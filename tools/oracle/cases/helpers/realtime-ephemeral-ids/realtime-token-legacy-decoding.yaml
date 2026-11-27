@@ -1,0 +1,63 @@
+kind: helper
+name: realtime-token-legacy-decoding
+call:
+  realtime_ephemeral_ids:
+    function: decode
+    decrypted: ep-test
+calls:
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: "{"
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: "[]"
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: "null"
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '"realtime_v1"'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v2","ephemeral_key":"k","model_id":"m"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"ephemeral_key":"k","model_id":"m"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":null,"model_id":"m"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":7,"model_id":"m"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"k","model_id":7}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","model_id":"m"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"k"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"","model_id":""}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"epé","model_id":"m","future":{"nested":[1,true,null]}}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","user_id":7,"team_id":null,"expires_at":true,"session_type":3}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"ep","model_id":"m","user_id":"","team_id":"","expires_at":null,"session_type":"realtime"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '  {"v":"realtime_v1","ephemeral_key":"k","model_id":"m"}  '
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"first","ephemeral_key":"last","model_id":"m"}'
+  - realtime_ephemeral_ids:
+      function: decode
+      decrypted: '{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","expires_at":7}'
+env: {}
+compare: {ignore: []}

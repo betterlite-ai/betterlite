@@ -1,0 +1,18 @@
+task: B1074
+deviations:
+  - what: >-
+      A failed update or delete renders the message through betterlite's shared SDK exception mapping, so the text carries the mapped class and provider where LiteLLM renders its own exception class and provider name, as in "BadRequestError: OpenAIException - ...".
+    why: >-
+      class, status, type, param and code match; only the message text differs, and the oracle cases ignore the failure message pointers for this reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L373-L381
+  - what: >-
+      A timeout the handler raises renders the mapped message, "Timeout Error: OpenAIException - litellm.Timeout: Connection timed out ...", where LiteLLM raises its litellm.Timeout instance itself, whose message is only the handler's "Connection timed out ..." line.
+    why: >-
+      The shared mapping renders every raise, and class, status 408, null type, param and code match; the oracle cases ignore the failure message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
+  - what: >-
+      A negative timeout, the call's or REQUEST_TIMEOUT, raises the handler's own error before any request goes out: Timeout 408 for update in both modes and for the sync delete, and InternalServerError 500 with type internal_server_error for the async delete. NaN, infinity or a value outside Duration's range is sent with the largest deadline, which tokio clamps to about 30 years, so the request never expires. LiteLLM hands the float to httpx, where CPython's socket layer rejects a value it cannot schedule ("Timeout value out of range", "timestamp out of range for C PyTime_t") before any TimeoutException exists, so the sync update and delete answer InternalServerError 500, while the async delete drops the deadline and sends the request.
+    why: >-
+      Those socket errors are CPython transport details no caller can rely on, and an async delete ignoring its timeout is a bug; betterlite keeps what each handler does with an httpx timeout exception (the three catches raise the 408, the async delete's missing catch becomes a synthesized 500) and lets a deadline it cannot schedule never expire.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1011-L1062
+kept_bugs: []

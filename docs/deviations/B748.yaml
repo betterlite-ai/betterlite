@@ -1,0 +1,6 @@
+task: B748
+deviations:
+  - what: Fallback authorization obtains the token from AuthContext rather than request metadata.
+    why: Caller metadata cannot supply the authentication identity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_model_access.py#L27-L68
+kept_bugs: []
