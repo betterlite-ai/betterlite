@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use betterlite_models::key_digest::hashing::hash_token;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -9,7 +8,10 @@ use crate::user_roles::UserRole;
 
 const ADMIN_NAME: &str = "master_key_operator";
 const MASTER_KEY_TEXT: &str = "sk-master-key-for-tests";
-const OTHER_KEY_TEXT: &str = "sk-another-master-key";
+// lowercase SHA-256 hex of MASTER_KEY_TEXT, of the empty string, and of "sk-another-master-key"
+const MASTER_KEY_DIGEST: &str = "08c01c2db90383f66f247ee03e19ac5053e408174e94be6e072db43963311fbd";
+const EMPTY_DIGEST: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+const OTHER_KEY_DIGEST: &str = "8ffae00efda00df519b1211233139edb52252c708f82f14150312cbdceb8df49";
 
 fn exposed(secret: Option<&SecretString>) -> Option<String> {
     secret.map(|held| held.expose_secret().to_owned())
@@ -18,7 +20,7 @@ fn exposed(secret: Option<&SecretString>) -> Option<String> {
 #[test]
 fn admits_the_digest_of_the_master_key_as_the_proxy_admin() {
     let master = SecretString::from(MASTER_KEY_TEXT);
-    let admin = master_key_admin_auth(&hash_token(MASTER_KEY_TEXT), Some(&master), ADMIN_NAME)
+    let admin = master_key_admin_auth(MASTER_KEY_DIGEST, Some(&master), ADMIN_NAME)
         .unwrap()
         .unwrap();
     let api_key = exposed(admin.extra.api_key.0.as_ref());
@@ -33,7 +35,7 @@ fn admits_the_digest_of_the_master_key_as_the_proxy_admin() {
 #[test]
 fn admits_an_empty_admin_name_as_given() {
     let master = SecretString::from(MASTER_KEY_TEXT);
-    let admin = master_key_admin_auth(&hash_token(MASTER_KEY_TEXT), Some(&master), "")
+    let admin = master_key_admin_auth(MASTER_KEY_DIGEST, Some(&master), "")
         .unwrap()
         .unwrap();
     assert_eq!(admin.view.token.user_id.as_deref(), Some(""));
@@ -52,11 +54,11 @@ enum Refusal {
 fn refusal_input(scenario: Refusal) -> (Option<SecretString>, String) {
     let master = SecretString::from(MASTER_KEY_TEXT);
     match scenario {
-        Refusal::NoMasterKey => (None, hash_token(MASTER_KEY_TEXT)),
-        Refusal::EmptyMasterKey => (Some(SecretString::from("")), hash_token("")),
+        Refusal::NoMasterKey => (None, MASTER_KEY_DIGEST.to_owned()),
+        Refusal::EmptyMasterKey => (Some(SecretString::from("")), EMPTY_DIGEST.to_owned()),
         Refusal::RawMasterKeyText => (Some(master), MASTER_KEY_TEXT.to_owned()),
-        Refusal::UppercaseDigest => (Some(master), hash_token(MASTER_KEY_TEXT).to_uppercase()),
-        Refusal::OtherKeyDigest => (Some(master), hash_token(OTHER_KEY_TEXT)),
+        Refusal::UppercaseDigest => (Some(master), MASTER_KEY_DIGEST.to_uppercase()),
+        Refusal::OtherKeyDigest => (Some(master), OTHER_KEY_DIGEST.to_owned()),
         Refusal::NonAsciiKeyHash => (Some(master), "\u{e9}".repeat(32)),
     }
 }
