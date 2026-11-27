@@ -65,7 +65,7 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
-use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
+use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
@@ -121,7 +121,7 @@ fn stage_input(
             model_pattern_input(backend, request, authenticated, resolver)
         }
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
-        AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
+        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
@@ -144,22 +144,6 @@ fn stage_input(
             model_grant_intersection::stage_input(request, authenticated)?,
         ))),
     }
-}
-
-// the resource grant stage reads the request's rule and database switch, so the dispatcher builds its input here
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    Ok(StageInput::AuthResourceGrants(Box::new(
-        ResourceGrantStageInput {
-            context: authenticated
-                .cloned()
-                .ok_or(AuthenticationFailure::Missing)?,
-            rule: auth_resource_grants::rule_for_request(request),
-            database: auth_resource_grants::database_for_request(request),
-        },
-    )))
 }
 
 fn model_pattern_input(
