@@ -10,6 +10,7 @@ pub mod byok_oauth_metadata;
 pub mod byok_token_exchange;
 pub mod ceilings;
 pub mod client;
+pub mod client_auth_headers;
 pub mod config_loader;
 pub mod connector_import;
 pub mod credential_contracts;
