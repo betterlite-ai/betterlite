@@ -14,8 +14,9 @@ description: >-
 
 
   Toolset ports go to B4681's toolset storage (create, list, get, update, delete and granted_toolset_ids) over
-  `shared.db`, B4717's admin predicates, and a toolset cache invalidation over McpState's identity.union (B6591's
-  toolset cache, built by B8621), so a toolset change reaches the next allowed-server union. Read the state struct of
+  `shared.db`, B4717's admin predicates, and a toolset cache invalidation that calls B10147's invalidate_toolset_cache on
+  McpState's shared cache, the one identity.union reads (B6591's toolset cache, built by B8621), so a toolset change
+  reaches the next allowed-server union and the next toolset name lookup. Read the state struct of
   toolset_routes for the exact port list; every port gets a production implementation and none is left as a fake.
   Make the admin predicate adapter pub(crate): B9950 reuses it for the full admin check of DELETE /v1/mcp/sessions.
 
@@ -40,11 +41,11 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3286-L3450
     why: The five toolset routes and the cache invalidation after each write.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3660-L3692
-    why: invalidate_toolset_cache, which the cache invalidation port stands for.
+    why: invalidate_toolset_cache, built by B10147 and called by the cache invalidation port.
 dod:
   - text: B4725's toolset router is merged once inside the auth layers.
     proof: [toolset-route-tests, oracle]
-  - text: The toolset ports forward to B4681 and B4717, and a toolset write invalidates the union's toolset cache.
+  - text: The toolset ports forward to B4681 and B4717, and a toolset write calls B10147's invalidate_toolset_cache on the union's toolset cache.
     proof: [toolset-route-tests]
   - text: The moved B4725 toolset cases match LiteLLM through the booted proxy.
     proof: [toolset-route-cases, oracle]
