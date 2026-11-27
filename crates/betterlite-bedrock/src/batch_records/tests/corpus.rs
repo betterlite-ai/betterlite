@@ -1,3 +1,5 @@
+use std::fs;
+
 use crate::batch_embeddings::classify::BatchRecordKind;
 use crate::batch_records::record::{CustomId, decode_batch_input_line};
 
@@ -13,9 +15,9 @@ fn replay_corpus() -> usize {
         "/fuzz/corpus/bedrock_services_batch_records"
     );
     let mut seeds = 0_usize;
-    for entry in std::fs::read_dir(directory).expect("the corpus directory reads") {
+    for entry in fs::read_dir(directory).expect("the corpus directory reads") {
         let path = entry.expect("the corpus entry reads").path();
-        let bytes = std::fs::read(&path).expect("the seed reads");
+        let bytes = fs::read(&path).expect("the seed reads");
         let name = path
             .file_stem()
             .and_then(|stem| stem.to_str())

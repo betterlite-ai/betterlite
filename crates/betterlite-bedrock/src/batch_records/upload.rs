@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
+use std::str;
 use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -27,6 +29,7 @@ use crate::s3_access::settings::{
 use crate::s3_signing::destination::{UploadTarget, get_complete_file_url};
 use crate::s3_signing::signer::{S3PutRequest, sign_s3_request};
 use crate::s3_signing::{UPLOAD_CONTENT_LENGTH_PARAM, UPLOAD_URL_PARAM};
+use crate::signing::request::AwsSignedRequest;
 use crate::signing::target::RegionInputs;
 
 const AWS_REGION_NAME: &str = "aws_region_name";
@@ -64,62 +67,12 @@ where
     Resolver: FnOnce(&AwsSettings, &str) -> Fut,
     Fut: Future<Output = Result<Credentials, CredentialError>>,
 {
-    let file = request.file.ok_or(BatchRecordsError::FileRequired)?;
-    let extracted = extract_file_data(file)?;
-    let is_batch = context.families.is_batch_jsonl(
-        request.purpose.map(CreatePurpose::wire_name),
-        Some(extracted.content_type.as_str()),
-        Some(extracted.content.as_slice()),
-    );
-    let file_content = if is_batch {
-        batch_content(
-            &extracted.content,
-            target_model(request.model, &*request.litellm_params),
-            context,
-        )
-        .await?
-    } else {
-        std::str::from_utf8(&extracted.content)?.to_owned()
-    };
-    let api_base = get_complete_file_url(&UploadTarget {
-        model: request.model,
-        litellm_params: &*request.litellm_params,
-        optional_params: request.optional_params,
-        file: request.file,
-        purpose: request.purpose,
-        environment: request.environment,
-        region_inputs: request.region_inputs,
-        id: request.id,
-    })?;
-    let request_params = signing_params(&*request.litellm_params, request.optional_params);
-    let deployment_settings = setting_map(request.litellm_params);
-    let call_settings = setting_map(&request_params);
-    let encryption_key_id = resolve_s3_setting(
-        S3Setting::EncryptionKeyId,
-        &S3SettingSources {
-            params: &deployment_settings,
-            optional_params: &call_settings,
-            secrets: request.secrets,
-            environment: request.environment,
-        },
-    )?;
-    let raw_params = raw_params(&request_params)?;
-    let signed = sign_s3_request(
-        S3PutRequest {
-            content: &file_content,
-            api_base: &api_base,
-            optional_params: &raw_params,
-            encryption_key_id: encryption_key_id.as_ref(),
-            region_inputs: request.region_inputs,
-            now: request.now,
-        },
-        resolve_credentials,
-    )
-    .await?;
-    request.litellm_params.insert(
-        String::from(UPLOAD_URL_PARAM),
-        RequestValue::Text(api_base.clone()),
-    );
+    let file_content = upload_content(request, context).await?;
+    let api_base = complete_file_url(request)?;
+    let signed = sign_content(request, &file_content, &api_base, resolve_credentials).await?;
+    request
+        .litellm_params
+        .insert(String::from(UPLOAD_URL_PARAM), RequestValue::Text(api_base));
     request.litellm_params.insert(
         String::from(UPLOAD_CONTENT_LENGTH_PARAM),
         RequestValue::Raw(file_content.len().to_string()),
@@ -134,6 +87,84 @@ where
     })
 }
 
+async fn upload_content<Lookup>(
+    request: &CreateFileRequest<'_>,
+    context: &BatchRecordContext<'_, Lookup>,
+) -> Result<String, BatchRecordsError>
+where
+    Lookup: ModelInfoLookup,
+{
+    let file = request.file.ok_or(BatchRecordsError::FileRequired)?;
+    let extracted = extract_file_data(file)?;
+    let is_batch = context.families.is_batch_jsonl(
+        request.purpose.map(CreatePurpose::wire_name),
+        Some(extracted.content_type.as_str()),
+        Some(extracted.content.as_slice()),
+    );
+    if is_batch {
+        batch_content(
+            &extracted.content,
+            target_model(request.model, &*request.litellm_params),
+            context,
+        )
+        .await
+    } else {
+        Ok(str::from_utf8(&extracted.content)?.to_owned())
+    }
+}
+
+fn complete_file_url(request: &CreateFileRequest<'_>) -> Result<String, BatchRecordsError> {
+    get_complete_file_url(&UploadTarget {
+        model: request.model,
+        litellm_params: &*request.litellm_params,
+        optional_params: request.optional_params,
+        file: request.file,
+        purpose: request.purpose,
+        environment: request.environment,
+        region_inputs: request.region_inputs,
+        id: request.id,
+    })
+    .map_err(BatchRecordsError::from)
+}
+
+async fn sign_content<Resolver, Fut>(
+    request: &CreateFileRequest<'_>,
+    content: &str,
+    api_base: &str,
+    resolve_credentials: Resolver,
+) -> Result<AwsSignedRequest, BatchRecordsError>
+where
+    Resolver: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
+    let request_params = signing_params(&*request.litellm_params, request.optional_params);
+    let deployment_settings = setting_map(&*request.litellm_params);
+    let call_settings = setting_map(&request_params);
+    let encryption_key_id = resolve_s3_setting(
+        S3Setting::EncryptionKeyId,
+        &S3SettingSources {
+            params: &deployment_settings,
+            optional_params: &call_settings,
+            secrets: request.secrets,
+            environment: request.environment,
+        },
+    )?;
+    let raw_params = raw_params(&request_params)?;
+    sign_s3_request(
+        S3PutRequest {
+            content,
+            api_base,
+            optional_params: &raw_params,
+            encryption_key_id: encryption_key_id.as_ref(),
+            region_inputs: request.region_inputs,
+            now: request.now,
+        },
+        resolve_credentials,
+    )
+    .await
+    .map_err(BatchRecordsError::from)
+}
+
 async fn batch_content<Lookup>(
     payload: &[u8],
     target_model: &str,
@@ -142,7 +173,7 @@ async fn batch_content<Lookup>(
 where
     Lookup: ModelInfoLookup,
 {
-    let text = std::str::from_utf8(payload)?;
+    let text = str::from_utf8(payload)?;
     let mut records = Vec::new();
     for line in text.split(LINE_BOUNDARIES) {
         if let Some(record) = decode_batch_input_line(line.as_bytes())? {
@@ -172,20 +203,16 @@ fn target_model<'source>(model: &'source str, litellm_params: &'source Params) -
 
 // merge_bedrock_aws_request_params, then s3_region_name overwrites aws_region_name unconditionally.
 fn signing_params(litellm_params: &Params, optional_params: &Params) -> Params {
-    let merged = merge_aws_request_params(litellm_params, optional_params);
-    let region = text_param(litellm_params, S3_REGION_NAME)
-        .or_else(|| text_param(optional_params, S3_REGION_NAME));
-    match region {
-        Some(region) => {
-            let mut params = merged;
-            params.insert(
-                String::from(AWS_REGION_NAME),
-                RequestValue::Text(region.to_owned()),
-            );
-            params
-        }
-        None => merged,
+    let mut merged = merge_aws_request_params(litellm_params, optional_params);
+    if let Some(s3_region) = text_param(litellm_params, S3_REGION_NAME)
+        .or_else(|| text_param(optional_params, S3_REGION_NAME))
+    {
+        merged.insert(
+            String::from(AWS_REGION_NAME),
+            RequestValue::Text(s3_region.to_owned()),
+        );
     }
+    merged
 }
 
 fn text_param<'source>(params: &'source Params, name: &str) -> Option<&'source str> {
@@ -249,15 +276,14 @@ fn policy_json(value: &RequestValue) -> Json {
 }
 
 // The handoff carries signed headers and the converted content, so Debug lists header names and lengths only.
-impl std::fmt::Debug for FileUploadHandoff {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for FileUploadHandoff {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let names: Vec<&str> = self
             .headers
             .iter()
             .map(|(name, _value)| name.as_str())
             .collect();
-        formatter
-            .debug_struct("FileUploadHandoff")
+        f.debug_struct("FileUploadHandoff")
             .field("method", &self.method)
             .field("url", &self.url)
             .field("header_names", &names)

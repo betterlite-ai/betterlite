@@ -515,7 +515,7 @@ pub(super) fn upload_signing_handoff() {
         String::from("model"),
         RequestValue::Text(String::from(GATEWAY_MODEL)),
     );
-    let (target_upload, _after) = run_upload(
+    let (target_upload, _target_params) = run_upload(
         &Families::batch(),
         &file,
         Some(CreatePurpose::Batch),
@@ -534,7 +534,7 @@ pub(super) fn upload_signing_handoff() {
         String::from("s3_region_name"),
         RequestValue::Text(String::new()),
     );
-    let (default_region_result, _after) = run_upload(
+    let (default_region_result, _default_params) = run_upload(
         &Families::batch(),
         &file,
         Some(CreatePurpose::Batch),
@@ -564,7 +564,7 @@ pub(super) fn upload_signing_handoff() {
         String::from("model"),
         RequestValue::Text(String::from("amazon.nova-pro-v1:0")),
     );
-    let (targeted_result, _after) = run_upload(
+    let (targeted_result, _converse_params) = run_upload(
         &Families::batch(),
         &unknown,
         Some(CreatePurpose::Batch),

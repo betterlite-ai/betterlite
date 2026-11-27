@@ -2,9 +2,12 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
         clippy::disallowed_types,
         clippy::too_many_lines,
-        reason = "each case states one LiteLLM behavior as a scenario and compares it through serde_json values"
+        reason = "each case states one LiteLLM behavior as a scenario, builds its request JSON as serde_json values and compares it through serde_json values"
     )
 )]
 

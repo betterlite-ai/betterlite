@@ -63,8 +63,8 @@ fn batch_records_credential_identity_isolation() {
         param_text(&second_params, "s3_access_key_id"),
         Some(OTHER_ACCESS_KEY)
     );
-    assert!(!format!("{:?}", first_params).contains(SECRET_KEY));
-    assert!(!format!("{:?}", second_params).contains(OTHER_SECRET_KEY));
+    assert!(!format!("{first_params:?}").contains(SECRET_KEY));
+    assert!(!format!("{second_params:?}").contains(OTHER_SECRET_KEY));
 }
 
 #[test]

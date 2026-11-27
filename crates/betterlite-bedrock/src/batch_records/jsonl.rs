@@ -74,12 +74,12 @@ async fn embedding_model_input<Lookup>(
 where
     Lookup: ModelInfoLookup,
 {
-    let value = serde_json::to_value(body).map_err(BatchRecordsError::Wire)?;
+    let wire = serde_json::to_value(body).map_err(BatchRecordsError::Wire)?;
     let request: EmbeddingRequest =
-        serde_json::from_value(value).map_err(BatchRecordsError::Json)?;
+        serde_json::from_value(wire).map_err(BatchRecordsError::Json)?;
     let mapped = map_embedding_to_bedrock(&request, model, lookup).await?;
-    let value = serde_json::to_value(mapped).map_err(BatchRecordsError::Wire)?;
-    serde_json::from_value(value).map_err(BatchRecordsError::Wire)
+    let serialized = serde_json::to_value(mapped).map_err(BatchRecordsError::Wire)?;
+    serde_json::from_value(serialized).map_err(BatchRecordsError::Wire)
 }
 
 // `openai_body.get("model", "")`: an absent model names nothing.

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
-use std::future::ready;
-use std::sync::Mutex;
+use std::future::{Ready, ready};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -166,24 +166,27 @@ impl Families {
 
 #[async_trait::async_trait]
 impl BatchFamilies for Families {
-    async fn anthropic_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
+    async fn anthropic_params(
+        &self,
+        mapping_model: &str,
+        optional_params: &Params,
+    ) -> Attempt<Params> {
         self.anthropic_params_calls
             .lock()
             .expect("no panic held the lock")
-            .push((mapping_model.to_owned(), params.clone()));
-        match &self.anthropic_params {
-            Some(mapped) => Ok(mapped.clone()),
-            None => Ok(Params::new()),
-        }
+            .push((mapping_model.to_owned(), optional_params.clone()));
+        self.anthropic_params
+            .as_ref()
+            .map_or_else(|| Ok(Params::new()), |mapped| Ok(mapped.clone()))
     }
 
     async fn anthropic_body(
         &self,
         model: &str,
         messages: &[Json],
-        params: &Params,
+        optional_params: &Params,
     ) -> Attempt<Json> {
-        let call = Call::of(model, messages, params);
+        let call = Call::of(model, messages, optional_params);
         self.anthropic_body_calls
             .lock()
             .expect("no panic held the lock")
@@ -193,11 +196,16 @@ impl BatchFamilies for Families {
             .ok_or_else(|| Failure::from(MissingFixture))
     }
 
-    async fn nova_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
+    async fn nova_body(
+        &self,
+        model: &str,
+        messages: &[Json],
+        optional_params: &Params,
+    ) -> Attempt<Json> {
         self.nova_calls
             .lock()
             .expect("no panic held the lock")
-            .push(Call::of(model, messages, params));
+            .push(Call::of(model, messages, optional_params));
         Ok(self.nova_body.clone().unwrap_or(Json::Null))
     }
 
@@ -295,9 +303,9 @@ impl OidcClock for NoOidc {
 fn secret_lookup() -> SecretLookup {
     SecretLookup {
         manager: None,
-        oidc_http: std::sync::Arc::new(NoOidc),
-        azure_tokens: std::sync::Arc::new(NoOidc),
-        clock: std::sync::Arc::new(NoOidc),
+        oidc_http: Arc::new(NoOidc),
+        azure_tokens: Arc::new(NoOidc),
+        clock: Arc::new(NoOidc),
         oidc_cache: OidcTokenCache::default(),
     }
 }
@@ -335,7 +343,12 @@ pub(super) fn transform_with(
     };
     runtime()
         .block_on(transform_openai_jsonl(records, target_model, &context))
-        .map(|records| records.iter().map(BedrockBatchRecord::to_json).collect())
+        .map(|transformed| {
+            transformed
+                .iter()
+                .map(BedrockBatchRecord::to_json)
+                .collect()
+        })
 }
 
 pub(super) fn chat_body_of(body: &Json, kind: BatchRecordKind) -> Result<Json, BatchRecordsError> {
@@ -384,7 +397,7 @@ pub(super) fn booking_params() -> RequestParams {
 fn resolve_credentials(
     _settings: &AwsSettings,
     _region: &str,
-) -> std::future::Ready<Result<Credentials, CredentialError>> {
+) -> Ready<Result<Credentials, CredentialError>> {
     ready(Ok(Credentials {
         access_key_id: SecretString::from(ACCESS_KEY),
         secret_access_key: SecretString::from(SECRET_KEY),
@@ -443,7 +456,9 @@ fn upload_request(
             session_region: None,
         },
         id: FIXED_UUID,
-        now: SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+        now: SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_secs(1_700_000_000))
+            .expect("the fixture clock is representable"),
     };
     runtime().block_on(transform_create_file_request(
         &mut request,

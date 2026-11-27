@@ -45,13 +45,14 @@ pub fn text_completion_to_chat(body: &Json) -> Result<Json, BatchRecordsError> {
             model: model_text(fields.get(MODEL_FIELD)),
         });
     };
-    let prompt: PromptJson =
+    let prompt_value: PromptJson =
         serde_json::from_value(serde_json::to_value(prompt).map_err(BatchRecordsError::Wire)?)
             .map_err(BatchRecordsError::Wire)?;
-    let messages = to_messages(&prompt)?;
-    let messages: Vec<Json> =
-        serde_json::from_value(serde_json::to_value(messages).map_err(BatchRecordsError::Wire)?)
-            .map_err(BatchRecordsError::Wire)?;
+    let prompt_messages = to_messages(&prompt_value)?;
+    let messages: Vec<Json> = serde_json::from_value(
+        serde_json::to_value(prompt_messages).map_err(BatchRecordsError::Wire)?,
+    )
+    .map_err(BatchRecordsError::Wire)?;
     let mut converted = fields.clone();
     converted.shift_remove(PROMPT_FIELD);
     converted.insert(String::from(MESSAGES_FIELD), Json::List(messages));

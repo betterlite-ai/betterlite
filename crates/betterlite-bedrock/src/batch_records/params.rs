@@ -3,6 +3,7 @@ use betterlite_context::provider_message_primitives::{Record, developer_to_syste
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 use super::error::BatchRecordsError;
 use super::families::{BatchFamilies, Params};
@@ -108,12 +109,23 @@ fn projected_messages(value: Option<&Json>) -> Result<Vec<Json>, BatchRecordsErr
         }
         None => Vec::new(),
     };
-    let value = serde_json::to_value(entries).map_err(BatchRecordsError::Wire)?;
-    let records: Vec<Record<serde_json::Value>> =
-        serde_json::from_value(value).map_err(|_error| BatchRecordsError::Field {
+    let payload = serde_json::to_value(entries).map_err(BatchRecordsError::Wire)?;
+    let records: Vec<Record<MessageField>> =
+        serde_json::from_value(payload).map_err(|_error| BatchRecordsError::Field {
             field: MESSAGES_FIELD,
         })?;
     let projected = developer_to_system(records)?;
-    let value = serde_json::to_value(projected).map_err(BatchRecordsError::Wire)?;
-    serde_json::from_value(value).map_err(BatchRecordsError::Wire)
+    let projected_payload = serde_json::to_value(projected).map_err(BatchRecordsError::Wire)?;
+    serde_json::from_value(projected_payload).map_err(BatchRecordsError::Wire)
+}
+
+// developer_to_system compares a message's role against `str`, so the content field is a newtype over `Json`.
+#[derive(Deserialize, Serialize)]
+#[serde(transparent)]
+struct MessageField(Json);
+
+impl PartialEq<str> for MessageField {
+    fn eq(&self, other: &str) -> bool {
+        matches!(&self.0, Json::Text(text) if text == other)
+    }
 }

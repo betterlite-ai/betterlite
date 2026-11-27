@@ -1,3 +1,5 @@
+use std::str;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -38,6 +40,7 @@ pub struct BedrockBatchRecord {
 
 impl BedrockBatchRecord {
     // {"recordId": ..., "modelInput": ...}: the insertion order Python's dict literal gives.
+    #[must_use]
     pub fn to_json(&self) -> Json {
         let mut fields = IndexMap::new();
         fields.insert(String::from("recordId"), self.record_id.clone());
@@ -48,6 +51,7 @@ impl BedrockBatchRecord {
 
 impl OpenAiBatchRecord {
     // `custom_id or f"CALL{str(idx).zfill(7)}"`: a present null stays null.
+    #[must_use]
     pub fn record_id(&self, index: usize) -> Json {
         match &self.custom_id {
             CustomId::Missing => Json::Text(format!("{CALL_PREFIX}{index:07}")),
@@ -61,7 +65,7 @@ impl OpenAiBatchRecord {
 pub fn decode_batch_input_line(
     line: &[u8],
 ) -> Result<Option<OpenAiBatchRecord>, BatchRecordsError> {
-    let text = std::str::from_utf8(line)?;
+    let text = str::from_utf8(line)?;
     // Python's str.strip also drops U+001F, which Rust's White_Space set leaves out
     let trimmed =
         text.trim_matches(|character: char| character.is_whitespace() || character == '\u{1f}');
@@ -74,7 +78,7 @@ pub fn decode_batch_input_line(
     let custom_id = match fields.get(CUSTOM_ID_FIELD) {
         None => CustomId::Missing,
         Some(Json::Null) => CustomId::Null,
-        Some(Json::Text(text)) => CustomId::Text(text.clone()),
+        Some(Json::Text(custom)) => CustomId::Text(custom.clone()),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             return Err(BatchRecordsError::Field {
                 field: CUSTOM_ID_FIELD,
