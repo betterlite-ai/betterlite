@@ -8,7 +8,7 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyModule};
+use pyo3::types::{PyDict, PyModule};
 use rstest::rstest;
 
 use super::NativeVectorFileSession;

@@ -12,10 +12,10 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::Serialize;
 
-mod list;
-mod read;
+pub(super) mod list;
+pub(super) mod read;
 mod tests;
-mod write;
+pub(super) mod write;
 
 // vector_store_file_create's arguments: the two ids, the named optionals, the call's **kwargs and its HTTP extras
 #[derive(Debug, Deserialize)]

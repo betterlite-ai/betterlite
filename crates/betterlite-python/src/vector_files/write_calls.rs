@@ -18,7 +18,7 @@ pub(crate) enum WriteSide {
 }
 
 impl WriteSide {
-    const fn call_type(self) -> &'static str {
+    pub(crate) const fn call_type(self) -> &'static str {
         match self {
             Self::Update => "update",
             Self::Delete => "delete",

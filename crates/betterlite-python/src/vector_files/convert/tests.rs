@@ -175,7 +175,7 @@ fn request_update_sends_an_empty_attributes_map() {
 
 #[test]
 fn error_attached_files_are_refused() {
-    let result: Result<CreateWire, ConvertError> = parse(r#"{}"#, 2);
+    let result: Result<CreateWire, ConvertError> = parse("{}", 2);
     assert!(matches!(result, Err(ConvertError::Files { count: 2 })));
 }
 
