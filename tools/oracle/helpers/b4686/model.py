@@ -102,6 +102,27 @@ class Envelope(TypedDict):
     observed: Observed
 
 
+class AgentSkillPayload(TypedDict):
+    name: str
+    description: str
+    tags: list[str]
+
+
+class AgentHitPayload(TypedDict):
+    agent_id: str
+    agent_name: str
+    description: str
+    skills: list[AgentSkillPayload]
+    score: float
+
+
+class SkillHitPayload(TypedDict):
+    skill_id: str
+    display_title: str
+    description: str | None
+    score: float
+
+
 @dataclass(frozen=True)
 class AgentSearchHits:
     hits: list[AgentSearchResult]

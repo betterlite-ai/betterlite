@@ -6,6 +6,7 @@ from mcp.types import Tool
 from pydantic import JsonValue
 
 from b4686.model import (
+    AgentHitPayload,
     AgentOutcome,
     AgentSearchEmbeddingFailed,
     AgentSearchHits,
@@ -20,6 +21,7 @@ from b4686.model import (
     FeatureCheckRecord,
     ListCallRecord,
     ScopeRecord,
+    SkillHitPayload,
     SkillOutcome,
     SkillSearchEmbeddingFailed,
     SkillSearchHits,
@@ -144,32 +146,30 @@ def tools_of(input_value: Input) -> list[Tool]:
 
 
 def agent_hit(agent: NamedRecord) -> AgentSearchResult:
-    return AgentSearchResult.model_validate(
-        {
-            "agent_id": agent.record_id,
-            "agent_name": agent.name,
-            "description": f"agent description of {agent.record_id}",
-            "skills": [
-                {
-                    "name": f"skill-{agent.record_id}",
-                    "description": f"skill description of {agent.record_id}",
-                    "tags": ["seeded"],
-                }
-            ],
-            "score": AGENT_SCORE,
-        }
-    )
+    payload: AgentHitPayload = {
+        "agent_id": agent.record_id,
+        "agent_name": agent.name,
+        "description": f"agent description of {agent.record_id}",
+        "skills": [
+            {
+                "name": f"skill-{agent.record_id}",
+                "description": f"skill description of {agent.record_id}",
+                "tags": ["seeded"],
+            }
+        ],
+        "score": AGENT_SCORE,
+    }
+    return AgentSearchResult.model_validate(payload)
 
 
 def skill_hit(skill: NamedRecord) -> SkillSearchResult:
-    return SkillSearchResult.model_validate(
-        {
-            "skill_id": skill.record_id,
-            "display_title": skill.name,
-            "description": skill.description,
-            "score": SKILL_SCORE,
-        }
-    )
+    payload: SkillHitPayload = {
+        "skill_id": skill.record_id,
+        "display_title": skill.name,
+        "description": skill.description,
+        "score": SKILL_SCORE,
+    }
+    return SkillSearchResult.model_validate(payload)
 
 
 def agent_outcome(input_value: Input, agents: list[NamedRecord]) -> AgentOutcome:

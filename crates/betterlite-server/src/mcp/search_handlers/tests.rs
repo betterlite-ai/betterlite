@@ -140,6 +140,14 @@ impl Default for Fake {
     }
 }
 
+fn search_call(query: &str, top_k: i64, embedding_model: Option<&str>) -> SearchCall {
+    SearchCall {
+        query: query.to_owned(),
+        top_k,
+        embedding_model: embedding_model.map(str::to_owned),
+    }
+}
+
 impl Fake {
     fn record_skill_search(
         &self,
@@ -150,11 +158,8 @@ impl Fake {
     ) {
         let mut seen = self.seen.lock().unwrap();
         seen.skills = skills.iter().map(|skill| skill.skill_id.clone()).collect();
-        seen.skill_searches.push(SearchCall {
-            query: query.to_owned(),
-            top_k,
-            embedding_model: embedding_model.map(str::to_owned),
-        });
+        seen.skill_searches
+            .push(search_call(query, top_k, embedding_model));
     }
 
     fn allowed_servers_response(&self) -> Result<Vec<String>, SearchPortError> {
@@ -192,13 +197,14 @@ impl SearchPorts for Fake {
         embedding_model: Option<&str>,
         _caller: &CallerScope,
     ) -> Result<AgentSearchOutcome, SearchPortError> {
+        let mut names = Vec::new();
+        for agent in agents {
+            names.push(agent.agent_id.clone());
+        }
         let mut seen = self.seen.lock().unwrap();
-        seen.agents = agents.iter().map(|agent| agent.agent_id.clone()).collect();
-        seen.agent_searches.push(SearchCall {
-            query: query.to_owned(),
-            top_k,
-            embedding_model: embedding_model.map(str::to_owned),
-        });
+        seen.agents = names;
+        seen.agent_searches
+            .push(search_call(query, top_k, embedding_model));
         Ok(self.agent_outcome.clone())
     }
 
