@@ -1,0 +1,19 @@
+kind: helper
+name: auth-model-grants-fallback-failure-policy
+call:
+  auth_model_grants:
+    steps:
+      # a key denial refuses the fallback and is not replaced by the provider error
+      - {function: fallback, model: "other-model", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, models: ["gpt-4o"]}}}}
+      # a team snapshot denial refuses it the same way
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, models: ["gpt-4o"], team_id: team-1, team_models: ["gpt-4o-mini"]}}}}
+      # disabled enforcement allows without reading the token's grants
+      - {function: fallback, model: "other-model", enabled: false, request: {metadata: {user_api_key_auth: {token: sk-1, models: ["gpt-4o"]}}}}
+      # all-team-models and a config blob skip the key check, so only the team decides
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, models: ["all-team-models"], team_id: team-1, team_models: ["gpt-4o"]}}}}
+      - {function: fallback, model: "other-model", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, config: {anything: true}, models: ["gpt-4o"]}}}}
+      # an empty key allowlist grants every model
+      - {function: fallback, model: "other-model", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, models: []}}}}
+      - {function: fallback, model: "other-model", enabled: true}
+env: {}
+compare: {ignore: []}

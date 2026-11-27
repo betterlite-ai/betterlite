@@ -1,0 +1,84 @@
+kind: sdk_http
+name: vector-file-write-provider-resolution
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_write:
+    runs:
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+        custom_llm_provider: ""
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+        custom_llm_provider: azure
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+        custom_llm_provider: bogus
+      - operation: delete
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        custom_llm_provider: azure
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+        api_key: sk-caller
+        registry:
+          credentials: {api_key: sk-registry}
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+        api_key: sk-caller
+        registry:
+          failing: true
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+        registry:
+          credentials: {api_key: sk-registry, custom_llm_provider: azure}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /vector_file_write/value/runs/2/failure/message
+      why: betterlite renders the ValueError text where LiteLLM wraps it in a traceback
+    - pointer: /vector_file_write/value/runs/3/failure/message
+      why: betterlite renders the ValueError text where LiteLLM wraps it in a traceback
+    - pointer: /vector_file_write/value/runs/4/failure/message
+      why: betterlite renders the ValueError text where LiteLLM wraps it in a traceback
