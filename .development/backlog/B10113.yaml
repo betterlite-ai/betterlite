@@ -1,13 +1,13 @@
 id: B10113
 milestone: R2 bug fixes
 title: Every evals call answers 400 for a provider it cannot serve
-status: todo
+status: done
 depends_on: [B3422, B3424, B3425]
 file: tasks/B10113-evals-unsupported-provider-400.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3307

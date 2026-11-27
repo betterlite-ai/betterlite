@@ -1,0 +1,64 @@
+id: B10132
+title: Model reconcile lock handle
+description: >-
+  LiteLLM serializes every change to the router's model list with one module-level asyncio.Lock, MODEL_RECONCILE_LOCK (proxy_server.py L2587-L2595). Without it two model writes each reconcile the router against their own database snapshot, and the one holding the older snapshot evicts the deployment the newer one just added: the row stays in the database and this pod stops serving it. Six places take it: add_deployment (B8381), clear_cache (done B841), reload_search_tools_from_db (B8384), delete_team_models (B836), delete_model's router eviction (B838) and the models read-through resync (B9948). They sit in betterlite-server and in the binary crate crates/betterlite, which betterlite-server may not depend on, so the one type they share sits in betterlite-server below all of them. This task builds only that type.
+
+
+  Module model_reconcile_lock in betterlite-server, crates/betterlite-server/src/model_reconcile_lock.rs with its tests in model_reconcile_lock/tests.rs. The file is an empty stub its parent declares. It holds one public type:
+
+  `ModelReconcileLock`, a tuple struct over a private `Arc<tokio::sync::Mutex<()>>`, deriving Clone, Debug and Default. Default makes a new lock, and Clone hands out another handle to the same one. It implements `Deref<Target = tokio::sync::Mutex<()>>`, so a holder writes `let _reconciling = reconcile_lock.lock().await;`, and done B841's `model_reload::cache::clear_cache`, whose `gate` parameter is `&tokio::sync::Mutex<()>`, takes `&reconcile_lock` unchanged. Add no other method: a `new()` or `lock()` that only forwards is a one-line function the hooks refuse, while the Deref impl is a trait impl and exempt.
+
+
+  LiteLLM keeps the lock at module level only because llm_router is a module global. betterlite has no statics (rules.yaml inject-dependencies), so the startup builds one handle with Default where it builds DeploymentSync (B8613) and passes clones through constructors to DeploymentSync, DbObjectSync, DeploymentModelSync and the model write services. None of that wiring is built here, and no consumer is changed.
+
+
+  Tests in model_reconcile_lock::tests, all #[tokio::test]. `clones_share_one_lock`: while a guard taken through one handle is alive, try_lock through its clone fails, and after the guard drops it succeeds. `separate_locks_do_not_block_each_other`: with a guard alive on one Default-built handle, try_lock on a second Default-built handle succeeds, so building a handle twice never gives a process-wide lock. `waiter_runs_after_the_holder_releases`: two futures over clones, standing for a model reconcile and a search tool refresh, run under tokio::join!; the first takes the guard, records "model start", calls tokio::task::yield_now while holding it and records "model end"; the second records "search" once it has the guard. The record reads model start, model end, search. Keep the record in an Arc<std::sync::Mutex<Vec<&str>>> or a bounded channel, never a RefCell.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_reconcile_lock.rs
+    - crates/betterlite-server/src/model_reconcile_lock/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2587-L2595
+    why: MODEL_RECONCILE_LOCK and the comment on why every model reconcile shares one lock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8101-L8130
+    why: add_deployment takes the lock around _add_deployment_locked; B8381 builds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9039-L9057
+    why: reload_search_tools_from_db takes the same lock; B8384 builds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L3224-L3253
+    why: clear_cache holds the lock for its whole extent and calls the locked half, since asyncio.Lock is not reentrant; done B841 takes it as a &Mutex<()> gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1798-L1809
+    why: delete_team_models evicts the deleted ids from the router under the lock; B836 builds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2247-L2256
+    why: delete_model's router eviction under the lock; B838 builds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L120-L131
+    why: The models read-through resync takes the lock only when a router exists; B9948 builds it.
+dod:
+  - text: A guard taken through one ModelReconcileLock handle blocks every clone of it until the guard drops.
+    proof: [lock-tests]
+  - text: Two handles built with Default are two independent locks.
+    proof: [lock-tests]
+  - text: A second holder waits until the first releases, even when the first yields while holding the guard.
+    proof: [lock-tests]
+checks:
+  optional: []
+  commands:
+    - id: lock-tests
+      why: The shared lock handle is missing, its clones do not share one mutex, or two separate handles share one.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_reconcile_lock::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "add_deployment and the locked half clear_cache calls: B8381. clear_cache itself: done B841 (model_reload::cache)."
+  - "reload_search_tools_from_db and the rule that load_search_tools never takes the lock: B8384."
+  - "delete_team_models: B836. delete_model and its router eviction: B838. The models read-through resync: B9948."
+  - "Building the one handle at startup and passing it to its holders: B8613."
+  - "The agent registry's and the guardrail runtime's own reconcile locks (done B4776 and the guardrail startup) are separate locks and stay where they are."
+pitfalls:
+  - "Use tokio::sync::Mutex, not std::sync::Mutex: every holder keeps the guard across database and router awaits, and clippy's await_holding_lock refuses a std guard there."
+  - "Derive Default and add no constructor: clippy's new_without_default fires on a bare new(), and the hooks refuse a new() that only builds the struct."
+  - "No static, OnceLock or LazyLock for the shared instance, even though LiteLLM's MODEL_RECONCILE_LOCK is a module global; one handle per process comes from the startup passing clones."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

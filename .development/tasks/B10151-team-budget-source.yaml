@@ -1,0 +1,99 @@
+id: B10151
+title: Team default member budget id and membership budget source
+description: >-
+  Build the module `team_budget_source` in betterlite-server: the reader for a team's default member budget id and the label that says where a team membership's budget comes from. Three team tasks need them. B809's /team/{team_id}/member/{user_id}/reset_budget looks up the default and labels its answer, B812's GET /team/info labels every membership it returns, and B802's bulk member budget update reads the default before its transaction. LiteLLM writes them as `_team_default_budget_id` and `_member_budget_source` in team_endpoints.py (L4036-L4059), with a second, line-for-line equal `_team_default_budget_id` in bulk_team_member_budgets.py (L75-L77). This task builds both once; B809, B812 and B802 call them and write none of their own. The file crates/betterlite-server/src/team_budget_source.rs is an empty stub that lib.rs already declares. Keep every test in team_budget_source/tests.rs, declared with `mod tests;`, so the test paths start with `team_budget_source::tests::`.
+
+
+  Default id. `team_default_budget_id(metadata: Option<&BTreeMap<String, JsonData>>) -> Option<&str>` returns the value under the key "team_member_budget_id" when it is `JsonData::String`, the empty string included, and None for absent metadata, a map without the key, and every other JsonData variant (Null, Bool, Number, Array, Object). JsonData is B2310's (betterlite_db::budget_permission_rows). It takes the metadata map and not a row because LiteLLM calls it with two row types: LiteLLM_TeamTable in B809 and B802, and TeamInfoResponseObjectTeamTable in B812 (L4939). Every Rust team row carries `metadata: Option<BTreeMap<String, JsonData>>` (B859's TeamBase), so each caller passes `row.metadata.as_ref()` and needs no converter. Python's `_TeamMetadataView` (L4036-L4037) exists only to pull metadata out of either row with from_attributes; the map argument is that projection, so build no struct for it. Its "not a mapping" validation error cannot happen here, because the Rust field is already a map.
+
+
+  Budget source. `TeamMemberBudgetSource` is the Literal alias from _types.py L4857 as a Rust enum with three variants, TeamDefault, Custom and NoBudget, that serialize to "team_default", "custom" and "none" and deserialize from exactly those three strings. Name the third variant NoBudget with `#[serde(rename = "none")]`, since a variant called None reads like Option::None at every match. Derive Debug, Clone, Copy, PartialEq, Eq, Serialize and Deserialize. B812's TeamInfoMembership and B809's TeamMemberResetBudgetResponse put it in their bodies as budget_source. `member_budget_source(budget_id: Option<&str>, team_default_budget_id: Option<&str>) -> TeamMemberBudgetSource` is `_member_budget_source` (L4056-L4059): Custom when budget_id is Some and differs from the default, a member id with no default included; otherwise TeamDefault when the default is Some, a membership with no budget id of its own included; otherwise NoBudget. The comparison is exact string equality, so an empty member id equals an empty default.
+
+
+  This module does no database read and no lookup. The callers decide which default they pass. B812 passes the default only when its budget lookup found the row (active_default_budget_id, L4943-L4945), and B809 passes the id from `_existing_team_default_budget_id` as both arguments (L4101 and L4122), so its route never answers custom. Both functions are total, so the module has no error enum.
+
+
+  Tests in team_budget_source::tests. default_id_string reads a nonempty string. default_id_empty_string keeps "" as Some(""). default_id_wrong_type gets None for each of null, true, 7, 1.5, ["b"] and {"budget_id": "b"} under the key. default_id_missing gets None for absent metadata, an empty map and a map holding only other keys. source_custom covers a member id unlike the default and a member id with no default. source_team_default covers a member id equal to the default, no member id with a default, and "" for both. source_no_budget covers both None. wire_source_values serializes each variant to its LiteLLM string and refuses "member" and "None" on deserialize.
+
+
+  Oracle. Helper cases on the b10151 operation in the server group, with a tagged union on `op`. `default_id` carries a list of metadata values, each null or an object; Python builds `LiteLLM_TeamTable(team_id="t", metadata=value)` for each and answers the list of `_team_default_budget_id(team)` results. `source` carries a list of [budget_id, team_default_budget_id] pairs, each a string or null; Python answers the list of `_member_budget_source(...)` literals. The Rust side runs the production functions over the same input and serializes TeamMemberBudgetSource through its own serde. Add helper_case seeds named team-budget-source-* for B171's existing decoder. No route reaches this module from here: B809's default-budget-links and B812's membership-budget-sources HTTP cases prove it through the routes.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_budget_source.rs
+    - crates/betterlite-server/src/team_budget_source/**
+    - tools/oracle/cases/helpers/team-budget-source/**
+    - tools/oracle/fuzz/corpus/helper_case/team-budget-source-*
+    - tools/oracle/helpers/b10151.py
+    - tools/oracle/helpers/b10151/**
+    - tools/oracle/src/helpers/server/b10151.rs
+    - tools/oracle/src/helpers/server/b10151/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4036-L4043
+    why: Owned. _TeamMetadataView and _team_default_budget_id, a string under team_member_budget_id or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4056-L4059
+    why: Owned. _member_budget_source, custom before team_default before none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_team_member_budgets.py#L75-L77
+    why: The second copy of _team_default_budget_id; B802 calls this task's function for it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4857-L4876
+    why: Owned. TeamMemberBudgetSource, and the two response models that carry it, TeamInfoMembership (B812) and TeamMemberResetBudgetResponse (B809).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4938-L4945
+    why: B812's call site; the default counts as active only when the budget row was found.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4975-L4985
+    why: B812's per-membership label from the membership's budget_id and the active default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4046-L4053
+    why: B809's _existing_team_default_budget_id, the database check that stays with B809 and calls team_default_budget_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L63-L86
+    why: TeamBase.metadata is dict | None, the declared input the helper cases send.
+dod:
+  - text: team_default_budget_id returns a string under team_member_budget_id, the empty string included, and None for every other JSON type, for absent metadata and for a map without the key, equal to LiteLLM's answers.
+    proof: [default-id-tests, oracle, helper-python, helper-case-corpus]
+  - text: member_budget_source answers custom for a member id unlike the default or with no default, team_default for an equal id or no member id under a default, and none with neither, equal to LiteLLM's answers.
+    proof: [source-tests, oracle, helper-python]
+  - text: TeamMemberBudgetSource serializes to exactly team_default, custom and none and refuses any other string.
+    proof: [wire-tests]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: default-id-tests
+      why: The default id reader drops the empty string, accepts a non-string value or fails on absent metadata.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_budget_source::tests::default_id_/)'
+    - id: source-tests
+      why: The budget source label picks the wrong variant for one of the member and default combinations.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_budget_source::tests::source_/)'
+    - id: wire-tests
+      why: The budget source enum writes other strings than LiteLLM's literals or accepts one it lacks.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_budget_source::tests::wire_/)'
+    - id: helper-python
+      why: The b10151 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10151.py tools/oracle/helpers/b10151)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10151 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-budget-source-*")" &&
+        grep -lE 'b10151"?:' tools/oracle/fuzz/corpus/helper_case/team-budget-source-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-budget-source/default-id-metadata-shapes.yaml
+  - tools/oracle/cases/helpers/team-budget-source/empty-string-ids.yaml
+  - tools/oracle/cases/helpers/team-budget-source/member-source-matrix.yaml
+deviations: []
+out_of_scope:
+  - "B809 keeps _existing_team_default_budget_id (L4046-L4053), the budget table read that calls team_default_budget_id, and both reset routes with TeamMemberResetBudgetResponse."
+  - "B812 keeps _add_team_member_budget_table (L4756-L4769), the active-default rule and TeamInfoMembership; it calls both functions from here."
+  - "B802 owns every other bulk_team_member_budgets.py function and calls team_default_budget_id for its L75-L77 copy instead of writing one."
+  - "Every other team_endpoints.py function stays with the owner the team task files list (B801 to B815, B1204 to B1209); this task calls none of them."
+  - "betterlite-auth's team_budget_admission/member.rs and reservation_counters/member.rs read team_member_budget_id inline, as LiteLLM's _check_team_member_budget (auth_checks.py L5858) and _get_team_member_budget_counter (budget_reservation.py L760) do; those are pattern matches inside done functions of a lower crate, not a named helper, so this task does not move them."
+pitfalls:
+  - B1231's team_request_contracts::values::BudgetSource (member, team_default) is the bulk result's max_budget_source and a different Literal; do not reuse or extend it for TeamMemberBudgetSource.
+  - A membership whose own budget_id is null still answers team_default when the team has a default, so test None against Some(default) and not only equal strings.
+  - The empty string is a str in Python, so team_member_budget_id "" is a default id and an empty member id equal to it is team_default, not custom.
+  - The helper stub tools/oracle/src/helpers/server/b10151.rs and its registry lines are on main; replace the stub Op with a typed impl Helper and leave the server group's lib.rs and operations.txt alone.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

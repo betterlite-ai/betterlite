@@ -28,7 +28,9 @@ description: >-
   classification from B750, model extraction from B881 and user budget enforcement from B753.
 
   All three enable flags activate only on literal True. Global OAuth applies only to LLM/info routes
-  and non-JWT inputs; an explicit routing override can send a JWT to OAuth on those routes. This
+  and non-JWT inputs; an explicit routing override can send a JWT to OAuth on those routes. B10161's
+  jwt_oauth_routing::should_route_jwt_to_oauth2_override(token, routing_overrides) decides that override, called
+  only when enable_jwt_auth is True and the token is a JWT; build no selector here. This
   choice precedes enable_oauth2_proxy_auth, which otherwise returns immediately before JWT handling.
   Non-JWT tokens fall through. Mapping verifies claims first; a managed-agent match raises HTTP 403
   auth_error with param "None". Resolved mappings replace api_key with token or empty string and
@@ -200,9 +202,10 @@ out_of_scope:
     (L733-L757), get_global_proxy_spend (L760-L790).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B755 owns validate_resolved_virtual_key (L2211-L2622).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns _normalize_public_auth_route (L160-L163), _route_requires_auth_despite_public
-    (L166-L171), _routing_selector_matches_claim (L514-L552), _matches_routing_override (L555-L565),
-    _should_route_jwt_to_oauth2_override (L568-L582), get_rbac_role (L793-L798), get_api_key (L801-L858),
+    (L166-L171), get_rbac_role (L793-L798), get_api_key (L801-L858),
     check_api_key_for_custom_headers_or_pass_through_endpoints (L861-L905), get_api_key_from_custom_header (L3580-L3612);
+    B10161 owns _routing_selector_matches_claim (L514-L552), _matches_routing_override (L555-L565) and
+    _should_route_jwt_to_oauth2_override (L568-L582);
     B10086 owns _get_bearer_token_or_received_api_key (L491-L511), _get_bearer_token (L585-L610) and is_no_auth_dev_mode
     (L2747-L2751).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B757 owns _ensure_litellm_received_at_on_request_state (L1310-L1327),

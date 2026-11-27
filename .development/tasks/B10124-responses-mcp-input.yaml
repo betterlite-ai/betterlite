@@ -1,0 +1,114 @@
+id: B10124
+title: Responses MCP follow-up input
+description: >-
+  After the gateway has run a Responses call's MCP tools, LiteLLM builds the input of the follow-up call with two static helpers: _is_persistence_disabled (litellm_proxy_mcp_handler.py L1020-L1022) decides whether reasoning items must be resent, and _create_follow_up_input (L1025-L1101) lays out the input items. B954's stream loop calls both at mcp_streaming_iterator.py L900-L910 and B955's non-streaming dispatch at responses/main.py L357-L364. They were B951's, but neither caller needs the rest of B951, so they are their own task and B954 waits on this instead of on B951.
+
+
+  Code goes in betterlite-core, module api::responses_mcp_input (crates/betterlite-core/src/api/responses_mcp_input.rs), with its tests in responses_mcp_input/tests.rs. The file is an empty stub that api.rs already declares. Both functions are pure: no provider call, no persistence write, no setting.
+
+
+  is_persistence_disabled(call: &ResponsesCreateCall) -> bool, over B1078's request record in api::responses_create::call, the call parameters both callers already hold. It is true only when call.store is Some(false); None (an absent or null store) and Some(true) leave persistence on. LiteLLM compares with `is False`, so 0 and the string "false" leave it on too, but store is declared bool there and is already a typed Option<bool> here, so those values fail where the request is decoded (docs/compatibility.md) and no case sends them. Both callers pass the result on as preserve_reasoning: with store=false the provider kept nothing, so the reasoning items have to travel in the input.
+
+
+  create_follow_up_input(response: &ResponsesApiResponse, tool_results: &[McpToolResult], original_input: Option<&ResponsesInput>, preserve_reasoning: bool) -> Vec<ResponsesItem>. ResponsesApiResponse is B1138's record in betterlite_openai::api::responses_objects, McpToolResult is B10121's record in api::responses_mcp_results, and ResponsesInput and ResponsesItem are B507's in betterlite_openai::response_input, so the result goes straight into the follow-up call as ResponsesInput::Items. The items come in this order:
+
+
+  1. The original input, when it is not empty: Text("hello") becomes {"type": "message", "role": "user", "content": "hello"}, and Items are copied one by one as given. None, an empty string and an empty list add nothing, as LiteLLM's truthiness check does.
+
+  2. One assistant message {"type": "message", "role": "assistant", "content": [...]}, holding the content of every message item in response.output in output order: a list content adds its parts one by one, any other content adds itself as one part, and a message without content adds nothing. When no part was collected the assistant message is left out, so a provider that needs a function call right after the user turn (Gemini) gets one.
+
+  3. Then, in output order, the turn items: each function_call item as {"type": "function_call", "call_id", "name", "arguments"}, where call_id is the item's call_id when that is not empty and its id otherwise, and arguments is copied as found, null included; a function call is skipped when call_id or name is empty or missing. A reasoning item is copied whole, and only when preserve_reasoning is true. Every other item type is skipped.
+
+  4. Then one {"type": "function_call_output", "call_id": tool_call_id, "output": result} per tool result, in the order given, with a null tool_call_id kept as null.
+
+
+  An output item that LiteLLM holds as a model is read as model_dump(exclude_none=True), so its null fields are gone before it is copied; an item that LiteLLM keeps as a plain mapping, B1138's Unknown arm, is read as it is, nulls included. That difference shows in a copied reasoning item and in message content parts. If turning an output item into a ResponsesItem can fail, the error is a thiserror enum in this module's files and the function returns a Result.
+
+
+  Tests in tests.rs, under api::responses_mcp_input::tests, each calling the production functions: store_false_only (rstest: absent, false, true), original_input_first (rstest: text, items, empty text, empty list, none), message_content_before_turn_items (an output that interleaves message, function_call, reasoning and message items, with preserve_reasoning true and false), function_call_fields (call_id or id, a skipped call without name, a null arguments kept) and tool_outputs_in_order (two results, one with a null id).
+
+
+  Oracle. The helper operation is b10124 in the core_ops group. Its input is either the call parameters for the store check (store absent, null, true or false), or a ResponsesAPIResponse body, the tool results, the original input and preserve_reasoning for the input builder. The Python adapter builds the response with ResponsesAPIResponse.model_validate and calls the pinned static methods; the Rust adapter decodes the same values and calls this module. No route reaches these functions on their own, so B954, B955 and the Responses routes keep the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/responses_mcp_input.rs
+    - crates/betterlite-core/src/api/responses_mcp_input/**
+    - tools/oracle/cases/helpers/responses-mcp-input/**
+    - tools/oracle/fuzz/corpus/helper_case/responses-mcp-input-*
+    - tools/oracle/helpers/b10124.py
+    - tools/oracle/helpers/b10124/**
+    - tools/oracle/src/helpers/core_ops/b10124.rs
+    - tools/oracle/src/helpers/core_ops/b10124/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1019-L1101
+    why: Owned. The identity check on store, the input truthiness branches, the content grouping, the call_id fallback, the reasoning condition and the function_call_output items.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L896-L912
+    why: B954's call site, which passes the store check on as preserve_reasoning and the original request input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L354-L364
+    why: B955's non-streaming call site with the same arguments.
+dod:
+  - text: is_persistence_disabled is true only for store=false; an absent or null store and store=true leave persistence on.
+    proof: [case-store-false-only, oracle, helper-python]
+  - text: A non-empty text input becomes one user message and an items input is copied in order; None, "" and [] add nothing.
+    proof: [case-original-input-first, oracle, helper-python]
+  - text: All message content goes into one assistant message before every function_call and reasoning item, even when the output interleaves them; the assistant message is left out when it would be empty, and reasoning is copied only when preserve_reasoning is true.
+    proof: [case-message-content-before-turn-items, oracle, helper-python]
+  - text: A function call is copied with call_id or id, name and arguments as found, and skipped without a call id or name.
+    proof: [case-function-call-fields, oracle, helper-python]
+  - text: One function_call_output per tool result follows in result order, with a null tool_call_id kept.
+    proof: [case-tool-outputs-in-order, oracle, helper-python]
+  - text: The b10124 adapters compare the pinned helpers with this module on new cases, and every new seed replays through the shared helper case parser.
+    proof: [new-oracle-cases, oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: case-store-false-only
+      why: a value other than the boolean false turns persistence off, or false does not
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_input::tests::store_false_only($|::)/)'
+    - id: case-original-input-first
+      why: the original input is missing, wrapped differently or added when empty
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_input::tests::original_input_first($|::)/)'
+    - id: case-message-content-before-turn-items
+      why: content and turn items keep source order, an empty assistant message is sent, or reasoning ignores preserve_reasoning
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_input::tests::message_content_before_turn_items($|::)/)'
+    - id: case-function-call-fields
+      why: the call id fallback, the skip rule or the copied arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_input::tests::function_call_fields($|::)/)'
+    - id: case-tool-outputs-in-order
+      why: tool outputs are missing, reordered or drop a null call id
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_input::tests::tool_outputs_in_order($|::)/)'
+    - id: helper-python
+      why: the b10124 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10124.py tools/oracle/helpers/b10124)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10124 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/responses-mcp-input-*")" &&
+        grep -lE 'b10124"?:' tools/oracle/fuzz/corpus/helper_case/responses-mcp-input-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new follow-up input case was added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-input)"
+oracle_cases:
+  - tools/oracle/cases/helpers/responses-mcp-input/store-false-only.yaml
+  - tools/oracle/cases/helpers/responses-mcp-input/original-input-first.yaml
+  - tools/oracle/cases/helpers/responses-mcp-input/message-content-before-turn-items.yaml
+  - tools/oracle/cases/helpers/responses-mcp-input/function-call-fields.yaml
+  - tools/oracle/cases/helpers/responses-mcp-input/tool-outputs-in-order.yaml
+deviations: []
+out_of_scope:
+  - "_make_follow_up_call (L1104-L1118), the follow-up request params and the MCP call events and output items: B951. The streamed and non-streamed rounds that call this task: B954 and B955."
+  - "The chat follow-up messages: B10123. McpToolResult: B10121. Reading function calls for execution: B10122."
+  - "The other functions in litellm_proxy_mcp_handler.py: B948 and B949 for selection and discovery, B950 for the executor."
+pitfalls:
+  - "Negating store with a default, as in !call.store.unwrap_or(false), turns an absent store into persistence off, the opposite of LiteLLM's identity check; only Some(false) disables it."
+  - "The function_call_output items take tool_call_id and result from the record, not the call_id of the matching function_call item; a result whose id is null still gets an output item with call_id null."
+  - "A function_call item is rebuilt from four keys, so its id, status and any other field never reach the follow-up input, while a reasoning item and message content parts are copied with all their fields."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

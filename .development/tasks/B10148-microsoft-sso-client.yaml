@@ -1,0 +1,118 @@
+id: B10148
+title: Microsoft OAuth client and endpoint settings
+description: >-
+  Two flows build LiteLLM's CustomMicrosoftSSO client. B1628's login entry (GET /sso/key/generate) sends the browser to Microsoft's authorization endpoint, and B1622's callback exchanges the code and reads the user. Both construct the client the same way and both read its endpoint document, so B1628 waited on the whole Microsoft callback for about 50 lines of construction. This task builds the client, its endpoints and the settings behind them, and B1628 and B1622 call them.
+
+
+  Layout. Module microsoft in betterlite-auth, crates/betterlite-auth/src/oauth_client/microsoft.rs beside B1629's google.rs, with its tests in oauth_client/microsoft/tests.rs. Config section microsoft_sso in crates/betterlite-config/src/sections/microsoft_sso.rs, with its tests in sections/microsoft_sso/tests.rs. Both files are stubs their parents already declare, and microsoft_sso is already in the sections! list. Both callers live in betterlite-server, and it depends on both crates.
+
+
+  Settings. The microsoft_sso section reads five environment variables, each absent by default: MICROSOFT_CLIENT_SECRET as Option<SecretString>, and MICROSOFT_TENANT, MICROSOFT_AUTHORIZATION_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT and MICROSOFT_USERINFO_ENDPOINT as Option<String>. A set variable is kept as given, the empty string included: LiteLLM tests the secret and the tenant with `is None`, and an empty tenant or endpoint falls back to its default later, in the client. Put the reads in a public `Settings::resolve_environment(lookup)` that the section's convert calls, so the oracle adapter can call it too, and export the five names as constants. MICROSOFT_CLIENT_ID stays with B1617's sso_identity_bridge config, and the callback URL comes from the caller.
+
+
+  Client. `microsoft_sso_client(settings: &Settings, client_id: &str, redirect_url: &str) -> Result<MicrosoftSsoClient, MicrosoftClientError>` is the construction both ui_sso.py call sites run. An absent client_secret is `MicrosoftClientError::MissingClientSecret`, and its `response()` gives B1629's OAuthErrorResponse with status 500, ProxyErrorTypes::AuthError, param MICROSOFT_CLIENT_SECRET and code "500", like GoogleSsoError's. Otherwise build B1629's OAuthClient with the client ID, the secret, Some(redirect_url), the scopes openid, User.Read and email in that order (fastapi-sso's MicrosoftSSO.scope, since neither caller passes a scope), allow_insecure_http true (both callers pass it) and no extra headers. `MicrosoftSsoClient { oauth: OAuthClient, tenant: String, discovery: OAuthDiscoveryDocument }` keeps the effective tenant: settings.tenant when it is a non-empty string, otherwise "common" (MicrosoftSSO's `tenant or self.tenant`). The client never refuses a missing tenant. The login entry accepts one, and only B1622's callback answers 500 for it.
+
+
+  Endpoints. `microsoft_default_discovery(tenant: &str) -> OAuthDiscoveryDocument` gives https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize, the same path ending in /token, and https://graph.microsoft.com/v1.0/me, with the tenant put in as plain text. The client's discovery starts from those defaults for the effective tenant and replaces each one whose override variable holds a non-empty value (get_discovery_document's `custom or default`). When any override is non-empty, log at debug "Using custom Microsoft SSO endpoints - authorization: {}, token: {}, userinfo: {}" with the three effective URLs. Nothing is fetched: callers pass `DiscoverySource::Inline(client.discovery.clone())` to B1629's fetch_discovery, or read the endpoints directly.
+
+
+  The second copy. B1617's crates/betterlite-server/src/sso_identity_bridge/microsoft_subject.rs formats the same default authorize and token URLs and keeps the userinfo URL in GRAPH_USERINFO_ENDPOINT. Switch it to microsoft_default_discovery for its canonical tenant and delete those copies, so the defaults live in one place. Its projection tests in sso_identity_bridge::tests must pass unchanged.
+
+
+  Tests. oauth_client::microsoft::tests cover common for an absent and for an empty tenant, a named tenant in both login URLs, each override alone, empty overrides falling back, the scopes, redirect and insecure flag on the OAuthClient, an empty secret accepted, the missing-secret response, and B1629's authorization_url building the login URL from the client and its discovery (client_id, redirect_uri and scope "openid User.Read email"). sections::microsoft_sso::tests load through B002's ConfigLoader with an injected environment: loads_microsoft_sso_settings with every variable absent, set and empty.
+
+
+  Helper. No route reaches this code yet, so helper operation b10148 compares the client with LiteLLM, and B1628 and B1622 add the HTTP cases through their routes. The input is client_id, redirect_url and environment, a map of variable name to text that always holds MICROSOFT_CLIENT_SECRET. The Python side patches os.environ with exactly that map (mock.patch.dict with clear=True, as agent_host_policy.py does), builds CustomMicrosoftSSO with the arguments ui_sso.py passes (client_secret from the variable, tenant=os.getenv("MICROSOFT_TENANT"), redirect_uri, allow_insecure_http=True), awaits get_discovery_document and returns the instance's tenant and the document. The Rust side resolves Settings from the same map, calls microsoft_sso_client and returns the same two fields. Add a microsoft-sso-client-* seed to the helper_case corpus.
+scope:
+  paths:
+    - crates/betterlite-auth/src/oauth_client/microsoft.rs
+    - crates/betterlite-auth/src/oauth_client/microsoft/**
+    - crates/betterlite-config/src/sections/microsoft_sso.rs
+    - crates/betterlite-config/src/sections/microsoft_sso/**
+    - crates/betterlite-server/src/sso_identity_bridge/microsoft_subject.rs
+    - tools/oracle/cases/helpers/microsoft-sso-client/**
+    - "tools/oracle/fuzz/corpus/helper_case/microsoft-sso-client-*"
+    - tools/oracle/helpers/b10148.py
+    - tools/oracle/helpers/b10148/**
+    - tools/oracle/src/helpers/auth/b10148.rs
+    - tools/oracle/src/helpers/auth/b10148/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/custom_microsoft_sso.py#L26-L82
+    why: Owned. CustomMicrosoftSSO, its constructor and get_discovery_document with the three overrides, their defaults and the debug line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/__init__.py#L7-L11
+    why: Owned. The package re-export; in betterlite the path is betterlite_auth::oauth_client::microsoft.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2973-L2992
+    why: Call site. The login entry refuses a missing secret, allows a missing tenant and passes allow_insecure_http=True (B1628).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4295-L4317
+    why: Call site. The callback checks the secret, then the tenant, then builds the same client (B1622).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/agent_subject_enrollment.py#L24-L30
+    why: The default endpoints the interactive subject compares overrides against; microsoft_subject.rs switches to this task's defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/uv.lock#L1909-L1922
+    why: fastapi-sso 0.19.0, whose MicrosoftSSO supplies scope openid/User.Read/email, version v1.0 and tenant common.
+dod:
+  - text: The microsoft_sso section loads the five variables with an absent one as None and an empty one kept as given.
+    proof: [config-tests]
+  - text: microsoft_sso_client refuses an absent secret with 500 auth_error naming MICROSOFT_CLIENT_SECRET, accepts an empty one, and builds the OAuthClient with the default scopes, the callback URL and insecure HTTP allowed.
+    proof: [client-tests]
+  - text: The effective tenant is common for an absent or empty MICROSOFT_TENANT, and the endpoints are the tenant's defaults except where an override holds a non-empty value.
+    proof: [client-tests, oracle, helper-python]
+  - text: B1629's authorization_url builds the Microsoft login URL from the client and its discovery, with client_id, redirect_uri and scope "openid User.Read email".
+    proof: [client-tests]
+  - text: microsoft_subject.rs takes its default endpoints from microsoft_default_discovery, keeps no URL copy of its own, and its projection tests still pass.
+    proof: [bridge-tests]
+  - text: The b10148 adapters lint and type-check, and new microsoft-sso-client seeds replay through the shared helper case parser.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: client-tests
+      why: The Microsoft client takes the wrong tenant, scopes or endpoints, or answers a missing secret differently from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^oauth_client::microsoft::/)'
+    - id: config-tests
+      why: A Microsoft secret, tenant or endpoint variable is not loaded, or an empty one is read as absent.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::microsoft_sso::/)'
+    - id: bridge-tests
+      why: The interactive subject still keeps its own copy of the default Microsoft endpoints, or the switch changed what it accepts.
+      run: >-
+        grep -q 'microsoft_default_discovery' crates/betterlite-server/src/sso_identity_bridge/microsoft_subject.rs &&
+        ! grep -qE 'oauth2/v2\.0|graph\.microsoft\.com' crates/betterlite-server/src/sso_identity_bridge/microsoft_subject.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_identity_bridge::tests::projection_/)'
+    - id: helper-python
+      why: The b10148 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10148.py tools/oracle/helpers/b10148)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10148 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/microsoft-sso-client-*")" &&
+        grep -lE '^[[:space:]]+b10148:' tools/oracle/fuzz/corpus/helper_case/microsoft-sso-client-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/microsoft-sso-client/absent-tenant-uses-common.yaml
+  - tools/oracle/cases/helpers/microsoft-sso-client/empty-tenant-uses-common.yaml
+  - tools/oracle/cases/helpers/microsoft-sso-client/named-tenant.yaml
+  - tools/oracle/cases/helpers/microsoft-sso-client/custom-endpoints.yaml
+  - tools/oracle/cases/helpers/microsoft-sso-client/empty-endpoints-fall-back.yaml
+  - tools/oracle/cases/helpers/microsoft-sso-client/token-override-only.yaml
+deviations: []
+out_of_scope:
+  - "get_microsoft_callback_response, openid_from_response, the app-role functions, the callback's 500 for a missing MICROSOFT_TENANT and the MICROSOFT_USER_* profile fields: B1622. It calls this client."
+  - "get_sso_login_redirect, the authorization redirect, the sso_state cookie and PKCE: B1628. Its Microsoft branch calls this client."
+  - "The token exchange and userinfo fetch: B1629's exchange. Graph group lookups: B1621."
+  - "fastapi-sso's MicrosoftSSO.openid_from_response: LiteLLM's callback converts with B1622's openid_from_response instead."
+  - "SSO readiness: B1627. It reports a missing MICROSOFT_CLIENT_SECRET or MICROSOFT_TENANT from this section."
+  - "MICROSOFT_CLIENT_ID: B1617's sso_identity_bridge config, already on main."
+  - "A custom constructor scope: no caller at the pin passes one."
+pitfalls:
+  - "An empty MICROSOFT_TENANT is not missing: it passes B1622's `is None` check and still selects common here, so the section keeps \"\" instead of reading it as absent the way google_sso's GOOGLE_CLIENT_SECRET loader does."
+  - "The tenant goes into both login URLs as plain text, as the f-string does; Url::join or path segments would encode characters the source keeps."
+  - "Only a non-empty override replaces a default, so MICROSOFT_TOKEN_ENDPOINT set to \"\" gives the tenant's /token URL, never an empty endpoint."
+  - "The userinfo default is https://graph.microsoft.com/v1.0/me for every tenant and has no tenant in it."
+  - "allow_insecure_http stays on this login's OAuthClient; do not set OAUTHLIB_INSECURE_TRANSPORT, since B1629's deviation already replaced it with the per-client flag."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

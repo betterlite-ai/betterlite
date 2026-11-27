@@ -29,13 +29,14 @@ description: >-
   edge in empty_org_id_filter_gap instead of inventing validation in this handler.
 
   Build conjunctive filters: truthy role is exact, with no role-enum validation; truthy user_ids
-  splits/strips/drops blanks, then ONE ID uses case-insensitive contains, zero or multiple use
-  exact IN. Non-null user_email uses insensitive contains even for empty string. Non-null team
+  splits/strips/drops blanks, then ONE ID uses case-insensitive contains (B10149's user_term_sql), zero or multiple use
+  exact IN. Non-null user_email uses insensitive contains even for empty string (user_term_sql too). Non-null team
   uses teams.has even for empty string. Non-null sso_user_ids uses split/strip/drop-blank exact
   IN, including empty IN. Truthy organization_ids adds membership.some organization_id IN only
-  when the stripped list is nonempty. Merge B1203 _user_search_where: falsey search adds nothing,
-  otherwise OR of insensitive user_id/user_email contains without trimming. AND it with other
-  filters, removing only top-level null predicates. Cases role_unknown_empty_result,
+  when the stripped list is nonempty, rendered by B10149's organization_membership_sql. Merge B10149's user_search_where through its user_search_sql
+  fragment, writing no OR of your own: falsey search adds nothing, otherwise OR of insensitive
+  user_id/user_email contains without trimming. AND it with other filters, removing only top-level
+  null predicates. Cases role_unknown_empty_result,
   single_id_contains_multiple_ids_exact, comma_only_ids_empty_in, email_empty_not_omitted,
   team_empty_not_omitted, sso_empty_in, admin_blank_org_filter_omitted, search_and_filters,
   search_whitespace_and_wildcards pin the precise Postgres predicates. Bind all values.
@@ -133,7 +134,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2067-L2388
     why: Pinned implementation and exact ownership boundary for user_list.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2205-L2215
-    why: B1203 owns the search predicate; its separate UI route is not owned here.
+    why: B10149 owns the search predicate as user_search_where and user_search_sql; B1203 owns the separate UI route.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L153-L233
     why: LitellmUserRoles request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2067-L2101
@@ -202,7 +203,7 @@ oracle_cases:
   - tools/oracle/cases/management/user-list/handler-error-envelope.yaml
 deviations: []
 out_of_scope:
-  - B1203 owns /user/filter/ui, scope_user_search_to_org and _user_search_where;
+  - B1203 owns /user/filter/ui and scope_user_search_to_org; B10149 owns _user_search_where;
     B2334 owns query identity helpers and UserListResponse; B791 owns metadata redaction;
     B720 owns the user projection; B736 owns caller membership loading.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
@@ -227,11 +228,11 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B795 owns bulk_update_processed_users
     (L1756-L1831), bulk_user_update (L1841-L2064).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B797 owns delete_user (L2397-L2604).'
-  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
-    (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10158 owns resolve_user_daily_activity_entity_ids
+    (L2866-L2875); B798 owns _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1203 owns _resolve_org_filter_for_user_search
-    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860), _user_search_where
-    (L2205-L2215).'
+    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10149 owns _user_search_where (L2205-L2215).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:
