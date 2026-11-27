@@ -48,6 +48,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait = "0.1.92"
+betterlite-http-fixture = { path = "../../tools/http-fixture" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-test-ports = { path = "../betterlite-test-ports" }
 chrono.workspace = true
