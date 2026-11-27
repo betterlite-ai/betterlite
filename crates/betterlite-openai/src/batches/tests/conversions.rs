@@ -11,6 +11,39 @@ use crate::batches::records::{
 };
 use crate::batches::sdk::{Timeout, TimeoutError, TimeoutPhases};
 
+// a create request with only the three required keys set
+fn create_body(
+    completion_window: Option<CompletionWindow>,
+    endpoint: Option<BatchEndpoint>,
+    input_file_id: Option<&str>,
+) -> CreateBatchRequest {
+    CreateBatchRequest {
+        completion_window,
+        endpoint,
+        input_file_id: input_file_id.map(str::to_owned),
+        metadata: None,
+        output_expires_after: None,
+        extra_headers: None,
+        extra_body: None,
+        timeout: None,
+    }
+}
+
+// the four phases of an httpx.Timeout, each one optional
+const fn phases(
+    connect: Option<f64>,
+    read: Option<f64>,
+    write: Option<f64>,
+    pool: Option<f64>,
+) -> TimeoutPhases {
+    TimeoutPhases {
+        connect,
+        read,
+        write,
+        pool,
+    }
+}
+
 #[test]
 fn create_from_request_carries_the_fields() {
     let body = CreateBatchRequest {
@@ -64,30 +97,16 @@ fn create_from_request_names_the_missing_field() {
         error.to_string(),
         "the batch request is missing its completion_window"
     );
-    let no_endpoint = CreateBatchRequest {
-        completion_window: Some(CompletionWindow::Day),
-        endpoint: None,
-        input_file_id: None,
-        metadata: None,
-        output_expires_after: None,
-        extra_headers: None,
-        extra_body: None,
-        timeout: None,
-    };
+    let no_endpoint = create_body(Some(CompletionWindow::Day), None, None);
     assert_eq!(
         BatchCreate::from_request(&no_endpoint).unwrap_err(),
         MissingBatchField::Missing { field: "endpoint" }
     );
-    let no_file = CreateBatchRequest {
-        completion_window: Some(CompletionWindow::Day),
-        endpoint: Some(BatchEndpoint::Embeddings),
-        input_file_id: None,
-        metadata: None,
-        output_expires_after: None,
-        extra_headers: None,
-        extra_body: None,
-        timeout: None,
-    };
+    let no_file = create_body(
+        Some(CompletionWindow::Day),
+        Some(BatchEndpoint::Embeddings),
+        None,
+    );
     assert_eq!(
         BatchCreate::from_request(&no_file).unwrap_err(),
         MissingBatchField::Missing {
@@ -130,22 +149,12 @@ fn timeout_duration_follows_the_pieces() {
         Timeout::Seconds(30.0).duration().unwrap(),
         Duration::from_secs(30)
     );
-    let read = TimeoutPhases {
-        connect: None,
-        read: Some(5.0_f64),
-        write: Some(9.0_f64),
-        pool: None,
-    };
+    let read = phases(None, Some(5.0_f64), Some(9.0_f64), None);
     assert_eq!(
         Timeout::Phases(read).duration().unwrap(),
         Duration::from_secs(5)
     );
-    let bare = TimeoutPhases {
-        connect: None,
-        read: None,
-        write: None,
-        pool: None,
-    };
+    let bare = phases(None, None, None, None);
     assert_eq!(
         Timeout::Phases(bare).duration().unwrap(),
         Duration::from_secs(600)
@@ -158,12 +167,7 @@ fn timeout_duration_follows_the_pieces() {
         Timeout::Seconds(-1.0).duration().unwrap_err().to_string(),
         "the timeout must be a finite, non-negative number of seconds, not -1"
     );
-    let negative_read = TimeoutPhases {
-        connect: Some(-2.0_f64),
-        read: Some(-3.0_f64),
-        write: None,
-        pool: None,
-    };
+    let negative_read = phases(Some(-2.0_f64), Some(-3.0_f64), None, None);
     assert_eq!(
         Timeout::Phases(negative_read).duration().unwrap_err(),
         TimeoutError::Invalid { seconds: -3.0_f64 }
