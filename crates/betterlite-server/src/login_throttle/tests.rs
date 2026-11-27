@@ -883,6 +883,9 @@ async fn shared_source_counts_when_declared() {
     built.throttle.clear_pair("bob").await.expect("the clear");
     assert_eq!(shared.counter(&keys.pair_counter), None);
     assert_eq!(shared.counter(&keys.source_counter), Some(7));
+    // the counter's window starts with its first count: a later failure does not push the expiry out
+    built.clock.set(1061.0);
+    assert_eq!(shared.counter(&keys.source_counter), None);
 }
 
 #[tokio::test]
