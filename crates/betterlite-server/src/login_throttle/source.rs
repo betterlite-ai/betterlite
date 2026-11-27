@@ -76,9 +76,7 @@ fn source_override(entries: &[SourceOverride], client_ip: &str, default: i64) ->
             }
         };
         let precedence = (network.prefix_len(), limit == EXEMPT, limit);
-        if best.is_none_or(|current| precedence > current) {
-            best = Some(precedence);
-        }
+        best = best.max(Some(precedence));
     }
     best.map_or(default, |(_prefix, _exempt, limit)| limit)
 }

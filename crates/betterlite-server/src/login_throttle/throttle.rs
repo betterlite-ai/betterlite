@@ -63,7 +63,7 @@ impl LoginThrottle {
     ) -> Self {
         let proxies = declared_proxy_ranges(&settings.proxy_topology);
         let config = TrustedProxyConfig {
-            use_forwarded_for: proxies.as_ref().is_some_and(|entries| !entries.is_empty()),
+            use_forwarded_for: matches!(proxies.as_deref(), Some([_, ..])),
             trusted_proxy_cidrs: proxies.clone().unwrap_or_default(),
         };
         let (resolved, _via_trusted_proxy) = resolve_client_ip(request, &config);
