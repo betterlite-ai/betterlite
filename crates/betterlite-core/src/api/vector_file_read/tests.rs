@@ -804,7 +804,7 @@ async fn an_empty_missing_body_maps_by_status() {
     assert_null_fields(&missing_failure);
 }
 
-// no response carried this failure's status, so its own text still picks the family and the family's default status
+// no provider answered, so the text still picks the family, and the 500 the exception carries stays the status
 #[tokio::test]
 async fn a_transport_failure_keeps_its_text() {
     let kwargs =
@@ -819,7 +819,7 @@ async fn a_transport_failure_keeps_its_text() {
         .expect_err("the transport fails");
     let projected = mapped(&error);
     assert_eq!(projected.class, "BadRequestError");
-    assert_eq!(projected.status, 400);
+    assert_eq!(projected.status, 500);
     assert_null_fields(&projected);
     assert_eq!(projected.message, phrase_transport().to_string());
     assert_eq!(fakes.requests().len(), 1);

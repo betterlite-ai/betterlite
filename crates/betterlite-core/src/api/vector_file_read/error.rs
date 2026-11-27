@@ -58,7 +58,8 @@ pub fn failure(error: &VectorFileReadError, redactor: &Redactor) -> SdkFailure {
             custom_llm_provider: provider.to_owned(),
             error_str,
             status_code: status,
-            status_code_is_synthesized: synthesized(error),
+            // LiteLLM's exception carries a response even when no provider answered, so the 500 stays the status
+            status_code_is_synthesized: false,
             message: dispatch_message,
             body: None,
             exception_type: class,
