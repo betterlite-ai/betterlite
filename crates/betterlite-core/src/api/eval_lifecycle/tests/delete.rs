@@ -5,9 +5,9 @@ use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    DELETED, Operation, REQUEST_TIMEOUT, RealConfigs, RecordingLookup, Rig, assert_line,
-    assert_no_request, call, deleted, head_value, headers, json_server, kwargs, object,
-    openai_kwargs, provider, run, text, url,
+    DELETED, Operation, REQUEST_TIMEOUT, RealConfigs, RecordingLookup, Rig,
+    assert_forwarded_headers, assert_line, assert_no_request, call, deleted, head_value, headers,
+    json_server, kwargs, object, openai_kwargs, provider, run, text, url,
 };
 use crate::api::eval_lifecycle::{DEFAULT_OPENAI_API_BASE, DELETE_ASYNC_FLAG, EvalLifecycleCall};
 
@@ -54,31 +54,8 @@ async fn delete_eval_passes_the_validated_headers_to_the_transform() {
         .await
         .expect("the fixture answers");
     let seen = serving.finish().expect("the fixture finishes");
-    assert_eq!(
-        head_value(&seen.head, "authorization"),
-        Some("Bearer sk-test")
-    );
-    assert_eq!(head_value(&seen.head, "x-validated"), Some("yes"));
-    assert_eq!(
-        head_value(&seen.head, "x-transformed"),
-        Some("yes"),
-        "the handler sends the headers the transform returned"
-    );
-    assert_eq!(head_value(&seen.head, "x-extra"), Some("one"));
     let asked = rig.configs.recorder().only_call();
-    assert_eq!(
-        asked.headers.get("x-validated").map(String::as_str),
-        Some("yes")
-    );
-    assert_eq!(
-        asked.headers.get("x-extra").map(String::as_str),
-        Some("one")
-    );
-    assert_eq!(
-        asked.headers.get("x-transformed"),
-        None,
-        "the transform is handed the validated headers, not its own answer"
-    );
+    assert_forwarded_headers(&seen, &asked);
 }
 
 #[tokio::test]

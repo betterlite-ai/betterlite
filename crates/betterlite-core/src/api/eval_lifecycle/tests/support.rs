@@ -196,6 +196,34 @@ pub(crate) fn assert_no_request(serving: Serving) {
     assert!(matches!(outcome, Err(FixtureError::NoRequest)));
 }
 
+// the validated headers reach the transform, and the handler sends what the transform returned
+pub(crate) fn assert_forwarded_headers(seen: &Request, asked: &Asked) {
+    assert_eq!(
+        head_value(&seen.head, "authorization"),
+        Some("Bearer sk-test")
+    );
+    assert_eq!(head_value(&seen.head, "x-validated"), Some("yes"));
+    assert_eq!(
+        head_value(&seen.head, "x-transformed"),
+        Some("yes"),
+        "the handler sends the headers the transform returned"
+    );
+    assert_eq!(head_value(&seen.head, "x-extra"), Some("one"));
+    assert_eq!(
+        asked.headers.get("x-validated").map(String::as_str),
+        Some("yes")
+    );
+    assert_eq!(
+        asked.headers.get("x-extra").map(String::as_str),
+        Some("one")
+    );
+    let transformed = asked.headers.get("x-transformed").map(String::as_str);
+    assert_eq!(
+        transformed, None,
+        "the transform sees the validated headers"
+    );
+}
+
 pub(crate) fn object(text: &str) -> Object {
     serde_json::from_str(text).expect("the object fixture is valid")
 }
@@ -399,9 +427,9 @@ impl BaseEvalsAPIConfig for RecordingConfig {
     fn validate_environment(
         &self,
         headers: Headers,
-        params: Option<&Object>,
+        litellm_params: Option<&Object>,
     ) -> Result<Headers, EvalsError> {
-        let mut validated = self.inner.validate_environment(headers, params)?;
+        let mut validated = self.inner.validate_environment(headers, litellm_params)?;
         validated.insert("x-validated".to_owned(), "yes".to_owned());
         Ok(validated)
     }

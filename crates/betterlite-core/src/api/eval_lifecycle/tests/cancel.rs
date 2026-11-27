@@ -6,9 +6,9 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::evals::types::CancelledStatus;
 
 use super::support::{
-    CANCELLED, Operation, REQUEST_TIMEOUT, RealConfigs, RecordingLookup, Rig, assert_line,
-    assert_no_request, call, cancelled, head_value, headers, json_server, kwargs, object,
-    openai_kwargs, provider, run, text, url,
+    CANCELLED, Operation, REQUEST_TIMEOUT, RealConfigs, RecordingLookup, Rig,
+    assert_forwarded_headers, assert_line, assert_no_request, call, cancelled, head_value, headers,
+    json_server, kwargs, object, openai_kwargs, provider, run, text, url,
 };
 use crate::api::eval_lifecycle::EvalLifecycleCall;
 
@@ -85,31 +85,8 @@ async fn cancel_eval_passes_the_validated_headers_to_the_transform() {
         .await
         .expect("the fixture answers");
     let seen = serving.finish().expect("the fixture finishes");
-    assert_eq!(
-        head_value(&seen.head, "authorization"),
-        Some("Bearer sk-test")
-    );
-    assert_eq!(head_value(&seen.head, "x-validated"), Some("yes"));
-    assert_eq!(
-        head_value(&seen.head, "x-transformed"),
-        Some("yes"),
-        "the handler sends the headers the transform returned"
-    );
-    assert_eq!(head_value(&seen.head, "x-extra"), Some("one"));
     let asked = rig.configs.recorder().only_call();
-    assert_eq!(
-        asked.headers.get("x-validated").map(String::as_str),
-        Some("yes")
-    );
-    assert_eq!(
-        asked.headers.get("x-extra").map(String::as_str),
-        Some("one")
-    );
-    assert_eq!(
-        asked.headers.get("x-transformed"),
-        None,
-        "the transform is handed the validated headers, not its own answer"
-    );
+    assert_forwarded_headers(&seen, &asked);
 }
 
 #[tokio::test]
