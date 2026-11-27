@@ -229,6 +229,8 @@ async fn inactive_token() {
         r#"{"active":"","sub":"user-1"}"#,
         r#"{"active":[],"sub":"user-1"}"#,
         r#"{"active":{},"sub":"user-1"}"#,
+        // the active check runs before the identity is extracted, so this is inactive, not a field failure
+        r#"{"active":false,"sub":42}"#,
     ] {
         let transport = Scripted::answering(200, body);
         let error = check_oauth2_token(&configured, &transport, &token())
