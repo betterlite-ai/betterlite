@@ -13,7 +13,10 @@ use crate::api::realtime_ephemeral_ids::session::{
 
 // what preparing a session can fail with: encoding the session dump, or the injected authorizer's refusal
 #[derive(Debug, thiserror::Error)]
-pub enum PrepareError<GrantError: Error + Send + Sync + 'static> {
+pub enum PrepareError<GrantError>
+where
+    GrantError: Error + Send + Sync + 'static,
+{
     #[error("the session could not be encoded")]
     Encode(#[source] serde_json::Error),
     #[error(transparent)]
