@@ -35,7 +35,6 @@ fn trim_sse(text: &str) -> &str {
 }
 
 // One stream item as the Anthropic handler reads it: a parsed event, a raw frame's bytes, or a value it leaves alone
-#[must_use]
 pub fn stream_item_chunk(item: &StreamItem) -> Result<SseChunk, serde_json::Error> {
     match item {
         StreamItem::Json(value) => match serde_json::to_value(value)? {

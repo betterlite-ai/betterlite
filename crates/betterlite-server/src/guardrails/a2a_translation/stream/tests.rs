@@ -147,10 +147,12 @@ async fn stream_rewrites_a_parsed_ndjson_item_that_has_no_text() {
 async fn stream_leaves_invalid_items_alone() {
     let guardrail = FakeGuardrail::replying(&["rewritten"]);
     let mut responses = vec![
-        GuardrailValue::Text("not json".to_owned()),
-        value("7"),
-        value(r#"{"result":"not an object"}"#),
-        value(r#"{"result":{"parts":[{"kind":"text","text":"hi"}]}}"#),
+        StreamItem::Json(GuardrailValue::Text("not json".to_owned())),
+        StreamItem::Json(value("7")),
+        StreamItem::Json(value(r#"{"result":"not an object"}"#)),
+        StreamItem::Json(value(
+            r#"{"result":{"parts":[{"kind":"text","text":"hi"}]}}"#,
+        )),
     ];
     let before_first = responses[0].clone();
     let before_second = responses[1].clone();

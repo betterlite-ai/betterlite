@@ -179,7 +179,7 @@ fn each_variant_reports_its_own_stream_end(
 
 #[test]
 fn frame_bytes_end_the_anthropic_stream() {
-    let probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
+    let probe: Probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
         stamps: (),
         _guardrail: PhantomData,
     });
@@ -191,7 +191,7 @@ fn frame_bytes_end_the_anthropic_stream() {
 
 #[test]
 fn frame_text_does_not_end_the_anthropic_stream() {
-    let probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
+    let probe: Probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
         stamps: (),
         _guardrail: PhantomData,
     });

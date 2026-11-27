@@ -12,8 +12,9 @@ use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::run::incremental_transform_stream;
 use crate::guardrails::unified_stream::tests::support::{
     FakeGuardrail, FakeTranslation, Plan, SinkUse, SourceFailure, block_texts, collect_outputs,
-    collect_results, finishing_tool_chunk, item, mixed_tool_chunk, modify_response, params,
-    rewrite, role_chunk, synthetic, terminator, text_chunk, text_chunk_finishing, tool_chunk,
+    collect_results, finishing_tool_chunk, item, metadata_chunk, mixed_tool_chunk, modify_response,
+    params, rewrite, role_chunk, synthetic, terminator, text_chunk, text_chunk_finishing,
+    tool_chunk,
 };
 
 #[tokio::test]
