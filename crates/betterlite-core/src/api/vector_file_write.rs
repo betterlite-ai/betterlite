@@ -18,7 +18,9 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use self::error::{VectorFileWriteError, VectorFileWriteFailure, failure};
-use self::prepare::{LogWrite, call_timeout, log_write, target, update_values, write_params};
+use self::prepare::{
+    HandlerTimeout, LogWrite, call_timeout, log_write, target, update_values, write_params,
+};
 use self::service::{DELETE_FLAG, UPDATE_FLAG, WriteCall, WriteService, flag, take_mode};
 use crate::api::vector_file_http_write::config::WriteParams;
 use crate::api::vector_file_provider::{
@@ -96,7 +98,7 @@ struct Prepared<'call> {
     // the update's argument and the merged kwargs: the log call reads both once the call is prepared
     attributes: Option<&'call Attributes>,
     merged: IndexMap<String, Json>,
-    timeout: Duration,
+    deadline: HandlerTimeout,
 }
 
 impl<Service: WriteService> VectorFileWrites<'_, Service> {
@@ -178,8 +180,7 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             Operation::Update => update_values(attributes).map_err(deny)?,
             Operation::Delete => VectorStoreFileUpdateRequest::default(),
         };
-        let timeout =
-            call_timeout(request.timeout, self.deps.request_timeout_seconds).map_err(deny)?;
+        let deadline = call_timeout(request.timeout, self.deps.request_timeout_seconds);
         Ok(Prepared {
             operation,
             mode,
@@ -194,11 +195,23 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             extra_body,
             attributes,
             merged,
-            timeout,
+            deadline,
         })
     }
 
     async fn send(&self, prepared: Prepared<'_>) -> WriteResult {
+        let timeout = match prepared.deadline {
+            HandlerTimeout::After(duration) => duration,
+            HandlerTimeout::Never => Duration::MAX,
+            HandlerTimeout::Expired { seconds } => {
+                let error = VectorFileWriteError::Expired {
+                    operation: prepared.operation,
+                    mode: prepared.mode,
+                    seconds,
+                };
+                return Err(failure(error, &prepared.provider_name, self.deps.redactor));
+            }
+        };
         let call = WriteCall {
             operation: prepared.operation,
             mode: prepared.mode,
@@ -210,7 +223,7 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             update_request: &prepared.update_request,
             extra_headers: prepared.extra_headers,
             extra_body: prepared.extra_body,
-            timeout: prepared.timeout,
+            timeout,
             logging: self.deps.logging,
         };
         self.service.write(&call).await.map_err(|error| {

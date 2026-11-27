@@ -1,5 +1,3 @@
-use std::time::TryFromFloatSecsError;
-
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
@@ -8,7 +6,7 @@ use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
 use crate::api::vector_file_http_write::error::FileWriteError;
-use crate::api::vector_store_http_write::service::Operation;
+use crate::api::vector_store_http_write::service::{ClientKind, Operation};
 
 // exception_type() maps every file write failure with model None and the provider the call resolved to
 const MODEL: &str = "";
@@ -30,11 +28,12 @@ pub enum VectorFileWriteError {
     // the Json-to-record bridges; a failure here is a local ValueError, not a provider answer
     #[error("the vector store file parameters are not valid")]
     Params(#[source] serde_json::Error),
-    #[error("the request timeout of {seconds} seconds is not a valid duration")]
-    Timeout {
+    // the effective timeout httpx expires before any request goes out
+    #[error("the request timeout of {seconds} seconds expired before the request was sent")]
+    Expired {
+        operation: Operation,
+        mode: ClientKind,
         seconds: f64,
-        #[source]
-        source: TryFromFloatSecsError,
     },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
@@ -109,11 +108,15 @@ fn raw_exception(error: &VectorFileWriteError, provider: &str) -> RawException {
             source.status_code_is_synthesized,
             String::new(),
         ),
+        VectorFileWriteError::Expired {
+            operation,
+            mode,
+            seconds,
+        } => expired_exception(*operation, *mode, *seconds),
         VectorFileWriteError::InvalidProvider { .. }
         | VectorFileWriteError::Unsupported { .. }
         | VectorFileWriteError::FieldType { .. }
         | VectorFileWriteError::Params(_)
-        | VectorFileWriteError::Timeout { .. }
         | VectorFileWriteError::Logging(_)
         | VectorFileWriteError::Write(_) => {
             (error.to_string(), None, false, String::from("ValueError"))
@@ -129,6 +132,31 @@ fn raw_exception(error: &VectorFileWriteError, provider: &str) -> RawException {
         body: None,
         exception_type,
     }
+}
+
+// An expired deadline: the catches raise litellm.Timeout's 408, and the async delete's missing catch gets _handle_error's synthesized 500
+fn expired_exception(
+    operation: Operation,
+    mode: ClientKind,
+    seconds: f64,
+) -> (String, Option<u16>, bool, String) {
+    if mode == ClientKind::Asynchronous && operation == Operation::Delete {
+        return (
+            String::from("timed out"),
+            Some(500_u16),
+            true,
+            String::new(),
+        );
+    }
+    let message = match mode {
+        ClientKind::Sync => {
+            format!("litellm.Timeout: Connection timed out after {seconds} seconds.")
+        }
+        ClientKind::Asynchronous => format!(
+            "litellm.Timeout: Connection timed out. Timeout passed={seconds}, time taken=0.0 seconds"
+        ),
+    };
+    (message, Some(408_u16), false, String::new())
 }
 
 // the name of the exception class exception_type() raises, and the message it carries

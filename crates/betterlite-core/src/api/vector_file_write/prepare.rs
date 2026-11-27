@@ -199,15 +199,23 @@ fn generic_params_dump(kwargs: &IndexMap<String, Json>) -> IndexMap<String, Json
     dump
 }
 
-// `timeout or request_timeout`: an explicit zero is falsy, and the module constant is never absent
-pub(crate) fn call_timeout(
-    requested: Option<f64>,
-    request_timeout_seconds: f64,
-) -> Result<Duration, VectorFileWriteError> {
+// `timeout or request_timeout` as the handler hands it to httpx: a deadline to schedule, one already past, or none at all
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum HandlerTimeout {
+    After(Duration),
+    // httpx expires a negative deadline before the request goes out
+    Expired { seconds: f64 },
+    // NaN, infinity and values past a Duration's range never expire
+    Never,
+}
+
+pub(crate) fn call_timeout(requested: Option<f64>, request_timeout_seconds: f64) -> HandlerTimeout {
     let seconds = match requested {
         Some(seconds) if seconds != 0.0_f64 => seconds,
         Some(_) | None => request_timeout_seconds,
     };
-    Duration::try_from_secs_f64(seconds)
-        .map_err(|source| VectorFileWriteError::Timeout { seconds, source })
+    if seconds < 0.0_f64 {
+        return HandlerTimeout::Expired { seconds };
+    }
+    Duration::try_from_secs_f64(seconds).map_or(HandlerTimeout::Never, HandlerTimeout::After)
 }
