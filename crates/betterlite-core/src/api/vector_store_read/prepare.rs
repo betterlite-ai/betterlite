@@ -51,16 +51,12 @@ pub(crate) fn target<'deps, Client>(
     })
 }
 
-// `timeout or request_timeout`: an explicit zero falls back, and REQUEST_TIMEOUT is never absent
-pub(crate) fn call_timeout(
-    requested: Option<f64>,
-    configured: f64,
-) -> Result<Duration, VectorStoreReadError> {
+// `timeout or request_timeout`: an explicit zero falls back, and an unusable value becomes a zero deadline no GET reads
+pub(crate) fn call_timeout(requested: Option<f64>, configured: f64) -> Duration {
     let seconds = requested
         .filter(|seconds| *seconds != 0.0_f64)
         .unwrap_or(configured);
-    Duration::try_from_secs_f64(seconds)
-        .map_err(|source| VectorStoreReadError::Timeout { seconds, source })
+    Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)
 }
 
 // the operation's own arguments: what pre-call logging reports and what the provider's read takes
@@ -86,12 +82,14 @@ pub(crate) fn options<'request, Client>(
     target: &Target<'_>,
     arguments: Arguments<'request>,
 ) -> Result<Content<'request>, VectorStoreReadFailure> {
-    let content = match arguments {
-        Arguments::Retrieve(request) => Content {
-            vector_store_id: Some(request.vector_store_id),
-            query: ListQuery::default(),
-            optional_params: retrieve_params(request.vector_store_id),
-        },
+    let (content, optional_params) = match arguments {
+        Arguments::Retrieve(request) => (
+            Content {
+                vector_store_id: Some(request.vector_store_id),
+                query: ListQuery::default(),
+            },
+            retrieve_params(request.vector_store_id),
+        ),
         Arguments::List(request) => {
             // the signature's defaults: an absent limit and order become 20 and desc, while an explicit null stays absent
             let query = ListQuery {
@@ -100,11 +98,13 @@ pub(crate) fn options<'request, Client>(
                 limit: request.limit.unwrap_or(Some(20)),
                 order: request.order.unwrap_or(Some("desc")),
             };
-            Content {
-                vector_store_id: None,
-                query,
-                optional_params: list_optional_params(query),
-            }
+            (
+                Content {
+                    vector_store_id: None,
+                    query,
+                },
+                list_optional_params(query),
+            )
         }
     };
     let transport = arguments.transport();
@@ -112,7 +112,7 @@ pub(crate) fn options<'request, Client>(
         deps,
         transport.kwargs,
         target.operation.flag(),
-        content.optional_params.clone(),
+        optional_params,
         &target.name,
     )
     .map_err(|error| failure(error, &target.name, deps.redactor))?;

@@ -70,11 +70,10 @@ pub struct VectorStoreReads<'service, Provider: ReadProvider> {
     pub deps: VectorStoreReadDeps<'service, Provider::Client>,
 }
 
-// what one read adds to the shared target: the id or the four arguments with their defaults applied, and the payload pre-call logging reports
+// what one read adds to the shared target: the id or the four arguments with their defaults applied
 pub(crate) struct Content<'call> {
     vector_store_id: Option<&'call str>,
     query: ListQuery<'call>,
-    optional_params: IndexMap<String, Json>,
 }
 
 impl<Provider: ReadProvider> VectorStoreReads<'_, Provider> {
@@ -117,8 +116,7 @@ impl<Provider: ReadProvider> VectorStoreReads<'_, Provider> {
         transport: TransportRequest<'_>,
         content: Content<'_>,
     ) -> ReadResult {
-        let deadline = call_timeout(transport.timeout, self.deps.request_timeout_seconds)
-            .map_err(|error| failure(error, &target.name, self.deps.redactor))?;
+        let deadline = call_timeout(transport.timeout, self.deps.request_timeout_seconds);
         let call = ReadCall {
             operation: target.operation,
             mode: mode(target.operation, transport.kwargs),

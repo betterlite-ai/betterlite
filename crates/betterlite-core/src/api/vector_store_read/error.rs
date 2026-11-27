@@ -1,5 +1,3 @@
-use std::time::TryFromFloatSecsError;
-
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_logging::logging_state::LoggingStateError;
@@ -26,12 +24,6 @@ pub enum VectorStoreReadError {
     Unconfigured {
         operation: Operation,
         provider: String,
-    },
-    #[error("the request timeout of {seconds} seconds is not a valid duration")]
-    Timeout {
-        seconds: f64,
-        #[source]
-        source: TryFromFloatSecsError,
     },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
