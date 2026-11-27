@@ -1,0 +1,56 @@
+task: B3424
+deviations:
+  - what: >-
+      acreate_run and alist_runs are separate Rust functions: they write the acreate_run or alist_runs
+      flag into kwargs, call the sync entry and await the handler future it hands back, or return the
+      object a sync handler answered with. There is no thread pool, contextvars.copy_context or
+      loop.run_in_executor hop.
+    why: >-
+      The request, the transform, the logging update and the result are the same; Rust has neither
+      contextvars nor a GIL, and LiteLLM's executor hop exists only to reuse its sync function from the
+      async wrapper. The handler's coroutine branch is the future the sync entry returns, so the wrapper
+      has nothing else to await.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1144-L1152
+  - what: >-
+      A create_run call with no timeout carries one 600-second deadline on the request, where LiteLLM
+      passes httpx.Timeout(timeout=600.0, connect=5.0) with a separate 5-second connect deadline.
+    why: >-
+      The shared outbound request carries one deadline and the pooled client owns connection setup, so a
+      per-call connect timeout cannot be set from this module; the deadline is the read value, so a slow
+      reply still fails at the same moment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1261
+  - what: >-
+      An unknown provider name, and a known provider with no evals config, answer a BadRequest (400)
+      with model "" and the provider set, for both operations. LiteLLM builds litellm.LlmProviders from
+      the name and raises a ValueError when the config lookup returns None; both ValueErrors reach
+      exception_type and come out as an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client
+      the server broke when its own request was wrong. betterlite's ProviderId parse failure also names
+      the value the caller gave.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1208-L1213
+  - what: >-
+      local_vars in an exception raised while the async wrapper's call runs keeps the acreate_run or
+      alist_runs flag in kwargs. LiteLLM's kwargs.pop removes the flag from the dict local_vars holds,
+      so its exception payload shows kwargs without it.
+    why: >-
+      betterlite snapshots the arguments at entry and the flag is what the async wrapper passed; every
+      other local_vars entry, the declared arguments and the caller's kwargs, is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1198
+  - what: >-
+      A client or shared_session kwarg is carried in local_vars and the logging update but never reaches
+      the handler, so every call uses the transport's pooled client. LiteLLM forwards kwargs.get("client")
+      and kwargs.get("shared_session") to create_run_handler and list_runs_handler.
+    why: >-
+      betterlite's transport owns its pooled client and its interface has no caller-supplied HTTP client;
+      a supplied client would bypass the deadlines, redaction and recording the shared client applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1263-L1264
+kept_bugs:
+  - what: >-
+      The timeout list_runs resolves is carried on the call and logged, but the list handler sends no
+      timeout with the GET, so the request_timeout never bounds the request.
+    why: >-
+      LiteLLM's list_runs_handler receives timeout=timeout or request_timeout and its sync and async
+      branches call client.get without it; a working setup sees the same unbounded GET, and the GET
+      belongs to B9371's handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13292
