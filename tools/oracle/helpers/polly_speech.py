@@ -1,7 +1,7 @@
 import os
 import re
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Final, Literal, NamedTuple, Protocol, Required, TypeAlias, TypedDict, cast
 
 import httpx
 import litellm
@@ -16,27 +16,12 @@ MODEL = "aws_polly/neural"
 DEFAULT_TIMEOUT = 600.0
 EXAMPLE_ACCESS_KEY = "AKIDEXAMPLE"
 EXAMPLE_SIGNING_VALUE = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
-ENVIRONMENT_NAMES = (
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "AWS_REGION",
-    "AWS_REGION_NAME",
-    "AWS_SESSION_NAME",
-    "AWS_PROFILE_NAME",
-    "AWS_ROLE_NAME",
-    "AWS_WEB_IDENTITY_TOKEN",
-    "AWS_STS_ENDPOINT",
-    "AWS_EXTERNAL_ID",
-)
 
 litellm.suppress_debug_info = True
 
 Object: TypeAlias = dict[str, JsonValue]
 OPTIONAL_TEXT: Final[TypeAdapter[str | None]] = TypeAdapter(str | None)
 OBJECT: Final[TypeAdapter[Object]] = TypeAdapter(Object)
-SIGNATURE: Final = re.compile("[0-9a-f]{64}")
-DATE: Final = re.compile("[0-9]{8}T[0-9]{6}Z")
 
 
 class SpeechRequestData(TypedDict, total=False):
@@ -66,51 +51,22 @@ class Handler(Protocol):
 
 class Config(Protocol):
     def map_openai_params(
-        self,
-        model: str,
-        optional_params: Object,
-        voice: str | dict[str, JsonValue] | None,
-        /,
-        *,
-        drop_params: bool,
-        kwargs: Object,
+        self, model: str, optional_params: Object, voice: str | dict[str, JsonValue] | None,
+        /, *, drop_params: bool, kwargs: Object
     ) -> tuple[str | None, Object]: ...
 
-    def get_complete_url(
-        self,
-        model: str,
-        api_base: str | None,
-        litellm_params: Object,
-        /,
-    ) -> str: ...
+    def get_complete_url(self, model: str, api_base: str | None, litellm_params: Object, /) -> str: ...
 
     def transform_text_to_speech_request(  # ast-grep-ignore: no-long-names
-        self,
-        model: str,
-        text: str,
-        voice: str | None,
-        optional_params: Object,
-        litellm_params: Object,
-        headers: dict[str, str],
-        /,
+        self, model: str, text: str, voice: str | None, optional_params: Object,
+        litellm_params: Object, headers: dict[str, str], /
     ) -> SpeechRequestData: ...
 
     def dispatch_text_to_speech(
-        self,
-        model: str,
-        text: str,
-        voice: str | dict[str, JsonValue] | None,
-        optional_params: Object,
-        litellm_params_dict: Object,
-        logging_obj: Logging,
-        timeout: float,
-        extra_headers: None,
-        base_llm_http_handler: Handler,
-        aspeech: bool,
-        api_base: str | None,
-        api_key: str | None,
-        /,
-        **kwargs: JsonValue,
+        self, model: str, text: str, voice: str | dict[str, JsonValue] | None, optional_params: Object,
+        litellm_params_dict: Object, logging_obj: Logging, timeout: float, extra_headers: None,
+        base_llm_http_handler: Handler, aspeech: bool, api_base: str | None, api_key: str | None,
+        /, **kwargs: JsonValue
     ) -> HttpxBinaryResponseContent: ...
 
 
@@ -126,45 +82,18 @@ LOG: Final = Logging(
 )
 
 
-class MapCall(TypedDict):
-    function: Literal["map_params"]
-    model: str
-    optional_params: Object
-    kwargs: Object
-    voice: NotRequired[str | dict[str, JsonValue] | None]
-
-
-class UrlCall(TypedDict):
-    function: Literal["url"]
+class Call(TypedDict, total=False):
+    function: Required[Literal["map_params", "url", "request", "dispatch", "credential_arguments"]]
+    model: Required[str]
+    text: Required[str]
+    optional_params: Required[Object]
+    litellm_params: Required[Object]
+    kwargs: Required[Object]
+    environment: Required[dict[str, str]]
+    voice: str | dict[str, JsonValue] | None
+    kwargs_region: str | None
     api_base: str | None
-    litellm_params: Object
-
-
-class RequestCall(TypedDict):
-    function: Literal["request"]
-    text: str
-    optional_params: Object
-    litellm_params: Object
-    voice: NotRequired[str | None]
-
-
-class DispatchCall(TypedDict):
-    function: Literal["dispatch"]
-    optional_params: Object
-    litellm_params: Object
-    environment: dict[str, str]
-    voice: NotRequired[str | dict[str, JsonValue] | None]
-    kwargs_region: NotRequired[str | None]
-    api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
-
-
-class CredentialCall(TypedDict):
-    function: Literal["credential_arguments"]
-    litellm_params: Object
-
-
-Call: TypeAlias = MapCall | UrlCall | RequestCall | DispatchCall | CredentialCall
+    api_key: str | None
 
 
 class Input(TypedDict):
@@ -213,11 +142,10 @@ class Output(TypedDict):
     calls: list[Answer]
 
 
-class SigningCredentials:
-    def __init__(self, access_key: str, secret_key: str, token: str | None) -> None:
-        self.access_key = access_key
-        self.secret_key = secret_key
-        self.token = token
+class SigningCredentials(NamedTuple):
+    access_key: str
+    secret_key: str
+    token: str | None
 
 
 class RecordedCredentialsError(Exception): ...
@@ -256,46 +184,43 @@ class Recorder:
 
 
 def apply_environment(environment: dict[str, str]) -> None:
-    for name in ENVIRONMENT_NAMES:
-        os.environ.pop(name, None)
+    for name in list(os.environ):
+        if name.startswith("AWS_"):
+            del os.environ[name]
     os.environ.update(environment)
 
 
 def signed_view(headers: dict[str, str]) -> Signed:
     lowered = {name.lower(): value for name, value in headers.items()}
     scheme, _, rest = lowered["authorization"].partition(" ")
-    fields: dict[str, str] = {}
-    for part in rest.split(", "):
-        name, _, value = part.partition("=")
-        fields[name] = value
+    fields = {name: value for name, _, value in (part.partition("=") for part in rest.split(", "))}
     parts = fields["Credential"].split("/")
     return {
         "scheme": scheme,
         "credential": parts[0],
         "scope": parts[2:5],
         "signed_headers": fields["SignedHeaders"].split(";"),
-        "signature_ok": SIGNATURE.fullmatch(fields["Signature"]) is not None,
-        "date_ok": DATE.fullmatch(lowered["x-amz-date"]) is not None,
+        "signature_ok": re.fullmatch("[0-9a-f]{64}", fields["Signature"]) is not None,
+        "date_ok": re.fullmatch("[0-9]{8}T[0-9]{6}Z", lowered["x-amz-date"]) is not None,
         "header_names": sorted(lowered),
         "content_type": lowered.get("content-type"),
         "security_token": lowered.get("x-amz-security-token"),
     }
 
 
-def map_answer(call: MapCall) -> Mapped:
+def map_answer(call: Call) -> Answer:
     voice, params = CONFIG.map_openai_params(
-        call["model"], call["optional_params"], call.get("voice"),
-        drop_params=False, kwargs=call["kwargs"],
+        call["model"], call["optional_params"], call.get("voice"), drop_params=False, kwargs=call["kwargs"]
     )
     return {"ok": True, "voice": voice, "params": params}
 
 
-def url_answer(call: UrlCall) -> Located:
-    url = CONFIG.get_complete_url(MODEL, call["api_base"], call["litellm_params"])
+def url_answer(call: Call) -> Answer:
+    url = CONFIG.get_complete_url(MODEL, call.get("api_base"), call["litellm_params"])
     return {"ok": True, "url": url}
 
 
-def dispatch_answer(call: DispatchCall) -> Dispatched | Failure:
+def dispatch_answer(call: Call) -> Answer:
     apply_environment(call["environment"])
     object.__setattr__(BASE, "get_credentials", SIGNING.get_credentials)
     recorder = Recorder()
@@ -316,7 +241,7 @@ def dispatch_answer(call: DispatchCall) -> Dispatched | Failure:
     }
 
 
-def request_answer(call: RequestCall) -> Requested | Failure:
+def request_answer(call: Call) -> Answer:
     apply_environment({})
     object.__setattr__(BASE, "get_credentials", SIGNING.get_credentials)
     try:
@@ -343,7 +268,7 @@ def request_answer(call: RequestCall) -> Requested | Failure:
     }
 
 
-def credential_answer(call: CredentialCall) -> Arguments | Failure:
+def credential_answer(call: Call) -> Answer:
     apply_environment({})
     object.__setattr__(BASE, "get_credentials", RECORDING.get_credentials)
     RECORDING.calls.clear()
