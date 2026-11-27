@@ -201,13 +201,15 @@ fn audioread_samples<'py>(
     channels: i64,
 ) -> Result<Bound<'py, PyAny>, RivaAudioError> {
     let chunks = read_chunks(py, numpy, source)?;
-    let scaled = concatenated_floats(py, numpy, chunks)?
-        .call_method1("__truediv__", (32768.0_f64,))
+    let interleaved = PyList::new(py, chunks)
+        .and_then(|list| numpy.getattr("concatenate")?.call1((&list,)))
+        .and_then(|joined| joined.call_method1("astype", ("float32",)))
+        .and_then(|floats| floats.call_method1("__truediv__", (32768.0_f64,)))
         .map_err(|error| decode_failure(py, &error))?;
     if channels <= 1 {
-        return Ok(scaled);
+        return Ok(interleaved);
     }
-    scaled
+    interleaved
         .call_method1("reshape", (-1_i64, channels))
         .map_err(|error| decode_failure(py, &error))
 }
@@ -253,21 +255,4 @@ fn added_samples(decoded_samples: u64, length: usize) -> Result<u64, RivaAudioEr
         return Err(RivaAudioError::TooLarge);
     }
     Ok(total)
-}
-
-fn concatenated_floats<'py>(
-    py: Python<'py>,
-    numpy: &Bound<'py, PyModule>,
-    chunks: Vec<Bound<'py, PyAny>>,
-) -> Result<Bound<'py, PyAny>, RivaAudioError> {
-    let fail = |error: PyErr| decode_failure(py, &error);
-    let list = PyList::new(py, chunks).map_err(fail)?;
-    let concatenated = numpy
-        .getattr("concatenate")
-        .and_then(|concatenate| concatenate.call1((&list,)))
-        .map_err(fail)?;
-    let float32 = numpy.getattr("float32").map_err(fail)?;
-    concatenated
-        .call_method1("astype", (&float32,))
-        .map_err(fail)
 }
