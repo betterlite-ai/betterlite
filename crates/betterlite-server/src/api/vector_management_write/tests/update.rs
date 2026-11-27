@@ -239,13 +239,15 @@ async fn update_writes_an_explicit_null_provider() {
     assert_eq!(StatusCode::OK, status);
     let changes = database.updates().pop().expect("the update ran").1;
     assert_eq!(Some(None), changes.custom_llm_provider);
+    // a key the body leaves out is not written at all, so the stored metadata survives
+    assert_eq!(None, changes.vector_store_metadata);
+    assert_eq!(None, changes.vector_store_name);
+    assert_eq!(None, changes.vector_store_description);
+    let row = database.rows().pop().expect("the row stays");
+    assert_eq!(None, row.custom_llm_provider);
     assert_eq!(
-        None,
-        database
-            .rows()
-            .pop()
-            .expect("the row stays")
-            .custom_llm_provider
+        Some(&Json::Text("prod".to_owned())),
+        field(&stored_column(&row, Column::Metadata), "env")
     );
 }
 
