@@ -109,44 +109,21 @@ impl Fake {
 }
 
 impl EvalRunHandlers for Fake {
-    fn get_run<'call>(
-        &'call self,
-        request: &'call RunHandlerRequest<'_>,
-        _logging: &'call mut LoggingState,
-    ) -> impl Future<Output = Result<Run, EvalHttpError>> + Send + 'call {
-        let Some(error) = self.record("get", request) else {
-            return ready(Ok(
-                serde_json::from_str::<Run>(RUN_FIXTURE).expect("the run fixture is valid")
-            ));
-        };
+    #[rustfmt::skip]
+    fn get_run<'call>(&'call self, request: &'call RunHandlerRequest<'_>, _logging: &'call mut LoggingState) -> impl Future<Output = Result<Run, EvalHttpError>> + Send + 'call {
+        let Some(error) = self.record("get", request) else { return ready(Ok(serde_json::from_str::<Run>(RUN_FIXTURE).expect("the run fixture is valid"))) };
         ready(Err(error))
     }
 
-    fn cancel_run<'call>(
-        &'call self,
-        request: &'call RunHandlerRequest<'_>,
-        _logging: &'call mut LoggingState,
-    ) -> impl Future<Output = Result<CancelRunResponse, EvalHttpError>> + Send + 'call {
-        let Some(error) = self.record("cancel", request) else {
-            return ready(Ok(serde_json::from_str::<CancelRunResponse>(
-                CANCELLED_FIXTURE,
-            )
-            .expect("the cancel fixture is valid")));
-        };
+    #[rustfmt::skip]
+    fn cancel_run<'call>(&'call self, request: &'call RunHandlerRequest<'_>, _logging: &'call mut LoggingState) -> impl Future<Output = Result<CancelRunResponse, EvalHttpError>> + Send + 'call {
+        let Some(error) = self.record("cancel", request) else { return ready(Ok(serde_json::from_str::<CancelRunResponse>(CANCELLED_FIXTURE).expect("the cancel fixture is valid"))) };
         ready(Err(error))
     }
 
-    fn delete_run<'call>(
-        &'call self,
-        request: &'call RunHandlerRequest<'_>,
-        _logging: &'call mut LoggingState,
-    ) -> impl Future<Output = Result<RunDeleteResponse, EvalHttpError>> + Send + 'call {
-        let Some(error) = self.record("delete", request) else {
-            return ready(Ok(serde_json::from_str::<RunDeleteResponse>(
-                DELETED_FIXTURE,
-            )
-            .expect("the delete fixture is valid")));
-        };
+    #[rustfmt::skip]
+    fn delete_run<'call>(&'call self, request: &'call RunHandlerRequest<'_>, _logging: &'call mut LoggingState) -> impl Future<Output = Result<RunDeleteResponse, EvalHttpError>> + Send + 'call {
+        let Some(error) = self.record("delete", request) else { return ready(Ok(serde_json::from_str::<RunDeleteResponse>(DELETED_FIXTURE).expect("the delete fixture is valid"))) };
         ready(Err(error))
     }
 }
@@ -267,31 +244,17 @@ impl BaseEvalsAPIConfig for RecordingConfig {
         transform_get_run_request(eval_id: &str, run_id: &str, api_base: &str) -> (String, Headers);
     }
 
-    fn transform_cancel_run_request(
-        &self,
-        eval_id: &str,
-        run_id: &str,
-        api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers, Object), EvalsError> {
+    #[rustfmt::skip]
+    fn transform_cancel_run_request(&self, eval_id: &str, run_id: &str, api_base: &str, context: &EvalsRequestContext<'_>) -> Result<(String, Headers, Object), EvalsError> {
         self.record("cancel_run_request");
-        let (url, headers, _built) = self
-            .inner
-            .transform_cancel_run_request(eval_id, run_id, api_base, context)?;
+        let (url, headers, _built) = self.inner.transform_cancel_run_request(eval_id, run_id, api_base, context)?;
         Ok((url, headers, marker_body()))
     }
 
-    fn transform_delete_run_request(
-        &self,
-        eval_id: &str,
-        run_id: &str,
-        api_base: &str,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Headers, Object), EvalsError> {
+    #[rustfmt::skip]
+    fn transform_delete_run_request(&self, eval_id: &str, run_id: &str, api_base: &str, context: &EvalsRequestContext<'_>) -> Result<(String, Headers, Object), EvalsError> {
         self.record("delete_run_request");
-        let (url, headers, _built) = self
-            .inner
-            .transform_delete_run_request(eval_id, run_id, api_base, context)?;
+        let (url, headers, _built) = self.inner.transform_delete_run_request(eval_id, run_id, api_base, context)?;
         Ok((url, headers, marker_body()))
     }
 

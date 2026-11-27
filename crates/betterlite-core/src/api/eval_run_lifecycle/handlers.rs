@@ -49,66 +49,24 @@ pub struct HttpRunHandlers<'deps> {
 }
 
 impl EvalRunHandlers for HttpRunHandlers<'_> {
-    fn get_run<'call>(
-        &'call self,
-        request: &'call RunHandlerRequest<'_>,
-        logging: &'call mut LoggingState,
-    ) -> impl Future<Output = Result<Run, EvalHttpError>> + Send + 'call {
-        let connection = EvalConnection {
-            config: request.config,
-            client: self.client,
-            url: request.url,
-            headers: request.headers,
-        };
+    #[rustfmt::skip]
+    fn get_run<'call>(&'call self, request: &'call RunHandlerRequest<'_>, logging: &'call mut LoggingState) -> impl Future<Output = Result<Run, EvalHttpError>> + Send + 'call {
+        let connection = EvalConnection { config: request.config, client: self.client, url: request.url, headers: request.headers };
         let env = self.env;
-        async move {
-            let mut log = EvalLogging {
-                state: logging,
-                env,
-            };
-            get_run_handler(&connection, &mut log).await
-        }
+        async move { get_run_handler(&connection, &mut EvalLogging { state: logging, env }).await }
     }
 
-    fn cancel_run<'call>(
-        &'call self,
-        request: &'call RunHandlerRequest<'_>,
-        logging: &'call mut LoggingState,
-    ) -> impl Future<Output = Result<CancelRunResponse, EvalHttpError>> + Send + 'call {
-        let connection = EvalConnection {
-            config: request.config,
-            client: self.client,
-            url: request.url,
-            headers: request.headers,
-        };
+    #[rustfmt::skip]
+    fn cancel_run<'call>(&'call self, request: &'call RunHandlerRequest<'_>, logging: &'call mut LoggingState) -> impl Future<Output = Result<CancelRunResponse, EvalHttpError>> + Send + 'call {
+        let connection = EvalConnection { config: request.config, client: self.client, url: request.url, headers: request.headers };
         let env = self.env;
-        async move {
-            let mut log = EvalLogging {
-                state: logging,
-                env,
-            };
-            cancel_run_handler(&connection, &mut log, request.timeout).await
-        }
+        async move { cancel_run_handler(&connection, &mut EvalLogging { state: logging, env }, request.timeout).await }
     }
 
-    fn delete_run<'call>(
-        &'call self,
-        request: &'call RunHandlerRequest<'_>,
-        logging: &'call mut LoggingState,
-    ) -> impl Future<Output = Result<RunDeleteResponse, EvalHttpError>> + Send + 'call {
-        let connection = EvalConnection {
-            config: request.config,
-            client: self.client,
-            url: request.url,
-            headers: request.headers,
-        };
+    #[rustfmt::skip]
+    fn delete_run<'call>(&'call self, request: &'call RunHandlerRequest<'_>, logging: &'call mut LoggingState) -> impl Future<Output = Result<RunDeleteResponse, EvalHttpError>> + Send + 'call {
+        let connection = EvalConnection { config: request.config, client: self.client, url: request.url, headers: request.headers };
         let env = self.env;
-        async move {
-            let mut log = EvalLogging {
-                state: logging,
-                env,
-            };
-            delete_run_handler(&connection, &mut log, request.timeout).await
-        }
+        async move { delete_run_handler(&connection, &mut EvalLogging { state: logging, env }, request.timeout).await }
     }
 }
