@@ -1,7 +1,7 @@
 id: B156
 milestone: M11 distribution
 title: LiteLLM's VS Code extension working against betterlite
-status: blocked
+status: todo
 depends_on: [B7770, B005, B060]
 file: tasks/B156-vscode-extension-contract.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, VS Code extension can wait"
+blocked_reason: null
 pr: null

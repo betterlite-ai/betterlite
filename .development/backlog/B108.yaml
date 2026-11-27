@@ -1,7 +1,7 @@
 id: B108
 milestone: M6 guardrails
 title: Third-party guardrails, M to Z, custom code and model judges
-status: blocked
+status: todo
 depends_on: [B8210, B8211, B8212, B8213, B8215, B8216, B8521, B8666, B8613, B8399, B3683, B3680, B3515, B524, B004, B9850]
 file: tasks/B108-m-z-guardrail-http.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, third-party guardrails Noma Pangea Pillar Presidio Prompt Security and others M to Z"
+blocked_reason: null
 pr: null

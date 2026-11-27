@@ -25,7 +25,8 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::OrganizationRoutePolicy(exception)
         | StageFailure::AuthRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
-        | StageFailure::EndUsers(exception) => denial_response(exception),
+        | StageFailure::EndUsers(exception)
+        | StageFailure::AuthPolicySupport(exception) => denial_response(exception),
     }
 }
 

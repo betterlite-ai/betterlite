@@ -2,6 +2,7 @@ use async_trait::async_trait;
 
 use crate::health_probe_modes::calls::{
     AudioTranscriptionCall, EvaluationCall, HealthProbeReply, ImageEditCall, OcrCall, ProbeCall,
+    RealtimeCall,
 };
 use crate::health_probe_modes::error::HealthProbeError;
 
@@ -78,4 +79,10 @@ pub trait EvaluationProbeCall: Send + Sync {
 #[async_trait]
 pub trait VideoGenerationProbeCall: Send + Sync {
     async fn generate(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError>;
+}
+
+// B1127's realtime health check; RealtimeProbe is its production implementation
+#[async_trait]
+pub trait RealtimeProbeCall: Send + Sync {
+    async fn probe(&self, call: RealtimeCall) -> Result<HealthProbeReply, HealthProbeError>;
 }

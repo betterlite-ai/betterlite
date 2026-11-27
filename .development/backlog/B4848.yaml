@@ -1,7 +1,7 @@
 id: B4848
 milestone: M9 agents and mcp
 title: Expose asynchronous harness runs, sessions and resume
-status: blocked
+status: todo
 depends_on: [B4830, B4844, B4846, B4847]
 file: tasks/B4848-harness-async-api.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B143
 split_from: B143
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, agent harnesses can wait"
+blocked_reason: null
 pr: null

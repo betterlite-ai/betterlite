@@ -1,0 +1,65 @@
+kind: helper
+name: auth-policy-support-token-team-provenance
+call:
+  auth_policy_support:
+    function: team_from_token
+    token:
+      token: sk-oracle-policy-key
+      team_id: team-a
+      team_max_budget: 100.0
+      team_soft_budget: 50.0
+      team_model_max_budget: {gpt-4: 10.0}
+      team_spend: 5.5
+      team_tpm_limit: 100
+      team_rpm_limit: 10
+      team_tpd_limit: 1000
+      team_blocked: true
+      team_models: [gpt-4]
+      team_metadata: {tier: gold}
+      team_object_permission_id: op-1
+calls:
+  - auth_policy_support:
+      function: team_from_token
+      token: {token: sk-oracle-policy-key}
+  - auth_policy_support:
+      function: vouch
+      token:
+        token: sk-oracle-policy-key
+        team_id: team-a
+        team_models: [gpt-4]
+      lookup: team_not_found
+      outage: true
+  - auth_policy_support:
+      function: vouch
+      token:
+        token: sk-oracle-policy-key
+        team_id: team-a
+        team_models: [gpt-4]
+      lookup: degraded
+      outage: false
+  - auth_policy_support:
+      function: vouch
+      token:
+        token: sk-oracle-policy-key
+        team_id: team-a
+        team_models: []
+      lookup: degraded
+      outage: false
+  - auth_policy_support:
+      function: vouch
+      token:
+        token: sk-oracle-policy-key
+        team_id: team-a
+        team_models: []
+      lookup: degraded
+      outage: true
+  - auth_policy_support:
+      function: vouch
+      token:
+        token: sk-oracle-policy-key
+        team_id: litellm-dashboard
+        team_models: []
+      lookup: team_not_found
+      outage: false
+env: {}
+compare: {ignore: []}

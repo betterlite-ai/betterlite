@@ -1,7 +1,7 @@
 id: B042
 milestone: M3 providers
 title: Cloud ML platforms
-status: blocked
+status: todo
 depends_on: [B080, B083, B085, B900, B8330, B8331, B9220]
 file: tasks/B042-cloud-ml-endpoints.yaml
 covers:
@@ -11,5 +11,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, Watsonx SageMaker Databricks cloud ML platforms"
+blocked_reason: null
 pr: null

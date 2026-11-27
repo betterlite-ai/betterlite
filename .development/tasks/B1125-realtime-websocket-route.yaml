@@ -21,7 +21,7 @@ description: >-
   an empty list; an empty value leaves the field absent. Build the B1004 synthetic request with raw ASGI headers,
   the original WebSocket URL and a body containing the resolved route model.
 
-  Call common_processing_pre_call_logic, B8801's PreCall step (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`), with route_type=_arealtime and the existing configured
+  Call common_processing_pre_call_logic, B8801's PreCall step (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); this task builds the production step directly and does not use B8804's adapters for other route families; never build `PreCallStep::standalone`), with route_type=_arealtime and the existing configured
   user_model/user_temperature/user_request_timeout/user_max_tokens/user_api_base values; B004 owns their
   defaults and precedence. B014 route_request selects B1011's realtime transport. B247/B187 supply logging and
   redaction, B3003 owns release_or_invalidate_budget_reservation, and B2400 owns the ProxyLogging disconnect

@@ -1,7 +1,7 @@
 id: B645
 milestone: M3 providers
 title: Bedrock managed file listing and lifecycle
-status: blocked
+status: todo
 depends_on: [B644, B643, B594, B591, B595, B198, B682, B1015, B173, B171, B2208]
 file: tasks/B645-bedrock-services-s3-listing.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B030
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Bedrock batches files agents and vector stores can wait"
+blocked_reason: null
 pr: null
