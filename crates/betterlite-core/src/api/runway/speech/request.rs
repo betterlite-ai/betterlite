@@ -19,10 +19,10 @@ pub fn speech_request(
         .filter(|value| !value.is_null())
         .cloned()
         .unwrap_or_else(|| {
-            json!({
-                "type": DEFAULT_VOICE_TYPE,
-                "presetId": DEFAULT_VOICE_PRESET_ID,
-            })
+            let mut fallback = Object::new();
+            fallback.insert(String::from("type"), json!(DEFAULT_VOICE_TYPE));
+            fallback.insert(String::from("presetId"), json!(DEFAULT_VOICE_PRESET_ID));
+            json!(fallback)
         });
     let mut body = Object::new();
     let name = if model.is_empty() {

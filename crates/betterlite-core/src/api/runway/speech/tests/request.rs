@@ -4,7 +4,7 @@ use serde_json::json;
 
 use super::super::mapping::VOICE_KEY;
 use super::super::request::speech_request;
-use super::support::{request_headers, text_params};
+use super::support::{preset_object, request_headers, text_params};
 
 #[test]
 fn a_falsey_model_falls_back_and_a_missing_voice_is_bernard() {
@@ -12,10 +12,7 @@ fn a_falsey_model_falls_back_and_a_missing_voice_is_bernard() {
     let body = data.dict_body.unwrap();
     assert_eq!(body.get("model"), Some(&json!("eleven_multilingual_v2")));
     assert_eq!(body.get("promptText"), Some(&json!("hello")));
-    assert_eq!(
-        body.get("voice"),
-        Some(&json!({"type": "runway-preset", "presetId": "Bernard"}))
-    );
+    assert_eq!(body.get("voice"), Some(&json!(preset_object("Bernard"))));
     assert_eq!(data.ssml_body, None);
 }
 
@@ -34,36 +31,27 @@ fn a_null_mapped_voice_chooses_bernard() {
     let body = speech_request("m", "i", &params, &IndexMap::new())
         .dict_body
         .unwrap();
-    assert_eq!(
-        body.get("voice"),
-        Some(&json!({"type": "runway-preset", "presetId": "Bernard"}))
-    );
+    assert_eq!(body.get("voice"), Some(&json!(preset_object("Bernard"))));
 }
 
 #[test]
 fn an_empty_mapped_voice_stays_the_body_voice() {
     let mut params = Object::new();
-    params.insert(VOICE_KEY.to_owned(), json!({}));
+    params.insert(VOICE_KEY.to_owned(), json!(Object::new()));
     let body = speech_request("m", "i", &params, &IndexMap::new())
         .dict_body
         .unwrap();
-    assert_eq!(body.get("voice"), Some(&json!({})));
+    assert_eq!(body.get("voice"), Some(&json!(Object::new())));
 }
 
 #[test]
 fn a_selected_mapping_voice_is_the_body_voice() {
     let mut params = Object::new();
-    params.insert(
-        VOICE_KEY.to_owned(),
-        json!({"type": "runway-preset", "presetId": "Maya"}),
-    );
+    params.insert(VOICE_KEY.to_owned(), json!(preset_object("Maya")));
     let body = speech_request("m", "i", &params, &IndexMap::new())
         .dict_body
         .unwrap();
-    assert_eq!(
-        body.get("voice"),
-        Some(&json!({"type": "runway-preset", "presetId": "Maya"}))
-    );
+    assert_eq!(body.get("voice"), Some(&json!(preset_object("Maya"))));
     assert!(!body.contains_key(VOICE_KEY));
 }
 
@@ -83,10 +71,7 @@ fn extra_options_are_kept_without_overwriting_the_body() {
     assert_eq!(body.get("seed"), Some(&json!("5")));
     assert_eq!(body.get("model"), Some(&json!("eleven_multilingual_v2")));
     assert_eq!(body.get("promptText"), Some(&json!("hello")));
-    assert_eq!(
-        body.get("voice"),
-        Some(&json!({"type": "runway-preset", "presetId": "Bernard"}))
-    );
+    assert_eq!(body.get("voice"), Some(&json!(preset_object("Bernard"))));
     assert!(!body.contains_key(VOICE_KEY));
 }
 
@@ -97,6 +82,6 @@ fn the_request_carries_its_headers() {
         ("Content-Type", "application/json"),
     ]);
     let data = speech_request("m", "i", &Object::new(), &given);
-    assert_eq!(data.headers, Some(given.clone()));
+    assert_eq!(data.headers, Some(given));
     assert_eq!(data.dict_body.unwrap().len(), 3);
 }

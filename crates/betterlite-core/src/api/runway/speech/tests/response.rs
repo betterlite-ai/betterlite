@@ -1,3 +1,4 @@
+use http::HeaderMap;
 use http::header::CONTENT_TYPE;
 use rstest::rstest;
 
@@ -30,16 +31,7 @@ async fn a_completed_submission_is_polled_anyway() {
         "https://api.dev.runwayml.com/v1/tasks/task_done"
     );
     assert_eq!(requests[1].0, "https://delivery.test/speech.mp3");
-    assert_eq!(requests[0].1.len(), 2);
-    assert_eq!(
-        header_text(&requests[0].1, "authorization"),
-        "Bearer sk-request"
-    );
-    assert_eq!(
-        header_text(&requests[0].1, "x-runway-version"),
-        "2025-03-03"
-    );
-    assert!(requests[0].1.get(CONTENT_TYPE).is_none());
+    assert_poll_headers(&requests[0].1);
     assert!(requests[1].1.is_empty());
     assert_eq!(content.status, 200);
     assert_eq!(
@@ -48,6 +40,13 @@ async fn a_completed_submission_is_polled_anyway() {
     );
     assert_eq!(content.body, b"audio-bytes".to_vec());
     assert!(pauses.is_empty());
+}
+
+fn assert_poll_headers(headers: &HeaderMap) {
+    assert_eq!(headers.len(), 2);
+    assert_eq!(header_text(headers, "authorization"), "Bearer sk-request");
+    assert_eq!(header_text(headers, "x-runway-version"), "2025-03-03");
+    assert!(headers.get(CONTENT_TYPE).is_none());
 }
 
 #[tokio::test]

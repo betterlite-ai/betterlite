@@ -100,10 +100,7 @@ fn resolved_params(
     api_key: Option<&SecretString>,
 ) -> Object {
     let mut params = call.litellm_params.clone();
-    let resolved_key = match api_key {
-        Some(key) => json!(key.expose_secret()),
-        None => json!(null),
-    };
+    let resolved_key = api_key.map_or(json!(null), |key| json!(key.expose_secret()));
     params.insert(String::from("api_key"), resolved_key);
     params.insert(String::from("api_base"), json!(api_base));
     params

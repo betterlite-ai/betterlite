@@ -18,14 +18,16 @@ const VOICE_MAPPINGS: [(&str, &str); 6] = [
 // LiteLLM maps only voice: every option that reached it, and drop_params itself, leaves no trace
 #[must_use]
 pub fn map_openai_params(voice: Option<&SpeechVoice>) -> (Option<SpeechVoice>, Object) {
-    let Some(voice) = voice else {
+    let Some(selected) = voice else {
         return (None, Object::new());
     };
-    let mapped = match voice {
-        SpeechVoice::Name(name) => json!({
-            "type": DEFAULT_VOICE_TYPE,
-            "presetId": preset_id(name),
-        }),
+    let mapped = match selected {
+        SpeechVoice::Name(name) => {
+            let mut preset = Object::new();
+            preset.insert(String::from("type"), json!(DEFAULT_VOICE_TYPE));
+            preset.insert(String::from("presetId"), json!(preset_id(name)));
+            json!(preset)
+        }
         SpeechVoice::Options(fields) => json!(fields),
     };
     let mut params = Object::new();

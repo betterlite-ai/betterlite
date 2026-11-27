@@ -58,12 +58,16 @@ pub(super) fn module_globals(api_base: Option<&str>, api_key: Option<&str>) -> L
     }
 }
 
+pub(super) fn preset_object(preset: &str) -> Object {
+    let mut fields = Object::new();
+    fields.insert(String::from("type"), json!("runway-preset"));
+    fields.insert(String::from("presetId"), json!(preset));
+    fields
+}
+
 pub(super) fn voice_params(preset: &str) -> Object {
     let mut params = Object::new();
-    params.insert(
-        VOICE_KEY.to_owned(),
-        json!({"type": "runway-preset", "presetId": preset}),
-    );
+    params.insert(VOICE_KEY.to_owned(), json!(preset_object(preset)));
     params
 }
 
@@ -218,7 +222,7 @@ impl TextToSpeechHandler for Recorder {
         record.insert(String::from("api_base"), json!(request.api_base));
         record.insert(
             String::from("api_key"),
-            json!(request.api_key.map(|key| key.expose_secret())),
+            json!(request.api_key.map(secrecy::ExposeSecret::expose_secret)),
         );
         record.insert(
             String::from("timeout_seconds"),
@@ -227,10 +231,10 @@ impl TextToSpeechHandler for Recorder {
         record.insert(String::from("extra_headers"), json!(request.extra_headers));
         record.insert(String::from("aspeech"), json!(request.aspeech));
         self.seen.push(record.clone());
-        let answer: Result<Object, HandlerFailure> = match self.failure.clone() {
-            Some(failure) => Err(failure),
-            None => Ok(record),
-        };
+        let answer: Result<Object, HandlerFailure> = self
+            .failure
+            .clone()
+            .map_or(Ok(record), |failure| Err(failure));
         ready(answer)
     }
 }

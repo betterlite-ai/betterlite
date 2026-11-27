@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::super::RunwaySpeechConfig;
 use super::super::mapping::{VOICE_KEY, map_openai_params};
-use super::support::{settings, text_params};
+use super::support::{preset_object, settings, text_params};
 use crate::api::speech_call::operations::{SpeechConfigOperation, SpeechMappingOptions};
 
 #[rstest]
@@ -20,35 +20,32 @@ fn mapped_openai_voices_become_runway_presets(#[case] name: &str, #[case] preset
     let (mapped, params) = map_openai_params(Some(&voice));
     assert_eq!(mapped, None);
     assert_eq!(params.len(), 1);
-    assert_eq!(
-        params.get(VOICE_KEY),
-        Some(&json!({"type": "runway-preset", "presetId": preset}))
-    );
+    assert_eq!(params.get(VOICE_KEY), Some(&json!(preset_object(preset))));
 }
 
 #[test]
 fn an_unknown_voice_is_a_literal_preset_id() {
     let voice = SpeechVoice::Name(String::from("Cosmo"));
     let (_, params) = map_openai_params(Some(&voice));
-    assert_eq!(
-        params.get(VOICE_KEY),
-        Some(&json!({"type": "runway-preset", "presetId": "Cosmo"}))
-    );
+    assert_eq!(params.get(VOICE_KEY), Some(&json!(preset_object("Cosmo"))));
 }
 
 #[test]
 fn a_mapping_voice_passes_through() {
-    let fields = json!({"type": "custom-preset", "presetId": "Maya", "weight": 2});
-    let voice = SpeechVoice::Options(fields.as_object().cloned().unwrap());
+    let mut fields = Object::new();
+    fields.insert(String::from("type"), json!("custom-preset"));
+    fields.insert(String::from("presetId"), json!("Maya"));
+    fields.insert(String::from("weight"), json!(2_i32));
+    let voice = SpeechVoice::Options(fields.clone());
     let (_, params) = map_openai_params(Some(&voice));
-    assert_eq!(params.get(VOICE_KEY), Some(&fields));
+    assert_eq!(params.get(VOICE_KEY), Some(&json!(fields)));
 }
 
 #[test]
 fn an_empty_mapping_remains_the_selected_voice() {
     let voice = SpeechVoice::Options(Object::new());
     let (_, params) = map_openai_params(Some(&voice));
-    assert_eq!(params.get(VOICE_KEY), Some(&json!({})));
+    assert_eq!(params.get(VOICE_KEY), Some(&json!(Object::new())));
 }
 
 #[test]
@@ -76,10 +73,7 @@ fn the_config_mapping_ignores_received_options_and_drop_params() {
     );
     assert_eq!(voice, None);
     assert_eq!(mapped.len(), 1);
-    assert_eq!(
-        mapped.get(VOICE_KEY),
-        Some(&json!({"type": "runway-preset", "presetId": "Maya"}))
-    );
+    assert_eq!(mapped.get(VOICE_KEY), Some(&json!(preset_object("Maya"))));
     assert!(!mapped.contains_key("speed"));
     assert!(!mapped.contains_key("response_format"));
 }
