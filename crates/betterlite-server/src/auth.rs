@@ -58,6 +58,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
+use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
@@ -109,6 +110,7 @@ fn stage_input(
     match backend {
         AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
+        AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -128,9 +130,7 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::TeamBudgetAdmission => {
-            team_budget_admission::stage_input(request, authenticated)
-        }
+        TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
@@ -206,6 +206,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
+        | StageInput::TrustedNetwork(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthVirtualKeyRoutes(_)

@@ -1,0 +1,9 @@
+task: B10120
+deviations:
+  - what: The per request auth is a SessionAuth handle passed to the session's handler and registry instead of a ContextVar plus a dict keyed by session id.
+    why: The Rust rules forbid module state and task locals; sharing one handle gives every holder the same newest-caller view.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2563-L2610
+  - what: A handle built by SessionAuth::new keeps the mcp_protocol_version its fields carry, where LiteLLM's set_auth_context has no such parameter and always starts the user at None.
+    why: McpAuthFields carries all eight fields and McpAuthenticatedUser::new passes them through; no caller at the pinned commit sets the version, so no request behaves differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2532-L2561
+kept_bugs: []
