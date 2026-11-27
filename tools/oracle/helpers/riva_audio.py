@@ -5,7 +5,7 @@ from importlib.machinery import ModuleSpec
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType, TracebackType
-from typing import Final, Literal, NoReturn, TypedDict
+from typing import Final, Literal, NoReturn, Self, TypedDict
 
 from litellm.llms.nvidia_riva.audio_transcription.audio_utils import (
     FloatArray,
@@ -77,7 +77,7 @@ class FakeSource:
     def channels(self) -> int:
         return self.spec["channels"]
 
-    def __enter__(self) -> "FakeSource":
+    def __enter__(self) -> Self:
         self.events.append("audioread.enter")
         return self
 
@@ -195,26 +195,11 @@ def staging_state(staging: list[str]) -> tuple[str | None, bool | None]:
     return (path.suffix.removeprefix("."), not path.exists())
 
 
-def success_answer(audio: ResampledAudio, events: list[str], staging: list[str]) -> Answer:
+def empty_answer(events: list[str], staging: list[str]) -> Answer:
     suffix, removed = staging_state(staging)
     return {
         "status": None,
         "message": None,
-        "pcm_hex": audio.pcm_bytes.hex(),
-        "sample_rate_hz": audio.sample_rate_hz,
-        "num_channels": audio.num_channels,
-        "duration_seconds": audio.duration_seconds,
-        "events": events,
-        "staging_suffix": suffix,
-        "staging_removed": removed,
-    }
-
-
-def failure_answer(error: NvidiaRivaException, events: list[str], staging: list[str]) -> Answer:
-    suffix, removed = staging_state(staging)
-    return {
-        "status": error.status_code,
-        "message": error.message,
         "pcm_hex": None,
         "sample_rate_hz": None,
         "num_channels": None,
@@ -225,10 +210,26 @@ def failure_answer(error: NvidiaRivaException, events: list[str], staging: list[
     }
 
 
+def success_answer(audio: ResampledAudio, events: list[str], staging: list[str]) -> Answer:
+    answer = empty_answer(events, staging)
+    answer["pcm_hex"] = audio.pcm_bytes.hex()
+    answer["sample_rate_hz"] = audio.sample_rate_hz
+    answer["num_channels"] = audio.num_channels
+    answer["duration_seconds"] = audio.duration_seconds
+    return answer
+
+
+def failure_answer(error: NvidiaRivaException, events: list[str], staging: list[str]) -> Answer:
+    answer = empty_answer(events, staging)
+    answer["status"] = error.status_code
+    answer["message"] = error.message
+    return answer
+
+
 def convert(file_hex: str, events: list[str], staging: list[str]) -> Answer:
     try:
         audio = resample_to_riva_pcm(bytes.fromhex(file_hex))
-    except NvidiaRivaException as error:
+    except NvidiaRivaException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/common_utils.py#L10-L17
         return failure_answer(error, events, staging)
     return success_answer(audio, events, staging)
 
