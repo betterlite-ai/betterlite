@@ -1,0 +1,40 @@
+kind: helper
+name: failure-metadata-null-only-patches-and-empty-tags
+call:
+  failure_metadata:
+    calls:
+      - function: patch
+        request_data:
+          litellm_params:
+            litellm_metadata: {user_api_key_alias: null, tags: null}
+            metadata: {user_api_key_alias: old, tags: [caller]}
+        metadata: {user_api_key_alias: new, user_api_key: null, tags: [trusted], other: x}
+      - function: patch
+        request_data: {litellm_params: {}}
+        metadata: {user_api_key: null, other: x}
+      - function: patch
+        request_data: {}
+        metadata: {user_api_key: hash}
+      - function: patch
+        request_data: {litellm_params: {metadata: {user_api_key_user_id: null}}}
+        metadata: {user_api_key_user_id: user, user_api_key_team_alias: team}
+      - function: tags
+        standard_logging_object: {request_tags: []}
+        metadata: {tags: [metadata]}
+      - function: tags
+        standard_logging_object: {request_tags: [payload]}
+        metadata: {tags: [metadata]}
+      - function: tags
+        standard_logging_object: {request_tags: payload}
+        metadata: {tags: [metadata]}
+      - function: tags
+        standard_logging_object: null
+        metadata: {tags: [metadata]}
+      - function: tags
+        standard_logging_object: null
+        metadata: {}
+      - function: tags
+        standard_logging_object: {request_tags: []}
+        metadata: {}
+env: {}
+compare: {ignore: []}
