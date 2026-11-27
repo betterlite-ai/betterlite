@@ -217,6 +217,8 @@ fn a_label_failure_is_logged_at_debug_and_swallowed() {
     drop(guard);
     assert!(events(&log).is_empty());
     let text = logged_text(&captured);
-    let failure = format!("{FAILURE_PREFIX}the label context was built from different enum values");
+    let failure = format!(
+        "DEBUG betterlite_server::team_membership_effects::metric: {FAILURE_PREFIX}the label context was built from different enum values"
+    );
     assert!(text.contains(failure.as_str()), "{text}");
 }
