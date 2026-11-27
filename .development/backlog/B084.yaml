@@ -1,7 +1,7 @@
 id: B084
 milestone: M5 api families
 title: Realtime WebRTC SDP routes
-status: blocked
+status: todo
 depends_on: [B001, B003, B014, B061, B732, B856, B1010, B1012, B1087, B1103, B1139, B8399]
 file: tasks/B084-realtime-routes.yaml
 covers:
@@ -11,5 +11,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Realtime WebSocket API is used by few deployments"
+blocked_reason: null
 pr: null

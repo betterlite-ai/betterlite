@@ -81,7 +81,7 @@ description: >-
   DELETE /cloudzero/delete, GET/PUT /vantage/settings, POST /vantage/init,
   POST /vantage/dry-run, POST /vantage/export and DELETE /vantage/delete. There are no
   /v1, /openai/v1 or provider-prefixed aliases. Neither B10082's area aggregator nor the
-  existing MCP mounts registers these paths; B8662 builds the spend-area mount in app/spend.rs first; add the one call to this mount inside it, since no other app task mounts FinOps routes.
+  existing MCP mounts registers these paths; main already defines the spend-area mount in app/spend.rs; the architect installs the one FinOps mount call alongside its existing merges as the shared glue described below, since no other app task mounts FinOps routes.
   Register only the two new routes in vantage_exports::routes, never repeat a child's
   .route call in mount. The skeleton declares the two modules; parent module files and
   the area hook are not this task's scope.
@@ -292,7 +292,7 @@ out_of_scope:
   - "S3/GCS delivery is B3062, Mavvrik delivery/catch-up is B3063/B3068, Vantage batching is B3064, and startup's scheduler registrations are B8372; do not start these jobs again from the mount."
   - "Lago/OpenMeter logger functions are B3072 with catalog adapters B8745; PointFive payload/upload functions are B3073 and logger/catalog functions B3074; this task adds HTTP composition evidence only."
   - "BillingMetricsRecorder is B3078; B8680 owns the edge middleware and gateway accumulator handoff, and B8374 owns recorder shutdown; no enterprise-package branch or paid-license mechanism is added here."
-  - "B8610 owns Shared, B10082 the area aggregator, B8662 owns app/spend.rs, and B9260 owns the daily-spend fixture extension; the architect installs shared field/call-site glue, module declarations and fuzz-target registration recorded in the planner report."
+  - "B8610 owns Shared, B10082 the area aggregator, B8662 the spend-report merge and callback startup in app/spend.rs, and B9260 owns the daily-spend fixture extension; the architect installs shared field/call-site glue, module declarations and fuzz-target registration recorded in the planner report."
 pitfalls:
   - "The usage modal sends limit 100000 while the standalone export omits limit entirely."
   - "The real FOCUS SELECT omits total_tokens, so adding prompt_tokens and completion_tokens would silently change /vantage/dry-run's total_tokens from zero."

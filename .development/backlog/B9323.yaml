@@ -1,7 +1,7 @@
 id: B9323
 milestone: M6 guardrails
 title: Policy inference and background retrieval HTTP parity
-status: blocked
+status: todo
 depends_on: [B9320, B9321, B8803, B8804]
 file: tasks/B9323-policy-inference-http.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: B079
 split_from: B079
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, policy engine over guardrails is new; guardrails attach to keys without it"
+blocked_reason: null
 pr: null

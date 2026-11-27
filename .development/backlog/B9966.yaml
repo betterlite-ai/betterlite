@@ -1,7 +1,7 @@
 id: B9966
 milestone: R2 bug fixes
 title: Model metadata downloads the Hugging Face model config
-status: blocked
+status: todo
 depends_on: [B2219, B068, B173, B2225, B8610]
 file: tasks/B9966-huggingface-config-metadata.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, Hugging Face model config download for unmapped HF models"
+blocked_reason: null
 pr: null

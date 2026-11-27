@@ -15,7 +15,7 @@ description: >-
   a RegistryView port with server_by_id(server_id) that passes no client ip [B4731];
   a RegistryReload port with update(record) and reload() [B6765, update_server and reload_servers_from_database];
   a SubmitterCache port with invalidate_submitted(user_id) [B6591, invalidate_byom_submitted_servers_cache];
-  a CatalogFetcher port with fetch_pinnable(server, request, auth) -> Result<BTreeMap<String, PinnedMCPTool>, CatalogFetchError> [B4727, fetch_pinnable_tool_catalog].
+  a CatalogFetcher port with fetch_pinnable(server, request, auth) -> Result<BTreeMap<String, PinnedMCPTool>, CatalogFetchError> [this task defines CatalogFetcher and CatalogFetchError; B8625 implements the port over B4727's fetch_pinnable_tool_catalog and maps its errors].
   The database port is optional: a proxy started without a database makes every route answer the 500 below. The redact and sanitize functions come from B4717 (mcp::management_visibility), PinnedMCPTool and the approval status enum from B2305 and B858, the table row LiteLLM_MCPServerTable and MCPSubmissionsSummary from B858 and B4711, and UserApiKeyAuth and the role enum from B2314.
 
 
@@ -83,7 +83,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2119-L2205
     why: What the four database writes and the submissions read do, so the fakes behave like them (B4711 owns the code).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L762-L788
-    why: fetch_pinnable_tool_catalog, the call route 2 makes (B4727 owns the code).
+    why: fetch_pinnable_tool_catalog, reached through this task's CatalogFetcher port; B8625 supplies the B4727 adapter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3357-L3365
     why: invalidate_byom_submitted_servers_cache, the call route 4 makes (B6591 owns the code).
 
@@ -145,7 +145,7 @@ deviations:
 out_of_scope:
   - "get_prisma_client_or_throw, get_mcp_server, approve_mcp_server, reject_mcp_server, get_mcp_submissions and set_mcp_server_pinned_tools: owned by B4711; this task calls them."
   - "_redact_mcp_credentials, _redact_mcp_credentials_list, _sanitize_mcp_server_list_for_non_admin and _user_is_full_admin: owned by B4717."
-  - "fetch_pinnable_tool_catalog and the tool scan it runs: owned by B4727. get_mcp_server_by_id: owned by B4731."
+  - "fetch_pinnable_tool_catalog and its scan belong to B4727; B8625 supplies them behind this task's CatalogFetcher port. get_mcp_server_by_id: owned by B4731."
   - "update_server and reload_servers_from_database: owned by B6765. invalidate_byom_submitted_servers_cache: owned by B6591."
   - "management_endpoint_wrapper: owned by B865. PinnedMCPTool and parse_pinned_tools: owned by B2305."
   - "validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow, _validate_mcp_required_fields and raise_mcp_identifier_conflict: owned by B4716. create_mcp_server_if_identifier_free: owned by B4712."

@@ -1,0 +1,111 @@
+kind: helper
+name: file-credentials-provider-grant-fallback
+call:
+  file_credentials:
+    calls:
+    - function: team_credentials
+      provider: openai
+      key: {models: [gpt-4o], team_models: [], team_id: null}
+      router:
+        model_names: [gpt-4o]
+        access_groups: {group-a: [gpt-4o]}
+        deployments:
+        - model_name: public-x
+          model_info: {id: d1, team_id: t, team_public_model_name: public-x}
+        credentials:
+          d1: {api_key: k-byok, custom_llm_provider: openai}
+          gpt-4o: {api_key: kg, custom_llm_provider: openai}
+          proxy-model: {api_key: kp, custom_llm_provider: anthropic}
+          claude-x: {api_key: kc, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: team_credentials
+      provider: openai
+      key: {models: [], team_models: [claude-x], team_id: t}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          claude-x: {api_key: kc, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: team_credentials
+      provider: openai
+      key: {models: [], team_models: [all-proxy-models], team_id: t}
+      router:
+        model_names: [gpt-4o]
+        access_groups: {}
+        deployments: []
+        credentials:
+          gpt-4o: {api_key: kg, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: team_credentials
+      provider: openai
+      key: {models: [group-a], team_models: [], team_id: null}
+      router:
+        model_names: [gpt-4o]
+        access_groups: {group-a: [gpt-4o]}
+        deployments:
+        - model_name: public-x
+          model_info: {id: d1, team_id: t, team_public_model_name: public-x}
+        credentials:
+          d1: {api_key: k-byok, custom_llm_provider: openai}
+          gpt-4o: {api_key: kg, custom_llm_provider: openai}
+          proxy-model: {api_key: kp, custom_llm_provider: anthropic}
+          claude-x: {api_key: kc, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: team_credentials
+      provider: openai
+      key: {models: [all-team-models], team_models: [claude-x], team_id: t}
+      router:
+        model_names: [gpt-4o]
+        access_groups: {group-a: [gpt-4o]}
+        deployments:
+        - model_name: public-x
+          model_info: {id: d1, team_id: t, team_public_model_name: public-x}
+        credentials:
+          d1: {api_key: k-byok, custom_llm_provider: openai}
+          gpt-4o: {api_key: kg, custom_llm_provider: openai}
+          proxy-model: {api_key: kp, custom_llm_provider: anthropic}
+          claude-x: {api_key: kc, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: team_credentials
+      provider: openai
+      key: {models: [], team_models: [], team_id: t}
+      router:
+        model_names: [proxy-model]
+        access_groups: {}
+        deployments: []
+        credentials:
+          proxy-model: {api_key: kp, custom_llm_provider: anthropic}
+        credential_deployments: {}
+    - function: team_credentials
+      provider: openai
+      key: {models: [], team_models: [], team_id: t}
+    - function: apply_team_credentials
+      provider: openai
+      key: {models: [], team_models: [], team_id: t}
+      data: {model: a, purpose: batch}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments:
+        - model_name: a
+          model_info: {id: d1, team_id: t, team_public_model_name: a}
+        credentials:
+          d1: {api_key: k1, api_base: https://one, custom_llm_provider: openai, model: m1}
+        credential_deployments: {}
+    - function: apply_team_credentials
+      provider: azure
+      key: {models: [], team_models: [], team_id: t}
+      data: {model: a, purpose: batch}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments:
+        - model_name: a
+          model_info: {id: d1, team_id: t, team_public_model_name: a}
+        credentials:
+          d1: {api_key: k1, api_base: https://one, custom_llm_provider: openai, model: m1}
+        credential_deployments: {}
+env: {}
+compare: {ignore: []}

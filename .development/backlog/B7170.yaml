@@ -1,7 +1,7 @@
 id: B7170
 milestone: M5 api families
 title: RAG OpenAI, Gemini and Vertex store ports
-status: blocked
+status: todo
 depends_on: [B3453, B3454, B3455, B1064, B1072, B1028, B1331, B1601, B3457]
 file: tasks/B7170-rag-store-ports.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B097
 split_from: B3460
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, RAG ingestion is new and can wait"
+blocked_reason: null
 pr: null

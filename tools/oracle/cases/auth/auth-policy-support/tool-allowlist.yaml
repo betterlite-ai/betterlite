@@ -1,0 +1,45 @@
+name: auth-policy-support-tool-allowlist
+config: |
+  model_list:
+    - model_name: policy-tool-model
+      litellm_params:
+        model: openai/policy-tool-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-policy-tool
+  body:
+    model: policy-tool-model
+    messages:
+      - {role: user, content: Say hello.}
+    tools:
+      - {type: function, function: {name: get_weather, parameters: {type: object, properties: {}}}}
+    stream: false
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-request-policy-tool}
+    body:
+      id: chatcmpl-policy-tool
+      object: chat.completion
+      created: 1700000000
+      model: gpt-policy-tool-upstream-2024
+      system_fingerprint: fp_oracle
+      service_tier: default
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          logprobs: null
+          finish_reason: stop
+      usage:
+        prompt_tokens: 5
+        completion_tokens: 2
+        total_tokens: 7
+        prompt_tokens_details: {cached_tokens: 0, audio_tokens: 0}
+        completion_tokens_details: {reasoning_tokens: 0, audio_tokens: 0, accepted_prediction_tokens: 0, rejected_prediction_tokens: 0}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}

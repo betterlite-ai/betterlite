@@ -1,0 +1,80 @@
+kind: helper
+name: file-credentials-model-hint-precedence
+call:
+  file_credentials:
+    calls:
+    - function: extract
+      file_id: file-abc
+      hints: {body: model_body, query: model_query, header: model_header}
+    - function: extract
+      file_id: file-abc
+      hints: {body: "", query: model_query, header: model_header}
+    - function: extract
+      file_id: file-abc
+      hints: {body: null, query: "", header: model_header}
+    - function: extract
+      file_id: file-abc
+      hints: {body: null, query: null, header: ""}
+    - function: extract
+      file_id: file-abc
+      hints: {body: null, query: null, header: null}
+    - function: extract
+      file_id: file-bGl0ZWxsbTpmaWxlLXJhdzttb2RlbCxtb2RlbF9pZA
+      hints: {body: model_body, query: model_query, header: model_header}
+    - function: routing
+      file_id: file-bGl0ZWxsbTpmaWxlLXJhdzttb2RlbCxtb2RlbF9pZA
+      hints: {body: model_body, query: model_query, header: model_header}
+      check_file_id_encoding: true
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          model_id: {api_key: km, custom_llm_provider: openai}
+          model_body: {api_key: kb, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: routing
+      file_id: file-bGl0ZWxsbTpmaWxlLXJhdzttb2RlbCxtb2RlbF9pZA
+      hints: {body: model_body, query: model_query, header: model_header}
+      check_file_id_encoding: false
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          model_id: {api_key: km, custom_llm_provider: openai}
+          model_body: {api_key: kb, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: routing
+      file_id: file-abc
+      hints: {body: "", query: null, header: null}
+      check_file_id_encoding: true
+    - function: routing
+      file_id: file-abc
+      hints: {body: m, query: null, header: null}
+      check_file_id_encoding: true
+    - function: routing
+      file_id: file-abc
+      hints: {body: m, query: null, header: null}
+      check_file_id_encoding: true
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          model_id: {api_key: km, custom_llm_provider: openai}
+          model_body: {api_key: kb, custom_llm_provider: openai}
+        credential_deployments: {}
+    - function: routing
+      file_id: file-bGl0ZWxsbTpmaWxlLXJhdzttb2RlbCxtb2RlbF9pZA
+      hints: {body: null, query: null, header: null}
+      check_file_id_encoding: true
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          model_body: {api_key: kb, custom_llm_provider: openai}
+        credential_deployments: {}
+env: {}
+compare: {ignore: []}

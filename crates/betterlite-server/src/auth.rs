@@ -53,12 +53,10 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
+use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
@@ -70,6 +68,7 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
+use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
@@ -84,10 +83,7 @@ pub(crate) async fn authenticate(
     next: Next,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
-    if matches!(
-        request.uri().path(),
-        "/health/liveliness" | "/health/liveness" | "/health/readiness"
-    ) {
+    if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
     }
     let Some(master_key) = master_key_state.as_ref() else {
@@ -145,6 +141,7 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
     }
 }
 
@@ -225,7 +222,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
-        | StageInput::OrganizationRoutePolicy(_)) => Ok(other),
+        | StageInput::OrganizationRoutePolicy(_)
+        | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
 }
 

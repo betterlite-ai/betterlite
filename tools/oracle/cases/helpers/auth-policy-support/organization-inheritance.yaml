@@ -1,0 +1,63 @@
+kind: helper
+name: auth-policy-support-organization-inheritance
+call:
+  auth_policy_support:
+    function: org_inherit
+    token: {token: sk-oracle-policy-key, team_id: team-a}
+    team: {team_id: team-a, organization_id: org-1}
+    org:
+      organization_id: org-1
+      organization_alias: Acme
+      budget_id: budget-1
+      created_by: creator
+      updated_by: updater
+      metadata: {tier: gold}
+      litellm_budget_table: {max_budget: 100.0, tpm_limit: 100, rpm_limit: 10}
+    database: true
+calls:
+  - auth_policy_support:
+      function: org_inherit
+      token:
+        token: sk-oracle-policy-key
+        team_id: team-a
+        organization_alias: Existing
+      team: {team_id: team-a, organization_id: org-1}
+      org:
+        organization_id: org-1
+        organization_alias: Acme
+        budget_id: budget-1
+        created_by: creator
+        updated_by: updater
+        litellm_budget_table: {max_budget: 100.0}
+      database: true
+  - auth_policy_support:
+      function: org_inherit
+      token: {token: sk-oracle-policy-key, org_id: org-1}
+      team: null
+      org:
+        organization_id: org-1
+        organization_alias: Acme
+        budget_id: budget-1
+        created_by: creator
+        updated_by: updater
+      database: false
+  - auth_policy_support:
+      function: org_inherit
+      token: {token: sk-oracle-policy-key, org_id: org-1}
+      team: null
+      org: null
+      database: true
+  - auth_policy_support:
+      function: org_inherit
+      token: {token: sk-oracle-policy-key, org_id: org-1}
+      team: null
+      org:
+        organization_id: org-1
+        organization_alias: Acme
+        budget_id: budget-1
+        created_by: creator
+        updated_by: updater
+        metadata: {tier: silver}
+      database: true
+env: {}
+compare: {ignore: []}
