@@ -40,9 +40,7 @@ pub async fn decode_riva_audio(
         .await
     {
         Ok(outcome) => outcome,
-        Err(error) => Err(RivaAudioError::Work {
-            message: error.to_string(),
-        }),
+        Err(error) => Err(RivaAudioError::Work(error)),
     }
 }
 
@@ -125,7 +123,7 @@ fn pcm(samples: &Bound<'_, PyAny>) -> Result<ResampledAudio, RivaAudioError> {
         .map_err(|error| call_failure(py, "numpy.clip", &error))?;
     numpy
         .getattr("clip")
-        .and_then(|clip| clip.call((-1.0_f64, 1.0_f64), Some(&keywords)))
+        .and_then(|clip| clip.call((samples, -1.0_f64, 1.0_f64), Some(&keywords)))
         .map_err(|error| call_failure(py, "numpy.clip", &error))?;
     let scaled = samples
         .call_method1("__mul__", (32767.0_f64,))

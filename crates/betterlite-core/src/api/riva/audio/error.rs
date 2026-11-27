@@ -1,4 +1,8 @@
+use std::io;
+
+use betterlite_pyhost::blocking_work::WorkError;
 use betterlite_pyhost::call_error::PythonError;
+use betterlite_pyhost::owned_temp::TempError;
 use pyo3::{PyErr, Python};
 
 pub const MAX_AUDIO_BYTES: u64 = 0x0400_0000;
@@ -22,13 +26,24 @@ pub enum RivaAudioError {
         operation: &'static str,
         type_name: String,
         message: String,
+        #[source]
+        source: PythonError,
     },
-    #[error("the audio could not be staged for the decoder: {message}")]
-    Staging { message: String },
+    #[error("the audio could not be staged for the decoder: {0}")]
+    Staging(#[from] TempError),
+    #[error("the audio could not be staged for the decoder: {source}")]
+    StageWrite {
+        #[source]
+        source: io::Error,
+    },
+    #[error(
+        "the audio could not be staged for the decoder: the staged audio path {path} is not valid UTF-8"
+    )]
+    StagedPath { path: String },
     #[error("the decoded audio duration is out of range")]
     Duration,
-    #[error("the Python worker pool failed: {message}")]
-    Work { message: String },
+    #[error("the Python worker pool failed: {0}")]
+    Work(#[from] WorkError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,9 +72,11 @@ impl RivaAudioError {
             },
             Self::NumpyMissing
             | Self::Python { .. }
-            | Self::Staging { .. }
+            | Self::Staging(..)
+            | Self::StageWrite { .. }
+            | Self::StagedPath { .. }
             | Self::Duration
-            | Self::Work { .. } => RivaAudioErrorResponse {
+            | Self::Work(..) => RivaAudioErrorResponse {
                 status_code: 500,
                 error_type: INTERNAL_SERVER_ERROR,
                 param: None,
@@ -77,7 +94,8 @@ pub(super) fn call_failure(
     let failure = PythonError::from_pyerr(py, error);
     RivaAudioError::Python {
         operation,
-        type_name: failure.type_name,
-        message: failure.message,
+        type_name: failure.type_name.clone(),
+        message: failure.message.clone(),
+        source: failure,
     }
 }

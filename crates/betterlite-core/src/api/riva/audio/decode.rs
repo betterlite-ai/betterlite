@@ -86,7 +86,6 @@ fn soundfile_samples(
     soundfile: &Bound<'_, PyModule>,
     file_bytes: &[u8],
 ) -> Result<DecodedAudio, SoundfileError> {
-    // sf.info closes the stream it was given, so the read opens its own
     let buffer = bytes_io(py, file_bytes).map_err(SoundfileError::Python)?;
     let keywords = PyDict::new(py);
     keywords
@@ -162,17 +161,11 @@ fn decode_with_audioread(
 }
 
 fn staged_file(file_bytes: &[u8]) -> Result<(OwnedTempDir, String), RivaAudioError> {
-    let fail = |error: String| RivaAudioError::Staging { message: error };
-    let folder = OwnedTempDir::new().map_err(|error| fail(error.to_string()))?;
-    let path = folder
-        .file("input.audio")
-        .map_err(|error| fail(error.to_string()))?;
-    fs::write(&path, file_bytes).map_err(|error| fail(error.to_string()))?;
-    let text = path.to_str().ok_or_else(|| RivaAudioError::Staging {
-        message: format!(
-            "the staged audio path {} is not valid UTF-8",
-            path.display()
-        ),
+    let folder = OwnedTempDir::new()?;
+    let path = folder.file("input.audio")?;
+    fs::write(&path, file_bytes).map_err(|source| RivaAudioError::StageWrite { source })?;
+    let text = path.to_str().ok_or_else(|| RivaAudioError::StagedPath {
+        path: path.display().to_string(),
     })?;
     Ok((folder, text.to_owned()))
 }

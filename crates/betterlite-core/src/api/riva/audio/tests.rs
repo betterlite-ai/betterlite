@@ -656,7 +656,7 @@ fn computes_scipy_factors_from_the_greatest_common_divisor() {
     });
     let _soxr = Hidden::new(&host, "soxr");
     let audio = decode(&host, b"fake audio").unwrap();
-    assert_eq!(pcm_values(&audio), vec![3276, 29490]);
+    assert_eq!(pcm_values(&audio), vec![3276, 16383, 29490]);
     assert_eq!(probe_events(&host), vec!["scipy.resample_poly:160:441"]);
 }
 
@@ -723,6 +723,27 @@ fn keeps_negative_full_scale_at_minus_32767() {
     let _scipy = Hidden::new(&host, "scipy");
     let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![-0x7FFF, -10922, 10922, 0x7FFF]);
+}
+
+#[test]
+fn clips_samples_outside_full_scale() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = host_with_numpy() else {
+        return;
+    };
+    reset_fakes(&host);
+    host.attach(|py| {
+        install(py, "riva_audio_probe", PROBE);
+        install(
+            py,
+            "soundfile",
+            &soundfile_source("[2.0, -2.0]", 2, 1, 16_000),
+        );
+        install(py, "soxr", &soxr_source(true));
+    });
+    let audio = decode(&host, b"fake audio").unwrap();
+    assert_eq!(pcm_values(&audio), vec![0x7FFF, -0x7FFF]);
+    assert!(probe_events(&host).is_empty());
 }
 
 #[test]
