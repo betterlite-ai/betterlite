@@ -1,6 +1,7 @@
 use betterlite_bedrock::request_policy::Params;
+use betterlite_bedrock::s3_listing::S3ListingError;
 use betterlite_bedrock::s3_listing::requests::{
-    S3FileMethod, S3SignedRequest, list_files_next_request, list_files_request,
+    S3FileMethod, S3FilesRequest, S3SignedRequest, list_files_next_request, list_files_request,
     object_file_request, retrieve_file,
 };
 use betterlite_bedrock::s3_listing::responses::{
@@ -8,7 +9,7 @@ use betterlite_bedrock::s3_listing::responses::{
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::input::{Call, Input, Operation};
 use super::support::{
@@ -53,7 +54,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
             signed_requests(&input.contents, RequestKind::File(S3FileMethod::Content))
         }
         Operation::DeleteResponse => delete_responses(input),
-        Operation::Retrieve => retrieves(input),
+        Operation::Retrieve => Ok(retrieves(input)),
     }
 }
 
@@ -91,6 +92,37 @@ fn success_entry(signed: &S3SignedRequest, litellm_params: &Params, nested: bool
     }))
 }
 
+fn request_outcome(
+    executor: &Runtime,
+    kind: RequestKind,
+    request: S3FilesRequest<'_>,
+    call: &Call,
+) -> Result<Option<S3SignedRequest>, S3ListingError> {
+    match kind {
+        RequestKind::List => executor
+            .block_on(list_files_request(
+                request,
+                call.purpose.as_deref(),
+                resolve_credentials,
+            ))
+            .map(Some),
+        RequestKind::Next => executor.block_on(list_files_next_request(
+            request,
+            call.status,
+            call.body.as_bytes(),
+            resolve_credentials,
+        )),
+        RequestKind::File(method) => executor
+            .block_on(object_file_request(
+                request,
+                method,
+                call.file_id.as_deref(),
+                resolve_credentials,
+            ))
+            .map(Some),
+    }
+}
+
 fn signed_requests(calls: &[Call], kind: RequestKind) -> HelperResult {
     let executor = Builder::new_current_thread().build().or_value_error()?;
     let now = signing_now()?;
@@ -100,30 +132,7 @@ fn signed_requests(calls: &[Call], kind: RequestKind) -> HelperResult {
         let mut litellm = to_params(&call.litellm_params);
         let access = access_params(call.trusted.as_deref());
         let request = request_of(call, &mut litellm, &optional, &access, now);
-        let outcome = match kind {
-            RequestKind::List => executor
-                .block_on(list_files_request(
-                    request,
-                    call.purpose.as_deref(),
-                    resolve_credentials,
-                ))
-                .map(Some),
-            RequestKind::Next => executor.block_on(list_files_next_request(
-                request,
-                call.status,
-                call.body.as_bytes(),
-                resolve_credentials,
-            )),
-            RequestKind::File(method) => executor
-                .block_on(object_file_request(
-                    request,
-                    method,
-                    call.file_id.as_deref(),
-                    resolve_credentials,
-                ))
-                .map(Some),
-        };
-        let entry = match outcome {
+        let entry = match request_outcome(&executor, kind, request, call) {
             Ok(Some(signed)) => {
                 success_entry(&signed, &litellm, matches!(kind, RequestKind::Next))?
             }
@@ -192,12 +201,12 @@ fn response_value(call: &Call, kind: ResponseKind) -> HelperResult {
     }
 }
 
-fn retrieves(input: &Input) -> HelperResult {
+fn retrieves(input: &Input) -> Value {
     let mut results = Vec::new();
     for _call in &input.retrieves {
         let status = retrieve_file().err().and_then(|error| error.status_code());
         results.push(json!({"failed": true, "status": status}));
         results.push(json!({"failed": true, "status": status}));
     }
-    Ok(json!({"results": results}))
+    json!({"results": results})
 }

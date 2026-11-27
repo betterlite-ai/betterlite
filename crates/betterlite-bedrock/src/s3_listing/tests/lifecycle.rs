@@ -443,7 +443,7 @@ fn invalid_regions_are_reported() {
     assert!(
         matches!(
             &numeric_error,
-            S3ListingError::Field { field, .. } if field.as_str() == "aws_region_name"
+            S3ListingError::Field { field, .. } if *field == "aws_region_name"
         ),
         "expected a Field error on aws_region_name, got {numeric_error:?}"
     );
