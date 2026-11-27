@@ -3,6 +3,7 @@ use betterlite_auth::jwt_claims::settings::JwtAuthSettings;
 use betterlite_config::sections::sso_callback_input;
 
 // LiteLLM_JWTAuth sets only team_ids_jwt_field here, so every other auth field keeps its declared default
+#[must_use]
 pub fn sso_jwt_handler(settings: &sso_callback_input::Settings) -> Option<JwtHandler> {
     let projection = settings.group_projection.as_ref()?;
     let mut handler = JwtHandler::default();
