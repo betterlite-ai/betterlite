@@ -146,7 +146,12 @@ fn decode_identity(
         let active = match fields.get("active") {
             None | Some(JsonValue::Null) => true,
             Some(JsonValue::Bool(flag)) => *flag,
-            Some(_) => {
+            Some(
+                JsonValue::Number(_)
+                | JsonValue::Text(_)
+                | JsonValue::Array(_)
+                | JsonValue::Object(_),
+            ) => {
                 return Err(ValidationError::from(ExtractError::NotABool {
                     field: "active".to_owned(),
                 }));
