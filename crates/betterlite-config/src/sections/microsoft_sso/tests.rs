@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::{
-    MICROSOFT_AUTHORIZATION_ENDPOINT, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT,
-    MICROSOFT_TOKEN_ENDPOINT, MICROSOFT_USERINFO_ENDPOINT, Settings,
+    AUTHORIZATION_ENDPOINT_ENV, CLIENT_SECRET_ENV, Settings, TENANT_ENV, TOKEN_ENDPOINT_ENV,
+    USERINFO_ENDPOINT_ENV,
 };
 use crate::loader::ConfigLoader;
 use crate::types::Config;
@@ -36,23 +36,23 @@ fn loads_microsoft_sso_settings_with_every_variable_absent() {
 
 #[test]
 fn loads_microsoft_sso_settings_with_every_variable_set() {
-    assert_eq!(MICROSOFT_CLIENT_SECRET, "MICROSOFT_CLIENT_SECRET");
-    assert_eq!(MICROSOFT_TENANT, "MICROSOFT_TENANT");
+    assert_eq!(CLIENT_SECRET_ENV, "MICROSOFT_CLIENT_SECRET");
+    assert_eq!(TENANT_ENV, "MICROSOFT_TENANT");
     assert_eq!(
-        MICROSOFT_AUTHORIZATION_ENDPOINT,
+        AUTHORIZATION_ENDPOINT_ENV,
         "MICROSOFT_AUTHORIZATION_ENDPOINT"
     );
-    assert_eq!(MICROSOFT_TOKEN_ENDPOINT, "MICROSOFT_TOKEN_ENDPOINT");
-    assert_eq!(MICROSOFT_USERINFO_ENDPOINT, "MICROSOFT_USERINFO_ENDPOINT");
+    assert_eq!(TOKEN_ENDPOINT_ENV, "MICROSOFT_TOKEN_ENDPOINT");
+    assert_eq!(USERINFO_ENDPOINT_ENV, "MICROSOFT_USERINFO_ENDPOINT");
     let settings = load(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_TENANT, "contoso.example.test"),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (TENANT_ENV, "contoso.example.test"),
         (
-            MICROSOFT_AUTHORIZATION_ENDPOINT,
+            AUTHORIZATION_ENDPOINT_ENV,
             "https://login.example.test/authorize",
         ),
-        (MICROSOFT_TOKEN_ENDPOINT, "https://login.example.test/token"),
-        (MICROSOFT_USERINFO_ENDPOINT, "https://graph.example.test/me"),
+        (TOKEN_ENDPOINT_ENV, "https://login.example.test/token"),
+        (USERINFO_ENDPOINT_ENV, "https://graph.example.test/me"),
     ]);
     assert_eq!(
         revealed(settings.client_secret.as_ref()),
@@ -77,11 +77,11 @@ fn loads_microsoft_sso_settings_with_every_variable_set() {
 #[test]
 fn loads_microsoft_sso_settings_with_every_variable_empty() {
     let settings = load(&[
-        (MICROSOFT_CLIENT_SECRET, ""),
-        (MICROSOFT_TENANT, ""),
-        (MICROSOFT_AUTHORIZATION_ENDPOINT, ""),
-        (MICROSOFT_TOKEN_ENDPOINT, ""),
-        (MICROSOFT_USERINFO_ENDPOINT, ""),
+        (CLIENT_SECRET_ENV, ""),
+        (TENANT_ENV, ""),
+        (AUTHORIZATION_ENDPOINT_ENV, ""),
+        (TOKEN_ENDPOINT_ENV, ""),
+        (USERINFO_ENDPOINT_ENV, ""),
     ]);
     assert_eq!(revealed(settings.client_secret.as_ref()), Some(""));
     assert_eq!(settings.tenant.as_deref(), Some(""));

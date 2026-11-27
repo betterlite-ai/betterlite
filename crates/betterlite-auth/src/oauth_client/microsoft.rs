@@ -1,6 +1,6 @@
 mod tests;
 
-use betterlite_config::sections::microsoft_sso::{MICROSOFT_CLIENT_SECRET, Settings};
+use betterlite_config::sections::microsoft_sso::{CLIENT_SECRET_ENV, Settings};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use http::HeaderMap;
 use thiserror::Error;
@@ -31,7 +31,7 @@ impl MicrosoftClientError {
             Self::MissingClientSecret => OAuthErrorResponse {
                 status: 500,
                 error_type: ProxyErrorTypes::AuthError,
-                param: Some(MICROSOFT_CLIENT_SECRET),
+                param: Some(CLIENT_SECRET_ENV),
                 code: "500",
             },
         }

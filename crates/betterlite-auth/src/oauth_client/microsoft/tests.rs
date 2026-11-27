@@ -5,8 +5,8 @@ use std::io::{self, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::microsoft_sso::{
-    MICROSOFT_AUTHORIZATION_ENDPOINT, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT,
-    MICROSOFT_TOKEN_ENDPOINT, MICROSOFT_USERINFO_ENDPOINT, Settings,
+    AUTHORIZATION_ENDPOINT_ENV, CLIENT_SECRET_ENV, Settings, TENANT_ENV, TOKEN_ENDPOINT_ENV,
+    USERINFO_ENDPOINT_ENV,
 };
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use secrecy::ExposeSecret;
@@ -37,7 +37,7 @@ fn configured_client(pairs: &[(&str, &str)]) -> MicrosoftSsoClient {
 
 #[test]
 fn an_absent_tenant_uses_common() {
-    let client = configured_client(&[(MICROSOFT_CLIENT_SECRET, "microsoft-secret")]);
+    let client = configured_client(&[(CLIENT_SECRET_ENV, "microsoft-secret")]);
     assert_eq!(client.tenant, "common");
     assert_eq!(
         client.discovery.authorization_endpoint,
@@ -49,10 +49,7 @@ fn an_absent_tenant_uses_common() {
 
 #[test]
 fn an_empty_tenant_uses_common() {
-    let client = configured_client(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_TENANT, ""),
-    ]);
+    let client = configured_client(&[(CLIENT_SECRET_ENV, "microsoft-secret"), (TENANT_ENV, "")]);
     assert_eq!(client.tenant, DEFAULT_TENANT);
     assert_eq!(
         client.discovery.authorization_endpoint,
@@ -64,8 +61,8 @@ fn an_empty_tenant_uses_common() {
 #[test]
 fn a_named_tenant_appears_in_both_login_urls() {
     let client = configured_client(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_TENANT, "contoso.example.test"),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (TENANT_ENV, "contoso.example.test"),
     ]);
     assert_eq!(client.tenant, "contoso.example.test");
     assert_eq!(
@@ -95,9 +92,9 @@ fn the_tenant_is_inserted_as_plain_text() {
 #[test]
 fn an_authorization_override_replaces_only_the_authorization_endpoint() {
     let client = configured_client(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
         (
-            MICROSOFT_AUTHORIZATION_ENDPOINT,
+            AUTHORIZATION_ENDPOINT_ENV,
             "https://login.example.test/authorize",
         ),
     ]);
@@ -112,8 +109,8 @@ fn an_authorization_override_replaces_only_the_authorization_endpoint() {
 #[test]
 fn a_token_override_replaces_only_the_token_endpoint() {
     let client = configured_client(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_TOKEN_ENDPOINT, "https://login.example.test/token"),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (TOKEN_ENDPOINT_ENV, "https://login.example.test/token"),
     ]);
     assert_eq!(
         client.discovery.token_endpoint,
@@ -129,8 +126,8 @@ fn a_token_override_replaces_only_the_token_endpoint() {
 #[test]
 fn a_userinfo_override_replaces_only_the_userinfo_endpoint() {
     let client = configured_client(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_USERINFO_ENDPOINT, "https://graph.example.test/me"),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (USERINFO_ENDPOINT_ENV, "https://graph.example.test/me"),
     ]);
     assert_eq!(
         client.discovery.userinfo_endpoint,
@@ -146,10 +143,10 @@ fn a_userinfo_override_replaces_only_the_userinfo_endpoint() {
 #[test]
 fn empty_overrides_fall_back_to_the_defaults() {
     let client = configured_client(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_AUTHORIZATION_ENDPOINT, ""),
-        (MICROSOFT_TOKEN_ENDPOINT, ""),
-        (MICROSOFT_USERINFO_ENDPOINT, ""),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (AUTHORIZATION_ENDPOINT_ENV, ""),
+        (TOKEN_ENDPOINT_ENV, ""),
+        (USERINFO_ENDPOINT_ENV, ""),
     ]);
     assert_eq!(
         client.discovery,
@@ -159,7 +156,7 @@ fn empty_overrides_fall_back_to_the_defaults() {
 
 #[test]
 fn the_client_carries_the_scopes_redirect_and_insecure_flag() {
-    let client = configured_client(&[(MICROSOFT_CLIENT_SECRET, "microsoft-secret")]);
+    let client = configured_client(&[(CLIENT_SECRET_ENV, "microsoft-secret")]);
     assert_eq!(client.oauth.client_id, CLIENT_ID);
     assert_eq!(client.oauth.redirect_uri.as_deref(), Some(REDIRECT_URL));
     assert_eq!(client.oauth.scopes, MICROSOFT_SCOPES);
@@ -169,7 +166,7 @@ fn the_client_carries_the_scopes_redirect_and_insecure_flag() {
 
 #[test]
 fn an_empty_secret_is_accepted() {
-    let client = configured_client(&[(MICROSOFT_CLIENT_SECRET, "")]);
+    let client = configured_client(&[(CLIENT_SECRET_ENV, "")]);
     assert_eq!(client.oauth.client_secret.expose_secret(), "");
 }
 
@@ -188,7 +185,7 @@ fn a_missing_secret_is_a_500_auth_error_naming_the_variable() {
 
 #[test]
 fn the_login_url_comes_from_the_client_and_its_discovery() {
-    let client = configured_client(&[(MICROSOFT_CLIENT_SECRET, "microsoft-secret")]);
+    let client = configured_client(&[(CLIENT_SECRET_ENV, "microsoft-secret")]);
     let request = AuthorizationRequest {
         endpoint: client.discovery.authorization_endpoint.clone(),
         state: None,
@@ -205,8 +202,8 @@ fn the_login_url_comes_from_the_client_and_its_discovery() {
 #[test]
 fn a_non_empty_override_logs_the_effective_endpoints_at_debug() {
     let settings = settings(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_TOKEN_ENDPOINT, "https://login.example.test/token"),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (TOKEN_ENDPOINT_ENV, "https://login.example.test/token"),
     ]);
     let (client, logs) =
         capture(|| microsoft_sso_client(&settings, CLIENT_ID, REDIRECT_URL).unwrap());
@@ -222,8 +219,8 @@ fn a_non_empty_override_logs_the_effective_endpoints_at_debug() {
 #[test]
 fn overrides_that_are_absent_or_empty_log_nothing() {
     let settings = settings(&[
-        (MICROSOFT_CLIENT_SECRET, "microsoft-secret"),
-        (MICROSOFT_TOKEN_ENDPOINT, ""),
+        (CLIENT_SECRET_ENV, "microsoft-secret"),
+        (TOKEN_ENDPOINT_ENV, ""),
     ]);
     let (_, logs) = capture(|| microsoft_sso_client(&settings, CLIENT_ID, REDIRECT_URL).unwrap());
     assert!(!logs.contains("Using custom Microsoft SSO endpoints"));

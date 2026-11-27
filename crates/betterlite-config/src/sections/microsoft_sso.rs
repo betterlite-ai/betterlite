@@ -6,12 +6,11 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-pub const MICROSOFT_CLIENT_SECRET: &str = "MICROSOFT_CLIENT_SECRET";
-pub const MICROSOFT_TENANT: &str = "MICROSOFT_TENANT";
-// ast-grep-ignore: no-long-names - the constant carries LiteLLM's environment variable name
-pub const MICROSOFT_AUTHORIZATION_ENDPOINT: &str = "MICROSOFT_AUTHORIZATION_ENDPOINT";
-pub const MICROSOFT_TOKEN_ENDPOINT: &str = "MICROSOFT_TOKEN_ENDPOINT";
-pub const MICROSOFT_USERINFO_ENDPOINT: &str = "MICROSOFT_USERINFO_ENDPOINT";
+pub const CLIENT_SECRET_ENV: &str = "MICROSOFT_CLIENT_SECRET";
+pub const TENANT_ENV: &str = "MICROSOFT_TENANT";
+pub const AUTHORIZATION_ENDPOINT_ENV: &str = "MICROSOFT_AUTHORIZATION_ENDPOINT";
+pub const TOKEN_ENDPOINT_ENV: &str = "MICROSOFT_TOKEN_ENDPOINT";
+pub const USERINFO_ENDPOINT_ENV: &str = "MICROSOFT_USERINFO_ENDPOINT";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -36,13 +35,11 @@ impl Settings {
         L: EnvironmentLookup,
     {
         Self {
-            client_secret: lookup
-                .lookup(MICROSOFT_CLIENT_SECRET)
-                .map(SecretString::from),
-            tenant: lookup.lookup(MICROSOFT_TENANT),
-            authorization_endpoint: lookup.lookup(MICROSOFT_AUTHORIZATION_ENDPOINT),
-            token_endpoint: lookup.lookup(MICROSOFT_TOKEN_ENDPOINT),
-            userinfo_endpoint: lookup.lookup(MICROSOFT_USERINFO_ENDPOINT),
+            client_secret: lookup.lookup(CLIENT_SECRET_ENV).map(SecretString::from),
+            tenant: lookup.lookup(TENANT_ENV),
+            authorization_endpoint: lookup.lookup(AUTHORIZATION_ENDPOINT_ENV),
+            token_endpoint: lookup.lookup(TOKEN_ENDPOINT_ENV),
+            userinfo_endpoint: lookup.lookup(USERINFO_ENDPOINT_ENV),
         }
     }
 }
