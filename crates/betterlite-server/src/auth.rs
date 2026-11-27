@@ -59,15 +59,14 @@ use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelRe
 use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, StageFailure, StageInput, resource_grant_stage_input,
-};
+use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -77,6 +76,18 @@ use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::SecretString;
+
+// The rewrite step authenticates an LLM API request before buffering it, and the key lookup stage forwards this identity instead of reading the key again.
+#[derive(Clone)]
+pub(crate) struct PreAuthenticated(pub(crate) AuthContext);
+
+fn key_lookup_stage_input(request: &Request<Body>) -> StageInput {
+    request.extensions().get::<PreAuthenticated>().map_or_else(
+        || auth_key_lookup::lookup_stage_input(request),
+        |context| StageInput::Authenticated(Box::new(context.0.clone())),
+    )
+}
+
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -114,7 +125,7 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
+        AuthBackend::AuthKeyLookup => Ok(key_lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
@@ -123,8 +134,10 @@ fn stage_input(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
-        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
-            model_pattern_input(backend, request, authenticated, resolver)
+        AuthBackend::AuthRequestModels
+        | AuthBackend::AuthModelPatterns
+        | AuthBackend::AuthContextSources => {
+            resolver_stage_input(backend, request, authenticated, resolver, body)
         }
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
@@ -150,18 +163,20 @@ fn stage_input(
         AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
             model_grant_intersection::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthContextSources => {
-            auth_context_sources::stage_input(request, authenticated, resolver, body)
-        }
     }
 }
 
-fn model_pattern_input(
+// The stages that read the request model against the resolver: the two model stages and the context sources stage.
+fn resolver_stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     resolver: &Arc<RequestModelResolver>,
+    body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
+    if backend == AuthBackend::AuthContextSources {
+        return auth_context_sources::stage_input(request, authenticated, resolver, body);
+    }
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
@@ -186,6 +201,21 @@ fn model_pattern_input(
             max_recurse_depth: depth,
         },
     )))
+}
+
+// the resource grant stage reads the request's rule and database switch, so its input is built here
+pub(crate) fn resource_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, AuthenticationFailure> {
+    let stage = ResourceGrantStageInput {
+        context: authenticated
+            .cloned()
+            .ok_or(AuthenticationFailure::Missing)?,
+        rule: auth_resource_grants::rule_for_request(request),
+        database: auth_resource_grants::database_for_request(request),
+    };
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {

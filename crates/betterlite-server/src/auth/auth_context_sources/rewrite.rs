@@ -20,10 +20,11 @@ use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 
 use crate::api::request_body::read_request_body;
-use crate::auth::auth_identity::{AuthBackend, StageFailure, StageInput, dispatch};
+use crate::auth::auth_identity::{AuthBackend, StageFailure, dispatch};
+use crate::auth::auth_key_lookup;
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
-use crate::auth::{extract_key, headers_json, query_json};
+use crate::auth::{PreAuthenticated, headers_json, prefetch_stage, query_json};
 use crate::state::ServerState;
 
 use super::selection::{Selection, select_model};
@@ -60,18 +61,19 @@ impl TeamRouterSettings for RewriteRule {
 }
 
 pub(crate) async fn prepare(
-    request: Request<Body>,
+    mut request: Request<Body>,
     master_key: &SecretString,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Result<Request<Body>, Box<Response>> {
     if !is_llm_api_route(&RouteValue::Text(request.uri().path())) {
         return Ok(request);
     }
-    // Authenticate before buffering; the existing stage loop still owns all subsequent authorization.
-    let credential = StageInput::MasterKey(extract_key(request.headers()));
-    if let Err(failure) = dispatch(AuthBackend::MasterKey, &credential, master_key) {
-        return Err(Box::new(failure_response(&failure)));
-    }
+    // Authenticate before buffering with the same lookup the stage loop runs first, and let that stage forward this identity.
+    let context = prefetch_stage(auth_key_lookup::lookup_stage_input(&request))
+        .await
+        .and_then(|input| dispatch(AuthBackend::AuthKeyLookup, &input, master_key))
+        .map_err(|failure| Box::new(failure_response(&failure)))?;
+    request.extensions_mut().insert(PreAuthenticated(context));
     let Some(state) = request
         .extensions()
         .get::<Arc<ServerState>>()

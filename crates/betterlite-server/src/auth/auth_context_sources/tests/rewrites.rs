@@ -1,16 +1,22 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, to_bytes};
+use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_context_sources::claude::RouterNames as _;
 use betterlite_auth::auth_context_sources::router_settings::TeamRouterSettings;
+use betterlite_auth::auth_key_lookup::error::KeyLookupError;
+use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_auth::auth_model_patterns::grant::ModelGrantPattern;
 use betterlite_auth::auth_team_lookup::error::TeamLookupError;
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
 use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::proxy_error_types::ModelAccessObject;
@@ -138,10 +144,8 @@ async fn rewrites_before_authorization(
     #[case] allowed: &str,
     #[case] status: StatusCode,
 ) {
-    let config = ConfigLoader { lookup: BTreeMap::<String, String>::new() }
-        .load("general_settings:\n  master_key: secret-master-key\nmodel_list:\n  - model_name: group-one\n    litellm_params:\n      model: openai/group-one\n").unwrap();
     let app = routes::router(
-        state_for(&config),
+        state_for(&model_config()),
         Arc::new(AtomicBool::new(false)),
         Router::new().route("/v1/chat/completions", post(echo)),
         Router::new(),
@@ -155,9 +159,84 @@ async fn rewrites_before_authorization(
             r#"{{"model":"{requested}","user":"kept"}}"#
         )))
         .unwrap();
-    let rule = alias_rule();
-    request.extensions_mut().insert(Arc::new(rule));
-    request.extensions_mut().insert(Arc::new(ModelPatternRule {
+    request.extensions_mut().insert(Arc::new(alias_rule()));
+    request
+        .extensions_mut()
+        .insert(Arc::new(pattern_rule(allowed)));
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), status);
+    if status == StatusCode::OK {
+        assert_eq!(
+            to_bytes(response.into_body(), 4096).await.unwrap().as_ref(),
+            br#"{"model":"group-one","user":"kept"}"#
+        );
+    }
+}
+
+const VIRTUAL_KEY: &str = "sk-virtual-key";
+
+struct AcceptingKeys {
+    calls: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl KeyAuthenticator for AcceptingKeys {
+    async fn authenticate(&self, presented: &str) -> Result<KeyLookupOutcome, KeyLookupError> {
+        assert_eq!(presented, VIRTUAL_KEY);
+        self.calls.fetch_add(1, Ordering::AcqRel);
+        let fields = serde_json::from_str(
+            r#"{"key_name":"key-name","user_id":"live-user","team_id":"live-team"}"#,
+        )
+        .unwrap();
+        let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
+        Ok(KeyLookupOutcome {
+            auth,
+            hashed_token: "hashed-virtual-key".to_owned(),
+        })
+    }
+}
+
+// The key lookup runs in prepare, before the alias rewrite, and the stage loop forwards its identity instead of reading the key again.
+#[tokio::test]
+async fn virtual_key_on_llm_route_authenticates_before_rewrite() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let authenticator: Arc<dyn KeyAuthenticator> = Arc::new(AcceptingKeys {
+        calls: Arc::clone(&calls),
+    });
+    let app = routes::router(
+        state_for(&model_config()),
+        Arc::new(AtomicBool::new(false)),
+        Router::new().route("/v1/chat/completions", post(echo)),
+        Router::new(),
+    )
+    .layer(Extension(authenticator));
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(header::AUTHORIZATION, format!("Bearer {VIRTUAL_KEY}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"model":"alias-one","user":"kept"}"#))
+        .unwrap();
+    request.extensions_mut().insert(Arc::new(alias_rule()));
+    request
+        .extensions_mut()
+        .insert(Arc::new(pattern_rule("group-one")));
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+    assert_eq!(
+        to_bytes(response.into_body(), 4096).await.unwrap().as_ref(),
+        br#"{"model":"group-one","user":"kept"}"#
+    );
+}
+
+fn model_config() -> Config {
+    ConfigLoader { lookup: BTreeMap::<String, String>::new() }
+        .load("general_settings:\n  master_key: secret-master-key\nmodel_list:\n  - model_name: group-one\n    litellm_params:\n      model: openai/group-one\n").unwrap()
+}
+
+fn pattern_rule(allowed: &str) -> ModelPatternRule {
+    ModelPatternRule {
         object: ModelAccessObject::Key,
         grant: ModelGrantPattern {
             models: vec![allowed.to_owned()],
@@ -168,14 +247,6 @@ async fn rewrites_before_authorization(
         view: None,
         provider: None,
         global_model_aliases: BTreeMap::new(),
-    }));
-    let response = app.oneshot(request).await.unwrap();
-    assert_eq!(response.status(), status);
-    if status == StatusCode::OK {
-        assert_eq!(
-            to_bytes(response.into_body(), 4096).await.unwrap().as_ref(),
-            br#"{"model":"group-one","user":"kept"}"#
-        );
     }
 }
 

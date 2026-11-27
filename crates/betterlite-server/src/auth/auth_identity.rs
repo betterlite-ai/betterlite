@@ -1,5 +1,3 @@
-use axum::body::Body;
-use axum::http::Request;
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -100,21 +98,6 @@ pub struct AuthContext {
     pub principal: Principal,
 }
 
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-pub(crate) fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
-
 #[derive(Clone, Debug)]
 pub struct RequestScope {
     pub route: String,
@@ -192,14 +175,18 @@ impl StageInput {
     }
 }
 
+// the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
+fn backend_matches(backend: AuthBackend, input: &StageInput) -> bool {
+    backend == input.backend()
+        || (backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_)))
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
+    if !backend_matches(backend, input) {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
