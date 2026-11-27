@@ -1,0 +1,12 @@
+kind: helper
+name: skill-search-top-k-bounds
+call:
+  b4686:
+    handler: skill_search
+    query: alpha
+    top_k: 500
+    skills:
+      - {id: s1, name: Skill One}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

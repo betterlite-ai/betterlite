@@ -1,0 +1,12 @@
+kind: helper
+name: proxy-tool-unknown-id
+call:
+  b4686:
+    handler: mcp_proxy_tool
+    name: get_tool_schema
+    arguments: {tool_id: "0123456789abcdef0123456789abcdef"}
+    tools:
+      - {name: alpha-tool, server_id: srv, description: finds alpha}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

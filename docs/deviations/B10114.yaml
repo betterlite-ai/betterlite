@@ -1,0 +1,6 @@
+task: B10114
+deviations:
+  - what: A team row whose stored alias column is a map with a value that is not text, or is neither text nor a map, makes fetch_cli_sso_team_details give None with the lookup's error log, where LiteLLM lets pydantic's ValidationError escape the function.
+    why: Both callers already refuse on None. B1614's CLI callback answers the same 500 its error mapping gives an escaped exception, and B4658's consent and mint answer unavailable (503 temporarily_unavailable) instead of an uncaught 500. LiteLLM's writers store the column as json.dumps text of a text-to-text map, so only a row written outside LiteLLM gets here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2259-L2274
+kept_bugs: []

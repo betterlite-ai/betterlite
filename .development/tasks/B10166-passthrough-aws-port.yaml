@@ -1,0 +1,150 @@
+id: B10166
+title: The SDK pass-through call signs Bedrock and reads the AWS and Mantle environment through a port
+description: >-
+  B8690's `allm_passthrough_route` in crates/betterlite-core/src/api/passthrough_call carries its own Bedrock and Bedrock Mantle code, and it falls short of LiteLLM three ways. Plain Bedrock never signs: `auth::sign_request` (auth.rs L162-L170) answers every Bedrock request with botocore's "Unable to locate credentials" text, so even an AWS_BEARER_TOKEN_BEDROCK setup fails. Mantle takes its Bearer token from `litellm_params.api_key` alone (auth.rs L171-L193) and its endpoint from the call's own arguments (mantle.rs L12-L35), so BEDROCK_MANTLE_API_BASE, BEDROCK_MANTLE_REGION, AWS_REGION_NAME, AWS_REGION, BEDROCK_MANTLE_API_KEY and AWS_BEARER_TOKEN_BEDROCK are never read. The Bedrock URL code in urls.rs L97-L224 reads no environment either, so AWS_REGION_NAME, AWS_REGION, the AWS profile region and AWS_BEDROCK_RUNTIME_ENDPOINT never apply. All of this is already built in betterlite-bedrock: B658's `BedrockPassthroughPlan` (passthrough.rs, passthrough/url.rs), B625's Mantle pass-through overrides (mantle_settings/passthrough.rs), B2207's Mantle endpoint inputs (mantle_inputs/chat_endpoint.rs) and B595's signing (signing/). Core can't call them, since betterlite-bedrock depends on betterlite-core, so B8690 wrote copies: `split_region` in mantle.rs L38-L48 copies mantle_inputs/region.rs `split_region_prefix`, and the region, runtime endpoint and model id helpers in urls.rs copy aws_endpoints and passthrough/model_id.rs.
+
+
+  Structure. Core gets a port that betterlite-bedrock implements and the caller hands in as an argument, the way LiteLLM's `provider_config` keyword hands the call its config (main.py L475-L480) and the way core's Polly speech keeps B594's resolver behind `CredentialResolver` (crates/betterlite-core/src/api/polly/speech/credentials.rs L30-L33). The AWS code stays where it is, and core keeps only the trait. Moving the call up into betterlite-bedrock is not an option: betterlite-sdk sits below betterlite-bedrock, and B8691's router executor there must call it. Moving the signing and credential code down into core is not one either: it would pull aws-config, aws-sdk-sts and betterlite-secret-managers into core.
+
+
+  The port. A new file crates/betterlite-core/src/api/passthrough_call/aws.rs, declared with `pub mod aws;` in passthrough_call.rs, holds `pub enum AwsFlavor { Bedrock, Mantle }` and an `#[async_trait]` trait `AwsPassthrough: Send + Sync` with three methods, each returning the call's own `ConfigError` (config.rs L27-L36) so a failure keeps today's Fault mapping, where a ValueError is a synthesized 500. `mantle_endpoint(&self, request: &ResolutionRequest<'_>) -> Result<MantleEndpoint, ConfigError>` is get_llm_provider's bedrock_mantle branch (get_llm_provider_logic.py L633-L642) and answers betterlite-models' `MantleEndpoint` (provider_defaults_a/policies.rs L14-L18). `complete_url(&self, flavor: AwsFlavor, request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError>` is the config's get_complete_url. `async fn sign_request(&self, flavor: AwsFlavor, headers: Headers, context: &PassthroughSigning<'_>) -> Result<(Headers, Option<Vec<u8>>), ConfigError>` is its sign_request, async because SigV4 resolves credentials first.
+
+
+  The call. `allm_passthrough_route` takes the port as its fifth argument, `aws: &Arc<dyn AwsPassthrough>`, after B10164's environment map. `PassthroughCallConfig` (config.rs L84-L86) holds a clone next to B10164's environment Arc, so the request config in send.rs `run` (L79), the relay's config in `send` (L205) and `map_fault`'s config (passthrough_call.rs L206) share one port. Resolution has two steps. The call first resolves with `mantle: None` in its `ProviderPolicies` (today `mantle::policies(args)`, passthrough_call.rs L169). Only when that fails with `ResolutionError::DefaultsA` holding `ProviderDefaultsError::MissingMantleEndpoint` (betterlite-models provider_defaults_a/special.rs L254) does it ask the port and resolve again with `Some(endpoint)`. A call for any other provider never reads an AWS variable, as in LiteLLM, and the main resolve and map_fault's second resolve go through this same function. A failing `mantle_endpoint` returns a new `PassthroughCallError::MantleEndpoint(#[source] ConfigError)`. get_llm_provider wraps the invalid-region ValueError in BadRequestError (L552-L562), so the Python session answers the new variant as BadRequestError with status 400 (a new arm in `failure`, crates/betterlite-python/src/passthrough_calls/session.rs L91-L110), and the proxy dispatch answers 400 (a new arm in `call_status`, crates/betterlite-core/src/dispatch/llm_passthrough/rejection.rs L32-L44). The Bedrock and BedrockMantle arms of urls.rs `complete_url` (L42-L43) call the port, and `arn_encoded` (send.rs L237-L250, main.py L492-L495) still runs on the URL it answers. send.rs `signed_headers` (L162-L188) becomes async: the two AWS tags await the port, and every other tag keeps `config.sign_request`. is_streaming_request keeps its `endpoint.contains("stream")` arm (config.rs L106-L108), and the error class stays core's.
+
+
+  What core loses: mantle.rs and its `mod mantle;` line; urls.rs's MODEL_PATH_PATTERN, MANTLE_HOST_PATTERN, DEFAULT_BEDROCK_REGION and DEFAULT_MANTLE_REGION (L21-L24) and every function from `bedrock_url` through `text_param` (L97-L224); auth.rs's NO_CREDENTIALS and MANTLE_NO_CREDENTIALS (L45-L51) and the two AWS arms of `sign_request` (L168-L193). The two tags join the arm that returns the headers unchanged (L194-L199), with a one-line comment that send.rs signs them through the port; nothing else calls that method, the relay in passthrough_stream included. MANTLE_NO_CREDENTIALS copies mantle_settings/error.rs L9, the text of the Mantle chat mixin (bedrock_mantle/common_utils.py L78-L127); the Mantle pass-through signs through BedrockPassthroughConfig.sign_request and never raises it. VLLM_MISSING_BASE (urls.rs L19-L20) stays for B10168.
+
+
+  The Bedrock side. A new module crates/betterlite-bedrock/src/passthrough/sdk_call.rs and sdk_call/**, declared with `pub mod sdk_call;` in passthrough.rs, holds `BedrockSdkCall<Source>` with a `PassthroughEnvironment` (passthrough/url.rs L55-L61), B2207's `MantleGlobals` (mantle_inputs/records.rs L3-L11), the credential source and `now: fn() -> SystemTime`, the fn-pointer clock style B658's CollectorClock uses. `Source` is `rerank::plan::CredentialSource + Send + Sync` (rerank/plan.rs L59-L65, the one converse_call already reuses). `BedrockSdkCall::from_environment(environment: &BTreeMap<String, String>, credentials: Source, now: fn() -> SystemTime) -> Result<Self, betterlite_config::loader::ConfigError>` reads B591's `bedrock_aws_endpoints` section (AWS_REGION_NAME, AWS_REGION, the profile and AWS_DEFAULT_REGION session region, AWS_BEDROCK_RUNTIME_ENDPOINT) and the `bedrock_mantle_inputs` section (BEDROCK_MANTLE_API_BASE, BEDROCK_MANTLE_API_KEY, BEDROCK_MANTLE_REGION and the new AWS_BEARER_TOKEN_BEDROCK field) with `Raw::default().convert(environment)`. Its AwsPassthrough impl calls merged code only. mantle_endpoint strips a leading `bedrock_mantle/` from the model and calls `chat_endpoint_inputs` (mantle_inputs/chat_endpoint.rs L26-L41) with `aws_region_name: None`, because allm_passthrough_route calls get_llm_provider without litellm_params (main.py L294-L299), and with an empty model cost map; the base model is `split_region_prefix`'s second part, and a MantleInputError becomes a ConfigError::ValueError. complete_url for Bedrock is B658's `url::complete_url` steps: llm_region_name over the environment, runtime_endpoint, the model_id rewrite and format_url (bedrock/passthrough/transformation.py L171-L210). For Mantle it is the same steps with B625's `passthrough_region` for the region and `passthrough_runtime_endpoint` for the endpoint (mantle_settings/passthrough.rs L28-L51), the two methods BedrockMantlePassthroughConfig overrides (bedrock_mantle/passthrough/transformation.py L26-L47). Split `url::complete_url` (url.rs L20-L54) so the plan and the port run the same code with the region and the endpoint input passed in as values. sign_request picks the Bearer token first: `bedrock_bearer_token(None, aws_bearer_token)` for Bedrock (aws_settings.rs L126-L136; base_aws_llm.py L192-L194 with get_bedrock_bearer_token returning None, transformation.py L212-L213) and B625's `passthrough_bearer_token` for Mantle (mantle_settings/passthrough.rs L54-L68; bedrock_mantle/passthrough/transformation.py L49-L51). With no token, it gets credentials from the source the way B595's `signing::target::request_target` does (signing/target.rs L31-L65): `pop_aws_auth_params` and `auth_settings` over litellm_params, at the signing region. That region is B658's signing_region chain for Bedrock (passthrough.rs L100-L118) and passthrough_region for Mantle, since _sign_request asks the config's own _get_aws_region_name (base_aws_llm.py L1657-L1730). Then B658's signing runs over the credentials or the token. B658's `sign_request` body (passthrough.rs L131-L163) moves into one function that takes the identity and the region as values, and the plan's impl and the port both call it. A credential failure becomes a ConfigError::ValueError with its text, so it stays a synthesized 500. The same module holds `pub struct NoCredentialChain;`, whose CredentialSource answers `CredentialError::Source(SourceError::MissingProvider)`. betterlite builds no production AWS credential chain yet (`AwsCredentialResolver`, credentials.rs L19-L25, is built only in tests), and the callers pass this one until a task builds it.
+
+
+  Config. `bedrock_mantle_inputs::Settings` (crates/betterlite-config/src/sections/bedrock_mantle_inputs.rs L13-L18) gains `aws_bearer_token: Option<SecretString>` from AWS_BEARER_TOKEN_BEDROCK. It is the one MantleGlobals name no top-level section reads (bedrock_settings.rs L178 reads it per deployment only), and plain Bedrock's Bearer token reads the same field. The section comment at L6 changes to say four names.
+
+
+  Python. B7890's session builds `BedrockSdkCall::from_environment(&environment, NoCredentialChain, SystemTime::now)` once in `SessionCore::build` (session.rs L67-L75) from the map B10164 keeps, stores it as `Arc<dyn AwsPassthrough>` and passes it in `call` (L77-L88). A convert failure is a new `SessionError` variant (L46-L59) with the source.
+
+
+  Tests. In core, crates/betterlite-core/src/api/passthrough_call/tests/aws.rs, declared with `mod aws;` in passthrough_call/tests.rs, runs the call with a fake port that records each method's input and answers a mock upstream URL (betterlite_http_fixture's serve and reply) and fixed signed headers and body. The other call tests pass a fake from tests/support.rs that answers every method with an error. aws.rs checks that a `bedrock/` and a `bedrock_mantle/` model reach the port with their flavor and the request goes to the URL with the headers and body the port answered; that an application-inference-profile endpoint is still ARN-encoded; that a VLLM call never calls mantle_endpoint; that a Mantle model resolves with the port's api_base, key and base model, so the logging state's model is the base model; that a mantle_endpoint error is `PassthroughCallError::MantleEndpoint`; that a sign error is `Mapped` with status 500 and synthesized; and that the body the port signed is the body sent before the model swap (B8690's kept bug). These B8690 tests of deleted code go, and each case lands in aws.rs or in sdk_call's tests: call_mantle_signs_the_body_before_the_model_swap, call_bedrock_inference_profile_url_is_arn_encoded and error_bedrock_without_credentials_is_a_mapped_value_error in tests.rs, and auth_mantle_signs_the_data_and_sets_the_json_content_type, auth_mantle_without_a_key_is_refused, urls_bedrock_reads_the_region_and_model_fields, urls_bedrock_refuses_an_invalid_region, urls_bedrock_region_from_the_model_arn, urls_mantle_reads_the_region_from_its_host and the four mantle_policies_ tests in tests/units.rs. In betterlite-bedrock, passthrough/sdk_call/tests.rs (`passthrough::sdk_call::tests`) uses hand-built maps, a fake CredentialSource that records its settings and region and answers fixed keys, and a fixed clock. It checks that from_environment fills every field from its variable; that a Bedrock URL takes the region from litellm_params aws_region_name, then AWS_REGION_NAME, then AWS_REGION, then AWS_DEFAULT_REGION, that AWS_BEDROCK_RUNTIME_ENDPOINT beats the default host and an api_base beats both; that a Mantle URL takes the region from a BEDROCK_MANTLE_API_BASE host, then BEDROCK_MANTLE_REGION, and sends a Mantle host's request to bedrock-runtime; that AWS_BEARER_TOKEN_BEDROCK signs plain Bedrock with `Authorization: Bearer`; that Mantle takes the litellm_params api_key, then BEDROCK_MANTLE_API_KEY, then AWS_BEARER_TOKEN_BEDROCK; that with no token the Authorization header starts with `AWS4-HMAC-SHA256 Credential=<key id>/<date>/<region>/bedrock/aws4_request` and the source got the litellm_params aws_access_key_id at that region; that NoCredentialChain gives the ValueError; and that mantle_endpoint answers `https://bedrock-mantle.<region>.api.aws/v1` for a model region prefix or BEDROCK_MANTLE_REGION, keeps BEDROCK_MANTLE_API_BASE, takes the key chain above and refuses BEDROCK_MANTLE_REGION `Not_A_Region`. In betterlite-config, bedrock_mantle_inputs/tests.rs loads AWS_BEARER_TOKEN_BEDROCK into the new field and checks Debug never shows it. In betterlite-python, passthrough_calls/session/tests.rs gains `call_signs_bedrock_with_the_session_token`: a session built with `{"environment": {"AWS_BEARER_TOKEN_BEDROCK": "session-token", "AWS_BEDROCK_RUNTIME_ENDPOINT": <mock>}}` sends model `bedrock/anthropic.claude-3-haiku` with endpoint `model/anthropic.claude-3-haiku/invoke` to the mock as `POST /model/anthropic.claude-3-haiku/invoke` with `authorization: Bearer session-token`. It also gains `call_refuses_an_invalid_mantle_region`: BEDROCK_MANTLE_REGION `Not_A_Region` and model `bedrock_mantle/openai.gpt-oss-120b` give BadRequestError with status 400. The dispatch tests (dispatch/llm_passthrough/tests.rs or tests/) check that the new variant is a 400 with type invalid_request_error.
+
+
+  Deviations. docs/deviations/B8690.yaml loses the rows "Bedrock runtime requests are not SigV4-signed ..." and "Bedrock Mantle takes its bearer token only from litellm_params.api_key ...". The row "No environment variable is read ..." is rewritten to name only VLLM_API_BASE, and "The Bedrock, Bedrock Mantle and VLLM passthrough configs are rebuilt ..." to name only VLLM, since B10168 removes both. The Mantle /v1 row keeps its "what" with a new "why": the port gets an empty model cost map because the call resolves with an empty catalog. docs/deviations/B10166.yaml gets the row in this task's deviations.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/passthrough_call.rs
+    - crates/betterlite-core/src/api/passthrough_call/**
+    - crates/betterlite-core/src/dispatch/llm_passthrough/rejection.rs
+    - crates/betterlite-core/src/dispatch/llm_passthrough/tests.rs
+    - crates/betterlite-core/src/dispatch/llm_passthrough/tests/**
+    - crates/betterlite-bedrock/src/passthrough.rs
+    - crates/betterlite-bedrock/src/passthrough/url.rs
+    - crates/betterlite-bedrock/src/passthrough/sdk_call.rs
+    - crates/betterlite-bedrock/src/passthrough/sdk_call/**
+    - crates/betterlite-config/src/sections/bedrock_mantle_inputs.rs
+    - crates/betterlite-config/src/sections/bedrock_mantle_inputs/tests.rs
+    - crates/betterlite-python/src/passthrough_calls/session.rs
+    - crates/betterlite-python/src/passthrough_calls/session/tests.rs
+    - docs/deviations/B8690.yaml
+    - docs/deviations/B10166.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L267-L389
+    why: allm_passthrough_route; get_llm_provider runs without litellm_params at L294 and again in the except block at L361.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L392-L509
+    why: llm_passthrough_route's get_complete_url, the Bedrock ARN encoding at L492-L495 and the sign_request step; L475-L480 is the provider_config keyword the port stands in for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L633-L642
+    why: the bedrock_mantle branch that asks the Mantle chat config for the api_base and key and strips the region prefix from the model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L552-L562
+    why: get_llm_provider wraps every other exception, the invalid region ValueError included, in BadRequestError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L58-L84
+    why: _get_openai_compatible_provider_info, the region chain, BEDROCK_MANTLE_API_BASE and the Bearer token the Mantle endpoint gets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L37-L64
+    why: resolve_mantle_bearer_token, split_mantle_region_prefix and resolve_mantle_region with their environment names and the us-east-1 default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/passthrough/transformation.py#L19-L51
+    why: BedrockMantlePassthroughConfig overrides only the region, the runtime endpoint and the Bearer token of the Bedrock pass-through config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L127-L232
+    why: BedrockPassthroughConfig's error class, streaming test, get_complete_url with the model_id rewrite, get_bedrock_bearer_token and sign_request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L192-L194
+    why: bedrock_bearer_token falls back to AWS_BEARER_TOKEN_BEDROCK and treats an empty token as none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L732-L790
+    why: _get_aws_region_name, the explicit region, the model ARN, AWS_REGION_NAME, AWS_REGION, the boto3 session region and us-west-2.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1471-L1500
+    why: get_runtime_endpoint, api_base first, then aws_bedrock_runtime_endpoint, then AWS_BEDROCK_RUNTIME_ENDPOINT, then the default host.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1657-L1730
+    why: _sign_request, the Bearer shortcut, credential resolution at the config's region, SigV4 and the caller's Authorization header kept when it is not a SigV4 one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9344-L9397
+    why: ProviderConfigManager.get_provider_passthrough_config returns BedrockPassthroughConfig and BedrockMantlePassthroughConfig for the two tags.
+dod:
+  - text: >-
+      A plain Bedrock call signs with `Authorization: Bearer` when AWS_BEARER_TOKEN_BEDROCK is in the map, and with SigV4 from the source's credentials otherwise, at the region from litellm_params, AWS_REGION_NAME, AWS_REGION or the session region; its URL host comes from api_base, AWS_BEDROCK_RUNTIME_ENDPOINT or that region.
+    proof: [sdk-call-tests, python-session-tests]
+  - text: A Mantle call resolves its endpoint from BEDROCK_MANTLE_API_BASE, else a region from the model prefix, BEDROCK_MANTLE_REGION, AWS_REGION_NAME, AWS_REGION or us-east-1, and its key from api_key, BEDROCK_MANTLE_API_KEY or AWS_BEARER_TOKEN_BEDROCK; an invalid region is BadRequestError with status 400 in Python and a 400 in the proxy dispatch.
+    proof: [sdk-call-tests, aws-tests, python-session-tests, dispatch-tests]
+  - text: Core keeps the AwsPassthrough trait and no Bedrock or Mantle code; the call asks the port only for the two AWS tags, and asks for the Mantle endpoint only after a MissingMantleEndpoint resolve.
+    proof: [no-copies, aws-tests, passthrough-tests]
+  - text: B658's plan and the port run one URL path and one signing path, and B658's, B625's and B2207's tests still pass.
+    proof: [bedrock-tests]
+  - text: bedrock_mantle_inputs reads AWS_BEARER_TOKEN_BEDROCK into a secret field.
+    proof: [config-tests, mutants]
+  - text: B8690's SigV4 and Mantle Bearer rows are gone, its environment and rebuilt-config rows name only VLLM, and docs/deviations/B10166.yaml has the credential chain row.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: aws-tests
+      why: the call does not reach the port for Bedrock or Mantle, asks it for other providers, or maps its answers wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::aws::/)'
+    - id: passthrough-tests
+      why: the new argument or the deletions broke a request, stream, params, environment or error test of the call
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::/)'
+    - id: dispatch-tests
+      why: the proxy dispatch does not answer the Mantle endpoint error with a 400, or its other mappings broke
+      run: grep -q 'MantleEndpoint' crates/betterlite-core/src/dispatch/llm_passthrough/rejection.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::llm_passthrough::/)'
+    - id: sdk-call-tests
+      why: the Bedrock port misses an environment name, a Bearer source, the SigV4 path or the Mantle endpoint rules
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^passthrough::sdk_call::/)'
+    - id: bedrock-tests
+      why: sharing the URL and signing code changed what B658's plan or B625's and B2207's Mantle helpers do
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E '(test(/^passthrough::/) | test(/^mantle_settings::/) | test(/^mantle_inputs::/)) - test(/replays_the_/)'
+    - id: config-tests
+      why: AWS_BEARER_TOKEN_BEDROCK is not read, or the section's other names broke
+      run: grep -q 'AWS_BEARER_TOKEN_BEDROCK' crates/betterlite-config/src/sections/bedrock_mantle_inputs.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::bedrock_mantle_inputs::/)'
+    - id: python-session-tests
+      why: the Python session does not build the port from its environment, or does not answer the Mantle endpoint error as BadRequestError
+      run: grep -q 'fn call_signs_bedrock_with_the_session_token' crates/betterlite-python/src/passthrough_calls/session/tests.rs && grep -q 'fn call_refuses_an_invalid_mantle_region' crates/betterlite-python/src/passthrough_calls/session/tests.rs && cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^passthrough_calls::session::tests::/)'
+    - id: no-copies
+      why: core still holds a copy of the Bedrock or Mantle region, endpoint, model id or credentials code
+      run: test ! -e crates/betterlite-core/src/api/passthrough_call/mantle.rs && test -z "$(grep -nE 'fn (bedrock_url|runtime_endpoint|default_runtime_endpoint|region|validate_region|is_region|region_from_model_arn|mantle_region_from_host|encoded_model_id|rewrite_model_path|split_region|text_param)[(<]|NO_CREDENTIALS|MANTLE_HOST_PATTERN|DEFAULT_BEDROCK_REGION|DEFAULT_MANTLE_REGION|mod mantle;' crates/betterlite-core/src/api/passthrough_call.rs crates/betterlite-core/src/api/passthrough_call/urls.rs crates/betterlite-core/src/api/passthrough_call/auth.rs)"
+    - id: deviation-rows
+      why: B8690 still lists the fixed Bedrock rows or names the providers B10164 fixed, or this task's row is missing
+      run: test -s docs/deviations/B10166.yaml && test -z "$(grep -nE 'not SigV4-signed|bearer token only from|AZURE_|GIGACHAT_|WATSONX_' docs/deviations/B8690.yaml)"
+oracle_cases: []
+deviations:
+  - what: >-
+      In the Python package a plain Bedrock or Bedrock Mantle pass-through with no Bearer token fails with a synthesized 500 ("AWS credential provider is unavailable"), even when litellm_params carry aws_access_key_id and aws_secret_access_key. LiteLLM resolves those keys or boto3's default chain and signs with SigV4.
+    why: >-
+      betterlite builds no production AWS credential chain yet, so the session passes NoCredentialChain until a task builds one. Bearer tokens from api_key, BEDROCK_MANTLE_API_KEY and AWS_BEARER_TOKEN_BEDROCK work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1697-L1699
+out_of_scope:
+  - "A production AWS credential chain (static keys from litellm_params, environment keys, profiles, roles, web identity, instance metadata): AwsCredentialResolver (crates/betterlite-bedrock/src/credentials.rs L19-L25) needs a CredentialCache, NativeSources, SecretLookup and StsClientKwargs, and no production code builds one; the server's only NativeSources build is a private function in crates/betterlite-server/src/bucket_config/s3_reader.rs L261-L276. No task owns it yet; the architect decides."
+  - "VLLM_API_BASE and the last config B8690 rebuilt in core: B10168."
+  - "Bedrock spend and reply logging: the call keeps NoSpendCollector (config.rs L150-L158) and the trait's empty logging_non_streaming_response, so B658's event stream collector and reply logging and B625's reply shaping stay unused; reported to the architect."
+  - "The Mantle /openai/v1 path for models the cost map marks with use_openai_responses_path: the call resolves with an empty catalog, so the port gets an empty model cost map and B8690's row stays."
+  - "Passing the port from the router executor, the router call assembly and the proxy's direct call: B8691, B8631 and B8694."
+  - "The three identical CredentialSource traits in betterlite-bedrock (embedding_call.rs L64-L70, image_call/plan.rs L61-L67, rerank/plan.rs L59-L65): this task uses rerank's and leaves the merge to a cleanup task."
+pitfalls:
+  - "allm_passthrough_route now has five parameters, the rules' limit, so nothing else goes on it."
+  - "passthrough_call.rs had 245 of its 300 allowed lines before B10164; put the two-step resolve in aws.rs or another file under passthrough_call/."
+  - "The first resolve must pass `mantle: None`; only MissingMantleEndpoint asks the port, so a bad AWS_REGION never breaks an OpenAI or VLLM call."
+  - "The async_trait future must be Send, so every argument of the port's methods, PassthroughSigning's borrowed params included, has to be Sync."
+  - "The Mantle pass-through signs through BedrockPassthroughConfig.sign_request, not BedrockMantleAuthMixin, so its no-credential failure is the credential error, never mantle_settings::error's AUTH_FAILURE_MESSAGE."
+  - "bedrock_bearer_token counts an empty token as none, so an empty AWS_BEARER_TOKEN_BEDROCK falls through to SigV4; a BTreeMap lookup returns an empty value as Some(\"\"), and docs/compatibility.md counts it as unset."
+  - "B658's signing keeps a caller's Authorization header that is not a SigV4 one (base_aws_llm.py L1716-L1728) and drops content-length unless the caller sent a length or transfer-encoding (passthrough.rs L141-L161); the shared function keeps both."
+  - "Keep BedrockPassthroughPlan's public fields as they are: betterlite-provider's bedrock_interactive_dispatch/passthrough.rs holds one."
+  - "The call's litellm_params are a serde_json Object, while pop_aws_auth_params and request_target read `BTreeMap<String, Box<RawValue>>`; convert once at the port's edge."
+  - "Test maps leave out HOME, AWS_CONFIG_FILE and AWS_SHARED_CREDENTIALS_FILE, so the session region never comes from the developer's ~/.aws/config; a BTreeMap lookup has no system home."
+  - "SigV4 assertions use the fixed clock's date, never SystemTime::now."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

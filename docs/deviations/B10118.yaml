@@ -1,0 +1,6 @@
+task: B10118
+deviations:
+  - what: A master key that PyJWT 2.15.1 refuses for its shape (PEM or SSH key text, DER key or certificate bytes, JSON holding a kty member) still signs the cookie; only the empty key is refused.
+    why: PyJWT guards against algorithm confusion when a token header picks the algorithm. This encoder always signs HS256 with the operator's master key, and porting PyJWT's key sniffing for keys no LiteLLM setup uses adds code with no reader.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_utils.py#L488-L498
+kept_bugs: []
