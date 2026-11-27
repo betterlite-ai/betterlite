@@ -207,6 +207,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::KeyBudgets(exception)
         | StageFailure::ModelBudgets(exception)
         | StageFailure::TeamBudgets(exception)
+        | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
