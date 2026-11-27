@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::runway::speech::RunwaySpeechConfig;
 use betterlite_core::api::runway::speech::SUPPORTED_OPENAI_PARAMS;
 use betterlite_core::api::runway::speech::dispatch::{
@@ -27,6 +29,8 @@ use tokio::runtime::{Builder, Runtime};
 
 use super::fakes::{Clock, Recorder, Script};
 use super::inputs::{DispatchInput, Globals, Input, Mapping, RequestInput, ResponseInput};
+
+const DOWNLOAD_DEADLINE: Duration = Duration::from_secs(600);
 
 fn failure<E>(error: E) -> Box<HelperError>
 where
@@ -155,6 +159,8 @@ fn response(input: &ResponseInput) -> HelperResult {
         transport: &transport,
         clock: &clock,
         settings: &config.settings,
+        limits: ApiLimits::default(),
+        deadline: DOWNLOAD_DEADLINE,
     };
     let outgoing = UpstreamResponse {
         status: input.submission.status,

@@ -8,7 +8,9 @@ use betterlite_core::api::runway::speech::dispatch::{
     HandlerFailure, HandlerRequest, TextToSpeechHandler,
 };
 use betterlite_core::api::runway::tasks::poll::{PollClock, TaskTransport};
+use betterlite_core::api::runway::video_lifecycle::artifact::ArtifactTransport;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
 use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
@@ -47,6 +49,33 @@ impl Script {
             })
             .collect()
     }
+
+    fn record(&self, url: &Url, headers: &HeaderMap) {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((url.to_string(), headers.clone()));
+    }
+
+    fn next_reply(&self) -> ReplyInput {
+        self.replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or(ReplyInput {
+                status: 500,
+                headers: BTreeMap::new(),
+                body: String::new(),
+            })
+    }
+}
+
+fn respond(reply: &ReplyInput) -> UpstreamResponse {
+    UpstreamResponse {
+        status: reply.status,
+        headers: reply_map(&reply.headers),
+        body: reply.body.as_bytes().to_vec(),
+    }
 }
 
 impl TaskTransport for Script {
@@ -55,26 +84,35 @@ impl TaskTransport for Script {
         url: Url,
         headers: HeaderMap,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((url.to_string(), headers));
-        let reply = self
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or(ReplyInput {
-                status: 500,
-                headers: BTreeMap::new(),
-                body: String::new(),
-            });
-        let reply_headers = reply_map(&reply.headers);
-        ready(Ok(UpstreamResponse {
-            status: reply.status,
-            headers: reply_headers,
-            body: reply.body.into_bytes(),
-        }))
+        self.record(&url, &headers);
+        ready(Ok(respond(&self.next_reply())))
+    }
+}
+
+impl ArtifactTransport for Script {
+    fn fetch(
+        &self,
+        request: OutboundRequest,
+        _max_bytes: usize,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        let mut url = request.url;
+        loop {
+            self.record(&url, &request.headers);
+            let reply = self.next_reply();
+            let next = if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
+                reply
+                    .headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("location"))
+                    .and_then(|(_, value)| Url::parse(value).ok())
+            } else {
+                None
+            };
+            let Some(next) = next else {
+                return ready(Ok(respond(&reply)));
+            };
+            url = next;
+        }
     }
 }
 

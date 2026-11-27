@@ -259,7 +259,10 @@ def transform_value(input_value: ResponseInput) -> JsonValue:
     scripted = Scripted(params["replies"])
     holder = LLMClientCache()
     litellm.in_memory_llm_clients_cache = holder
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(scripted)))
+    # production LiteLLM builds its cached httpx client with follow_redirects=True
+    client = HTTPHandler(
+        client=httpx.Client(transport=httpx.MockTransport(scripted), follow_redirects=True)
+    )
     CLIENT_CACHE.validate_python(holder).set_cache(key="httpx_client", value=client, ttl=600)
     clock = Clock(params["step_millis"])
     object.__setattr__(runway_transformation, "time", clock)
