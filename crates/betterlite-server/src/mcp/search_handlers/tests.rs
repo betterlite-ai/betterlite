@@ -741,6 +741,26 @@ async fn proxy_tool_call_validates_arguments() {
 }
 
 #[tokio::test]
+async fn proxy_tool_call_surfaces_a_malformed_served_schema_as_500() {
+    let listed = tool("alpha", "finds alpha", r#"{"type":5}"#, "srv");
+    let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
+    fake.allowed_servers = vec!["srv".to_owned()];
+    let caller = caller();
+    let scope = McpRequestScope::default();
+    let arguments = proxy_arguments(&tool_id);
+    let request = ProxyToolRequest {
+        name: "call_tool",
+        arguments: &arguments,
+    };
+    let error = handle_mcp_proxy_tool(request, &context(&fake, &caller, &scope))
+        .await
+        .expect_err("a malformed served schema is an internal error");
+    assert_eq!(error.status_code(), http::StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
 async fn proxy_tool_call_rejects_non_object_arguments() {
     let listed = tool("alpha", "finds alpha", "{}", "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");

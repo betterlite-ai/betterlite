@@ -11,18 +11,19 @@ use betterlite_core::schema::SchemaLimits;
 use betterlite_core::schema::validate::validate_schema;
 use betterlite_core::skills::search::MAX_SKILL_SEARCH_TOP_K;
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_error::error::ErrorClass;
 use betterlite_mcp::client::tools::result::{CallToolResult, ContentBlock, TextContent};
 use betterlite_mcp::wire_compat::result_conversion::complete_call_tool_result;
 use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use betterlite_prompts::arguments::json::Object;
 use http::StatusCode;
 
-use self::dispatch::{agent_search_text, proxy_search, ranked_hits, tool_search_text};
+use self::dispatch::{agent_search_text, proxy_search, ranked_hits, search_text, tool_search_text};
 use self::error::SearchHandlerError;
 use self::ports::ToolExecution;
 use self::types::{
     AgentSearchRequest, HandlerContext, McpToolSearchRequest, ProxyToolIdentity, ProxyToolRequest,
-    SearchOutcome, SkillSearchRequest, ToolCallRequest, json_string,
+    SkillSearchRequest, ToolCallRequest, json_string,
 };
 use crate::management_rbac::FeatureName;
 use crate::mcp::catalog_guard::types::MCPTool;
@@ -57,7 +58,7 @@ pub async fn handle_skill_search(
         .top_k
         .clamp(1, i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX));
     let skills = context.ports.accessible_skills(context.caller).await?;
-    match context
+    let outcome = context
         .ports
         .search_skills(
             SkillSearchRequest {
@@ -68,13 +69,8 @@ pub async fn handle_skill_search(
             context.settings.skill_embedding_model(),
             context.caller,
         )
-        .await?
-    {
-        SearchOutcome::Hits(hits) => Ok(text_tool_result(serde_json::to_string(&hits)?, false)),
-        SearchOutcome::NotConfigured { reason } | SearchOutcome::EmbeddingFailed { reason } => {
-            Ok(text_tool_result(reason, true))
-        }
-    }
+        .await?;
+    search_text(outcome)
 }
 
 // Upstream spellings are fn _list_mcp_tools and fn _get_allowed_mcp_servers; local names avoid Rust's underscore-item lint
@@ -160,6 +156,15 @@ async fn proxy_call_text(
     let schema = serde_json::to_value(&tool.input_schema)?;
     let instance = serde_json::to_string(&tool_arguments)?;
     if let Err(error) = validate_schema(&schema, &instance, &SchemaLimits::default()) {
+        if !matches!(
+            error.classify(&schema, &instance),
+            ErrorClass::JsonSchemaValidation(_)
+        ) {
+            return Err(SearchHandlerError::Http {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                detail: error.to_string(),
+            });
+        }
         return Ok(text_tool_result(
             format!("Invalid arguments: {error}"),
             true,
