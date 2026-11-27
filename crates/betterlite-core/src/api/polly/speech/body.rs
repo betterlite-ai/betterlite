@@ -1,4 +1,3 @@
-use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
@@ -12,12 +11,6 @@ const SSML_TAG: &str = "<speak>";
 const SSML_PREFIX: &str = "<speak ";
 const OPTIONAL_FIELDS: [&str; 3] = ["LanguageCode", "LexiconNames", "SampleRate"];
 
-// Polly takes SSML only when the text holds a case-sensitive <speak> or <speak-space substring
-#[must_use]
-pub fn is_ssml(input: &str) -> bool {
-    input.contains(SSML_TAG) || input.contains(SSML_PREFIX)
-}
-
 // LiteLLM's request body: five fixed fields in this order, then the present Polly fields including nulls
 #[must_use]
 pub fn request_body(
@@ -25,7 +18,11 @@ pub fn request_body(
     voice: Option<&str>,
     optional_params: &Object,
 ) -> IndexMap<String, Json> {
-    let text_type = if is_ssml(input) { "ssml" } else { "text" };
+    let text_type = if input.contains(SSML_TAG) || input.contains(SSML_PREFIX) {
+        "ssml"
+    } else {
+        "text"
+    };
     let mut body = IndexMap::new();
     body.insert(
         String::from("Engine"),
@@ -47,12 +44,6 @@ pub fn request_body(
         }
     }
     body
-}
-
-// LiteLLM keeps the insertion order of its dict, so the body is built as Json rather than serde_json's sorted map
-#[must_use]
-pub fn serialize(body: &IndexMap<String, Json>) -> String {
-    dumps_object(body)
 }
 
 fn configured(optional_params: &Object, name: &str, default: &str) -> Json {

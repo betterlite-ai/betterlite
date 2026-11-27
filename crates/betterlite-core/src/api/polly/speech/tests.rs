@@ -2,6 +2,7 @@
 
 use std::time::{Duration, SystemTime};
 
+use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::openai_base_config::Object;
@@ -9,7 +10,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::json;
 
-use super::body::{is_ssml, request_body, serialize};
+use super::body::request_body;
 use super::config::PollySpeechConfig;
 use super::credentials::{self, CredentialResolver, CredentialSources, ResolvedCredentials};
 use super::endpoint::{DEFAULT_REGION, complete_url};
@@ -629,16 +630,18 @@ fn configured_url_reads_the_base_and_the_region_from_the_effective_params() {
 // the synthesis body and its Python-compatible JSON
 
 #[rstest]
-#[case::tag("<speak>hi</speak>", true)]
-#[case::attributes("<speak xml:lang=\"en-US\">hi</speak>", true)]
-#[case::dangling_prefix("<speak ", true)]
-#[case::inside("hello <speak>there", true)]
-#[case::uppercase("<SPEAK>hi</SPEAK>", false)]
-#[case::other_tag("<speakx>hi</speakx>", false)]
-#[case::incomplete("<speak", false)]
-#[case::empty("", false)]
-fn ssml_is_detected_only_by_the_exact_lowercase_tags(#[case] text: &str, #[case] expected: bool) {
-    assert_eq!(is_ssml(text), expected);
+#[case::tag("<speak>hi</speak>", "ssml")]
+#[case::attributes("<speak xml:lang=\"en-US\">hi</speak>", "ssml")]
+#[case::dangling_prefix("<speak ", "ssml")]
+#[case::inside("hello <speak>there", "ssml")]
+#[case::uppercase("<SPEAK>hi</SPEAK>", "text")]
+#[case::other_tag("<speakx>hi</speakx>", "text")]
+#[case::incomplete("<speak", "text")]
+#[case::empty("", "text")]
+fn ssml_is_detected_only_by_the_exact_lowercase_tags(#[case] text: &str, #[case] expected: &str) {
+    let body = request_body(text, None, &Object::new());
+
+    assert_eq!(body["TextType"], Json::Text(String::from(expected)));
 }
 
 #[test]
@@ -712,7 +715,7 @@ fn the_body_serializes_like_pythons_json_dumps() {
     );
     let body = request_body(UNICODE_TEXT, Some("Joanna"), &params);
 
-    assert_eq!(serialize(&body), UNICODE_BODY);
+    assert_eq!(dumps_object(&body), UNICODE_BODY);
 }
 
 // the signed request: exact botocore vectors, service polly, the body bytes carried in ssml_body

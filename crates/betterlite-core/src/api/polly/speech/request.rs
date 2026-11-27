@@ -1,10 +1,11 @@
 use std::time::SystemTime;
 
+use betterlite_logging::python_json::dumps_object;
 use betterlite_openai::api::speech_provider_contract::{SpeechVoice, TextToSpeechRequestData};
 use betterlite_openai::openai_base_config::Object;
 use serde_json::json;
 
-use super::body::{request_body, serialize};
+use super::body::request_body;
 use super::credentials::{self, CredentialResolver};
 use super::endpoint::{DEFAULT_REGION, complete_url};
 use super::error::SpeechError;
@@ -80,7 +81,7 @@ pub fn transform_request(
     let url = configured_url(request.litellm_params)?;
     let region = text_field(request.litellm_params, "aws_region_name")?;
     let body = request_body(request.input, request.voice, request.optional_params);
-    let payload = serialize(&body);
+    let payload = dumps_object(&body);
     let sources = credentials::sources(request.litellm_params)?;
     let resolved = resolver.resolve(&sources)?;
     let headers = sign_post(&SignablePost {
