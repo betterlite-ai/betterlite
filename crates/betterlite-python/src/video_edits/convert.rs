@@ -114,7 +114,7 @@ fn loose(arguments: &RequestMap, named: &[&str]) -> IndexMap<String, Json> {
         .collect()
 }
 
-const CREATE_NAMED: [&str; 9] = [
+const CREATE_NAMED: [&str; 11] = [
     "name",
     "video",
     "timeout",
@@ -122,17 +122,21 @@ const CREATE_NAMED: [&str; 9] = [
     "extra_headers",
     "extra_query",
     "extra_body",
+    "mock_response",
+    "litellm_call_id",
     "litellm_logging_obj",
     "async_call",
 ];
 
-const GET_NAMED: [&str; 8] = [
+const GET_NAMED: [&str; 10] = [
     "character_id",
     "timeout",
     "custom_llm_provider",
     "extra_headers",
     "extra_query",
     "extra_body",
+    "mock_response",
+    "litellm_call_id",
     "litellm_logging_obj",
     "async_call",
 ];

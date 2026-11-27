@@ -201,17 +201,22 @@ fn request_create_character_loose_keywords_stay_in_extra() {
         Some(&Json::Text(String::from("u-1")))
     );
     assert!(request.mock_response.is_some());
+    assert!(!request.extra.contains_key("mock_response"));
 }
 
 #[test]
 fn request_get_character_arguments_reach_the_call() {
     let request = get(
         r#"{"character_id": "char-1", "custom_llm_provider": "openai", "timeout": 5,
-            "extra_headers": {"x-one": "1"}, "extra_query": {"q": "1"}}"#,
+            "extra_headers": {"x-one": "1"}, "extra_query": {"q": "1"},
+            "mock_response": {"id": "c", "object": "character", "created_at": 1, "name": "n"},
+            "litellm_call_id": "call-2"}"#,
     );
     assert_eq!(request.character_id, "char-1");
     assert_eq!(request.timeout, Some(5.0_f64));
     assert_eq!(request.custom_llm_provider, "openai");
+    assert!(request.mock_response.is_some());
+    assert_eq!(request.litellm_call_id.as_deref(), Some("call-2"));
     assert_eq!(
         request
             .extra_headers
