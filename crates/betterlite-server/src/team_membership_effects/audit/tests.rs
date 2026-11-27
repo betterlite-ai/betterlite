@@ -325,6 +325,18 @@ fn members_audit_value_keeps_the_roster_order() {
     assert_eq!(listed, ["test-user-3", "test-user-1", "test-user-2"]);
 }
 
+#[test]
+fn members_audit_value_drops_nul_bytes_from_member_text() {
+    let members = vec![member(
+        "test-user-\0one",
+        "test-1@example.com",
+        MemberRole::User,
+    )];
+    let text = members_audit_value(Some("Test Team"), &members).unwrap();
+    let value = parsed(&text);
+    assert_eq!(value["members_with_roles"][0]["user_id"], "test-user-one");
+}
+
 #[tokio::test]
 async fn disabled_audit_logging_spawns_nothing() {
     let harness = harness(false);
