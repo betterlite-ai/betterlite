@@ -1,7 +1,8 @@
 from typing import Literal, NotRequired, TypedDict
 
 from litellm.responses.mcp.litellm_proxy_mcp_handler import LiteLLM_Proxy_MCP_Handler
-from litellm.types.llms.openai import ResponseInputParam, ResponsesAPIResponse
+from litellm.types.llms.openai import ResponsesAPIResponse
+from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import JsonValue, TypeAdapter
 
 JSON = TypeAdapter(JsonValue)
@@ -38,7 +39,7 @@ def answer(call: Call) -> JsonValue:
     if preserve_reasoning is None:
         raise ValueError("the follow_up function needs preserve_reasoning")
     follow_up = LiteLLM_Proxy_MCP_Handler._create_follow_up_input(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1025
-        response=ResponsesAPIResponse.model_validate(response),
+        response=ResponsesAPIResponse.model_validate(response),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
         tool_results=tool_results,
         original_input=call.get("original_input"),
         preserve_reasoning=preserve_reasoning,
