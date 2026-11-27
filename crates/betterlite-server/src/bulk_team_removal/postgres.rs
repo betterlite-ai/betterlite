@@ -13,7 +13,6 @@ use betterlite_db::team_rows::member::Member;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_db::user_repository::projection::decode_user_record;
 use tokio::time::timeout;
-use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
 use super::error::BulkRemovalError;
@@ -48,21 +47,6 @@ struct PostgresRemovalTables<'tables, 'client> {
 }
 
 impl PostgresRemovalTables<'_, '_> {
-    async fn rows<T>(
-        &self,
-        sql: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-        decode: fn(&Row) -> Result<T, BulkRemovalError>,
-    ) -> Result<Vec<T>, BulkRemovalError> {
-        self.session
-            .query(sql, parameters)
-            .await
-            .map_err(backend)?
-            .iter()
-            .map(decode)
-            .collect()
-    }
-
     async fn exec(
         &self,
         sql: &str,
@@ -145,7 +129,18 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         user_emails: &[String],
     ) -> Result<Vec<LiteLLMUserTable>, BulkRemovalError> {
         let parameters: [&(dyn ToSql + Sync); 2] = [&user_ids, &user_emails];
-        self.rows(REQUESTED_USERS_SQL, &parameters, user_row).await
+        let rows = self
+            .session
+            .query(REQUESTED_USERS_SQL, &parameters)
+            .await
+            .map_err(backend)?;
+        let mut users = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let text: String = row.try_get(0).map_err(backend)?;
+            let user = decode_user_record(text.as_bytes())?.ok_or(BulkRemovalError::MissingRow)?;
+            users.push(user);
+        }
+        Ok(users)
     }
 
     async fn tokens(
@@ -153,7 +148,16 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         team_id: &str,
         user_ids: &[String],
     ) -> Result<Vec<LiteLLMVerificationToken>, BulkRemovalError> {
-        self.rows(KEYS_SQL, &[&team_id, &user_ids], key_row).await
+        self.session
+            .query(KEYS_SQL, &[&team_id, &user_ids])
+            .await
+            .map_err(backend)?
+            .iter()
+            .map(|row| {
+                let text: String = row.try_get(0).map_err(backend)?;
+                decode_token_record(text.as_bytes()).map_err(BulkRemovalError::from)
+            })
+            .collect()
     }
 
     async fn write_roster(&self, team_id: &str, kept: &[Member]) -> Result<(), BulkRemovalError> {
@@ -195,14 +199,4 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
     ) -> Result<(), BulkRemovalError> {
         self.exec(DELETE_KEYS_SQL, &[&team_id, &user_ids]).await
     }
-}
-
-fn user_row(row: &Row) -> Result<LiteLLMUserTable, BulkRemovalError> {
-    let text: String = row.try_get(0).map_err(backend)?;
-    decode_user_record(text.as_bytes())?.ok_or(BulkRemovalError::MissingRow)
-}
-
-fn key_row(row: &Row) -> Result<LiteLLMVerificationToken, BulkRemovalError> {
-    let text: String = row.try_get(0).map_err(backend)?;
-    decode_token_record(text.as_bytes()).map_err(BulkRemovalError::from)
 }
