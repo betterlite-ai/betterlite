@@ -99,7 +99,7 @@ impl ArtifactTransport for Script {
         loop {
             self.record(&url, &request.headers);
             let reply = self.next_reply();
-            let next = if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
+            let target = if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
                 reply
                     .headers
                     .iter()
@@ -108,7 +108,7 @@ impl ArtifactTransport for Script {
             } else {
                 None
             };
-            let Some(next) = next else {
+            let Some(next) = target else {
                 return ready(Ok(respond(&reply)));
             };
             url = next;
