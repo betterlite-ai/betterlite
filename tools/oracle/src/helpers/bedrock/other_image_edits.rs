@@ -12,6 +12,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod driver;
+#[path = "other_image_edits/fixtures/support.rs"]
 mod fixtures;
 mod input;
 mod tests;
