@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::mcp::admin_credential_view::MCP_ADMIN_CONFIG_CREDENTIAL_KEYS;
 use axum::http::StatusCode;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
@@ -317,6 +318,16 @@ fn admin_config_and_scopes_are_not_credentials(#[case] fixture: &str) {
 fn every_other_credential_field_counts(#[case] fixture: &str) {
     let supplied = decoded_credentials(fixture);
     assert!(has_non_admin_config_credentials(Some(&supplied)));
+}
+
+// the guard lists the complement of B10134's keys, so widening that constant must fail here until the guard follows
+#[test]
+fn admin_config_keys_from_b10134_are_not_credentials() {
+    for key in MCP_ADMIN_CONFIG_CREDENTIAL_KEYS {
+        let supplied: MCPCredentials =
+            serde_json::from_str(&format!(r#"{{"{key}": "value"}}"#)).unwrap();
+        assert!(!has_non_admin_config_credentials(Some(&supplied)));
+    }
 }
 
 #[test]
