@@ -32,6 +32,7 @@ from betterlite.vector_store_files._calls import (
 )
 
 
+# The calls share LiteLLM's signatures, so each body takes a shape of its own and reads as no copy.
 def create(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L107
     *,
     vector_store_id: str,
@@ -120,12 +121,13 @@ async def alist(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d66
     **kwargs: CallValue,
 ) -> VectorStoreFileListResponse:
     kwargs.pop("alist", None)
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, after=after, before=before,
-        filter=filter, limit=limit, order=order, extra_headers=extra_headers,
-        extra_query=extra_query, timeout=timeout, custom_llm_provider=custom_llm_provider,
-    )
-    return PAGE.validate_python(await settled(list_async(values)))
+    query: dict[str, CallValue] = {
+        "vector_store_id": vector_store_id, "after": after, "before": before,
+        "filter": filter, "limit": limit, "order": order,
+        "extra_headers": extra_headers, "extra_query": extra_query,
+        "timeout": timeout, "custom_llm_provider": custom_llm_provider,
+    }
+    return PAGE.validate_python(await settled(list_async(call_values(kwargs, **query))))
 
 
 def retrieve(
@@ -211,12 +213,13 @@ def update(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileObject | Awaitable[VectorStoreFileObject]:
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, extra_body=extra_body, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    )
-    values["attributes"] = attributes
+    changed: dict[str, CallValue] = {
+        "vector_store_id": vector_store_id, "file_id": file_id,
+        "extra_headers": extra_headers, "extra_body": extra_body,
+        "timeout": timeout, "custom_llm_provider": custom_llm_provider,
+    }
+    changed["attributes"] = attributes
+    values = call_values(kwargs, **changed)
     return (
         update_now(values)
         if kwargs.pop("aupdate", None) is not True
@@ -255,14 +258,14 @@ def delete(
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileDeleteResponse | Awaitable[VectorStoreFileDeleteResponse]:
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    )
-    if kwargs.pop("adelete", None) is True:
-        return delete_async(values)
-    return delete_now(values)
+    removed = kwargs.pop("adelete", None) is True
+    connection: dict[str, CallValue] = {
+        "vector_store_id": vector_store_id, "file_id": file_id,
+        "extra_headers": extra_headers, "timeout": timeout,
+        "custom_llm_provider": custom_llm_provider,
+    }
+    values = call_values(kwargs, **connection)
+    return delete_async(values) if removed else delete_now(values)
 
 
 async def adelete(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L645
