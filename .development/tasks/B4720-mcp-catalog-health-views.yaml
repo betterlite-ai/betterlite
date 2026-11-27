@@ -39,7 +39,7 @@ description: >-
   c. Team-scoped list (`_get_team_scoped_mcp_server_list`). Load the team again with get_team_object(team_id, check_db_only true). The id set is B818's _get_team_allowed_mcp_servers(team) united with B817's _get_allow_all_keys_server_ids(). An empty set gives []. Otherwise each id is read with B4731's server_by_id (no ip), ids the registry does not know are skipped, and each found record becomes a table row with B4731's server_table. The rows are then redacted with B4717's redact list function.
   d. Normal branch: B4717's resolve_accessible_mcp_servers(auth), then B4717's redact list function, then sorted.
   e. Sort key (`_mcp_server_display_order`): the lowercase of server_name, else alias, else server_id, then the server_id as a tie breaker.
-  f. connected_app_view: only when the flag is true and B10070's is_ui_session_credential(auth) is true, set connected_app_reachable on every row to whether its server_id is in the reachable set. The reachable set (`_connected_app_reachable_server_ids`) is empty when B4672's admitted_user_context(auth) is None, else B6591's allowed_servers(admitted).
+  f. connected_app_view: only when the flag is true and B10070's is_ui_session_credential(auth) is true, set connected_app_reachable on every row to whether its server_id is in the reachable set. The reachable set (`_connected_app_reachable_server_ids`) is empty when B10127's admitted_user_context(auth) is None, else B6591's allowed_servers(admitted).
   g. has_user_credential: only when the caller has a non-empty user_id and a database exists. Take the rows with is_byok true. If there are any, read the credential rows of B4711's _db_find_user_credential_rows with where user_id = the caller and server_id in those ids (one query), and set has_user_credential on each BYOK row to whether its id is among them. Any credential row counts, BYOK or OAuth, because both share the table and the query has no type filter.
   h. A restricted key gets B4717's sanitize list for virtual key. Else a caller who is not a full admin (B4717's user_is_full_admin: PROXY_ADMIN only) gets B4717's sanitize list for non-admin. Else the redacted rows are returned.
   This route needs no database for the normal branch: without one the answer is built from the registry alone.
@@ -47,7 +47,7 @@ description: >-
   Route 6. GET /v1/mcp/server/health. Query: server_ids (repeatable, optional) and include_reachability (bool, default false). It returns a JSON list of {"server_id": id, "status": s}.
   s goes through `_mcp_health_status_for_response`: the value "reachable" becomes "unknown" unless include_reachability is true, and every other value (healthy, unhealthy, unknown, or null) is unchanged, null staying null.
   When B4717's get_user_mcp_management_mode is "view_all" and the key is not restricted, the rows come from B6592's with_health_unfiltered(server_ids), in its order.
-  Otherwise, for each context in B4672's build_effective_auth_contexts(auth), call B6592's with_health_and_teams(context, server_ids, checked) where checked is a copy of the ids already collected before this call, and keep a server's status the first time it is seen. The output order is the order of first sight. Nothing is health-checked twice.
+  Otherwise, for each context in B10127's build_effective_auth_contexts(auth), call B6592's with_health_and_teams(context, server_ids, checked) where checked is a copy of the ids already collected before this call, and keep a server's status the first time it is seen. The output order is the order of first sight. Nothing is health-checked twice.
 
   Route 7. GET /v1/mcp/server/{server_id} describes one server. Query: include_reachability (bool, default false). The static path /server/health must win over this path.
   Steps, in this order.
@@ -190,7 +190,7 @@ out_of_scope:
   - "get_prisma_client_or_throw, get_mcp_server, _db_find_user_credential_rows and the server table handle: owned by B4711."
   - "resolve_mcp_server, authorize_mcp_server, get_mcp_server_by_id, get_filtered_registry and _build_mcp_server_table: owned by B4731."
   - "get_allowed_mcp_servers: owned by B6591. health_check_server, get_all_mcp_servers_with_health_and_teams, get_all_mcp_servers_with_health_unfiltered and add_server: owned by B6592."
-  - "is_ui_session_credential: owned by B10070. admitted_user_context and build_effective_auth_contexts: owned by B4672. user_api_key_has_admin_view: owned by B2314."
+  - "is_ui_session_credential: owned by B10070. admitted_user_context and build_effective_auth_contexts: owned by B10127. user_api_key_has_admin_view: owned by B2314."
   - "get_team_object: owned by B737. _get_team_allowed_mcp_servers: owned by B818. _get_allow_all_keys_server_ids: owned by B817."
   - "get_mcp_client_ip: owned by B743. get_request_base_url: owned by B4654. get_server_prefix: owned by B6594."
   - "The OpenAPI catalog data and its loader (_load_openapi_registry): owned by B4231; route 9 only serves what it loads."

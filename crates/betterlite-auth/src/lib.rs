@@ -1,4 +1,5 @@
 pub mod admitted_key;
+pub mod admitted_user;
 pub mod agent;
 pub mod agent_access;
 pub mod agent_access_groups;
