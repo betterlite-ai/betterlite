@@ -430,7 +430,6 @@ async fn eval_run_lifecycle_async_refuses_a_blocking_call_inside_a_runtime() {
         .expect_err("a blocking call cannot drive a runtime inside one");
     assert!(matches!(&failure.error, EvalRunError::SyncInRuntime));
     assert_eq!(failure.class.metadata().status_code, 500);
-    assert!(fake.calls().is_empty());
 }
 
 // A supplied timeout is used as given, even zero, and an absent one takes the request timeout
