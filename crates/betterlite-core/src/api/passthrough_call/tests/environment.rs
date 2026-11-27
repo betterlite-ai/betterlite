@@ -12,7 +12,7 @@ use betterlite_openai::openai_base_config::Object;
 use super::super::auth;
 use super::super::config::PassthroughCallConfig;
 use super::super::{PassthroughCallArgs, allm_passthrough_route};
-use super::support::{base_args, logging_state, proxy_client, test_environment};
+use super::support::{base_args, empty_environment, logging_state, proxy_client, test_environment};
 
 fn args_for(model: &str) -> PassthroughCallArgs {
     let mut args = base_args();
@@ -198,7 +198,28 @@ async fn azure_ad_token_becomes_the_bearer_header() {
 }
 
 #[tokio::test]
-async fn azure_ai_entra_check_reads_the_ad_token() {
+async fn azure_param_ad_token_becomes_the_bearer_header() {
+    let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
+    let mut args = azure_args("2024-02-01");
+    args.api_base = Some(format!("http://{}", serving.address));
+    args.extra.insert(
+        "azure_ad_token".to_owned(),
+        JsonValue::String(String::from("param-token")),
+    );
+    allm_passthrough_route(
+        args,
+        &mut logging_state(),
+        &proxy_client(1024),
+        &empty_environment(),
+    )
+    .await
+    .expect("the upstream answers");
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("authorization: Bearer param-token"));
+}
+
+#[tokio::test]
+async fn azure_ai_entra_reads_the_ad_token() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::AzureAI,
         environment: Arc::new(test_environment(&[("AZURE_AD_TOKEN", "azure-ai-ad-token")])),
