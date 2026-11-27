@@ -33,7 +33,7 @@ description: >-
   get_complete_url through the injected reader, and has_config(Milvus) is true; preserve the AzureAi arm and existing
   registry/access checks. The reader is Shared's `secrets` (B8610). Tests in ports/vector/tests.rs (names start with
   `milvus_`) assert that the adapter answers has_config(Milvus) as true and returns MilvusProviderPorts' headers, URL and
-  errors unchanged.
+  errors unchanged. B8641's test that Milvus answers the missing provider error lives in the same file; change it to the configured answer.
 scope:
   paths:
   - crates/betterlite-server/src/milvus_vector_config.rs

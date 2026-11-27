@@ -27,7 +27,7 @@ description: >-
 
   Config writes. B8520's `GeneralSettingsStore` is backed by `shared.general_settings`. When B8612's type already implements B8520's trait, `PassThroughPorts` holds it as is; when B8612 declares its own trait, write `SettingsAdapter` here that forwards get_field and update_field and keeps the status and detail of each error unchanged.
 
-  Tests (tests.rs). One test group per file, each with a recording double of the backing service where the service is a trait, or a small real value (a Router built from a two deployment config, an in memory credential router) where it is a struct. Each test checks that the call reaches the backing service with the right arguments and that its result or error comes back unchanged.
+  Tests (tests.rs). One test group per file, each with a recording double of the backing service where the service is a trait, or a small real value (a Router built from a two deployment config, an in memory credential router) where it is a struct. Each test checks that the call reaches the backing service with the right arguments and that its result or error comes back unchanged. The vector adapter tests go in ports/vector/tests.rs instead, as module ports::vector::tests, since B7892 later replaces the Milvus arm and updates its test there.
 scope:
   paths:
     - crates/betterlite-server/src/app/pass_through/ports.rs
@@ -64,7 +64,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::router(::|$)/)'
     - id: vector-tests
       why: a vector port reaches the wrong registry, access check or provider config
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::vector(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::vector::tests::/)'
     - id: vertex-tests
       why: a Vertex route port authenticates, reads credentials or relays wrongly
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::vertex(::|$)/)'
