@@ -39,11 +39,17 @@ description: >-
 
   Startup. LiteLLM resolves and registers the callbacks before the server takes requests. In
   crates/betterlite-server/src/app/callbacks.rs add one line to `start(state)` (the file is B8656's; touch nothing
-  else; B8891's `alerting::bindings::install` runs first): `state.shared.proxy_logging.init_callbacks(state.callback_loggers.resolver(), hooks::configured(&state)?)`,
+  else; B8891's `alerting::bindings::install` runs first): `state.shared.proxy_logging.init_callbacks(hooks::configured(&state)?)`,
   awaited once before the listener opens. Right after it, one more line builds B115's
   `CatalogColdStorage::new(<litellm_settings.cold_storage_custom_logger from B1729's spend_storage section>, <the catalog Arc this slot holds>)`
   and hands it to the logging lifecycle. A RegistryError from init_callbacks stops startup with the message that names the
-  callback. The slot also exposes the catalog Arc, whose ordered list of built loggers (the order B8910's selection and
+  callback.
+
+
+  The loggers. The success handler B10185 builds reads one CallbackRegistry, and CallbackRegistry::register takes `&mut self`, so the configured loggers go in before that registry is wrapped. B8610 builds this slot in application() (crates/betterlite-server/src/server.rs) before ServerState::new and keeps `CallbackRegistry::new(config.sections.callback_settings.max_callbacks)` on its own line before B10185's start_logging. Make that line `let mut registry = CallbackRegistry::new(config.sections.callback_settings.max_callbacks).with_resolver(callback_loggers.resolver());` and call B8399's `register_callback_loggers(&mut registry, &config.sections.callback_settings)?` on the next line; a RegistryError stops application() through a new `ServerError::CallbackLoggers(#[from] RegistryError)` that keeps the callback name. LiteLLM registers them in proxy_startup_event before it yields to requests (proxy_server.py L1415-L1419 and L1577), so this keeps its order. Touch nothing else in server.rs.
+
+
+  The slot also exposes the catalog Arc, whose ordered list of built loggers (the order B8910's selection and
   publication read) is B8746's, and B8910's publication runs after init_callbacks finishes, so every configured V2
   logger is in the collection when the provider is published. The slot builds no OTel runtime: B110 builds the shared
   one with B10007's build_proxy_runtime, and the call site B110 adds here hands it to B8746's
@@ -60,7 +66,7 @@ description: >-
   without a team key reaches the catalog (with LITELLM_OTEL_V2 on and no runtime injected, UnavailableAdapter naming
   newrelic, before B8746 fills the arm and after); generic_api with missing headers
   gives Ok(None); langsmith gives UnavailableAdapter naming langsmith; an unknown name gives UnavailableAdapter;
-  websearch_interception and code_interpreter_interception give Ok(None). A
+  websearch_interception and code_interpreter_interception give Ok(None). `callback_loggers_fill_the_success_registry` builds a registry with this slot's resolver, runs register_callback_loggers over a config whose callbacks list prometheus, and asserts the registry lists prometheus in the Callbacks list and answers a failure_counter. A
   hooks.rs test: a config with dynamic_rate_limiter in callbacks makes configured() fail naming it, and a config
   without hook names gives an empty list.
 scope:
@@ -70,6 +76,7 @@ scope:
     - crates/betterlite-server/src/app/callbacks.rs
     - crates/betterlite-server/src/app/callbacks/hooks.rs
     - crates/betterlite-server/src/app/callbacks/hooks/**
+    - crates/betterlite-server/src/server.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L176-L181
@@ -85,7 +92,7 @@ dod:
     proof: [slot-tests]
   - text: litellm_agent resolves to a do nothing logger, newrelic without a team key reaches the catalog, other server names that give None stay None, and the two interception names that are not CallbackName values give None without reaching the catalog.
     proof: [slot-tests]
-  - text: app::callbacks::start calls init_callbacks once with the slot's resolver and the configured hooks, and a configured hook name with no built arm stops startup naming it.
+  - text: app::callbacks::start calls init_callbacks once with the configured hooks, application() fills the logging registry through the slot's resolver before start_logging, and a configured hook name with no built arm stops startup naming it.
     proof: [slot-tests]
 checks:
   optional: []
@@ -97,9 +104,10 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "The server arms and their caches: B8655. The catalog and its modules: B8741 and the logger tasks."
-  - "Registering resolved loggers inside ProxyLogging: B8399's init_callbacks. Per request selection: B248. The hook arms of hooks.rs: B8747 (anthropic_cache_control_hook) and B8749 (the dynamic rate limiters)."
+  - "The logger registration itself: B8399's register_callback_loggers. Per request selection: B248. The hook arms of hooks.rs: B8747 (anthropic_cache_control_hook) and B8749 (the dynamic rate limiters)."
   - "compression_interception, websearch_interception and code_interpreter_interception as SDK callbacks: B9821 builds the list, takes compression_interception out of hooks.rs and installs the list in start after the init_callbacks line; B9822, B9823 and B9824 register each one."
 pitfalls:
+  - "The resolver also reaches LoggingWiring's register_service_callbacks (crates/betterlite-logging/src/logging_service_events/wiring.rs L58-L82): service_callback names stop logging 'not installed' and resolve through this slot. Check what the slot answers for each service_callback name and keep the warning for a name it does not build."
   - Ask the server arms before the catalog for every name, because a callback_settings entry named after a catalog name with callback_type generic_api is a generic_api logger.
   - A ResolvedLogger variant is an Arc of a concrete type; coerce it with `as Arc<dyn CallbackLogger>` and keep the same Arc so the server's own caches stay shared.
 review_level: standard
