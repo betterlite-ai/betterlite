@@ -90,10 +90,9 @@ fn check_outer_reply(body: &[u8]) -> Result<(), ImageEditError> {
 
 fn log_post_call(call: &EditCall<'_>, observed: &ObservedReply<'_>, log: &mut LogContext<'_, '_>) {
     let text = response_text(&observed.reply.body);
-    let input = match call.prompt {
-        Some(prompt) => Json::Text(prompt.to_owned()),
-        None => Json::Null,
-    };
+    let input = call
+        .prompt
+        .map_or_else(|| Json::Null, |prompt| Json::Text(prompt.to_owned()));
     post_call(
         log.state,
         &PostCall {

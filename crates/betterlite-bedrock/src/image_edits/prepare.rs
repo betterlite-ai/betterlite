@@ -146,10 +146,7 @@ fn log_pre_call(
     for (name, value) in &signed.headers {
         headers.insert(name.clone(), Json::Text(value.clone()));
     }
-    let input = match prompt {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    };
+    let input = prompt.map_or_else(|| Json::Null, |text| Json::Text(text.to_owned()));
     pre_call(
         log.state,
         &PreCall {

@@ -73,6 +73,14 @@ fn image_edit_call_credential_identity_isolation() {
     let second_source = Source::with(SECOND_ACCESS, SECOND_SECRET);
     let first = identity_run(FIRST_ACCESS, FIRST_SECRET, 1, &first_source, redactor);
     let second = identity_run(SECOND_ACCESS, SECOND_SECRET, 2, &second_source, redactor);
+    assert_distinct_authorization(&first, &second);
+    assert_own_seed(&first, 1_i64);
+    assert_own_seed(&second, 2_i64);
+    assert_resolved_identity(&first_source, FIRST_ACCESS);
+    assert_resolved_identity(&second_source, SECOND_ACCESS);
+}
+
+fn assert_distinct_authorization(first: &Run, second: &Run) {
     let first_headers = first.headers();
     let second_headers = second.headers();
     assert!(first_headers["Authorization"].contains(FIRST_ACCESS));
@@ -81,36 +89,27 @@ fn image_edit_call_credential_identity_isolation() {
         first_headers["Authorization"],
         second_headers["Authorization"]
     );
+}
+
+fn assert_own_seed(run: &Run, seed: i64) {
     assert_eq!(
-        first.body().get("seed"),
-        Some(&Json::Number(Number::from(1_i64)))
+        run.body().get("seed"),
+        Some(&Json::Number(Number::from(seed)))
     );
+}
+
+fn assert_resolved_identity(source: &Source, access: &str) {
+    let calls = source.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1, "each call resolves its own identity");
     assert_eq!(
-        second.body().get("seed"),
-        Some(&Json::Number(Number::from(2_i64)))
-    );
-    let first_calls = first_source.calls.lock().unwrap();
-    let second_calls = second_source.calls.lock().unwrap();
-    assert_eq!(first_calls.len(), 1, "each call resolves its own identity");
-    assert_eq!(second_calls.len(), 1);
-    assert_eq!(
-        first_calls[0]
+        calls[0]
             .0
             .access_key_id
             .as_ref()
             .map(ExposeSecret::expose_secret),
-        Some(FIRST_ACCESS)
+        Some(access)
     );
-    assert_eq!(
-        second_calls[0]
-            .0
-            .access_key_id
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some(SECOND_ACCESS)
-    );
-    assert_eq!(first_calls[0].1, "us-east-1");
-    assert_eq!(second_calls[0].1, "us-east-1");
+    assert_eq!(calls[0].1, "us-east-1");
 }
 
 #[test]
