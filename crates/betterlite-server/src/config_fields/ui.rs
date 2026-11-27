@@ -30,8 +30,7 @@ impl UiFieldEdit<'_> {
     }
 }
 
-// _persist_general_settings_ui_litellm_field and _reset_general_settings_ui_litellm_field:
-// validate or default, refuse a config-owned key, reload, set litellm's attribute, save
+// _persist_general_settings_ui_litellm_field and _reset_general_settings_ui_litellm_field: validate or default, then the shared save
 pub async fn edit_ui_litellm_field(
     services: ConfigFieldServices<'_>,
     caller: &ConfigFieldCaller,

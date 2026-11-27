@@ -1,8 +1,6 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_pyhost::json_values::JsonObject;
 
-use crate::plugin_routes::config::PluginConfig;
-
 use super::validation::{Check, is_integer};
 
 mod rules;
@@ -32,10 +30,6 @@ fn check_field(value: Option<&JsonValue>, check: Check, presence: Presence) -> b
     }
 }
 
-fn only_known(entries: &JsonObject, names: &[&str]) -> bool {
-    entries.keys().all(|key| names.contains(&key.as_str()))
-}
-
 // an object holding the rules' fields
 fn object_rules(value: &JsonValue, rules: &[Rule]) -> bool {
     value
@@ -45,15 +39,9 @@ fn object_rules(value: &JsonValue, rules: &[Rule]) -> bool {
 
 // an object that also carries no key outside the given names
 fn known_object(value: &JsonValue, names: &[&str], rules: &[Rule]) -> bool {
-    value
-        .as_object()
-        .is_some_and(|entries| only_known(entries, names) && check_fields(entries, rules))
-}
-
-// PluginConfig's own deserializer: name and url strings, display_name and plugin_key optional, extras dropped
-#[must_use]
-pub fn plugins(value: &JsonValue) -> bool {
-    serde_json::from_value::<Vec<PluginConfig>>(JsonValue::clone(value)).is_ok()
+    value.as_object().is_some_and(|entries| {
+        entries.keys().all(|key| names.contains(&key.as_str())) && check_fields(entries, rules)
+    })
 }
 
 // PassThroughGenericEndpoint, one entry of pass_through_endpoints
@@ -159,7 +147,10 @@ pub fn stagger(value: &JsonValue) -> bool {
     let Some(entries) = value.as_object() else {
         return false;
     };
-    only_known(entries, &STAGGER_KEYS) && check_fields(entries, &STAGGER_RULES)
+    entries
+        .keys()
+        .all(|key| STAGGER_KEYS.contains(&key.as_str()))
+        && check_fields(entries, &STAGGER_RULES)
 }
 
 // SpendCaptureRateCheckSettings forbids unknown keys, a threshold outside (0, 1] and a lookback outside 1..=180
@@ -177,7 +168,10 @@ pub fn spend_capture(value: &JsonValue) -> bool {
                 .as_f64()
                 .is_some_and(|days| (1.0..=180.0).contains(&days))
     });
-    only_known(entries, &SPEND_KEYS) && check_fields(entries, &SPEND_RULES) && threshold && lookback
+    entries.keys().all(|key| SPEND_KEYS.contains(&key.as_str()))
+        && check_fields(entries, &SPEND_RULES)
+        && threshold
+        && lookback
 }
 
 fn non_empty_openai(value: &JsonValue) -> bool {

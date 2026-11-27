@@ -1,6 +1,6 @@
 use betterlite_config::sections::settings::JsonValue;
 
-use super::super::validation::{Check, at_least, in_set, int_dict, is_integer, str_list};
+use super::super::validation::{Check, in_set, int_dict, is_integer, str_list};
 
 #[derive(Clone, Copy)]
 pub(super) enum Presence {
@@ -73,7 +73,7 @@ pub(super) const STAGGER_RULES: [Rule; 4] = [
     ("enabled", JsonValue::is_boolean, Presence::Optional),
     (
         "window_seconds",
-        |value| at_least(value, 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 0.0),
         Presence::Optional,
     ),
     ("identity", JsonValue::is_string, Presence::Nullable),

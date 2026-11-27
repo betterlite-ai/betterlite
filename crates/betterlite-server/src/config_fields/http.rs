@@ -1,18 +1,15 @@
 use std::sync::Arc;
 
 use axum::Json;
-use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Extension, Query, State};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::auth_identity::AuthContext;
 use crate::config_overlay_port::ConfigOverlayPort;
 use crate::proxy_config_state::state::ProxyConfigState;
 
-use super::ConfigFieldState;
 use super::error::ConfigFieldError;
 use super::ports::{ConfigFieldCaller, ConfigFieldServices};
 use super::read::{get_config_general_settings, list_config_general_settings};
@@ -41,19 +38,7 @@ struct ListQuery {
     config_type: Option<String>,
 }
 
-pub(super) fn router(state: ConfigFieldState, overlay: Arc<dyn ConfigOverlayPort>) -> Router {
-    Router::new()
-        .route("/config/field/update", post(update))
-        .route("/config/field/info", get(info))
-        .route("/config/list", get(list))
-        .route("/config/field/delete", post(delete))
-        .with_state(HttpState {
-            fields: state,
-            overlay,
-        })
-}
-
-async fn update(
+pub(super) async fn update(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
@@ -69,7 +54,7 @@ async fn update(
     Ok(Json(row))
 }
 
-async fn delete(
+pub(super) async fn delete(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
@@ -88,7 +73,7 @@ async fn delete(
     respond(delete_config_general_settings(services(&state, &mut config), &client, &delete).await)
 }
 
-async fn info(
+pub(super) async fn info(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     Query(query): Query<InfoQuery>,
@@ -110,7 +95,7 @@ async fn info(
     }
 }
 
-async fn list(
+pub(super) async fn list(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     Query(query): Query<ListQuery>,

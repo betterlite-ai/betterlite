@@ -120,8 +120,8 @@ pub async fn list_config_general_settings(
     let context = ListContext {
         state: services.state,
         runtime: services.runtime,
-        row: table_row(database, GENERAL_SETTINGS).await?,
-        litellm: table_row(database, LITELLM_SETTINGS).await?,
+        row: object_entries(database.rows.config_param(GENERAL_SETTINGS).await?.as_ref())?,
+        litellm: object_entries(database.rows.config_param(LITELLM_SETTINGS).await?.as_ref())?,
         is_full_admin: caller.user_role.as_deref() == Some(PROXY_ADMIN_ROLE),
     };
     let mut entries = Vec::with_capacity(LIST_FIELDS.len() + UI_FIELDS.len());
@@ -146,14 +146,6 @@ struct ListContext<'run> {
     row: BTreeMap<String, JsonValue>,
     litellm: BTreeMap<String, JsonValue>,
     is_full_admin: bool,
-}
-
-async fn table_row(
-    database: &ConfigFieldDatabase,
-    name: &'static str,
-) -> Result<BTreeMap<String, JsonValue>, ConfigFieldError> {
-    let row = database.rows.config_param(name).await?;
-    object_entries(row.as_ref())
 }
 
 fn list_entry(

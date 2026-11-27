@@ -1,3 +1,4 @@
+use crate::plugin_routes::config::PluginConfig;
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_config::sections::settings::JsonValue;
 
@@ -57,21 +58,29 @@ const KINDS: [(&str, Check, bool); 32] = [
     (INT, is_integer, true),
     (
         INT_POSITIVE,
-        |value| is_integer(value) && above(value, 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0),
         true,
     ),
-    (INT_NON_NEGATIVE, |value| at_least(value, 0.0), true),
-    (INT_AT_LEAST_ONE, |value| at_least(value, 1.0), true),
+    (
+        INT_NON_NEGATIVE,
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 0.0),
+        true,
+    ),
+    (
+        INT_AT_LEAST_ONE,
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 1.0),
+        true,
+    ),
     (INT_REQUIRED, is_integer, false),
     (
         INT_REQUIRED_POSITIVE,
-        |value| is_integer(value) && above(value, 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0),
         false,
     ),
     (FLOAT, JsonValue::is_number, true),
     (
         FLOAT_REQUIRED,
-        |value| JsonValue::is_number(value) && above(value, 0.0),
+        |value| JsonValue::is_number(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0),
         false,
     ),
     (BOOL, JsonValue::is_boolean, true),
@@ -90,7 +99,11 @@ const KINDS: [(&str, Check, bool); 32] = [
         |value| values_in(value, &DB_OBJECTS),
         true,
     ),
-    ("plugins", models::plugins, true),
+    (
+        "plugins",
+        |value| serde_json::from_value::<Vec<PluginConfig>>(JsonValue::clone(value)).is_ok(),
+        true,
+    ),
     ("pass_through_endpoints", models::endpoints, true),
     ("alerting_args", JsonValue::is_object, true),
     ("user_header_mappings", models::header_mappings, true),
@@ -187,15 +200,6 @@ pub fn is_integer(value: &JsonValue) -> bool {
     value
         .as_f64()
         .is_some_and(|numeric| numeric.is_finite() && numeric.fract() == 0.0)
-}
-
-fn above(value: &JsonValue, minimum: f64) -> bool {
-    value.as_f64().is_some_and(|numeric| numeric > minimum)
-}
-
-#[must_use]
-pub fn at_least(value: &JsonValue, minimum: f64) -> bool {
-    is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= minimum)
 }
 
 #[must_use]

@@ -11,12 +11,12 @@ pub mod ui;
 pub mod validation;
 pub mod write;
 
-#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
 
 use axum::Router;
+use axum::routing::{get, post};
 use tokio::sync::Mutex;
 
 use crate::audit_events::sink::AuditEventSink;
@@ -48,5 +48,14 @@ pub struct ConfigFieldState {
 
 // the four /config routes; B8675 mounts this and the overlay supplies reload_config and the pass-through re-serve
 pub fn routes(state: ConfigFieldState, overlay: Arc<dyn ConfigOverlayPort>) -> Router {
-    http::router(state, overlay)
+    let http_state = http::HttpState {
+        fields: state,
+        overlay,
+    };
+    Router::new()
+        .route("/config/field/update", post(http::update))
+        .route("/config/field/info", get(http::info))
+        .route("/config/list", get(http::list))
+        .route("/config/field/delete", post(http::delete))
+        .with_state(http_state)
 }
