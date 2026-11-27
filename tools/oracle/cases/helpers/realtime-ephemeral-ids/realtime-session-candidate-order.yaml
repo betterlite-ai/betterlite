@@ -1,0 +1,180 @@
+kind: helper
+name: realtime-session-candidate-order
+call:
+  realtime_ephemeral_ids:
+    function: session_type
+calls:
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: null
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: ""
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: realtime
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: Realtime
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: transcription
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: TRANSCRIPTION
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: "transcription "
+  - realtime_ephemeral_ids:
+      function: session_type
+      session_type: audio
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: a
+        input_audio_transcription:
+          model: b
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: a
+        input_audio_transcription:
+          model: a
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: ""
+        input_audio_transcription:
+          model: b
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: 7
+        input_audio_transcription:
+          model: b
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        input_audio_transcription:
+          model: b
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: " "
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: " a"
+        input_audio_transcription:
+          model: a
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio: pcm16
+        input_audio_transcription:
+          model: c
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input: pcm16
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        instructions: hi
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        model: session-model
+        audio:
+          input:
+            format: pcm16
+            transcription:
+              model: b
+              language: en
+          output:
+            voice: alloy
+        input_audio_transcription:
+          model: c
+          language: es
+      model: a
+      create_if_missing: false
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        input_audio_transcription:
+          model: c
+          language: es
+      model: a
+      create_if_missing: true
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        audio:
+          input:
+            transcription:
+              model: b
+              language: en
+      model: a
+      create_if_missing: false
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        instructions: hi
+      model: a
+      create_if_missing: false
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        instructions: hi
+      model: a
+      create_if_missing: true
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        audio: pcm16
+      model: a
+      create_if_missing: true
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        audio:
+          input: pcm16
+          output:
+            voice: alloy
+      model: a
+      create_if_missing: true
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        audio:
+          input:
+            transcription: legacy
+      model: a
+      create_if_missing: true
+  - realtime_ephemeral_ids:
+      function: set_model
+      session:
+        input_audio_transcription: legacy
+      model: a
+      create_if_missing: true
+env: {}
+compare: {ignore: []}
