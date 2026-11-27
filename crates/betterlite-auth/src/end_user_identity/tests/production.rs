@@ -279,7 +279,7 @@ async fn real_user_lookup_probes_by_email() {
     );
     assert!(!store.calls().contains(&"create"));
     assert!(
-        UserCache::read(cache.as_ref(), "alice@example.com")
+        UserCache::read(&*cache, "alice@example.com")
             .await
             .expect("the email row reads back")
             .is_some(),
@@ -313,7 +313,7 @@ async fn real_user_lookup_never_creates_a_user() {
     assert!(resolved.is_none());
     assert!(!store.calls().contains(&"create"));
     assert!(
-        UserCache::read(cache.as_ref(), "ghost")
+        UserCache::read(&*cache, "ghost")
             .await
             .expect("the user cache reads back")
             .is_none(),
