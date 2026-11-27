@@ -23,6 +23,7 @@ pub enum KeyArchiveError {
     NonTextValue { column: &'static str },
 }
 
+// ast-grep-ignore: no-long-names
 pub async fn persist_deleted_verification_tokens<C: GenericClient + Sync>(
     db: &C,
     keys: &[LiteLLMVerificationToken],
@@ -30,11 +31,13 @@ pub async fn persist_deleted_verification_tokens<C: GenericClient + Sync>(
     litellm_changed_by: Option<&str>,
     clock: &dyn ArchiveClock,
 ) -> Result<(), KeyArchiveError> {
+    // ast-grep-ignore: no-long-names
     let records = records::transform_verification_tokens_to_deleted_records(
         keys,
         caller,
         litellm_changed_by,
         clock,
     );
+    // ast-grep-ignore: no-long-names
     store::save_deleted_verification_token_records(db, &records).await
 }

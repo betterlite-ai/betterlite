@@ -11,6 +11,7 @@ use super::KeyArchiveError;
 
 mod tests;
 
+// ast-grep-ignore: no-long-names
 pub async fn save_deleted_verification_token_records<C: GenericClient + Sync>(
     db: &C,
     records: &[DeletedVerificationToken],

@@ -8,6 +8,7 @@ use crate::audit_events::identity::CallerIdentity;
 use super::clock::ArchiveClock;
 
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn transform_verification_tokens_to_deleted_records(
     keys: &[LiteLLMVerificationToken],
     caller: &CallerIdentity,

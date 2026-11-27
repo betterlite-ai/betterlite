@@ -104,7 +104,8 @@ fn caller() -> CallerIdentity {
     CallerIdentity {
         user_id: Some(String::from("deleter-1")),
         api_key: Some(SecretString::from("sk-caller-hash")),
-        ..CallerIdentity::default()
+        metadata: None,
+        team_metadata: None,
     }
 }
 
