@@ -31,6 +31,8 @@ description: >-
   the class is the 400 from B10113.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/eval_run_lifecycle/tests.rs"
+  - "crates/betterlite-core/src/api/eval_run_lifecycle/**"
   - crates/betterlite-core/src/api/eval_http/error.rs
   - crates/betterlite-core/src/api/eval_lifecycle/error.rs
   - crates/betterlite-core/src/api/eval_lifecycle/tests/**
