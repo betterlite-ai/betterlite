@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::future::{Ready, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -174,7 +174,7 @@ impl Families {
             BodyFamily::Anthropic => {
                 self.anthropic_body_calls
                     .lock()
-                    .expect("no panic held the lock")
+                    .unwrap_or_else(PoisonError::into_inner)
                     .push(call);
                 self.anthropic_body
                     .clone()
@@ -183,7 +183,7 @@ impl Families {
             BodyFamily::Nova => {
                 self.nova_calls
                     .lock()
-                    .expect("no panic held the lock")
+                    .unwrap_or_else(PoisonError::into_inner)
                     .push(call);
                 Ok(self.nova_body.clone().unwrap_or(Json::Null))
             }

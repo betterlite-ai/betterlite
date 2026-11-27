@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
+use std::thread::yield_now;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::batch_records::jsonl::{BatchRecordContext, transform_openai_jsonl};
@@ -30,11 +31,11 @@ where
     F: Future,
 {
     let mut context = Context::from_waker(Waker::noop());
-    let mut future = pin!(future);
+    let mut pinned = pin!(future);
     loop {
-        match future.as_mut().poll(&mut context) {
+        match pinned.as_mut().poll(&mut context) {
             Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
+            Poll::Pending => yield_now(),
         }
     }
 }
@@ -215,10 +216,10 @@ fn upload(call: &CreateFileRequest) -> HelperResult {
     };
     let file = upload_file(call);
     let (signed, litellm) = sign_upload(call, &context, &file)?;
-    match signed {
-        Some(handoff) => Ok(upload_answer(&handoff, &litellm)),
-        None => Ok(json!({ "failed": true })),
-    }
+    signed.map_or_else(
+        || Ok(json!({ "failed": true })),
+        |handoff| Ok(upload_answer(&handoff, &litellm)),
+    )
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {

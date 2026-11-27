@@ -58,6 +58,30 @@ where
     })
 }
 
+fn call(operation: &str, input: Value) -> Attempt<Value> {
+    let output = invoke(
+        &[crate::GROUP],
+        &HelperCall {
+            operation: operation.to_owned(),
+            input,
+        },
+    );
+    if let Some(error) = output.error {
+        return Err(failure(error.message));
+    }
+    output
+        .value
+        .ok_or_else(|| failure("the nested helper returned no value"))
+}
+
+fn part(operation: &str, input: Value, pointer: &str) -> Attempt<Value> {
+    let value = call(operation, input)?;
+    value
+        .pointer(pointer)
+        .cloned()
+        .ok_or_else(|| failure("the family pass returned no value"))
+}
+
 // The provider passes run through the operations that already bind them, so the seam never copies an algorithm.
 pub(super) struct Families {
     model_cost: Value,
@@ -83,30 +107,6 @@ impl Families {
         })
     }
 
-    fn call(&self, operation: &str, input: Value) -> Attempt<Value> {
-        let output = invoke(
-            &[crate::GROUP],
-            &HelperCall {
-                operation: operation.to_owned(),
-                input,
-            },
-        );
-        if let Some(error) = output.error {
-            return Err(failure(error.message));
-        }
-        output
-            .value
-            .ok_or_else(|| failure("the nested helper returned no value"))
-    }
-
-    fn part(&self, operation: &str, input: Value, pointer: &str) -> Attempt<Value> {
-        let value = self.call(operation, input)?;
-        value
-            .pointer(pointer)
-            .cloned()
-            .ok_or_else(|| failure("the family pass returned no value"))
-    }
-
     fn claude(
         &self,
         function: &str,
@@ -114,7 +114,7 @@ impl Families {
         messages: &[Json],
         params: &Params,
     ) -> Attempt<Value> {
-        let (call, pointer) = match function {
+        let (call_input, pointer) = match function {
             "map_params" => (
                 json!({
                     "model": model,
@@ -139,26 +139,26 @@ impl Families {
         let input = json!({
             "function": function,
             "model_cost": self.model_cost,
-            "calls": [call],
+            "calls": [call_input],
         });
-        self.part("bedrock_claude_invoke", input, pointer)
+        part("bedrock_claude_invoke", input, pointer)
     }
 
     fn claude_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
-        self.claude("map_params", mapping_model, &[], params)
-            .and_then(|mapped| serde_json::from_value(mapped).map_err(failure))
+        let mapped = self.claude("map_params", mapping_model, &[], params)?;
+        serde_json::from_value(mapped).map_err(failure)
     }
 
     fn claude_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
-        self.claude("transform", model, messages, params)
-            .and_then(|body| serde_json::from_value(body).map_err(failure))
+        let body = self.claude("transform", model, messages, params)?;
+        serde_json::from_value(body).map_err(failure)
     }
 
     fn converse_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
         let map_input = json!({"function": "map_params", "model": model, "model_cost": self.model_cost, "environment": {}, "non_default_params": params, "optional_params": {}, "global_drop": false, "call_drop": false});
-        let mapped_params = self.part("bedrock_converse_params", map_input, "/params")?;
+        let mapped_params = part("bedrock_converse_params", map_input, "/params")?;
         let request_input = json!({"model": model, "messages": messages, "model_cost": self.model_cost, "optional_params": mapped_params, "litellm_params": {}, "global_drop": false, "modify_params": false, "neutralize_orphaned_blocks": true});
-        let body = self.part("bedrock_converse_request", request_input, "/body")?;
+        let body = part("bedrock_converse_request", request_input, "/body")?;
         serde_json::from_value(body).map_err(failure)
     }
 }

@@ -7,14 +7,14 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum Input {
+pub(crate) enum Input {
     TransformRecords(TransformRecords),
     CreateFileRequest(CreateFileRequest),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct TransformRecords {
+pub(crate) struct TransformRecords {
     pub(super) records: Vec<Value>,
     #[serde(default)]
     pub(super) target_model: String,
@@ -26,7 +26,7 @@ pub(super) struct TransformRecords {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct CreateFileRequest {
+pub(crate) struct CreateFileRequest {
     pub(super) model: String,
     pub(super) file: FileInput,
     #[serde(default)]
@@ -47,7 +47,7 @@ pub(super) struct CreateFileRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct FileInput {
+pub(crate) struct FileInput {
     pub(super) content: String,
     #[serde(default)]
     pub(super) filename: Option<String>,
