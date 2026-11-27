@@ -494,6 +494,21 @@ async fn empty_email_request_is_not_backfilled_from_a_user_row() {
 }
 
 #[tokio::test]
+async fn email_only_request_matches_a_stale_user_row() {
+    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u2")]));
+    fixture
+        .session
+        .add_user(support::user("u1", Some("u1@example.com"), &["team-1"]));
+    let request = [support::identity(None, Some("u1@example.com"))];
+    let results = fixture
+        .remove("team-1", &request, &support::proxy_admin())
+        .await
+        .unwrap();
+    assert!(results[0].success);
+    assert!(fixture.session.user_teams("u1").is_empty());
+}
+
+#[tokio::test]
 async fn postgres_concurrent_roster_delete() {
     postgres::concurrent_roster_delete().await;
 }
