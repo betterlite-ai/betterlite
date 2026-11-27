@@ -205,7 +205,7 @@ pub(crate) fn dispatch(
         | StageInput::AuthTenantBudgets(_)
         | StageInput::AuthOrgLookup(_)
         | StageInput::AuthEndUsers(_)
-        | StageInput::ModelGrantIntersection(_) => input.forwarded_context()?,
+        | StageInput::ModelGrantIntersection(_) => input.forwarded_context(),
         StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
