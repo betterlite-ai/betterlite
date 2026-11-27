@@ -1,7 +1,7 @@
 use betterlite_pyhost::call_error::PythonError;
 use pyo3::{PyErr, Python};
 
-pub const MAX_AUDIO_BYTES: u64 = 67_108_864;
+pub const MAX_AUDIO_BYTES: u64 = 0x0400_0000;
 
 const INVALID_REQUEST_ERROR: &str = "invalid_request_error";
 const INTERNAL_SERVER_ERROR: &str = "internal_server_error";

@@ -21,10 +21,10 @@ pub(super) fn resample<'py>(
         return Ok(samples.clone());
     }
     for resampler in [Resampler::Soxr, Resampler::Scipy] {
-        if let Some(resampled) =
+        if let Some(converted) =
             try_resampler(py, &numpy, resampler, samples, source_rate, target_rate)?
         {
-            return Ok(resampled);
+            return Ok(converted);
         }
     }
     linear(py, &numpy, samples, source_rate, target_rate)
@@ -49,12 +49,12 @@ fn try_resampler<'py>(
             .import("soxr")
             .and_then(|soxr| soxr.getattr("resample"))
             .and_then(|call| call.call1((samples, source_rate, target_rate)))
-            .and_then(|resampled| as_float32(py, numpy, &resampled)),
+            .and_then(|converted| as_float32(py, numpy, &converted)),
         Resampler::Scipy => scipy_resample(py, samples, source_rate, target_rate)
-            .and_then(|resampled| as_float32(py, numpy, &resampled)),
+            .and_then(|converted| as_float32(py, numpy, &converted)),
     };
     match outcome {
-        Ok(resampled) => Ok(Some(resampled)),
+        Ok(converted) => Ok(Some(converted)),
         Err(error) if error.is_instance_of::<PyImportError>(py) => Ok(None),
         Err(error) => Err(call_failure(py, operation(resampler), &error)),
     }

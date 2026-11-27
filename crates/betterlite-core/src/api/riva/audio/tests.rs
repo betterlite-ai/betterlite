@@ -299,7 +299,7 @@ async fn decodes_a_stereo_file_to_16k_mono_pcm() {
         return;
     };
     reset_fakes(&host);
-    let wav = wav_bytes(&[-16384, 0, 16384, 0], 2, 8000);
+    let wav = wav_bytes(&[-0x4000, 0, 0x4000, 0], 2, 8000);
     let tracker = WorkTracker::new(1, Duration::from_secs(5));
     let audio = decode_riva_audio(&host, &tracker, Duration::from_secs(30), wav)
         .await
@@ -321,7 +321,7 @@ fn passes_audio_at_the_target_rate_through_unchanged() {
         return;
     };
     reset_fakes(&host);
-    let audio = decode(&host, &wav_bytes(&[16384, -16384, 8192], 1, 16_000)).unwrap();
+    let audio = decode(&host, &wav_bytes(&[0x4000, -0x4000, 8192], 1, 16_000)).unwrap();
     assert_eq!(pcm_values(&audio), vec![16383, -16383, 8191]);
     assert_eq!(audio.duration_seconds, duration(3, TARGET_SAMPLE_RATE_HZ));
     assert_eq!(audio.sample_rate_hz, TARGET_SAMPLE_RATE_HZ);
@@ -335,7 +335,7 @@ fn rounds_a_short_high_rate_file_down_to_one_sample() {
         return;
     };
     reset_fakes(&host);
-    let audio = decode(&host, &wav_bytes(&[16384], 1, 44_100)).unwrap();
+    let audio = decode(&host, &wav_bytes(&[0x4000], 1, 44_100)).unwrap();
     assert_eq!(pcm_values(&audio), vec![16383]);
     assert_eq!(audio.duration_seconds, duration(1, TARGET_SAMPLE_RATE_HZ));
 }
@@ -700,7 +700,7 @@ fn rounds_the_linear_target_length_half_even() {
     let _soxr = Hidden::new(&host, "soxr");
     let _scipy = Hidden::new(&host, "scipy");
     let audio = decode(&host, b"fake audio").unwrap();
-    assert_eq!(pcm_values(&audio), vec![0, 32767]);
+    assert_eq!(pcm_values(&audio), vec![0, 0x7FFF]);
 }
 
 #[test]
@@ -721,7 +721,7 @@ fn keeps_negative_full_scale_at_minus_32767() {
     let _soxr = Hidden::new(&host, "soxr");
     let _scipy = Hidden::new(&host, "scipy");
     let audio = decode(&host, b"fake audio").unwrap();
-    assert_eq!(pcm_values(&audio), vec![-32767, -10922, 10922, 32767]);
+    assert_eq!(pcm_values(&audio), vec![-0x7FFF, -10922, 10922, 0x7FFF]);
 }
 
 #[test]
@@ -817,7 +817,7 @@ fn rejects_decoded_soundfile_audio_over_the_limit() {
     reset_fakes(&host);
     host.attach(|py| {
         install(py, "riva_audio_probe", PROBE);
-        install(py, "soundfile", &oversized_soundfile(16_777_217));
+        install(py, "soundfile", &oversized_soundfile(0x0100_0001));
     });
     let error = decode(&host, b"fake audio").unwrap_err();
     assert!(matches!(error, RivaAudioError::TooLarge));
@@ -833,7 +833,7 @@ fn accepts_decoded_soundfile_audio_of_exactly_the_limit() {
     reset_fakes(&host);
     host.attach(|py| {
         install(py, "riva_audio_probe", PROBE);
-        install(py, "soundfile", &oversized_soundfile(16_777_216));
+        install(py, "soundfile", &oversized_soundfile(0x0100_0000));
         install(
             py,
             "audioread",

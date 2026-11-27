@@ -103,14 +103,16 @@ fn audioread_source(spec: &AudioreadSpec) -> String {
         .map(|chunk| format!("bytes.fromhex({chunk:?})"))
         .collect();
     let joined = chunks.join(", ");
-    let samplerate = spec.samplerate;
-    let channels = spec.channels;
-    let iteration = if matches!(spec.failure, Failure::Iteration) {
+    script(&joined, spec.samplerate, spec.channels, spec.failure)
+}
+
+fn script(chunks: &str, samplerate: i64, channels: i64, failure: Failure) -> String {
+    let iteration = if matches!(failure, Failure::Iteration) {
         "True"
     } else {
         "False"
     };
-    let open = if matches!(spec.failure, Failure::Open) {
+    let open = if matches!(failure, Failure::Open) {
         "True"
     } else {
         "False"
@@ -128,7 +130,7 @@ class _Source:
     def __iter__(self):
         if {iteration}:
             raise RuntimeError('cannot read audio')
-        for chunk in [{joined}]:
+        for chunk in [{chunks}]:
             probe.events.append('audioread.read')
             yield chunk
 class _Open:

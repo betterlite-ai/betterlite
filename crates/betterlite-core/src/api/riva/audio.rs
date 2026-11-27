@@ -110,7 +110,7 @@ fn mono<'py>(
             .call_method("mean", (), Some(&keywords))
             .map_err(|error| call_failure(py, "samples.mean", &error));
     }
-    data.get_item((PySlice::full(), 0_i64))
+    data.get_item((PySlice::full(py), 0_i64))
         .map_err(|error| call_failure(py, "samples[:, 0]", &error))
 }
 
