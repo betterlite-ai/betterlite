@@ -31,19 +31,27 @@ pub(crate) struct RetrieveCache<'cache, Memory, Remote> {
     pub(crate) limits: ApiLimits,
 }
 
+// the verbose sink a retrieve writes through, holding the caller's key so print_verbose can mask it
+struct Verbose<'a> {
+    api_key: Option<&'a str>,
+    diagnostics: Vec<BatchDiagnostic>,
+    printed: Vec<String>,
+}
+
 impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, Memory, Remote> {
     pub(crate) async fn run(
         &self,
         call: &BatchRetrieveCall,
     ) -> Result<BatchRetrieveResult, BatchPrecallError> {
         let mut data = call.data.clone();
-        let mut diagnostics = Vec::new();
-        let mut printed = Vec::new();
         let api_key = fields::principal_text(&call.principal, "api_key")?;
         let name = format!("litellm:{}:{}", api_key.unwrap_or("None"), call.call_type);
-        let raised = self
-            .warm(&name, api_key, &mut data, &mut diagnostics, &mut printed)
-            .await;
+        let mut verbose = Verbose {
+            api_key,
+            diagnostics: Vec::new(),
+            printed: Vec::new(),
+        };
+        let raised = self.warm(&name, &mut data, &mut verbose).await;
         let cached = if raised.is_some() {
             None
         } else {
@@ -53,8 +61,8 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
             data,
             cached,
             raised,
-            diagnostics,
-            printed,
+            diagnostics: verbose.diagnostics,
+            printed: verbose.printed,
         })
     }
 
@@ -62,66 +70,49 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
     async fn warm(
         &self,
         name: &str,
-        api_key: Option<&str>,
         data: &mut RequestData,
-        diagnostics: &mut Vec<BatchDiagnostic>,
-        printed: &mut Vec<String>,
+        verbose: &mut Verbose<'_>,
     ) -> Option<BatchHttpError> {
         let mut warmed = Vec::new();
         if !self.memory.keys().iter().any(|key| key.starts_with(name))
             && let Some(remote) = self.remote
             && remote.is_redis()
         {
-            self.print_verbose(
-                &format!("cache_key_name: {name}"),
-                api_key,
-                diagnostics,
-                printed,
-            );
+            self.print_verbose(&format!("cache_key_name: {name}"), verbose);
             let keys = match remote.scan(name, SCAN_COUNT).await {
                 Ok(keys) => keys,
-                Err(failure) => return warm_failed(failure, diagnostics),
+                Err(failure) => return warm_failed(failure, &mut verbose.diagnostics),
             };
             let listed: Vec<String> = keys.iter().map(|key| format!("'{key}'")).collect();
-            self.print_verbose(
-                &format!("redis keys: [{}]", listed.join(", ")),
-                api_key,
-                diagnostics,
-                printed,
-            );
+            self.print_verbose(&format!("redis keys: [{}]", listed.join(", ")), verbose);
             if !keys.is_empty() {
                 match remote.batch_get(&keys).await {
                     Ok(entries) => warmed = entries,
-                    Err(failure) => return warm_failed(failure, diagnostics),
+                    Err(failure) => return warm_failed(failure, &mut verbose.diagnostics),
                 }
             }
         }
         if !warmed.is_empty()
             && let Err(failure) = self.memory.set_many(warmed, WARM_TTL_SECONDS).await
         {
-            return warm_failed(failure, diagnostics);
+            return warm_failed(failure, &mut verbose.diagnostics);
         }
         if let Err(reason) = fields::set_namespace(data, name) {
             let message = format!("{CACHE_FAILURE_PREFIX}{reason}");
-            diagnostics.push(error(message));
+            verbose.diagnostics.push(error(message));
         }
         None
     }
 
     // print_verbose: the debug log line always, and the same text on stdout when litellm.set_verbose is True
-    fn print_verbose(
-        &self,
-        message: &str,
-        api_key: Option<&str>,
-        diagnostics: &mut Vec<BatchDiagnostic>,
-        printed: &mut Vec<String>,
-    ) {
+    fn print_verbose(&self, line: &str, verbose: &mut Verbose<'_>) {
         // secrets-stay-secret: a verbose line masks the caller's key, while the cache key and namespace keep it raw
-        let message =
-            api_key.map_or_else(|| message.to_owned(), |key| message.replace(key, REDACTED));
-        diagnostics.push(debug(message.clone()));
+        let message = verbose
+            .api_key
+            .map_or_else(|| line.to_owned(), |key| line.replace(key, REDACTED));
+        verbose.diagnostics.push(debug(message.clone()));
         if self.verbose_stdout {
-            printed.push(message);
+            verbose.printed.push(message);
         }
     }
 
