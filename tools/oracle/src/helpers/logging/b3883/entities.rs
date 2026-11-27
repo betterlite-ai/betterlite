@@ -1,23 +1,33 @@
 use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_logging::prometheus::budget_lookups::customer_budget::{
-    CustomerBudgetRequest, set_customer_budget_metrics_after_api_request,
+    CustomerBudgetRequest,
+    // ast-grep-ignore: no-long-names
+    set_customer_budget_metrics_after_api_request as set_customer_budget,
 };
 use betterlite_logging::prometheus::budget_lookups::customer_default::get_default_customer_budget;
 use betterlite_logging::prometheus::budget_lookups::key_budget::{
-    KeyBudgetRequest, set_key_budget_metrics_after_api_request,
+    KeyBudgetRequest,
+    // ast-grep-ignore: no-long-names
+    set_key_budget_metrics_after_api_request as set_key_budget,
 };
 use betterlite_logging::prometheus::budget_lookups::org_budget::{
-    OrgBudgetRequest, set_org_budget_metrics_after_api_request,
+    OrgBudgetRequest,
+    // ast-grep-ignore: no-long-names
+    set_org_budget_metrics_after_api_request as set_org_budget,
 };
 use betterlite_logging::prometheus::budget_lookups::snapshots::{
     KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot,
 };
 use betterlite_logging::prometheus::budget_lookups::team_budget::{
-    TeamBudgetRequest, set_team_budget_metrics_after_api_request,
+    TeamBudgetRequest,
+    // ast-grep-ignore: no-long-names
+    set_team_budget_metrics_after_api_request as set_team_budget,
 };
 use betterlite_logging::prometheus::budget_lookups::user_budget::{
-    UserBudgetRequest, set_user_budget_metrics_after_api_request,
+    UserBudgetRequest,
+    // ast-grep-ignore: no-long-names
+    set_user_budget_metrics_after_api_request as set_user_budget,
 };
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, SeriesLimits,
@@ -57,7 +67,7 @@ pub(super) fn team_value(input: &Input) -> HelperResult {
     finish(
         &probe,
         &scripted,
-        set_team_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
+        set_team_budget(&scripted, &gauges, source, now, &request),
     )
 }
 
@@ -81,7 +91,7 @@ pub(super) fn org_value(input: &Input) -> HelperResult {
     finish(
         &probe,
         &scripted,
-        set_org_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
+        set_org_budget(&scripted, &gauges, source, now, &request),
     )
 }
 
@@ -105,9 +115,7 @@ pub(super) fn customer_value(input: &Input) -> HelperResult {
     finish(
         &probe,
         &scripted,
-        set_customer_budget_metrics_after_api_request(
-            &scripted, &gauges, context, end_user, &request,
-        ),
+        set_customer_budget(&scripted, &gauges, context, end_user, &request),
     )
 }
 
@@ -132,7 +140,7 @@ pub(super) fn key_value(input: &Input) -> HelperResult {
     finish(
         &probe,
         &scripted,
-        set_key_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
+        set_key_budget(&scripted, &gauges, source, now, &request),
     )
 }
 
@@ -159,7 +167,7 @@ pub(super) fn user_value(input: &Input) -> HelperResult {
     finish(
         &probe,
         &scripted,
-        set_user_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
+        set_user_budget(&scripted, &gauges, source, now, &request),
     )
 }
 
