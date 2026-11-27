@@ -269,6 +269,42 @@ fn request_timeout_reads_seconds() {
     ));
 }
 
+// docs/deviations/B7885.yaml: a timeout no Duration can hold is refused with a 400 that names timeout
+#[rstest]
+#[case::negative("-1.0")]
+#[case::too_large("1e300")]
+fn request_a_timeout_that_is_not_a_duration_is_a_bad_request(#[case] given: &str) {
+    Python::initialize();
+    let error = ListPayload::parse(&format!(r#"{{"timeout": {given}}}"#))
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        ConvertError::FieldType {
+            name: "timeout",
+            ..
+        }
+    ));
+    let raised = PyErr::from(EvalOperationFailure::from(error));
+    Python::attach(|py| {
+        let message = raised.value(py).to_string();
+        assert!(message.contains(r#""type":"BadRequestError""#), "{message}");
+        assert!(message.contains(r#""status_code":400"#), "{message}");
+        assert!(message.contains(r#""param":"timeout""#), "{message}");
+    });
+}
+
+// docs/deviations/B7885.yaml: JSON has no non-finite numbers, so the parse refuses a NaN or infinite timeout
+#[rstest]
+#[case::nan("NaN")]
+#[case::infinity("Infinity")]
+fn request_a_non_finite_timeout_is_a_json_error(#[case] given: &str) {
+    let error = ListPayload::parse(&format!(r#"{{"timeout": {given}}}"#))
+        .err()
+        .unwrap();
+    assert!(matches!(error, ConvertError::Json { .. }));
+}
+
 #[test]
 fn request_a_wrong_typed_field_names_it() {
     let error = ListPayload::parse(r#"{"limit": "many"}"#).err().unwrap();

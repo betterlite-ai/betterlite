@@ -21,6 +21,9 @@ deviations:
 - what: "A value outside its declared type (a non-string header value, or metadata, extra_query and extra_body values that are not JSON) raises a 400 that names the field, where LiteLLM's dict updates pass the object on and httpx or the provider fails later."
   why: "docs/compatibility.md reads a value outside the declared type as an error naming the field; the typed request model cannot carry the wrong shape."
   link: ""
+- what: "A timeout that cannot be a std Duration is refused before the provider call: a negative or too-large number is a 400 that names timeout, and a non-finite timeout fails the payload parse as a ValueError, where LiteLLM's `timeout or request_timeout` hands the float to httpx and reports whatever it raises through exception_type as a 500-class APIConnectionError."
+  why: "betterlite carries the timeout as a typed Duration and refuses the value it cannot represent at the parameter, so the failure names the value instead of inventing a provider status; JSON has no non-finite numbers, so those stop at the parse."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L212
 kept_bugs:
 - what: "create_eval accepts `metadata` and never puts it on the request; only extra_body can add a metadata body field."
   why: "LiteLLM builds create_request from data_source_config, testing_criteria, name and extra_body only, so a working setup that passes metadata today sees it ignored; changing that would change the wire body against LiteLLM."

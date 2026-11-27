@@ -281,6 +281,14 @@ def made_answer(result: BaseModel | Awaitable[BaseModel]) -> BaseModel:
             return result
 
 
+async def awaited_answer(pending: BaseModel | Awaitable[BaseModel]) -> BaseModel:
+    match pending:
+        case Awaitable():
+            return await pending
+        case object():
+            return pending
+
+
 def test_signature_matches_litellm() -> None:
     assert parameter_rows(inspect.signature(create_eval)) == parameter_rows(
         inspect.signature(LITELLM.create_eval)
@@ -378,8 +386,8 @@ def test_signature_all_parameters() -> None:
     assert dumped(made_answer(updated)) == dumped(reference_updated)
     assert dumped(made_answer(deleted)) == dumped(reference_deleted)
     assert dumped(made_answer(cancelled)) == dumped(reference_cancelled)
-    ours_calls = server.calls[0::2]
-    their_calls = server.calls[1::2]
+    ours_calls = server.calls[:6]
+    their_calls = server.calls[6:]
     assert [(call["method"], call["path"]) for call in ours_calls] == [
         (call["method"], call["path"]) for call in their_calls
     ]
@@ -508,8 +516,8 @@ def test_calls_update_filters() -> None:
     assert dumped(made_answer(ours)) == dumped(reference)
     assert dumped(made_answer(internal)) == dumped(reference_internal)
     assert dumped(made_answer(replaced)) == dumped(reference_replaced)
-    our_calls = server.calls[0::2]
-    their_calls = server.calls[1::2]
+    our_calls = server.calls[:3]
+    their_calls = server.calls[3:]
     assert [body_of(call) for call in our_calls] == [body_of(call) for call in their_calls]
     assert body_of(our_calls[0]) == {"name": NAME, "metadata": {"team": "evals"}, "note": "n"}
     assert body_of(our_calls[1]) == {}
@@ -599,6 +607,41 @@ def test_calls_async_every_op() -> None:
     assert dumped(cancelled) == dumped(reference_cancelled)
     seen = [(call["method"], call["path"]) for call in server.calls]
     assert seen == [*OPERATIONS, *OPERATIONS]
+
+
+def test_calls_flag_coroutines() -> None:
+    with EvalsServer() as server:
+        created = create_eval(
+            DATA_SOURCE_CONFIG, TESTING_CRITERIA, name=NAME, api_base=server.url,
+            api_key=GOOD_KEY, acreate_eval=True,
+        )
+        assert inspect.isawaitable(created)
+        listed = list_evals(limit=5, api_base=server.url, api_key=GOOD_KEY, alist_evals=True)
+        assert inspect.isawaitable(listed)
+        fetched = get_eval(EVAL_ID, api_base=server.url, api_key=GOOD_KEY, aget_eval=True)
+        assert inspect.isawaitable(fetched)
+        updated = update_eval(
+            EVAL_ID, name=NAME, api_base=server.url, api_key=GOOD_KEY, aupdate_eval=True
+        )
+        assert inspect.isawaitable(updated)
+        deleted = delete_eval(EVAL_ID, api_base=server.url, api_key=GOOD_KEY, adelete_eval=True)
+        assert inspect.isawaitable(deleted)
+        cancelled = cancel_eval(
+            EVAL_ID, api_base=server.url, api_key=GOOD_KEY, acancel_eval=True
+        )
+        assert inspect.isawaitable(cancelled)
+        pending: tuple[BaseModel | Awaitable[BaseModel], ...] = (
+            created, listed, fetched, updated, deleted, cancelled,
+        )
+        answers = [asyncio.run(awaited_answer(item)) for item in pending]
+        seen = [(call["method"], call["path"]) for call in server.calls]
+    assert dumped(answers[0])["name"] == "created"
+    assert dumped(answers[1])["object"] == "list"
+    assert dumped(answers[2])["name"] == "fetched"
+    assert dumped(answers[3])["name"] == "updated"
+    assert dumped(answers[4])["deleted"] is True
+    assert dumped(answers[5])["status"] == "cancelled"
+    assert seen == [*OPERATIONS]
 
 
 def test_calls_drop_logging() -> None:
