@@ -54,6 +54,7 @@ hex = "0.4.3"
 http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 quick-xml.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
