@@ -85,117 +85,98 @@ fn failure_message(method: &str, payload: &str) -> String {
     })
 }
 
-fn check_create(method: &str) {
-    let (answer, request) = call(
-        method,
-        r#""name":"hero","video":"https://cdn.test/a.mp4","custom_llm_provider":"openai""#,
-        CHARACTER,
-        Vec::new(),
-    );
-    assert!(
-        request.line.starts_with("POST /v1/videos/characters"),
-        "{}",
-        request.line
-    );
-    assert!(
-        request
-            .head
-            .to_lowercase()
-            .contains("authorization: bearer sk-test")
-    );
-    assert!(request.body.contains("hero"), "{}", request.body);
-    assert!(request.body.contains("a.mp4"), "{}", request.body);
-    assert!(answer.contains(r#""id":"char_test""#), "{answer}");
-    assert!(answer.contains(r#""name":"hero""#), "{answer}");
+// one roundtrip: the arguments and answer the call is expected to make of them
+struct Expectation<'a> {
+    arguments: &'a str,
+    response: &'a str,
+    blob: Option<&'a [u8]>,
+    request_start: &'a str,
+    head_fragments: &'a [&'a str],
+    body_fragments: &'a [&'a str],
+    answer_fragments: &'a [&'a str],
 }
 
-fn check_create_file(method: &str) {
-    let (answer, request) = call(
-        method,
-        r#""name":"hero","video":{"$file":{"name":"clip.mov","blob":0,"content_type":null}},"custom_llm_provider":"openai""#,
-        CHARACTER,
-        vec![b"video bytes".to_vec()],
-    );
+fn check(method: &str, expected: &Expectation<'_>) {
+    let blobs = match expected.blob {
+        Some(bytes) => vec![bytes.to_vec()],
+        None => Vec::new(),
+    };
+    let (answer, request) = call(method, expected.arguments, expected.response, blobs);
     assert!(
-        request.line.starts_with("POST /v1/videos/characters"),
+        request.line.starts_with(expected.request_start),
         "{}",
         request.line
     );
-    assert!(request.body.contains("clip.mov"), "{}", request.body);
-    assert!(request.body.contains("video bytes"), "{}", request.body);
-    assert!(answer.contains(r#""id":"char_test""#), "{answer}");
+    for &fragment in expected.head_fragments {
+        assert!(
+            request.head.to_lowercase().contains(fragment),
+            "{}",
+            request.head
+        );
+    }
+    for &fragment in expected.body_fragments {
+        assert!(request.body.contains(fragment), "{}", request.body);
+    }
+    for &fragment in expected.answer_fragments {
+        assert!(answer.contains(fragment), "{answer}");
+    }
 }
 
-fn check_get(method: &str) {
-    let (answer, request) = call(
-        method,
-        r#""character_id":"char_test","custom_llm_provider":"openai""#,
-        CHARACTER,
-        Vec::new(),
-    );
-    assert!(
-        request
-            .line
-            .starts_with("GET /v1/videos/characters/char_test"),
-        "{}",
-        request.line
-    );
-    assert!(answer.contains(r#""name":"hero""#), "{answer}");
-}
-
-fn check_edit(method: &str) {
-    let (answer, request) = call(
-        method,
-        r#""video_id":"vid-1","prompt":"add rain","custom_llm_provider":"openai""#,
-        VIDEO,
-        Vec::new(),
-    );
-    assert!(
-        request.line.starts_with("POST /v1/videos/edits"),
-        "{}",
-        request.line
-    );
-    assert!(request.body.contains("add rain"), "{}", request.body);
-    assert!(request.body.contains("vid-1"), "{}", request.body);
-    assert!(answer.contains(r#""status":"queued""#), "{answer}");
-}
-
-fn check_edit_file(method: &str) {
-    let (answer, request) = call(
-        method,
-        r#""video_id":"vid-1","prompt":"add rain","video":{"$file":{"name":"clip.mp4","blob":0,"content_type":null}},"custom_llm_provider":"openai""#,
-        VIDEO,
-        vec![b"video bytes".to_vec()],
-    );
-    assert!(
-        request.line.starts_with("POST /v1/videos/edits"),
-        "{}",
-        request.line
-    );
-    assert!(request.body.contains("clip.mp4"), "{}", request.body);
-    assert!(request.body.contains("add rain"), "{}", request.body);
-    assert!(answer.contains(r#""status":"queued""#), "{answer}");
-}
-
-fn check_extension(method: &str) {
-    let (answer, request) = call(
-        method,
-        r#""video_id":"vid-1","prompt":"more","seconds":"8","custom_llm_provider":"openai""#,
-        VIDEO,
-        Vec::new(),
-    );
-    assert!(
-        request.line.starts_with("POST /v1/videos/extensions"),
-        "{}",
-        request.line
-    );
-    assert!(
-        request.body.contains(r#""seconds":"8""#),
-        "{}",
-        request.body
-    );
-    assert!(answer.contains(r#""status":"queued""#), "{answer}");
-}
+const MEDIA: &[u8] = b"video bytes";
+const CREATE: Expectation<'static> = Expectation {
+    arguments: r#""name":"hero","video":"https://cdn.test/a.mp4","custom_llm_provider":"openai""#,
+    response: CHARACTER,
+    blob: None,
+    request_start: "POST /v1/videos/characters",
+    head_fragments: &["authorization: bearer sk-test"],
+    body_fragments: &["hero", "a.mp4"],
+    answer_fragments: &[r#""id":"char_test""#, r#""name":"hero""#],
+};
+const CREATE_FILE: Expectation<'static> = Expectation {
+    arguments: r#""name":"hero","video":{"$file":{"name":"clip.mov","blob":0,"content_type":null}},"custom_llm_provider":"openai""#,
+    response: CHARACTER,
+    blob: Some(MEDIA),
+    request_start: "POST /v1/videos/characters",
+    head_fragments: &[],
+    body_fragments: &["clip.mov", "video bytes"],
+    answer_fragments: &[r#""id":"char_test""#],
+};
+const GET: Expectation<'static> = Expectation {
+    arguments: r#""character_id":"char_test","custom_llm_provider":"openai""#,
+    response: CHARACTER,
+    blob: None,
+    request_start: "GET /v1/videos/characters/char_test",
+    head_fragments: &[],
+    body_fragments: &[],
+    answer_fragments: &[r#""name":"hero""#],
+};
+const EDIT: Expectation<'static> = Expectation {
+    arguments: r#""video_id":"vid-1","prompt":"add rain","custom_llm_provider":"openai""#,
+    response: VIDEO,
+    blob: None,
+    request_start: "POST /v1/videos/edits",
+    head_fragments: &[],
+    body_fragments: &["add rain", "vid-1"],
+    answer_fragments: &[r#""status":"queued""#],
+};
+const EDIT_FILE: Expectation<'static> = Expectation {
+    arguments: r#""video_id":"vid-1","prompt":"add rain","video":{"$file":{"name":"clip.mp4","blob":0,"content_type":null}},"custom_llm_provider":"openai""#,
+    response: VIDEO,
+    blob: Some(MEDIA),
+    request_start: "POST /v1/videos/edits",
+    head_fragments: &[],
+    body_fragments: &["clip.mp4", "add rain"],
+    answer_fragments: &[r#""status":"queued""#],
+};
+const EXTENSION: Expectation<'static> = Expectation {
+    arguments: r#""video_id":"vid-1","prompt":"more","seconds":"8","custom_llm_provider":"openai""#,
+    response: VIDEO,
+    blob: None,
+    request_start: "POST /v1/videos/extensions",
+    head_fragments: &[],
+    body_fragments: &[r#""seconds":"8""#],
+    answer_fragments: &[r#""status":"queued""#],
+};
 
 fn check_failed(method: &str, arguments: &str) {
     let serving = serve(
@@ -233,38 +214,38 @@ fn check_mock(method: &str, arguments: &str, expected: &str) {
 
 #[test]
 fn character_create_roundtrip() {
-    check_create("create_character");
-    check_create("acreate_character");
+    check("create_character", &CREATE);
+    check("acreate_character", &CREATE);
 }
 
 #[test]
 fn character_create_file_roundtrip() {
-    check_create_file("create_character");
-    check_create_file("acreate_character");
+    check("create_character", &CREATE_FILE);
+    check("acreate_character", &CREATE_FILE);
 }
 
 #[test]
 fn character_get_roundtrip() {
-    check_get("get_character");
-    check_get("aget_character");
+    check("get_character", &GET);
+    check("aget_character", &GET);
 }
 
 #[test]
 fn edit_roundtrip() {
-    check_edit("edit");
-    check_edit("aedit");
+    check("edit", &EDIT);
+    check("aedit", &EDIT);
 }
 
 #[test]
 fn edit_file_roundtrip() {
-    check_edit_file("edit");
-    check_edit_file("aedit");
+    check("edit", &EDIT_FILE);
+    check("aedit", &EDIT_FILE);
 }
 
 #[test]
 fn extension_roundtrip() {
-    check_extension("extension");
-    check_extension("aextension");
+    check("extension", &EXTENSION);
+    check("aextension", &EXTENSION);
 }
 
 #[test]
