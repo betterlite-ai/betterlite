@@ -8,7 +8,8 @@ use betterlite_models::decisions::Json;
 use serde::Serialize;
 
 use self::errors::{DiscoveryFailure, not_oauth_protected};
-use super::{GatewayFacts, JsonObject, ProtectedRoot, UpstreamGet};
+use super::upstream_fetch::UpstreamMetadataFetch as _;
+use super::{GatewayFacts, JsonObject, ProtectedRoot, RequestFacts, UpstreamGet};
 
 #[derive(Debug, Serialize)]
 pub struct RootResource {
@@ -99,115 +100,122 @@ pub fn merge_issuers(env_issuer: Option<&str>, configured: &[Option<String>]) ->
     issuers
 }
 
-impl<U, R, G> ProtectedRoot<U, R, G>
+pub(crate) async fn named_resource<U, R, G>(
+    root: &ProtectedRoot<U, R, G>,
+    base_url: &str,
+    name: &str,
+    standard: bool,
+    server: Option<&MCPServer>,
+) -> Result<NamedDocument, DiscoveryFailure>
 where
     U: UpstreamGet,
+    R: RequestFacts,
     G: GatewayFacts,
 {
-    pub(crate) async fn named_resource(
-        &self,
-        base_url: &str,
-        name: &str,
-        standard: bool,
-        server: Option<&MCPServer>,
-    ) -> Result<NamedDocument, DiscoveryFailure> {
-        let resource_url = if standard {
-            format!("{base_url}/mcp/{name}")
-        } else {
-            format!("{base_url}/{name}/mcp")
-        };
-        let Some(resolved) = server else {
-            return Err(not_oauth_protected(name));
-        };
-        if resolved.is_dcr_bridge() {
-            return Ok(NamedDocument::Gateway(GatewayResource {
-                authorization_servers: vec![format!("{base_url}/{name}")],
-                resource: resource_url,
-                scopes_supported: resolved.fields.scopes.clone().unwrap_or_default(),
-            }));
-        }
-        if resolved.is_oauth_passthrough()
-            || resolved.is_oauth_delegate()
-            || resolved.is_true_passthrough()
-        {
-            return self.pass_through_document(resolved, &resource_url).await;
-        }
-        self.gateway_or_refusal(base_url, name, &resource_url, resolved)
+    let resource_url = if standard {
+        format!("{base_url}/mcp/{name}")
+    } else {
+        format!("{base_url}/{name}/mcp")
+    };
+    let Some(resolved) = server else {
+        return Err(not_oauth_protected(name));
+    };
+    if resolved.is_dcr_bridge() {
+        return Ok(NamedDocument::Gateway(GatewayResource {
+            authorization_servers: vec![format!("{base_url}/{name}")],
+            resource: resource_url,
+            scopes_supported: resolved.fields.scopes.clone().unwrap_or_default(),
+        }));
     }
+    if resolved.is_oauth_passthrough()
+        || resolved.is_oauth_delegate()
+        || resolved.is_true_passthrough()
+    {
+        return pass_through_document(root, resolved, &resource_url).await;
+    }
+    gateway_or_refusal(root, base_url, name, &resource_url, resolved)
+}
 
-    fn gateway_or_refusal(
-        &self,
-        base_url: &str,
-        name: &str,
-        resource_url: &str,
-        server: &MCPServer,
-    ) -> Result<NamedDocument, DiscoveryFailure> {
-        if server.fields.auth_type == Some(MCPAuth::Oauth2TokenExchange) {
-            let issuers = self.gateway.jwt_issuers();
-            if !issuers.is_empty() {
-                return Ok(NamedDocument::Gateway(GatewayResource {
-                    authorization_servers: issuers,
-                    resource: resource_url.to_owned(),
-                    scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
-                }));
-            }
-        }
-        if server.advertises_gateway_authorization_server() {
+fn gateway_or_refusal<U, R, G>(
+    root: &ProtectedRoot<U, R, G>,
+    base_url: &str,
+    name: &str,
+    resource_url: &str,
+    server: &MCPServer,
+) -> Result<NamedDocument, DiscoveryFailure>
+where
+    G: GatewayFacts,
+{
+    if server.fields.auth_type == Some(MCPAuth::Oauth2TokenExchange) {
+        let issuers = root.gateway.jwt_issuers();
+        if !issuers.is_empty() {
             return Ok(NamedDocument::Gateway(GatewayResource {
-                authorization_servers: vec![format!("{base_url}/mcp")],
+                authorization_servers: issuers,
                 resource: resource_url.to_owned(),
                 scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
             }));
         }
-        if !matches!(
-            server.fields.auth_type,
-            Some(MCPAuth::Oauth2TokenExchange | MCPAuth::Oauth2)
-        ) {
-            return Err(not_oauth_protected(name));
-        }
-        Ok(NamedDocument::Gateway(GatewayResource {
-            authorization_servers: vec![format!("{base_url}/{name}")],
+    }
+    if server.advertises_gateway_authorization_server() {
+        return Ok(NamedDocument::Gateway(GatewayResource {
+            authorization_servers: vec![format!("{base_url}/mcp")],
             resource: resource_url.to_owned(),
             scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
-        }))
+        }));
     }
+    if !matches!(
+        server.fields.auth_type,
+        Some(MCPAuth::Oauth2TokenExchange | MCPAuth::Oauth2)
+    ) {
+        return Err(not_oauth_protected(name));
+    }
+    Ok(NamedDocument::Gateway(GatewayResource {
+        authorization_servers: vec![format!("{base_url}/{name}")],
+        resource: resource_url.to_owned(),
+        scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
+    }))
+}
 
-    async fn pass_through_document(
-        &self,
-        server: &MCPServer,
-        resource_url: &str,
-    ) -> Result<NamedDocument, DiscoveryFailure> {
-        match self.fetch_upstream_oauth_protected_resource(server).await {
-            Ok(Some(document)) => {
-                if server.is_client_forwarded_token() {
-                    return Ok(NamedDocument::Upstream(document));
-                }
-                Ok(NamedDocument::Upstream(rewritten_resource(
-                    document,
-                    resource_url,
-                )))
+async fn pass_through_document<U, R, G>(
+    root: &ProtectedRoot<U, R, G>,
+    server: &MCPServer,
+    resource_url: &str,
+) -> Result<NamedDocument, DiscoveryFailure>
+where
+    U: UpstreamGet,
+    R: RequestFacts,
+    G: GatewayFacts,
+{
+    match root.fetch_upstream_oauth_protected_resource(server).await {
+        Ok(Some(document)) => {
+            if server.is_client_forwarded_token() {
+                return Ok(NamedDocument::Upstream(document));
             }
-            Ok(None) => {
-                tracing::warn!(
-                    mcp_server = %server.fields.name,
-                    "upstream oauth-protected-resource metadata is unavailable for a pass-through MCP server"
-                );
-                Err(errors::upstream_failure(
-                    &server.fields.name,
-                    "Upstream oauth-protected-resource metadata unavailable",
-                ))
-            }
-            Err(cause) => {
-                tracing::warn!(
-                    mcp_server = %server.fields.name,
-                    error = %cause,
-                    "fetching upstream oauth-protected-resource metadata failed for a pass-through MCP server"
-                );
-                Err(errors::upstream_failure(
-                    &server.fields.name,
-                    "Failed to fetch upstream oauth-protected-resource metadata",
-                ))
-            }
+            Ok(NamedDocument::Upstream(rewritten_resource(
+                document,
+                resource_url,
+            )))
+        }
+        Ok(None) => {
+            tracing::warn!(
+                mcp_server = %server.fields.name,
+                "upstream oauth-protected-resource metadata is unavailable for a pass-through MCP server"
+            );
+            Err(errors::upstream_failure(
+                &server.fields.name,
+                "Upstream oauth-protected-resource metadata unavailable",
+            ))
+        }
+        Err(cause) => {
+            tracing::warn!(
+                mcp_server = %server.fields.name,
+                error = %cause,
+                "fetching upstream oauth-protected-resource metadata failed for a pass-through MCP server"
+            );
+            Err(errors::upstream_failure(
+                &server.fields.name,
+                "Failed to fetch upstream oauth-protected-resource metadata",
+            ))
         }
     }
 }

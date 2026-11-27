@@ -11,7 +11,9 @@ use betterlite_mcp::registry::servers::SharedRegistry;
 use betterlite_mcp::server_record::MCPServer;
 use serde::Serialize;
 
-use super::documents::{aggregate_auth_server, aggregate_protected_resource, root_resource};
+use super::documents::{
+    aggregate_auth_server, aggregate_protected_resource, named_resource, root_resource,
+};
 use super::{GatewayFacts, ProtectedRoot, RequestFacts, UpstreamGet};
 
 pub(crate) const PROTECTED_RESOURCE_PATH: &str = "/.well-known/oauth-protected-resource";
@@ -61,10 +63,7 @@ where
             let standard = matches!(shape, DocumentShape::Standard);
             let client_ip = root.request.client_ip(&parts);
             let server = resolve_server(&root.registry, &name, client_ip.as_deref()).await;
-            match root
-                .named_resource(&base_url, &name, standard, server.as_ref())
-                .await
-            {
+            match named_resource(&root, &base_url, &name, standard, server.as_ref()).await {
                 Ok(document) => Json(document).into_response(),
                 Err(failure) => (
                     failure.status,

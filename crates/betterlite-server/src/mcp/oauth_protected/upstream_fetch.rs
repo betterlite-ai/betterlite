@@ -1,5 +1,7 @@
 mod tests;
 
+use std::future::Future;
+
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::oauth_metadata_cache::{
     CacheFill, CacheKey, NEGATIVE_TTL_SECONDS, TTL_SECONDS,
@@ -8,7 +10,9 @@ use betterlite_mcp::server_record::MCPServer;
 use betterlite_models::decisions::Json;
 use thiserror::Error;
 
-use super::{GetFailure, JsonObject, ProtectedRoot, UpstreamGet, UpstreamReply};
+use super::{
+    GatewayFacts, GetFailure, JsonObject, ProtectedRoot, RequestFacts, UpstreamGet, UpstreamReply,
+};
 
 const METADATA_ACCEPT: &str = "application/json";
 const METADATA_STATUS_OK: u16 = 200;
@@ -108,12 +112,22 @@ fn stored_value(value: &Json) -> JsonValue {
     }
 }
 
-impl<U, R, G> ProtectedRoot<U, R, G>
+pub(crate) trait UpstreamMetadataFetch {
+    // ast-grep-ignore: no-long-names
+    fn fetch_upstream_oauth_protected_resource(
+        &self,
+        server: &MCPServer,
+    ) -> impl Future<Output = Result<Option<JsonObject>, FetchError>> + Send;
+}
+
+impl<U, R, G> UpstreamMetadataFetch for ProtectedRoot<U, R, G>
 where
     U: UpstreamGet,
+    R: RequestFacts,
+    G: GatewayFacts,
 {
     // ast-grep-ignore: no-long-names
-    pub(crate) async fn fetch_upstream_oauth_protected_resource(
+    async fn fetch_upstream_oauth_protected_resource(
         &self,
         server: &MCPServer,
     ) -> Result<Option<JsonObject>, FetchError> {
@@ -142,70 +156,80 @@ where
             return Ok(second.and_then(cached_document));
         }
         let generation = self.cache.generation(&server.fields.server_id);
-        self.fetch_candidates(&key, generation, &target).await
+        fetch_candidates(self, &key, generation, &target).await
     }
+}
 
-    async fn fetch_candidates(
-        &self,
-        key: &CacheKey,
-        generation: u64,
-        target: &UpstreamTarget,
-    ) -> Result<Option<JsonObject>, FetchError> {
-        let candidates = metadata_candidates(target);
-        let mut transport_failures: Vec<String> = Vec::new();
-        for candidate in &candidates {
-            match self.fetch_candidate(candidate, key, generation).await {
-                Ok(Some(document)) => return Ok(Some(document)),
-                Ok(None) => {}
-                Err(GetFailure::Transport(message)) => transport_failures.push(message),
-                Err(GetFailure::Other(kind)) => {
-                    tracing::warn!(
-                        "MCP OAuth metadata fetch for {candidate} raised non-transport {kind}, treating as no metadata for this candidate"
-                    );
-                }
+async fn fetch_candidates<U, R, G>(
+    root: &ProtectedRoot<U, R, G>,
+    key: &CacheKey,
+    generation: u64,
+    target: &UpstreamTarget,
+) -> Result<Option<JsonObject>, FetchError>
+where
+    U: UpstreamGet,
+    R: RequestFacts,
+    G: GatewayFacts,
+{
+    let candidates = metadata_candidates(target);
+    let mut transport_failures: Vec<String> = Vec::new();
+    for candidate in &candidates {
+        match fetch_candidate(root, candidate, key, generation).await {
+            Ok(Some(document)) => return Ok(Some(document)),
+            Ok(None) => {}
+            Err(GetFailure::Transport(message)) => transport_failures.push(message),
+            Err(GetFailure::Other(kind)) => {
+                tracing::warn!(
+                    "MCP OAuth metadata fetch for {candidate} raised non-transport {kind}, treating as no metadata for this candidate"
+                );
             }
         }
-        if transport_failures.len() == candidates.len() {
-            return Err(FetchError::Transport {
-                message: transport_failures.last().cloned().unwrap_or_default(),
-            });
-        }
-        let _stored = self.cache.store(
-            key,
-            generation,
-            CacheFill {
-                payload: None,
-                ttl_seconds: NEGATIVE_TTL_SECONDS,
-            },
-            (self.clock)(),
-        );
-        Ok(None)
     }
+    if transport_failures.len() == candidates.len() {
+        return Err(FetchError::Transport {
+            message: transport_failures.last().cloned().unwrap_or_default(),
+        });
+    }
+    let _stored = root.cache.store(
+        key,
+        generation,
+        CacheFill {
+            payload: None,
+            ttl_seconds: NEGATIVE_TTL_SECONDS,
+        },
+        (root.clock)(),
+    );
+    Ok(None)
+}
 
-    async fn fetch_candidate(
-        &self,
-        candidate: &str,
-        key: &CacheKey,
-        generation: u64,
-    ) -> Result<Option<JsonObject>, GetFailure> {
-        let reply = self.upstream.get(candidate, METADATA_ACCEPT).await?;
-        let Some(document) = payload_from(candidate, &reply) else {
-            return Ok(None);
-        };
-        let _stored = self.cache.store(
-            key,
-            generation,
-            CacheFill {
-                payload: Some(JsonValue::Object(
-                    document
-                        .iter()
-                        .map(|(field, value)| (field.clone(), stored_value(value)))
-                        .collect(),
-                )),
-                ttl_seconds: TTL_SECONDS,
-            },
-            (self.clock)(),
-        );
-        Ok(Some(document))
-    }
+async fn fetch_candidate<U, R, G>(
+    root: &ProtectedRoot<U, R, G>,
+    candidate: &str,
+    key: &CacheKey,
+    generation: u64,
+) -> Result<Option<JsonObject>, GetFailure>
+where
+    U: UpstreamGet,
+    R: RequestFacts,
+    G: GatewayFacts,
+{
+    let reply = root.upstream.get(candidate, METADATA_ACCEPT).await?;
+    let Some(document) = payload_from(candidate, &reply) else {
+        return Ok(None);
+    };
+    let _stored = root.cache.store(
+        key,
+        generation,
+        CacheFill {
+            payload: Some(JsonValue::Object(
+                document
+                    .iter()
+                    .map(|(field, value)| (field.clone(), stored_value(value)))
+                    .collect(),
+            )),
+            ttl_seconds: TTL_SECONDS,
+        },
+        (root.clock)(),
+    );
+    Ok(Some(document))
 }

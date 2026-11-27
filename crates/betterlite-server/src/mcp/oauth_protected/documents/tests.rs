@@ -7,7 +7,7 @@ use rstest::rstest;
 use super::errors::DiscoveryFailure;
 use super::{
     NamedDocument, aggregate_auth_server, aggregate_protected_resource, merge_issuers,
-    root_resource,
+    named_resource, root_resource,
 };
 use crate::mcp::oauth_protected::tests::support::{
     AGGREGATE_AUTH_SERVER_DOCUMENT, AGGREGATE_AUTH_SERVER_WITH_EXCHANGE_DOCUMENT,
@@ -22,10 +22,8 @@ async fn named(
     server: &MCPServer,
     standard: bool,
 ) -> Result<NamedDocument, DiscoveryFailure> {
-    harness
-        .root()
-        .named_resource(BASE_URL, &server.fields.name, standard, Some(server))
-        .await
+    let root = harness.root();
+    named_resource(&root, BASE_URL, &server.fields.name, standard, Some(server)).await
 }
 
 fn text(document: &NamedDocument) -> String {
@@ -224,22 +222,22 @@ async fn the_502_detail_quotes_a_name_with_an_apostrophe_with_double_quotes() {
 #[tokio::test]
 async fn an_unknown_server_and_a_keyed_server_share_the_404() {
     let harness = Harness::new();
-    let unknown = harness
-        .root()
-        .named_resource(BASE_URL, "ghost", true, None)
+    let root = harness.root();
+    let unknown = named_resource(&root, BASE_URL, "ghost", true, None)
         .await
         .expect_err("an unknown server is refused");
-    let keyed = named(&harness, &keyed_server(), true)
+    let keyed = keyed_server();
+    let keyed_failure = named_resource(&root, BASE_URL, &keyed.fields.name, true, Some(&keyed))
         .await
         .expect_err("a keyed server is refused");
     assert_eq!(unknown.status, StatusCode::NOT_FOUND);
-    assert_eq!(keyed.status, StatusCode::NOT_FOUND);
+    assert_eq!(keyed_failure.status, StatusCode::NOT_FOUND);
     assert_eq!(
         unknown.detail,
         "MCP server 'ghost' is not an OAuth-protected resource"
     );
     assert_eq!(
-        keyed.detail,
+        keyed_failure.detail,
         "MCP server 'keyed' is not an OAuth-protected resource"
     );
 }

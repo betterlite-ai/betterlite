@@ -7,6 +7,7 @@ use std::time::Duration;
 use rstest::rstest;
 use tokio::time::advance;
 
+use super::UpstreamMetadataFetch as _;
 use super::{BodyOutcome, parse_metadata_body};
 use crate::mcp::oauth_protected::tests::support::{
     Harness, PASS_THROUGH_HOST, PASS_THROUGH_PATH, UPSTREAM_DOCUMENT, document, passthrough_server,
