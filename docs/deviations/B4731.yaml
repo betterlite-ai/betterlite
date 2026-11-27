@@ -1,0 +1,30 @@
+task: B4731
+deviations:
+  - what: Settings (public ids, internal ranges) are read from a RegistrySettings struct, not from litellm globals and the live general_settings dict on every call.
+    why: betterlite has no module-level state and its config is immutable after load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6923-L6952
+  - what: authorize_server returns an AuthorizeError value, not an HTTPException.
+    why: this crate has no HTTP framework; the route layer renders the same 404 and 403 bodies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L1-L122
+  - what: Lists LiteLLM builds from a Python set (expand_permission_list) come back de-duplicated in first-seen order.
+    why: Python set order is not stable, so no client can rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7002-L7024
+  - what: The two optional lookups are taken as Option<&dyn TempLookup> and Option<&dyn DbLookup>, and the access port as a named generic Checker, where LiteLLM passes plain callables.
+    why: Option<&impl Trait> cannot be written and the lint lane refuses impl Trait in argument position, so the ports are dyn-compatible boxed futures and the access port stays generic for its associated Error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L20-L60
+  - what: resolve_server takes one ResolveTarget value and authorize_server takes AuthorizeOptions and AuthorizeDetails beside the resolution, where LiteLLM passes the same values as separate parameters.
+    why: clippy's too-many-arguments threshold is 5, so four resolution inputs and five authorization inputs are grouped into structs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L20-L122
+  - what: server_table and all_server_tables are infallible; an env_vars entry that is not an MCPEnvVar, a non-string mcp_info description, a timeout with no decimal form and a timestamp that cannot round-trip are logged and left out.
+    why: LiteLLM lets the pydantic model raise on those values inside _build_mcp_server_table, while the table view of the registry is a read that no caller guards, and B10135 expects the infallible read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7333-L7385
+  - what: expand_tool_permissions unions tool lists in sorted key order, because its input is a BTreeMap, where LiteLLM follows the caller's dict insertion order.
+    why: a BTreeMap cannot carry insertion order, and the grouping by server id is sorted in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7046-L7055
+  - what: is_config is true for a server declared in the config that no database row overrides, where LiteLLM tests server_id against the config and DB union registry it is iterating.
+    why: betterlite keeps the config and DB records in separate maps, so the task's check (config-declared and absent from the DB map) expresses the row's intent, and a record taken from the union registry would always give false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7336
+  - what: server_exposes_tool is an associated function of ServerRegistry, where LiteLLM has it as a method.
+    why: it reads only the record and the owner map, and the task's inputs name no registry state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2908-L2914
+kept_bugs: []
