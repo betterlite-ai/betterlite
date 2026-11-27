@@ -135,8 +135,10 @@ fn provider_exception(found: &ProviderError, provider: &str, redactor: &Redactor
 
 // an exception outside the provider's family: no branch matches, and with no status it reports api_connection
 fn local_class(message: String, provider: &str, redactor: &Redactor) -> ErrorClass {
-    let raw = raw_exception(message, None, false, provider);
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+    dispatch(
+        &DispatchInput::Raw(Box::new(raw_exception(message, None, false, provider))),
+        redactor,
+    )
 }
 
 // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
