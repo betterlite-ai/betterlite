@@ -44,7 +44,6 @@ def json_map(value: JsonValue | None) -> dict[str, JsonValue]:
             return {}
 
 
-# ast-grep-ignore: no-long-names
 def get_optional_params_video_generation(
     model: str,
     provider_config: VideoProviderConfig,
@@ -63,7 +62,6 @@ def get_optional_params_video_generation(
     return mapped_params
 
 
-# ast-grep-ignore: no-long-names
 def get_requested_video_generation_optional_param(
     params: Mapping[str, JsonValue],
 ) -> dict[str, JsonValue]:
