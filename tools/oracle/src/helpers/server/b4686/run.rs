@@ -111,10 +111,10 @@ fn envelope(result: &CallToolResult, fakes: &Fakes<'_>) -> HelperResult {
 fn content_value(block: &ContentBlock) -> Result<JsonValue, Box<HelperError>> {
     match block {
         ContentBlock::Text(text) => Ok(text_block(&text.text)),
-        ContentBlock::Image(_image)
-        | ContentBlock::Audio(_audio)
-        | ContentBlock::ResourceLink(_link)
-        | ContentBlock::Resource(_resource) => Err(invalid_input(
+        ContentBlock::Image(_)
+        | ContentBlock::Audio(_)
+        | ContentBlock::ResourceLink(_)
+        | ContentBlock::Resource(_) => Err(invalid_input(
             "the search handlers return text content blocks only".to_owned(),
         )),
     }
