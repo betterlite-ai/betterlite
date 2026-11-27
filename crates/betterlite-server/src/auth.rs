@@ -207,7 +207,10 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
             Ok(StageInput::AuthOrgLookup(stage))
         }
         StageInput::AuthEndUserIdentity(stage) => end_user_identity::prefetched(stage).await,
-        StageInput::AuthEndUsers(stage) => end_user_identity::prefetched_budget(stage).await,
+        StageInput::AuthEndUsers(mut stage) => {
+            end_user_identity::prefetch_budget(&mut stage).await?;
+            Ok(StageInput::AuthEndUsers(stage))
+        }
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::MasterKey(_)

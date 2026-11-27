@@ -152,25 +152,16 @@ pub(crate) async fn prefetched(
 }
 
 // LiteLLM reads the id this stage validated, and none other, when the end-user budget lookup follows
-pub(crate) async fn prefetch_budget(
-    stage: &mut EndUserStageInput,
-) -> Result<(), Box<ProxyException>> {
+pub(crate) async fn prefetch_budget(stage: &mut EndUserStageInput) -> Result<(), StageFailure> {
     Arc::make_mut(&mut stage.rule).end_user_id = stage
         .context
         .principal
         .end_user
         .as_ref()
         .map(|identity| identity.id.clone());
-    auth_end_users::prefetch(stage).await
-}
-
-pub(crate) async fn prefetched_budget(
-    mut stage: Box<EndUserStageInput>,
-) -> Result<StageInput, StageFailure> {
-    prefetch_budget(&mut stage)
+    auth_end_users::prefetch(stage)
         .await
-        .map_err(StageFailure::EndUsers)?;
-    Ok(StageInput::AuthEndUsers(stage))
+        .map_err(StageFailure::EndUsers)
 }
 
 // LiteLLM lets a cache failure escape the auth path as an unhandled internal server error.

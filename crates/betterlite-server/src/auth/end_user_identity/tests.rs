@@ -750,9 +750,9 @@ async fn disabled_validation_without_id_clears_a_preseeded_budget_id() {
         panic!("the budget stage input is built");
     };
     assert_eq!(stage.rule.end_user_id.as_deref(), Some("unrelated-user"));
-    prefetch_budget(&mut stage)
-        .await
-        .expect("an absent ID skips the end-user budget lookup");
+    let Ok(()) = prefetch_budget(&mut stage).await else {
+        panic!("an absent ID skips the end-user budget lookup");
+    };
     assert!(stage.rule.end_user_id.is_none());
     assert!(lookup.lookups().is_empty());
     assert!(lookup.checks().is_empty());
