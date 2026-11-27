@@ -31,10 +31,6 @@ pub fn required_object<'json>(
     Ok(entries)
 }
 
-pub fn required_text(fields: &Fields, field: &'static str) -> Parsed<String> {
-    text_field(fields, field)?.map_or_else(|| Err(BatchCallError::MissingField { field }), Ok)
-}
-
 pub fn required_integer(fields: &Fields, field: &'static str) -> Parsed<i64> {
     fields.get(field).map_or_else(
         || Err(BatchCallError::MissingField { field }),

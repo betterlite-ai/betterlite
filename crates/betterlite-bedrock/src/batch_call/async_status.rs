@@ -19,7 +19,7 @@ use crate::image_call::plan::CredentialSource;
 use super::error::BatchCallError;
 use super::fields::{
     falsey_text, matching_time, optional_integer, required_integer, required_object,
-    required_optional_integer, required_text,
+    required_optional_integer, text_field,
 };
 
 pub const ENDPOINT: &str = "/v1/embeddings";
@@ -83,9 +83,15 @@ impl AsyncRecord {
             "failure_message".to_owned(),
             falsey_text(fields, "failureMessage")?,
         );
-        metadata.insert("model_arn".to_owned(), required_text(fields, "modelArn")?);
+        metadata.insert(
+            "model_arn".to_owned(),
+            text_field(fields, "modelArn")?
+                .ok_or(BatchCallError::MissingField { field: "modelArn" })?,
+        );
         Ok(Self {
-            id: required_text(fields, "invocationArn")?,
+            id: text_field(fields, "invocationArn")?.ok_or(BatchCallError::MissingField {
+                field: "invocationArn",
+            })?,
             status: async_status(fields)?,
             created_at: required_integer(fields, "submitTime")?,
             in_progress_at: required_optional_integer(fields, "lastModifiedTime")?,
@@ -129,7 +135,8 @@ impl AsyncRecord {
 
 // the body carries the job's own status word, which LiteLLMBatch validates as an OpenAI status
 fn async_status(fields: &IndexMap<String, Json>) -> Result<BatchStatus, BatchCallError> {
-    let name = required_text(fields, "status")?;
+    let name =
+        text_field(fields, "status")?.ok_or(BatchCallError::MissingField { field: "status" })?;
     match name.as_str() {
         "validating" => Ok(BatchStatus::Validating),
         "failed" => Ok(BatchStatus::Failed),
@@ -149,5 +156,5 @@ fn async_status(fields: &IndexMap<String, Json>) -> Result<BatchStatus, BatchCal
 fn output_uri(fields: &IndexMap<String, Json>) -> Result<String, BatchCallError> {
     let outer = required_object(fields, "outputDataConfig")?;
     let inner = required_object(outer, "s3OutputDataConfig")?;
-    required_text(inner, "s3Uri")
+    text_field(inner, "s3Uri")?.ok_or(BatchCallError::MissingField { field: "s3Uri" })
 }
