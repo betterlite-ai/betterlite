@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::bedrock_services_batch_records::BatchRecordsSettings;
+use crate::sections::bedrock_services_batch_records::Settings;
 
-const ALIAS_CONFIG: &str = r#"
+const ALIAS_CONFIG: &str = "
 litellm_settings:
   model_alias_map:
     global-only: amazon.nova-pro-v1:0
@@ -23,7 +23,7 @@ model_list:
   - model_name: second
     litellm_params:
       model: bedrock/second
-"#;
+";
 
 #[rstest]
 #[case::loads_model_alias_map(ALIAS_CONFIG)]
@@ -48,7 +48,7 @@ fn batch_records_config_cases(#[case] source: &str) {
     );
     // the loader reads the same map the pre-call section keeps
     let config = ConfigLoader {
-        lookup: std::collections::BTreeMap::new(),
+        lookup: BTreeMap::new(),
     }
     .load(ALIAS_CONFIG)
     .expect("the configuration loads");
@@ -78,7 +78,7 @@ fn unrelated_keys_still_load() {
     assert!(settings.model_alias_map.is_empty());
 }
 
-fn settings(source: &str) -> Result<BatchRecordsSettings, ConfigError> {
+fn settings(source: &str) -> Result<Settings, ConfigError> {
     ConfigLoader {
         lookup: BTreeMap::new(),
     }

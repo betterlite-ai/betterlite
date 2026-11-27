@@ -34,13 +34,13 @@ struct GlobalSettings {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BatchRecordsSettings {
+pub struct Settings {
     // litellm_settings.model_alias_map, then each deployment's map in file order over it
     pub model_alias_map: BTreeMap<String, String>,
 }
 
 impl Section for Raw {
-    type Settings = BatchRecordsSettings;
+    type Settings = Settings;
 
     fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
     where
@@ -50,6 +50,6 @@ impl Section for Raw {
         for deployment in self.model_list {
             model_alias_map.extend(deployment.litellm_params.model_alias_map);
         }
-        Ok(BatchRecordsSettings { model_alias_map })
+        Ok(Settings { model_alias_map })
     }
 }
