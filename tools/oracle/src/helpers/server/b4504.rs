@@ -1,11 +1,270 @@
+use std::collections::BTreeMap;
+use std::fmt::Display;
+
+use betterlite_auth::reservation_cost::ModelInfoSource;
+use betterlite_auth::reservation_cost::error::ModelInfoError;
+use betterlite_db::lens_repository::repository::LensRepository;
+use betterlite_lens::models::job::{Job, Lens};
+use betterlite_models::model_registration::JsonObject;
+use betterlite_openai::chat::response::ChatResponse;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_server::lens_inference::charge::{self, CostCalculator, CostError, CustomRates};
+use betterlite_server::lens_inference::quote::{self, Deployment};
+use betterlite_server::lens_inference::request_body::{AnalysisBody, RequestIds};
+use betterlite_server::lens_inference::reservation::{self, ReserveRequest};
+use betterlite_server::lens_inference::settlement::{self, SettleRequest};
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use tokio::runtime::{Builder, Runtime};
+
+mod store;
+
+use self::store::{FakeDatabase, Store, lens_store};
 
 pub(crate) struct Op;
 
-impl Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+enum Input {
+    Quote(QuoteInput),
+    Reserve(AnalyzeInput),
+    Settle(AnalyzeInput),
+    Charge(ChargeInput),
+    RequestBody(AnalyzeInput),
+}
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b4504")
+#[derive(Deserialize)]
+struct QuoteInput {
+    prompt: String,
+    deployments: Vec<Deployment>,
+    #[serde(default)]
+    model_info: BTreeMap<String, JsonObject>,
+}
+
+#[derive(Deserialize)]
+struct AnalyzeInput {
+    lens: Lens,
+    job_id: String,
+    worker_id: String,
+    prompt: String,
+    deployments: Vec<Deployment>,
+    #[serde(default)]
+    model_info: BTreeMap<String, JsonObject>,
+    now: Vec<DateTime<Utc>>,
+    #[serde(default)]
+    team_id: Option<String>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    cost: Option<Decimal>,
+    #[serde(default)]
+    job: Option<Job>,
+}
+
+#[derive(Deserialize)]
+struct ChargeInput {
+    deployments: Vec<Deployment>,
+    response: ChatResponse,
+    #[serde(with = "rust_decimal::serde::float")]
+    estimate: Decimal,
+}
+
+#[derive(Serialize)]
+struct FloatAmount(#[serde(with = "rust_decimal::serde::float")] Decimal);
+
+#[derive(Serialize)]
+struct LensState {
+    version: i64,
+    spent: FloatAmount,
+    budget_month: String,
+    cost: FloatAmount,
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::Quote(call) => estimate_value(call),
+            Input::Charge(call) => charge_value(call),
+            Input::Reserve(call) => reserve_value(call),
+            Input::Settle(call) => settle_value(call),
+            Input::RequestBody(call) => body_value(call),
+        }
     }
+}
+
+struct Catalog(BTreeMap<String, JsonObject>);
+
+impl ModelInfoSource for Catalog {
+    fn get_model_info(&self, model: &str) -> Result<Option<JsonObject>, ModelInfoError> {
+        Ok(self.0.get(model).cloned())
+    }
+}
+
+// B068's completion_cost for the custom rates a single deployment carries; the oracle only prices those
+struct CustomCosts;
+
+impl CostCalculator for CustomCosts {
+    fn completion_cost(
+        &self,
+        response: &ChatResponse,
+        custom: Option<&CustomRates<'_>>,
+    ) -> Result<Decimal, CostError> {
+        let Some(custom) = custom else {
+            return Err(CostError::Unavailable);
+        };
+        let prompt = Decimal::from(response.usage.prompt_tokens)
+            .checked_mul(custom.input_cost_per_token)
+            .ok_or(CostError::Unavailable)?;
+        let completion = Decimal::from(response.usage.completion_tokens)
+            .checked_mul(custom.output_cost_per_token)
+            .ok_or(CostError::Unavailable)?;
+        prompt.checked_add(completion).ok_or(CostError::Unavailable)
+    }
+}
+
+fn estimate(call: &AnalyzeInput) -> Result<Decimal, Box<HelperError>> {
+    let catalog = Catalog(call.model_info.clone());
+    quote::quote(&call.deployments, &call.prompt, &catalog)
+        .map_err(|error| http_error(500, error.to_string()))
+}
+
+fn estimate_value(call: &QuoteInput) -> HelperResult {
+    let catalog = Catalog(call.model_info.clone());
+    let estimate = quote::quote(&call.deployments, &call.prompt, &catalog)
+        .map_err(|error| http_error(500, error.to_string()))?;
+    serde_json::to_value(FloatAmount(estimate)).map_err(helper_error)
+}
+
+fn charge_value(call: &ChargeInput) -> HelperResult {
+    let cost = charge::completion_charge(
+        &call.deployments,
+        &call.response,
+        call.estimate,
+        &CustomCosts,
+    )
+    .map_err(|error| http_error(500, error.to_string()))?;
+    serde_json::to_value(FloatAmount(cost)).map_err(helper_error)
+}
+
+fn lens_state(lens: &Lens) -> LensState {
+    LensState {
+        version: lens.version,
+        spent: FloatAmount(lens.spent),
+        budget_month: lens.budget_month.clone(),
+        cost: FloatAmount(lens.jobs.first().map_or(Decimal::ZERO, |job| job.cost)),
+    }
+}
+
+fn stored(store: &Store) -> Result<Lens, Box<HelperError>> {
+    let lens = store::stored(store);
+    lens.ok_or_else(|| invalid("the lens store lost its lens"))
+}
+
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread().build().map_err(helper_error)
+}
+
+fn reserve_value(call: &AnalyzeInput) -> HelperResult {
+    let estimate = estimate(call)?;
+    let (month_now, lease_now) = match call.now.as_slice() {
+        [month, lease] => (*month, *lease),
+        _ => return Err(invalid("reserve needs two clock readings")),
+    };
+    let store = lens_store(call.lens.clone());
+    let repository = LensRepository {
+        database: FakeDatabase(store.clone()),
+    };
+    let request = ReserveRequest {
+        lens_id: &call.lens.id,
+        job_id: &call.job_id,
+        worker_id: &call.worker_id,
+        month_now,
+        lease_now,
+        estimate,
+    };
+    let runtime = runtime()?;
+    runtime
+        .block_on(reservation::reserve(&repository, &request))
+        .map_err(|error| http_error(error.status(), error.detail()))?;
+    let lens = stored(&store)?;
+    serde_json::to_value(lens_state(&lens)).map_err(helper_error)
+}
+
+fn settle_value(call: &AnalyzeInput) -> HelperResult {
+    let estimate = estimate(call)?;
+    let Some(cost) = call.cost else {
+        return Err(invalid("settle needs the billed cost"));
+    };
+    let Some(month_now) = call.now.first().copied() else {
+        return Err(invalid("settle needs one clock reading"));
+    };
+    let store = lens_store(call.lens.clone());
+    let repository = LensRepository {
+        database: FakeDatabase(store.clone()),
+    };
+    let request = SettleRequest {
+        lens_id: &call.lens.id,
+        job_id: &call.job_id,
+        month_now,
+        estimate,
+        cost,
+    };
+    let runtime = runtime()?;
+    runtime
+        .block_on(settlement::settle(&repository, &request))
+        .map_err(|error| http_error(error.status(), error.detail()))?;
+    let lens = stored(&store)?;
+    serde_json::to_value(lens_state(&lens)).map_err(helper_error)
+}
+
+fn body_value(call: &AnalyzeInput) -> HelperResult {
+    let job = match &call.job {
+        Some(job) => job.clone(),
+        None => call
+            .lens
+            .jobs
+            .iter()
+            .find(|job| job.id == call.job_id)
+            .cloned()
+            .ok_or_else(|| invalid("the lens has no such job"))?,
+    };
+    let data = AnalysisBody::new(
+        &job.settings.model,
+        &call.prompt,
+        RequestIds {
+            lens_id: &call.lens.id,
+            run_id: &call.job_id,
+            worker_id: &call.worker_id,
+            team_id: call.team_id.as_deref(),
+        },
+    );
+    serde_json::to_value(&data).map_err(helper_error)
+}
+
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "InvalidInput".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: message.to_owned(),
+    })
+}
+
+fn helper_error<E: Display>(error: E) -> Box<HelperError> {
+    invalid(&error.to_string())
+}
+
+fn http_error(status: u16, detail: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "HTTPException".to_owned(),
+        status: Some(status),
+        error_type: None,
+        param: None,
+        code: None,
+        message: detail,
+    })
 }
