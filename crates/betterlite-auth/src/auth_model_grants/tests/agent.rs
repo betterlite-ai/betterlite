@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use rstest::rstest;
 
 use crate::auth_model_grants::access_source::AgentAccessSource;
@@ -10,8 +12,9 @@ use crate::entity_model_access::error::EntityModelAccessError;
 
 use super::support::{
     AGENT_ALIAS_KEY, AGENT_KEY, AGENT_MODEL_ALIAS_KEY, AGENT_TEAM_KEY, ALLOWING_MEMBER,
-    ALLOWING_TEAM, CALLER_KEY, CaseMemberships, DENYING_MEMBER, DENYING_TEAM, Failing, POLICY,
-    Script, admission, agent_token, ceiling, context, denial_of, one, shallow_context, token,
+    ALLOWING_TEAM, CALLER_KEY, CaseMemberships, DENYING_MEMBER, DENYING_TEAM, Failing, GROUP_TEAM,
+    GroupDirectory, POLICY, Script, admission, agent_token, ceiling, context, denial_of, one,
+    shallow_context, team_lookup, token,
 };
 
 #[rstest]
@@ -434,6 +437,35 @@ async fn caller_team_before_membership() {
         Some(&script),
         &CallerChecks {
             teams: None,
+            admission: &admission,
+            context: &context,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(script.events(), ["caller_auth", "caller_team"]);
+    assert_eq!(memberships.asked(), ["caller-1:team-1"]);
+}
+
+#[tokio::test]
+async fn caller_team_groups_grant_model() {
+    let context = context();
+    // the caller team's models deny the request, so only its access group can grant it
+    let script = Script {
+        caller: Some(CALLER_KEY.to_owned()),
+        team: Some(GROUP_TEAM.to_owned()),
+        ..Script::plain()
+    };
+    let directory = Arc::new(GroupDirectory::new("ag-caller", &["gpt-4o"]));
+    let lookup = team_lookup(&directory);
+    let memberships = CaseMemberships::allowed(ALLOWING_MEMBER);
+    let admission = admission(&memberships, &context);
+    check_agent_caller(
+        &one("gpt-4o"),
+        Some(&agent_token(AGENT_KEY)),
+        Some(&script),
+        &CallerChecks {
+            teams: Some(&lookup),
             admission: &admission,
             context: &context,
         },

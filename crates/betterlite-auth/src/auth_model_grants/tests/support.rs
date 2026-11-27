@@ -4,8 +4,11 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
+use betterlite_db::budget_permission_rows::{
+    JsonData, LiteLLMBudgetTable, LiteLLMObjectPermissionTable,
+};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
+use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use chrono::{DateTime, Utc};
@@ -27,8 +30,15 @@ use crate::auth_model_grants::access_source::AgentAccessSource;
 use crate::auth_model_grants::error::AgentModelGrantsError;
 use crate::auth_model_patterns::decision::ModelAccessContext;
 use crate::auth_model_patterns::pattern::UnresolvedProviderInference;
+use crate::auth_prefetch::permission::lookup::{
+    ObjectPermissionCache, PermissionAnswer, PermissionCacheError, PermissionError,
+};
+use crate::auth_prefetch::permission::store::ObjectPermissionStore;
 use crate::auth_request_models::RequestedModels;
 use crate::auth_team_lookup::error::TeamLookupError;
+use crate::auth_team_lookup::lookup::{TeamDatabase, TeamLookup};
+use crate::auth_team_lookup::ports::{StoreAnswer, TeamCache, TeamCacheError, TeamStore};
+use crate::auth_user_lookup::cadence::{Cadence, WallClock};
 use crate::budget_primitives::window_start::DurationParser;
 use crate::current_spend::SpendQuery;
 use crate::entity_model_access::resolved::ResolvedDeps;
@@ -51,6 +61,8 @@ pub(super) const ALLOWING_TEAM: &str =
     r#"{"team_id":"team-1","models":["gpt-4o"],"access_group_ids":[]}"#;
 pub(super) const DENYING_TEAM: &str =
     r#"{"team_id":"team-1","models":["other-model"],"access_group_ids":[]}"#;
+pub(super) const GROUP_TEAM: &str =
+    r#"{"team_id":"team-1","models":["other-model"],"access_group_ids":["ag-caller"]}"#;
 pub(super) const ALLOWING_MEMBER: &str = r#"{"user_id":"caller-1","team_id":"team-1","litellm_budget_table":{"allowed_models":["gpt-4o"]}}"#;
 pub(super) const DENYING_MEMBER: &str = r#"{"user_id":"caller-1","team_id":"team-1","litellm_budget_table":{"allowed_models":["other-model"]}}"#;
 
@@ -369,6 +381,145 @@ impl AgentAccessSource for Script {
         _auth: &UserAPIKeyAuth,
     ) -> Result<Option<LiteLLMUserTable>, AgentCallerError> {
         Ok(self.lookup(CallerSlot::User)?.map(looked_up_user))
+    }
+}
+
+// the access-group half of a TeamLookup: the cache answers the team's group ids and nothing reads the database
+pub(super) struct GroupDirectory {
+    groups: BTreeMap<String, AccessGroupTable>,
+}
+
+impl GroupDirectory {
+    pub(super) fn new(access_group_id: &str, models: &[&str]) -> Self {
+        let mut groups = BTreeMap::new();
+        groups.insert(
+            access_group_id.to_owned(),
+            AccessGroupTable {
+                access_group_id: access_group_id.to_owned(),
+                access_group_name: access_group_id.to_owned(),
+                description: None,
+                access_model_names: models.iter().map(|model| (*model).to_owned()).collect(),
+                access_mcp_server_ids: Vec::new(),
+                access_agent_ids: Vec::new(),
+                assigned_team_ids: Vec::new(),
+                assigned_key_ids: Vec::new(),
+                created_at: None,
+                created_by: None,
+                updated_at: None,
+                updated_by: None,
+            },
+        );
+        Self { groups }
+    }
+}
+
+#[async_trait]
+impl TeamCache for GroupDirectory {
+    async fn read_team(
+        &self,
+        _key: &str,
+    ) -> Result<Option<LiteLLMTeamTableCachedObj>, TeamCacheError> {
+        Ok(None)
+    }
+
+    async fn write_team(
+        &self,
+        _key: &str,
+        _team: &LiteLLMTeamTableCachedObj,
+        _ttl: f64,
+    ) -> Result<(), TeamCacheError> {
+        Ok(())
+    }
+
+    async fn cache_team(
+        &self,
+        _team_id: &str,
+        _team: &mut LiteLLMTeamTableCachedObj,
+    ) -> Result<(), TeamCacheError> {
+        Ok(())
+    }
+
+    async fn read_access_group(
+        &self,
+        key: &str,
+    ) -> Result<Option<AccessGroupTable>, TeamCacheError> {
+        let id = key.strip_prefix("access_group_id:").unwrap_or(key);
+        Ok(self.groups.get(id).cloned())
+    }
+
+    async fn cache_access_group(
+        &self,
+        _access_group_id: &str,
+        _table: &AccessGroupTable,
+    ) -> Result<(), TeamCacheError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TeamStore for GroupDirectory {
+    async fn find_team(&self, _team_id: &str, _use_writer: bool) -> StoreAnswer<Option<JsonData>> {
+        Ok(None)
+    }
+
+    async fn find_by_alias(&self, _team_alias: &str) -> StoreAnswer<Vec<JsonData>> {
+        Ok(Vec::new())
+    }
+
+    async fn find_access_group(
+        &self,
+        _access_group_id: &str,
+        _use_writer: bool,
+    ) -> StoreAnswer<Option<JsonData>> {
+        Ok(None)
+    }
+}
+
+#[async_trait]
+impl ObjectPermissionCache for GroupDirectory {
+    async fn read(&self, _key: &str) -> PermissionAnswer {
+        Ok(None)
+    }
+
+    async fn write(
+        &self,
+        _key: &str,
+        _permission: &LiteLLMObjectPermissionTable,
+        _ttl: f64,
+    ) -> Result<(), PermissionCacheError> {
+        Ok(())
+    }
+
+    fn management_ttl(&self) -> f64 {
+        60.0
+    }
+}
+
+#[async_trait]
+impl ObjectPermissionStore for GroupDirectory {
+    async fn find_permission(&self, _id: &str) -> Result<Option<JsonData>, PermissionError> {
+        Ok(None)
+    }
+}
+
+// the TeamLookup get_access_object reads: the cache answers the group before the store is asked
+pub(super) fn team_lookup(directory: &Arc<GroupDirectory>) -> TeamLookup {
+    let cache: Arc<dyn TeamCache> = Arc::<GroupDirectory>::clone(directory);
+    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::<GroupDirectory>::clone(directory);
+    let store: Arc<dyn TeamStore> = Arc::<GroupDirectory>::clone(directory);
+    let permission_reader: Arc<dyn ObjectPermissionStore> = Arc::<GroupDirectory>::clone(directory);
+    let permission_writer: Arc<dyn ObjectPermissionStore> = Arc::<GroupDirectory>::clone(directory);
+    TeamLookup {
+        cache,
+        permission_cache,
+        database: Some(TeamDatabase {
+            store,
+            permission_reader,
+            permission_writer,
+        }),
+        provisioner: None,
+        cadence: Arc::new(Cadence::new(1024, Arc::new(WallClock))),
+        in_memory_ttl: 60,
     }
 }
 
