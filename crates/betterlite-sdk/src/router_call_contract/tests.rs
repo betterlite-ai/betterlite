@@ -281,5 +281,5 @@ fn error_passthrough_upstream_status_comes_back_unchanged() {
         headers,
         vec![(String::from("retry-after"), String::from("5"))]
     );
-    assert_eq!(&body[..], b"rate limited");
+    assert_eq!(&*body, b"rate limited");
 }

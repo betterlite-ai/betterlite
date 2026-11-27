@@ -13,8 +13,16 @@ use crate::router_call_contract::GenericRequest;
 use crate::router_call_contract::error::GenericError;
 use crate::router_call_contract::executors::GenericExecutors;
 
+type RecordedCall = (String, Vec<(String, Json)>);
+
 struct RecordingExecutor {
-    calls: Mutex<Vec<(String, Vec<(String, Json)>)>>,
+    calls: Mutex<Vec<RecordedCall>>,
+}
+
+impl RecordingExecutor {
+    fn call_log(&self) -> Vec<RecordedCall> {
+        self.calls.lock().expect("the call log is free").clone()
+    }
 }
 
 #[async_trait]
@@ -66,13 +74,13 @@ async fn executor_lookup_returns_the_one_registered_under_the_name() {
         panic!("the fake answers with the call type");
     };
     assert_eq!(call_type, "acreate_batch");
-    let calls = second.calls.lock().expect("the call log is free");
+    let calls = second.call_log();
     assert_eq!(calls.len(), 1);
     assert_eq!(
         calls.first().expect("the fake saw the call").0,
         "acreate_batch"
     );
-    assert!(first.calls.lock().expect("the call log is free").is_empty());
+    assert!(first.call_log().is_empty());
 }
 
 #[tokio::test]
@@ -99,7 +107,7 @@ async fn executor_receives_the_arguments_in_order_with_a_later_key_winning() {
     };
     assert_eq!(call_type, "aembedding");
 
-    let calls = recorder.calls.lock().expect("the call log is free");
+    let calls = recorder.call_log();
     let call = calls.first().expect("the fake saw the call");
     assert_eq!(
         call.1,
