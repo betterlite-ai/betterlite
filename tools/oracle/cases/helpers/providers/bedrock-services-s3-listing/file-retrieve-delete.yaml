@@ -1,0 +1,45 @@
+kind: helper
+name: bedrock-services-s3-listing-file-retrieve-delete
+call:
+  bedrock_services_s3_listing:
+    operation: retrieve
+    retrieves:
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+calls:
+  - bedrock_services_s3_listing:
+      operation: delete_request
+      deletes:
+        - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://other/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: null
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/litellm-bedrock-files-a b?c
+          litellm_params: {aws_region_name: us-east-1, s3_access_key_id: STATICACCESS, s3_secret_access_key: STATICKEY}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/pre/litellm-bedrock-files-a
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket/pre]]
+  - bedrock_services_s3_listing:
+      operation: content_request
+      contents:
+        - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: ""
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: us-east-1, s3_access_key_id: STATICACCESS, s3_secret_access_key: STATICKEY, aws_session_token: ignored}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/litellm-bedrock-files-a b?c
+          litellm_params: {aws_region_name: us-east-1, s3_access_key_id: STATICACCESS, s3_secret_access_key: STATICKEY}
+          trusted: [[s3_bucket_name, bucket]]
+env: {}
+compare: {ignore: []}

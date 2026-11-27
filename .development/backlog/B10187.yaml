@@ -1,0 +1,13 @@
+id: B10187
+milestone: R2 bug fixes
+title: The Python package imports and type-checks on Python 3.10
+status: todo
+depends_on: [B5369, B170]
+file: tasks/B10187-python-310-floor.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

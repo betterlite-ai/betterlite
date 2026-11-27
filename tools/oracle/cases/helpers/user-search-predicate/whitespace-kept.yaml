@@ -1,0 +1,10 @@
+kind: helper
+name: user-search-predicate-whitespace-kept
+call:
+  b10149:
+    search: " "
+calls:
+  - b10149:
+      search: "  Bob "
+env: {}
+compare: {ignore: []}

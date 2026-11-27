@@ -1,0 +1,113 @@
+id: B10185
+title: One owned success handler, built once at server start
+description: >-
+  Three types hold the same nine owned fields of B250's borrowed `SuccessHandler` (crates/betterlite-logging/src/logging_success/handler.rs L38-L48): core's `OwnedSuccessHandler` (crates/betterlite-core/src/caching/hit_callbacks/job.rs L23-L33, B4301), betterlite-logging's `InteractionLoggingCallbacks` (logging_interactions/completion.rs L44-L55) and `StreamLoggingCallbacks` (passthrough_stream_logging/object.rs L65-L75). Four places then copy the same borrow literal from them: job.rs L88-L98, crates/betterlite-core/src/caching/lookup/hit.rs L201-L211, completion.rs L111-L121 and object.rs L102-L112. No production code builds any of the three: server.rs L110-L116 builds only the CallbackRegistry, SystemClock and ChatStreamAssembler that `LoggingWiring::start` takes, the registry goes into the private field of ServicePipeline (logging_service_events/wiring.rs L42-L47, pipeline.rs L45), and nothing calls `PayloadBuilder::new`. `HitLogging`, `SuccessHandlerDispatch` and `InteractionLoggingObject` are built only in tests. So B10177's pass-through call, B8631's router hop and the cache-hit path have no handler to log with. In LiteLLM every call's Logging object reads one process-wide callback setup (litellm.callbacks, standard_logging_payload_excluded_fields, _known_custom_logger_compatible_callbacks; __init__.py L121-L180 and L209), so the proxy has one handler setup from start.
+
+
+  The merged type. A new file crates/betterlite-logging/src/logging_success/owned.rs, declared with `pub mod owned;` in logging_success.rs, holds `#[derive(Clone)] pub struct OwnedSuccessHandler` with seven public fields: `registry: Arc<CallbackRegistry>`, `payload_builder: Arc<dyn StandardPayloadBuilder>`, `stream_assembler: Arc<dyn StreamAssembler>`, `clock: Arc<dyn SuccessClock>`, `excluded_fields: Vec<String>`, `known_callback: Arc<dyn Fn(&str) -> bool + Send + Sync>` and `privacy: Settings` (betterlite_config logging_privacy). The same file holds the one borrow, `impl<'handler> From<&'handler OwnedSuccessHandler> for SuccessHandler<'handler>`. The three old structs go. Core's job.rs and hit.rs, completion.rs and object.rs import the merged type and call `SuccessHandler::from(...)` where they wrote the literal. Their holders keep it behind an Arc so a request clones a pointer, never the vectors: `CacheHitCallbacks.handler`, `CacheHitSuccessJob.handler` and `HitLogging.handler` become `Arc<OwnedSuccessHandler>`, `InteractionLoggingObject.callbacks` becomes `Arc<OwnedSuccessHandler>`, and `SuccessHandlerDispatch.callbacks` too. betterlite-logging is the lowest crate all of them reach: core depends on it, and it owns SuccessHandler.
+
+
+  The response stamp. The bundles carry one `ResponseStamp`, and SuccessHandler hands it to the redaction of every async callback's payload (handler.rs L190-L195, redaction.rs L14-L19). Built once at start, it would give every redacted response the same id and created time. LiteLLM builds a fresh `ModelResponse` for each redacted payload (integrations/custom_logger.py L955-L961), so each gets a new `chatcmpl-` id (types/utils.py L122-L123) and the current time. SuccessHandler loses its `stamp` field. `redacted_payload` takes `now: DateTime<FixedOffset>` in place of the stamp and builds `ResponseStamp { id: format!("chatcmpl-{}", Uuid::new_v4()), created: now.timestamp() }` itself, and handler.rs passes `handler.clock.now()` on the line that passed `handler.stamp`. B190's LoggingLifecycleConfig and LoggingLifecycle (payload/lifecycle.rs L42, L60, L80) lose the stamp they only handed to SuccessHandler (L103). The failure side's stamp (logging_failure/handlers.rs L175, L222) is not part of this bundle and stays.
+
+
+  The failure counter. SuccessHandler also carries a `failure_counters` slice (handler.rs L43) that nothing in production fills. LiteLLM keeps no such list: `_handle_callback_failure` walks the live callback lists at call time and increments the first callback that has `increment_callback_logging_failure` (litellm_logging.py L3579-L3599, the lists from logging_callback_manager.py L344-L354), and only the Prometheus logger has that method (integrations/prometheus.py L3588). So the slice goes from SuccessHandler, the merged type and the inputs. `CallbackLogger` (callback_logger.rs L19) gains a provided `fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter>` that answers None. `CallbackRegistry` (registry.rs L48-L54) gains `pub fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter>`: it walks the Callbacks, Success and Failure lists in that order, each in registration order, and answers the first logger sink whose failure_counter is Some. callback_failure.rs (L8-L24) passes `handler.registry.failure_counter()` as a slice of at most one to exporter_options' handle_callback_failure (failure_counter.rs L6-L15), so the debug line for a missing counter stays in one place. The server fills the registry before the one Arc is made (B8399's register_callback_loggers, called by B8742), so the lookup reads a registry that no longer changes and needs no lock.
+
+
+  Building it once. `LoggingWiring` (wiring.rs L15-L22) is the one place the server builds its logging parts, so it also builds the handler. `LoggingWiring::start` takes one `LoggingInputs<'config>` struct, declared in wiring.rs, with `settings: &'config SettingsValues`, `clock`, `sink`, `registry` and `stream_assembler` (today's five arguments) and `success: SuccessInputs`. `SuccessInputs` holds `payload: PayloadBuilderConfig` (payload/builder.rs L22-L29), `excluded_fields` and `known_callback`. The registry it gets may already hold the configured loggers; start registers the service callbacks as today, wraps the registry in one Arc, and hands `Arc::clone` of it, of the clock and of the stream assembler to both the pipeline and `OwnedSuccessHandler`; the payload builder is `Arc::new(PayloadBuilder::new(payload))` with privacy copied from `payload.privacy` first. LoggingWiring gains `pub success: Arc<OwnedSuccessHandler>`.
+
+
+  The server's inputs. server.rs has 295 lines, so the call moves out: a new file crates/betterlite-server/src/server/logging_start.rs, declared with `mod logging_start;` in server.rs, holds `pub(super) fn start_logging(config: &Config, registry: CallbackRegistry, stream_assembler: Arc<dyn StreamAssembler>) -> Result<LoggingWiring, ServerError>`. run_with_listener calls it in place of L109-L116 and keeps `CallbackRegistry::new(config.sections.callback_settings.max_callbacks)` and `Arc::new(ChatStreamAssembler)` on their own lines, where B8610, B8742 and B9840 look for them. start_logging builds today's SystemClock and TracingSink, and the success inputs from the config: `PayloadSources::default()` (payload/deps.rs L133-L156; every source has only its Absent implementation in production), `PayloadSettings { tag_config: TagConfig::default(), request_correlation_in_logs: false, log_client_error_tracebacks: config.sections.auth_errors.log_client_error_tracebacks }` written out in full, `Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)`, `Normalizer::new()`, `Base64Truncator::new` over `config.sections.prompt_affinity.maximum_base64_length` (the MAX_BASE64_LENGTH_FOR_LOGGING section, converted the way routing/prompt_affinity.rs L37-L39 does), `config.sections.logging_privacy`, `config.sections.payload_exclusions.excluded_fields` and `known_callback: Arc::new(|name: &str| KNOWN_CALLBACKS.contains(&name))` over betterlite-router's list (prompt_dispatch/known_callbacks.rs L1, LiteLLM's _custom_logger_compatible_callbacks_literal). A redactor, normalizer or truncator failure is a new `SuccessInputsError` in logging_start.rs, and ServerError gets one `SuccessInputs(#[from] SuccessInputsError)` variant. B8610 moves the two lines and the call into application() and keeps the wiring in ServerState, and B8631 and the cache-hit path take the handler from there.
+
+
+  Tests. crates/betterlite-logging/src/logging_service_events/tests/success_wiring.rs, declared in logging_service_events/tests.rs: `wiring_builds_one_success_handler_over_its_parts` starts the wiring and asserts with Arc::ptr_eq that the handler's stream assembler and clock are the Arcs passed in, that its registry is the one the service callbacks were registered into (a service callback name from the settings is listed in it), and that excluded_fields, privacy and known_callback are the inputs. In logging_success/tests/redaction.rs, `each_redacted_payload_gets_a_fresh_response_id` redacts two payloads with message logging turned off and asserts both ids start with `chatcmpl-`, differ, and carry the test clock's second as created; `is_placeholder_response` (L22-L30) checks the prefix in place of the fixed id. crates/betterlite-server/src/server/logging_start/tests.rs: `start_logging_reads_the_handler_settings_from_the_config` builds a Config with excluded fields, turn_off_message_logging and log_client_error_tracebacks set and asserts the handler's excluded_fields and privacy and that known_callback answers true for langfuse and false for a custom name. In logging_success/tests/errors.rs the counter fixture registers two counting loggers in the Callbacks list in place of the two counters it passes today (L42-L43): `a_failed_callback_counts_once_through_the_first_counting_logger` asserts only the first counts the failed callback name, and `a_registry_without_a_counting_logger_counts_nothing` registers a logger whose failure_counter is None and asserts the call still returns. The cache-hit tests that count a failure (crates/betterlite-core/src/caching/hit_callbacks/tests/support.rs L331, caching/lookup/tests/support.rs L706) register their counter the same way. The existing cache-hit, interaction, stream logging, lifecycle and wiring tests move to the new type and the inputs struct and stay green.
+scope:
+  paths:
+    - crates/betterlite-logging/src/logging_success.rs
+    - crates/betterlite-logging/src/logging_success/owned.rs
+    - crates/betterlite-logging/src/logging_success/handler.rs
+    - crates/betterlite-logging/src/logging_success/callback_failure.rs
+    - crates/betterlite-logging/src/callback_logger.rs
+    - crates/betterlite-logging/src/registry.rs
+    - crates/betterlite-logging/src/logging_success/redaction.rs
+    - crates/betterlite-logging/src/logging_success/tests.rs
+    - crates/betterlite-logging/src/logging_success/tests/**
+    - crates/betterlite-logging/src/logging_interactions/completion.rs
+    - crates/betterlite-logging/src/logging_interactions/tests.rs
+    - crates/betterlite-logging/src/passthrough_stream_logging/object.rs
+    - crates/betterlite-logging/src/passthrough_stream_logging/tests/**
+    - crates/betterlite-logging/src/passthrough_logging_state/tests/support.rs
+    - crates/betterlite-logging/src/logging_streams/tests/support.rs
+    - crates/betterlite-logging/src/payload/lifecycle.rs
+    - crates/betterlite-logging/src/payload/tests.rs
+    - crates/betterlite-logging/src/logging_service_events/wiring.rs
+    - crates/betterlite-logging/src/logging_service_events/tests.rs
+    - crates/betterlite-logging/src/logging_service_events/tests/**
+    - crates/betterlite-core/src/caching/hit_callbacks/job.rs
+    - crates/betterlite-core/src/caching/hit_callbacks/tests/**
+    - crates/betterlite-core/src/caching/lookup/hit.rs
+    - crates/betterlite-core/src/caching/lookup/tests/**
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/logging_start.rs
+    - crates/betterlite-server/src/server/logging_start/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L121-L180
+    why: the custom-logger callback names LiteLLM knows, the list KNOWN_CALLBACKS copies and known_callback answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L207-L211
+    why: the process-wide standard_logging_payload_excluded_fields every redaction reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L897-L961
+    why: the redaction builds a new ModelResponse for each redacted payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L122-L123
+    why: each ModelResponse gets a fresh chatcmpl- id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4093-L4106
+    why: the known callback names are dropped before the sync callbacks for async calls run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3578-L3599
+    why: a failed callback increments the first callback in the live lists that counts failures, looked up at call time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L344-L354
+    why: the order that lookup walks, callbacks first and then the success and failure lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3588-L3595
+    why: the Prometheus logger is the one callback with increment_callback_logging_failure.
+dod:
+  - text: One OwnedSuccessHandler in betterlite-logging replaces core's type, InteractionLoggingCallbacks and StreamLoggingCallbacks, and one From impl replaces their four borrow literals.
+    proof: [one-type, logging-tests, core-tests]
+  - text: Every redacted payload gets its own chatcmpl- id and the clock's current second, and no bundle carries a stamp.
+    proof: [logging-tests]
+  - text: LoggingWiring builds the handler once over the registry, clock and stream assembler the pipeline gets, and the server fills it from the config sections and KNOWN_CALLBACKS.
+    proof: [logging-tests, server-tests]
+  - text: A failed success callback counts once through the first registered logger whose failure_counter answers, read from the handler's registry at call time, and no failure counter slice is left in the success path.
+    proof: [logging-tests, core-tests, one-type]
+checks:
+  optional: [mutants]
+  commands:
+    - id: logging-tests
+      why: the merged type, the fresh stamp or the wiring's handler broke a success, interaction, stream logging, lifecycle or service event test
+      run: grep -q 'fn wiring_builds_one_success_handler_over_its_parts' crates/betterlite-logging/src/logging_service_events/tests/success_wiring.rs && grep -q 'fn each_redacted_payload_gets_a_fresh_response_id' crates/betterlite-logging/src/logging_success/tests/redaction.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_success::/) | test(/^logging_interactions::/) | test(/^passthrough_stream_logging::/) | test(/^passthrough_logging_state::/) | test(/^logging_streams::/) | test(/^payload::/) | test(/^logging_service_events::/)'
+    - id: core-tests
+      why: the cache-hit job or the lookup's hit logging no longer logs through the shared handler
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^caching::hit_callbacks::/) | test(/^caching::lookup::/)'
+    - id: server-tests
+      why: the server builds the handler from the wrong section or the start path broke
+      run: grep -q 'fn start_logging_reads_the_handler_settings_from_the_config' crates/betterlite-server/src/server/logging_start/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::/)'
+    - id: one-type
+      why: an old bundle or a copied borrow literal is still there
+      run: test -z "$(grep -rn 'pub struct InteractionLoggingCallbacks\|pub struct StreamLoggingCallbacks\|pub stamp:.&' crates/betterlite-logging/src)" && test -z "$(grep -rn 'pub struct OwnedSuccessHandler' crates/betterlite-core/src)" && test -z "$(grep -rn 'known_callback:.' crates/betterlite-core/src crates/betterlite-logging/src/logging_interactions crates/betterlite-logging/src/passthrough_stream_logging --include=*.rs | grep -v '/tests/' | grep -v 'tests.rs')" && test -z "$(grep -rn 'failure_counters' crates/betterlite-logging/src/logging_success crates/betterlite-logging/src/logging_service_events crates/betterlite-core/src/caching)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B190's LoggingLifecycle (payload/lifecycle.rs L29-L62) keeps its own fields and its SuccessHandler literal (L95-L105): its failure path reads the concrete PayloadBuilder's redactor (L127-L129) and nothing builds it in production."
+  - "Filling the registry with the configured loggers before start wraps it: B8399's register_callback_loggers, which B8742 calls in application(). PrometheusHooks' failure_counter override: B8399."
+  - "Production payload sources: ModelCostInformation, SavedCacheCost, RequestAccessGroups and the autorouter audit have only their Absent implementations (payload/deps.rs L133-L156)."
+  - "Config sections for disable_add_user_agent_to_request_tags, extra_spend_tag_headers and request_correlation_in_logs: none exists (only the reporting safe list names them, safe_proxy_config/litellm_settings.rs L62, L74, L123), so TagConfig and the flag keep their defaults."
+  - "Handing the Arc to routes: B8610 keeps the wiring in ServerState, and B8631 passes the handler to the pass-through hop."
+pitfalls:
+  - "handler.rs has 300 lines. Removing the stamp field and passing the clock where the stamp went keeps it there; the stamp is built in redaction.rs."
+  - "server.rs has 295 lines. The LoggingWiring call and its parts move to logging_start.rs, so server.rs shrinks; only Arc::new(ChatStreamAssembler), the call and the error variant stay."
+  - "CallbackRegistry::register takes &mut self (registry.rs L76): register the service callbacks before the one Arc is made, as start does today."
+  - "registry.rs has 269 lines; the lookup is one short method. Return the borrowed counter, never a clone of the logger Arc."
+  - "Write the From impl as a trait impl: the rules forbid a constructor that only builds a struct, and they exempt trait impls."
+  - "No struct update syntax with Default (the no-default-struct-update rule): write every PayloadSettings field."
+  - "Clone an Arc with Arc::clone, never .clone() on the Arc."
+review_level: standard
+budget:
+  max_changed_lines: 1050
+  max_new_expects: 0
