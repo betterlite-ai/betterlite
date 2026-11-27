@@ -7,8 +7,8 @@ use betterlite_models::decisions::Json;
 
 use self::error::VectorFileReadError;
 use self::service::{ReadCall, ReadEntry, SdkDeps, entry_from_flag, read_attachment};
-use crate::api::vector_file_http_read::service::{ClientSource, Operation};
-use crate::api::vector_store_http_write::service::{ClientKind, LogContext};
+use crate::api::vector_file_http_read::service::{ClientSource, LogContext, Operation};
+use crate::api::vector_store_http_write::service::ClientKind;
 
 // retrieve: the wrapper's own flag is popped, and only a literal true selects the asynchronous handler
 pub async fn retrieve<S>(

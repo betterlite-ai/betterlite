@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::api::vector_file_read::loads_read_timeout;
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::api::vector_file_http_read::service::LogContext;
 use betterlite_core::api::vector_file_provider::CredentialLookup;
 use betterlite_core::api::vector_file_read::error::{
     VectorFileReadError, failure as project_failure,
@@ -10,7 +11,6 @@ use betterlite_core::api::vector_file_read::service::{ReadCall, SdkDeps};
 use betterlite_core::api::vector_file_read::{
     aretrieve, aretrieve_content, retrieve, retrieve_content,
 };
-use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_error::envelope::WireField;
 use betterlite_logging::logging_state::LoggingState;

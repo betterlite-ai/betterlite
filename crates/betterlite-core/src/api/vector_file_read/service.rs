@@ -4,26 +4,25 @@ use std::time::Duration;
 use betterlite_context::resource_config_selection::vector_stores::{
     VectorStoreFilesConfigTag, select_store_files_config,
 };
-use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::vector_stores::Headers;
-use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::error::VectorFileReadError;
 use crate::api::vector_file_http_read::config::{QueryParams, ReadConfig, ReadParams};
 use crate::api::vector_file_http_read::error::PrepareFailure;
 use crate::api::vector_file_http_read::service::{
-    ClientSource, Operation, ReadDeps, ReadTarget, prepare, send,
+    ClientSource, LogContext, Operation, ReadDeps, ReadTarget, prepare, send,
 };
 use crate::api::vector_file_provider::{
     CredentialLookup, OperationKwargs, ensure_provider, prepare_registry_credentials,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
-use crate::api::vector_store_http_write::service::{ClientKind, LogContext, SuppliedClient};
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
+
+mod log;
 
 // The wrapper's named arguments and the call's **kwargs
 pub struct ReadCall<'call> {
@@ -148,15 +147,7 @@ where
     let params = read_params(&overlaid.0)?;
     let provider = ensure_provider(call.custom_llm_provider).to_owned();
     let tag = files_config_tag(&provider, entry.operation)?;
-    log_read(
-        log.state,
-        call,
-        &LogFields {
-            kwargs: &overlaid.0,
-            call_id: &call_id,
-            provider: &provider,
-        },
-    )?;
+    log::log_read(log.state, call, &overlaid.0, &call_id, &provider)?;
     let handler = handler_call(call, params, entry, deps.request_timeout_seconds)?;
     let inner = deps
         .configs
@@ -285,70 +276,4 @@ fn flag(kwargs: &JsonObject, field: &'static str) -> Result<Option<bool>, Vector
             })
         }
     }
-}
-
-struct LogFields<'fields> {
-    kwargs: &'fields JsonObject,
-    call_id: &'fields Json,
-    provider: &'fields str,
-}
-
-// update_from_kwargs(model=None, optional_params={ids}, litellm_params={vector_store_id, litellm_call_id, **model_dump})
-fn log_read(
-    state: &mut LoggingState,
-    call: &ReadCall<'_>,
-    fields: &LogFields<'_>,
-) -> Result<(), VectorFileReadError> {
-    let optional_params = IndexMap::from([
-        (
-            "vector_store_id".to_owned(),
-            Json::Text(call.vector_store_id.to_owned()),
-        ),
-        ("file_id".to_owned(), Json::Text(call.file_id.to_owned())),
-    ]);
-    let mut litellm_params = IndexMap::from([
-        (
-            "vector_store_id".to_owned(),
-            Json::Text(call.vector_store_id.to_owned()),
-        ),
-        ("litellm_call_id".to_owned(), fields.call_id.clone()),
-    ]);
-    litellm_params.extend(generic_params_dump(fields.kwargs));
-    let additional_params = IndexMap::from([(
-        "custom_llm_provider".to_owned(),
-        Json::Text(fields.provider.to_owned()),
-    )]);
-    update_from_kwargs(
-        state,
-        fields.kwargs,
-        Some(&litellm_params),
-        CallUpdate {
-            model: None,
-            user: None,
-            optional_params,
-            additional_params,
-        },
-    )?;
-    Ok(())
-}
-
-// GenericLiteLLMParams.model_dump(exclude_none=True): the five fields defaulting to False, then every non-null kwarg
-fn generic_params_dump(kwargs: &JsonObject) -> IndexMap<String, Json> {
-    let mut dump: IndexMap<String, Json> = [
-        "allow_client_keepalive_override",
-        "merge_reasoning_content_in_choices",
-        "use_in_pass_through",
-        "use_litellm_proxy",
-        "use_xai_oauth",
-    ]
-    .into_iter()
-    .map(|name| (name.to_owned(), Json::Bool(false)))
-    .collect();
-    dump.extend(
-        kwargs
-            .iter()
-            .filter(|(_, value)| !matches!(value, Json::Null))
-            .map(|(name, value)| (name.clone(), value.clone())),
-    );
-    dump
 }

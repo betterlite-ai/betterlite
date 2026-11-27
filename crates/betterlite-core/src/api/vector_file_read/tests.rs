@@ -34,11 +34,11 @@ use super::service::{
 use super::{aretrieve, aretrieve_content, retrieve, retrieve_content};
 use crate::api::vector_file_http_read::config::{OpenAiReadConfig, ReadConfig, ReadParams};
 use crate::api::vector_file_http_read::service::{
-    ClientSource, Operation, ReadRequest, ReadTransport,
+    ClientSource, LogContext, Operation, ReadRequest, ReadTransport,
 };
 use crate::api::vector_file_provider::{CredentialLookup, CredentialLookupError, OperationKwargs};
 use crate::api::vector_store_http_write::error::ClientError;
-use crate::api::vector_store_http_write::service::{ClientKind, LogContext};
+use crate::api::vector_store_http_write::service::ClientKind;
 
 const RETRIEVE_BODY: &str = r#"{"id":"file_a","object":"vector_store.file","status":"completed"}"#;
 const CONTENT_BODY: &str = r#"{"file_id":"file_a","filename":"a","attributes":{"tag":"x"},"content":[{"type":"text","text":"hello"},{"type":"text","text":"world"}]}"#;
