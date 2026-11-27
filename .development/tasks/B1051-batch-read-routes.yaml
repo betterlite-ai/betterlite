@@ -32,7 +32,7 @@ description: >-
   B1019 encodes the returned batch id and each nonempty input_file_id/output_file_id/error_file_id with that model.
   Otherwise, a unified id or enable_loadbalancing_on_batch_endpoints=true uses Router.aretrieve_batch (B10142).
   Build it once in routes(state) with B10142's app::inference::router_calls::batch_retrieve::batch_retrieve(state, executor),
-  where the executor is a B6021 GenericCallExecutor for the call type aretrieve_batch over the same B1037 provider read
+  where the executor is a B10154 GenericCallExecutor for the call type aretrieve_batch over the same B1037 provider read
   the model-encoded branch calls. BatchProviderReadInput is deny_unknown_fields, so the executor takes batch_id, the
   provider, the extra headers and body, model and the credential fields out of the merged map by name and never
   deserializes the whole map, which also holds litellm_metadata, model_info and the deployment's other params.
