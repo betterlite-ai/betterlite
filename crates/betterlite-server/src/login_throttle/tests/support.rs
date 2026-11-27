@@ -357,6 +357,7 @@ pub struct WarningLog {
 }
 
 impl WarningLog {
+    #[must_use]
     pub fn subscribe(&self) -> DefaultGuard {
         let subscriber = tracing_subscriber::fmt()
             .with_writer(self.clone())

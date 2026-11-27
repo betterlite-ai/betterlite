@@ -59,8 +59,8 @@ fn positive_integer_settings() {
 
     // int() accepts groups of digits joined by one underscore
     let underscored =
-        loaded("general_settings:\n  max_failed_login_attempts_per_source: \"1_0\"\n");
-    assert_eq!(underscored.source_limit, DEFAULT_SOURCE_LIMIT);
+        loaded("general_settings:\n  max_failed_login_attempts_per_source: \"1_2\"\n");
+    assert_eq!(underscored.source_limit, 12);
     assert_eq!(underscored.window_seconds, DEFAULT_WINDOW_SECONDS);
     assert_eq!(underscored.block_seconds, DEFAULT_BLOCK_SECONDS);
 
