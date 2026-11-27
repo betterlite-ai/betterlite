@@ -401,8 +401,8 @@ impl BatchPrecallStages for ScriptedStages {
         ready(self.stage_answer(effect, StageName::Charge))
     }
 
-    fn http(&self, error: &StagesError) -> Option<&BatchHttpError> {
-        error.http.as_ref()
+    fn http(&self, error: &StagesError) -> Option<BatchHttpError> {
+        error.http.clone()
     }
 }
 
@@ -640,7 +640,10 @@ impl ScriptedRemote {
     }
 }
 
-fn resolved<T: Clone>(answer: &RemoteAnswer<T>) -> Result<T, BatchCacheError> {
+fn resolved<T>(answer: &RemoteAnswer<T>) -> Result<T, BatchCacheError>
+where
+    T: Clone,
+{
     match answer {
         RemoteAnswer::Value(value) => Ok(value.clone()),
         RemoteAnswer::Failed(message) => Err(BatchCacheError::Failed {

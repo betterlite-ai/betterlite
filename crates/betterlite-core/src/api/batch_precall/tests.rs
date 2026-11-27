@@ -862,7 +862,7 @@ struct FailingRefunds;
 impl BatchRefundSink for FailingRefunds {
     type Error = RefundStoreError;
 
-    async fn run(
+    async fn handle(
         &self,
         _input: &BatchEnqueuedRefundInput,
     ) -> Result<BatchEnqueuedRefundResult, RefundStoreError> {
