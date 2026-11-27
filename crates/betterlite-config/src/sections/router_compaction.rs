@@ -61,9 +61,9 @@ struct RawContextCompactionConfig {
     trigger_ratio: Option<RawNumber>,
     max_tokens: Option<RawNumber>,
     timeout_seconds: Option<RawNumber>,
-    // LiteLLM's config model is extra="forbid", so a key left over is refused with its path
+    // extra="forbid" refuses a leftover key by path; zero_sized_map_values bans the plain IgnoredAny value
     #[serde(flatten)]
-    extra: BTreeMap<String, IgnoredAny>,
+    extra: BTreeMap<String, Option<IgnoredAny>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -142,8 +142,8 @@ fn every_key_of_a_full_object_resolves() {
 }
 
 #[rstest]
-#[case::just_inside_zero(0.001)]
-#[case::just_inside_one(0.999)]
+#[case::just_inside_zero(0.001_f64)]
+#[case::just_inside_one(0.999_f64)]
 fn a_trigger_ratio_inside_the_open_range_loads(#[case] ratio: f64) {
     let source = object(&format!("trigger_ratio: {ratio}"));
     assert_eq!(
@@ -156,10 +156,10 @@ fn a_trigger_ratio_inside_the_open_range_loads(#[case] ratio: f64) {
 }
 
 #[rstest]
-#[case::zero(0.0)]
-#[case::one(1.0)]
-#[case::negative(-0.5)]
-#[case::above_one(1.5)]
+#[case::zero(0.0_f64)]
+#[case::one(1.0_f64)]
+#[case::negative(-0.5_f64)]
+#[case::above_one(1.5_f64)]
 fn a_trigger_ratio_outside_the_open_range_names_its_path(#[case] ratio: f64) {
     let error = only(&object(&format!("trigger_ratio: {ratio}"))).unwrap_err();
     assert!(
