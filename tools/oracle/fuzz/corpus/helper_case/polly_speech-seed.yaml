@@ -1,0 +1,14 @@
+kind: helper
+name: polly-speech-seed
+call:
+  polly_speech:
+    calls:
+    - {function: map_params, model: aws_polly/standard, optional_params: {response_format: opus}, kwargs: {language_code: en-US}, voice: alloy}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: us-west-2}}
+    - function: dispatch
+      optional_params: {aws_region_name: us-east-2}
+      litellm_params: {}
+      environment: {AWS_REGION: eu-central-1}
+      voice: {name: Matthew}
+compare: {ignore: []}
+env: {}
