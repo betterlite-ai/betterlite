@@ -217,8 +217,10 @@ impl LoggerCatalog {
     // built on the first OTel arm: the snapshot never changes and the clients are shared by every arm
     fn shared(&self) -> Arc<SharedOtel> {
         let mut slot = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
-        let shared = slot.get_or_insert_with(|| Arc::new(SharedOtel::new(&self.inputs)));
-        Arc::clone(shared)
+        let shared =
+            Arc::clone(slot.get_or_insert_with(|| Arc::new(SharedOtel::new(&self.inputs))));
+        drop(slot);
+        shared
     }
 
     fn auto_start_phoenix(&self) {
@@ -324,8 +326,7 @@ dispatch_logger! {
     }
     connected { Agentops => agentops, }
     builders {
-        Argilla => argilla,
-        Athina => athina, AwsSqs => aws_sqs,
+        Argilla => argilla, Athina => athina, AwsSqs => aws_sqs,
         AzureSentinel => azure_sentinel, AzureStorage => azure_storage,
         Bitbucket => bitbucket, Braintrust => braintrust,
         Clickhouse => clickhouse, Cloudzero => cloudzero,
