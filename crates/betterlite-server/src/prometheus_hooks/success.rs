@@ -3,6 +3,7 @@ use std::time::Instant;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::end_user::{
     CostTrackingService,
+    EndUserCostTrackingSettings,
     get_end_user_id_for_cost_tracking as end_user_for_cost_tracking, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::fields::payload::StandardLoggingPayload;
@@ -58,6 +59,7 @@ struct SuccessRecord<'record> {
     values: &'record UserApiKeyLabelValues,
     context: &'record PrometheusLabelFactoryContext,
     labels: UsageLabels<'record>,
+    end_user: EndUserCostTrackingSettings,
     now: Instant,
 }
 
@@ -101,6 +103,7 @@ pub(crate) async fn record_success(
             context: &context,
             settings: &hooks.settings.labels,
         },
+        end_user: hooks.settings.end_user,
         now: Instant::now(),
     };
     emit_success(hooks, &record).await
@@ -145,6 +148,15 @@ async fn record_budget(
         .await;
 }
 
+fn usage_label_inputs<'record>(record: &SuccessRecord<'record>) -> LabelInputs<'record> {
+    LabelInputs {
+        values: record.values,
+        settings: record.labels.settings,
+        end_user_settings: record.end_user,
+        context: Some(record.context),
+    }
+}
+
 fn record_rate_limits(
     hooks: &PrometheusHooks,
     record: &SuccessRecord<'_>,
@@ -163,17 +175,32 @@ fn record_rate_limits(
             end_user_settings: hooks.settings.end_user,
         },
     )?;
-    key_and_team_rate_limits(
-        &record.metrics,
-        record.payload,
-        LabelInputs {
-            values: record.values,
-            settings: &hooks.settings.labels,
-            end_user_settings: hooks.settings.end_user,
-            context: Some(record.context),
-        },
-    )?;
+    key_and_team_rate_limits(&record.metrics, record.payload, usage_label_inputs(record))?;
     Ok(())
+}
+
+fn latency_observation(
+    hooks: &PrometheusHooks,
+    record: &SuccessRecord<'_>,
+    queue_time: Option<Decimal>,
+) -> LatencyObservation<'static> {
+    let label_enabled = hooks.collectors.emit_input_sequence_length_label; // ast-grep-ignore: no-long-names
+    let input_sequence_length =
+        label_enabled.then(|| input_sequence_length_bucket(&input_length_inputs(record.payload)));
+    LatencyObservation {
+        timestamps: LatencyTimestamps {
+            start_time: Some(record.payload.start_time),
+            end_time: Some(record.payload.end_time),
+            api_call_start: Some(record.payload.start_time),
+            completion_start: (record.payload.completion_start_time != Decimal::ZERO)
+                .then_some(record.payload.completion_start_time),
+        },
+        now: now_seconds(),
+        now_monotonic: record.now,
+        stream: record.payload.stream,
+        queue_time_seconds: queue_time,
+        input_sequence_length,
+    }
 }
 
 fn record_latency(
@@ -181,33 +208,10 @@ fn record_latency(
     record: &SuccessRecord<'_>,
     queue_time: Option<Decimal>,
 ) -> Result<(), PrometheusHookError> {
-    let label_enabled = hooks.collectors.emit_input_sequence_length_label; // ast-grep-ignore: no-long-names
-    let input_sequence_length =
-        label_enabled.then(|| input_sequence_length_bucket(&input_length_inputs(record.payload)));
-    let timestamps = LatencyTimestamps {
-        start_time: Some(record.payload.start_time),
-        end_time: Some(record.payload.end_time),
-        // the event carries no api-call start, so the request start stands in for it
-        api_call_start: Some(record.payload.start_time),
-        completion_start: (record.payload.completion_start_time != Decimal::ZERO)
-            .then_some(record.payload.completion_start_time),
-    };
     set_latency_metrics(
         &latency_histograms(hooks),
-        &LatencyObservation {
-            timestamps,
-            now: now_seconds(),
-            now_monotonic: record.now,
-            stream: record.payload.stream,
-            queue_time_seconds: queue_time,
-            input_sequence_length,
-        },
-        &LabelInputs {
-            values: record.values,
-            settings: &hooks.settings.labels,
-            end_user_settings: hooks.settings.end_user,
-            context: Some(record.context),
-        },
+        &latency_observation(hooks, record, queue_time),
+        &usage_label_inputs(record),
     )?;
     Ok(())
 }
