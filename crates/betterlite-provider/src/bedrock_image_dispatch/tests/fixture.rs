@@ -22,7 +22,7 @@ use crate::bedrock_image_dispatch::test_support::{
     DiscardingSink, Factory, Reply, Seen, Source, logging_state, prepost_env,
 };
 use crate::bedrock_image_dispatch::{BedrockImageRequest, BedrockImageResult};
-use crate::operation::OperationRequest;
+use crate::operation::{OperationRequest, OperationResult};
 
 // The prices and the Nova Canvas flag the edit selector reads; generation never consults it
 const MODEL_COST: &str = r#"{
@@ -189,7 +189,7 @@ pub(crate) async fn run_request(
         seen: Seen::default(),
     };
     let source = fixture_source();
-    let result = {
+    let dispatched = {
         let mut log = LogContext {
             state: &mut state,
             env: &env,
@@ -205,6 +205,11 @@ pub(crate) async fn run_request(
             &mut log,
         )
         .await
+    };
+    let result = match dispatched {
+        Ok(OperationResult::BedrockImage(result)) => Ok(result),
+        Ok(_other) => panic!("the image dispatcher returns an image result"),
+        Err(error) => Err(error),
     };
     Run {
         result,

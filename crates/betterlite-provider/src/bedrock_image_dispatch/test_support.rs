@@ -46,9 +46,9 @@ pub enum FixtureError {
 }
 
 pub fn instant(seconds: i64) -> Result<SystemTime, FixtureError> {
-    let seconds = u64::try_from(seconds).map_err(|_error| FixtureError::Instant)?;
+    let whole = u64::try_from(seconds).map_err(|_error| FixtureError::Instant)?;
     SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_secs(seconds))
+        .checked_add(Duration::from_secs(whole))
         .ok_or(FixtureError::Instant)
 }
 

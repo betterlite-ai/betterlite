@@ -122,9 +122,9 @@ fn request_value(outcome: &Outcome, probe: &Probe) -> Result<Value, Box<HelperEr
             "posted": 0,
         }));
     };
-    let body: Json =
+    let parsed: Json =
         serde_json::from_slice(&request.body).map_err(|error| failure("Fixture", error))?;
-    let body = serde_json::to_value(body).map_err(|error| failure("Fixture", error))?;
+    let body = serde_json::to_value(parsed).map_err(|error| failure("Fixture", error))?;
     Ok(json!({
         "url": request.url.as_str(),
         "body": body,
