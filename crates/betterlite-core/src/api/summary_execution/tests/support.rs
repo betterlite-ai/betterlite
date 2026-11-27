@@ -523,9 +523,7 @@ impl Sample {
             principal: None,
         }
     }
-}
 
-impl Sample {
     pub(crate) fn request<'request>(
         &'request self,
         model: &'request str,

@@ -85,10 +85,10 @@ where
 fn model_region<HookError>(
     principal: Option<&UserAPIKeyAuth>,
 ) -> Result<Option<String>, SummaryExecutionError<HookError>> {
-    let Some(principal) = principal else {
+    let Some(auth) = principal else {
         return Ok(None);
     };
-    let encoded = serde_json::to_value(principal).map_err(SummaryExecutionError::Principal)?;
+    let encoded = serde_json::to_value(auth).map_err(SummaryExecutionError::Principal)?;
     let fields: PrincipalRegion =
         serde_json::from_value(encoded).map_err(SummaryExecutionError::Principal)?;
     Ok(fields.allowed_model_region)
