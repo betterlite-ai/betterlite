@@ -1,10 +1,11 @@
+from litellm.llms.litellm_proxy.skills.skill_search import SkillSearchResult
 from litellm.proxy._experimental.mcp_server import tool_search
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.agent_endpoints.agent_search import AgentSearchResult
 from mcp.types import Tool
 from pydantic import JsonValue
 
 from b4686.model import (
-    AgentHit,
     AgentOutcome,
     AgentSearchEmbeddingFailed,
     AgentSearchHits,
@@ -19,8 +20,6 @@ from b4686.model import (
     FeatureCheckRecord,
     ListCallRecord,
     ScopeRecord,
-    SearchableSkill,
-    SkillHit,
     SkillOutcome,
     SkillSearchEmbeddingFailed,
     SkillSearchHits,
@@ -144,27 +143,32 @@ def tools_of(input_value: Input) -> list[Tool]:
     ]
 
 
-def agent_hit(agent: NamedRecord) -> AgentHit:
-    skill = SearchableSkill(
-        name=f"skill-{agent.record_id}",
-        description=f"skill description of {agent.record_id}",
-        tags=["seeded"],
-    )
-    return AgentHit(
-        agent_id=agent.record_id,
-        agent_name=agent.name,
-        description=f"agent description of {agent.record_id}",
-        skills=[skill],
-        score=AGENT_SCORE,
+def agent_hit(agent: NamedRecord) -> AgentSearchResult:
+    return AgentSearchResult.model_validate(
+        {
+            "agent_id": agent.record_id,
+            "agent_name": agent.name,
+            "description": f"agent description of {agent.record_id}",
+            "skills": [
+                {
+                    "name": f"skill-{agent.record_id}",
+                    "description": f"skill description of {agent.record_id}",
+                    "tags": ["seeded"],
+                }
+            ],
+            "score": AGENT_SCORE,
+        }
     )
 
 
-def skill_hit(skill: NamedRecord) -> SkillHit:
-    return SkillHit(
-        skill_id=skill.record_id,
-        display_title=skill.name,
-        description=skill.description,
-        score=SKILL_SCORE,
+def skill_hit(skill: NamedRecord) -> SkillSearchResult:
+    return SkillSearchResult.model_validate(
+        {
+            "skill_id": skill.record_id,
+            "display_title": skill.name,
+            "description": skill.description,
+            "score": SKILL_SCORE,
+        }
     )
 
 

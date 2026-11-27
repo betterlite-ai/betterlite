@@ -41,18 +41,7 @@ pub(super) async fn ranked_hits(
     }
 }
 
-pub(super) async fn ranked_tool_search(
-    query: &str,
-    top_k: i64,
-    tools: &[MCPTool],
-    settings: &MCPToolSearchSettings,
-    context: &HandlerContext<'_>,
-) -> Result<Vec<ToolSearchResult>, SearchError> {
-    let hits = ranked_hits(query, top_k, tools, settings, context).await?;
-    Ok(hits.into_iter().map(tool_search_result).collect())
-}
-
-fn tool_search_result(hit: MCPToolSearchHit) -> ToolSearchResult {
+pub(super) fn tool_search_result(hit: MCPToolSearchHit) -> ToolSearchResult {
     ToolSearchResult {
         name: hit.tool.name,
         description: hit.tool.description.unwrap_or_default(),

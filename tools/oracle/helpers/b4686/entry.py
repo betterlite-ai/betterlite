@@ -27,9 +27,9 @@ from b4686.doubles import (
     FakePermissionModule,
     FakeProxyModule,
     FakeRbacModule,
+    Fakes,
     FakeSkillModule,
     FakeSkillsModule,
-    Fakes,
 )
 from b4686.model import ARGUMENTS, JSON, Envelope
 from b4686.readers import guardrail_of, query_of, top_k_of

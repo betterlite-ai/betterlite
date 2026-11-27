@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from typing import Final, NotRequired, TypedDict
 
+from litellm.llms.litellm_proxy.skills.skill_search import SkillSearchResult
+from litellm.proxy.agent_endpoints.agent_search import AgentSearchResult
 from mcp.types import Tool
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 ARGUMENTS: Final = TypeAdapter(dict[str, object])
 JSON: Final = TypeAdapter(JsonValue)
@@ -100,30 +102,9 @@ class Envelope(TypedDict):
     observed: Observed
 
 
-class SearchableSkill(BaseModel):
-    name: str
-    description: str
-    tags: list[str]
-
-
-class AgentHit(BaseModel):
-    agent_id: str
-    agent_name: str
-    description: str
-    skills: list[SearchableSkill]
-    score: float
-
-
-class SkillHit(BaseModel):
-    skill_id: str
-    display_title: str | None
-    description: str | None
-    score: float
-
-
 @dataclass(frozen=True)
 class AgentSearchHits:
-    hits: list[AgentHit]
+    hits: list[AgentSearchResult]
 
 
 @dataclass(frozen=True)
@@ -138,7 +119,7 @@ class AgentSearchEmbeddingFailed:
 
 @dataclass(frozen=True)
 class SkillSearchHits:
-    hits: list[SkillHit]
+    hits: list[SkillSearchResult]
 
 
 @dataclass(frozen=True)

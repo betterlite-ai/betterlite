@@ -4,22 +4,24 @@ from typing import Final, Unpack
 from fastapi import HTTPException
 from litellm.llms.litellm_proxy.skills.skill_search import (
     MAX_SKILL_SEARCH_TOP_K,
+    SkillSearchResult,
     global_skill_search_index,
 )
 from litellm.proxy._experimental.mcp_server.tool_outcome import TextResult
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.proxy.agent_endpoints.agent_search import global_agent_search_index
+from litellm.proxy.agent_endpoints.agent_search import (
+    AgentSearchResult,
+    global_agent_search_index,
+)
 from pydantic import BaseModel, JsonValue
 
 from b4686.model import (
-    AgentHit,
     AgentOutcome,
     AgentSearchEmbeddingFailed,
     AgentSearchHits,
     AgentSearchNotConfigured,
     Listing,
     Observed,
-    SkillHit,
     SkillOutcome,
     SkillSearchEmbeddingFailed,
     SkillSearchHits,
@@ -170,7 +172,7 @@ class FakeAgentModule(ModuleType):
         self.fakes.observed["agent_searches"].append(agent_search_record(kwargs))
         return agent_outcome(self.fakes.input_value, kwargs["agents"])
 
-    def agent_search_result(self, hit: AgentHit) -> AgentHit:
+    def agent_search_result(self, hit: AgentSearchResult) -> AgentSearchResult:
         return hit
 
 
@@ -230,5 +232,5 @@ class FakeSkillModule(ModuleType):
         self.fakes.observed["skill_searches"].append(skill_search_record(kwargs))
         return skill_outcome(self.fakes.input_value, kwargs["skills"])
 
-    def skill_search_result(self, hit: SkillHit) -> SkillHit:
+    def skill_search_result(self, hit: SkillSearchResult) -> SkillSearchResult:
         return hit

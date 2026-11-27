@@ -17,7 +17,7 @@ use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use betterlite_prompts::arguments::json::Object;
 use http::StatusCode;
 
-use self::dispatch::{agent_search_text, proxy_search, ranked_tool_search};
+use self::dispatch::{agent_search_text, proxy_search, ranked_hits, tool_search_result};
 use self::error::SearchHandlerError;
 use self::ports::ToolExecution;
 use self::types::{
@@ -29,7 +29,7 @@ use crate::mcp::catalog_guard::types::MCPTool;
 use crate::mcp::tool_search::identity::{mcp_proxy_tool_id, proxy_schema_result};
 use crate::mcp::tool_search::{
     MCP_PROXY_CALL_TOOL_NAME, MCP_PROXY_SCHEMA_TOOL_NAME, MCP_PROXY_SEARCH_TOOL_NAME,
-    MCP_TOOL_SEARCH_SETTINGS_KEY,
+    MCP_TOOL_SEARCH_SETTINGS_KEY, ToolSearchResult,
 };
 
 // the message litellm_settings.mcp_tool_search.embedding_model gets when no model_list exists
@@ -93,10 +93,12 @@ pub async fn handle_mcp_tool_search(
         .operations
         ._list_mcp_tools(context.caller, context.scope, false)
         .await?;
-    let ranking =
-        ranked_tool_search(request.query, request.top_k, &tools, &settings, context).await;
+    let ranking = ranked_hits(request.query, request.top_k, &tools, &settings, context).await;
     match ranking {
-        Ok(results) => Ok(_text_tool_result(serde_json::to_string(&results)?, false)),
+        Ok(hits) => {
+            let results: Vec<ToolSearchResult> = hits.into_iter().map(tool_search_result).collect();
+            Ok(_text_tool_result(serde_json::to_string(&results)?, false))
+        }
         Err(error) => Ok(_text_tool_result(error.to_string(), true)),
     }
 }

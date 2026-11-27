@@ -66,7 +66,7 @@ class Input(TypedDict, total=False):
     raw_headers: dict[str, str]
 
 
-class AuthScopeArguments(TypedDict, total=False):
+class AuthScopeArguments(TypedDict):
     client_ip: str | None
     mcp_auth_header: str | None
     mcp_server_auth_headers: dict[str, dict[str, str]]
