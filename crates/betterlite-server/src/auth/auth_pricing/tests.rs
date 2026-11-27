@@ -111,10 +111,6 @@ async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static
     "reached"
 }
 
-fn request_to(reached: &Arc<AtomicBool>, route: &str, body: &'static str) -> Request<Body> {
-    request_with(reached, route, JSON_BODY, body)
-}
-
 fn request_with(
     reached: &Arc<AtomicBool>,
     route: &str,
