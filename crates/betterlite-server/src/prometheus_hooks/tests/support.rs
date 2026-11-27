@@ -3,8 +3,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_logging::callback_logger::event::LoggerEvent;
+use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::fields::payload::records::ErrorInformation;
+use betterlite_logging::payload::deps::TagConfig;
 use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_logging::prometheus::budget_lookups::lookups::{
     BudgetLookupError, BudgetLookups, UserLookupOptions,
@@ -14,6 +16,7 @@ use betterlite_logging::prometheus::budget_lookups::records::{
 };
 use betterlite_logging::prometheus_exporter::{PrometheusCollectors, PrometheusExporterSettings};
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
+use betterlite_logging::prometheus_label_schema::PrometheusLabelSettings;
 use betterlite_models::decisions::Json;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 use betterlite_prometheus::collector_registry::CollectorRegistry;
@@ -153,9 +156,12 @@ pub(crate) fn fixture() -> Fixture {
 }
 
 pub(crate) fn fixture_with_limits(limits: SeriesLimits) -> Fixture {
-    let mut settings = PrometheusHookSettings::default();
-    settings.limits = limits;
-    fixture_with_settings(settings)
+    fixture_with_settings(PrometheusHookSettings {
+        labels: PrometheusLabelSettings::with_defaults(),
+        end_user: EndUserCostTrackingSettings::default(),
+        tags: TagConfig::default(),
+        limits,
+    })
 }
 
 pub(crate) fn fixture_with_settings(settings: PrometheusHookSettings) -> Fixture {
