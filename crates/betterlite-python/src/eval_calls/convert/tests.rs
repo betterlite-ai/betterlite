@@ -2,21 +2,19 @@
 
 use std::time::Duration;
 
-use betterlite_core::api::eval_create_list::request::{create_request, list_params};
-use betterlite_core::api::eval_get_update::request::update_request;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::types::{EvalOrder, EvalOrderBy};
 use indexmap::IndexMap;
+use pyo3::PyErr;
 use pyo3::Python;
+use rstest::rstest;
 use serde::Deserialize;
 
-use super::{ConvertError, parse_fields, timeout};
+use super::{ConvertError, Fields, parse, timeout};
 use crate::eval_calls::error::{EvalOperationFailure, payload};
-use crate::eval_calls::payload::{
-    CreatePayload, GetPayload, LifecyclePayload, ListPayload, UpdatePayload,
-};
+use crate::eval_calls::payload::{CreatePayload, IdPayload, ListPayload, UpdatePayload};
 
 const CREATE: &str = r#"{
     "data_source_config": {"type": "custom", "item_schema": {"type": "object"}},
@@ -46,22 +44,21 @@ const LIST: &str = r#"{
 #[test]
 fn request_create_reads_the_typed_fields() {
     let payload = CreatePayload::parse(CREATE).unwrap();
-    let call = payload.call();
-    assert_eq!(call.name, Some("probe"));
+    assert_eq!(payload.name.as_deref(), Some("probe"));
     assert_eq!(
-        serde_json::to_string(&call.data_source_config).unwrap(),
+        serde_json::to_string(&payload.data_source_config).unwrap(),
         r#"{"type":"custom","item_schema":{"type":"object"}}"#
     );
     assert_eq!(
-        serde_json::to_string(&call.testing_criteria).unwrap(),
+        serde_json::to_string(&payload.testing_criteria).unwrap(),
         r#"[{"type":"custom","function_id":"fn-1"}]"#
     );
     assert_eq!(
-        call.metadata.unwrap().get("tag"),
+        payload.metadata.unwrap().get("tag"),
         Some(&Json::Text("x".to_owned()))
     );
     assert_eq!(
-        call.extra_body.get("note"),
+        payload.extra_body.get("note"),
         Some(&Json::Text("n".to_owned()))
     );
 }
@@ -69,57 +66,54 @@ fn request_create_reads_the_typed_fields() {
 #[test]
 fn request_create_splits_the_shared_parameters_from_the_keywords() {
     let payload = CreatePayload::parse(CREATE).unwrap();
-    let call = payload.call();
     assert_eq!(
-        call.params
+        payload
+            .params
             .extra_headers
+            .as_ref()
             .unwrap()
             .get("x-test")
             .map(String::as_str),
         Some("1")
     );
     assert!(matches!(
-        call.params.extra_query.get("limit"),
+        payload.params.extra_query.get("limit"),
         Some(Json::Number(value)) if value.as_i64() == Some(9)
     ));
     assert_eq!(
-        call.params.timeout,
+        payload.params.timeout,
         Some(Duration::try_from_secs_f64(2.5).unwrap())
     );
-    assert_eq!(call.params.custom_llm_provider, Some("openai"));
     assert_eq!(
-        call.params.kwargs.get("api_base"),
+        payload.params.custom_llm_provider.as_deref(),
+        Some("openai")
+    );
+    assert_eq!(
+        payload.params.kwargs.get("api_base"),
         Some(&Json::Text("http://local/v1".to_owned()))
     );
     assert_eq!(
-        call.params.kwargs.get("api_key"),
+        payload.params.kwargs.get("api_key"),
         Some(&Json::Text("sk-test".to_owned()))
     );
     assert!(matches!(
-        call.params.kwargs.get("max_retries"),
+        payload.params.kwargs.get("max_retries"),
         Some(Json::Number(value)) if value.as_i64() == Some(2)
     ));
-    for named in [
-        "metadata",
-        "extra_body",
-        "extra_headers",
-        "extra_query",
-        "timeout",
-    ] {
-        assert!(
-            !call.params.kwargs.contains_key(named),
-            "{named} stayed in kwargs"
-        );
-    }
 }
 
-#[test]
-fn request_create_never_forwards_the_metadata_argument() {
+#[rstest]
+#[case::metadata("metadata")]
+#[case::extra_body("extra_body")]
+#[case::extra_headers("extra_headers")]
+#[case::extra_query("extra_query")]
+#[case::timeout("timeout")]
+fn request_create_named_parameters_leave_the_keywords(#[case] named: &str) {
     let payload = CreatePayload::parse(CREATE).unwrap();
-    let call = payload.call();
-    let request = create_request(&call).unwrap();
-    assert_eq!(request.name.as_deref(), Some("probe"));
-    assert!(request.metadata.is_none());
+    assert!(
+        !payload.params.kwargs.contains_key(named),
+        "{named} stayed in kwargs"
+    );
 }
 
 #[test]
@@ -157,36 +151,35 @@ fn request_create_reads_a_null_name_and_metadata_as_absent() {
         r#"{"data_source_config": {"type": "logs"}, "testing_criteria": [], "name": null, "metadata": null}"#,
     )
     .unwrap();
-    let call = payload.call();
-    assert_eq!(call.name, None);
-    assert!(call.metadata.is_none());
+    assert_eq!(payload.name, None);
+    assert!(payload.metadata.is_none());
 }
 
 #[test]
 fn request_list_reads_every_pagination_field() {
     let payload = ListPayload::parse(LIST).unwrap();
-    let call = payload.call();
-    assert_eq!(call.limit, Some(5));
-    assert_eq!(call.after, Some("eval_a"));
-    assert_eq!(call.before, Some("eval_b"));
-    assert_eq!(call.order, Some(EvalOrder::Asc));
-    assert_eq!(call.order_by, Some(EvalOrderBy::UpdatedAt));
+    assert_eq!(payload.limit, Some(5));
+    assert_eq!(payload.after.as_deref(), Some("eval_a"));
+    assert_eq!(payload.before.as_deref(), Some("eval_b"));
+    assert_eq!(payload.order, Some(EvalOrder::Asc));
+    assert_eq!(payload.order_by, Some(EvalOrderBy::UpdatedAt));
     assert_eq!(
-        call.params.kwargs.get("api_base"),
+        payload.params.kwargs.get("api_base"),
         Some(&Json::Text("http://local".to_owned()))
     );
 }
 
 #[test]
-fn request_list_lets_extra_query_overlay_only_the_known_keys() {
+fn request_list_keeps_extra_query_as_given() {
     let payload = ListPayload::parse(LIST).unwrap();
-    let call = payload.call();
-    let params = list_params(&call).unwrap();
-    assert_eq!(params.limit, Some(9));
-    assert_eq!(params.after.as_deref(), Some("eval_c"));
-    assert_eq!(params.before.as_deref(), Some("eval_b"));
-    assert_eq!(params.order, Some(EvalOrder::Asc));
-    assert_eq!(params.order_by, Some(EvalOrderBy::UpdatedAt));
+    assert_eq!(
+        payload.params.extra_query.get("after"),
+        Some(&Json::Text("eval_c".to_owned()))
+    );
+    assert_eq!(
+        payload.params.extra_query.get("unknown"),
+        Some(&Json::Text("x".to_owned()))
+    );
 }
 
 #[test]
@@ -195,133 +188,78 @@ fn request_list_reads_nulls_as_absent() {
         r#"{"limit": null, "after": null, "before": null, "order": null, "order_by": null}"#,
     )
     .unwrap();
-    let call = payload.call();
-    assert_eq!(call.limit, None);
-    assert_eq!(call.after, None);
-    assert_eq!(call.before, None);
-    assert_eq!(call.order, None);
-    assert_eq!(call.order_by, None);
-    let params = list_params(&call).unwrap();
-    assert_eq!(params.limit, None);
-    assert_eq!(params.order, None);
+    assert_eq!(payload.limit, None);
+    assert_eq!(payload.after, None);
+    assert_eq!(payload.before, None);
+    assert_eq!(payload.order, None);
+    assert_eq!(payload.order_by, None);
 }
 
 #[test]
-fn request_get_reads_the_eval_id_and_keeps_extra_query() {
-    let payload = GetPayload::parse(r#"{"eval_id": "eval_1", "extra_query": {"a": "b"}}"#).unwrap();
-    let call = payload.call();
-    assert_eq!(call.eval_id, "eval_1");
+fn request_update_reads_the_typed_fields() {
+    let payload = UpdatePayload::parse(
+        r#"{"eval_id": "eval_1", "name": "old", "metadata": {"team": "a"}, "extra_body": {"note": "n"}}"#,
+    )
+    .unwrap();
+    assert_eq!(payload.eval_id, "eval_1");
+    assert_eq!(payload.name.as_deref(), Some("old"));
     assert_eq!(
-        call.params.extra_query.get("a"),
+        payload.metadata.unwrap().get("team"),
+        Some(&Json::Text("a".to_owned()))
+    );
+    assert_eq!(
+        payload.extra_body.get("note"),
+        Some(&Json::Text("n".to_owned()))
+    );
+}
+
+#[test]
+fn request_id_reads_the_eval_id_and_keeps_extra_query() {
+    let payload = IdPayload::parse(r#"{"eval_id": "eval_1", "extra_query": {"a": "b"}}"#).unwrap();
+    assert_eq!(payload.eval_id, "eval_1");
+    assert_eq!(
+        payload.params.extra_query.get("a"),
         Some(&Json::Text("b".to_owned()))
     );
-    assert!(call.params.kwargs.is_empty());
-}
-
-#[test]
-fn request_update_filters_the_metadata_before_the_request() {
-    let payload = UpdatePayload::parse(
-        r#"{"eval_id": "eval_1", "name": "old", "metadata": {"headers": "x", "team": "a"}, "extra_body": {"note": "n"}}"#,
-    )
-    .unwrap();
-    let call = payload.call();
-    assert_eq!(call.eval_id, "eval_1");
-    assert_eq!(call.name, Some("old"));
-    let request = update_request(&call).unwrap();
-    assert_eq!(request.name.as_deref(), Some("old"));
-    assert_eq!(
-        serde_json::to_string(&request.metadata).unwrap(),
-        r#"{"team":"a"}"#
-    );
-}
-
-#[test]
-fn request_update_lets_extra_body_replace_the_typed_fields() {
-    let payload = UpdatePayload::parse(
-        r#"{"eval_id": "eval_1", "name": "old", "metadata": {"team": "a"}, "extra_body": {"name": "new", "metadata": {"team": "b"}}}"#,
-    )
-    .unwrap();
-    let call = payload.call();
-    let request = update_request(&call).unwrap();
-    assert_eq!(request.name.as_deref(), Some("new"));
-    assert_eq!(
-        serde_json::to_string(&request.metadata).unwrap(),
-        r#"{"team":"b"}"#
-    );
-}
-
-#[test]
-fn request_update_drops_metadata_that_is_all_internal() {
-    let payload = UpdatePayload::parse(
-        r#"{"eval_id": "eval_1", "metadata": {"headers": "x", "endpoint": "e"}}"#,
-    )
-    .unwrap();
-    let call = payload.call();
-    let request = update_request(&call).unwrap();
-    assert!(request.metadata.is_none());
-    assert!(request.name.is_none());
-}
-
-#[test]
-fn request_lifecycle_accepts_and_drops_extra_query() {
-    let payload = LifecyclePayload::parse(
-        r#"{"eval_id": "eval_1", "extra_query": {"a": "b"}, "extra_headers": {"x": "1"}, "api_base": "http://local"}"#,
-    )
-    .unwrap();
-    let call = payload.call();
-    assert_eq!(call.eval_id, "eval_1");
-    assert!(call.extra_query.is_none());
-    assert_eq!(call.timeout, None);
-    assert_eq!(
-        call.extra_headers.unwrap().get("x").map(String::as_str),
-        Some("1")
-    );
-    assert_eq!(
-        call.kwargs.get("api_base"),
-        Some(&Json::Text("http://local".to_owned()))
-    );
-    assert!(!call.kwargs.contains_key("extra_query"));
+    assert!(payload.params.kwargs.is_empty());
 }
 
 #[test]
 fn request_the_provider_defaults_to_openai() {
-    let payload = LifecyclePayload::parse(r#"{"eval_id": "eval_1"}"#).unwrap();
+    let payload = IdPayload::parse(r#"{"eval_id": "eval_1"}"#).unwrap();
     assert_eq!(payload.params.provider(), "openai");
     let named =
-        LifecyclePayload::parse(r#"{"eval_id": "eval_1", "custom_llm_provider": "openai"}"#)
-            .unwrap();
+        IdPayload::parse(r#"{"eval_id": "eval_1", "custom_llm_provider": "openai"}"#).unwrap();
     assert_eq!(named.params.provider(), "openai");
     let other =
-        LifecyclePayload::parse(r#"{"eval_id": "eval_1", "custom_llm_provider": "anthropic"}"#)
-            .unwrap();
+        IdPayload::parse(r#"{"eval_id": "eval_1", "custom_llm_provider": "anthropic"}"#).unwrap();
     assert_eq!(other.params.provider(), "anthropic");
 }
 
 #[test]
 fn request_unknown_keywords_stay_kwargs_even_when_null() {
     let payload =
-        GetPayload::parse(r#"{"eval_id": "e", "max_retries": null, "organization": "org"}"#)
+        IdPayload::parse(r#"{"eval_id": "e", "max_retries": null, "organization": "org"}"#)
             .unwrap();
-    let call = payload.call();
-    assert_eq!(call.params.kwargs.get("max_retries"), Some(&Json::Null));
+    assert_eq!(payload.params.kwargs.get("max_retries"), Some(&Json::Null));
     assert_eq!(
-        call.params.kwargs.get("organization"),
+        payload.params.kwargs.get("organization"),
         Some(&Json::Text("org".to_owned()))
     );
 }
 
 #[test]
 fn request_timeout_reads_seconds() {
-    let mut fields = parse_fields(r#"{"timeout": 2.5}"#).unwrap();
+    let mut fields = parse::<Fields>(r#"{"timeout": 2.5}"#).unwrap();
     assert_eq!(
         timeout(&mut fields, "openai").unwrap(),
         Some(Duration::try_from_secs_f64(2.5).unwrap())
     );
-    let mut zero = parse_fields(r#"{"timeout": 0}"#).unwrap();
+    let mut zero = parse::<Fields>(r#"{"timeout": 0}"#).unwrap();
     assert_eq!(timeout(&mut zero, "openai").unwrap(), Some(Duration::ZERO));
-    let mut nulled = parse_fields(r#"{"timeout": null}"#).unwrap();
+    let mut nulled = parse::<Fields>(r#"{"timeout": null}"#).unwrap();
     assert_eq!(timeout(&mut nulled, "openai").unwrap(), None);
-    let mut text = parse_fields(r#"{"timeout": "soon"}"#).unwrap();
+    let mut text = parse::<Fields>(r#"{"timeout": "soon"}"#).unwrap();
     assert!(matches!(
         timeout(&mut text, "openai"),
         Err(ConvertError::FieldType {
@@ -343,7 +281,7 @@ fn request_a_wrong_typed_field_names_it() {
         order,
         ConvertError::FieldType { name: "order", .. }
     ));
-    let eval_id = GetPayload::parse(r#"{"eval_id": 7}"#).unwrap_err();
+    let eval_id = IdPayload::parse(r#"{"eval_id": 7}"#).unwrap_err();
     assert!(matches!(
         eval_id,
         ConvertError::FieldType {
@@ -454,9 +392,8 @@ fn error_payload_keeps_the_provider_it_was_given() {
 fn error_a_wrong_typed_field_is_a_bad_request() {
     Python::initialize();
     let error = ListPayload::parse(r#"{"limit": "many"}"#).unwrap_err();
-    let failure = EvalOperationFailure::from(error);
+    let raised = PyErr::from(EvalOperationFailure::from(error));
     Python::attach(|py| {
-        let raised = failure.into_py();
         let message = raised.value(py).to_string();
         assert!(message.contains(r#""type":"BadRequestError""#), "{message}");
         assert!(message.contains(r#""status_code":400"#), "{message}");

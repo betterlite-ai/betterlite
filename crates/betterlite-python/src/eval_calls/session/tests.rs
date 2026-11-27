@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::thread::JoinHandle;
+use std::net::TcpListener;
+use std::time::Duration;
 
 use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
 use betterlite_core::api::eval_create_list::config::EvalsConfigLookup;
 use betterlite_core::api::eval_lifecycle::EvalLifecycleConfigLookup;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
@@ -34,99 +35,15 @@ const LISTED: &str = r#"{"object":"list","data":[],"has_more":false}"#;
 const DELETED: &str = r#"{"eval_id":"eval_1","deleted":true}"#;
 const CANCELLED: &str = r#"{"id":"eval_1","status":"cancelled"}"#;
 
-// a server that answers one request per connection and then returns the request lines it saw
-struct Server {
-    base: String,
-    worker: JoinHandle<Vec<String>>,
+const JSON_HEADERS: &[(&str, &str)] = &[("content-type", "application/json")];
+
+// one fixture server per request: it answers with the body it was given and hands back the request line it saw
+fn serve_answer(body: &str) -> Serving {
+    serve(reply("200 OK", JSON_HEADERS, body), Duration::ZERO).expect("the fixture serves")
 }
 
-impl Server {
-    fn start(count: usize) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("the test server binds");
-        let port = listener
-            .local_addr()
-            .expect("the test server has an address")
-            .port();
-        let worker = std::thread::spawn(move || {
-            let mut seen = Vec::new();
-            for stream in listener.incoming().take(count) {
-                let mut stream = stream.expect("the test server accepts");
-                let request = read_request(&mut stream);
-                let reply = reply_for(&request);
-                seen.push(request);
-                write_reply(&mut stream, reply);
-            }
-            seen
-        });
-        Self {
-            base: format!("http://127.0.0.1:{port}"),
-            worker,
-        }
-    }
-
-    fn finish(self) -> Vec<String> {
-        self.worker.join().expect("the test server stops")
-    }
-}
-
-fn read_request(stream: &mut TcpStream) -> String {
-    let mut reader = BufReader::new(stream.try_clone().expect("the test server clones"));
-    let mut head = String::new();
-    loop {
-        let mut line = String::new();
-        reader.read_line(&mut line).expect("the test server reads");
-        if line == "\r\n" || line.is_empty() {
-            break;
-        }
-        head.push_str(&line);
-    }
-    let length = head
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length: "))
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .unwrap_or(0);
-    let mut body = vec![0; length];
-    reader
-        .read_exact(&mut body)
-        .expect("the test server reads the body");
-    format!(
-        "{head}\r\n{}",
-        String::from_utf8(body).expect("the body is JSON")
-    )
-}
-
-fn reply_for(request: &str) -> &'static str {
-    let mut parts = request
-        .lines()
-        .next()
-        .expect("a request has a request line")
-        .split(' ');
-    let method = parts.next().expect("a request line names the method");
-    let target = parts.next().expect("a request line names the path");
-    let path = target.split('?').next().expect("a target has a path");
-    match (method, path) {
-        ("POST", "/v1/evals") => CREATED,
-        ("GET", "/v1/evals") => LISTED,
-        ("POST", _) if path.ends_with("/cancel") => CANCELLED,
-        ("POST", _) => UPDATED,
-        ("GET", _) => FETCHED,
-        ("DELETE", _) => DELETED,
-        (_, _) => panic!("the test server has no reply for {method} {path}"),
-    }
-}
-
-fn write_reply(stream: &mut TcpStream, body: &str) {
-    let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-        body.len()
-    );
-    stream
-        .write_all(head.as_bytes())
-        .expect("the test server writes");
-    stream
-        .write_all(body.as_bytes())
-        .expect("the test server writes");
-    stream.flush().expect("the test server flushes");
+fn base(serving: &Serving) -> String {
+    format!("http://{}", serving.address)
 }
 
 // a port nothing listens on any more: the connect is refused at once and reaches the transport
@@ -208,66 +125,94 @@ fn session_bad_json_is_a_value_error() {
 #[test]
 fn session_sync_calls_reach_their_own_operation() {
     Python::initialize();
-    let server = Server::start(6);
-    let base = server.base.clone();
     Python::attach(|py| {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
-        let created = session
-            .create_eval(py, &create_call(&base), Vec::new())
+        let created = serve_answer(CREATED);
+        let created_answer = session
+            .create_eval(py, &create_call(&base(&created)), Vec::new())
             .expect("create answers");
-        assert!(created.contains("eval_created"), "{created}");
-        let listed = session
-            .list_evals(py, &list_call(&base), Vec::new())
+        assert!(created_answer.contains("eval_created"), "{created_answer}");
+        let created_request = created.finish().expect("the fixture answers once");
+        assert!(
+            created_request.line.starts_with("POST /v1/evals HTTP/1.1"),
+            "{}",
+            created_request.line
+        );
+        let listed = serve_answer(LISTED);
+        let listed_answer = session
+            .list_evals(py, &list_call(&base(&listed)), Vec::new())
             .expect("list answers");
-        assert!(listed.contains(r#""object":"list""#), "{listed}");
-        let fetched = session
-            .get_eval(py, &eval_call(&base), Vec::new())
+        assert!(
+            listed_answer.contains(r#""object":"list""#),
+            "{listed_answer}"
+        );
+        let listed_request = listed.finish().expect("the fixture answers once");
+        assert!(
+            listed_request
+                .line
+                .starts_with("GET /v1/evals?limit=5 HTTP/1.1"),
+            "{}",
+            listed_request.line
+        );
+        let fetched = serve_answer(FETCHED);
+        let fetched_answer = session
+            .get_eval(py, &eval_call(&base(&fetched)), Vec::new())
             .expect("get answers");
-        assert!(fetched.contains("eval_fetched"), "{fetched}");
-        let updated = session
-            .update_eval(py, &update_call(&base), Vec::new())
+        assert!(fetched_answer.contains("eval_fetched"), "{fetched_answer}");
+        let fetched_request = fetched.finish().expect("the fixture answers once");
+        assert!(
+            fetched_request
+                .line
+                .starts_with("GET /v1/evals/eval_1 HTTP/1.1"),
+            "{}",
+            fetched_request.line
+        );
+        let updated = serve_answer(UPDATED);
+        let updated_answer = session
+            .update_eval(py, &update_call(&base(&updated)), Vec::new())
             .expect("update answers");
-        assert!(updated.contains("eval_updated"), "{updated}");
-        let deleted = session
-            .delete_eval(py, &eval_call(&base), Vec::new())
+        assert!(updated_answer.contains("eval_updated"), "{updated_answer}");
+        let updated_request = updated.finish().expect("the fixture answers once");
+        assert!(
+            updated_request
+                .line
+                .starts_with("POST /v1/evals/eval_1 HTTP/1.1"),
+            "{}",
+            updated_request.line
+        );
+        let deleted = serve_answer(DELETED);
+        let deleted_answer = session
+            .delete_eval(py, &eval_call(&base(&deleted)), Vec::new())
             .expect("delete answers");
-        assert!(deleted.contains(r#""deleted":true"#), "{deleted}");
-        let cancelled = session
-            .cancel_eval(py, &eval_call(&base), Vec::new())
+        assert!(
+            deleted_answer.contains(r#""deleted":true"#),
+            "{deleted_answer}"
+        );
+        let deleted_request = deleted.finish().expect("the fixture answers once");
+        assert!(
+            deleted_request
+                .line
+                .starts_with("DELETE /v1/evals/eval_1 HTTP/1.1"),
+            "{}",
+            deleted_request.line
+        );
+        let cancelled = serve_answer(CANCELLED);
+        let cancelled_answer = session
+            .cancel_eval(py, &eval_call(&base(&cancelled)), Vec::new())
             .expect("cancel answers");
-        assert!(cancelled.contains(r#""status":"cancelled""#), "{cancelled}");
+        assert!(
+            cancelled_answer.contains(r#""status":"cancelled""#),
+            "{cancelled_answer}"
+        );
+        let cancelled_request = cancelled.finish().expect("the fixture answers once");
+        assert!(
+            cancelled_request
+                .line
+                .starts_with("POST /v1/evals/eval_1/cancel HTTP/1.1"),
+            "{}",
+            cancelled_request.line
+        );
     });
-    let seen = server.finish();
-    assert!(
-        seen[0].starts_with("POST /v1/evals HTTP/1.1"),
-        "{}",
-        seen[0]
-    );
-    assert!(
-        seen[1].starts_with("GET /v1/evals?limit=5 HTTP/1.1"),
-        "{}",
-        seen[1]
-    );
-    assert!(
-        seen[2].starts_with("GET /v1/evals/eval_1 HTTP/1.1"),
-        "{}",
-        seen[2]
-    );
-    assert!(
-        seen[3].starts_with("POST /v1/evals/eval_1 HTTP/1.1"),
-        "{}",
-        seen[3]
-    );
-    assert!(
-        seen[4].starts_with("DELETE /v1/evals/eval_1 HTTP/1.1"),
-        "{}",
-        seen[4]
-    );
-    assert!(
-        seen[5].starts_with("POST /v1/evals/eval_1/cancel HTTP/1.1"),
-        "{}",
-        seen[5]
-    );
 }
 
 // the native async twins need the running loop the facade calls them from
@@ -283,24 +228,33 @@ answers = asyncio.run(main())
 #[test]
 fn session_async_calls_reach_their_own_operation() {
     Python::initialize();
-    let server = Server::start(6);
-    let base = server.base.clone();
+    let created = serve_answer(CREATED);
+    let listed = serve_answer(LISTED);
+    let fetched = serve_answer(FETCHED);
+    let updated = serve_answer(UPDATED);
+    let deleted = serve_answer(DELETED);
+    let cancelled = serve_answer(CANCELLED);
     Python::attach(|py| {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
         let calls = PyList::empty(py);
-        let requests = [
-            ("acreate_eval", create_call(&base)),
-            ("alist_evals", list_call(&base)),
-            ("aget_eval", eval_call(&base)),
-            ("aupdate_eval", update_call(&base)),
-            ("adelete_eval", eval_call(&base)),
-            ("acancel_eval", eval_call(&base)),
-        ];
-        for (method, request) in requests {
-            calls
-                .append((method, request))
-                .expect("the call list grows");
-        }
+        calls
+            .append(("acreate_eval", create_call(&base(&created))))
+            .expect("the call list grows");
+        calls
+            .append(("alist_evals", list_call(&base(&listed))))
+            .expect("the call list grows");
+        calls
+            .append(("aget_eval", eval_call(&base(&fetched))))
+            .expect("the call list grows");
+        calls
+            .append(("aupdate_eval", update_call(&base(&updated))))
+            .expect("the call list grows");
+        calls
+            .append(("adelete_eval", eval_call(&base(&deleted))))
+            .expect("the call list grows");
+        calls
+            .append(("acancel_eval", eval_call(&base(&cancelled))))
+            .expect("the call list grows");
         let globals = PyDict::new(py);
         globals
             .set_item("session", session)
@@ -314,48 +268,59 @@ fn session_async_calls_reach_their_own_operation() {
             .get_item("answers")
             .expect("the globals hold the answers")
             .expect("the answers were set");
-        let answers: Vec<String> = answers.extract().expect("the answers are text");
-        assert!(answers[0].contains("eval_created"), "{}", answers[0]);
-        assert!(answers[1].contains(r#""object":"list""#), "{}", answers[1]);
-        assert!(answers[2].contains("eval_fetched"), "{}", answers[2]);
-        assert!(answers[3].contains("eval_updated"), "{}", answers[3]);
-        assert!(answers[4].contains(r#""deleted":true"#), "{}", answers[4]);
-        assert!(
-            answers[5].contains(r#""status":"cancelled""#),
-            "{}",
-            answers[5]
-        );
+        let texts: Vec<String> = answers.extract().expect("the answers are text");
+        assert!(texts[0].contains("eval_created"), "{}", texts[0]);
+        assert!(texts[1].contains(r#""object":"list""#), "{}", texts[1]);
+        assert!(texts[2].contains("eval_fetched"), "{}", texts[2]);
+        assert!(texts[3].contains("eval_updated"), "{}", texts[3]);
+        assert!(texts[4].contains(r#""deleted":true"#), "{}", texts[4]);
+        assert!(texts[5].contains(r#""status":"cancelled""#), "{}", texts[5]);
     });
-    let seen = server.finish();
+    let created_request = created.finish().expect("the fixture answers once");
     assert!(
-        seen[0].starts_with("POST /v1/evals HTTP/1.1"),
+        created_request.line.starts_with("POST /v1/evals HTTP/1.1"),
         "{}",
-        seen[0]
+        created_request.line
     );
+    let listed_request = listed.finish().expect("the fixture answers once");
     assert!(
-        seen[1].starts_with("GET /v1/evals?limit=5 HTTP/1.1"),
+        listed_request
+            .line
+            .starts_with("GET /v1/evals?limit=5 HTTP/1.1"),
         "{}",
-        seen[1]
+        listed_request.line
     );
+    let fetched_request = fetched.finish().expect("the fixture answers once");
     assert!(
-        seen[2].starts_with("GET /v1/evals/eval_1 HTTP/1.1"),
+        fetched_request
+            .line
+            .starts_with("GET /v1/evals/eval_1 HTTP/1.1"),
         "{}",
-        seen[2]
+        fetched_request.line
     );
+    let updated_request = updated.finish().expect("the fixture answers once");
     assert!(
-        seen[3].starts_with("POST /v1/evals/eval_1 HTTP/1.1"),
+        updated_request
+            .line
+            .starts_with("POST /v1/evals/eval_1 HTTP/1.1"),
         "{}",
-        seen[3]
+        updated_request.line
     );
+    let deleted_request = deleted.finish().expect("the fixture answers once");
     assert!(
-        seen[4].starts_with("DELETE /v1/evals/eval_1 HTTP/1.1"),
+        deleted_request
+            .line
+            .starts_with("DELETE /v1/evals/eval_1 HTTP/1.1"),
         "{}",
-        seen[4]
+        deleted_request.line
     );
+    let cancelled_request = cancelled.finish().expect("the fixture answers once");
     assert!(
-        seen[5].starts_with("POST /v1/evals/eval_1/cancel HTTP/1.1"),
+        cancelled_request
+            .line
+            .starts_with("POST /v1/evals/eval_1/cancel HTTP/1.1"),
         "{}",
-        seen[5]
+        cancelled_request.line
     );
 }
 
@@ -419,7 +384,7 @@ fn configs_read_the_module_key_before_the_openai_key_and_the_environment() {
         openai_key: Some(SecretString::from("openai-key")),
     };
     assert_eq!(
-        authorization(&EvalConfigs::new(&both, &environment())).as_deref(),
+        authorization(&EvalConfigs::new(both, &environment())).as_deref(),
         Some("Bearer module-key")
     );
     let fallback = ModuleSettings {
@@ -427,7 +392,7 @@ fn configs_read_the_module_key_before_the_openai_key_and_the_environment() {
         openai_key: Some(SecretString::from("openai-key")),
     };
     assert_eq!(
-        authorization(&EvalConfigs::new(&fallback, &environment())).as_deref(),
+        authorization(&EvalConfigs::new(fallback, &environment())).as_deref(),
         Some("Bearer openai-key")
     );
     let empty = ModuleSettings {
@@ -435,11 +400,11 @@ fn configs_read_the_module_key_before_the_openai_key_and_the_environment() {
         openai_key: None,
     };
     assert_eq!(
-        authorization(&EvalConfigs::new(&empty, &environment())).as_deref(),
+        authorization(&EvalConfigs::new(empty, &environment())).as_deref(),
         Some("Bearer env-key")
     );
     let none = ModuleSettings::default();
-    let configs = EvalConfigs::new(&none, &BTreeMap::new());
+    let configs = EvalConfigs::new(none, &BTreeMap::new());
     let lookup: &dyn EvalsConfigLookup = &configs;
     let config = lookup
         .evals_config(EvalsConfigTag::OpenAI)
@@ -452,7 +417,7 @@ fn configs_read_the_module_key_before_the_openai_key_and_the_environment() {
 
 #[test]
 fn configs_serve_only_openai_to_the_lifecycle_service() {
-    let configs = EvalConfigs::new(&ModuleSettings::default(), &environment());
+    let configs = EvalConfigs::new(ModuleSettings::default(), &environment());
     assert!(configs.eval_config("openai").is_some());
     assert!(configs.eval_config("anthropic").is_none());
     let config = configs.eval_config("openai").expect("openai has a config");
