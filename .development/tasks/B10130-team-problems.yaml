@@ -1,0 +1,83 @@
+id: B10130
+title: Team management problem constructors
+description: >-
+  LiteLLM's bulk_user_deletion.py builds two RFC 9457 problems that three services raise: _team_not_found (L120-L128) and _forbidden (L131-L134). B1202's bulk team member removal raises both, B802's bulk member budget update imports both from that file, and B794's bulk user delete raises _forbidden with its own detail. B802 and B794 need nothing else of B1202's removal service, so the two constructors are their own task and all three call them.
+
+
+  Layout. Module team_problems in betterlite-server, crates/betterlite-server/src/team_problems.rs, with its tests in team_problems/tests.rs. The file is an empty stub that lib.rs already declares. The types are on main: ManagementProblem in crate::list_api::problem (B1701, a newtype over ProblemDetail whose Display is the detail and whose IntoResponse sends application/problem+json) and ProblemDetail in crate::management_envelopes (B1665).
+
+
+  The constructors. `pub fn team_not_found(team_id: &str) -> ManagementProblem` returns type `urn:litellm:error:team-not-found`, title `Team not found`, status 404, detail `Team id=<team_id> does not exist in db` and allowed None. The id goes in as given, so an empty id gives `Team id= does not exist in db`. `pub fn forbidden(detail: String) -> ManagementProblem` returns type `urn:litellm:error:forbidden`, title `Forbidden`, status 403, the caller's detail unchanged and allowed None. Each caller writes its own detail: B1202 and B802 name their route (`Call not allowed. User not proxy admin OR team admin OR org admin for this team. route='/management/v1/teams/<id>/members/bulk_delete'` and the same text ending in `/members/bulk_update'`), and B794 passes `Only PROXY_ADMIN or ORG_ADMIN users may delete users.`. LiteLLM writes the type as PROBLEM_TYPE_BASE plus the slug; list_api::problem keeps that constant private, so write the two full URNs as literals, as list_api/plan/build.rs already does for its forbidden scope. Leave list_api as it is.
+
+
+  Tests in team_problems::tests: team_not_found_fields (all five fields for team-1), team_not_found_keeps_empty_id, forbidden_keeps_detail (the three caller details above and an empty string, unchanged), display_is_detail (to_string of each problem equals its detail, as LiteLLM's Exception message does) and problem_response_shape (into_response gives status 404 or 403, content type application/problem+json and a JSON body with type, title, status and detail and no allowed member).
+
+
+  Oracle. Helper cases on the b10130 operation, a list of calls, each either `{team_not_found: <team id>}` or `{forbidden: <detail>}`, answering per call the problem's type, title, status, detail and allowed plus the exception message. The Python side imports _team_not_found and _forbidden from litellm.proxy.management_helpers.bulk_user_deletion, reads ManagementProblem.problem.model_dump() and str() of the exception. Both are private, so the import line carries `# pyright: ignore[reportPrivateUsage]` with a link to L120-L134 at the pinned commit. The Rust side calls team_not_found and forbidden and reads the ProblemDetail and to_string. team-not-found.yaml covers a plain id, an empty id and an id with spaces and a slash; forbidden-problem.yaml covers the three caller details and an empty one. Add a team-problems-* seed to the helper_case corpus.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_problems.rs
+    - crates/betterlite-server/src/team_problems/**
+    - tools/oracle/cases/helpers/team-problems/**
+    - tools/oracle/fuzz/corpus/helper_case/team-problems-*
+    - tools/oracle/helpers/b10130.py
+    - tools/oracle/helpers/b10130/**
+    - tools/oracle/src/helpers/server/b10130.rs
+    - tools/oracle/src/helpers/server/b10130/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L120-L134
+    why: Owned. _team_not_found and _forbidden.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/common.py#L23-L31
+    why: PROBLEM_TYPE_BASE and ManagementProblem, whose message is the problem's detail; B1701 built both.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/management_v1.py#L11-L18
+    why: ProblemDetail and its allowed default of None; B1665 built it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L321-L330
+    why: Call site in B1202's bulk_remove_team_members, the team lookup before the access check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_team_member_budgets.py#L178-L186
+    why: Call site in B802's bulk_update_team_member_budgets, with the bulk_update route in the detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L524-L525
+    why: Call site in B794's bulk_delete_users, with its own forbidden detail.
+dod:
+  - text: team_not_found gives type urn:litellm:error:team-not-found, title Team not found, status 404, detail Team id=<id> does not exist in db and no allowed, with an empty id kept as it is.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: forbidden gives type urn:litellm:error:forbidden, title Forbidden, status 403, the caller's detail unchanged and no allowed.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: The message of either problem is its detail, and its response is 404 or 403 with application/problem+json and a body without allowed.
+    proof: [behavior-tests]
+  - text: The new helper seed replays through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: A team problem has the wrong type, title, status or detail, sets allowed, or answers with the wrong response shape.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_problems::tests::/)'
+    - id: helper-python
+      why: The b10130 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10130.py tools/oracle/helpers/b10130)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10130 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-problems-*")" &&
+        grep -lE 'b10130"?:' tools/oracle/fuzz/corpus/helper_case/team-problems-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-problems/team-not-found.yaml
+  - tools/oracle/cases/helpers/team-problems/forbidden-problem.yaml
+deviations: []
+out_of_scope:
+  - "bulk_remove_team_members, _remove_members_from_team and the rest of the team removal: B1202, which raises both problems. bulk_update_team_member_budgets: B802, which raises both. bulk_delete_users: B794, which raises forbidden."
+  - "ManagementProblem, problem_response and the problem+json response: B1701, on main. ProblemDetail and ProblemDocument: B1665, on main."
+  - "Every other function in bulk_user_deletion.py: the owners B1202's out_of_scope list names."
+pitfalls:
+  - "The not-found detail is `Team id=<id> does not exist in db`, with no period and no quotes; the older /team routes word their missing-team error differently, so share no text with them."
+  - "forbidden takes the whole detail from its caller; putting the bulk_delete route text inside it would hand B794's user delete and B802's bulk_update a wrong route."
+  - "B1665's ProblemDocument skips allowed only when it is None, so Some(vec![]) adds an `allowed: []` member LiteLLM never sends."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

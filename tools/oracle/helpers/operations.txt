@@ -203,6 +203,7 @@ b10118
 b10122
 b10123
 b10124
+b10130
 b10137
 b1010
 b10134
@@ -1366,7 +1367,6 @@ budget_primitives
 budget_reset
 budget_window_start
 builtin_prompts
-bulk_team_removal
 bulk_user_write
 bytez_record
 call_context
