@@ -115,6 +115,7 @@ impl ConfigOverlayPort for ScriptedOverlay {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct RecordingSaver {
     pub(crate) saves: Mutex<Vec<ConfigWithBaseline>>,
     pub(crate) failures: Mutex<Vec<ConfigStateError>>,
@@ -216,6 +217,7 @@ impl StoreModelInDbSettings for StoreFlag {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct RecordingRepository {
     pub(crate) inserted: Mutex<Vec<AuditLogRecord>>,
 }
@@ -312,10 +314,7 @@ impl Harness {
             config,
             overlay_failure: None,
             reloads: Arc::new(AtomicUsize::new(0)),
-            saver: Arc::new(RecordingSaver {
-                saves: Mutex::new(Vec::new()),
-                failures: Mutex::new(Vec::new()),
-            }),
+            saver: Arc::new(RecordingSaver::default()),
             database_connected: true,
             store_model_in_db: true,
             callbacks: FakeCallbacks::default(),
@@ -324,9 +323,7 @@ impl Harness {
             router_settings: None,
             environment: BTreeMap::new(),
             clock: moment(),
-            audit_repository: Arc::new(RecordingRepository {
-                inserted: Mutex::new(Vec::new()),
-            }),
+            audit_repository: Arc::new(RecordingRepository::default()),
             deployments: Arc::new(FakeDeployments::default()),
         }
     }
@@ -409,31 +406,46 @@ impl Harness {
 
     pub(crate) fn state(&self) -> CallbackConfigState {
         CallbackConfigState {
-            overlay: Arc::new(ScriptedOverlay {
-                reloads: Arc::clone(&self.reloads),
-                config: ConfigWithBaseline::with_baseline(self.config.clone(), self.config.clone()),
-                failure: self.overlay_failure,
-            }),
+            overlay: Arc::new(self.overlay_source()),
             saver: Arc::clone(&self.saver) as Arc<dyn ConfigSaver>,
             database_connected: self.database_connected,
             store_model_in_db: Arc::new(StoreFlag(self.store_model_in_db)),
-            callbacks: Arc::new(FakeCallbacks {
-                selection: self.callbacks.selection.clone(),
-                objects: self.callbacks.objects.clone(),
-                classes: self.callbacks.classes.clone(),
-            }),
-            alerting: Arc::new(FakeAlerting {
-                alert_types: self.alert_types.clone(),
-                webhooks: self.webhooks.clone(),
-            }),
-            router: self
-                .router_settings
-                .clone()
-                .map(|settings| Arc::new(FakeRouter { settings }) as Arc<dyn RouterSettingsReader>),
+            callbacks: Arc::new(self.callback_fakes()),
+            alerting: Arc::new(self.alerting_state()),
+            router: self.router_reader(),
             environment: Arc::new(self.environment.clone()),
             audit: Arc::new(enabled_sink(Arc::clone(&self.audit_repository))),
             clock: Arc::new(FixedCallbackClock { moment: self.clock }),
         }
+    }
+
+    fn overlay_source(&self) -> ScriptedOverlay {
+        ScriptedOverlay {
+            reloads: Arc::clone(&self.reloads),
+            config: ConfigWithBaseline::with_baseline(self.config.clone(), self.config.clone()),
+            failure: self.overlay_failure,
+        }
+    }
+
+    fn callback_fakes(&self) -> FakeCallbacks {
+        FakeCallbacks {
+            selection: self.callbacks.selection.clone(),
+            objects: self.callbacks.objects.clone(),
+            classes: self.callbacks.classes.clone(),
+        }
+    }
+
+    fn alerting_state(&self) -> FakeAlerting {
+        FakeAlerting {
+            alert_types: self.alert_types.clone(),
+            webhooks: self.webhooks.clone(),
+        }
+    }
+
+    fn router_reader(&self) -> Option<Arc<dyn RouterSettingsReader>> {
+        self.router_settings
+            .clone()
+            .map(|settings| Arc::new(FakeRouter { settings }) as Arc<dyn RouterSettingsReader>)
     }
 
     pub(crate) async fn call(

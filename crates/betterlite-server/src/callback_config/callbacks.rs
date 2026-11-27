@@ -65,21 +65,25 @@ pub(crate) fn process_callback(
     }
 }
 
+fn invalid_config(field: &str, expected: &'static str) -> CallbackConfigError {
+    CallbackConfigError::InvalidConfig {
+        field: field.to_owned(),
+        expected,
+    }
+}
+
 // A stored callback list the delete path rewrites: null is the absent default, and any other non-list is rejected
 pub(crate) fn strict_entries(
     value: Option<&JsonValue>,
     field: &str,
 ) -> Result<Vec<String>, CallbackConfigError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(Vec::new()),
-        Some(JsonValue::Array(items)) => string_items(items, field),
-        Some(
-            JsonValue::String(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
-        ) => Err(CallbackConfigError::InvalidConfig {
-            field: field.to_owned(),
-            expected: "a list of strings",
-        }),
-    }
+    let Some(present) = value.filter(|entry| !entry.is_null()) else {
+        return Ok(Vec::new());
+    };
+    let JsonValue::Array(items) = present else {
+        return Err(invalid_config(field, "a list of strings"));
+    };
+    string_items(items, field)
 }
 
 // normalize_callback: the settings page reads a single string as one entry, as LiteLLM does
@@ -89,14 +93,7 @@ pub(crate) fn normalized_entries(
 ) -> Result<Vec<String>, CallbackConfigError> {
     match value {
         Some(JsonValue::String(name)) => Ok(vec![name.clone()]),
-        None | Some(JsonValue::Null) => Ok(Vec::new()),
-        Some(JsonValue::Array(items)) => string_items(items, field),
-        Some(JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_)) => {
-            Err(CallbackConfigError::InvalidConfig {
-                field: field.to_owned(),
-                expected: "a list of strings",
-            })
-        }
+        other => strict_entries(other, field),
     }
 }
 
@@ -127,10 +124,7 @@ pub(crate) fn section_object(
             .collect()),
         Some(
             JsonValue::String(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_),
-        ) => Err(CallbackConfigError::InvalidConfig {
-            field: section.to_owned(),
-            expected: "an object",
-        }),
+        ) => Err(invalid_config(section, "an object")),
     }
 }
 

@@ -39,15 +39,11 @@ fn is_hidden(
     configured_classes: &BTreeSet<String>,
     configured_modules: &BTreeSet<String>,
 ) -> bool {
+    let owner = callback.module.split('.').next().unwrap_or_default();
     callback.guardrail
-        || is_internal(callback)
+        || (!callback.registered_integration && INTERNAL_MODULE_OWNERS.contains(&owner))
         || is_configured_class_instance(callback, configured_classes)
         || configured_modules.contains(&callback.module)
-}
-
-fn is_internal(callback: &RuntimeCallback) -> bool {
-    let owner = callback.module.split('.').next().unwrap_or_default();
-    !callback.registered_integration && INTERNAL_MODULE_OWNERS.contains(&owner)
 }
 
 // A self-naming instance matches by its own name, so a configured bare `logfire` leaves its siblings of the class visible

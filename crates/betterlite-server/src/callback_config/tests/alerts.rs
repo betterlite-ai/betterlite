@@ -32,7 +32,7 @@ async fn masks_alert_credentials_for_admins_and_redacts_them_for_viewers() {
     let config = object(&[(
         "environment_variables",
         json(
-            r#"{"SMTP_PASSWORD": "smtp-password-value", "SMTP_USERNAME": "mailer", "MS_TEAMS_WEBHOOK_URL": "https://teams.example/hook"}"#,
+            r#"{"SMTP_PASSWORD": "smtp-password-abcd", "SMTP_USERNAME": "mailer", "MS_TEAMS_WEBHOOK_URL": "https://teams.example/hook"}"#,
         ),
     )]);
     let harness = Harness::new(config);
@@ -45,9 +45,9 @@ async fn masks_alert_credentials_for_admins_and_redacts_them_for_viewers() {
     assert_eq!(email["SMTP_TLS"], json(r#""True""#));
     assert_eq!(email["SMTP_HOST"], json("null"));
     let password = email["SMTP_PASSWORD"].as_str().expect("a string");
-    assert_ne!(password, "smtp-password-value");
+    assert_ne!(password, "smtp-password-abcd");
     assert!(password.starts_with("smtp"));
-    assert!(password.ends_with("alue"));
+    assert!(password.ends_with("abcd"));
     assert!(password.contains('*'));
     let teams = &alert_entry(&admin_body, "ms_teams")["variables"];
     let teams_url = teams["MS_TEAMS_WEBHOOK_URL"].as_str().expect("a string");

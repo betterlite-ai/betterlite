@@ -83,38 +83,30 @@ pub(crate) struct CallbackDelete {
 
 // CallbackDelete.callback_name is a required str, so FastAPI answers a missing key and a non-string alike
 pub(crate) fn callback_delete_request(body: &[u8]) -> Result<CallbackDelete, BodyError> {
-    let value = parse_body(body)?;
-    match value {
-        JsonValue::Object(mut fields) => match fields.remove("callback_name") {
-            None => Err(BodyError::MissingField {
-                field: "callback_name",
-                input: JsonValue::Object(fields),
-            }),
-            Some(JsonValue::String(callback_name)) => Ok(CallbackDelete { callback_name }),
-            Some(other) => Err(BodyError::NotAString {
-                field: "callback_name",
-                input: other,
-            }),
-        },
-        other @ (JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_)) => Err(BodyError::NotAnObject(other)),
+    let mut fields = match parse_body(body)? {
+        JsonValue::Object(fields) => fields,
+        other => return Err(BodyError::NotAnObject(other)),
+    };
+    match fields.remove("callback_name") {
+        None => Err(BodyError::MissingField {
+            field: "callback_name",
+            input: JsonValue::Object(fields),
+        }),
+        Some(JsonValue::String(callback_name)) => Ok(CallbackDelete { callback_name }),
+        Some(other) => Err(BodyError::NotAString {
+            field: "callback_name",
+            input: other,
+        }),
     }
 }
 
 // config_yaml_endpoint declares a ConfigYAML body parameter, so a GET without one is a 422 before the mock runs
 pub(crate) fn config_yaml_request(body: &[u8]) -> Result<(), BodyError> {
     let value = parse_body(body)?;
-    match value {
-        JsonValue::Object(_) => Ok(()),
-        other @ (JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_)) => Err(BodyError::NotAnObject(other)),
+    if value.is_object() {
+        return Ok(());
     }
+    Err(BodyError::NotAnObject(value))
 }
 
 fn parse_body(body: &[u8]) -> Result<JsonValue, BodyError> {
