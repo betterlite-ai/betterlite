@@ -352,6 +352,26 @@ fn create_logs_the_body_as_optional_params() {
     );
 }
 
+// a client or shared_session kwarg is carried in the log and local_vars, but the transport's pooled client sends the call
+#[test]
+fn create_ignores_a_caller_client_kwarg() {
+    let params = kwargs(r#"{"client":"caller-client","shared_session":"caller-session"}"#);
+    let data_source = object(r#"{"type":"jsonl"}"#);
+    let request = create_args("eval-1", &data_source, &params);
+
+    let (answer, _fixture, calls) = sync_create(
+        RecordingConfig::with_key("sk-test"),
+        Recorder::new(),
+        request,
+    );
+
+    assert_eq!(answer.expect("the call answers"), run_fixture());
+    let creates = calls.transport.creates();
+    let seen = creates.first().expect("the create reached the transport");
+    assert_eq!(seen.url, "https://api.openai.com/v1/evals/eval-1/runs");
+    assert_eq!(seen.body, object(r#"{"data_source":{"type":"jsonl"}}"#));
+}
+
 // kwargs get("litellm_call_id", None) is recorded as null when the caller names no call id
 #[test]
 fn create_without_a_call_id_logs_null() {
