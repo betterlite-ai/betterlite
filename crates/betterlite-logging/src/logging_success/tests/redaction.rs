@@ -101,6 +101,18 @@ async fn logging_success_behavior_tests_behavior(#[case] scenario: &str) {
     }
 }
 
+fn redacted_response_id(response: Option<&Json>) -> String {
+    let Some(Json::Object(fields)) = response else {
+        panic!("the redacted response is not an object");
+    };
+    assert_eq!(fields.get("created"), Some(&parse("1704067202")));
+    let Some(Json::Text(id)) = fields.get("id") else {
+        panic!("the redacted response has no id");
+    };
+    assert!(id.starts_with("chatcmpl-"));
+    id.clone()
+}
+
 #[tokio::test]
 async fn each_redacted_payload_gets_a_fresh_response_id() {
     let mut fixture = Fixture::new();
@@ -112,37 +124,33 @@ async fn each_redacted_payload_gets_a_fresh_response_id() {
     };
     fixture.add(&Arc::new(logger));
     fixture.builder.set_payload(secret_payload());
-    for _run in 0..2 {
-        let mut state = state(Some(false));
-        state
-            .litellm_params
-            .insert("acompletion".to_owned(), Json::Bool(true));
-        let mut correlation = correlation();
-        dispatch_success_handlers(
-            &fixture.handler(),
-            &mut state,
-            &mut correlation,
-            &request(chat_result()),
-        )
-        .await;
-    }
-    let responses: Vec<Json> = calls
-        .calls()
-        .into_iter()
-        .filter_map(|call| call.response)
-        .collect();
-    assert_eq!(responses.len(), 2);
-    let mut ids = Vec::new();
-    for response in &responses {
-        let Json::Object(fields) = response else {
-            panic!("the redacted response is not an object");
-        };
-        let Some(Json::Text(id)) = fields.get("id") else {
-            panic!("the redacted response has no id");
-        };
-        assert!(id.starts_with("chatcmpl-"));
-        assert_eq!(fields.get("created"), Some(&parse("1704067202")));
-        ids.push(id.clone());
-    }
-    assert_ne!(ids[0], ids[1]);
+    let mut first_state = state(Some(false));
+    first_state
+        .litellm_params
+        .insert("acompletion".to_owned(), Json::Bool(true));
+    let mut first_correlation = correlation();
+    dispatch_success_handlers(
+        &fixture.handler(),
+        &mut first_state,
+        &mut first_correlation,
+        &request(chat_result()),
+    )
+    .await;
+    let mut second_state = state(Some(false));
+    second_state
+        .litellm_params
+        .insert("acompletion".to_owned(), Json::Bool(true));
+    let mut second_correlation = correlation();
+    dispatch_success_handlers(
+        &fixture.handler(),
+        &mut second_state,
+        &mut second_correlation,
+        &request(chat_result()),
+    )
+    .await;
+    let recorded = calls.calls();
+    assert_eq!(recorded.len(), 2);
+    let first_id = redacted_response_id(recorded[0].response.as_ref());
+    let second_id = redacted_response_id(recorded[1].response.as_ref());
+    assert_ne!(first_id, second_id);
 }
