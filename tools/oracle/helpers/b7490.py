@@ -9,6 +9,7 @@ from litellm.proxy._experimental.mcp_server.auth.user_api_key_auth_mcp import (
     _is_gateway_dcr_challenge_scope,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L252-L276
 )
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from starlette.types import Scope
 
@@ -63,7 +64,7 @@ def auth_headers(input_value: Input) -> dict[str, dict[str, str]]:
     return headers
 
 
-def exception_value(error: HTTPException) -> JsonValue:
+def exception_value(error: StarletteHTTPException) -> JsonValue:
     headers = error.headers
     if headers is None:
         headers = {}
