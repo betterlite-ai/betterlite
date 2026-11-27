@@ -35,8 +35,14 @@ const CACHED_FIELDS: &str = r#"{"token":"hashed-token","key_name":"key-1","user_
 #[tokio::test]
 async fn cache_copy_isolation() {
     let cache = FakeCache::new(CacheAnswer::Hit(Box::new(auth_from_fields(CACHED_FIELDS))));
+    let source = FakeSource::new(Vec::new());
+    let permissions = FakePermissions::new(Vec::new());
+    let writer = FakeWriter::new(false);
     let store = StoreSetup {
+        reader: Some(reader(Arc::clone(&source))),
         cache: Arc::clone(&cache),
+        permissions: Arc::clone(&permissions),
+        writer: Arc::clone(&writer),
         ..setup()
     }
     .store();
@@ -52,6 +58,9 @@ async fn cache_copy_isolation() {
     assert!(held.extra.budget_throttle_pct.is_some());
     assert!(held.extra.request_route.is_some());
     assert!(held.extra.parent_otel_span.is_some());
+    assert!(source.calls().is_empty());
+    assert!(permissions.calls().is_empty());
+    assert!(writer.writes().is_empty());
 }
 
 #[tokio::test]
@@ -331,6 +340,29 @@ const fn projection(subject_fallback: Option<&'static str>) -> Projection<'stati
         credential_ref: None,
         network: None,
     }
+}
+
+#[tokio::test]
+async fn resolve_uses_the_stored_token_over_the_requested_hash() {
+    let source = FakeSource::new(vec![Ok(Some(view_from_text(
+        r#"{"token":"stored-token","key_name":"key-1"}"#,
+    )))]);
+    let store = StoreSetup {
+        reader: Some(reader(Arc::clone(&source))),
+        ..setup()
+    }
+    .store();
+    let principal = store.resolve("requested-hash").await.unwrap();
+    assert_eq!(principal.subject, "stored-token");
+    assert_eq!(
+        principal.credential_ref.token_id.as_deref(),
+        Some("stored-token")
+    );
+    let calls = source.calls();
+    assert_eq!(
+        calls.first().map(|(token, _, _)| token.as_str()),
+        Some("requested-hash")
+    );
 }
 
 #[test]
