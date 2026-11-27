@@ -523,11 +523,12 @@ fn expected_signed_headers(
     signature: &str,
 ) -> Vec<(String, String)> {
     let mut headers = vec![("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned())];
-    let mut signed = "host;x-amz-content-sha256;x-amz-date";
-    if let Some(value) = token {
+    let signed = if let Some(value) = token {
         headers.push(("X-Amz-Security-Token".to_owned(), value.to_owned()));
-        signed = "host;x-amz-content-sha256;x-amz-date;x-amz-security-token";
-    }
+        "host;x-amz-content-sha256;x-amz-date;x-amz-security-token"
+    } else {
+        "host;x-amz-content-sha256;x-amz-date"
+    };
     headers.push(("X-Amz-Content-SHA256".to_owned(), EMPTY_SHA256.to_owned()));
     headers.push((
         "Authorization".to_owned(),
