@@ -100,6 +100,7 @@ struct Fake {
     agent_outcome: AgentSearchOutcome,
     skills: Vec<AccessibleSkill>,
     skill_outcome: SkillSearchOutcome,
+    skill_error: Option<String>,
     tools: Vec<MCPTool>,
     allowed_servers: Vec<String>,
     denial_detail: String,
@@ -121,6 +122,7 @@ impl Default for Fake {
             agent_outcome: AgentSearchOutcome::Hits(Vec::new()),
             skills: Vec::new(),
             skill_outcome: SkillSearchOutcome::Hits(Vec::new()),
+            skill_error: None,
             tools: Vec::new(),
             allowed_servers: Vec::new(),
             denial_detail: String::new(),
@@ -215,6 +217,11 @@ impl SearchPorts for Fake {
         embedding_model: Option<&str>,
         _caller: &CallerScope,
     ) -> Result<SkillSearchOutcome, SearchPortError> {
+        if let Some(detail) = &self.skill_error {
+            return Err(SearchPortError {
+                detail: detail.clone(),
+            });
+        }
         self.record_skill_search(query, skills, top_k, embedding_model);
         Ok(self.skill_outcome.clone())
     }
@@ -511,6 +518,23 @@ async fn skill_search_returns_the_reason_as_error_text(
         .expect("a scripted outcome is not a failure");
     assert!(result.is_error);
     assert_eq!(text_of(&result), reason);
+}
+
+#[tokio::test]
+async fn skill_search_surfaces_a_port_error_as_http_500() {
+    let mut fake = Fake::default();
+    fake.skill_error = Some("skill store down".to_owned());
+    let caller = caller();
+    let scope = McpRequestScope::default();
+    let request = SkillSearchRequest {
+        query: "task",
+        top_k: 2,
+    };
+    let error = handle_skill_search(request, &context(&fake, &caller, &scope))
+        .await
+        .expect_err("a port error fails the call");
+    assert_eq!(error.status_code(), http::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error.detail(), "skill store down");
 }
 
 #[tokio::test]
