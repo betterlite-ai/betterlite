@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_config::api::vector_file_write::loads_write_timeout;
+use betterlite_config::api::vector_store_write::loads_request_timeout;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_core::api::vector_file_http_write::config::OpenAiFileWriteConfig;
@@ -46,7 +46,7 @@ pub(super) async fn execute(
     .load("model_list: []")
     .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let request_timeout_seconds =
-        loads_write_timeout(env).map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+        loads_request_timeout(env).map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let service = write_service(&config, env)?;
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
