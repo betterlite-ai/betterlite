@@ -41,7 +41,7 @@ fn answer(call: &Call) -> Answer {
         Call::Forbidden { forbidden: detail } => forbidden(detail.clone()),
     };
     Answer {
-        message: problem.0.detail.clone(),
+        message: problem.to_string(),
         problem: problem.0,
     }
 }
