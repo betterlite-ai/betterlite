@@ -36,6 +36,12 @@ fn object(keys: &str) -> String {
     with_value(&format!("{{{keys}}}"))
 }
 
+fn second_deployment(router_config: &str) -> String {
+    format!(
+        "model_list:\n  - model_name: plain\n    litellm_params:\n      model: openai/gpt-4o\n  - model_name: router\n    litellm_params:\n      model: openai/gpt-4o-mini\n{router_config}"
+    )
+}
+
 fn only(source: &str) -> Result<Option<ContextCompaction>, String> {
     let mut deployments = load_with(source, &[])
         .map_err(|error| error.to_string())?
@@ -73,6 +79,32 @@ fn a_deployment_without_router_configuration_keeps_none() {
 fn a_missing_context_compaction_compacts_with_the_defaults() {
     let source = deployment("      complexity_router_config: {}\n");
     assert_eq!(configured(&source), ContextCompaction::On(defaults()));
+}
+
+#[test]
+fn settings_stay_aligned_with_model_list() {
+    let source =
+        second_deployment("      complexity_router_config:\n        context_compaction: false\n");
+    assert_eq!(
+        load_with(&source, &[])
+            .expect("the fixture config loads")
+            .deployments,
+        [None, Some(ContextCompaction::Off)]
+    );
+}
+
+#[test]
+fn an_error_in_a_later_deployment_names_its_index() {
+    let source = second_deployment(
+        "      complexity_router_config:\n        context_compaction: {trigger_ratio: 1}\n",
+    );
+    let error = load_with(&source, &[]).unwrap_err().to_string();
+    assert!(
+        error.contains(
+            "model_list.1.litellm_params.complexity_router_config.context_compaction.trigger_ratio"
+        ),
+        "{error}"
+    );
 }
 
 #[test]
