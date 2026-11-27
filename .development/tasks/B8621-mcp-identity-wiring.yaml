@@ -54,7 +54,9 @@ description: >-
   B4668's key object permission read, all named in B4671's AccessReads text. Its DelegatedHuman port is
   B10126's AdmittedUserReload over the UserReads and TeamLimits below. B6591's ServerUnion with UnionSettings, the registry from McpCore,
   LiveUnionReads over B4711 and B4681, GrantSource over McpAccess (B4671) and B4670's admin_view_unscoped, and the
-  toolset cache with McpCore's toolset_ttl_secs.
+  toolset cache with McpCore's toolset_ttl_secs. The same shared.auth_cache also implements B10147's ToolsetCache port (get, set with a ttl, and
+  remove_where over the in-memory keys through betterlite-cache's MemoryCacheOps), so invalidate_toolset_cache clears the
+  toolset_perms: entries B6591 caches, and B10147 never gets a cache of its own.
 
 
   Admission (admission.rs). B4673's RequestAdmission: KeyAuthenticator calls B052's user_api_key_auth with the given

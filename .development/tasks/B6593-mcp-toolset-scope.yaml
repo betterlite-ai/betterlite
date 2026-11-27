@@ -96,7 +96,7 @@ deviations:
 
 out_of_scope:
   - "Every other function of server.py (transport handlers handle_streamable_http_mcp and handle_sse_mcp, session tracking, _raise_preemptive_401_for_unauthenticated_servers, the origin and client allowlist checks, the OpenTelemetry carriers): B136. B136 also calls apply_toolset_scope and toolset_server_ids at L2027-L2031 and L2374-L2378."
-  - "acting_user_auth and granted_toolset_ids: B4672. resolve_toolset_tool_permissions and its cache: B6591. get_toolset_by_name_cached: B6592. _is_mcp_admitted_user_subject: B4679 as key_identity."
+  - "acting_user_auth and granted_toolset_ids: B4672. resolve_toolset_tool_permissions and its cache: B6591. get_toolset_by_name_cached: B10147. _is_mcp_admitted_user_subject: B4679 as key_identity."
   - "ActingPorts itself, resolve_acting_auth and the 404 and 500 branches for a missing toolset or database: B4726. The adapters that implement the three ports here over B4672 and B6591 are composition code for the roots that wire B4726 and B136."
 
 pitfalls:

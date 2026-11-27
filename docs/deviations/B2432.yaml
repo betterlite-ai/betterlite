@@ -1,0 +1,36 @@
+task: B2432
+deviations:
+  - what: >-
+      A summary response whose text content part carries a non-string text, or whose usage counter is not an
+      integer, produces the typed ExtractionError variants NonTextPart and TokenNotAnInteger. LiteLLM lets the
+      TypeError from "".join and the ValueError from int() escape apply_compact_20260112, which turns a malformed
+      summary answer into a failed parent request instead of the documented nonfatal summary errors.
+    why: >-
+      The editor's result type carries no Python exception, and the task's DoD asks for typed internal errors
+      without inventing provider statuses; the caller decides how a typed extraction failure maps, and the
+      helper adapter records the LiteLLM type name for both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1084-L1111
+  - what: >-
+      A negative or above-u64 usage count is a TokenNotAnInteger error, where LiteLLM's int(value or 0) accepts a
+      negative number and records it in applied.summary_input_tokens and iterations_usage.
+    why: >-
+      B968's AppliedEdit and UsageIteration carry unsigned token counts, and a negative count cannot reach them
+      without wrapping to a huge number; a provider answer that reports one is malformed, and the parent request
+      sees a typed extraction failure instead of a negative usage entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1105-L1111
+  - what: >-
+      allowed_model_region travels top-level to the routed completion only as the auth model's Region value (us or
+      eu). LiteLLM reads any non-null attribute and forwards it unchanged, including an empty string.
+    why: >-
+      betterlite's key auth types the field as Region, so a value outside that set is rejected when the principal
+      is constructed rather than being forwarded to routing; the forwarding code itself passes every value the
+      typed principal can hold, and never puts the region in the provider body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1311-L1320
+  - what: >-
+      A configured context_management_summary_max_tokens above u32::MAX fails the summary call locally with
+      summary_call_failed, where LiteLLM passes the integer to the provider.
+    why: >-
+      B014's ChatRequest models max_tokens as u32, so the summary wire request cannot carry a larger value; the
+      editor itself forwards the configured u64 unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L180-L195
+kept_bugs: []
