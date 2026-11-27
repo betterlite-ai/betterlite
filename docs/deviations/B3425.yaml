@@ -86,3 +86,19 @@ kept_bugs:
       calls run on the client's deadline; docs/deviations/B9371.yaml records the handler's side of it.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13440
+  - what: >-
+      get_run, cancel_run and delete_run accept extra_query and never forward it: no run transform or
+      handler takes a query, so it reaches neither the URL nor the transport.
+    why: >-
+      LiteLLM declares extra_query in all three run signatures and drops it: get_run at
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1528,
+      cancel_run at
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1684
+      and delete_run at
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1849,
+      and each one calls its handler without the argument, as
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1595-L1606
+      shows. A working setup passes the arguments the handler reads, so betterlite keeps the keyword
+      accepted and dropped instead of inventing a query the pinned wire never carries.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1528
