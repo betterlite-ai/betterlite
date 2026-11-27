@@ -628,10 +628,12 @@ fn failing_rig(failure: CacheFailure) -> (Rig, BatchPrecallInput) {
 
 fn expected_failure_diagnostics(failure: CacheFailure) -> Vec<BatchDiagnostic> {
     match failure {
-        CacheFailure::ScanLogged => {
-            vec![error_line(format!("{CACHE_FAILURE_PREFIX}redis is down"))]
-        }
-        CacheFailure::ScanRaised | CacheFailure::MemoryRead => Vec::new(),
+        CacheFailure::ScanLogged => vec![
+            debug_line(&format!("cache_key_name: {CACHE_NAME}")),
+            error_line(format!("{CACHE_FAILURE_PREFIX}redis is down")),
+        ],
+        CacheFailure::ScanRaised => vec![debug_line(&format!("cache_key_name: {CACHE_NAME}"))],
+        CacheFailure::MemoryRead => Vec::new(),
         CacheFailure::RemoteRead | CacheFailure::ReadWarm => vec![
             debug_line(&format!("cache_key_name: {CACHE_NAME}")),
             debug_line("redis keys: []"),
