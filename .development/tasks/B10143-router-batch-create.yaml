@@ -1,0 +1,95 @@
+id: B10143
+title: Router batch create with fallbacks
+description: >-
+  `Router.acreate_batch` sends a batch create to one deployment of a model group and lets the router retry and fall back like any other call. LiteLLM's create_batch route calls it when `litellm_settings.enable_loadbalancing_on_batch_endpoints` is true and the body's model is a router model (B1050), and the Python `Router` exposes it through B8353's RouterBatchCalls. Splitting it out of B8353 lets B1050 start without the file upload, vector store and other batch calls it never makes.
+
+
+  Code. betterlite-sdk gets module `router_batch_create` (crates/betterlite-sdk/src/router_batch_create.rs and its folder, tests in router_batch_create/tests.rs), and betterlite-server gets the builder in `app::inference::router_calls::batch_create` (crates/betterlite-server/src/app/inference/router_calls/batch_create.rs and its folder, tests in batch_create/tests.rs). lib.rs and router_calls.rs already declare both stub files, so neither parent needs an edit.
+
+
+  `RouterBatchCreate` is built by its constructor from B6020's `RouterCompletionParts` and one `Arc<dyn GenericCallExecutor>` (B6021's trait) for the call type `acreate_batch`. Everything this call needs from the router is already a port in those parts: async selection (B016), the request update, client and deployment slot (B303), update-before-fallbacks and the fallback-with-retries executor (B310), and the `total_calls`, `success_calls` and `fail_calls` counters it shares with B6020's RouterCompletion, so a Python Router reports one set. This task declares no port of its own. For `get_llm_provider`, call whatever B6021's generic attempt calls in the merged router_generic.rs, and report a blocker if that file has no such lookup.
+
+
+  `acreate_batch(model: &str, request: Map)` (router.py L6229-L6255) sets `model` on the request, hands the attempt below to the fallback executor as its `original_function` (the way B6021's generic_call_with_fallbacks hands over its attempt), runs B6020's update-before-fallbacks port with the metadata key `litellm_metadata`, then runs the fallback-with-retries port and returns its answer. An error comes back unchanged. `_get_router_metadata_variable_name("_acreate_batch")` gives that key; betterlite-core keeps its Rust port of the helper private in batch_records, so the call uses the string itself, under a one-line comment that names the helper.
+
+
+  The attempt is `_acreate_batch` (L6257-L6312), one deployment per call:
+
+  1. Take `specific_deployment` out of the request and pick one deployment with the async selection port, passing the model, messages `[{"role":"user","content":"files-api-fake-text"}]`, the taken value and the request.
+
+  2. Copy the deployment's `litellm_params` as `data` and read `data["model"]` as the model name. Update the request with the deployment through the request update port under the function name `_acreate_batch`. Take the deployment's async client from the client port; B303 gives none when the request's `api_key` differs from the client's key. Add one to `total_calls` for the model name.
+
+  3. Call the provider lookup with data's model and data's `custom_llm_provider`, every time, even when the deployment names its provider. The provider is data's `custom_llm_provider` when it is set and not empty, otherwise the looked-up one.
+
+  4. Hold the deployment slot for the call and call the executor with the call type `acreate_batch` and one map built in this order, later keys winning: data, `custom_llm_provider`, `caching` set to the parts' `cache_responses`, `client`, then the request. If B6021's GenericRequest has no place for a client, leave it out: a provider call with no client builds its own, which is LiteLLM's `model_client` None path, so only connection reuse differs.
+
+  5. On success add one to `success_calls` for the model name, log `litellm.acreate_batch(model=<model name>) 200 OK` at info level and return the answer.
+
+  6. On any error (selection, update, lookup, slot or executor) add one to `fail_calls` for the requested group name, stamp the error with the request's `model_info.id` as its retry skip id when that is a non-empty string (B017's `_stamp_retry_skip_deployment_id`, the same stamp B6021's and B8352's attempts set for the retry loop), and return it unchanged.
+
+
+  Server builder. In router_calls/batch_create.rs write `batch_create(state: &ServerState, executor: Arc<dyn GenericCallExecutor>) -> Result<RouterBatchCreate, RouterPortError>`. Its inputs are B8631's `completion_parts(state)`, which lives in the parent router_calls.rs and is visible from this child, and the executor. No adapter is needed here: B8630 already implements every port in the parts. The provider create belongs to the route, so B1050 hands in an executor over B1036's provider create.
+
+
+  Tests. router_batch_create/tests.rs uses fake parts and fake executors only, so no test opens a socket or waits on time. Only error-path tests carry `failure` in their names, which is how create-calls and create-failures tell them apart. batch_create/tests.rs starts from a real Router over a config.yaml with two deployments, set up as in router_calls/tests.rs, and checks that a recording executor gets the call type `acreate_batch`, the picked deployment's `litellm_params`, its `custom_llm_provider`, `caching` false and `litellm_metadata.model_info.id` equal to that deployment's id, and that an executor error comes back to the caller.
+scope:
+  paths:
+    - crates/betterlite-sdk/src/router_batch_create.rs
+    - crates/betterlite-sdk/src/router_batch_create/**
+    - crates/betterlite-server/src/app/inference/router_calls/batch_create.rs
+    - crates/betterlite-server/src/app/inference/router_calls/batch_create/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6229-L6312
+    why: Owned. acreate_batch and its attempt _acreate_batch, with the argument order, the counter keys and the error stamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3909-L3914
+    why: _stamp_retry_skip_deployment_id reads model_info.id from the request after the update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4098-L4120
+    why: The async client, dropped when the request brings its own api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/batch_utils.py#L153-L173
+    why: The metadata key helper that answers litellm_metadata for _acreate_batch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L391-L398
+    why: Call site in B1050. The route takes the router path only for a router model with the load balancing flag on.
+dod:
+  - text: "`acreate_batch` sets `model`, runs update-before-fallbacks with `litellm_metadata` and the fallback executor with the create attempt, and returns its answer."
+    proof: [create-calls]
+  - text: The attempt picks one deployment with `files-api-fake-text` and the `specific_deployment` taken out, updates the request under `_acreate_batch`, holds the slot, and calls the executor with data, provider, caching, client and the request in that order.
+    proof: [create-calls]
+  - text: The deployment's own `custom_llm_provider` wins over the looked-up one, and the lookup runs even when the deployment names its provider.
+    proof: [create-calls]
+  - text: "`total_calls` and `success_calls` count by the deployment's model and `fail_calls` by the group name; an error comes back unchanged and carries the retry skip id only when the request has a `model_info.id`."
+    proof: [create-failures]
+  - text: "`batch_create` builds the object from the server's router parts and reaches a recording executor through a real router."
+    proof: [create-assembly]
+checks:
+  optional: []
+  commands:
+    - id: create-calls
+      why: the metadata key, the fake message, the argument order, the slot or the provider choice differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_create::/) - test(/failure/)'
+    - id: create-failures
+      why: a counter uses the wrong key, the retry skip id is missing or invented, or the error is wrapped
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_create::.*failure/)'
+    - id: create-assembly
+      why: batch_create cannot be built from the server's parts or does not reach the executor through the router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::router_calls::batch_create::/)'
+oracle_cases: []
+deviations:
+  - what: The provider create runs in the GenericCallExecutor handed to the constructor instead of LiteLLM's module function `litellm.acreate_batch`.
+    why: Rust keeps no module-level function to look up; the batch route and the Python crate each pass their own provider create.
+out_of_scope:
+  - "acancel_batch, acreate_file, avector_store_create, alist_batches and RouterBatchCalls, which forwards acreate_batch to this object: B8353. aretrieve_batch: B10142."
+  - "create_batch in litellm/proxy/batches_endpoints/endpoints.py and the acreate_batch executor over B1036's provider create: B1050. _create_provider_batch_for_managed_file, which also calls Router.acreate_batch with disable_fallbacks true: B1112."
+  - "Selection is B016's, the request update, client and slot B303's, update-before-fallbacks and the fallback executor B310's and the retry stamps B017's, all reached through B6020's ports; the server adapters behind them are B8630's."
+  - "send_llm_exception_alert runs in a background task on failure and stops at once when the router has no slack_alerting_logger; router_settings.alerting_config is refused at config load, so the call is left out."
+pitfalls:
+  - "The selection's fake message is `files-api-fake-text`, the files text; `batch-api-fake-text` belongs to the cancel attempt."
+  - "The request is spread after `custom_llm_provider`, `caching` and `client`, so a request value for any of them wins over the router's, unlike retrieval, which removes the request's provider first."
+  - "`total_calls` and `success_calls` use the deployment's litellm model as key, while `fail_calls` uses the group name the caller asked for."
+  - "get_llm_provider runs even when the deployment sets custom_llm_provider, so a lookup error fails the attempt after `total_calls` has counted it."
+  - "The retry skip stamp reads `model_info` from the request after the update, so a selection failure carries no skip id."
+  - "After the update the request holds the deployment's api_key, so do not log the request map; LiteLLM's debug and exception lines that print kwargs are left out."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
