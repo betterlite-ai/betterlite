@@ -64,7 +64,7 @@ async fn attachment_explicit_provider_unsupported() {
     let mut azure = caller();
     azure.provider = Some(String::from("azure"));
     let create_spy = Spy::replying(file());
-    let create_failure = attempt(
+    let create_failure = *attempt(
         Which::Create,
         &create_spy,
         &azure,
@@ -85,7 +85,7 @@ async fn attachment_explicit_provider_unsupported() {
     assert_eq!(create_spy.call_count(), 0);
 
     let list_spy = Spy::replying(listing());
-    let list_failure = attempt(
+    let list_failure = *attempt(
         Which::List,
         &list_spy,
         &azure,
@@ -108,7 +108,7 @@ async fn attachment_unknown_provider_fails_conversion() {
     let mut bogus = caller();
     bogus.provider = Some(String::from("bogus"));
     let spy = Spy::replying(file());
-    let failure = attempt(Which::Create, &spy, &bogus, None, REQUEST_TIMEOUT)
+    let failure = *attempt(Which::Create, &spy, &bogus, None, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails");
     assert_eq!(failure.message, "'bogus' is not a valid LlmProviders");

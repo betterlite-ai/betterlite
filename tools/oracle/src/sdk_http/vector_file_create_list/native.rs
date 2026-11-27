@@ -200,7 +200,7 @@ fn project(failure: &SdkFailure) -> Failure {
     }
 }
 
-const fn field(wire: WireField) -> Nullable {
+fn field(wire: WireField) -> Nullable {
     match wire {
         WireField::Missing(_) => None,
         WireField::Null => Some(None),

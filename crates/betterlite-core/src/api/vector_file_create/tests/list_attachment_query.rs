@@ -85,7 +85,7 @@ async fn list_attachment_field_types() {
     let mut fixture = Fixture::new();
     fixture.kwargs.insert(String::from("api_base"), json("42"));
     let spy = Spy::replying(listing());
-    let failure = attempt(Which::List, &spy, &fixture, None, REQUEST_TIMEOUT)
+    let failure = *attempt(Which::List, &spy, &fixture, None, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails");
     assert_eq!(failure.class, "APIConnectionError");

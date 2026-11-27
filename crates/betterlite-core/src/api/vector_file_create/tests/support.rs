@@ -227,11 +227,10 @@ pub(crate) async fn attempt(
     fixture: &Fixture,
     registry: Option<&dyn CredentialLookup>,
     request_timeout_seconds: f64,
-) -> Result<Recorded, SdkFailure> {
-    match call(which, spy, fixture, registry, request_timeout_seconds).await {
-        Ok(_) => Ok(spy.seen().expect("the service saw the call")),
-        Err(failure) => Err(*failure),
-    }
+) -> Result<Recorded, Box<SdkFailure>> {
+    call(which, spy, fixture, registry, request_timeout_seconds)
+        .await
+        .map(|_| spy.seen().expect("the service saw the call"))
 }
 
 // what the service saw: the call's fields and the logging state the call left behind

@@ -105,7 +105,7 @@ async fn attach_file_field_types() {
         .kwargs
         .insert(String::from("ssl_verify"), json(r#""yes""#));
     let spy = Spy::replying(file());
-    let failure = attempt(Which::Create, &spy, &fixture, None, REQUEST_TIMEOUT)
+    let failure = *attempt(Which::Create, &spy, &fixture, None, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails");
     assert_eq!(failure.class, "APIConnectionError");

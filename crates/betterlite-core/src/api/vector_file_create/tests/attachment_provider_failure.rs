@@ -20,12 +20,12 @@ fn assert_authentication(failure: &SdkFailure, spy: &Spy) {
 async fn attachment_provider_failure() {
     let fixture = Fixture::new();
     let create_spy = Spy::failing(401, UNAUTHORIZED);
-    let create_failure = attempt(Which::Create, &create_spy, &fixture, None, REQUEST_TIMEOUT)
+    let create_failure = *attempt(Which::Create, &create_spy, &fixture, None, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails");
     assert_authentication(&create_failure, &create_spy);
     let list_spy = Spy::failing(401, UNAUTHORIZED);
-    let list_failure = attempt(Which::List, &list_spy, &fixture, None, REQUEST_TIMEOUT)
+    let list_failure = *attempt(Which::List, &list_spy, &fixture, None, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails");
     assert_authentication(&list_failure, &list_spy);
@@ -35,7 +35,7 @@ async fn attachment_provider_failure() {
 async fn attachment_provider_failure_async() {
     let fixture = Fixture::new();
     let acreate_spy = Spy::failing(401, UNAUTHORIZED);
-    let acreate_failure = attempt(
+    let acreate_failure = *attempt(
         Which::Acreate,
         &acreate_spy,
         &fixture,
@@ -46,7 +46,7 @@ async fn attachment_provider_failure_async() {
     .expect_err("the attachment call fails");
     assert_authentication(&acreate_failure, &acreate_spy);
     let alist_spy = Spy::failing(401, UNAUTHORIZED);
-    let alist_failure = attempt(Which::Alist, &alist_spy, &fixture, None, REQUEST_TIMEOUT)
+    let alist_failure = *attempt(Which::Alist, &alist_spy, &fixture, None, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails");
     assert_authentication(&alist_failure, &alist_spy);
