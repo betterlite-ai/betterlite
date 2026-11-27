@@ -6,11 +6,10 @@ use std::sync::{Arc, Mutex};
 use betterlite_config::sections::otel_settings;
 use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_error::normalize::Normalizer;
-use betterlite_error::proxy_exception::{
-    ExceptionCode, ModelAccessDeniedProxyException, ProxyException, ProxyExceptionInit,
-};
+use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
+use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_logging::otel::config::destination::SpanScope;
-use betterlite_logging::otel::config::{CaptureMessageContent, Settings};
+use betterlite_logging::otel::config::{CaptureMessageContent, ExporterSpec, Settings};
 use betterlite_logging::otel::emitter::span_emission::MapperKind;
 use betterlite_logging::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
 use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
@@ -20,7 +19,7 @@ use betterlite_logging::otel::mappers::utils::tool_attr_budget;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
 use betterlite_logging::otel::plumbing::exporters::{
-    ExportResult, ExporterFactories, ExporterFactory, ExporterSpec, HttpClients,
+    ExportResult, ExporterFactories, ExporterFactory, HttpClients,
 };
 use betterlite_logging::otel::plumbing::providers::ProviderState;
 use betterlite_logging::otel::plumbing::routing::cache::{TenantSources, TenantTracerCache};
