@@ -41,6 +41,46 @@ impl VideoExtensionConfigLookup for OpenAiEditConfig {
     }
 }
 
+fn edited_reply(reply: VideoReply<'_>) -> Result<VideoObject, BoxError> {
+    let reply_object = video_response(&OpenAiReply {
+        body: &reply.raw_response.body,
+        custom_llm_provider: reply.custom_llm_provider,
+        request_data: None,
+    })?;
+    let object: VideoObject = record(&reply_object)?;
+    Ok(object)
+}
+
+fn edit_wire<'call>(
+    input: VideoEditInput<'call>,
+    context: VideoRequestContext<'_>,
+) -> VideoEditRequest<'call> {
+    VideoEditRequest {
+        prompt: input.prompt.to_owned(),
+        video_id: input.video_id.to_owned(),
+        api_base: context.api_base.to_owned(),
+        video_file: input.video_file.map(media_body),
+        extra_body: input.extra_body.cloned(),
+        prefetched_source_data: None,
+    }
+}
+
+// the URL and body an extension sends: its wire fields, then the source transform
+fn extension_call(
+    input: VideoExtensionInput<'_>,
+    context: VideoRequestContext<'_>,
+) -> (String, Params) {
+    let request = VideoExtensionRequest {
+        prompt: input.prompt.to_owned(),
+        video_id: input.video_id.to_owned(),
+        seconds: input.seconds.to_owned(),
+        api_base: context.api_base.to_owned(),
+        extra_body: input.extra_body.cloned(),
+    };
+    let extension = extension_request(request);
+    (extension.url, extension.body)
+}
+
 impl BaseVideoConfig for OpenAiEditConfig {
     fn validate_environment(&self, request: VideoEnvironment<'_>) -> Headers {
         self.edit_headers(request)
@@ -68,15 +108,7 @@ impl BaseVideoConfig for OpenAiEditConfig {
         input: VideoEditInput<'_>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params, Option<RequestFiles>), BoxError> {
-        let request = VideoEditRequest {
-            prompt: input.prompt.to_owned(),
-            video_id: input.video_id.to_owned(),
-            api_base: context.api_base.to_owned(),
-            video_file: input.video_file.map(media_body),
-            extra_body: input.extra_body.cloned(),
-            prefetched_source_data: None,
-        };
-        let edit = edit_request(request);
+        let edit = edit_request(edit_wire(input, context));
         let files = match edit.files {
             Some(part) => Some(vec![named_part(part, self.video_name.as_deref())?]),
             None => None,
@@ -89,13 +121,7 @@ impl BaseVideoConfig for OpenAiEditConfig {
         reply: VideoReply<'_>,
         _request_data: Option<&Params>,
     ) -> Result<VideoObject, BoxError> {
-        let reply_object = video_response(&OpenAiReply {
-            body: &reply.raw_response.body,
-            custom_llm_provider: reply.custom_llm_provider,
-            request_data: None,
-        })?;
-        let object: VideoObject = record(&reply_object)?;
-        Ok(object)
+        edited_reply(reply)
     }
 
     // ast-grep-ignore: no-long-names
@@ -104,15 +130,7 @@ impl BaseVideoConfig for OpenAiEditConfig {
         input: VideoExtensionInput<'_>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), BoxError> {
-        let request = VideoExtensionRequest {
-            prompt: input.prompt.to_owned(),
-            video_id: input.video_id.to_owned(),
-            seconds: input.seconds.to_owned(),
-            api_base: context.api_base.to_owned(),
-            extra_body: input.extra_body.cloned(),
-        };
-        let extension = extension_request(request);
-        Ok((extension.url, extension.body))
+        Ok(extension_call(input, context))
     }
 
     // ast-grep-ignore: no-long-names
@@ -120,13 +138,7 @@ impl BaseVideoConfig for OpenAiEditConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, BoxError> {
-        let reply_object = video_response(&OpenAiReply {
-            body: &reply.raw_response.body,
-            custom_llm_provider: reply.custom_llm_provider,
-            request_data: None,
-        })?;
-        let object: VideoObject = record(&reply_object)?;
-        Ok(object)
+        edited_reply(reply)
     }
 
     fn get_error_class(

@@ -72,12 +72,14 @@ fn openai_config(video_name: Option<&str>) -> OpenAiEditConfig {
     }
 }
 
+const VIDEOS_BASE: &str = "http://host.test/v1/videos";
+
 fn character_context<'call>(
     params: &'call HttpParams,
     headers: &'call RequestHeaders,
 ) -> CharacterContext<'call> {
     CharacterContext {
-        api_base: "http://host.test/v1/videos",
+        api_base: VIDEOS_BASE,
         litellm_params: params,
         headers,
     }
@@ -88,9 +90,9 @@ fn request_context<'call>(
     headers: &'call Headers,
 ) -> VideoRequestContext<'call> {
     VideoRequestContext {
-        api_base: "http://host.test/v1/videos",
-        litellm_params: params,
         headers,
+        litellm_params: params,
+        api_base: VIDEOS_BASE,
     }
 }
 

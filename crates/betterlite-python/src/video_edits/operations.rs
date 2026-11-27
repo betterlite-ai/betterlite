@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_core::api::video_character_calls::error::{
     CharacterCallError, CharacterCallFailure, failure,
 };
+use betterlite_core::api::video_character_calls::handler::CharacterHandler;
 use betterlite_core::api::video_character_calls::{
     CharacterCallDeps, CreateCharacterCall, GetCharacterCall, avideo_create_character,
     avideo_get_character,
@@ -16,9 +17,12 @@ use betterlite_core::api::video_extension_call::{VideoExtensionDeps, avideo_exte
 use betterlite_core::api::video_records::{CharacterObject, VideoObject};
 use betterlite_core::api::video_selection::VideoConfigTag;
 use betterlite_core::api::video_selection::get_provider_video_config;
+use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 
+use super::adapter::OpenAiEditConfig;
 use super::convert::requests::{OwnedEdit, OwnedExtension};
 use super::convert::{VideoEditWire, VideoFile};
 use super::error::{RunError, SessionError};
@@ -66,6 +70,81 @@ impl Which {
             Self::Get => CharacterCallError::GetUnsupported { provider },
         }
     }
+
+    const fn call_type(self) -> &'static str {
+        match self {
+            Self::Create => CREATE_CALL_TYPE,
+            Self::Get => GET_CALL_TYPE,
+        }
+    }
+}
+
+// a character request the session can run without knowing which of the two operations it came from
+enum CharacterRequest {
+    Create(CreateCharacterCall),
+    Get(GetCharacterCall),
+}
+
+impl CharacterRequest {
+    fn mock_response(&self) -> Option<&Json> {
+        match self {
+            Self::Create(call) => call.mock_response.as_ref(),
+            Self::Get(call) => call.mock_response.as_ref(),
+        }
+    }
+
+    fn provider(&self) -> &str {
+        match self {
+            Self::Create(call) => &call.custom_llm_provider,
+            Self::Get(call) => &call.custom_llm_provider,
+        }
+    }
+
+    const fn which(&self) -> Which {
+        match self {
+            Self::Create(_) => Which::Create,
+            Self::Get(_) => Which::Get,
+        }
+    }
+
+    async fn call<'run>(
+        self,
+        transport: &'run mut dyn CharacterHandler,
+        deps: CharacterCallDeps<'run>,
+    ) -> Result<CharacterObject, RunError> {
+        match self {
+            Self::Create(call) => avideo_create_character(transport, deps, &call)
+                .await
+                .map_err(RunError::from),
+            Self::Get(call) => avideo_get_character(transport, deps, &call)
+                .await
+                .map_err(RunError::from),
+        }
+    }
+
+    // one character call's setup and hand-off, for both operations
+    async fn run(
+        self,
+        session: Arc<EditSession>,
+        wire: VideoEditWire,
+        video: Option<VideoFile>,
+    ) -> Result<CharacterObject, RunError> {
+        if self.mock_response().is_none() {
+            refuse_other_providers(self.provider(), self.which(), &session.redactor)?;
+        }
+        let config = config(&session, &wire.settings, video.and_then(|file| file.name));
+        let mut clients = session.clients();
+        let mut state = logging(&session.redactor, self.which().call_type())?;
+        let sink = SilentSink;
+        let env = pre_post(&sink, &session.redactor);
+        let mut transport =
+            CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
+        let deps = CharacterCallDeps {
+            redactor: &session.redactor,
+            request_timeout_seconds: session.request_timeout_seconds,
+        };
+        self.call(&mut transport, deps).await
+    }
 }
 
 // the package builds OpenAI's config only, so every other provider is refused where LiteLLM has none
@@ -99,112 +178,109 @@ fn request_timeout(session: &EditSession) -> Result<Duration, RunError> {
 pub(crate) async fn create_character(
     input: Input<CreateCharacterCall>,
 ) -> Result<CharacterObject, RunError> {
-    let Input {
-        session,
-        wire,
-        request,
-        video,
-    } = input;
-    if request.mock_response.is_none() {
-        refuse_other_providers(
-            &request.custom_llm_provider,
-            Which::Create,
-            &session.redactor,
-        )?;
-    }
-    let config = config(&session, &wire.settings, video.and_then(|file| file.name));
-    let mut clients = session.clients();
-    let mut state = logging(&session.redactor, CREATE_CALL_TYPE)?;
-    let sink = SilentSink;
-    let env = pre_post(&sink, &session.redactor);
-    let mut transport =
-        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
-    let deps = CharacterCallDeps {
-        redactor: &session.redactor,
-        request_timeout_seconds: session.request_timeout_seconds,
-    };
-    avideo_create_character(&mut transport, deps, &request)
+    CharacterRequest::Create(input.request)
+        .run(input.session, input.wire, input.video)
         .await
-        .map_err(RunError::from)
 }
 
 // video_get_character and avideo_get_character: the mock first, then the one lookup
 pub(crate) async fn get_character(
     input: Input<GetCharacterCall>,
 ) -> Result<CharacterObject, RunError> {
-    let Input {
-        session,
-        wire,
-        request,
-        ..
-    } = input;
-    if request.mock_response.is_none() {
-        refuse_other_providers(&request.custom_llm_provider, Which::Get, &session.redactor)?;
-    }
-    let config = config(&session, &wire.settings, None);
-    let mut clients = session.clients();
-    let mut state = logging(&session.redactor, GET_CALL_TYPE)?;
-    let sink = SilentSink;
-    let env = pre_post(&sink, &session.redactor);
-    let mut transport =
-        CharacterTransport::with_generated_boundary(&config, &mut clients, &mut state, &env);
-    let deps = CharacterCallDeps {
-        redactor: &session.redactor,
-        request_timeout_seconds: session.request_timeout_seconds,
-    };
-    avideo_get_character(&mut transport, deps, &request)
+    CharacterRequest::Get(input.request)
+        .run(input.session, input.wire, input.video)
         .await
-        .map_err(RunError::from)
+}
+
+// the config, client source, log and logging state an edit or extension call runs on
+struct Prepared {
+    config: OpenAiEditConfig,
+    source: EditSource,
+    log: SilentLog,
+    converter: SharedErrorConvert,
+    state: Mutex<LoggingState>,
+    timeout: Duration,
+}
+
+impl Prepared {
+    fn new(
+        session: &EditSession,
+        wire: &VideoEditWire,
+        video: Option<VideoFile>,
+        call_type: &str,
+    ) -> Result<Self, RunError> {
+        Ok(Self {
+            config: config(session, &wire.settings, video.and_then(|file| file.name)),
+            source: EditSource::new(session),
+            log: SilentLog,
+            converter: SharedErrorConvert,
+            state: Mutex::new(logging(&session.redactor, call_type)?),
+            timeout: request_timeout(session)?,
+        })
+    }
+}
+
+// the owned request video_edit or video_extension runs
+enum EditRequest {
+    Edit(OwnedEdit),
+    Extension(OwnedExtension),
+}
+
+impl EditRequest {
+    const fn call_type(&self) -> &'static str {
+        match self {
+            Self::Edit(_) => EDIT_CALL_TYPE,
+            Self::Extension(_) => EXTENSION_CALL_TYPE,
+        }
+    }
+
+    async fn run(
+        self,
+        session: &EditSession,
+        wire: &VideoEditWire,
+        video: Option<VideoFile>,
+    ) -> Result<VideoObject, RunError> {
+        let prepared = Prepared::new(session, wire, video, self.call_type())?;
+        let transport = VideoTransport::new(&prepared.source, &prepared.log, &prepared.converter);
+        match self {
+            Self::Edit(owned) => {
+                let call = owned.call();
+                let deps = VideoEditDeps {
+                    configs: &prepared.config,
+                    handler: &transport,
+                    logging: &prepared.state,
+                    redactor: &session.redactor,
+                    request_timeout: prepared.timeout,
+                    client: None,
+                };
+                avideo_edit(&deps, &call).await.map_err(RunError::from)
+            }
+            Self::Extension(owned) => {
+                let call = owned.call();
+                let deps = VideoExtensionDeps {
+                    configs: &prepared.config,
+                    handler: &transport,
+                    logging: &prepared.state,
+                    redactor: &session.redactor,
+                    request_timeout: prepared.timeout,
+                    client: None,
+                };
+                avideo_extension(&deps, &call).await.map_err(RunError::from)
+            }
+        }
+    }
 }
 
 // video_edit and avideo_edit: the mock, the provider the id or the caller names, then one POST
 pub(crate) async fn edit(input: Input<OwnedEdit>) -> Result<VideoObject, RunError> {
-    let Input {
-        session,
-        wire,
-        request,
-        video,
-    } = input;
-    let config = config(&session, &wire.settings, video.and_then(|file| file.name));
-    let source = EditSource::new(&session);
-    let log = SilentLog;
-    let converter = SharedErrorConvert;
-    let transport = VideoTransport::new(&source, &log, &converter);
-    let state = Mutex::new(logging(&session.redactor, EDIT_CALL_TYPE)?);
-    let deps = VideoEditDeps {
-        configs: &config,
-        handler: &transport,
-        logging: &state,
-        redactor: &session.redactor,
-        request_timeout: request_timeout(&session)?,
-        client: None,
-    };
-    let call = request.call();
-    avideo_edit(&deps, &call).await.map_err(RunError::from)
+    EditRequest::Edit(input.request)
+        .run(&input.session, &input.wire, input.video)
+        .await
 }
 
 // video_extension and avideo_extension: the mock, the provider, then one JSON POST
 pub(crate) async fn extension(input: Input<OwnedExtension>) -> Result<VideoObject, RunError> {
-    let Input {
-        session,
-        wire,
-        request,
-        ..
-    } = input;
-    let config = config(&session, &wire.settings, None);
-    let source = EditSource::new(&session);
-    let log = SilentLog;
-    let converter = SharedErrorConvert;
-    let transport = VideoTransport::new(&source, &log, &converter);
-    let state = Mutex::new(logging(&session.redactor, EXTENSION_CALL_TYPE)?);
-    let deps = VideoExtensionDeps {
-        configs: &config,
-        handler: &transport,
-        logging: &state,
-        redactor: &session.redactor,
-        request_timeout: request_timeout(&session)?,
-        client: None,
-    };
-    let call = request.call();
-    avideo_extension(&deps, &call).await.map_err(RunError::from)
+    EditRequest::Extension(input.request)
+        .run(&input.session, &input.wire, input.video)
+        .await
 }
