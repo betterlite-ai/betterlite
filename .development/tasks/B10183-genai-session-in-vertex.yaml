@@ -6,7 +6,7 @@ description: >-
 
   Module. `genai::session` in betterlite-vertex: crates/betterlite-vertex/src/genai/session.rs and genai/session/ (provider.rs, clients.rs, call.rs, error.rs, tests.rs), beside B3480's genai_contract. The skeleton adds the `pub mod session;` line to genai.rs. Each item below moves from crates/betterlite-python/src/genai/ unchanged except where this text says so, and becomes `pub`; the old definition goes.
 
-  - provider.rs takes `NativeContentConfig` with its GenerateContentProviderConfig and GenerateContentHttpConfig impls, `target`, `native_auth`, `lookup`, `native_request`, `gemini_key`, `configured_credentials` and `exposed_headers` (provider.rs L59-L250). The config gains one field, `aws: Arc<dyn AwsCredentialsSource>` (betterlite-vertex credential_sources/aws.rs L17), and `lookup` puts it in LoadDeps where it now builds `Arc::new(UnavailableAws)` (L198). `UnavailableAws` (L49-L58) stays in the Python file, and the Python session passes it in.
+  - provider.rs takes `NativeContentConfig` with its GenerateContentProviderConfig and GenerateContentHttpConfig impls, `target`, `native_auth`, `lookup`, `native_request`, `gemini_key`, `configured_credentials` and `exposed_headers` (provider.rs L59-L250). The config gains one field, `aws: Arc<dyn AwsCredentialsSource>` (betterlite-vertex credential_sources/aws.rs L17), and `lookup` puts it in LoadDeps where it now builds `Arc::new(UnavailableAws)` (L198). `UnavailableAws` (L49-L58) moves too, as `pub struct UnavailableAws` with its comment, and the server's copy (crates/betterlite-server/src/server/chat_setup/vertex_embedding/executor.rs L28-L38) goes: executor.rs imports the vertex one for its LoadDeps at L89. The Python session and B10178 pass `Arc::new(UnavailableAws)` into the config.
   - error.rs takes `GenaiConfigError` and its From impl (error.rs L15-L38). SessionError, NativeGenaiError and payload_error stay in Python, since they are pyo3 types.
   - clients.rs takes `NativeClients` with `verified_with` and its ClientSource impl (client.rs L13-L63). Its fields become `default: ProxiedClient` and `user_agent: String`, and `pub fn new(default: ProxiedClient, user_agent: String) -> Self` replaces `build`. verified_with takes the proxy policy from `self.default.policy` (betterlite-http proxy.rs L42) instead of a field of its own. The Python session keeps today's ProxyPolicy::resolve and ProxiedClient::outbound steps with their SessionError variants and passes the client to `new`.
   - call.rs takes `GenaiCall` and its `timeout` (convert.rs L20-L45) and the session's `request_of` (session.rs L194-L208) as `GenaiCall::request(&self, timeout: Option<Duration>) -> GenerateContentRequest<'_>`. timeout returns `Result<Option<Duration>, TryFromFloatSecsError>`, and Python's ConvertError::Timeout wraps that error where it calls it. GenaiCall keeps its Deserialize derive, so Python's parse still builds it from the wire text, and the proxy builds it field by field.
@@ -50,6 +50,7 @@ scope:
     - crates/betterlite-logging/src/logging_pre_post/env.rs
     - crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging/embedding.rs
     - crates/betterlite-provider/src/anthropic_dispatch/gateway/logging.rs
+    - crates/betterlite-server/src/server/chat_setup/vertex_embedding/executor.rs
     - crates/betterlite-server/src/messages_call.rs
     - crates/betterlite-server/src/messages_call/standalone.rs
     - crates/betterlite-server/src/messages_call/tests.rs
@@ -71,7 +72,7 @@ dod:
     proof: [python-genai, python-native]
   - text: LITELLM_USER_AGENT is read by one function in betterlite-config, and the three Python copies are gone.
     proof: [tls-tests, no-copies, python-native]
-  - text: One TracingSink in betterlite-logging serves the Cohere pass-through logging and the Anthropic gateway logging.
+  - text: One TracingSink in betterlite-logging serves the Cohere pass-through logging and the Anthropic gateway logging, and one UnavailableAws in betterlite-vertex serves the Python session, the Vertex embedding executor and B10178.
     proof: [no-copies, sink-users]
   - text: B9800's steps and standalone routing take the route type and name it in the not-found error, and /v1/messages chooses and answers as before.
     proof: [messages-tests]
@@ -91,19 +92,19 @@ checks:
       why: the shared user agent reads another name or falls back to other text, or resolve stopped using it
       run: grep -q 'pub fn user_agent' crates/betterlite-config/src/tls.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^tls::/)'
     - id: sink-users
-      why: the Cohere pass-through logging or the Anthropic gateway logging broke when its sink moved
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::cohere_passthrough_logging::/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^anthropic_dispatch::/)'
+      why: the Cohere pass-through logging, the Anthropic gateway logging or the Vertex embedding credentials broke when the sink or UnavailableAws moved
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::cohere_passthrough_logging::/) | test(/^server::chat_setup::vertex_embedding::/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^anthropic_dispatch::/)'
     - id: messages-tests
       why: the route type field changed what the messages steps choose or answer, or the not-found error still names anthropic_messages
       run: test -z "$(grep -n 'const ROUTE_TYPE' crates/betterlite-server/src/messages_call.rs)" && grep -q 'fn steps_name_their_route_type_in_not_found' crates/betterlite-server/src/messages_call/tests.rs crates/betterlite-server/src/messages_call/tests/*.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^messages_call::/)'
     - id: no-copies
-      why: betterlite-python still defines a moved type, or a user agent or tracing sink copy is left
-      run: test -z "$(grep -rnE 'struct (NativeContentConfig|NativeClients|GenaiCall)\b|enum (GenaiConfigError|Entry)\b|fn (user_agent|logging_env|native_request|gemini_key|configured_credentials|exposed_headers|request_of)\(' crates/betterlite-python/src/genai crates/betterlite-python/src/video_calls/clients.rs crates/betterlite-python/src/video_edits/session.rs)" && test -z "$(grep -n 'struct TracingSink' crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging/embedding.rs crates/betterlite-provider/src/anthropic_dispatch/gateway/logging.rs)" && grep -qF 'Arc<dyn AwsCredentialsSource>' crates/betterlite-vertex/src/genai/session/provider.rs
+      why: betterlite-python still defines a moved type, or a user agent, tracing sink or UnavailableAws copy is left
+      run: test -z "$(grep -rnE 'struct (NativeContentConfig|NativeClients|GenaiCall|UnavailableAws)\b|enum (GenaiConfigError|Entry)\b|fn (user_agent|logging_env|native_request|gemini_key|configured_credentials|exposed_headers|request_of)\(' crates/betterlite-python/src/genai crates/betterlite-python/src/video_calls/clients.rs crates/betterlite-python/src/video_edits/session.rs)" && test -z "$(grep -n 'struct TracingSink\|struct UnavailableAws' crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging/embedding.rs crates/betterlite-provider/src/anthropic_dispatch/gateway/logging.rs crates/betterlite-server/src/server/chat_setup/vertex_embedding/executor.rs)" && grep -qF 'Arc<dyn AwsCredentialsSource>' crates/betterlite-vertex/src/genai/session/provider.rs
 oracle_cases: []
 deviations: []
 out_of_scope:
   - "The proxy's GenerateContentDispatch that calls this session: B10178."
-  - "UnavailableAws and its server twin in crates/betterlite-server/src/server/chat_setup/vertex_embedding/executor.rs L28-L38: the AWS credential chain work replaces both, and this task only moves the value into the constructor."
+  - "A production AWS credential source for Vertex workload identity pools: the AWS credential chain work replaces the one UnavailableAws this task leaves, at the constructors that pass it."
   - "TracingSink in crates/betterlite-core/src/api/passthrough_call/logging.rs L75-L89: B10164 and B10166 hold that folder; whichever lands last points it at betterlite-logging's sink."
   - "Python's `static NEXT_CALL` call counter (genai/logging.rs L21) stays with logging_state; a per-session counter is a separate change."
   - "The Vertex token cache: the moved lookup still loads credentials on every call, as B7844 does."
