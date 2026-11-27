@@ -13,8 +13,8 @@ use super::result::{BatchCreateOutcome, BatchCreateResult, BatchDiagnostic, debu
 
 const CREATE_CALL_TYPE: &str = "acreate_batch";
 
-pub(crate) struct CreateHook<'a, Stages> {
-    pub(crate) stages: &'a Stages,
+pub(crate) struct CreateHook<'hook, Stages> {
+    pub(crate) stages: &'hook Stages,
 }
 
 impl<Stages: BatchPrecallStages> CreateHook<'_, Stages> {
@@ -41,16 +41,17 @@ impl<Stages: BatchPrecallStages> CreateHook<'_, Stages> {
             )));
             return Ok(passed(data, diagnostics));
         };
-        let file_id = file_id.to_owned();
+        let file_id_owned = file_id.to_owned();
         let scopes = fields::enqueued_scopes(&call.principal)?;
         let attempt = CreateAttempt {
             principal: &call.principal,
-            file_id: &file_id,
+            file_id: &file_id_owned,
             scopes: &scopes,
             data: &mut data,
             diagnostics: &mut diagnostics,
+            stages: self.stages,
         };
-        match attempt.run(self.stages).await {
+        match attempt.run().await {
             Ok(outcome) => Ok(BatchCreateResult {
                 data,
                 outcome,
@@ -71,7 +72,7 @@ impl<Stages: BatchPrecallStages> CreateHook<'_, Stages> {
         if let Some(http) = self.stages.http(failure) {
             return BatchCreateResult {
                 data,
-                outcome: BatchCreateOutcome::Raised(http.clone()),
+                outcome: BatchCreateOutcome::Raised(http),
                 diagnostics,
             };
         }
@@ -86,35 +87,25 @@ enum AttemptFailure<StagesError> {
     Stage(StagesError),
 }
 
-struct CreateAttempt<'a> {
-    principal: &'a BatchLimitPrincipal,
-    file_id: &'a str,
-    scopes: &'a [BatchEnqueuedTokenScope],
-    data: &'a mut RequestData,
-    diagnostics: &'a mut Vec<BatchDiagnostic>,
+struct CreateAttempt<'attempt, Stages> {
+    principal: &'attempt BatchLimitPrincipal,
+    file_id: &'attempt str,
+    scopes: &'attempt [BatchEnqueuedTokenScope],
+    data: &'attempt mut RequestData,
+    diagnostics: &'attempt mut Vec<BatchDiagnostic>,
+    stages: &'attempt Stages,
 }
 
-impl CreateAttempt<'_> {
-    async fn run<Stages: BatchPrecallStages>(
-        mut self,
-        stages: &Stages,
-    ) -> Result<BatchCreateOutcome, AttemptFailure<Stages::Error>> {
-        let decision = stages
+impl<Stages: BatchPrecallStages> CreateAttempt<'_, Stages> {
+    // count_input_file_usage, then the two counters the route reads afterwards
+    async fn run(mut self) -> Result<BatchCreateOutcome, AttemptFailure<Stages::Error>> {
+        let decision = self
+            .stages
             .should_skip(self.principal, self.data, !self.scopes.is_empty())
             .map_err(AttemptFailure::Stage)?;
         if decision.skip {
             return Ok(BatchCreateOutcome::Passed);
         }
-        let usage = self.record_usage(stages, &decision).await?;
-        self.settle(stages, &decision, &usage).await
-    }
-
-    // count_input_file_usage, then the two counters the route reads afterwards
-    async fn record_usage<Stages: BatchPrecallStages>(
-        &mut self,
-        stages: &Stages,
-        decision: &BatchPrecallSkip,
-    ) -> Result<BatchFileUsage, AttemptFailure<Stages::Error>> {
         // the source reads the provider only once the file will be processed
         let custom_llm_provider =
             fields::custom_llm_provider(self.data).map_err(AttemptFailure::Field)?;
@@ -128,7 +119,8 @@ impl CreateAttempt<'_> {
             data: self.data,
             descriptors: decision.descriptors.as_deref(),
         };
-        let usage = stages
+        let usage = self
+            .stages
             .account(self.principal, &request)
             .await
             .map_err(AttemptFailure::Stage)?;
@@ -137,18 +129,17 @@ impl CreateAttempt<'_> {
             usage.total_tokens, usage.request_count
         )));
         fields::insert_usage(self.data, &usage);
-        Ok(usage)
+        self.settle(&decision, &usage).await
     }
 
     // enqueued scopes reserve, a plain key charges, and a refusal returns without a success line
-    async fn settle<Stages: BatchPrecallStages>(
+    async fn settle(
         &mut self,
-        stages: &Stages,
         decision: &BatchPrecallSkip,
         usage: &BatchFileUsage,
     ) -> Result<BatchCreateOutcome, AttemptFailure<Stages::Error>> {
-        if self.scopes.is_empty() {
-            let rejection = stages
+        let refusal = if self.scopes.is_empty() {
+            self.stages
                 .charge(
                     self.principal,
                     self.data,
@@ -156,17 +147,18 @@ impl CreateAttempt<'_> {
                     decision.descriptors.as_deref(),
                 )
                 .await
-                .map_err(AttemptFailure::Stage)?;
-            return Ok(self.settled(
-                rejection,
-                "Batch rate limit check passed, counters incremented",
-            ));
-        }
-        let rejection = stages
-            .reserve(self.principal, self.data, usage, self.scopes)
-            .await
-            .map_err(AttemptFailure::Stage)?;
-        Ok(self.settled(rejection, "Batch enqueued-token reservation succeeded"))
+        } else {
+            self.stages
+                .reserve(self.principal, self.data, usage, self.scopes)
+                .await
+        };
+        let rejection = refusal.map_err(AttemptFailure::Stage)?;
+        let message = if self.scopes.is_empty() {
+            "Batch rate limit check passed, counters incremented"
+        } else {
+            "Batch enqueued-token reservation succeeded"
+        };
+        Ok(self.settled(rejection, message))
     }
 
     // a refusal returns without a success line
@@ -182,7 +174,7 @@ impl CreateAttempt<'_> {
     }
 }
 
-fn passed(data: RequestData, diagnostics: Vec<BatchDiagnostic>) -> BatchCreateResult {
+const fn passed(data: RequestData, diagnostics: Vec<BatchDiagnostic>) -> BatchCreateResult {
     BatchCreateResult {
         data,
         outcome: BatchCreateOutcome::Passed,

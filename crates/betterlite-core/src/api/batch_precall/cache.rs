@@ -20,11 +20,11 @@ const CACHE_FAILURE_PREFIX: &str = concat!(
 const SCAN_COUNT: usize = 100;
 const WARM_TTL_SECONDS: f64 = 60.0;
 
-pub(crate) struct RetrieveCache<'a, Memory, Remote> {
-    pub(crate) memory: &'a Memory,
-    pub(crate) remote: Option<&'a Remote>,
+pub(crate) struct RetrieveCache<'cache, Memory, Remote> {
+    pub(crate) memory: &'cache Memory,
+    pub(crate) remote: Option<&'cache Remote>,
     pub(crate) verbose_stdout: bool,
-    pub(crate) clock: &'a EpochClock,
+    pub(crate) clock: &'cache EpochClock,
     pub(crate) limits: ApiLimits,
 }
 

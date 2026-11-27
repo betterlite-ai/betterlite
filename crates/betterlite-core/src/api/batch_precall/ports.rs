@@ -51,7 +51,7 @@ pub trait BatchPrecallStages: Send + Sync {
     ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, Self::Error>> + Send;
 
     // the HTTPException the source re-raises instead of returning the request data
-    fn http(&self, error: &Self::Error) -> Option<&BatchHttpError>;
+    fn http(&self, error: &Self::Error) -> Option<BatchHttpError>;
 }
 
 #[derive(Debug, Clone)]
@@ -61,11 +61,11 @@ pub struct BatchPrecallSkip {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BatchAccountRequest<'a> {
-    pub file_id: &'a str,
-    pub custom_llm_provider: &'a str,
-    pub data: &'a RequestData,
-    pub descriptors: Option<&'a [BatchLimitDescriptor]>,
+pub struct BatchAccountRequest<'request> {
+    pub file_id: &'request str,
+    pub custom_llm_provider: &'request str,
+    pub data: &'request RequestData,
+    pub descriptors: Option<&'request [BatchLimitDescriptor]>,
 }
 
 // The per-request stash B1045 fills: the reservation a retrieve later saves or refunds, and the TPD refunds a failed create applies
@@ -79,7 +79,7 @@ pub trait BatchPrecallStash: Send + Sync {
 pub trait BatchRefundSink: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
-    fn run(
+    fn handle(
         &self,
         input: &BatchEnqueuedRefundInput,
     ) -> impl Future<Output = Result<BatchEnqueuedRefundResult, Self::Error>> + Send;
@@ -153,10 +153,10 @@ where
 {
     type Error = BatchEnqueuedRefundError;
 
-    async fn run(
+    async fn handle(
         &self,
         input: &BatchEnqueuedRefundInput,
     ) -> Result<BatchEnqueuedRefundResult, Self::Error> {
-        EnqueuedTokenRefund::run(self, input).await
+        Self::run(self, input).await
     }
 }

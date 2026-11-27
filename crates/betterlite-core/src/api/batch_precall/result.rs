@@ -28,14 +28,14 @@ pub struct BatchDiagnostic {
 }
 
 // The create pre-call's answer: the request data the route continues with, and what the hook did to it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchCreateResult {
     pub data: RequestData,
     pub outcome: BatchCreateOutcome,
     pub diagnostics: Vec<BatchDiagnostic>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BatchCreateOutcome {
     Passed,
     Rejected(Box<ProxyRateLimitError>),
@@ -43,7 +43,7 @@ pub enum BatchCreateOutcome {
 }
 
 // The retrieve pre-call's answer: the warm-up's diagnostics, the cache read, and the HTTPException the source re-raises
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatchRetrieveResult {
     pub data: RequestData,
     pub cached: Option<Json>,
@@ -69,14 +69,14 @@ pub struct BatchTerminalResult {
     pub diagnostics: Vec<BatchDiagnostic>,
 }
 
-pub(crate) fn debug(message: String) -> BatchDiagnostic {
+pub(crate) const fn debug(message: String) -> BatchDiagnostic {
     BatchDiagnostic {
         level: BatchDiagnosticLevel::Debug,
         message,
     }
 }
 
-pub(crate) fn error(message: String) -> BatchDiagnostic {
+pub(crate) const fn error(message: String) -> BatchDiagnostic {
     BatchDiagnostic {
         level: BatchDiagnosticLevel::Error,
         message,

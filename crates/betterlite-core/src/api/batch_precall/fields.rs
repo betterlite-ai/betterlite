@@ -36,10 +36,10 @@ pub(crate) fn enqueued_scopes(
     Ok(resolve_enqueued_scopes(&caller))
 }
 
-pub(crate) fn principal_text<'a>(
-    principal: &'a BatchLimitPrincipal,
+pub(crate) fn principal_text<'value>(
+    principal: &'value BatchLimitPrincipal,
     name: &'static str,
-) -> Result<Option<&'a str>, BatchPrecallError> {
+) -> Result<Option<&'value str>, BatchPrecallError> {
     match principal.0.get(name) {
         None | Some(JsonData::Null) => Ok(None),
         Some(JsonData::String(text)) => Ok(Some(text)),

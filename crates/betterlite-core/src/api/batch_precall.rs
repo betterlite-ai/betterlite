@@ -32,13 +32,13 @@ pub enum BatchPrecallError {
 }
 
 // The two batch hooks over their injected dependencies, plus the create-failure and terminal-retrieve refunds the stash carries
-pub struct BatchPrecall<'a, Stages, Stash, Refunds, Applier, Memory, Remote> {
-    pub stages: &'a Stages,
-    pub stash: &'a Stash,
-    pub refunds: &'a Refunds,
-    pub applier: &'a Applier,
-    pub memory: &'a Memory,
-    pub remote: Option<&'a Remote>,
+pub struct BatchPrecall<'precall, Stages, Stash, Refunds, Applier, Memory, Remote> {
+    pub stages: &'precall Stages,
+    pub stash: &'precall Stash,
+    pub refunds: &'precall Refunds,
+    pub applier: &'precall Applier,
+    pub memory: &'precall Memory,
+    pub remote: Option<&'precall Remote>,
     pub verbose_stdout: bool,
     pub clock: EpochClock,
     pub limits: ApiLimits,
@@ -58,14 +58,17 @@ where
         &self,
         input: &BatchPrecallInput,
     ) -> Result<BatchPrecallResult, BatchPrecallError> {
+        let refunds = RefundHook {
+            stash: self.stash,
+            refunds: self.refunds,
+            applier: self.applier,
+        };
         match &input.call {
             BatchPrecallCall::Create(call) => {
-                let result = CreateHook {
+                let hook = CreateHook {
                     stages: self.stages,
-                }
-                .run(call)
-                .await?;
-                Ok(BatchPrecallResult::Create(result))
+                };
+                Ok(BatchPrecallResult::Create(hook.run(call).await?))
             }
             BatchPrecallCall::Retrieve(call) => {
                 let cache = RetrieveCache {
@@ -75,29 +78,14 @@ where
                     clock: &self.clock,
                     limits: self.limits,
                 };
-                let result = cache.run(call).await?;
-                Ok(BatchPrecallResult::Retrieve(result))
+                Ok(BatchPrecallResult::Retrieve(cache.run(call).await?))
             }
-            BatchPrecallCall::CreateFailure => {
-                let result = RefundHook {
-                    stash: self.stash,
-                    refunds: self.refunds,
-                    applier: self.applier,
-                }
-                .create_failure()
-                .await;
-                Ok(BatchPrecallResult::CreateFailure(result))
-            }
-            BatchPrecallCall::TerminalRetrieve(call) => {
-                let result = RefundHook {
-                    stash: self.stash,
-                    refunds: self.refunds,
-                    applier: self.applier,
-                }
-                .terminal(call)
-                .await;
-                Ok(BatchPrecallResult::TerminalRetrieve(result))
-            }
+            BatchPrecallCall::CreateFailure => Ok(BatchPrecallResult::CreateFailure(
+                refunds.create_failure().await,
+            )),
+            BatchPrecallCall::TerminalRetrieve(call) => Ok(BatchPrecallResult::TerminalRetrieve(
+                refunds.terminal(call).await,
+            )),
         }
     }
 }
