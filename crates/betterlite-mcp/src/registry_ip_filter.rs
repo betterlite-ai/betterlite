@@ -21,7 +21,7 @@ pub fn filter_server_ids_by_ip_with_info(
         };
     };
     let mut allowed_server_ids = Vec::with_capacity(server_ids.len());
-    let mut ip_blocked_count = 0;
+    let mut ip_blocked_count = 0_usize;
     for server_id in server_ids {
         let Some(server) = registry.server_by_id(server_id, None) else {
             continue;
