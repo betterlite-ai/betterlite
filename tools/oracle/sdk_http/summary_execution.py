@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict
-from typing import Final, Literal, Protocol, cast
+from typing import Any, Final, Literal, Protocol, cast
 
 import litellm
 from litellm.llms.anthropic.pass_through.context_management import (
@@ -16,8 +16,6 @@ from litellm.llms.anthropic.pass_through.context_management.editors import (
     apply_compact_20260112,
     compact,
 )
-from litellm.proxy import proxy_server
-from litellm.proxy._types import UserAPIKeyAuth
 from litellm.router import Router
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -81,6 +79,30 @@ class Call(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     scenarios: list[Scenario]
+
+
+# the one principal field the editor reads; the SDK side cannot import the proxy's UserAPIKeyAuth
+class Principal(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    allowed_model_region: str | None = None
+
+
+# the proxy general_settings values the editor's setting readers answer, without the proxy server
+class ModelSetting:
+    def __init__(self, value: str | None) -> None:
+        self.value = value
+
+    def __call__(self) -> str | None:
+        return self.value
+
+
+class MaxTokensSetting:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+    def __call__(self) -> int:
+        return self.value
 
 
 class SummaryCall(BaseModel):
@@ -148,27 +170,33 @@ class PolicyCheck:
 
     async def access(
         self,
-        user_api_key_auth: UserAPIKeyAuth | None,
+        user_api_key_auth: Principal | None,
         summary_model: str,
         llm_router: Router | None,
     ) -> bool:
-        del user_api_key_auth, summary_model, llm_router
+        del summary_model, llm_router
+        if user_api_key_auth is None:
+            return True
         return self.note("access")
 
     async def budget(
         self,
-        user_api_key_auth: UserAPIKeyAuth | None,
+        user_api_key_auth: Principal | None,
         summary_model: str,
     ) -> bool:
-        del user_api_key_auth, summary_model
+        del summary_model
+        if user_api_key_auth is None:
+            return True
         return self.note("budget")
 
     async def rate_limit(
         self,
-        user_api_key_auth: UserAPIKeyAuth | None,
+        user_api_key_auth: Principal | None,
         summary_model: str,
     ) -> bool:
-        del user_api_key_auth, summary_model
+        del summary_model
+        if user_api_key_auth is None:
+            return True
         return self.note("rate")
 
 
@@ -217,10 +245,19 @@ def patch_checks(policy: PolicyCheck) -> None:
     object.__setattr__(compact, "_check_summary_model_rate_limit", policy.rate_limit)
 
 
+def patch_settings(scenario: Scenario) -> None:
+    object.__setattr__(
+        compact, "_read_summary_model_setting", ModelSetting(scenario.summary_model)
+    )
+    object.__setattr__(
+        compact, "_read_summary_max_tokens_setting", MaxTokensSetting(scenario.max_tokens)
+    )
+
+
 async def call_editor(
     scenario: Scenario,
     llm_router: Router | None,
-    principal: UserAPIKeyAuth | None,
+    principal: Principal | None,
 ) -> PolyfillResult:
     return await apply_compact_20260112(
         model=scenario.model,
@@ -230,18 +267,14 @@ async def call_editor(
         edit_spec=cast(dict[str, object], scenario.edit_spec),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1166
         litellm_metadata=scenario.metadata,
         llm_router=llm_router,
-        user_api_key_auth=principal,
+        user_api_key_auth=cast(Any, principal),
     )
 
 
 async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue]:
-    updates: dict[str, JsonValue] = {
-        "context_management_summary_model": scenario.summary_model,
-        "context_management_summary_max_tokens": scenario.max_tokens,
-    }
-    proxy_server.general_settings = updates
     policy = PolicyCheck(scenario.policy, record=scenario.record_steps)
     patch_checks(policy)
+    patch_settings(scenario)
     object.__setattr__(litellm, "token_counter", ScriptedCounter(scenario.counter))
     deployment = Deployment(api_base, scenario.route)
     llm_router: Router | None = None
@@ -253,7 +286,7 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
     principal = (
         None
         if scenario.principal is None
-        else UserAPIKeyAuth.model_validate(scenario.principal)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+        else Principal.model_validate(scenario.principal)
     )
     capture = LogCapture()
     logger = logging.getLogger("LiteLLM")
