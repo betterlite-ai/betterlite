@@ -107,9 +107,10 @@ fn listed_managed_file(
     configured_bucket_name: &str,
     allow_legacy: bool,
 ) -> Result<Option<FileObject>, S3ListingError> {
-    let Some(object_key) = entry.key.as_deref().filter(|key| !key.is_empty()) else {
+    let object_key = entry.key.as_deref().unwrap_or_default();
+    if object_key.is_empty() {
         return Ok(None);
-    };
+    }
     let file_id = format!("s3://{bucket_name}/{object_key}");
     let configured = [configured_bucket_name.to_owned()];
     if validate_configured_file_id(&file_id, &configured, allow_legacy).is_err() {

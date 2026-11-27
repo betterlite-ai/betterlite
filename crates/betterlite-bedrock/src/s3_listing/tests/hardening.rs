@@ -18,6 +18,8 @@ use crate::s3_access::S3AccessParams;
 #[test]
 fn s3_listing_rejects_dtd_and_limits() {
     rejects_doctypes_and_entities();
+    resolves_predefined_entities();
+    rejects_unbound_prefixes();
     enforces_body_and_depth_limits();
     keeps_only_root_text();
 }
@@ -52,6 +54,25 @@ fn rejects_doctypes_and_entities() {
             .as_deref(),
         Some("a&b")
     );
+}
+
+fn resolves_predefined_entities() {
+    let escaped = b"<ListBucketResult><Name>a&lt;b&gt;c&apos;d&quot;e</Name></ListBucketResult>";
+    let listing = decode_s3_listing(escaped, &DecodeLimits::DEFAULT).unwrap();
+    assert_eq!(listing.name.as_deref(), Some("a<b>c'd\"e"));
+}
+
+fn rejects_unbound_prefixes() {
+    let element = b"<s3:ListBucketResult/>";
+    assert!(matches!(
+        decode_s3_listing(element, &DecodeLimits::DEFAULT),
+        Err(S3ListingError::UnboundPrefix { prefix }) if prefix == "s3"
+    ));
+    let attribute = b"<ListBucketResult p:x=\"1\"/>";
+    assert!(matches!(
+        decode_s3_listing(attribute, &DecodeLimits::DEFAULT),
+        Err(S3ListingError::UnboundPrefix { prefix }) if prefix == "p"
+    ));
 }
 
 fn enforces_body_and_depth_limits() {
