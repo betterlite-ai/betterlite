@@ -7,7 +7,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_config::sections::jwt_settings::records::{RoutingOverride, Selector};
 use rstest::rstest;
-use serde_json::json;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -53,7 +52,10 @@ impl<S: Subscriber> Layer<S> for Recorder {
     }
 }
 
-fn observed<T, F: FnOnce() -> T>(run: F) -> (T, Vec<Logged>) {
+fn observed<T, F>(run: F) -> (T, Vec<Logged>)
+where
+    F: FnOnce() -> T,
+{
     let recorder = Recorder::default();
     let subscriber = tracing_subscriber::registry().with(recorder.clone());
     let value = with_default(subscriber, run);
@@ -65,13 +67,13 @@ fn document(raw: &str) -> TypedValue {
     serde_json::from_str(raw).unwrap()
 }
 
-fn one(selector: &str) -> Option<Selector> {
-    Some(Selector::One(selector.to_owned()))
+fn one(selector: &str) -> Selector {
+    Selector::One(selector.to_owned())
 }
 
-fn many(selectors: &[&str]) -> Option<Selector> {
+fn many(selectors: &[&str]) -> Selector {
     let values = selectors.iter().map(|value| String::from(*value)).collect();
-    Some(Selector::Many(values))
+    Selector::Many(values)
 }
 
 fn rule(raw: &str) -> RoutingOverride {
@@ -96,16 +98,16 @@ fn messages(events: &[Logged]) -> Vec<&str> {
 #[rstest]
 #[case::null_selector_matches_absent_claim(None, "{}", true)]
 #[case::null_selector_matches_null_claim(None, r#"{"iss": null}"#, true)]
-#[case::absent_claim_never_matches(one("issuer"), "{}", false)]
-#[case::null_claim_never_matches(one("issuer"), r#"{"iss": null}"#, false)]
-#[case::empty_selector_list_never_matches(many(&[]), r#"{"iss": "issuer"}"#, false)]
-#[case::empty_claim_list_never_matches(one("issuer"), r#"{"iss": []}"#, false)]
-#[case::empty_selector_and_claim_lists_never_match(many(&[]), r#"{"iss": []}"#, false)]
-#[case::single_selector_matches_string_claim(one("issuer"), r#"{"iss": "issuer"}"#, true)]
-#[case::single_selector_misses_another_claim(one("issuer"), r#"{"iss": "other"}"#, false)]
-#[case::empty_selector_matches_empty_claim(one(""), r#"{"iss": ""}"#, true)]
-#[case::empty_selector_misses_nonempty_claim(one(""), r#"{"iss": "a"}"#, false)]
-#[case::selector_list_matches_claim_list(many(&["a", "b"]), r#"{"iss": ["b"]}"#, true)]
+#[case::absent_claim_never_matches(Some(one("issuer")), "{}", false)]
+#[case::null_claim_never_matches(Some(one("issuer")), r#"{"iss": null}"#, false)]
+#[case::empty_selector_list_never_matches(Some(many(&[])), r#"{"iss": "issuer"}"#, false)]
+#[case::empty_claim_list_never_matches(Some(one("issuer")), r#"{"iss": []}"#, false)]
+#[case::empty_selector_and_claim_lists_never_match(Some(many(&[])), r#"{"iss": []}"#, false)]
+#[case::single_selector_matches_string_claim(Some(one("issuer")), r#"{"iss": "issuer"}"#, true)]
+#[case::single_selector_misses_another_claim(Some(one("issuer")), r#"{"iss": "other"}"#, false)]
+#[case::empty_selector_matches_empty_claim(Some(one("")), r#"{"iss": ""}"#, true)]
+#[case::empty_selector_misses_nonempty_claim(Some(one("")), r#"{"iss": "a"}"#, false)]
+#[case::selector_list_matches_claim_list(Some(many(&["a", "b"])), r#"{"iss": ["b"]}"#, true)]
 fn selector_null_absent_and_empty_lists(
     #[case] selector: Option<Selector>,
     #[case] claims: &str,
@@ -116,38 +118,47 @@ fn selector_null_absent_and_empty_lists(
 }
 
 #[rstest]
-#[case::space_splits_scope("openid profile", one("profile"), true, true)]
-#[case::unsplit_scope_keeps_the_whole_string("openid profile", one("profile"), false, false)]
-#[case::unsplit_scope_matches_its_full_text("openid profile", one("openid profile"), false, true)]
+#[case::space_splits_scope("openid profile", Some(one("profile")), true, true)]
+#[case::unsplit_scope_keeps_the_whole_string("openid profile", Some(one("profile")), false, false)]
+#[case::unsplit_scope_matches_its_full_text(
+    "openid profile",
+    Some(one("openid profile")),
+    false,
+    true
+)]
 #[case::split_scope_matches_no_multiword_selector(
     "openid profile",
-    one("openid profile"),
+    Some(one("openid profile")),
     true,
     false
 )]
-#[case::padded_scope_keeps_its_padding("  openid  ", one("openid"), true, false)]
-#[case::padded_scope_matches_the_padded_selector("  openid  ", one("  openid  "), true, true)]
-#[case::split_drops_the_empty_pieces(" a  b ", one("b"), true, true)]
-#[case::split_space_never_equals_one_token(" a  b ", one("a b"), true, false)]
-#[case::tab_never_splits("a\tb", one("a"), true, false)]
-#[case::tab_keeps_the_exact_text("a\tb", one("a\tb"), true, true)]
-#[case::nonbreaking_space_never_splits("a\u{a0}b", one("a"), true, false)]
-#[case::whitespace_only_scope_is_kept(" ", one(" "), true, true)]
-#[case::whitespace_only_scope_is_not_empty(" ", one(""), true, false)]
-#[case::separator_before_the_split_is_stripped("\u{1c}a b", one("b"), true, true)]
-#[case::separator_inside_a_token_never_splits("a\u{1c}b", one("a"), true, false)]
-#[case::single_token_scope_matches("openid", one("openid"), true, true)]
+#[case::padded_scope_keeps_its_padding("  openid  ", Some(one("openid")), true, false)]
+#[case::padded_scope_matches_the_padded_selector("  openid  ", Some(one("  openid  ")), true, true)]
+#[case::split_drops_the_empty_pieces(" a  b ", Some(one("b")), true, true)]
+#[case::split_space_never_equals_one_token(" a  b ", Some(one("a b")), true, false)]
+#[case::tab_never_splits("a\tb", Some(one("a")), true, false)]
+#[case::tab_keeps_the_exact_text("a\tb", Some(one("a\tb")), true, true)]
+#[case::nonbreaking_space_never_splits("a\u{a0}b", Some(one("a")), true, false)]
+#[case::whitespace_only_scope_is_kept(" ", Some(one(" ")), true, true)]
+#[case::whitespace_only_scope_is_not_empty(" ", Some(one("")), true, false)]
+#[case::separator_before_the_split_is_stripped("\u{1c}a b", Some(one("b")), true, true)]
+#[case::separator_inside_a_token_never_splits("a\u{1c}b", Some(one("a")), true, false)]
+#[case::single_token_scope_matches("openid", Some(one("openid")), true, true)]
 fn scope_splits_on_ascii_space_only(
-    #[case] claim: &str,
+    #[case] scope: &str,
     #[case] selector: Option<Selector>,
     #[case] split_space_delimited: bool,
     #[case] expected: bool,
 ) {
-    let claims = TypedValue {
-        json: json!({ "scope": claim }),
-    };
-    let found =
-        routing_selector_matches_claim(selector.as_ref(), &claims, "scope", split_space_delimited);
+    let found = routing_selector_matches_claim(
+        selector.as_ref(),
+        &document(&format!(
+            r#"{{"scope": {}}}"#,
+            serde_json::to_string(scope).unwrap()
+        )),
+        "scope",
+        split_space_delimited,
+    );
     assert_eq!(found, expected);
 }
 
@@ -155,13 +166,13 @@ fn scope_splits_on_ascii_space_only(
 fn scope_list_claims_never_split() {
     let claims = document(r#"{"scope": ["openid profile"]}"#);
     assert!(!routing_selector_matches_claim(
-        one("profile").as_ref(),
+        Some(&one("profile")),
         &claims,
         "scope",
         true
     ));
     assert!(routing_selector_matches_claim(
-        one("openid profile").as_ref(),
+        Some(&one("openid profile")),
         &claims,
         "scope",
         true
@@ -249,25 +260,25 @@ fn selector_and_claim_cross_product(
     #[case] claims: &str,
     #[case] expected: bool,
 ) {
-    let selector = many(selectors);
+    let selector = Some(many(selectors));
     let values = document(claims);
     let found = routing_selector_matches_claim(selector.as_ref(), &values, "iss", false);
     assert_eq!(found, expected);
 }
 
 #[rstest]
-#[case::number_claim(r#"{"iss": 5}"#, one("5"), false)]
-#[case::float_claim(r#"{"iss": 1.5}"#, one("1.5"), false)]
-#[case::bool_claim(r#"{"iss": true}"#, one("true"), false)]
-#[case::object_claim(r#"{"iss": {"a": 1}}"#, one(r#"{"a": 1}"#), false)]
-#[case::number_in_a_list(r#"{"iss": [5]}"#, one("5"), false)]
-#[case::other_types_in_a_list(r#"{"iss": [true, {"a": 1}]}"#, one("true"), false)]
-#[case::string_members_still_count(r#"{"iss": ["admin", 5]}"#, one("admin"), true)]
-#[case::string_members_match_patterns(r#"{"iss": [7, "admin"]}"#, one("adm*"), true)]
-#[case::null_members_are_skipped(r#"{"iss": [null, "admin"]}"#, one("admin"), true)]
-#[case::nested_lists_have_no_value(r#"{"iss": [["a"]]}"#, one("a"), false)]
-#[case::only_non_strings_never_match_a_star(r#"{"iss": [5, true]}"#, one("*"), false)]
-#[case::an_empty_object_matches_no_empty_selector(r#"{"iss": {}}"#, one(""), false)]
+#[case::number_claim(r#"{"iss": 5}"#, Some(one("5")), false)]
+#[case::float_claim(r#"{"iss": 1.5}"#, Some(one("1.5")), false)]
+#[case::bool_claim(r#"{"iss": true}"#, Some(one("true")), false)]
+#[case::object_claim(r#"{"iss": {"a": 1}}"#, Some(one(r#"{"a": 1}"#)), false)]
+#[case::number_in_a_list(r#"{"iss": [5]}"#, Some(one("5")), false)]
+#[case::other_types_in_a_list(r#"{"iss": [true, {"a": 1}]}"#, Some(one("true")), false)]
+#[case::string_members_still_count(r#"{"iss": ["admin", 5]}"#, Some(one("admin")), true)]
+#[case::string_members_match_patterns(r#"{"iss": [7, "admin"]}"#, Some(one("adm*")), true)]
+#[case::null_members_are_skipped(r#"{"iss": [null, "admin"]}"#, Some(one("admin")), true)]
+#[case::nested_lists_have_no_value(r#"{"iss": [["a"]]}"#, Some(one("a")), false)]
+#[case::only_non_strings_never_match_a_star(r#"{"iss": [5, true]}"#, Some(one("*")), false)]
+#[case::an_empty_object_matches_no_empty_selector(r#"{"iss": {}}"#, Some(one("")), false)]
 fn non_string_claims_never_match(
     #[case] claims: &str,
     #[case] selector: Option<Selector>,

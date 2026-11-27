@@ -60,10 +60,10 @@ pub fn routing_selector_matches_claim(
     claim: &str,
     split_space_delimited: bool,
 ) -> bool {
-    let Some(selector) = selector else {
+    let Some(required) = selector else {
         return true;
     };
-    let selectors: &[String] = match selector {
+    let selectors: &[String] = match required {
         Selector::One(one) => slice::from_ref(one),
         Selector::Many(many) => many.as_slice(),
     };
@@ -91,16 +91,16 @@ pub fn should_route_jwt_to_oauth2_override(
     token: &str,
     overrides: Option<&[RoutingOverride]>,
 ) -> bool {
-    let Some(overrides) = overrides else {
+    let Some(rules) = overrides else {
         return false;
     };
-    if overrides.is_empty() {
+    if rules.is_empty() {
         return false;
     }
     let Some(claims) = unverified_claims(token) else {
         return false;
     };
-    for rule in overrides {
+    for rule in rules {
         if rule.path == OverridePath::Oauth2 && matches_routing_override(&claims, rule) {
             tracing::debug!("JWT routing override matched. Routing token to OAuth2 introspection.");
             return true;
