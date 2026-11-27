@@ -1,0 +1,8 @@
+kind: helper
+name: identity-store-auth-no-database-auth-error
+call:
+  identity_store:
+    aspect: error
+    kind: no_database
+env: {}
+compare: {ignore: []}
