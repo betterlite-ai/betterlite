@@ -13,11 +13,12 @@ use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_prompts::arguments::json::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use secrecy::SecretString;
-use tokio::io::AsyncReadExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::sleep;
 use url::Url;
@@ -25,9 +26,11 @@ use uuid::Uuid;
 
 use crate::api::messages_context_clear::constants::COMPACT_SUMMARY_SYSTEM_PREFIX;
 use crate::api::messages_context_clear::result::CompactionKind;
-use crate::api::summary_execution::completion::ExecutorCompletion;
+use crate::api::summary_execution::completion::{
+    ExecutorCompletion, SummaryCall, SummaryCompletion as _,
+};
 
-use super::support::{Fixture, Port, Sample, capture_logs, run};
+use super::support::{Fixture, Port, Sample, capture_logs, list, object, run};
 
 const MODEL: &str = "main-model";
 const MOCK_ID: &str = "sum-mock";
@@ -184,6 +187,103 @@ async fn a_max_tokens_past_u32_fails_the_summary_call() {
             "summary call failed: the request body is not a valid chat completion request"
         )
     );
+}
+
+// litellm.completion drops every None message field before the provider call, so thinking_blocks never reaches the wire
+#[tokio::test]
+async fn the_summary_wire_drops_null_message_fields() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let executor = executor(BTreeMap::new(), UsageDefaults::default());
+    let deployment = deployment("wire", &format!("http://{address}/v1"));
+    let completion = ExecutorCompletion {
+        executor: &executor,
+        deployment: &deployment,
+    };
+    let messages = list(
+        r#"[
+            {"role":"system","content":"SYS"},
+            {"role":"assistant","content":"ack","thinking_blocks":null,"reasoning_content":"why"},
+            {"role":"user","content":"question"}
+        ]"#,
+    );
+    let metadata = object("{}");
+    let call = SummaryCall {
+        model: "sum",
+        messages: &messages,
+        max_tokens: 4096,
+        timeout_seconds: 60.0,
+        metadata: &metadata,
+        user: None,
+        allowed_model_region: None,
+    };
+    let (answer, request) = tokio::join!(completion.complete(call), answer_with(listener));
+    let answer = answer.expect("the summary call runs");
+    assert!(answer.usage.is_some(), "the provider answered with usage");
+    let body = object(request.split_once("\r\n\r\n").expect("a head and a body").1);
+    let Some(Json::List(sent)) = body.get("messages") else {
+        panic!("the provider body carries the messages");
+    };
+    let Some(Json::Object(assistant)) = sent.get(1) else {
+        panic!("the second message is the assistant turn");
+    };
+    assert!(
+        !assistant.contains_key("thinking_blocks"),
+        "the null field is dropped: {assistant:?}"
+    );
+    assert_eq!(
+        assistant.get("reasoning_content").and_then(Json::as_str),
+        Some("why"),
+        "a non-null field stays"
+    );
+}
+
+// reads one whole request so the client finishes writing, then answers with a summary
+async fn answer_with(listener: TcpListener) -> String {
+    let (mut stream, _) = listener.accept().await.expect("the connection");
+    let request = read_http_request(&mut stream).await;
+    let answer = br#"{"id":"chatcmpl-1","object":"chat.completion","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"<summary> NEW </summary>"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+    let head = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        answer.len()
+    );
+    stream
+        .write_all(head.as_bytes())
+        .await
+        .expect("the response head");
+    stream.write_all(answer).await.expect("the response body");
+    request
+}
+
+async fn read_http_request(stream: &mut tokio::net::TcpStream) -> String {
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    loop {
+        if let Some(head_end) = received
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n".as_slice())
+        {
+            let head =
+                std::str::from_utf8(&received[..head_end]).expect("the request head is UTF-8");
+            let length = head
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().expect("a content length"))
+                })
+                .expect("a content length");
+            if received.len() >= head_end + 4 + length {
+                break;
+            }
+        }
+        let read = stream.read(&mut chunk).await.expect("the request bytes");
+        assert_ne!(read, 0, "the client sends its whole request");
+        received.extend_from_slice(&chunk[..read]);
+    }
+    String::from_utf8(received).expect("the request is UTF-8")
 }
 
 async fn hold_open(listener: TcpListener) {

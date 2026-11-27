@@ -12,6 +12,7 @@ use serde_json::Number;
 use crate::api::summary_execution::extract::{
     CompletionAnswer, CompletionChoice, CompletionMessage, CompletionUsage,
 };
+use crate::message_utilities::validators::fix_openai_messages;
 
 // the keyword arguments _call_summary_model hands to router.acompletion or litellm.acompletion
 pub struct SummaryCall<'call> {
@@ -59,9 +60,13 @@ impl SummaryCompletion for ExecutorCompletion<'_> {
         &self,
         call: SummaryCall<'_>,
     ) -> Result<CompletionAnswer, SummaryCallFailure> {
+        // litellm.completion validates the messages and drops their None fields before any provider call
+        let messages = fix_openai_messages(call.messages).map_err(|error| SummaryCallFailure {
+            message: error.to_string(),
+        })?;
         let wire = SummaryWire {
             model: call.model,
-            messages: call.messages,
+            messages: &messages,
             max_tokens: call.max_tokens,
             user: call.user,
         };
