@@ -125,10 +125,10 @@ fn linear_target_length(
     target_rate: i64,
 ) -> PyResult<i64> {
     let builtins = py.import("builtins")?;
-    let rate = builtins
-        .getattr("float")?
-        .call1((PyInt::new(py, source_rate),))?;
-    let duration = size.call_method1("__truediv__", (&rate,))?;
+    let to_float = builtins.getattr("float")?;
+    let rate = to_float.call1((PyInt::new(py, source_rate),))?;
+    let count = to_float.call1((size,))?;
+    let duration = count.call_method1("__truediv__", (&rate,))?;
     let product = duration.call_method1("__mul__", (PyInt::new(py, target_rate),))?;
     let rounded = builtins.getattr("round")?.call1((&product,))?;
     as_int(py, &rounded)
