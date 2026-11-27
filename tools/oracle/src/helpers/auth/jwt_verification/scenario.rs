@@ -127,7 +127,7 @@ async fn step_answer(fixture: &Fixture<'_>, step: &Step) -> StepAnswer {
 
 async fn auth_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) {
     match fixture.verifier.auth_jwt(token, fixture.source).await {
-        Ok(payload) => (payload.json, None),
+        Ok(payload) => (json_value(payload.json), None),
         Err(error) => (Json::Null, Some(auth_failure(&error))),
     }
 }
@@ -147,8 +147,25 @@ fn decode_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) 
         None,
         false,
     ) {
-        Ok(payload) => (payload.json, None),
+        Ok(payload) => (json_value(payload.json), None),
         Err(error) => (Json::Null, Some(auth_failure(&error))),
+    }
+}
+
+// TypedValue carries serde_json's value, and the answer reports this crate's JSON type.
+fn json_value(value: serde_json::Value) -> Json {
+    match value {
+        serde_json::Value::Null => Json::Null,
+        serde_json::Value::Bool(flag) => Json::Bool(flag),
+        serde_json::Value::Number(number) => Json::Number(number),
+        serde_json::Value::String(text) => Json::Text(text),
+        serde_json::Value::Array(items) => Json::List(items.into_iter().map(json_value).collect()),
+        serde_json::Value::Object(fields) => Json::Object(
+            fields
+                .into_iter()
+                .map(|(field, value)| (field, json_value(value)))
+                .collect(),
+        ),
     }
 }
 
