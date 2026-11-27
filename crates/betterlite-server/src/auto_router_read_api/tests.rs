@@ -1,9 +1,12 @@
 #![cfg(test)]
 
 mod behaviors;
+mod corpus;
 mod postgres;
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::error::Error as _;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -15,10 +18,13 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use betterlite_db::autorouter_facts::session::bounded_session_id;
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
 use betterlite_db::managed_resource_rows::wire::RowTimestamp;
-use chrono::NaiveDate;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_logging::analytics::python::FormatError;
+use chrono::{NaiveDate, NaiveDateTime};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use sha2::{Digest as _, Sha256};
@@ -34,6 +40,7 @@ use super::query::{
 };
 use super::service::{benchmarks_for, session_for};
 use super::store::AutoRouterReadStore;
+use crate::benchmark_aggregates::decode::DecodeError;
 use crate::benchmark_aggregates::row::SessionAggRow;
 use crate::benchmark_aggregates::window::{BenchmarkWindow, WindowError};
 use crate::plugin_routes::routes::Identity;
@@ -737,4 +744,20 @@ fn the_registry_narrows_to_the_router_key() {
         Some("auto_router/complexity_router")
     );
     assert_eq!(deployments[2].deployment().model, None);
+}
+
+// the 500 store failures keep their typed cause instead of a flattened string
+#[test]
+fn every_store_failure_answers_500_with_its_source() {
+    let failures = [
+        ReadApiError::from(DbError::<Infallible>::NoDbConnected),
+        ReadApiError::from(TableError::MissingRow),
+        ReadApiError::from(DecodeError::TooLarge { bytes: 2, limit: 1 }),
+        ReadApiError::from("nope".parse::<NaiveDateTime>().unwrap_err()),
+        ReadApiError::from(FormatError::Utf8 {
+            source: String::from_utf8(vec![0xff]).unwrap_err(),
+        }),
+    ];
+    assert!(failures.iter().all(|failure| failure.source().is_some()));
+    assert_eq!(failures.map(|failure| failure.status_code()), [500_u16; 5]);
 }
