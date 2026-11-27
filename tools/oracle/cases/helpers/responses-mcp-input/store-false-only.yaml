@@ -1,0 +1,15 @@
+kind: helper
+name: store-false-only
+call:
+  b10124:
+    calls:
+      - function: store
+        call_params: {}
+      - function: store
+        call_params: {store: null}
+      - function: store
+        call_params: {store: false}
+      - function: store
+        call_params: {store: true}
+env: {}
+compare: {ignore: []}

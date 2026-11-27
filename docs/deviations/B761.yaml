@@ -1,0 +1,24 @@
+task: B761
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L931-L945
+  - what: A cache read or write failure during a JWKS or discovery refresh fails the authentication as a 401 auth_error and leaves the earlier writes in place, where LiteLLM's DualCache logs the exception and carries on with no cache tier.
+    why: The task requires cache errors to propagate and prior writes to remain; a silently uncached key read would hide a broken cache while this task's cache contract is what the resolver's timing depends on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L293-L297
+  - what: A cache write failure on the stale copy still leaves the fresh entry written, and later writes of the same refresh are skipped, where LiteLLM's DualCache swallows every failed write and continues with the next one.
+    why: Same cache contract as above; the task names the sequential write order and partial failure explicitly, so the first failing write ends the refresh instead of being ignored.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L514-L518
+  - what: The key fetch runs for a three-segment Bearer credential whenever JWT_PUBLIC_KEY_URL is configured, without a general_settings.enable_jwt_auth switch; LiteLLM enters its JWT branch only when that flag is true, and betterlite's config loader rejects the key until B10006.
+    why: The stage is registered ahead of identity lookup by B732 and B053, and this task owns only key resolution, so an operator enables it by setting the URL. The oracle's LiteLLM root carries the flag through config_files while betterlite's root does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1637-L1645
+  - what: JWT_PUBLIC_KEY_URL is read once at config load into the jwt_keys section, where LiteLLM calls os.getenv on every get_public_key, so changing the variable in a running process changes LiteLLM's next lookup and not betterlite's.
+    why: betterlite reads configuration only through the config crate, and the task's own jwt_keys section is the one place this environment variable is read; a per-call environment read would put configuration outside the loader.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L962-L968
+kept_bugs:
+  - what: A one-entry JWKS list or dict whose kid does not match still yields that key when the requested kid is absent, so a token without kid is verified against whatever single key the provider published.
+    why: LiteLLM's parse_keys treats an absent kid as a match for a single key, and a working setup whose provider publishes one key relies on tokens without kid still authenticating.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L981-L997
+  - what: A longer JWKS list with duplicate kids selects the last matching entry rather than the first, so a provider that publishes two keys under one kid has the later one chosen.
+    why: LiteLLM's parse_keys keeps overwriting its match while iterating; a rotation that briefly publishes both keys relies on the newer one winning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L981-L997

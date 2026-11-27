@@ -1,0 +1,35 @@
+kind: helper
+name: bedrock-services-batch-records-text-completion
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost: {}
+    records:
+      - custom_id: text-string
+        url: /v1/completions
+        body:
+          model: custom-model-v1
+          prompt: hello
+          max_tokens: 8
+          stop: ["END"]
+      - custom_id: text-list
+        url: /v1/completions
+        body:
+          model: custom-model-v1
+          prompt: [first, second]
+      - custom_id: text-replace
+        url: /v1/completions
+        body:
+          model: custom-model-v1
+          messages:
+            - {role: user, content: old}
+          prompt: new
+          temperature: 0.5
+      - custom_id: text-body-kind
+        body:
+          model: custom-model-v1
+          prompt: body-kind
+env: {}
+compare: {ignore: []}

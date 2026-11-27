@@ -1,0 +1,33 @@
+kind: helper
+name: jwt-keys-configured-stale-ttl
+call:
+  jwt_keys:
+    scenarios:
+      # the configured 1200 seconds are used as written: ttl + stale_ttl is the whole window
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 300.0, public_key_stale_ttl: 1200.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+          - now: 2500.0
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+      # past the configured window the last-known-good copy is not served
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 300.0, public_key_stale_ttl: 1200.0}
+        steps:
+          - now: 0.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+          - now: 1500.5
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+env: {}
+compare: {ignore: []}

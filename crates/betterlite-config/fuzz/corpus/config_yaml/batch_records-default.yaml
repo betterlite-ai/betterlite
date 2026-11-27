@@ -1,0 +1,3 @@
+model_list: []
+litellm_settings:
+  drop_params: true

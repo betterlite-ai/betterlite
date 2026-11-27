@@ -1,0 +1,63 @@
+kind: helper
+name: function-call-fields
+call:
+  b10124:
+    calls:
+      - function: follow_up
+        response:
+          id: resp_call_id
+          created_at: 1
+          output:
+            - {type: function_call, call_id: call_1, id: fc_1, name: weather, arguments: "{}"}
+        tool_results: []
+        preserve_reasoning: false
+      - function: follow_up
+        response:
+          id: resp_id
+          created_at: 1
+          output:
+            - {type: function_call, id: fc_2, name: weather, arguments: "{}"}
+        tool_results: []
+        preserve_reasoning: false
+      - function: follow_up
+        response:
+          id: resp_empty_call_id
+          created_at: 1
+          output:
+            - {type: function_call, call_id: "", id: fc_3, name: weather, arguments: "{}"}
+        tool_results: []
+        preserve_reasoning: false
+      - function: follow_up
+        response:
+          id: resp_no_call_id
+          created_at: 1
+          output:
+            - {type: function_call, name: weather, arguments: "{}"}
+        tool_results: []
+        preserve_reasoning: false
+      - function: follow_up
+        response:
+          id: resp_no_name
+          created_at: 1
+          output:
+            - {type: function_call, call_id: call_5, arguments: "{}"}
+        tool_results: []
+        preserve_reasoning: false
+      - function: follow_up
+        response:
+          id: resp_null_arguments
+          created_at: 1
+          output:
+            - {type: function_call, call_id: call_6, name: weather, arguments: null}
+        tool_results: []
+        preserve_reasoning: false
+      - function: follow_up
+        response:
+          id: resp_missing_arguments
+          created_at: 1
+          output:
+            - {type: function_call, call_id: call_7, name: weather}
+        tool_results: []
+        preserve_reasoning: false
+env: {}
+compare: {ignore: []}
