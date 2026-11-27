@@ -44,6 +44,7 @@ async fn attachment_logging_context() {
         .kwargs
         .insert(String::from("ssl_verify"), json("true"));
     fixture.kwargs.insert(String::from("unknown"), json("1"));
+    fixture.kwargs.insert(String::from("absent"), json("null"));
     let spy = Spy::replying(file());
     let seen = recorded(Which::Create, &spy, &fixture, None, REQUEST_TIMEOUT).await;
     assert_eq!(seen.model, "");
