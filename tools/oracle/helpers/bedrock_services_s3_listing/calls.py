@@ -3,13 +3,16 @@ import os
 import time
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, TypedDict
+from types import MappingProxyType
+from typing import Final, Literal, NotRequired, TypedDict, cast
 
 import httpx
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
 from litellm.types.llms.openai import FileContentRequest
 from pydantic import JsonValue, TypeAdapter
+
+from bedrock_services_s3_access import credentials_params
 
 JSON: Final = TypeAdapter(JsonValue)
 SIGNING_SECONDS: Final = 1_704_067_200
@@ -132,7 +135,8 @@ def params_of(
 ) -> dict[str, JsonValue]:
     params: dict[str, JsonValue] = {} if declared is None else dict(declared)
     if trusted is not None:
-        params[TRUSTED_KEY] = dict(trusted)
+        snapshot = MappingProxyType(dict(trusted))
+        params.update(cast(dict[str, JsonValue], credentials_params(snapshot, trusted=True)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L192-L198
     return params
 
 
@@ -144,7 +148,7 @@ def optional_of(declared: dict[str, JsonValue] | None) -> dict[str, JsonValue]:
 
 def visible(params: dict[str, JsonValue]) -> JsonValue:
     without_trusted = {name: value for name, value in params.items() if name != TRUSTED_KEY}
-    return JSON.validate_json(json.dumps(without_trusted))
+    return JSON.validate_json(json.dumps(without_trusted, default=dict))
 
 
 def response_of(status: int, body: str, headers: list[tuple[str, str]] | None) -> httpx.Response:
