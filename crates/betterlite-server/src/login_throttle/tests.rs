@@ -888,6 +888,42 @@ async fn shared_source_counts_when_declared() {
     assert_eq!(shared.counter(&keys.source_counter), None);
 }
 
+// Redis TTL truncates a sub-second remainder to 0, and the Lua guard only stops a count above zero
+#[tokio::test]
+async fn shared_bump_counts_with_a_subsecond_block_left() {
+    let settings = Settings {
+        source_limit: 4,
+        ..Settings::default()
+    };
+    let built = fixture_request(
+        &settings,
+        &NetworkRequest {
+            peer: Some("10.1.1.1"),
+            ..NetworkRequest::default()
+        },
+        1000.5,
+        Some(NO_FAULTS),
+    );
+    let keys = keys_of(&built, "bob");
+    let shared = built.redis.as_ref().expect("shared");
+    shared.block(&keys.pair_block, 300);
+    built.clock.set(1300.1);
+    let ttls = shared
+        .record_failure(
+            &keys,
+            FailureLimits {
+                user_limit: 4,
+                source_limit: 0,
+                window_seconds: 60,
+                block_seconds: 300,
+            },
+        )
+        .await
+        .expect("the bump");
+    assert_eq!(ttls, BlockTtls { user: 0, source: 0 });
+    assert_eq!(shared.counter(&keys.pair_counter), Some(1));
+}
+
 #[tokio::test]
 async fn failed_attempt_records_and_warns() {
     let settings = Settings {
