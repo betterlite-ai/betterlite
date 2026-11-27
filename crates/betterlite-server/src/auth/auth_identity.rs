@@ -1,5 +1,3 @@
-use axum::body::Body;
-use axum::http::Request;
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -18,7 +16,7 @@ use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
-use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
+use crate::auth::auth_resource_grants;
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
@@ -98,21 +96,6 @@ pub enum StageInput {
 #[derive(Clone, Debug)]
 pub struct AuthContext {
     pub principal: Principal,
-}
-
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-pub(crate) fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 #[derive(Clone, Debug)]
