@@ -1,0 +1,25 @@
+task: B1069
+deviations:
+  - what: >-
+      On POST /vector_store/new a declared body field of the wrong JSON type reads as absent. The shared
+      B1131 request record keeps a null or wrong-typed declared field in its extra map, so
+      litellm_params: "x" creates the store with {}, vector_store_id: 5 and vector_store_id: null both
+      answer the 400 "vector_store_id and custom_llm_provider are required". LiteLLM validates the
+      TypedDict body with FastAPI and answers its 422 to each of the three.
+    why: >-
+      B1131's record decoder owns request decoding for every route that takes a LiteLLM record, and the
+      task pins this route to it instead of adding a second parser. The update and delete routes take
+      typed request records and answer the same 422 LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L277-L280
+kept_bugs:
+  - what: >-
+      A litellm_params value sent to POST /vector_store/update is ignored and the stored params stay as
+      they were, an explicit null included. LiteLLM's update handler has a branch that would normalize
+      update_data["litellm_params"] and write it, but VectorStoreUpdateRequest declares no such field
+      and pydantic drops the key, so model_dump(exclude_unset=True) never carries it and the branch
+      cannot run.
+    why: >-
+      LiteLLM is the spec and the oracle answers this input with the stored params intact, so a working
+      setup can only rely on the params surviving; making the body's value win would change what those
+      updates store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L650-L653
