@@ -1,4 +1,4 @@
-use std::str::Utf8Error;
+use std::str::{Utf8Error, from_utf8};
 
 use thiserror::Error;
 
@@ -18,7 +18,7 @@ pub fn decode_return_destination(bytes: &[u8]) -> Result<String, ReturnDestinati
             length: bytes.len(),
         });
     }
-    std::str::from_utf8(bytes)
+    from_utf8(bytes)
         .map(str::to_owned)
         .map_err(ReturnDestinationError::NotUtf8)
 }

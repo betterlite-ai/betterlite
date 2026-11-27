@@ -10,6 +10,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_config::sections::login_return::Settings as LoginSettings;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 pub(super) const SESSION_TOKEN: &str = "jwt.header.payload.signature";
@@ -118,7 +119,7 @@ impl LoginCodeCache for FailingCache {
         _value: &LoginCode,
         _ttl_seconds: f64,
     ) -> Result<(), LoginCodeCacheError> {
-        let source = serde_json::Error::io(std::io::Error::other("cache unavailable"));
+        let source = serde_json::Error::io(io::Error::other("cache unavailable"));
         Err(LoginCodeCacheError::Local(AuthCacheError::Payload(
             Box::new(PayloadError::Json(source)),
         )))
