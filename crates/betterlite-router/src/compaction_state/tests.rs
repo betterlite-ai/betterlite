@@ -125,6 +125,16 @@ fn pending_rejects_an_item_with_encrypted_content() {
 }
 
 #[test]
+fn pending_ignores_null_encrypted_content() {
+    let item = object(vec![
+        ("type", text("message")),
+        ("encrypted_content", Json::Null),
+    ]);
+    let request = payload(vec![("input", list(vec![item]))]);
+    assert!(compaction_pending(Some(&armed()), &request));
+}
+
+#[test]
 fn pending_rejects_an_item_with_an_encrypted_block() {
     let block = object(vec![("type", text("encrypted_content"))]);
     let item = object(vec![
