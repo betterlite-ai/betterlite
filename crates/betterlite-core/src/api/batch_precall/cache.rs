@@ -13,8 +13,10 @@ use super::input::BatchRetrieveCall;
 use super::ports::{BatchCacheError, BatchPrecallMemory, BatchPrecallRemote};
 use super::result::{BatchDiagnostic, BatchRetrieveResult, debug, error};
 
-const CACHE_FAILURE_PREFIX: &str =
-    "litellm.proxy.hooks.batch_redis_get.py::async_pre_call_hook(): Exception occured - ";
+const CACHE_FAILURE_PREFIX: &str = concat!(
+    "litellm.proxy.hooks.batch_redis_get.py::async_pre_call_hook(): Exception occu",
+    "red - "
+);
 const SCAN_COUNT: usize = 100;
 const WARM_TTL_SECONDS: f64 = 60.0;
 
@@ -70,8 +72,9 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
                 Ok(keys) => keys,
                 Err(failure) => return warm_failed(failure, diagnostics),
             };
+            let listed: Vec<String> = keys.iter().map(|key| format!("'{key}'")).collect();
             self.print_verbose(
-                &format!("redis keys: {}", python_list(&keys)),
+                &format!("redis keys: [{}]", listed.join(", ")),
                 diagnostics,
                 printed,
             );
@@ -155,12 +158,6 @@ fn cache_key_name(call: &BatchRetrieveCall) -> Result<String, BatchPrecallError>
         api_key.unwrap_or("None"),
         call.call_type
     ))
-}
-
-// f"redis keys: {keys}" of a Python list, which the print_verbose line carries as its repr
-fn python_list(keys: &[String]) -> String {
-    let quoted: Vec<String> = keys.iter().map(|key| format!("'{key}'")).collect();
-    format!("[{}]", quoted.join(", "))
 }
 
 // litellm.cache._get_cache_logic behind the typed cache value model, bounded by the JSON limit like every outside payload

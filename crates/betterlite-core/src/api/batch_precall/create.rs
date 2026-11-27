@@ -157,28 +157,29 @@ impl CreateAttempt<'_> {
                 )
                 .await
                 .map_err(AttemptFailure::Stage)?;
-            if rejection.is_none() {
-                self.diagnostics.push(debug(String::from(
-                    "Batch rate limit check passed, counters incremented",
-                )));
-            }
-            return Ok(judge(rejection));
+            return Ok(self.settled(
+                rejection,
+                "Batch rate limit check passed, counters incremented",
+            ));
         }
         let rejection = stages
             .reserve(self.principal, self.data, usage, self.scopes)
             .await
             .map_err(AttemptFailure::Stage)?;
-        if rejection.is_none() {
-            self.diagnostics.push(debug(String::from(
-                "Batch enqueued-token reservation succeeded",
-            )));
-        }
-        Ok(judge(rejection))
+        Ok(self.settled(rejection, "Batch enqueued-token reservation succeeded"))
     }
-}
 
-fn judge(rejection: Option<Box<ProxyRateLimitError>>) -> BatchCreateOutcome {
-    rejection.map_or(BatchCreateOutcome::Passed, BatchCreateOutcome::Rejected)
+    // a refusal returns without a success line
+    fn settled(
+        &mut self,
+        rejection: Option<Box<ProxyRateLimitError>>,
+        message: &str,
+    ) -> BatchCreateOutcome {
+        if rejection.is_none() {
+            self.diagnostics.push(debug(message.to_owned()));
+        }
+        rejection.map_or(BatchCreateOutcome::Passed, BatchCreateOutcome::Rejected)
+    }
 }
 
 fn passed(data: RequestData, diagnostics: Vec<BatchDiagnostic>) -> BatchCreateResult {

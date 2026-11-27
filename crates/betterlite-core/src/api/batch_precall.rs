@@ -23,8 +23,12 @@ use result::BatchPrecallResult;
 // The one failure that leaves the hook's swallowed-error policy: a request field the typed record cannot hold
 #[derive(Debug, thiserror::Error)]
 pub enum BatchPrecallError {
-    #[error("the batch request field {name} has the wrong type")]
-    Field { name: &'static str },
+    #[error("the batch request field {0} has the wrong type")]
+    Field(&'static str),
+    #[error("the request metadata is missing")]
+    MetadataMissing,
+    #[error("the request metadata is not an object")]
+    MetadataNotObject,
 }
 
 // The two batch hooks over their injected dependencies, plus the create-failure and terminal-retrieve refunds the stash carries

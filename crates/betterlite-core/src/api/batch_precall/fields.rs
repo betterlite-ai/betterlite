@@ -43,7 +43,7 @@ pub(crate) fn principal_text<'a>(
     match principal.0.get(name) {
         None | Some(JsonData::Null) => Ok(None),
         Some(JsonData::String(text)) => Ok(Some(text)),
-        Some(_) => Err(BatchPrecallError::Field { name }),
+        Some(_) => Err(BatchPrecallError::Field(name)),
     }
 }
 
@@ -54,7 +54,7 @@ fn principal_object(
     match principal.0.get(name) {
         None | Some(JsonData::Null) => Ok(None),
         Some(JsonData::Object(fields)) => Ok(Some(fields.clone())),
-        Some(_) => Err(BatchPrecallError::Field { name }),
+        Some(_) => Err(BatchPrecallError::Field(name)),
     }
 }
 
@@ -63,9 +63,7 @@ pub(crate) fn input_file_id(data: &RequestData) -> Result<Option<&str>, BatchPre
     match data.get(INPUT_FILE_ID) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
-        Some(_) => Err(BatchPrecallError::Field {
-            name: INPUT_FILE_ID,
-        }),
+        Some(_) => Err(BatchPrecallError::Field(INPUT_FILE_ID)),
     }
 }
 
@@ -73,9 +71,7 @@ pub(crate) fn custom_llm_provider(data: &RequestData) -> Result<&str, BatchPreca
     match data.get(CUSTOM_LLM_PROVIDER) {
         None | Some(Json::Null) => Ok(DEFAULT_LLM_PROVIDER),
         Some(Json::Text(text)) => Ok(text),
-        Some(_) => Err(BatchPrecallError::Field {
-            name: CUSTOM_LLM_PROVIDER,
-        }),
+        Some(_) => Err(BatchPrecallError::Field(CUSTOM_LLM_PROVIDER)),
     }
 }
 
@@ -92,13 +88,13 @@ pub(crate) fn insert_usage(data: &mut RequestData, usage: &BatchFileUsage) {
 }
 
 // data["metadata"]["redis_namespace"] = cache_key_name; a request without a metadata object is a swallowed failure
-pub(crate) fn set_namespace(data: &mut RequestData, name: &str) -> Result<(), &'static str> {
+pub(crate) fn set_namespace(data: &mut RequestData, name: &str) -> Result<(), BatchPrecallError> {
     match data.get_mut(METADATA) {
         Some(Json::Object(fields)) => {
             fields.insert(REDIS_NAMESPACE.to_owned(), Json::Text(name.to_owned()));
             Ok(())
         }
-        None | Some(Json::Null) => Err("the request metadata is missing"),
-        Some(_) => Err("the request metadata is not an object"),
+        None | Some(Json::Null) => Err(BatchPrecallError::MetadataMissing),
+        Some(_) => Err(BatchPrecallError::MetadataNotObject),
     }
 }

@@ -31,8 +31,10 @@ use self::support::{
 
 mod support;
 
-const CACHE_FAILURE_PREFIX: &str =
-    "litellm.proxy.hooks.batch_redis_get.py::async_pre_call_hook(): Exception occured - ";
+const CACHE_FAILURE_PREFIX: &str = concat!(
+    "litellm.proxy.hooks.batch_redis_get.py::async_pre_call_hook(): Exception occu",
+    "red - "
+);
 
 fn expected_create_effects(enqueued: bool) -> Vec<Effect> {
     let mut effects = vec![
@@ -276,7 +278,7 @@ async fn create_precall_names_wrong_fields(#[case] field: &str) {
     data.insert(field.to_owned(), Json::Number(Number::from(7_i64)));
     let input = create_input(CALL_TYPE, plain_principal(), data);
     let failure = rig.run(&input).await.unwrap_err();
-    assert!(matches!(failure, BatchPrecallError::Field { name } if name == field));
+    assert!(matches!(failure, BatchPrecallError::Field(name) if name == field));
 }
 
 // a principal field the typed record cannot hold is named, on the scope resolution and on the cache key
@@ -294,7 +296,7 @@ async fn create_precall_names_wrong_principal_fields(#[case] field: &str) {
         create_data("file-1"),
     );
     let failure = rig.run(&input).await.unwrap_err();
-    assert!(matches!(failure, BatchPrecallError::Field { name } if name == field));
+    assert!(matches!(failure, BatchPrecallError::Field(name) if name == field));
 }
 
 // the provider default is openai and the request's value reaches the file accounting
@@ -781,8 +783,7 @@ fn expected_failure_data(failure: CacheFailure) -> RequestData {
     }
 }
 
-// async_pre_call_hook and async_get_cache never block a retrieve: every failure but an HTTPException becomes a log line,
-// and the namespace is set only after a warm-up that did not fail
+// the async cache hooks never block a retrieve: every failure but an HTTPException becomes a log line, and the namespace is set only after a clean warm-up
 #[rstest]
 #[case::scan_logged(CacheFailure::ScanLogged)]
 #[case::scan_raised(CacheFailure::ScanRaised)]

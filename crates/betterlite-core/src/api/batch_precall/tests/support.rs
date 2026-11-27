@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
@@ -47,28 +48,21 @@ pub(crate) const CACHE_KEY: &str = "litellm:sk-key:aretrieve_batch:abc";
 pub(crate) const COUNTER_KEY: &str = "batch_enqueued_tokens:api_key:sk-key";
 pub(crate) const OPERATOR: &str = "worker-1";
 
-pub(crate) fn create_data(file_id: &str) -> RequestData {
+fn text_data(fields: &[(&str, &str)]) -> RequestData {
     let mut data = RequestData::new();
-    data.insert(
-        String::from("model"),
-        Json::Text(String::from("gpt-4o-mini")),
-    );
-    data.insert(
-        String::from("input_file_id"),
-        Json::Text(file_id.to_owned()),
-    );
+    for (name, value) in fields {
+        data.insert(String::from(*name), Json::Text(String::from(*value)));
+    }
     data.insert(String::from("metadata"), Json::Object(IndexMap::new()));
     data
 }
 
+pub(crate) fn create_data(file_id: &str) -> RequestData {
+    text_data(&[("model", "gpt-4o-mini"), ("input_file_id", file_id)])
+}
+
 pub(crate) fn retrieve_data() -> RequestData {
-    let mut data = RequestData::new();
-    data.insert(
-        String::from("batch_id"),
-        Json::Text(String::from("batch-1")),
-    );
-    data.insert(String::from("metadata"), Json::Object(IndexMap::new()));
-    data
+    text_data(&[("batch_id", "batch-1")])
 }
 
 pub(crate) fn principal_with_scope() -> BatchLimitPrincipal {
@@ -335,6 +329,16 @@ impl ScriptedStages {
             }),
         })
     }
+
+    fn stage_answer(
+        &self,
+        effect: Effect,
+        stage: StageName,
+    ) -> Result<Option<Box<ProxyRateLimitError>>, StagesError> {
+        self.record(effect);
+        self.fail(stage)?;
+        Ok(self.rejection.clone())
+    }
 }
 
 impl BatchPrecallStages for ScriptedStages {
@@ -374,27 +378,27 @@ impl BatchPrecallStages for ScriptedStages {
         file_usage: &BatchFileUsage,
         scopes: &[BatchEnqueuedTokenScope],
     ) -> Result<Option<Box<ProxyRateLimitError>>, StagesError> {
-        self.record(Effect::Reserve {
-            tokens: file_usage.total_tokens,
-            scopes: scopes.to_vec(),
-        });
-        self.fail(StageName::Reserve)?;
-        Ok(self.rejection.clone())
+        self.stage_answer(
+            Effect::Reserve {
+                tokens: file_usage.total_tokens,
+                scopes: scopes.to_vec(),
+            },
+            StageName::Reserve,
+        )
     }
 
-    async fn charge(
+    fn charge(
         &self,
         _principal: &BatchLimitPrincipal,
         _data: &RequestData,
         file_usage: &BatchFileUsage,
         descriptors: Option<&[BatchLimitDescriptor]>,
-    ) -> Result<Option<Box<ProxyRateLimitError>>, StagesError> {
-        self.record(Effect::Charge {
+    ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StagesError>> + Send {
+        let effect = Effect::Charge {
             tokens: file_usage.total_tokens,
             descriptors: descriptors.map(<[_]>::to_vec),
-        });
-        self.fail(StageName::Charge)?;
-        Ok(self.rejection.clone())
+        };
+        ready(self.stage_answer(effect, StageName::Charge))
     }
 
     fn http(&self, error: &StagesError) -> Option<&BatchHttpError> {
@@ -485,39 +489,39 @@ impl ScriptedMemory {
         self.values.lock().unwrap().insert(key.to_owned(), value);
     }
 
+    fn set_entries(&self) -> Vec<(String, Json, f64)> {
+        self.sets.lock().unwrap().clone()
+    }
+
+    fn pipeline_entries(&self) -> Vec<(Vec<String>, f64)> {
+        self.pipelines.lock().unwrap().clone()
+    }
+
     pub(crate) fn set_keys(&self) -> Vec<String> {
-        self.sets
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(key, _value, _ttl)| key.clone())
+        self.set_entries()
+            .into_iter()
+            .map(|(key, _, _)| key)
             .collect()
     }
 
     pub(crate) fn set_ttls(&self) -> Vec<f64> {
-        self.sets
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(_key, _value, ttl)| *ttl)
+        self.set_entries()
+            .into_iter()
+            .map(|(_, _, ttl)| ttl)
             .collect()
     }
 
     pub(crate) fn pipeline_keys(&self) -> Vec<Vec<String>> {
-        self.pipelines
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(keys, _ttl)| keys.clone())
+        self.pipeline_entries()
+            .into_iter()
+            .map(|(keys, _)| keys)
             .collect()
     }
 
     pub(crate) fn pipeline_ttls(&self) -> Vec<f64> {
-        self.pipelines
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(_keys, ttl)| *ttl)
+        self.pipeline_entries()
+            .into_iter()
+            .map(|(_, ttl)| ttl)
             .collect()
     }
 }
@@ -733,14 +737,17 @@ impl Rig {
     pub(crate) fn new() -> Self {
         let cache = LocalTtlCache::with_clock(None, None, None, 1_024, Arc::new(|| 0.0_f64))
             .expect("the local cache builds");
+        let counters = Arc::new(Mutex::new(LocalTokenCounters { cache }));
+        let clock: EpochClock = Arc::new(|| 100.0_f64);
+        let stages = ScriptedStages::new();
         Self {
-            stages: ScriptedStages::new(),
+            stages,
             stash: ScriptedStash::default(),
-            counters: Arc::new(Mutex::new(LocalTokenCounters { cache })),
+            counters,
             applier: ScriptedApplier::default(),
             memory: ScriptedMemory::default(),
             remote: ScriptedRemote::default(),
-            clock: Arc::new(|| 100.0_f64),
+            clock,
             limits: ApiLimits::default(),
             verbose_stdout: false,
         }
