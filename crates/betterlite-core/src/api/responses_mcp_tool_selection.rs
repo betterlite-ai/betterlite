@@ -114,25 +114,18 @@ fn output_details(
                 .or_else(|| value_before_null(call.extra.get("input")));
             Ok((call.name.clone(), arguments))
         }
-        ResponseOutputItem::Message(message) => attribute_details(&message.extra),
+        ResponseOutputItem::Message(message) => {
+            // a pydantic model answers getattr for an extra `function` key, so a non-null one hides the name and arguments
+            if has_function_member(&message.extra) {
+                return Ok((None, None));
+            }
+            top_level_details(&message.extra)
+        }
         ResponseOutputItem::Unknown(entries) => mapping_details(entries),
         ResponseOutputItem::ImageGeneration(_)
         | ResponseOutputItem::CodeInterpreter(_)
         | ResponseOutputItem::CustomTool(_) => Ok((None, None)),
     }
-}
-
-// a pydantic model answers getattr for an extra `function` key, so a non-null one hides the name and arguments
-fn attribute_details(
-    entries: &BTreeMap<String, Json>,
-) -> Result<(Option<String>, Option<Json>), ToolSelectionError> {
-    if has_function_member(entries) {
-        return Ok((None, None));
-    }
-    let name = text_field(entries, "name")?;
-    let arguments = value_before_null(entries.get("arguments"))
-        .or_else(|| value_before_null(entries.get("input")));
-    Ok((name, arguments))
 }
 
 fn mapping_details(
@@ -142,6 +135,12 @@ fn mapping_details(
         let name = text_field(function, "name")?;
         return Ok((name, value_before_null(function.get("arguments"))));
     }
+    top_level_details(entries)
+}
+
+fn top_level_details(
+    entries: &BTreeMap<String, Json>,
+) -> Result<(Option<String>, Option<Json>), ToolSelectionError> {
     let name = text_field(entries, "name")?;
     let arguments = value_before_null(entries.get("arguments"))
         .or_else(|| value_before_null(entries.get("input")));
