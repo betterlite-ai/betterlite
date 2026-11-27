@@ -28,7 +28,7 @@ pub fn restore_file_identifiers(response: Option<FileResponse<'_>>, original_fil
             }
         }
         FileResponse::Both { id, .. } | FileResponse::Identifier(id) => {
-            original_file_id.clone_into(id)
+            original_file_id.clone_into(id);
         }
         FileResponse::FileIdentifier(file_id) => original_file_id.clone_into(file_id),
     }
