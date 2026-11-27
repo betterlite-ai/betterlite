@@ -1,0 +1,47 @@
+kind: helper
+name: follow-up-message-order
+call:
+  b10123:
+    original_messages:
+      - role: user
+        content: null
+        name: recall
+      - role: user
+        content: weather in Oslo?
+    body:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1
+      model: gpt-4o
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: null
+            refusal: "no"
+            tool_calls:
+              - id: call_1
+                type: function
+                function:
+                  name: lookup
+                  arguments: ''
+              - id: call_2
+                type: function
+                function:
+                  name: forecast
+                  arguments: '{"city":"Oslo"}'
+          finish_reason: tool_calls
+        - index: 1
+          message:
+            role: assistant
+            content: a later choice
+          finish_reason: stop
+    tool_results:
+      - tool_call_id: call_1
+        result: sunny
+        name: lookup
+      - tool_call_id: null
+        result: unknown
+        name: null
+env: {}
+compare: {ignore: []}

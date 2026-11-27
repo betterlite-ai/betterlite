@@ -19,7 +19,10 @@ description: >-
   NVIDIA_RIVA_API_BASE, NVIDIA_RIVA_API_KEY and NVIDIA_NIM_API_KEY all default unset. Explicit truthy
   base wins, otherwise NVIDIA_RIVA_API_BASE; no public endpoint is invented. Explicit truthy key wins,
   then NVIDIA_RIVA_API_KEY, then NVIDIA_NIM_API_KEY. riva_dispatch_settings loads these keys and checks
-  precedence. Forward Soniox, ElevenLabs, Deepgram and AWS resolved settings from their owners.
+  precedence. Forward Soniox, ElevenLabs, Deepgram and AWS resolved settings from their owners. Polly's
+  credential resolver is B10175's AWS credential chain (its CredentialResolver impl in betterlite-bedrock
+  credentials/chain/polly.rs), cloned from `state.shared.aws_credentials` on the server, and Polly's
+  transform_request is async since B10173; never build a resolver, cache or NativeSources here.
 
   Reuse B083's route registrations for POST /v1/audio/speech, /audio/speech, /v1/audio/transcriptions
   and /audio/transcriptions. Booted-proxy cases cover each supported provider on both aliases,

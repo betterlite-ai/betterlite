@@ -1,0 +1,13 @@
+kind: helper
+name: project-alias-text
+call:
+  b10114:
+    team_details: null
+    team_id: null
+    row:
+      team_id: team-9
+      team_alias: Text Team
+      models: [gpt-4, claude]
+      aliases: '{"gpt-4": "gpt-4o", "claude": "claude-sonnet"}'
+env: {}
+compare: {ignore: []}

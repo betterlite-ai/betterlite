@@ -1,0 +1,77 @@
+kind: helper
+name: summary-response-extractors
+call:
+  summary_extraction:
+    responses:
+      - {}
+      - choices: null
+      - choices: []
+      - choices:
+          - {}
+      - choices:
+          - message: null
+      - choices:
+          - message: {}
+      - choices:
+          - message:
+              content: ""
+      - choices:
+          - message:
+              content: hello
+      - choices:
+          - message:
+              content: 7
+      - choices:
+          - message:
+              content: null
+      - choices:
+          - message:
+              content: []
+      - choices:
+          - message:
+              content:
+                - type: text
+                  text: A
+                - skip
+                - type: image
+                - type: text
+                - type: text
+                  text: B
+      - choices:
+          - message:
+              content:
+                - type: image
+                  text: 5
+                - type: text
+                  text: A
+      - choices:
+          - message:
+              content:
+                - type: image
+                - type: text
+      - choices:
+          - message:
+              content:
+                - type: text
+                  text: 5
+      - usage: null
+      - usage: {}
+      - usage:
+          prompt_tokens: null
+          completion_tokens: null
+      - usage:
+          prompt_tokens: ""
+          completion_tokens: ""
+      - usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+      - usage:
+          prompt_tokens: "12"
+          completion_tokens: "3"
+      - usage:
+          prompt_tokens: 12.9
+          completion_tokens: 3
+      - usage:
+          prompt_tokens: bad
+env: {}
+compare: {ignore: []}

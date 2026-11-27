@@ -1,0 +1,13 @@
+task: B10123
+deviations:
+  - what: >-
+      The dumped first-choice assistant message leaves out function_call, images, reasoning_content,
+      thinking_blocks, reasoning_items and provider_specific_fields, where LiteLLM's
+      Message.model_dump(exclude_none=True) writes each of them when it is not null.
+    why: >-
+      The shared chat reply type (ChatResponse and AssistantMessage, owned by B004) has no field for
+      function_call, images, reasoning_content, thinking_blocks or reasoning_items, and it skips
+      provider_specific_fields when it decodes a reply, so this conversion never sees them; extending
+      that type is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1394-L1400
+kept_bugs: []

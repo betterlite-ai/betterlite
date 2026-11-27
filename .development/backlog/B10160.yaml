@@ -1,0 +1,14 @@
+id: B10160
+milestone: M8 platform
+title: Guardrail pipeline runs and pipeline result mapping
+status: todo
+depends_on: [B3240, B3247, B5471, B8390, B8391, B8392]
+file: tasks/B10160-pipeline-execution.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B8393
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

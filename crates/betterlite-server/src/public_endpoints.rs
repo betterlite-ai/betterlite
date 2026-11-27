@@ -1,5 +1,6 @@
 pub mod agent_fields;
 pub mod blog_feed;
+pub mod blog_feed_parser;
 pub mod hub_surface;
 pub mod model_hub;
 pub mod providers;

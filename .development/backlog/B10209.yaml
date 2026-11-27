@@ -1,0 +1,13 @@
+id: B10209
+milestone: R2 bug fixes
+title: The Gemini agents config that B3504's and B3505's agent calls take exists in production
+status: todo
+depends_on: [B1392, B3504, B3505]
+file: tasks/B10209-gemini-agents-config.yaml
+covers: []
+parent: null
+split_from: B10199
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

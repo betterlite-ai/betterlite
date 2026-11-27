@@ -194,6 +194,6 @@ betterlite_oracle_helper_api::helper_group! {
     "vector_store_contracts" => vector_store_contracts,
     "vector_store_registry" => vector_store_registry, "vector_stores" => vector_stores,
     "vector_tool_selection" => vector_tool_selection, "vertex_live" => vertex_live,
-    "vertex_messages" => vertex_messages, "vertex_partner_factory" => vertex_partner_factory,
+    "vertex_messages" => vertex_messages,
     "zero_cost_diagnostic" => zero_cost_diagnostic,
 }
