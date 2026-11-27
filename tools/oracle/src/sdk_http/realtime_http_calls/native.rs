@@ -13,7 +13,7 @@ use betterlite_core::api::realtime_http_calls::call::{
     CallCommon, ClientSecretCall, RealtimeCallsCall, SuppliedClient, TranscriptionSessionCall,
 };
 use betterlite_core::api::realtime_http_calls::dispatch::{
-    CallsRequest, RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint, SessionRequest,
+    RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint as SdkEndpoint,
 };
 use betterlite_core::api::realtime_http_calls::error::RealtimeHttpCallsError;
 use betterlite_core::api::realtime_http_calls::provider::RealtimeHttpConfig;
@@ -36,7 +36,7 @@ use betterlite_provider::api::realtime_http_transport::client::{
 };
 use betterlite_provider::api::realtime_http_transport::error::RealtimeHttpError;
 use betterlite_provider::api::realtime_http_transport::session::{
-    SessionCall, SessionEndpoint as ProviderEndpoint, session_post,
+    SessionCall, SessionEndpoint as HttpEndpoint, session_post,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -83,14 +83,13 @@ pub(super) async fn execute(
     })
 }
 
-// Each SDK method's declared arguments over the shared kwargs and routing hints
+// Each SDK method's declared arguments over an empty kwargs map a borrow keeps alive for this block
 async fn run(
-    calls: &RealtimeHttpCalls<'_, Dispatcher>,
+    sdk: &RealtimeHttpCalls<'_, Dispatcher>,
     call: &Call,
     api_base: &str,
-    state: &mut LoggingState,
+    log: &mut LoggingState,
 ) -> Result<UpstreamResponse, RealtimeHttpCallsError<RealtimeHttpError>> {
-    let kwargs = IndexMap::new();
     let api_key = call.api_key.as_deref().map(SecretString::from);
     let common = CallCommon {
         model: call.model.as_deref(),
@@ -100,34 +99,32 @@ async fn run(
         api_version: call.api_version.as_deref(),
         extra_headers: call.extra_headers.as_ref(),
         client: None,
-        kwargs: &kwargs,
+        kwargs: &IndexMap::new(),
     };
     match call.operation {
         Operation::ClientSecret => {
-            let request = ClientSecretCall {
-                common: common.clone(),
+            let req = ClientSecretCall {
+                common,
                 session: call.session.as_ref(),
                 expires_after: call.expires_after.as_ref(),
             };
-            calls.acreate_realtime_client_secret(request, state).await
+            sdk.acreate_realtime_client_secret(req, log).await
         }
         Operation::TranscriptionSession => {
-            let request = TranscriptionSessionCall {
-                common: common.clone(),
+            let req = TranscriptionSessionCall {
+                common,
                 transcription_session: call.transcription_session.as_ref(),
             };
-            calls
-                .acreate_realtime_transcription_session(request, state)
-                .await
+            sdk.acreate_realtime_transcription_session(req, log).await
         }
         Operation::Calls => {
-            let request = RealtimeCallsCall {
+            let req = RealtimeCallsCall {
                 common,
                 openai_ephemeral_key: &call.ephemeral_key,
                 sdp_body: &call.sdp,
                 session: call.session.as_ref(),
             };
-            calls.arealtime_calls(request, state).await
+            sdk.arealtime_calls(req, log).await
         }
     }
 }
@@ -193,10 +190,8 @@ impl Dispatcher {
             RealtimeHttpRequest::Session(session) => {
                 let call = SessionCall {
                     endpoint: match session.endpoint {
-                        SessionEndpoint::ClientSecrets => ProviderEndpoint::ClientSecrets,
-                        SessionEndpoint::TranscriptionSessions => {
-                            ProviderEndpoint::TranscriptionSessions
-                        }
+                        SdkEndpoint::ClientSecrets => HttpEndpoint::ClientSecrets,
+                        SdkEndpoint::TranscriptionSessions => HttpEndpoint::TranscriptionSessions,
                     },
                     api_base: session.api_base,
                     api_key: session.api_key,
