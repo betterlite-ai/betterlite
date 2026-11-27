@@ -74,7 +74,7 @@ fn admin_config_credentials(stored: &MCPCredentials) -> Option<MCPCredentials> {
 fn kept_string(value: Option<&Option<String>>) -> Option<String> {
     match value {
         Some(Some(text)) if !text.is_empty() => Some(text.clone()),
-        Some(Some(_)) | Some(None) | None => None,
+        Some(Some(_) | None) | None => None,
     }
 }
 
@@ -83,7 +83,7 @@ fn kept_scopes(value: Option<&Option<Vec<String>>>) -> Option<Vec<String>> {
         Some(Some(items)) if !items.is_empty() && items.iter().all(|scope| !scope.is_empty()) => {
             Some(items.clone())
         }
-        Some(Some(_)) | Some(None) | None => None,
+        Some(Some(_) | None) | None => None,
     }
 }
 
