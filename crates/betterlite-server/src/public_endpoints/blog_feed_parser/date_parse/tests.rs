@@ -12,6 +12,7 @@ use rstest::rstest;
 #[case::timezone_below_an_hour("Thu, 12 Mar 2026 10:00:00 +0099", "2026-03-12")]
 #[case::timezone_at_an_hour("Thu, 12 Mar 2026 10:00:00 +100", "2026-03-12")]
 #[case::unparsable_timezone_means_no_zone("Thu, 12 Mar 2026 10:00:00 +12a4", "2026-03-12")]
+#[case::underscore_in_day("Thu, 1_2 Mar 2026 10:00:00 GMT", "2026-03-12")]
 fn formats_valid_dates(#[case] raw: &str, #[case] expected: &str) {
     assert_eq!(parse_date(raw), expected);
 }

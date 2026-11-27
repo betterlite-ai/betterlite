@@ -1,0 +1,6 @@
+task: B10163
+deviations:
+  - what: A pubDate in the years 100 to 999 formats as 0999-03-12, zero-padded to four digits, where LiteLLM's strftime("%Y-%m-%d") prints 999-03-12.
+    why: The parser writes the parsed fields with chrono's %Y, whose contract is a year zero-padded to four digits, and the task text asks for YYYY-MM-DD. A two-digit year never reaches this case because parsedate_tz reads it as 19xx or 20xx, so only a feed that spells a three-digit year shows the padding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L96-L100
+kept_bugs: []
