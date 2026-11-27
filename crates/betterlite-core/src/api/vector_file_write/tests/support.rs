@@ -145,12 +145,12 @@ impl CredentialLookup for Registry {
         _vector_store_id: &str,
     ) -> Result<OperationKwargs, CredentialLookupError> {
         self.lookups.fetch_add(1, Ordering::Relaxed);
-        match &self.credentials {
-            Some(values) => Ok(OperationKwargs(values.clone())),
-            None => Err(CredentialLookupError::Unavailable {
+        let Some(values) = &self.credentials else {
+            return Err(CredentialLookupError::Unavailable {
                 reason: String::from("the registry is unreachable"),
-            }),
-        }
+            });
+        };
+        Ok(OperationKwargs(values.clone()))
     }
 }
 

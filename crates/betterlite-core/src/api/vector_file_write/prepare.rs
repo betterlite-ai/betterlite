@@ -119,6 +119,7 @@ fn attributes_value(attributes: Option<&Attributes>) -> Result<Json, VectorFileW
 }
 
 // One file write's log call: update_from_kwargs(kwargs, model=None, optional_params={ids, attributes for an update}, ...)
+#[derive(Clone, Copy)]
 pub(crate) struct LogWrite<'write> {
     pub(crate) logging: &'write Mutex<LoggingState>,
     pub(crate) operation: Operation,
