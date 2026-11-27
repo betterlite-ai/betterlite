@@ -27,7 +27,7 @@ async fn create_eval_defaults_to_the_module_request_timeout() {
         .await
         .expect("the create succeeds");
     let creates = harness.handler.creates();
-    assert_eq!(creates[0].timeout, Duration::from_secs(6000));
+    assert_eq!(creates[0].timeout, Duration::from_mins(100));
 }
 
 #[tokio::test]
@@ -96,7 +96,7 @@ async fn list_evals_defaults_to_the_module_request_timeout() {
         .await
         .expect("the list succeeds");
     let lists = harness.handler.lists();
-    assert_eq!(lists[0].timeout, Duration::from_secs(6000));
+    assert_eq!(lists[0].timeout, Duration::from_mins(100));
 }
 
 #[tokio::test]

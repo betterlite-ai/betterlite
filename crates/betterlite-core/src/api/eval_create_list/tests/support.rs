@@ -477,10 +477,10 @@ impl Harness {
     }
 
     pub(crate) fn recorded(&self) -> Recorded {
-        match &self.configs.config {
-            Some(config) => config.recorded(),
-            None => Recorded::default(),
-        }
+        self.configs
+            .config
+            .as_ref()
+            .map_or_else(Recorded::default, RecordingConfig::recorded)
     }
 
     pub(crate) fn logging_state(&self, call_type: &str) -> LoggingState {
@@ -559,7 +559,7 @@ pub(crate) fn create_call<'call>(
     }
 }
 
-pub(crate) fn list_call<'call>(calls: &'call Calls) -> ListEvalsCall<'call> {
+pub(crate) fn list_call(calls: &Calls) -> ListEvalsCall<'_> {
     ListEvalsCall {
         limit: None,
         after: None,

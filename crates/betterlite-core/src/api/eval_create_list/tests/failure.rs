@@ -4,7 +4,7 @@ use betterlite_openai::evals::error::EvalsError;
 use crate::api::eval_create_list::call::{EvalCreation, EvalListing};
 use crate::api::eval_create_list::error::EvalsCreateListError;
 use crate::api::eval_create_list::tests::support::{
-    Calls, Harness, create_call, eval, evals_page, json, list_call, map, object, provider_failure,
+    Calls, Harness, create_call, json, list_call, map, object, provider_failure,
 };
 use crate::api::eval_http::error::EvalHttpError;
 

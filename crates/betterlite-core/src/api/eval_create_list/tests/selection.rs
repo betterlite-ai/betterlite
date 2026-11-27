@@ -1,10 +1,9 @@
 use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
 use betterlite_error::error::ErrorClass;
 use betterlite_openai::evals::openai::OpenAiEvalsConfig;
-use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
 
 use crate::api::eval_create_list::call::{EvalCreation, EvalListing};
-use crate::api::eval_create_list::config::{EvalsConfigLookup, EvalsConfigs};
+use crate::api::eval_create_list::config::{EvalsConfigLookup as _, EvalsConfigs};
 use crate::api::eval_create_list::error::EvalsCreateListError;
 use crate::api::eval_create_list::tests::support::{
     Calls, Harness, create_call, eval, evals_page, list_call,

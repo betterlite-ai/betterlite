@@ -45,7 +45,7 @@ struct ProviderCall<'deps> {
 
 impl ProviderCall<'_> {
     // the provider call's own fields as the transform context, borrowed for the transform's lifetime
-    fn context(&self) -> EvalsRequestContext<'_> {
+    const fn context(&self) -> EvalsRequestContext<'_> {
         EvalsRequestContext {
             litellm_params: &self.litellm_params,
             headers: &self.headers,
