@@ -197,27 +197,6 @@ impl Fixture {
             kwargs: &self.arguments.kwargs,
         }
     }
-
-    pub(crate) fn request(&self) -> VectorStoreReadRequest<'_> {
-        VectorStoreReadRequest {
-            transport: self.transport(),
-            vector_store_id: self
-                .arguments
-                .vector_store_id
-                .as_deref()
-                .unwrap_or(VECTOR_STORE_ID),
-        }
-    }
-
-    pub(crate) fn list_request(&self) -> VectorStoreListRequest<'_> {
-        VectorStoreListRequest {
-            transport: self.transport(),
-            after: self.arguments.after.as_deref(),
-            before: self.arguments.before.as_deref(),
-            limit: self.arguments.limit,
-            order: self.arguments.order.as_ref().map(|order| order.as_deref()),
-        }
-    }
 }
 
 // which public entry point runs; the sync forms still let an aretrieve/alist flag in kwargs select async
@@ -247,16 +226,6 @@ pub(crate) async fn call<Provider: ReadProvider>(
     call_with(which, provider, fixture, None, request_timeout_seconds).await
 }
 
-pub(crate) async fn call_with_client(
-    which: Which,
-    spy: &Spy,
-    fixture: &Fixture,
-    supplied: Option<SuppliedClient<'_, FakeClient>>,
-    request_timeout_seconds: f64,
-) -> Result<Json, VectorStoreReadFailure> {
-    call_with(which, spy, fixture, supplied, request_timeout_seconds).await
-}
-
 pub(crate) async fn call_with<Provider: ReadProvider>(
     which: Which,
     provider: &Provider,
@@ -272,11 +241,30 @@ pub(crate) async fn call_with<Provider: ReadProvider>(
         request_timeout_seconds,
     };
     let reads = VectorStoreReads { provider, deps };
+    let read = VectorStoreReadRequest {
+        transport: fixture.transport(),
+        vector_store_id: fixture
+            .arguments
+            .vector_store_id
+            .as_deref()
+            .unwrap_or(VECTOR_STORE_ID),
+    };
+    let list = VectorStoreListRequest {
+        transport: fixture.transport(),
+        after: fixture.arguments.after.as_deref(),
+        before: fixture.arguments.before.as_deref(),
+        limit: fixture.arguments.limit,
+        order: fixture
+            .arguments
+            .order
+            .as_ref()
+            .map(|order| order.as_deref()),
+    };
     match which {
-        Which::Retrieve => reads.retrieve(&fixture.request()).await,
-        Which::Aretrieve => reads.aretrieve(&fixture.request()).await,
-        Which::List => reads.list(&fixture.list_request()).await,
-        Which::Alist => reads.alist(&fixture.list_request()).await,
+        Which::Retrieve => reads.retrieve(&read).await,
+        Which::Aretrieve => reads.aretrieve(&read).await,
+        Which::List => reads.list(&list).await,
+        Which::Alist => reads.alist(&list).await,
     }
 }
 
@@ -322,7 +310,7 @@ pub(crate) struct Recorded {
     pub(crate) provider_name: Option<String>,
 }
 
-fn observe(call: &ReadCall<'_>) -> Recorded {
+fn observe(call: &ReadCall<'_, FakeClient>) -> Recorded {
     let state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
     Recorded {
         operation: call.operation,

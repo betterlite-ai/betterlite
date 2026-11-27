@@ -16,6 +16,7 @@ use chrono::{DateTime, FixedOffset};
 use http::Method;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::from_str;
 
@@ -231,31 +232,33 @@ fn authorization(request: &WriteRequest) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
+// null takes REQUEST_TIMEOUT's loaded value, zero falls back to it, and 3 keeps 3
+#[rstest]
+#[case::null(None, REQUEST_TIMEOUT, 6000.0_f64)]
+#[case::zero(Some(0.0_f64), REQUEST_TIMEOUT, 6000.0_f64)]
+#[case::three(Some(3.0_f64), REQUEST_TIMEOUT, 3.0_f64)]
+#[case::configured(None, 4.5_f64, 4.5_f64)]
 #[tokio::test]
-async fn native_read_timeout() {
-    // null takes REQUEST_TIMEOUT's loaded value, zero falls back to it, and 3 keeps 3
-    for (requested, configured, expected) in [
-        (None, REQUEST_TIMEOUT, 6000.0_f64),
-        (Some(0.0_f64), REQUEST_TIMEOUT, 6000.0_f64),
-        (Some(3.0_f64), REQUEST_TIMEOUT, 3.0_f64),
-        (None, 4.5_f64, 4.5_f64),
-    ] {
-        let native = Native::new(Wire::replying(record()));
-        let mut fixture = Fixture::new();
-        fixture.arguments.timeout = requested;
-        call_with(Which::Retrieve, &native, &fixture, None, configured)
-            .await
-            .expect("the read answers");
-        assert_eq!(
-            native.captured(),
-            vec![Duration::try_from_secs_f64(expected).expect("the fixture is a duration")]
-        );
-        // the GET never receives the resolved deadline, only the selected client's own
-        let requests = native.requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].method, Method::GET);
-        assert_eq!(requests[0].timeout, None);
-    }
+async fn native_read_timeout(
+    #[case] requested: Option<f64>,
+    #[case] configured: f64,
+    #[case] expected: f64,
+) {
+    let native = Native::new(Wire::replying(record()));
+    let mut fixture = Fixture::new();
+    fixture.arguments.timeout = requested;
+    call_with(Which::Retrieve, &native, &fixture, None, configured)
+        .await
+        .expect("the read answers");
+    assert_eq!(
+        native.captured(),
+        vec![Duration::try_from_secs_f64(expected).expect("the fixture is a duration")]
+    );
+    // the GET never receives the resolved deadline, only the selected client's own
+    let requests = native.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, Method::GET);
+    assert_eq!(requests[0].timeout, None);
 }
 
 #[tokio::test]
@@ -375,25 +378,29 @@ async fn native_selects_the_matching_client() {
     assert!(native.source_calls().is_empty());
 }
 
+// a 404 with a body the provider cannot map keeps its status in either mode
+#[rstest]
+#[case::sync(Which::Retrieve)]
+#[case::asynchronous(Which::Aretrieve)]
 #[tokio::test]
-async fn native_read_failures() {
-    // a 404 with a body the provider cannot map keeps its status in either mode
-    for which in [Which::Retrieve, Which::Aretrieve] {
-        let native = Native::new(Wire::answering(404, "[]"));
-        let fixture = Fixture::new();
-        let error = call_with(which, &native, &fixture, None, REQUEST_TIMEOUT)
-            .await
-            .expect_err("a 404 is an error");
-        let raised = error.raised();
-        assert_eq!(raised.class, "NotFoundError");
-        assert_eq!(raised.status, 404_u16);
-        assert_eq!(raised.kind, WireField::Null);
-        assert_eq!(raised.param, WireField::Null);
-        assert_eq!(raised.code, None);
-        assert_eq!(native.requests().len(), 1);
-    }
+async fn native_read_failures(#[case] which: Which) {
+    let native = Native::new(Wire::answering(404, "[]"));
+    let fixture = Fixture::new();
+    let error = call_with(which, &native, &fixture, None, REQUEST_TIMEOUT)
+        .await
+        .expect_err("a 404 is an error");
+    let raised = error.raised();
+    assert_eq!(raised.class, "NotFoundError");
+    assert_eq!(raised.status, 404_u16);
+    assert_eq!(raised.kind, WireField::Null);
+    assert_eq!(raised.param, WireField::Null);
+    assert_eq!(raised.code, None);
+    assert_eq!(native.requests().len(), 1);
+}
 
-    // list returns whatever JSON the 404 carries, as LiteLLM's response.json() does
+// list returns whatever JSON the 404 carries, as LiteLLM's response.json() does
+#[tokio::test]
+async fn native_list_keeps_a_json_body_whatever_the_status() {
     let native = Native::new(Wire::answering(404, r#"{"error":"gone"}"#));
     let fixture = Fixture::new();
     let value = call_with(Which::List, &native, &fixture, None, REQUEST_TIMEOUT)
