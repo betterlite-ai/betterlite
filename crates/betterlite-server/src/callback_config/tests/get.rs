@@ -284,6 +284,20 @@ async fn hides_the_runtime_callbacks_a_configured_name_claims() {
         .await
         .is_empty()
     );
+    assert!(
+        runtime_rows_for(
+            r#"["signoz"]"#,
+            &[("signoz", "opentelemetry")],
+            runtime(
+                "opentelemetry",
+                "user_module",
+                "OpenTelemetry",
+                Some("opentelemetry"),
+            )
+        )
+        .await
+        .is_empty()
+    );
     let sibling = runtime_rows_for(
         r#"["logfire"]"#,
         &[("logfire", "opentelemetry")],
