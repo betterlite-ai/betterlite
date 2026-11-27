@@ -24,8 +24,9 @@ use betterlite_logging::prometheus_helpers::bounded_series_tracker::{
 };
 use betterlite_logging::prometheus_label_schema::PrometheusLabelSettings;
 use betterlite_oracle_helper_api::helper::HelperResult;
+use rust_decimal::Decimal;
 
-use super::input::{Input, KeySnapshotCall, OrgSnapshotCall, TeamSnapshotCall, UserSnapshotCall};
+use super::input::Input;
 use super::lookups::ScriptedLookups;
 use super::output::budget_output;
 use super::probe::ProbeLog;
@@ -34,141 +35,72 @@ use super::support::{
     entity_gauges, finish, label_source, runtime, shape_error,
 };
 
-impl TeamSnapshotCall {
-    const fn snapshot(&self) -> TeamBudgetSnapshot {
-        TeamBudgetSnapshot {
-            budget_reset_at: self.budget_reset_at,
-            max_budget: self.max_budget,
-        }
-    }
-}
-
-impl OrgSnapshotCall {
-    const fn snapshot(&self) -> OrgBudgetSnapshot {
-        OrgBudgetSnapshot {
-            spend: self.spend,
-            max_budget: self.max_budget,
-        }
-    }
-}
-
-impl KeySnapshotCall {
-    const fn snapshot(&self) -> KeyBudgetSnapshot {
-        KeyBudgetSnapshot {
-            budget_reset_at: self.budget_reset_at,
-        }
-    }
-}
-
-impl UserSnapshotCall {
-    fn snapshot(&self) -> UserBudgetSnapshot {
-        UserBudgetSnapshot {
-            budget_reset_at: self.budget_reset_at,
-            max_budget: self.max_budget,
-            user_alias: self.user_alias.clone(),
-        }
-    }
-}
-
 pub(super) fn team_value(input: &Input) -> HelperResult {
-    let Input::Team {
-        team_id,
-        team_alias,
-        team_spend,
-        team_max_budget,
-        response_cost,
-        carried,
-        lookup,
-        now,
-        noop,
-        labels_by_metric,
-    } = input
-    else {
-        return Err(shape_error());
-    };
+    let now = input.now.ok_or_else(shape_error)?;
     let probe = ProbeLog::default();
-    let gauges = entity_gauges(TEAM_GAUGES, labels_by_metric, *noop, &probe)?;
+    let gauges = entity_gauges(TEAM_GAUGES, &input.labels_by_metric, input.noop, &probe)?;
     let settings = PrometheusLabelSettings::with_defaults();
-    let scripted = ScriptedLookups::new(lookup.clone(), true);
-    let carried_state = carried.as_ref().map(TeamSnapshotCall::snapshot);
+    let scripted = ScriptedLookups::new(input.lookup.clone(), true);
+    let carried = input.carried.as_ref().map(|call| TeamBudgetSnapshot {
+        budget_reset_at: call.budget_reset_at,
+        max_budget: call.max_budget,
+    });
     let request = TeamBudgetRequest {
-        user_api_team: team_id.as_deref(),
-        user_api_team_alias: team_alias.as_deref(),
-        team_spend: *team_spend,
-        team_max_budget: *team_max_budget,
-        response_cost: *response_cost,
-        carried: carried_state.as_ref(),
+        user_api_team: input.team_id.as_deref(),
+        user_api_team_alias: input.team_alias.as_deref(),
+        team_spend: input.team_spend,
+        team_max_budget: input.team_max_budget,
+        response_cost: input.response_cost,
+        carried: carried.as_ref(),
     };
     let source = label_source(&settings, None, Some(true));
     finish(
         &probe,
         &scripted,
-        set_team_budget_metrics_after_api_request(&scripted, &gauges, source, *now, &request),
+        set_team_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
     )
 }
 
 pub(super) fn org_value(input: &Input) -> HelperResult {
-    let Input::Org {
-        org_id,
-        org_alias,
-        response_cost,
-        carried,
-        database,
-        lookup,
-        now,
-        noop,
-        labels_by_metric,
-    } = input
-    else {
-        return Err(shape_error());
-    };
+    let now = input.now.ok_or_else(shape_error)?;
     let probe = ProbeLog::default();
-    let gauges = entity_gauges(ORG_GAUGES, labels_by_metric, *noop, &probe)?;
+    let gauges = entity_gauges(ORG_GAUGES, &input.labels_by_metric, input.noop, &probe)?;
     let settings = PrometheusLabelSettings::with_defaults();
-    let scripted = ScriptedLookups::new(lookup.clone(), *database);
-    let carried_state = carried.as_ref().map(OrgSnapshotCall::snapshot);
+    let scripted = ScriptedLookups::new(input.lookup.clone(), input.database);
+    let carried = input.carried.as_ref().map(|call| OrgBudgetSnapshot {
+        spend: call.spend.unwrap_or(Decimal::ZERO),
+        max_budget: call.max_budget,
+    });
     let request = OrgBudgetRequest {
-        org_id: org_id.as_deref(),
-        response_cost: *response_cost,
-        carried: carried_state.as_ref(),
-        org_alias: org_alias.as_deref(),
+        org_id: input.org_id.as_deref(),
+        response_cost: input.response_cost,
+        carried: carried.as_ref(),
+        org_alias: input.org_alias.as_deref(),
     };
     let source = label_source(&settings, None, Some(true));
     finish(
         &probe,
         &scripted,
-        set_org_budget_metrics_after_api_request(&scripted, &gauges, source, *now, &request),
+        set_org_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
     )
 }
 
 pub(super) fn customer_value(input: &Input) -> HelperResult {
-    let Input::Customer {
-        end_user_id,
-        response_cost,
-        enable_prometheus_only,
-        disable_end_user_cost_tracking,
-        lookup,
-        now,
-        noop,
-        labels_by_metric,
-    } = input
-    else {
-        return Err(shape_error());
-    };
+    let now = input.now.ok_or_else(shape_error)?;
     let probe = ProbeLog::default();
-    let gauges = entity_gauges(CUSTOMER_GAUGES, labels_by_metric, *noop, &probe)?;
+    let gauges = entity_gauges(CUSTOMER_GAUGES, &input.labels_by_metric, input.noop, &probe)?;
     let settings = PrometheusLabelSettings::with_defaults();
     let end_user = EndUserCostTrackingSettings {
-        disable_end_user_cost_tracking: *disable_end_user_cost_tracking,
-        enable_prometheus_only: *enable_prometheus_only,
+        disable_end_user_cost_tracking: input.disable_end_user_cost_tracking,
+        enable_prometheus_only: input.enable_prometheus_only,
     };
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let context = customer_context(&settings, end_user, *now, &tracker, &limits);
-    let scripted = ScriptedLookups::new(lookup.clone(), true);
+    let context = customer_context(&settings, end_user, now, &tracker, &limits);
+    let scripted = ScriptedLookups::new(input.lookup.clone(), true);
     let request = CustomerBudgetRequest {
-        end_user_id: end_user_id.as_deref(),
-        response_cost: *response_cost,
+        end_user_id: input.end_user_id.as_deref(),
+        response_cost: input.response_cost,
     };
     finish(
         &probe,
@@ -180,91 +112,62 @@ pub(super) fn customer_value(input: &Input) -> HelperResult {
 }
 
 pub(super) fn key_value(input: &Input) -> HelperResult {
-    let Input::Key {
-        user_api_key,
-        user_api_key_alias,
-        response_cost,
-        key_max_budget,
-        key_spend,
-        carried,
-        lookup,
-        now,
-        noop,
-        labels_by_metric,
-    } = input
-    else {
-        return Err(shape_error());
-    };
+    let now = input.now.ok_or_else(shape_error)?;
     let probe = ProbeLog::default();
-    let gauges = entity_gauges(KEY_GAUGES, labels_by_metric, *noop, &probe)?;
+    let gauges = entity_gauges(KEY_GAUGES, &input.labels_by_metric, input.noop, &probe)?;
     let settings = PrometheusLabelSettings::with_defaults();
-    let scripted = ScriptedLookups::new(lookup.clone(), true);
-    let carried_state = carried.as_ref().map(KeySnapshotCall::snapshot);
+    let scripted = ScriptedLookups::new(input.lookup.clone(), true);
+    let carried = input.carried.as_ref().map(|call| KeyBudgetSnapshot {
+        budget_reset_at: call.budget_reset_at,
+    });
     let request = KeyBudgetRequest {
-        user_api_key: user_api_key.as_deref(),
-        user_api_key_alias: user_api_key_alias.as_deref(),
-        response_cost: *response_cost,
-        key_max_budget: *key_max_budget,
-        key_spend: *key_spend,
-        carried: carried_state.as_ref(),
+        user_api_key: input.user_api_key.as_deref(),
+        user_api_key_alias: input.user_api_key_alias.as_deref(),
+        response_cost: input.response_cost,
+        key_max_budget: input.key_max_budget,
+        key_spend: input.key_spend,
+        carried: carried.as_ref(),
     };
     let source = label_source(&settings, None, Some(true));
     finish(
         &probe,
         &scripted,
-        set_key_budget_metrics_after_api_request(&scripted, &gauges, source, *now, &request),
+        set_key_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
     )
 }
 
 pub(super) fn user_value(input: &Input) -> HelperResult {
-    let Input::User {
-        user_id,
-        user_spend,
-        user_max_budget,
-        response_cost,
-        carried,
-        user_email,
-        lookup,
-        now,
-        noop,
-        labels_by_metric,
-    } = input
-    else {
-        return Err(shape_error());
-    };
+    let now = input.now.ok_or_else(shape_error)?;
     let probe = ProbeLog::default();
-    let gauges = entity_gauges(USER_GAUGES, labels_by_metric, *noop, &probe)?;
+    let gauges = entity_gauges(USER_GAUGES, &input.labels_by_metric, input.noop, &probe)?;
     let settings = PrometheusLabelSettings::with_defaults();
-    let scripted = ScriptedLookups::new(lookup.clone(), true);
-    let carried_state = carried.as_ref().map(UserSnapshotCall::snapshot);
+    let scripted = ScriptedLookups::new(input.lookup.clone(), true);
+    let carried = input.carried.as_ref().map(|call| UserBudgetSnapshot {
+        budget_reset_at: call.budget_reset_at,
+        max_budget: call.max_budget,
+        user_alias: call.user_alias.clone(),
+    });
     let request = UserBudgetRequest {
-        user_id: user_id.as_deref(),
-        user_spend: *user_spend,
-        user_max_budget: *user_max_budget,
-        response_cost: *response_cost,
-        carried: carried_state.as_ref(),
-        user_email: user_email.as_deref(),
+        user_id: input.user_id.as_deref(),
+        user_spend: input.user_spend,
+        user_max_budget: input.user_max_budget,
+        response_cost: input.response_cost,
+        carried: carried.as_ref(),
+        user_email: input.user_email.as_deref(),
     };
     let source = label_source(&settings, None, Some(true));
     finish(
         &probe,
         &scripted,
-        set_user_budget_metrics_after_api_request(&scripted, &gauges, source, *now, &request),
+        set_user_budget_metrics_after_api_request(&scripted, &gauges, source, now, &request),
     )
 }
 
 pub(super) fn default_value(input: &Input) -> HelperResult {
-    let Input::DefaultCustomerBudget {
-        default_budget_id,
-        lookup,
-    } = input
-    else {
-        return Err(shape_error());
-    };
-    let scripted = ScriptedLookups::new(lookup.clone(), true);
+    let scripted = ScriptedLookups::new(input.lookup.clone(), true);
     let row: Option<BudgetTableSnapshot> = runtime()?.block_on(get_default_customer_budget(
         &scripted,
-        default_budget_id.as_deref(),
+        input.default_budget_id.as_deref(),
     ));
     Ok(budget_output(row, &scripted.calls()))
 }
