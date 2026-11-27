@@ -1,9 +1,11 @@
 use std::error::Error;
 
+use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_core::api::file_routing_ids::ManagedResourceAccessChecker;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_server::api::vector_file_resolution::error::VectorFileResolutionError;
 use betterlite_server::api::vector_file_resolution::file_routing::unified_file_routing;
 use betterlite_server::api::vector_file_resolution::model_hint::{
@@ -13,57 +15,187 @@ use betterlite_server::api::vector_file_resolution::provider_permissions::provid
 use betterlite_server::api::vector_file_resolution::response_ids::{
     FileResponse, restore_file_identifiers,
 };
-use betterlite_server::api::vector_file_resolution::store_overlay::unified_store_and_registry_overlay;
+use betterlite_server::api::vector_file_resolution::store_overlay::apply_store_overlay;
 use betterlite_server::api::vector_file_resolution::team_fallback::team_model_fallback;
 use betterlite_server::api::vector_file_resolution::{Caller, RoutingDeps, StoreDeps};
 use serde_json::{Value, json};
 
-use super::input::{Call, Hint, Overlay, Permissions, ResponseScript, Restore, Routing};
-use super::script::{Catalog, Checker, Grants, Prepared, TABLES, caller_principal, key_auth};
+use super::input::{Call, CatalogScript, RequestScript, ResponseScript, Restore};
+use super::script::{Catalog, Checker, Grants, Prepared, TABLES, caller_principal};
 
 pub(super) async fn answer(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::UnifiedFileRouting(routing) => routing_answer(routing).await,
+        Call::UnifiedFileRouting(routing) => {
+            let stage = Stage::new(
+                &routing.request,
+                routing.catalog.clone(),
+                routing.deny.clone(),
+            )?;
+            let auth = UserAPIKeyAuth::construct(AuthInput::Dict(routing.caller.clone()))
+                .or_value_error()?;
+            let caller = Caller {
+                principal: &stage.principal,
+                auth: &auth,
+            };
+            let checker = routing.managed_files.map(|allow| Checker { allow });
+            let deps = stage.deps(
+                checker
+                    .as_ref()
+                    .map(|hook| hook as &dyn ManagedResourceAccessChecker),
+                routing.require_managed_files,
+            );
+            let facts = stage.prepared.facts();
+            let mut data = routing.data.clone();
+            let outcome =
+                unified_file_routing(&mut data, &routing.file_id, &facts, &caller, &deps).await;
+            let (restored, error) = match outcome {
+                Ok(restored) => (restored, None),
+                Err(found) => (None, Some(error_view(&found))),
+            };
+            Ok(json!({
+                "data": data,
+                "restored": restored,
+                "lookups": stage.lookups(),
+                "error": error,
+            }))
+        }
         Call::RestoreFileIdentifiers(restore) => Ok(restore_answer(restore)),
-        Call::ModelHintPrecedence(hint) | Call::TeamModelFallback(hint) => hint_answer(hint).await,
-        Call::UnifiedStoreAndRegistryOverlay(overlay) => overlay_answer(overlay),
-        Call::ProviderAndIndexPermissions(permissions) => permissions_answer(permissions),
+        Call::ModelHintPrecedence(hint) | Call::TeamModelFallback(hint) => {
+            let stage = Stage::new(&hint.request, hint.catalog.clone(), hint.deny.clone())?;
+            let auth = hint
+                .caller
+                .as_ref()
+                .map(|script| {
+                    UserAPIKeyAuth::construct(AuthInput::Dict(script.clone())).or_value_error()
+                })
+                .transpose()?;
+            let caller = auth.as_ref().map(|key| Caller {
+                principal: &stage.principal,
+                auth: key,
+            });
+            let facts = stage.prepared.facts();
+            let deps = stage.deps(None, false);
+            let mut data = hint.data.clone();
+            let error = match model_hint_precedence(&mut data, &facts, caller.as_ref(), &deps).await
+            {
+                Ok(ModelHintStep::FallbackRequired) => {
+                    team_model_fallback(&mut data, caller.as_ref(), &deps)
+                        .await
+                        .err()
+                        .map(|found| error_view(&found))
+                }
+                Ok(ModelHintStep::Bypassed | ModelHintStep::CredentialsApplied) => None,
+                Err(found) => Some(error_view(&found)),
+            };
+            Ok(json!({
+                "data": data,
+                "lookups": stage.lookups(),
+                "authorizations": stage.grants.asked_json(),
+                "error": error,
+            }))
+        }
+        Call::UnifiedStoreAndRegistryOverlay(overlay) => {
+            let managed = overlay
+                .managed_store
+                .as_ref()
+                .map(|script| serde_json::from_value::<LiteLlmManagedVectorStore>(script.clone()))
+                .transpose()?;
+            let registry = match &overlay.registry {
+                Some(stores) => {
+                    let mut built = VectorStoreRegistry::default();
+                    for script in stores {
+                        built
+                            .stores
+                            .push(serde_json::from_value::<LiteLlmManagedVectorStore>(
+                                script.clone(),
+                            )?);
+                    }
+                    Some(built)
+                }
+                None => None,
+            };
+            let deps = StoreDeps {
+                managed_store: managed.as_ref(),
+                registry: registry.as_ref(),
+                should_lookup_registry: overlay.should_lookup_registry.unwrap_or(true),
+            };
+            let mut data = overlay.data.clone();
+            let error = apply_store_overlay(&mut data, &overlay.vector_store_id, &deps)
+                .err()
+                .map(|found| error_view(&found));
+            Ok(json!({"data": data, "error": error}))
+        }
+        Call::ProviderAndIndexPermissions(permissions) => {
+            let prepared = Prepared::new(&permissions.request)?;
+            let facts = prepared.facts();
+            let principal = caller_principal()?;
+            let auth = UserAPIKeyAuth::construct(AuthInput::Dict(permissions.caller.clone()))
+                .or_value_error()?;
+            let caller = Caller {
+                principal: &principal,
+                auth: &auth,
+            };
+            match provider_and_index_permissions(
+                &permissions.data,
+                &permissions.vector_store_id,
+                &facts,
+                &caller,
+                &TABLES,
+            ) {
+                Ok(provider) => Ok(json!({
+                    "provider": provider.map(|provider| provider.to_string()),
+                    "error": Value::Null,
+                })),
+                Err(found) => Ok(json!({
+                    "provider": Value::Null,
+                    "error": {"status": found.status(), "detail": found.to_string()},
+                })),
+            }
+        }
     }
 }
 
-// _update_request_data_with_managed_file_id with the router, grants and ownership hook scripted
-async fn routing_answer(call: &Routing) -> Result<Value, Box<HelperError>> {
-    let prepared = Prepared::new(&call.request)?;
-    let facts = prepared.facts();
-    let principal = caller_principal()?;
-    let auth = key_auth(&call.caller)?;
-    let caller = Caller {
-        principal: &principal,
-        auth: &auth,
-    };
-    let checker = call.managed_files.map(Checker::new);
-    let catalog = call.catalog.clone().map(Catalog::new);
-    let grants = Grants::new(call.deny.clone());
-    let deps = RoutingDeps {
-        catalog: catalog.as_ref(),
-        grants: &grants,
-        managed_files: checker
-            .as_ref()
-            .map(|hook| hook as &dyn ManagedResourceAccessChecker),
-        require_managed_files: call.require_managed_files,
-    };
-    let mut data = call.data.clone();
-    let outcome = unified_file_routing(&mut data, &call.file_id, &facts, &caller, &deps).await;
-    let (restored, error) = match outcome {
-        Ok(restored) => (restored, None),
-        Err(found) => (None, Some(error_view(&found))),
-    };
-    Ok(json!({
-        "data": data,
-        "restored": restored,
-        "lookups": lookups(catalog.as_ref()),
-        "error": error,
-    }))
+// The request, key and scripted router the routing and hint calls share.
+struct Stage {
+    prepared: Prepared,
+    principal: Principal,
+    catalog: Option<Catalog>,
+    grants: Grants,
+}
+
+impl Stage {
+    fn new(
+        request: &RequestScript,
+        catalog: Option<CatalogScript>,
+        deny: Vec<String>,
+    ) -> Result<Self, Box<HelperError>> {
+        Ok(Self {
+            prepared: Prepared::new(request)?,
+            principal: caller_principal()?,
+            catalog: catalog.map(Catalog::new),
+            grants: Grants::new(deny),
+        })
+    }
+
+    fn deps<'stage>(
+        &'stage self,
+        managed_files: Option<&'stage dyn ManagedResourceAccessChecker>,
+        require_managed_files: bool,
+    ) -> RoutingDeps<'stage, Catalog, Grants> {
+        RoutingDeps {
+            catalog: self.catalog.as_ref(),
+            grants: &self.grants,
+            managed_files,
+            require_managed_files,
+        }
+    }
+
+    fn lookups(&self) -> Value {
+        match &self.catalog {
+            Some(catalog) => catalog.lookups_json(),
+            None => Value::Array(Vec::new()),
+        }
+    }
 }
 
 // _replace_file_id_in_response over the response shape the case names
@@ -101,102 +233,6 @@ fn restore_answer(call: &Restore) -> Value {
             json!({"response": restored})
         }
     }
-}
-
-// _update_request_data_with_model_routing_hint, its hint half and then the team fallback when a caller is scripted
-async fn hint_answer(call: &Hint) -> Result<Value, Box<HelperError>> {
-    let prepared = Prepared::new(&call.request)?;
-    let facts = prepared.facts();
-    let principal = caller_principal()?;
-    let auth = call.caller.as_ref().map(key_auth).transpose()?;
-    let caller = auth.as_ref().map(|key| Caller {
-        principal: &principal,
-        auth: key,
-    });
-    let catalog = call.catalog.clone().map(Catalog::new);
-    let grants = Grants::new(call.deny.clone());
-    let deps = RoutingDeps {
-        catalog: catalog.as_ref(),
-        grants: &grants,
-        managed_files: None,
-        require_managed_files: false,
-    };
-    let mut data = call.data.clone();
-    let mut error = None;
-    match model_hint_precedence(&mut data, &facts, caller.as_ref(), &deps).await {
-        Ok(ModelHintStep::FallbackRequired) => {
-            if let Err(found) = team_model_fallback(&mut data, caller.as_ref(), &deps).await {
-                error = Some(error_view(&found));
-            }
-        }
-        Ok(ModelHintStep::Bypassed | ModelHintStep::CredentialsApplied) => {}
-        Err(found) => error = Some(error_view(&found)),
-    }
-    Ok(json!({
-        "data": data,
-        "lookups": lookups(catalog.as_ref()),
-        "authorizations": grants.asked_json(),
-        "error": error,
-    }))
-}
-
-// _update_request_data_with_litellm_managed_vector_store_registry over the store the route resolved and the registry script
-fn overlay_answer(call: &Overlay) -> Result<Value, Box<HelperError>> {
-    let managed = call
-        .managed_store
-        .as_ref()
-        .map(|script| serde_json::from_value::<LiteLlmManagedVectorStore>(script.clone()))
-        .transpose()?;
-    let registry = match &call.registry {
-        Some(stores) => {
-            let mut built = VectorStoreRegistry::default();
-            for script in stores {
-                built
-                    .stores
-                    .push(serde_json::from_value::<LiteLlmManagedVectorStore>(
-                        script.clone(),
-                    )?);
-            }
-            Some(built)
-        }
-        None => None,
-    };
-    let deps = StoreDeps {
-        managed_store: managed.as_ref(),
-        registry: registry.as_ref(),
-        should_lookup_registry: call.should_lookup_registry.unwrap_or(true),
-    };
-    let mut data = call.data.clone();
-    let error = unified_store_and_registry_overlay(&mut data, &call.vector_store_id, &deps)
-        .err()
-        .map(|found| error_view(&found));
-    Ok(json!({"data": data, "error": error}))
-}
-
-// _resolve_provider then _maybe_check_permissions, B1061 reading the scripted key and the real endpoint tables
-fn permissions_answer(call: &Permissions) -> Result<Value, Box<HelperError>> {
-    let prepared = Prepared::new(&call.request)?;
-    let facts = prepared.facts();
-    let principal = caller_principal()?;
-    let auth = key_auth(&call.caller)?;
-    let caller = Caller {
-        principal: &principal,
-        auth: &auth,
-    };
-    let outcome =
-        provider_and_index_permissions(&call.data, &call.vector_store_id, &facts, &caller, &TABLES);
-    let (provider, error) = match outcome {
-        Ok(provider) => (provider.map(|provider| provider.to_string()), None),
-        Err(found) => (
-            None,
-            Some(json!({"status": found.status(), "detail": found.to_string()})),
-        ),
-    };
-    Ok(json!({"provider": provider, "error": error}))
-}
-
-fn lookups(catalog: Option<&Catalog>) -> Value {
-    catalog.map_or(Value::Array(Vec::new()), Catalog::lookups_json)
 }
 
 // the status and detail the route would answer with, as LiteLLM's HTTPException carries them

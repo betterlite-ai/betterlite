@@ -35,33 +35,39 @@ class Caller(TypedDict, total=False):
     user_role: str
 
 
-class RoutingCall(TypedDict):
-    function: Literal["unified_file_routing"]
+class ModelCall(TypedDict):
     data: dict[str, JsonValue]
-    file_id: str
-    caller: Caller
     request: NotRequired[RequestScript]
     catalog: NotRequired[dict[str, dict[str, JsonValue]] | None]
     deny: NotRequired[list[str]]
+
+
+class RoutingCall(ModelCall):
+    function: Literal["unified_file_routing"]
+    file_id: str
+    caller: Caller
     managed_files: NotRequired[bool | None]
     require_managed_files: NotRequired[bool]
 
 
-class HintCall(TypedDict):
+class HintCall(ModelCall):
     function: Literal["model_hint_precedence", "team_model_fallback"]
-    data: dict[str, JsonValue]
-    request: NotRequired[RequestScript]
     caller: NotRequired[Caller | None]
-    catalog: NotRequired[dict[str, dict[str, JsonValue]] | None]
-    deny: NotRequired[list[str]]
+
+
+class ManagedStore(TypedDict, total=False):
+    vector_store_id: str
+    custom_llm_provider: str | None
+    litellm_credential_name: str | None
+    litellm_params: dict[str, JsonValue] | None
 
 
 class OverlayCall(TypedDict):
     function: Literal["unified_store_and_registry_overlay"]
     data: dict[str, JsonValue]
     vector_store_id: str
-    managed_store: NotRequired[LiteLLM_ManagedVectorStore | None]
-    registry: NotRequired[list[LiteLLM_ManagedVectorStore] | None]
+    managed_store: NotRequired[ManagedStore | None]
+    registry: NotRequired[list[ManagedStore] | None]
     should_lookup_registry: NotRequired[bool | None]
 
 
@@ -86,11 +92,8 @@ class RestoreCall(TypedDict):
     response: ResponseScript
 
 
-Call = RoutingCall | HintCall | OverlayCall | PermissionsCall | RestoreCall
-
-
 class Input(TypedDict):
-    calls: list[Call]
+    calls: list[RoutingCall | HintCall | OverlayCall | PermissionsCall | RestoreCall]
 
 
 class ScriptObject:
@@ -161,18 +164,19 @@ class ScriptedAuthorize:
 
 MANAGED_FILE = cast("Callable[[dict[str, JsonValue], str, Request, UserAPIKeyAuth, object | None, Router | None], Coroutine[object, object, tuple[dict[str, JsonValue], str | None]]]", endpoints._update_request_data_with_managed_file_id)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L35-L171
 HINT = cast("Callable[[dict[str, JsonValue], Request, Router | None, UserAPIKeyAuth | None], Coroutine[object, object, dict[str, JsonValue]]]", endpoints._update_request_data_with_model_routing_hint)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L218-L313
-OVERLAY = cast("Callable[[dict[str, JsonValue], str, Router | None, LiteLLM_ManagedVectorStore | None, bool], dict[str, JsonValue]]", endpoints._update_request_data_with_litellm_managed_vector_store_registry)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L316-L408
+OVERLAY = cast("Callable[[dict[str, JsonValue], str, Router | None, ManagedStore | None, bool], dict[str, JsonValue]]", endpoints._update_request_data_with_litellm_managed_vector_store_registry)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L316-L408
 REPLACE = cast("Callable[[object | None, str], object | None]", endpoints._replace_file_id_in_response)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L174-L204
 
 
 def error_view(raised: HTTPException) -> JsonValue:
     detail = TypeAdapter(str | dict[str, str]).validate_python(raised.detail)
+    text = ""
     match detail:
         case str():
             text = detail
         case dict():
             text = detail["error"]
-    return JSON.validate_python({"status": raised.status_code, "detail": text})
+    return JSON.validate_python({"status": raised.status_code, "detail": text})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
 
 
 def request_for(script: RequestScript | None) -> Request:
@@ -196,7 +200,7 @@ def model_answer(call: RoutingCall | HintCall) -> JsonValue:
     router = None if catalog is None else ScriptedRouter(catalog)
     caller = call.get("caller")
     grant = ScriptedAuthorize(call.get("deny"))
-    endpoints.authorize_model_for_key = grant
+    endpoints.authorize_model_for_key = grant  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L16
     common_utils.authorize_model_for_key = grant
     data = dict(call["data"])
     restored: str | None = None
@@ -208,7 +212,7 @@ def model_answer(call: RoutingCall | HintCall) -> JsonValue:
             restored = asyncio.run(
                 MANAGED_FILE(
                     data, call["file_id"], request_for(call.get("request")),
-                    UserAPIKeyAuth.model_construct(**call["caller"]),
+                    UserAPIKeyAuth.model_construct(**call["caller"]),  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
                     None if managed is None else Checker(allow=managed), router,
                 )
             )[1]
@@ -216,7 +220,7 @@ def model_answer(call: RoutingCall | HintCall) -> JsonValue:
             asyncio.run(
                 HINT(
                     data, request_for(call.get("request")), router,
-                    None if caller is None else UserAPIKeyAuth.model_construct(**caller),
+                    None if caller is None else UserAPIKeyAuth.model_construct(**caller),  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
                 )
             )
     except HTTPException as raised:
@@ -234,12 +238,12 @@ def model_answer(call: RoutingCall | HintCall) -> JsonValue:
 def restore_answer(call: RestoreCall) -> JsonValue:
     script = call["response"]
     if script["kind"] == "null":
-        return JSON.validate_python({"response": None})
+        return JSON.validate_python({"response": None})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L174-L204
     if script["kind"] == "dict":
         fields = script.get("fields")
         document = {} if fields is None else dict(fields)
         REPLACE(document, call["original_file_id"])
-        return JSON.validate_python({"response": document})
+        return JSON.validate_python({"response": document})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L174-L204
     identifier = script.get("id")
     file_id = script.get("file_id")
     response = ScriptObject(identifier, file_id)
@@ -249,40 +253,38 @@ def restore_answer(call: RestoreCall) -> JsonValue:
         restored["id"] = response.id
     if file_id is not None:
         restored["file_id"] = response.file_id
-    return JSON.validate_python({"response": restored})
+    return JSON.validate_python({"response": restored})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L174-L204
 
 
 def overlay_answer(call: OverlayCall) -> JsonValue:
     registry = call.get("registry")
-    lookup = call.get("should_lookup_registry")
-    stores = None if registry is None else VectorStoreRegistry(vector_stores=registry)
+    stores = None if registry is None else VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", registry))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
     litellm.vector_store_registry = stores
     data = dict(call["data"])
     try:
         OVERLAY(
             data, call["vector_store_id"], None, call.get("managed_store"),
-            True if lookup is None else lookup,
+            call.get("should_lookup_registry") is not False,
         )
     finally:
         litellm.vector_store_registry = None
-    return JSON.validate_python({"data": data, "error": None})
+    return JSON.validate_python({"data": data, "error": None})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L316-L408
 
 
 def permissions_answer(call: PermissionsCall) -> JsonValue:
     request = request_for(call.get("request"))
-    provider = asyncio.run(endpoints._resolve_provider(data=call["data"], request=request))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L411-L431
-    name = None if provider is None else provider.value
+    provider = asyncio.run(endpoints._resolve_provider(data=call["data"], request=request))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L411-L431
     try:
-        endpoints._maybe_check_permissions(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
+        endpoints._maybe_check_permissions(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
             provider=provider, vector_store_id=call["vector_store_id"],
-            request=request, user_api_key_dict=UserAPIKeyAuth.model_construct(**call["caller"]),
+            request=request, user_api_key_dict=UserAPIKeyAuth.model_construct(**call["caller"]),  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
         )
     except HTTPException as raised:
-        return JSON.validate_python({"provider": None, "error": error_view(raised)})
-    return JSON.validate_python({"provider": name, "error": None})
+        return JSON.validate_python({"provider": None, "error": error_view(raised)})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
+    return JSON.validate_python({"provider": None if provider is None else provider.value, "error": None})  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
 
 
-def answer(call: Call) -> JsonValue:
+def answer(call: RoutingCall | HintCall | OverlayCall | PermissionsCall | RestoreCall) -> JsonValue:
     if call["function"] == "restore_file_identifiers":
         return restore_answer(call)
     if call["function"] == "unified_store_and_registry_overlay":

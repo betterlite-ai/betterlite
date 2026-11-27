@@ -3,7 +3,6 @@ use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_auth::route_match::canonical::RequestRouteSource;
 use betterlite_context::resource_config_selection::vector_stores::{
     VectorStoreFilesConfigTag, VectorStoresConfigTag,
@@ -25,7 +24,7 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use super::input::{CallerScript, CatalogScript, RequestScript};
+use super::input::{CatalogScript, RequestScript};
 
 pub(super) fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -77,10 +76,6 @@ impl Prepared {
             },
         }
     }
-}
-
-pub(super) fn key_auth(script: &CallerScript) -> Result<UserAPIKeyAuth, Box<HelperError>> {
-    UserAPIKeyAuth::construct(AuthInput::Dict(script.clone())).or_value_error()
 }
 
 pub(super) fn caller_principal() -> Result<Principal, Box<HelperError>> {
@@ -173,13 +168,9 @@ impl Grants {
     }
 
     pub(super) fn asked_json(&self) -> Value {
-        Value::Array(
-            locked(&self.asked)
-                .iter()
-                .cloned()
-                .map(Value::String)
-                .collect(),
-        )
+        let asked = locked(&self.asked);
+        let names: Vec<Value> = asked.iter().cloned().map(Value::String).collect();
+        Value::Array(names)
     }
 }
 
@@ -202,13 +193,7 @@ impl ModelGrant<Catalog> for Grants {
 
 // B1021's ownership hook, answering with the case's single allow flag
 pub(super) struct Checker {
-    allow: bool,
-}
-
-impl Checker {
-    pub(super) const fn new(allow: bool) -> Self {
-        Self { allow }
-    }
+    pub(super) allow: bool,
 }
 
 #[async_trait]
