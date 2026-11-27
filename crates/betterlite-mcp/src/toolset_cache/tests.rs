@@ -489,6 +489,23 @@ fn wire_not_found_decodes_from_the_sentinel_string() {
     assert_eq!(from_value, CachedToolset::NotFound);
 }
 
+#[test]
+fn wire_reports_the_shape_and_the_rejected_value() {
+    let wrong_shape = serde_json::from_str::<CachedToolset>("null").unwrap_err();
+    let wrong_string = serde_json::from_str::<CachedToolset>(r#""test-other""#).unwrap_err();
+
+    assert!(
+        wrong_shape
+            .to_string()
+            .contains("a toolset object or the __not_found__ string")
+    );
+    assert!(
+        wrong_string
+            .to_string()
+            .contains(r#"the cache value "test-other" is not a toolset"#)
+    );
+}
+
 #[rstest]
 #[case::other_string(r#""test-other""#)]
 #[case::near_sentinel(r#""__not_found__x""#)]
