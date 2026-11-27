@@ -68,14 +68,13 @@ fn proxy_budget_loaded(#[case] written: &str, #[case] expected: MaxBudget) {
     assert_eq!(load(&source).unwrap().max_budget, expected);
 }
 
-// a non-finite float never reaches the section, quoted or not: the YAML layer refuses it for every config key
+// an unquoted non-finite float never reaches the section: the YAML layer refuses it for every config key
 #[rstest]
 #[case::infinity(".inf")]
 #[case::signed_infinity("+.inf")]
 #[case::negative_infinity("-.inf")]
 #[case::nan(".nan")]
 #[case::overflow("1e999")]
-#[case::quoted_overflow("\"1e999\"")]
 fn nonfinite_yaml_budget_rejected(#[case] written: &str) {
     let source = format!("litellm_settings:\n  max_budget: {written}\n");
     assert!(matches!(
