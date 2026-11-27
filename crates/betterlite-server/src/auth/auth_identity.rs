@@ -168,6 +168,13 @@ pub(crate) fn dispatch(
     if backend != input.backend() && !key_pass_through {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
+    run_stage_input(input, master_key)
+}
+
+fn run_stage_input(
+    input: &StageInput,
+    master_key: &SecretString,
+) -> Result<AuthContext, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
             Err(StageFailure::from(AuthenticationFailure::Missing))
