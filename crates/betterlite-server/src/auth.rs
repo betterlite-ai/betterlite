@@ -85,7 +85,7 @@ pub(crate) struct PreAuthenticated(pub(crate) AuthContext);
 
 fn key_lookup_stage_input(request: &Request<Body>) -> StageInput {
     request.extensions().get::<PreAuthenticated>().map_or_else(
-        || auth_key_lookup::lookup_stage_input(request),
+        || identity_store::lookup_stage_input(request),
         |context| StageInput::Authenticated(Box::new(context.0.clone())),
     )
 }
@@ -261,6 +261,7 @@ async fn prefetch_model_grants(stage: Box<GrantStageInput>) -> Result<StageInput
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
+        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,

@@ -1,0 +1,13 @@
+id: B10184
+milestone: R2 bug fixes
+title: The SDK pass-through call logs Bedrock and Bedrock Mantle replies and streams through B658's ports
+status: todo
+depends_on: [B10177, B10186, B10166, B658, B612, B625, B681, B598, B591, B2203, B2230]
+file: tasks/B10184-passthrough-bedrock-logging.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

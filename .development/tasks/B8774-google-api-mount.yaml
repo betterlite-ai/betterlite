@@ -25,7 +25,10 @@ description: >-
   the RouterCalls application() hands to the mount (below), once in
   google::mount with that same pre-call Arc and pass it as `GenaiRoutesState.generation`; pass B10197's
   `ContentTranslator::new(Arc::clone(&sdk_call))` as `translator` and `ProxyTokenCounter::new(state)` as `token_counter`, so the
-  four countTokens cases run on the production adapter and B8598's counter. Pass each routes function whatever else
+  four countTokens cases run on the production adapter and B8598's counter.
+  B3508's routes take `app::inference::google_agents::GoogleAgents::new(state, &calls, &process_environment())?` (B10199)
+  as `AgentCollectionState.processing`, built once in google::mount from the same calls; its TlsPolicyError is a startup
+  failure like router_calls'. Pass each routes function whatever else
   its task gives it, and register no path here.
 
 
