@@ -1,0 +1,31 @@
+kind: helper
+name: context-edit-dispatch-serial-flow-seed
+call:
+  context_edit_dispatch:
+    scenarios:
+      - messages:
+          - role: user
+            content: seed
+        system: BASE
+        context_management:
+          edits:
+            - type: clear_tool_uses_20250919
+            - type: future
+            - type: compact_20260112
+        clear:
+          - kind: legacy
+            messages:
+              - role: user
+                content: cleared
+            applied:
+              type: clear_tool_uses_20250919
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: compacted
+            compaction_block:
+              type: compaction
+              content: S
+env: {}
+compare: {ignore: []}
