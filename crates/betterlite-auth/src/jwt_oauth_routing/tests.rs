@@ -169,47 +169,65 @@ fn scope_list_claims_never_split() {
 }
 
 #[rstest]
-#[case::star_matches_the_prefix("trusted.*", "trusted.example.com", false, true)]
-#[case::star_refuses_a_space("trusted.*", "trusted.example.com evil.com", false, false)]
+#[case::star_matches_the_prefix("trusted.*", r#"{"iss": "trusted.example.com"}"#, false, true)]
+#[case::star_refuses_a_space(
+    "trusted.*",
+    r#"{"iss": "trusted.example.com evil.com"}"#,
+    false,
+    false
+)]
 #[case::star_refuses_a_unit_separator(
     "trusted.*",
-    "trusted.example.com\u{1c}evil.com",
+    r#"{"iss": "trusted.example.com\u001cevil.com"}"#,
     false,
     false
 )]
-#[case::star_refuses_a_tab("trusted.*", "trusted.example.com\tevil.com", false, false)]
-#[case::star_refuses_a_newline("trusted.*", "trusted.example.com\nevil.com", false, false)]
+#[case::star_refuses_a_tab(
+    "trusted.*",
+    r#"{"iss": "trusted.example.com\tevil.com"}"#,
+    false,
+    false
+)]
+#[case::star_refuses_a_newline(
+    "trusted.*",
+    r#"{"iss": "trusted.example.com\nevil.com"}"#,
+    false,
+    false
+)]
 #[case::star_refuses_a_nonbreaking_space(
     "trusted.*",
-    "trusted.example.com\u{a0}evil.com",
+    r#"{"iss": "trusted.example.com\u00a0evil.com"}"#,
     false,
     false
 )]
-#[case::scope_star_spans_a_tab("App:*", "App:\tLiteLLM", true, true)]
-#[case::wildcards_are_case_sensitive("TRUSTED.*", "trusted.example.com", false, false)]
-#[case::question_matches_one_letter("a?c", "abc", false, true)]
-#[case::question_needs_one_letter("a?c", "ac", false, false)]
-#[case::question_refuses_a_space("a?c", "a c", false, false)]
-#[case::question_refuses_a_unit_separator("a?c", "a\u{1c}c", false, false)]
-#[case::brackets_alone_are_literal("[ab]c", "[ab]c", false, true)]
-#[case::brackets_alone_never_match_a_class("[ab]c", "ac", false, false)]
-#[case::brackets_with_a_star_are_a_pattern("[ab]*", "acme", false, true)]
-#[case::question_inside_brackets_is_a_pattern("[?]", "?", false, true)]
-#[case::an_exact_selector_may_hold_spaces("a b", "a b", false, true)]
-#[case::a_bare_star_matches_anything("*", "trusted.example.com", false, true)]
-#[case::a_trailing_star_refuses_a_space("a*", "a b", false, false)]
+#[case::scope_star_spans_a_tab("App:*", r#"{"iss": "App:\tLiteLLM"}"#, true, true)]
+#[case::wildcards_are_case_sensitive(
+    "TRUSTED.*",
+    r#"{"iss": "trusted.example.com"}"#,
+    false,
+    false
+)]
+#[case::question_matches_one_letter("a?c", r#"{"iss": "abc"}"#, false, true)]
+#[case::question_needs_one_letter("a?c", r#"{"iss": "ac"}"#, false, false)]
+#[case::question_refuses_a_space("a?c", r#"{"iss": "a c"}"#, false, false)]
+#[case::question_refuses_a_unit_separator("a?c", r#"{"iss": "a\u001cc"}"#, false, false)]
+#[case::brackets_alone_are_literal("[ab]c", r#"{"iss": "[ab]c"}"#, false, true)]
+#[case::brackets_alone_never_match_a_class("[ab]c", r#"{"iss": "ac"}"#, false, false)]
+#[case::brackets_with_a_star_are_a_pattern("[ab]*", r#"{"iss": "acme"}"#, false, true)]
+#[case::question_inside_brackets_is_a_pattern("[?]", r#"{"iss": "?"}"#, false, true)]
+#[case::an_exact_selector_may_hold_spaces("a b", r#"{"iss": "a b"}"#, false, true)]
+#[case::a_bare_star_matches_anything("*", r#"{"iss": "trusted.example.com"}"#, false, true)]
+#[case::a_trailing_star_refuses_a_space("a*", r#"{"iss": "a b"}"#, false, false)]
 fn wildcard_case_whitespace_and_brackets(
     #[case] selector: &str,
-    #[case] claim: &str,
+    #[case] claims: &str,
     #[case] split_space_delimited: bool,
     #[case] expected: bool,
 ) {
-    let claims = TypedValue {
-        json: json!({ "iss": claim }),
-    };
+    let values = document(claims);
     let found = routing_selector_matches_claim(
         one(selector).as_ref(),
-        &claims,
+        &values,
         "iss",
         split_space_delimited,
     );
@@ -217,21 +235,23 @@ fn wildcard_case_whitespace_and_brackets(
 }
 
 #[rstest]
-#[case::second_selector_second_claim(many(&["x", "y"]), r#"{"iss": ["a", "y"]}"#, true)]
-#[case::second_selector_first_claim(many(&["x", "y"]), r#"{"iss": ["y", "a"]}"#, true)]
-#[case::no_pair_matches(many(&["x", "z"]), r#"{"iss": ["a", "b"]}"#, false)]
-#[case::one_selector_matches_the_last_claim(one("b"), r#"{"iss": ["a", "b"]}"#, true)]
-#[case::a_star_selector_matches_any_claim(one("*"), r#"{"iss": ["a", "b"]}"#, true)]
-#[case::two_patterns_share_one_claim(many(&["a*", "*c"]), r#"{"iss": ["abc"]}"#, true)]
-#[case::an_empty_element_is_a_value(one(""), r#"{"iss": ["", "x"]}"#, true)]
-#[case::an_empty_selector_matches_the_empty_element(many(&[""]), r#"{"iss": [""]}"#, true)]
-#[case::an_empty_claim_list_has_no_value(many(&["a"]), r#"{"iss": []}"#, false)]
+#[case::second_selector_second_claim(&["x", "y"], r#"{"iss": ["a", "y"]}"#, true)]
+#[case::second_selector_first_claim(&["x", "y"], r#"{"iss": ["y", "a"]}"#, true)]
+#[case::no_pair_matches(&["x", "z"], r#"{"iss": ["a", "b"]}"#, false)]
+#[case::one_selector_matches_the_last_claim(&["b"], r#"{"iss": ["a", "b"]}"#, true)]
+#[case::a_star_selector_matches_any_claim(&["*"], r#"{"iss": ["a", "b"]}"#, true)]
+#[case::two_patterns_share_one_claim(&["a*", "*c"], r#"{"iss": ["abc"]}"#, true)]
+#[case::an_empty_element_is_a_value(&[""], r#"{"iss": ["", "x"]}"#, true)]
+#[case::an_empty_selector_matches_the_empty_element(&[""], r#"{"iss": [""]}"#, true)]
+#[case::an_empty_claim_list_has_no_value(&["a"], r#"{"iss": []}"#, false)]
 fn selector_and_claim_cross_product(
-    #[case] selector: Option<Selector>,
+    #[case] selectors: &[&str],
     #[case] claims: &str,
     #[case] expected: bool,
 ) {
-    let found = routing_selector_matches_claim(selector.as_ref(), &document(claims), "iss", false);
+    let selector = many(selectors);
+    let values = document(claims);
+    let found = routing_selector_matches_claim(selector.as_ref(), &values, "iss", false);
     assert_eq!(found, expected);
 }
 
