@@ -1,0 +1,18 @@
+task: B4686
+deviations:
+  - what: "handle_agent_search returns MCP text tool results with the is_error flag instead of structured OpenAI Assistants response objects."
+    why: "Betterlite's MCP virtual tools answer in the MCP CallToolResult wire format, not through the proxy's agent endpoints, so the JSON result array is carried as a text content block like every other virtual tool."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L386-L417
+  - what: "Config or embedding failures in handle_mcp_tool_search and in handle_mcp_proxy_tool's search branch return is_error text results instead of silently falling back to keyword search."
+    why: "Betterlite keeps LiteLLM's semantics when semantic ranking is configured: an invalid mcp_tool_search setting, an embedding model without a model_list, or a failed embedding request prevents the search and returns error text. Graceful fallback belongs to a task that owns the settings layer."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L469-L500
+  - what: "The invalid mcp_tool_search text names betterlite's own setting error, and the proxy search branch returns that same error text; LiteLLM interpolates pydantic's ValidationError rendering in the first case and str(settings) in the second."
+    why: "betterlite settings are typed and fail with a one-line thiserror message instead of a pydantic error tree, so the two hosts word the same invalid setting differently. The is_error flag, the ordered config check before listing, and the fixed embedding-without-router message are identical."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L537-L543
+  - what: "handle_skill_search has no UnsupportedProvider arm; a skills layer that reports SkillSearchUnsupportedProvider surfaces through the port as a port error with HTTP 500, where LiteLLM's assert_never raises AssertionError."
+    why: "LiteLLM's handle_skill_search matches only hits, not-configured and embedding-failed, so a non-litellm_proxy skill store crashes the handler; a working proxy setup stores skills under litellm_proxy and never reaches it. The port keeps the reachable three outcomes and maps the fourth to the same 500 without the crash."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L57-L63
+kept_bugs:
+  - what: "The proxy search branch ranks with a hardcoded top_k of 5 and ignores the caller's arguments, so a larger configured top_k never returns more than five ranked tools."
+    why: "LiteLLM's MCP proxy search tool calls rank_mcp_tools(str(arguments.get(\"query\", \"\")), listing.tools, 5, settings, ranker) with a literal 5, so a configured top_k above five never widens the shortlist. Whether the fixed shortlist is a bug or intended is unclear, so betterlite keeps what a working proxy setup sees."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L557-L559
