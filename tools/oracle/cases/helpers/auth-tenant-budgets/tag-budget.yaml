@@ -1,0 +1,77 @@
+kind: helper
+name: auth-tenant-budgets-tag-budget
+call:
+  auth_tenant_budgets:
+    calls:
+      # metadata tags come first, the body's follow, duplicates and nonstrings keep their places, and the
+      # first tag over its ceiling denies without any alert
+      - function: tags
+        database: true
+        request_body:
+          metadata:
+            tags: ["alpha", "beta", 7, "alpha"]
+          tags: ["beta", "top"]
+        tag_rows:
+          - {tag_name: alpha, models: [], spend: 2.0, litellm_budget_table: {max_budget: 10.0}}
+          - {tag_name: beta, models: [], spend: 0.0, litellm_budget_table: {max_budget: 5.0}}
+          - {tag_name: top, models: [], spend: 0.0, litellm_budget_table: {max_budget: 50.0}}
+        spends: [1.5, 2.5, 6.0, 7.0]
+      # spend equal to the tag ceiling passes; a cent over denies, and a zero ceiling denies any spend
+      - function: tags
+        database: true
+        request_body: {tags: ["eq"]}
+        tag_rows:
+          - {tag_name: eq, models: [], spend: 10.0, litellm_budget_table: {max_budget: 10.0}}
+        spends: [10.0]
+      - function: tags
+        database: true
+        request_body: {tags: ["over"]}
+        tag_rows:
+          - {tag_name: over, models: [], spend: 0.0, litellm_budget_table: {max_budget: 5.0}}
+        spends: [5.01]
+      - function: tags
+        database: true
+        request_body: {tags: ["zero"]}
+        tag_rows:
+          - {tag_name: zero, models: [], spend: 0.0, litellm_budget_table: {max_budget: 0.0}}
+        spends: [0.01]
+      # duplicated tags are read once per occurrence
+      - function: tags
+        database: true
+        request_body: {tags: ["dup", "dup"]}
+        tag_rows:
+          - {tag_name: dup, models: [], spend: 0.0, litellm_budget_table: {max_budget: 5.0}}
+        spends: [1.0, 2.0]
+      # a missing row, a row without a budget relation or ceiling, no database and an empty body skip
+      - function: tags
+        database: true
+        request_body: {tags: ["ghost"]}
+        tag_rows:
+          - {tag_name: other, models: [], spend: 0.0, litellm_budget_table: {max_budget: 1.0}}
+        spends: []
+      - function: tags
+        database: true
+        request_body: {tags: ["bare", "no-ceiling"]}
+        tag_rows:
+          - {tag_name: bare, models: [], spend: 0.0}
+          - {tag_name: no-ceiling, models: [], spend: 3.0, litellm_budget_table: {budget_id: budget-1}}
+        spends: []
+      - function: tags
+        database: false
+        request_body: {tags: ["eq"]}
+        spends: []
+      - function: tags
+        database: true
+        request_body: {}
+        spends: []
+      # metadata that arrived as a JSON string reads the same way
+      - function: tags
+        database: true
+        request_body:
+          metadata: '{"tags": ["encoded"]}'
+        tag_rows:
+          - {tag_name: encoded, models: [], spend: 0.0, litellm_budget_table: {max_budget: 1.0}}
+        spends: [2.0]
+env: {}
+compare:
+  ignore: []

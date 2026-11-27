@@ -11,7 +11,7 @@ use betterlite_db::database_availability::policy::AllowRequestsOnOutage;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_error::proxy_exception::ProxyException;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
@@ -93,6 +93,11 @@ pub(crate) fn stage_input(
         policy,
         database,
     })
+}
+
+pub(crate) async fn prefetched(stage: Box<OrgStageInput>) -> Result<StageInput, StageFailure> {
+    prefetch(&stage).await.map_err(StageFailure::OrgLookup)?;
+    Ok(StageInput::AuthOrgLookup(stage))
 }
 
 // LiteLLM's _inherit_org_identity reads nothing without a database, an org id or a wired lookup

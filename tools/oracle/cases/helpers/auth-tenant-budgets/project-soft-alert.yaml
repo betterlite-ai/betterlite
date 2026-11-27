@@ -1,0 +1,55 @@
+kind: helper
+name: auth-tenant-budgets-project-soft-alert
+call:
+  auth_tenant_budgets:
+    calls:
+      # the row spend at the soft budget logs and alerts with no max_budget, so the ceiling never denies
+      - function: project_soft
+        database: true
+        project:
+          project_id: proj-1
+          spend: 5.0
+          litellm_budget_table: {max_budget: 10.0, soft_budget: 5.0}
+        token: {token: sk-project, user_id: user-1, team_id: team-1, team_alias: Alpha, org_id: org-1}
+        spends: []
+      # zero spend crosses a zero soft budget
+      - function: project_soft
+        database: true
+        project:
+          project_id: proj-1
+          spend: 0.0
+          litellm_budget_table: {soft_budget: 0.0}
+        token: {token: sk-zero}
+        spends: []
+      # a cent under the soft budget, and a row without one, do nothing
+      - function: project_soft
+        database: true
+        project:
+          project_id: proj-1
+          spend: 4.99
+          litellm_budget_table: {soft_budget: 5.0}
+        token: {token: sk-under}
+        spends: []
+      - function: project_soft
+        database: true
+        project:
+          project_id: proj-1
+          spend: 5.0
+          litellm_budget_table: {max_budget: 10.0}
+        token: {token: sk-no-soft}
+        spends: []
+      # crossing without a token logs and schedules nothing
+      - function: project_soft
+        database: true
+        project:
+          project_id: proj-1
+          spend: 6.5
+          litellm_budget_table: {soft_budget: 5.0}
+        spends: []
+      # an absent project never logs
+      - function: project_soft
+        database: false
+        spends: []
+env: {}
+compare:
+  ignore: []
