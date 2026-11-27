@@ -1,0 +1,15 @@
+model_list:
+  - model_name: compacting-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        context_compaction:
+          model: openai/gpt-4o-mini
+          trigger_ratio: 0.85
+          max_tokens: 2048
+          timeout_seconds: 60
+  - model_name: plain-router
+    litellm_params:
+      model: openai/gpt-4o-mini
+      complexity_router_config:
+        context_compaction: false
