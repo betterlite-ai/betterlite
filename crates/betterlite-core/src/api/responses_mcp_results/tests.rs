@@ -54,6 +54,22 @@ fn serializes_keys_in_order(
         name: None,
     })
 )]
+#[case::id_only(
+    r#"{"tool_call_id":"call_1","result":"done","name":null}"#,
+    Ok(McpToolResult {
+        tool_call_id: Some("call_1".to_owned()),
+        result: "done".to_owned(),
+        name: None,
+    })
+)]
+#[case::name_only(
+    r#"{"tool_call_id":null,"result":"done","name":"search"}"#,
+    Ok(McpToolResult {
+        tool_call_id: None,
+        result: "done".to_owned(),
+        name: Some("search".to_owned()),
+    })
+)]
 #[case::full_object(
     r#"{"tool_call_id":"call_1","result":"done","name":"search"}"#,
     Ok(McpToolResult {
