@@ -17,21 +17,15 @@ pub fn without_nulls(values: &SettingsMap) -> SettingsMap {
         .collect()
 }
 
-// alerting is declared before alert_to_webhook_url, so the sent list lands first and the webhook side effect appends to it
+// every sent key lands first, then the webhook side effect appends slack to the sent alerting list whatever order the request used
 #[must_use]
 pub fn general_settings(existing: &SettingsMap, sent: &SettingsMap) -> SettingsMap {
     let mut merged = existing.clone();
-    if let Some(alerting) = sent.get(ALERTING) {
-        merged.insert(ALERTING.to_owned(), alerting.clone());
-    }
     for (key, value) in sent {
-        if key != ALERTING && key != ALERT_TO_WEBHOOK_URL {
-            merged.insert(key.clone(), value.clone());
-        }
+        merged.insert(key.clone(), value.clone());
     }
-    if let Some(webhook) = sent.get(ALERT_TO_WEBHOOK_URL) {
+    if sent.contains_key(ALERT_TO_WEBHOOK_URL) {
         enable_slack_alerting(&mut merged);
-        merged.insert(ALERT_TO_WEBHOOK_URL.to_owned(), webhook.clone());
     }
     merged
 }
