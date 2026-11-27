@@ -1,0 +1,25 @@
+kind: helper
+name: select-first-match
+call:
+  b10114:
+    team_details:
+      - team_id: team-2
+        team_alias: Team Two
+        team_models: [gpt-4o]
+      - team_id: team-1
+        team_alias: Team One
+        team_models: [gpt-4, claude]
+        team_model_aliases:
+          gpt-4: gpt-4o
+      - team_id: team-1
+        team_alias: Team One Again
+        team_models: [mistral]
+    team_id: team-1
+    row:
+      team_id: team-1
+      team_alias: Team One
+      models: [gpt-4]
+      aliases:
+        gpt-4: gpt-4o
+env: {}
+compare: {ignore: []}

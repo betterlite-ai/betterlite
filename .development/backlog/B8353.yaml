@@ -1,8 +1,8 @@
 id: B8353
 milestone: M12 python
-title: Router file, vector store create and batch calls
+title: Router file, vector store create, batch cancel and list calls
 status: todo
-depends_on: [B014, B016, B017, B082, B303, B310, B844, B1035, B6020, B6021, B8354, B8631]
+depends_on: [B014, B016, B017, B082, B303, B310, B844, B1035, B6020, B6021, B8354, B8631, B10142, B10143, B10154]
 file: tasks/B8353-router-batch-calls.yaml
 covers:
   - "litellm/router.py"

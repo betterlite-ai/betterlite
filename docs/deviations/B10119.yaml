@@ -1,0 +1,7 @@
+task: B10119
+deviations:
+  - what: >-
+      An os.environ/ reference in general_settings.ui_access_mode.sso_group_jwt_field whose variable is unset fails the config load with an error naming the variable, where LiteLLM resolves the reference to None and builds the SSO handler with team_ids_jwt_field None.
+    why: >-
+      betterlite's shared config resolution treats an unset os.environ/ reference as a load error naming the variable, so a missing variable fails at startup instead of silently leaving the restricted-group check reading no claim. The test is sections::sso_callback_input::tests::an_unset_environment_reference_fails_the_load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5783-L5786

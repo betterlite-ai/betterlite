@@ -1,0 +1,14 @@
+id: B10158
+milestone: M4 keys, spend and management
+title: User daily activity scope
+status: done
+depends_on: [B171, B738, B861, B2314, B3090]
+file: tasks/B10158-user-activity-scope.yaml
+covers:
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+parent: B056
+split_from: B798
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3366

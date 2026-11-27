@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-listing-list-response-seed
+call:
+  bedrock_services_s3_listing:
+    operation: list_response
+    listings:
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-a</Key><Size>12</Size><LastModified>2024-01-02T03:04:05.000Z</LastModified></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+env: {}
+compare: {ignore: []}

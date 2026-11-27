@@ -1,21 +1,14 @@
 id: B8389
-title: Admin settings views, OTel span close and denial log
+title: Admin settings routes and model access denial log
 description: >-
-  A few small proxy_server.py pieces that route and error handler tasks call: the read-only general settings view,
-  the close of a server span left open by an error answer, the model access denial log, and the two settings routes
-  the admin UI reads to build its model add and alerting pages. Build crates/betterlite-server/src/admin_settings_views.rs
+  Two small proxy_server.py pieces: the model access denial log the exception handlers call, and the two settings
+  routes the admin UI reads to build its model add and alerting pages. The close of a server span left open by an error
+  answer (_close_dangling_otel_server_span) is B10156's close_error_span. general_settings_view needs no code: callers
+  read B8380's ProxyConfigState.general_settings through B4140's SettingsStore::resolved. Build crates/betterlite-server/src/admin_settings_views.rs
   (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8675 mounts
   it. Error enum AdminSettingsError.
 
-  `general_settings_view(state)` returns a read-only snapshot of the resolved general settings from B8380's store (the
-  B081 Anthropic routes and the MCP capability list read it). `log_model_access_denial(error)` logs a warning with
-  B8410's sanitized_internal_message when the error is a ModelAccessDeniedProxyException and does nothing otherwise.
-  `close_error_span(request, status, error)` (_close_dangling_otel_server_span): nothing without a parent server span on
-  the request or without the OTel logger. With OTel V2 on (B3842's is_otel_v2_enabled, treated as off when the check
-  fails) only stamp the error attributes (B3858's record_error_attributes_on_span) for a status of 400 or more and leave
-  the span to its instrumentation. Otherwise set the response status attribute (B3854), stamp the error attributes for
-  400 or more, set the span status to ERROR for 400 or more and OK below, end the span and clear it from the request.
-  Any failure logs at debug "Error closing dangling OTEL SERVER span: {error}".
+  `log_model_access_denial(error)` logs a warning with B8410's sanitized_internal_message when the error is a ModelAccessDeniedProxyException and does nothing otherwise.
 
   GET `/model/settings` (normal key check, not in the schema): one {name, fields} per provider in LiteLLM's provider
   list order, fields from B5364's get_provider_fields. GET `/alerting/settings` (normal key check, not in the schema):
@@ -32,7 +25,7 @@ description: >-
   parent mapping has the field, else the unset source (default when a default exists, otherwise unset) when the file
   owns the parent, else db when the row has the field, else the unset source.
 
-  Tests cover each helper and both routes. HTTP oracle cases (B8675 writes and runs them, not this task) under tools/oracle/cases/admin-settings/ cover
+  Tests cover the denial log and both routes. HTTP oracle cases (B8675 writes and runs them, not this task) under tools/oracle/cases/admin-settings/ cover
   /model/settings with the master key, both routes without a key, and /alerting/settings without a database.
 scope:
   paths:
@@ -44,10 +37,8 @@ scope:
     - tools/oracle/src/helpers/server/b8389/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1922-L1963
-    why: The denial log and the dangling span close with the V2 branch.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2596-L2601
-    why: general_settings_view.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1922-L1925
+    why: The model access denial log.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16584-L16754
     why: /model/settings, _nested_setting_source and /alerting/settings.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5263-L5266
@@ -55,7 +46,7 @@ references:
 dod:
   - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8675 runs the HTTP oracle cases through the booted proxy."
     proof: [route-oneshot]
-  - text: The span close follows LiteLLM's V1 and V2 branches and never fails the error answer; the denial log fires only for model access denials.
+  - text: The denial log fires only for model access denials.
     proof: [admin-views-tests]
   - text: /model/settings lists every provider with its fields in LiteLLM's order. B8675 proves it over HTTP.
     proof: [admin-views-tests]
@@ -68,16 +59,15 @@ checks:
       why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_settings_views::tests::oneshot_/)'
     - id: admin-views-tests
-      why: A settings view, the span close, the denial log or a settings route differs from LiteLLM
+      why: The denial log or a settings route differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_settings_views::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The exception handlers that call close_error_span and log_model_access_denial, and the admin-view role predicate, belong to their own proxy_server.py tasks."
-  - "OTel span writers: B3854 and B3858. SlackAlertingArgs: B4020."
+  - "The exception handlers that call log_model_access_denial (B8591) and the admin-view role predicate belong to their own proxy_server.py tasks."
+  - "_close_dangling_otel_server_span (close_error_span): B10156. general_settings_view: no code, B8380's general_settings store read through B4140's SettingsStore::resolved. SlackAlertingArgs: B4020."
 pitfalls:
-  - Under OTel V2 the span stays on the request and is not ended here; only V1 clears it.
   - slack_alerting's stored_in_db looks at the database row, while its value looks at the resolved store.
   - Both refusals of /alerting/settings are 400, not 500 or 403.
 review_level: standard

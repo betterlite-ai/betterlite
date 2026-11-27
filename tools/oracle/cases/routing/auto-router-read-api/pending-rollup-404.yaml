@@ -1,0 +1,17 @@
+kind: probe
+name: auto-router-read-api-pending-rollup-404
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      auto_router_read_api:
+        now_unix_millis: 1710504000000
+        steps:
+          - kind: session
+            api_key: hash-a
+            session_id: s1
+          - kind: session
+            api_key: ""
+            session_id: s1
+compare:
+  ignore: []

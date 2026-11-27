@@ -644,3 +644,17 @@ path = "fuzz_targets/model_info_datetime.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "auto_router_read_api"
+path = "fuzz_targets/auto_router_read_api.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oauth_callback_query"
+path = "fuzz_targets/oauth_callback_query.rs"
+test = false
+doc = false
+bench = false

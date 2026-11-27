@@ -45,9 +45,11 @@ description: >-
   include_current_utc_day are copied from the query. B815 declares the team scope's api_key filter type;
   if it already has an equivalent enum, use it instead of declaring a second one.
 
-  User resolver. `resolve_user(auth, query)` calls B798's `resolve_user_daily_activity_entity_ids` with
-  user_id = the first element of query.entity_ids (None when entity_ids is None) and the caller's UserAPIKeyAuth
-  (B2314). A ScopeDenied (B3090, betterlite-analytics) comes back unchanged as the error. Otherwise it builds the
+  User resolver. `resolve_user(auth, query)` calls B10158's `resolve_user_daily_activity_entity_ids` (module
+  user_activity_scope) with user_id = the first element of query.entity_ids (None when entity_ids is None) and the
+  caller's UserAPIKeyAuth (B2314). Its error is B10158's UserActivityScopeError: the ScopeDenied (B3090, betterlite-analytics) in the
+  Denied variant comes back unchanged as the error, and the Caller variant (B861's service-account 403) passes through untranslated, the
+  way B815's errors do. Otherwise it builds the
   scope with the USER resolver, exclude_entity_ids from the query (always empty for users), api_key from
   query.api_key as a Single filter and no entity metadata. It never touches the database.
 
@@ -87,7 +89,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L358-L396
     why: USER_RESOLVER and TEAM_RESOLVER constants with route prefixes, tags and operation names.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2866-L2875
-    why: resolve_user_daily_activity_entity_ids, built by B798; this task only calls it.
+    why: resolve_user_daily_activity_entity_ids, built by B10158; this task only calls it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6518-L6623
     why: _TeamDailyActivityScope and resolve_team_daily_activity_scope, built by B815; this task only calls it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L9-L46
@@ -105,7 +107,7 @@ dod:
     proof: [build-tests, helper-case-corpus]
   - text: build_scope turns missing start_date and end_date into empty strings and copies model, timezone offset and include_current_utc_day.
     proof: [build-tests, helper-case-corpus]
-  - text: resolve_user passes the first requested id and the caller to B798, returns its ScopeDenied unchanged, and otherwise builds a user-table scope with no metadata.
+  - text: resolve_user passes the first requested id and the caller to B10158, returns its ScopeDenied unchanged, and otherwise builds a user-table scope with no metadata.
     proof: [user-resolve-tests, helper-case-corpus]
   - text: resolve_team passes comma-joined ids (None for an absent team list or empty exclusions) to B815, builds a team-table scope from the result, keeps an empty alias map as Some, and passes B815's error through.
     proof: [team-resolve-tests]
@@ -123,7 +125,7 @@ checks:
       why: build_scope api key filter handling, date defaults or field copying is missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::build_/)'
     - id: user-resolve-tests
-      why: the user resolver does not call B798 with the first requested id, does not pass its denial through, or builds the wrong scope
+      why: the user resolver does not call B10158 with the first requested id, does not pass its denial through, or builds the wrong scope
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::user_resolve_/)'
     - id: team-resolve-tests
       why: the team resolver mishandles the comma re-join, the alias metadata, the key filter or B815's errors
@@ -155,7 +157,7 @@ deviations:
     why: rules.yaml requires a build-time set to be an enum matched exhaustively, not a registry of callables, and HTTP parsing belongs to the routes.
 out_of_scope:
   - "B3095 owns _resolve_tag, _resolve_organization, _resolve_customer, _resolve_agent, _tag_query, _organization_query, _customer_query, _agent_query and the TAG, ORGANIZATION, CUSTOMER and AGENT resolver constants (L146-L216, L275-L355, L397-L472), plus the dispatch function that matches on Entity and calls the right resolve step."
-  - "B798 owns resolve_user_daily_activity_entity_ids and B815 owns resolve_team_daily_activity_scope and _TeamDailyActivityScope; this task only calls them."
+  - "B10158 owns resolve_user_daily_activity_entity_ids and B815 owns resolve_team_daily_activity_scope and _TeamDailyActivityScope; this task only calls them."
   - "B2312 owns DailyActivityScope, DailyActivityTable and the entity_id_field check; B3090 owns ScopeDenied and raise_public."
   - "B3096 to B3098 own the routes that use these resolvers and add the HTTP oracle cases through the booted proxy, since no route reaches this module yet."
   - "Date validation, timezone extension of end_date and key-filter enforcement in SQL are done later, by the route date check and by B727's builders."
@@ -163,7 +165,7 @@ pitfalls:
   - An empty api key list from the team resolver must stay Some(empty) in the scope, because it means "this caller sees no keys"; only None and "" mean no filter.
   - The team resolver gets its ids back as comma-joined strings, so ids containing "," would split differently the second time; keep the join and do not pass the vector through directly.
   - resolve_user reads only entity_ids[0] and ignores any later ids; user_entity_query never builds more than one.
-  - A user_id of "" is a real value, so it gives entity_ids [""] and B798 treats it as a requested user, not as absent.
+  - A user_id of "" is a real value, so it gives entity_ids [""] and B10158 treats it as a requested user, not as absent.
   - TEAM_RESOLVER has no cache_leakage_keys operation name, so a route task asking for it on a team must see None, not a made-up name.
   - Only the user query reads include_current_utc_day from the request; the team query has no such parameter and sets false.
   - The team alias map goes into entity_metadata even when empty; None means "this entity has no metadata field" and is only for users.

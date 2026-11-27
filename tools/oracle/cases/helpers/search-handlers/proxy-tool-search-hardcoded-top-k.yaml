@@ -1,0 +1,18 @@
+kind: helper
+name: proxy-tool-search-hardcoded-top-k
+call:
+  b4686:
+    handler: mcp_proxy_tool
+    name: search_tools
+    arguments: {query: alpha}
+    settings: {top_k: 100}
+    tools:
+      - {name: alpha-0, server_id: srv, description: finds alpha}
+      - {name: alpha-1, server_id: srv, description: finds alpha}
+      - {name: alpha-2, server_id: srv, description: finds alpha}
+      - {name: alpha-3, server_id: srv, description: finds alpha}
+      - {name: alpha-4, server_id: srv, description: finds alpha}
+      - {name: alpha-5, server_id: srv, description: finds alpha}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

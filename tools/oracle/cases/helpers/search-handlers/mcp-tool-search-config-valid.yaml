@@ -1,0 +1,16 @@
+kind: helper
+name: mcp-tool-search-config-valid
+call:
+  b4686:
+    handler: mcp_tool_search
+    query: alpha
+    top_k: 5
+    settings: {top_k: 2, core_tools: [core-tool]}
+    tools:
+      - {name: core-tool, server_id: srv, description: always first}
+      - {name: alpha-tool, server_id: srv, description: finds alpha}
+      - {name: beta-tool, server_id: srv, description: finds beta}
+      - {name: alpha-extra, server_id: srv, description: more alpha}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}
