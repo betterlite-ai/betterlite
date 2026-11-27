@@ -113,6 +113,17 @@ fn resolves_an_environment_reference_in_the_claim_field() {
 }
 
 #[test]
+fn an_empty_environment_reference_stays_an_empty_claim_field() {
+    let projection = settings(
+        "general_settings:\n  ui_access_mode:\n    sso_group_jwt_field: os.environ/GROUP_CLAIM\n",
+        &[("GROUP_CLAIM", "")],
+    )
+    .group_projection
+    .expect("a mapping yields a group projection");
+    assert_eq!(projection.sso_group_jwt_field.as_deref(), Some(""));
+}
+
+#[test]
 fn an_unset_environment_reference_fails_the_load() {
     let error = load_error(
         "general_settings:\n  ui_access_mode:\n    sso_group_jwt_field: os.environ/GROUP_CLAIM\n",
