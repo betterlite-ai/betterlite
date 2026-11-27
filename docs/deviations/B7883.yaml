@@ -24,6 +24,9 @@ deviations:
   - what: A client, shared_session or logger_fn keyword raises UnsupportedCallArgument instead of being used.
     why: Those are Python objects that cannot cross to Rust, and the shared payload layer refuses them before a request is built; LiteLLM accepts a client and calls through it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1203
+  - what: The VideoGenerationRequestUtils helper class becomes two plain functions in the private betterlite.videos._utils module.
+    why: The task asks for plain functions with the same output, and the module is private, so a caller that imported LiteLLM's helper class from litellm.videos.utils has no betterlite equivalent path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/utils.py#L9-L13
 kept_bugs:
   - what: extra_body and extra_query are accepted by both character calls and never sent to the provider.
     why: LiteLLM's signatures carry both keywords but its handler call forwards only extra_headers, so a working setup can pass them and see them ignored; betterlite drops them the same way instead of rejecting the call.
