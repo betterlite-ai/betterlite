@@ -5,16 +5,24 @@ use rstest::rstest;
 
 use super::super::S3ListingError;
 use super::super::decode::{DecodeLimits, decode_s3_listing};
-use super::super::requests::{S3FileMethod, list_files_request, object_file_request};
+use super::super::requests::{
+    S3FileMethod, S3SignedRequest, list_files_request, object_file_request,
+};
 use super::support::{
     block_on, bucket_access, empty_environment, header_pairs, header_value, list_access,
     listing_request, params, region_params, text_params, unavailable_credentials,
 };
-use crate::request_policy::RequestValue;
+use crate::request_policy::{Params, RequestValue};
 use crate::s3_access::S3AccessParams;
 
 #[test]
 fn s3_listing_rejects_dtd_and_limits() {
+    rejects_doctypes_and_entities();
+    enforces_body_and_depth_limits();
+    keeps_only_root_text();
+}
+
+fn rejects_doctypes_and_entities() {
     let doctype = b"<!DOCTYPE ListBucketResult><ListBucketResult><Name>x</Name></ListBucketResult>";
     assert!(matches!(
         decode_s3_listing(doctype, &DecodeLimits::DEFAULT),
@@ -44,7 +52,9 @@ fn s3_listing_rejects_dtd_and_limits() {
             .as_deref(),
         Some("a&b")
     );
+}
 
+fn enforces_body_and_depth_limits() {
     let limits = DecodeLimits {
         body_bytes: 4,
         depth: 8,
@@ -71,6 +81,9 @@ fn s3_listing_rejects_dtd_and_limits() {
         depth: 2,
     };
     decode_s3_listing(b"<a><b/></a>", &two).unwrap();
+}
+
+fn keeps_only_root_text() {
     let content = decode_s3_listing(
         b"<ListBucketResult><Name><b>a</b>b</Name><Contents><Key>k</Key></Contents></ListBucketResult>",
         &DecodeLimits::DEFAULT,
@@ -101,73 +114,69 @@ fn replays_the_bedrock_services_s3_listing_corpus(
 
 #[test]
 fn bedrock_services_s3_listing_credential_identity_isolation() {
-    let optional = region_params();
-    let environment = empty_environment();
-    let access = list_access();
-    let first_keys = text_params(&[
-        ("aws_region_name", "us-east-1"),
-        ("s3_access_key_id", "AKIDONE"),
-        ("s3_secret_access_key", "SECRETONE"),
-    ]);
-    let second_keys = text_params(&[
-        ("aws_region_name", "us-east-1"),
-        ("s3_access_key_id", "AKIDTWO"),
-        ("s3_secret_access_key", "SECRETTWO"),
-    ]);
-
-    let mut litellm = first_keys.clone();
-    let first = block_on(list_files_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
-        None,
-        unavailable_credentials,
-    ))
-    .unwrap();
-    assert_eq!(first.url, "https://s3.us-east-1.amazonaws.com/bucket/");
-    let first_authorization = header_value(&litellm, "Authorization").unwrap();
+    let (first_signed, first_params) = signed_listing("AKIDONE", "SECRETONE");
+    let first_authorization = header_value(&first_params, "Authorization").unwrap();
+    assert_eq!(
+        first_signed.url,
+        "https://s3.us-east-1.amazonaws.com/bucket/"
+    );
     assert!(first_authorization.contains("Credential=AKIDONE/"));
     assert!(!first_authorization.contains("AKIDTWO"));
     assert!(!first_authorization.contains("SECRETTWO"));
 
-    let mut litellm = second_keys;
-    let second = block_on(list_files_request(
+    let (second_signed, second_params) = signed_listing("AKIDTWO", "SECRETTWO");
+    let second_authorization = header_value(&second_params, "Authorization").unwrap();
+    assert!(second_authorization.contains("Credential=AKIDTWO/"));
+    assert!(!second_authorization.contains("AKIDONE"));
+    assert!(!second_authorization.contains("SECRETONE"));
+    assert_ne!(first_authorization, second_authorization);
+    assert_eq!(first_signed.query, second_signed.query);
+
+    let (_, once) = signed_listing("AKIDONE", "SECRETONE");
+    let (_, twice) = signed_listing_with(once);
+    assert_eq!(
+        header_value(&twice, "Authorization").unwrap(),
+        first_authorization
+    );
+    assert_eq!(header_pairs(&twice).len(), 3);
+}
+
+fn signed_listing(access_key: &str, secret_key: &str) -> (S3SignedRequest, Params) {
+    let keys = text_params(&[
+        ("aws_region_name", "us-east-1"),
+        ("s3_access_key_id", access_key),
+        ("s3_secret_access_key", secret_key),
+    ]);
+    signed_listing_with(keys)
+}
+
+fn signed_listing_with(mut litellm: Params) -> (S3SignedRequest, Params) {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
+    let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
         None,
         unavailable_credentials,
     ))
     .unwrap();
-    let second_authorization = header_value(&litellm, "Authorization").unwrap();
-    assert!(second_authorization.contains("Credential=AKIDTWO/"));
-    assert!(!second_authorization.contains("AKIDONE"));
-    assert!(!second_authorization.contains("SECRETONE"));
-    assert_ne!(first_authorization, second_authorization);
-    assert_eq!(first.query, second.query);
-
-    let mut reused = first_keys;
-    block_on(list_files_request(
-        listing_request(&optional, &mut reused, &access, &environment),
-        None,
-        unavailable_credentials,
-    ))
-    .unwrap();
-    block_on(list_files_request(
-        listing_request(&optional, &mut reused, &access, &environment),
-        None,
-        unavailable_credentials,
-    ))
-    .unwrap();
-    assert_eq!(
-        header_value(&reused, "Authorization").unwrap(),
-        first_authorization
-    );
-    assert_eq!(header_pairs(&reused).len(), 3);
+    (signed, litellm)
 }
 
 #[test]
 fn bedrock_services_s3_listing_secret_safe_failure() {
+    bad_regions_hide_secrets();
+    unavailable_credentials_hide_secrets();
+    bad_endpoints_hide_secrets();
+    missing_file_ids_hide_secrets();
+    missing_buckets_hide_secrets();
+    secret_params_hide_their_values();
+}
+
+fn bad_regions_hide_secrets() {
     let optional = region_params();
     let environment = empty_environment();
     let access = bucket_access("in-bucket");
-
     let mut bad_region = text_params(&[
         ("aws_region_name", "NOT A REGION"),
         ("s3_access_key_id", "S3SECRETACCESS"),
@@ -192,7 +201,12 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
             "AWSSECRETTOKEN",
         ],
     );
+}
 
+fn unavailable_credentials_hide_secrets() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = bucket_access("in-bucket");
     let mut unavailable = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("aws_access_key_id", "AWSSECRETACCESS"),
@@ -211,7 +225,12 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
         &error,
         &["AWSSECRETACCESS", "AWSSECRETVALUE", "AWSSECRETTOKEN"],
     );
+}
 
+fn bad_endpoints_hide_secrets() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = bucket_access("in-bucket");
     let mut bad_endpoint = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("aws_secret_access_key", "AWSSECRETVALUE"),
@@ -228,7 +247,12 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
     .unwrap_err();
     assert_eq!(error.status_code(), None);
     assert!(!format!("{error:?}").contains("AWSSECRETVALUE"));
+}
 
+fn missing_file_ids_hide_secrets() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = bucket_access("in-bucket");
     let mut no_file_id = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("aws_access_key_id", "AWSSECRETACCESS"),
@@ -244,7 +268,11 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
     let rendered = format!("{error:?}");
     assert!(!rendered.contains("AWSSECRETACCESS"));
     assert!(!rendered.contains("AWSSECRETVALUE"));
+}
 
+fn missing_buckets_hide_secrets() {
+    let optional = region_params();
+    let environment = empty_environment();
     let mut no_bucket = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("aws_access_key_id", "AWSSECRETACCESS"),
@@ -262,7 +290,12 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
     ))
     .unwrap_err();
     assert!(!format!("{error:?}").contains("AWSSECRETVALUE"));
+}
 
+fn secret_params_hide_their_values() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = bucket_access("in-bucket");
     let mut static_pair = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("s3_access_key_id", "S3SECRETACCESS"),
@@ -276,13 +309,13 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
         "s3_secret_access_key".to_owned(),
         RequestValue::Secret(secrecy::SecretString::from("S3SECRETVALUE".to_owned())),
     );
-    let error = block_on(list_files_request(
+    let succeeded = block_on(list_files_request(
         listing_request(&optional, &mut static_pair, &access, &environment),
         None,
         unavailable_credentials,
     ))
     .unwrap();
-    assert!(error.query.len() >= 2);
+    assert!(succeeded.query.len() >= 2);
     let secret_error = block_on(list_files_request(
         listing_request(&optional, &mut target_password, &access, &environment),
         None,

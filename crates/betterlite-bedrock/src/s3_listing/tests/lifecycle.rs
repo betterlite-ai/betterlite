@@ -4,19 +4,19 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_openai::files::records::FileKind;
 use secrecy::ExposeSecret as _;
 
+use super::super::S3ListingError;
 use super::super::decode::{DecodeLimits, decode_s3_listing};
 use super::super::requests::{
-    S3FileMethod, list_files_next_request, list_files_request, object_file_request, retrieve_file,
-    s3_credentials, sign_without_body,
+    S3FileMethod, S3SignedRequest, list_files_next_request, list_files_request,
+    object_file_request, retrieve_file, s3_credentials, sign_without_body,
 };
 use super::super::responses::delete_file_response;
 use super::super::target::s3_request_target;
-use super::super::{LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use super::support::{
     EMPTY_SHA256, authorization, block_on, bucket_access, credentials, empty_environment, env_map,
     environment_credentials, fixed_now, header_pairs, header_value, list_access, listing_request,
-    managed_files, params, raw_listing, region_params, text_params, token_credentials,
-    unavailable_credentials,
+    managed_files, null_purpose, params, raw_listing, region_inputs, region_params, text_params,
+    token_credentials, unavailable_credentials,
 };
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
@@ -25,17 +25,17 @@ use crate::s3_access::{S3AccessParams, TrustedValue, frozen_mapping};
 use crate::signing::target::RegionInputs;
 
 pub(super) fn file_retrieve_delete() {
-    let error = retrieve_file().unwrap_err();
-    assert!(matches!(error, S3ListingError::RetrievalUnsupported));
-    assert_eq!(
-        error.to_string(),
-        "BedrockFilesConfig does not support file retrieval"
-    );
+    retrieve_is_unsupported();
+    object_requests_require_a_file_id();
+    content_request_is_signed();
+    delete_request_is_signed();
+    file_ids_are_decoded_into_keys();
+    delete_rejections_carry_their_status();
+    a_missing_bucket_is_reported();
+}
 
-    let optional = region_params();
-    let environment = empty_environment();
-    let access = bucket_access("in-bucket");
-    let mut litellm = params(vec![
+fn token_params() -> Params {
+    params(vec![
         (
             "aws_region_name",
             RequestValue::Text("us-east-1".to_owned()),
@@ -52,34 +52,58 @@ pub(super) fn file_retrieve_delete() {
             "aws_session_token",
             RequestValue::Text("tokEXAMPLE".to_owned()),
         ),
-    ]);
-    let error = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
-        S3FileMethod::Content,
-        None,
+    ])
+}
+
+fn signed_object_request(
+    litellm: &mut Params,
+    access: &S3AccessParams,
+    method: S3FileMethod,
+    file_id: Option<&str>,
+) -> Result<S3SignedRequest, S3ListingError> {
+    let optional = region_params();
+    let environment = empty_environment();
+    block_on(object_file_request(
+        listing_request(&optional, litellm, access, &environment),
+        method,
+        file_id,
         token_credentials,
     ))
-    .unwrap_err();
-    assert!(matches!(error, S3ListingError::FileIdRequired));
+}
+
+fn retrieve_is_unsupported() {
+    let error = retrieve_file().unwrap_err();
+    assert!(matches!(error, S3ListingError::RetrievalUnsupported));
     assert_eq!(
         error.to_string(),
+        "BedrockFilesConfig does not support file retrieval"
+    );
+}
+
+fn object_requests_require_a_file_id() {
+    let mut litellm = token_params();
+    let access = bucket_access("in-bucket");
+    let missing =
+        signed_object_request(&mut litellm, &access, S3FileMethod::Content, None).unwrap_err();
+    assert!(matches!(missing, S3ListingError::FileIdRequired));
+    assert_eq!(
+        missing.to_string(),
         "file_id is required for Bedrock file content retrieval"
     );
-    let error = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
-        S3FileMethod::Content,
-        Some(""),
-        token_credentials,
-    ))
-    .unwrap_err();
-    assert!(matches!(error, S3ListingError::FileIdRequired));
+    let empty =
+        signed_object_request(&mut litellm, &access, S3FileMethod::Content, Some("")).unwrap_err();
+    assert!(matches!(empty, S3ListingError::FileIdRequired));
+}
 
-    let signed = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
+fn content_request_is_signed() {
+    let mut litellm = token_params();
+    let access = bucket_access("in-bucket");
+    let signed = signed_object_request(
+        &mut litellm,
+        &access,
         S3FileMethod::Content,
         Some("s3://in-bucket/litellm-batch-outputs/x.jsonl"),
-        token_credentials,
-    ))
+    )
     .unwrap();
     assert_eq!(
         signed.url,
@@ -103,16 +127,20 @@ pub(super) fn file_retrieve_delete() {
             ),
         ]
     );
+}
 
-    let signed = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
+fn delete_request_is_signed() {
+    let mut litellm = token_params();
+    let access = bucket_access("in-bucket");
+    let deletion = signed_object_request(
+        &mut litellm,
+        &access,
         S3FileMethod::Delete,
         Some("s3://in-bucket/litellm-batch-outputs/x.jsonl"),
-        token_credentials,
-    ))
+    )
     .unwrap();
     assert_eq!(
-        signed.url,
+        deletion.url,
         "https://s3.us-east-1.amazonaws.com/in-bucket/litellm-batch-outputs%2Fx.jsonl"
     );
     assert_eq!(
@@ -124,7 +152,13 @@ pub(super) fn file_retrieve_delete() {
             "67f7305849bc15f5b462815692fa5eaedc6ae429f2a91ded713113f3e39ab960"
         )
     );
+}
 
+fn file_ids_are_decoded_into_keys() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = bucket_access("in-bucket");
+    let mut litellm = token_params();
     let spaced = block_on(object_file_request(
         listing_request(&optional, &mut litellm, &access, &environment),
         S3FileMethod::Content,
@@ -136,28 +170,35 @@ pub(super) fn file_retrieve_delete() {
         spaced.url,
         "https://s3.us-east-1.amazonaws.com/in-bucket/litellm-bedrock-files/a/b%20c.jsonl"
     );
+}
 
-    let error = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
-        S3FileMethod::Delete,
-        None,
-        token_credentials,
-    ))
-    .unwrap_err();
-    assert_eq!(error.status_code(), Some(400));
-
-    let error = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
+fn delete_rejections_carry_their_status() {
+    let mut litellm = token_params();
+    let access = bucket_access("in-bucket");
+    let missing_id =
+        signed_object_request(&mut litellm, &access, S3FileMethod::Delete, None).unwrap_err();
+    assert_eq!(missing_id.status_code(), Some(400));
+    let unmanaged = signed_object_request(
+        &mut litellm,
+        &access,
         S3FileMethod::Delete,
         Some("s3://in-bucket/notes/readme.txt"),
-        token_credentials,
-    ))
+    )
     .unwrap_err();
-    assert_eq!(error.status_code(), Some(400));
+    assert_eq!(unmanaged.status_code(), Some(400));
+}
 
-    let no_bucket = S3AccessParams::default();
+fn a_missing_bucket_is_reported() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let mut litellm = token_params();
     let error = block_on(object_file_request(
-        listing_request(&optional, &mut litellm, &no_bucket, &environment),
+        listing_request(
+            &optional,
+            &mut litellm,
+            &S3AccessParams::default(),
+            &environment,
+        ),
         S3FileMethod::Content,
         Some("s3://in-bucket/litellm-bedrock-files-a"),
         unavailable_credentials,
@@ -168,6 +209,12 @@ pub(super) fn file_retrieve_delete() {
 }
 
 pub(super) fn invalid_xml() {
+    rejects_malformed_documents();
+    reports_decode_failures_through_managed_files();
+    reports_a_truncated_continuation_token();
+}
+
+fn rejects_malformed_documents() {
     assert!(matches!(
         decode_s3_listing(b"<a>", &DecodeLimits::DEFAULT),
         Err(S3ListingError::Unclosed)
@@ -191,18 +238,19 @@ pub(super) fn invalid_xml() {
         decode_s3_listing(truncated, &DecodeLimits::DEFAULT),
         Err(S3ListingError::Unclosed)
     ));
+}
 
-    let litellm = params(vec![(
-        LIST_FILES_PURPOSE_PARAM,
-        RequestValue::Raw("null".to_owned()),
-    )]);
-    let error = managed_files(b"<ListBucketResult>", &litellm).unwrap_err();
-    assert_eq!(error.status_code(), None);
-    let error = managed_files(b"", &litellm).unwrap_err();
-    assert_eq!(error.status_code(), None);
-    let error = managed_files(b"<a></b>", &litellm).unwrap_err();
-    assert_eq!(error.status_code(), None);
+fn reports_decode_failures_through_managed_files() {
+    let litellm = null_purpose();
+    let unterminated = managed_files(b"<ListBucketResult>", &litellm).unwrap_err();
+    assert_eq!(unterminated.status_code(), None);
+    let empty = managed_files(b"", &litellm).unwrap_err();
+    assert_eq!(empty.status_code(), None);
+    let mismatched = managed_files(b"<a></b>", &litellm).unwrap_err();
+    assert_eq!(mismatched.status_code(), None);
+}
 
+fn reports_a_truncated_continuation_token() {
     let optional = region_params();
     let environment = empty_environment();
     let access = list_access();
@@ -218,6 +266,12 @@ pub(super) fn invalid_xml() {
 }
 
 pub(super) fn delete_response_context() {
+    deletes_a_managed_file();
+    requires_a_file_id();
+    maps_failures_to_bedrock_errors();
+}
+
+fn deletes_a_managed_file() {
     let headers = vec![("x-amz-request-id".to_owned(), "abc".to_owned())];
     let success = raw_listing(204, b"", &headers);
     let args = text_params(&[("file_id", "s3://in-bucket/litellm-batch-outputs/x.jsonl")]);
@@ -225,7 +279,11 @@ pub(super) fn delete_response_context() {
     assert_eq!(deleted.id, "s3://in-bucket/litellm-batch-outputs/x.jsonl");
     assert!(deleted.deleted);
     assert_eq!(deleted.object, FileKind::File);
+}
 
+fn requires_a_file_id() {
+    let headers = vec![("x-amz-request-id".to_owned(), "abc".to_owned())];
+    let success = raw_listing(204, b"", &headers);
     assert!(matches!(
         delete_file_response(&success, None),
         Err(S3ListingError::DeleteContext)
@@ -240,43 +298,67 @@ pub(super) fn delete_response_context() {
         delete_file_response(&success, Some(&null_id)),
         Err(S3ListingError::DeleteContext)
     ));
+}
+
+fn maps_failures_to_bedrock_errors() {
+    let headers = vec![("x-amz-request-id".to_owned(), "abc".to_owned())];
+    let args = text_params(&[("file_id", "s3://in-bucket/litellm-batch-outputs/x.jsonl")]);
 
     let denied = raw_listing(500, b"boom", &headers);
-    let error = delete_file_response(&denied, Some(&args)).unwrap_err();
-    assert_eq!(error.status_code(), Some(500));
-    match &error {
-        S3ListingError::Bedrock(inner) => {
-            assert_eq!(inner.error.message, "boom");
-            assert_eq!(inner.response_headers, headers);
-        }
-        other => panic!("expected a Bedrock error, got {other:?}"),
-    }
+    let denied_error = delete_file_response(&denied, Some(&args)).unwrap_err();
+    assert_eq!(denied_error.status_code(), Some(500));
+    assert_bedrock_reply(&denied_error, "boom", Some(headers.as_slice()));
 
     let odd = raw_listing(200, b"", &headers);
-    let error = delete_file_response(&odd, Some(&args)).unwrap_err();
-    assert_eq!(error.status_code(), Some(502));
-    match &error {
-        S3ListingError::Bedrock(inner) => {
-            assert_eq!(inner.error.message, "S3 file deletion returned HTTP 200");
-            assert_eq!(inner.response_headers, headers);
-        }
-        other => panic!("expected a Bedrock error, got {other:?}"),
-    }
+    let odd_error = delete_file_response(&odd, Some(&args)).unwrap_err();
+    assert_eq!(odd_error.status_code(), Some(502));
+    assert_bedrock_reply(
+        &odd_error,
+        "S3 file deletion returned HTTP 200",
+        Some(headers.as_slice()),
+    );
 
     let odd_body = raw_listing(200, b"bad", &headers);
-    let error = delete_file_response(&odd_body, Some(&args)).unwrap_err();
-    assert_eq!(error.status_code(), Some(502));
-    match &error {
-        S3ListingError::Bedrock(inner) => assert_eq!(inner.error.message, "bad"),
-        other => panic!("expected a Bedrock error, got {other:?}"),
-    }
+    let body_error = delete_file_response(&odd_body, Some(&args)).unwrap_err();
+    assert_eq!(body_error.status_code(), Some(502));
+    assert_bedrock_reply(&body_error, "bad", None);
 
     let missing = raw_listing(404, b"", &headers);
-    let error = delete_file_response(&missing, Some(&args)).unwrap_err();
-    assert_eq!(error.status_code(), Some(404));
+    let missing_error = delete_file_response(&missing, Some(&args)).unwrap_err();
+    assert_eq!(missing_error.status_code(), Some(404));
+}
+
+fn assert_bedrock_reply(
+    error: &S3ListingError,
+    message: &str,
+    headers: Option<&[(String, String)]>,
+) {
+    let S3ListingError::Bedrock(inner) = error else {
+        panic!("expected a Bedrock error, got {error:?}");
+    };
+    assert_eq!(inner.error.message, message);
+    if let Some(expected) = headers {
+        assert_eq!(inner.response_headers.as_slice(), expected);
+    }
 }
 
 pub(super) fn s3_request_target_case() {
+    explicit_s3_region_wins();
+    aws_region_name_sets_the_region();
+    optional_params_override_litellm_params();
+    a_configured_endpoint_replaces_the_default();
+    partition_suffixes_follow_the_region();
+    an_empty_endpoint_falls_back_to_the_default();
+    environment_regions_precede_the_default();
+    a_session_region_precedes_the_default();
+    the_default_region_is_us_west_2();
+    invalid_regions_are_reported();
+    static_key_pairs_sign_directly();
+    aws_parameters_reach_the_credential_chain();
+    missing_credentials_surface();
+}
+
+fn explicit_s3_region_wins() {
     let litellm = text_params(&[
         ("s3_region_name", "us-west-2"),
         ("aws_region_name", "eu-west-1"),
@@ -284,18 +366,24 @@ pub(super) fn s3_request_target_case() {
     let target = s3_request_target(&Params::new(), &litellm, RegionInputs::default()).unwrap();
     assert_eq!(target.aws_region_name, "us-west-2");
     assert_eq!(target.endpoint_url, "https://s3.us-west-2.amazonaws.com");
+}
 
+fn aws_region_name_sets_the_region() {
     let litellm = text_params(&[("aws_region_name", "eu-west-1")]);
     let target = s3_request_target(&Params::new(), &litellm, RegionInputs::default()).unwrap();
     assert_eq!(target.aws_region_name, "eu-west-1");
     assert_eq!(target.endpoint_url, "https://s3.eu-west-1.amazonaws.com");
+}
 
+fn optional_params_override_litellm_params() {
     let optional = text_params(&[("s3_region_name", "ap-south-1")]);
     let litellm = text_params(&[("s3_region_name", "us-west-2")]);
     let target = s3_request_target(&optional, &litellm, RegionInputs::default()).unwrap();
     assert_eq!(target.aws_region_name, "ap-south-1");
     assert_eq!(target.endpoint_url, "https://s3.ap-south-1.amazonaws.com");
+}
 
+fn a_configured_endpoint_replaces_the_default() {
     let litellm = text_params(&[
         ("aws_region_name", "cn-north-1"),
         ("s3_endpoint_url", "https://example.com:9000/"),
@@ -303,30 +391,34 @@ pub(super) fn s3_request_target_case() {
     let target = s3_request_target(&Params::new(), &litellm, RegionInputs::default()).unwrap();
     assert_eq!(target.aws_region_name, "cn-north-1");
     assert_eq!(target.endpoint_url, "https://example.com:9000");
+}
 
+fn partition_suffixes_follow_the_region() {
     let litellm = text_params(&[("aws_region_name", "cn-north-1")]);
     let target = s3_request_target(&Params::new(), &litellm, RegionInputs::default()).unwrap();
     assert_eq!(
         target.endpoint_url,
         "https://s3.cn-north-1.amazonaws.com.cn"
     );
+}
 
+fn an_empty_endpoint_falls_back_to_the_default() {
     let litellm = text_params(&[("aws_region_name", "us-east-1"), ("s3_endpoint_url", "")]);
     let target = s3_request_target(&Params::new(), &litellm, RegionInputs::default()).unwrap();
     assert_eq!(target.endpoint_url, "https://s3.us-east-1.amazonaws.com");
+}
 
+fn environment_regions_precede_the_default() {
     let environment = env_map(&[
         ("AWS_REGION_NAME", "eu-central-1"),
         ("AWS_REGION", "ca-central-1"),
     ]);
-    let target = s3_request_target(
-        &Params::new(),
-        &Params::new(),
-        super::support::region_inputs(&environment),
-    )
-    .unwrap();
+    let target =
+        s3_request_target(&Params::new(), &Params::new(), region_inputs(&environment)).unwrap();
     assert_eq!(target.aws_region_name, "eu-central-1");
+}
 
+fn a_session_region_precedes_the_default() {
     let inputs = RegionInputs {
         environment_region_name: None,
         environment_region: None,
@@ -334,33 +426,41 @@ pub(super) fn s3_request_target_case() {
     };
     let target = s3_request_target(&Params::new(), &Params::new(), inputs).unwrap();
     assert_eq!(target.aws_region_name, "ap-south-1");
+}
 
+fn the_default_region_is_us_west_2() {
     let target =
         s3_request_target(&Params::new(), &Params::new(), RegionInputs::default()).unwrap();
     assert_eq!(target.aws_region_name, "us-west-2");
     assert_eq!(target.endpoint_url, "https://s3.us-west-2.amazonaws.com");
+}
 
-    let litellm = text_params(&[("aws_region_name", "US-EAST-1")]);
-    let error = s3_request_target(&Params::new(), &litellm, RegionInputs::default())
+fn invalid_regions_are_reported() {
+    let upper = text_params(&[("aws_region_name", "US-EAST-1")]);
+    let upper_error = s3_request_target(&Params::new(), &upper, RegionInputs::default())
         .err()
         .unwrap();
-    assert_eq!(error.status_code(), None);
-    let litellm = text_params(&[("aws_region_name", "")]);
-    let empty_region = s3_request_target(&Params::new(), &litellm, RegionInputs::default());
+    assert_eq!(upper_error.status_code(), None);
+    let empty = text_params(&[("aws_region_name", "")]);
+    let empty_region = s3_request_target(&Params::new(), &empty, RegionInputs::default());
     assert_eq!(empty_region.err().unwrap().status_code(), None);
-
-    let litellm = params(vec![(
+    let numeric = params(vec![(
         "aws_region_name",
         RequestValue::Raw("123".to_owned()),
     )]);
-    let error = s3_request_target(&Params::new(), &litellm, RegionInputs::default())
+    let numeric_error = s3_request_target(&Params::new(), &numeric, RegionInputs::default())
         .err()
         .unwrap();
-    match error {
-        S3ListingError::Field { field, .. } => assert_eq!(field, "aws_region_name"),
-        other => panic!("expected a Field error, got {other:?}"),
-    }
+    assert!(
+        matches!(
+            &numeric_error,
+            S3ListingError::Field { field, .. } if field.as_str() == "aws_region_name"
+        ),
+        "expected a Field error on aws_region_name, got {numeric_error:?}"
+    );
+}
 
+fn static_key_pairs_sign_directly() {
     let litellm = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("aws_access_key_id", "STATICACCESS"),
@@ -374,7 +474,9 @@ pub(super) fn s3_request_target_case() {
     assert_eq!(resolved.access_key_id.expose_secret(), "S3ACCESS");
     assert_eq!(resolved.secret_access_key.expose_secret(), "S3SECRET");
     assert!(resolved.session_token.is_none());
+}
 
+fn aws_parameters_reach_the_credential_chain() {
     let litellm = text_params(&[
         ("aws_region_name", "us-east-1"),
         ("aws_access_key_id", "STATICACCESS"),
@@ -406,7 +508,9 @@ pub(super) fn s3_request_target_case() {
     assert_eq!(seen_region.as_deref(), Some("us-east-1"));
     assert_eq!(resolved.access_key_id.expose_secret(), "AKIDEXAMPLE");
     assert!(resolved.session_token.is_none());
+}
 
+fn missing_credentials_surface() {
     let target =
         s3_request_target(&Params::new(), &Params::new(), RegionInputs::default()).unwrap();
     let error = block_on(s3_credentials(&target, unavailable_credentials)).unwrap_err();
@@ -417,10 +521,36 @@ pub(super) fn s3_request_target_case() {
 }
 
 pub(super) fn bodiless_s3_signature() {
+    signs_the_default_listing();
+    purpose_params_change_the_signature();
+    a_cn_partition_signs_with_its_host();
+    a_custom_endpoint_and_prefix_change_the_signature();
+    custom_endpoint_headers_carry_the_session_token();
+}
+
+fn assert_default_headers(litellm: &Params) {
+    assert_eq!(
+        header_pairs(litellm),
+        vec![
+            ("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned()),
+            ("X-Amz-Content-SHA256".to_owned(), EMPTY_SHA256.to_owned()),
+            (
+                "Authorization".to_owned(),
+                authorization(
+                    "AKIDEXAMPLE",
+                    "us-east-1",
+                    "host;x-amz-content-sha256;x-amz-date",
+                    "f2c6f153494cd7f15cc4726db61cfec89d62b1e441f98adc110b242901b1d978"
+                )
+            ),
+        ]
+    );
+}
+
+fn signs_the_default_listing() {
     let environment = empty_environment();
     let access = list_access();
     let optional = region_params();
-
     let mut litellm = region_params();
     let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -436,23 +566,13 @@ pub(super) fn bodiless_s3_signature() {
             ("prefix".to_owned(), "litellm-b".to_owned()),
         ]
     );
-    assert_eq!(
-        header_pairs(&litellm),
-        vec![
-            ("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned()),
-            ("X-Amz-Content-SHA256".to_owned(), EMPTY_SHA256.to_owned()),
-            (
-                "Authorization".to_owned(),
-                authorization(
-                    "AKIDEXAMPLE",
-                    "us-east-1",
-                    "host;x-amz-content-sha256;x-amz-date",
-                    "f2c6f153494cd7f15cc4726db61cfec89d62b1e441f98adc110b242901b1d978"
-                )
-            ),
-        ]
-    );
+    assert_default_headers(&litellm);
+}
 
+fn purpose_params_change_the_signature() {
+    let environment = empty_environment();
+    let access = list_access();
+    let optional = region_params();
     let mut litellm = region_params();
     block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -469,7 +589,9 @@ pub(super) fn bodiless_s3_signature() {
             "346642ac3b733b94fea62ae70ecfdf91c70614d6bc0d917705db5f4733f723e7"
         )
     );
+}
 
+fn a_cn_partition_signs_with_its_host() {
     let cn = text_params(&[("aws_region_name", "cn-north-1")]);
     let cn_target = s3_request_target(&Params::new(), &cn, RegionInputs::default()).unwrap();
     let resolved = credentials(None);
@@ -497,7 +619,10 @@ pub(super) fn bodiless_s3_signature() {
             ),
         ]
     );
+}
 
+fn a_custom_endpoint_and_prefix_change_the_signature() {
+    let environment = empty_environment();
     let custom_access = S3AccessParams {
         trusted: frozen_mapping([(
             "s3_bucket_name".to_owned(),
@@ -525,8 +650,35 @@ pub(super) fn bodiless_s3_signature() {
             ("prefix".to_owned(), "p/litellm-b".to_owned()),
         ]
     );
+}
+
+fn custom_endpoint_headers_carry_the_session_token() {
+    let environment = empty_environment();
+    let custom_access = S3AccessParams {
+        trusted: frozen_mapping([(
+            "s3_bucket_name".to_owned(),
+            TrustedValue::Text("bucket/p".to_owned()),
+        )]),
+        bucket_name: None,
+        output_bucket_name: None,
+    };
+    let mut custom = text_params(&[
+        ("aws_region_name", "eu-west-1"),
+        ("s3_endpoint_url", "https://example.com:9000"),
+        ("aws_session_token", "tokEXAMPLE"),
+    ]);
+    block_on(list_files_request(
+        listing_request(&Params::new(), &mut custom, &custom_access, &environment),
+        None,
+        token_credentials,
+    ))
+    .unwrap();
+    assert_custom_endpoint_headers(&custom);
+}
+
+fn assert_custom_endpoint_headers(custom: &Params) {
     assert_eq!(
-        header_pairs(&custom),
+        header_pairs(custom),
         vec![
             ("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned()),
             ("X-Amz-Security-Token".to_owned(), "tokEXAMPLE".to_owned()),
@@ -543,7 +695,7 @@ pub(super) fn bodiless_s3_signature() {
         ]
     );
     assert_eq!(
-        header_pairs(&custom).len(),
+        header_pairs(custom).len(),
         4,
         "a bodiless request adds no content headers"
     );

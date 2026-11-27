@@ -64,7 +64,7 @@ pub enum S3FileMethod {
 }
 
 impl S3FileMethod {
-    fn wire_name(self) -> &'static str {
+    const fn wire_name(self) -> &'static str {
         match self {
             Self::Content => "GET",
             Self::Delete => "DELETE",
@@ -73,11 +73,11 @@ impl S3FileMethod {
 }
 
 fn set_listing_value(params: &mut Params, name: &str, value: Option<&str>) {
-    let stored = match value {
-        Some(text) => RequestValue::Text(text.to_owned()),
-        // LiteLLM writes None into litellm_params, and the next transform reads it as unset
-        None => RequestValue::Raw("null".to_owned()),
-    };
+    // LiteLLM writes None into litellm_params, and the next transform reads it as unset
+    let stored = value.map_or_else(
+        || RequestValue::Raw("null".to_owned()),
+        |text| RequestValue::Text(text.to_owned()),
+    );
     params.insert(name.to_owned(), stored);
 }
 

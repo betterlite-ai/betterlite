@@ -122,9 +122,10 @@ fn listed_managed_file(
         let skip = configured_prefix.chars().count().saturating_add(1);
         object_key.chars().skip(skip).collect()
     };
-    let purpose = match relative_key.starts_with(BATCH_OUTPUT_LISTING_PREFIX) {
-        true => FilesPurpose::BatchOutput,
-        false => FilesPurpose::Batch,
+    let purpose = if relative_key.starts_with(BATCH_OUTPUT_LISTING_PREFIX) {
+        FilesPurpose::BatchOutput
+    } else {
+        FilesPurpose::Batch
     };
     Ok(Some(FileObject {
         id: file_id,
@@ -190,8 +191,8 @@ pub fn delete_file_response(
         let error = bedrock_error(raw, message, status, None)?;
         return Err(S3ListingError::Bedrock(Box::new(error)));
     }
-    let file_id = additional_args.and_then(|args| setting_text(args, "file_id"));
-    let Some(file_id) = file_id.filter(|value| !value.is_empty()) else {
+    let requested_id = additional_args.and_then(|args| setting_text(args, "file_id"));
+    let Some(file_id) = requested_id.filter(|value| !value.is_empty()) else {
         return Err(S3ListingError::DeleteContext);
     };
     Ok(FileDeleted {

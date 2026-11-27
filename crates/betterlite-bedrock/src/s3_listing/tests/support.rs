@@ -3,14 +3,16 @@ use std::future::{Future, Ready, ready};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_openai::files::records::FileObject;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 
-use super::super::S3ListingError;
 use super::super::prefix::setting_text;
 use super::super::requests::S3FilesRequest;
 use super::super::responses::{
     S3RawResponse, S3ResponseContext, S3ResponseRequest, list_files_response,
 };
+use super::super::{LIST_FILES_LOCATION_PARAM, LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
 use crate::request_policy::{Params, RequestValue};
@@ -32,7 +34,7 @@ pub(super) fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .build()
         .unwrap()
         .block_on(future)
@@ -43,6 +45,13 @@ pub(super) fn params(entries: Vec<(&str, RequestValue)>) -> Params {
         .into_iter()
         .map(|(name, value)| (name.to_owned(), value))
         .collect()
+}
+
+pub(super) fn null_purpose() -> Params {
+    params(vec![(
+        LIST_FILES_PURPOSE_PARAM,
+        RequestValue::Raw("null".to_owned()),
+    )])
 }
 
 pub(super) fn text_params(entries: &[(&str, &str)]) -> Params {
@@ -85,6 +94,60 @@ pub(super) fn access_params(trusted: &[(&str, TrustedValue)]) -> S3AccessParams 
         bucket_name: None,
         output_bucket_name: None,
     }
+}
+
+pub(super) fn input_output_access() -> S3AccessParams {
+    access_params(&[
+        ("s3_bucket_name", TrustedValue::Text("in-bucket".to_owned())),
+        (
+            "s3_output_bucket_name",
+            TrustedValue::Text("out-bucket".to_owned()),
+        ),
+    ])
+}
+
+pub(super) fn bucket_pair_access() -> S3AccessParams {
+    access_params(&[
+        ("s3_bucket_name", TrustedValue::Text("bucket/in".to_owned())),
+        (
+            "s3_output_bucket_name",
+            TrustedValue::Text("bucket/out".to_owned()),
+        ),
+    ])
+}
+
+pub(super) fn null_location_params() -> Params {
+    params(vec![
+        (
+            "aws_region_name",
+            RequestValue::Text("us-east-1".to_owned()),
+        ),
+        (
+            LIST_FILES_PURPOSE_PARAM,
+            RequestValue::Raw("null".to_owned()),
+        ),
+        (
+            LIST_FILES_LOCATION_PARAM,
+            RequestValue::Raw("null".to_owned()),
+        ),
+    ])
+}
+
+pub(super) fn batch_params() -> Params {
+    params(vec![
+        (
+            "aws_region_name",
+            RequestValue::Text("us-east-1".to_owned()),
+        ),
+        (
+            LIST_FILES_PURPOSE_PARAM,
+            RequestValue::Text("batch".to_owned()),
+        ),
+        (
+            LIST_FILES_LOCATION_PARAM,
+            RequestValue::Raw("null".to_owned()),
+        ),
+    ])
 }
 
 pub(super) fn bucket_access(bucket: &str) -> S3AccessParams {
@@ -211,7 +274,7 @@ pub(super) fn raw_listing<'input>(
 pub(super) fn managed_files(
     body: &[u8],
     litellm_params: &Params,
-) -> Result<Vec<betterlite_openai::files::records::FileObject>, S3ListingError> {
+) -> Result<Vec<FileObject>, S3ListingError> {
     let access = bucket_access("in-bucket");
     let environment = empty_environment();
     let context = S3ResponseContext {

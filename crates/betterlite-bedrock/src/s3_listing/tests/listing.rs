@@ -9,14 +9,26 @@ use super::super::requests::{list_files_next_request, list_files_request};
 use super::super::responses::{S3ResponseContext, list_files_response};
 use super::super::{LIST_FILES_LOCATION_PARAM, LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use super::support::{
-    access_params, authorization, block_on, bucket_access, contents_entry, empty_environment,
-    env_map, environment_credentials, header_value, list_access, listing_request, listing_xml,
-    managed_files, params, raw_listing, region_params, stored_text,
+    access_params, authorization, batch_params, block_on, bucket_access, bucket_pair_access,
+    contents_entry, empty_environment, env_map, environment_credentials, header_value,
+    input_output_access, list_access, listing_request, listing_xml, managed_files,
+    null_location_params, null_purpose, params, raw_listing, region_params, stored_text,
 };
 use crate::request_policy::{Params, RequestValue};
 use crate::s3_access::{S3AccessParams, TrustedValue};
 
 pub(super) fn list_purpose_prefix() {
+    managed_prefixes();
+    listing_queries();
+    setting_text_reads_strings();
+    walked_purpose_prefers_the_location();
+    an_empty_location_is_used_as_given();
+    batch_purpose_reaches_the_listing();
+    absent_purpose_stores_null();
+    unknown_purpose_asks_for_no_keys();
+}
+
+fn managed_prefixes() {
     assert_eq!(
         managed_listing_prefix("", None).as_deref(),
         Some("litellm-b")
@@ -38,6 +50,9 @@ pub(super) fn list_purpose_prefix() {
         managed_listing_prefix("base/prefix", Some("batch")).as_deref(),
         Some("base/prefix/litellm-bedrock-files")
     );
+}
+
+fn listing_queries() {
     assert_eq!(
         listing_query("", None),
         vec![
@@ -52,7 +67,9 @@ pub(super) fn list_purpose_prefix() {
             ("max-keys".to_owned(), "0".to_owned()),
         ]
     );
+}
 
+fn setting_text_reads_strings() {
     let requested = params(vec![(
         LIST_FILES_PURPOSE_PARAM,
         RequestValue::Text("batch".to_owned()),
@@ -61,10 +78,7 @@ pub(super) fn list_purpose_prefix() {
         setting_text(&requested, LIST_FILES_PURPOSE_PARAM).as_deref(),
         Some("batch")
     );
-    let missing = params(vec![(
-        LIST_FILES_PURPOSE_PARAM,
-        RequestValue::Raw("null".to_owned()),
-    )]);
+    let missing = null_purpose();
     assert_eq!(setting_text(&missing, LIST_FILES_PURPOSE_PARAM), None);
     assert_eq!(setting_text(&Params::new(), LIST_FILES_PURPOSE_PARAM), None);
     let empty = params(vec![(
@@ -75,7 +89,9 @@ pub(super) fn list_purpose_prefix() {
         setting_text(&empty, LIST_FILES_PURPOSE_PARAM).as_deref(),
         Some("")
     );
+}
 
+fn walked_purpose_prefers_the_location() {
     let walked = params(vec![
         (
             LIST_FILES_PURPOSE_PARAM,
@@ -104,6 +120,9 @@ pub(super) fn list_purpose_prefix() {
         walked_listing_purpose(&null_location).as_deref(),
         Some("batch")
     );
+}
+
+fn an_empty_location_is_used_as_given() {
     let empty_location = params(vec![
         (
             LIST_FILES_PURPOSE_PARAM,
@@ -112,7 +131,9 @@ pub(super) fn list_purpose_prefix() {
         (LIST_FILES_LOCATION_PARAM, RequestValue::Text(String::new())),
     ]);
     assert_eq!(walked_listing_purpose(&empty_location).as_deref(), Some(""));
+}
 
+fn batch_purpose_reaches_the_listing() {
     let optional = region_params();
     let environment = empty_environment();
     let access = list_access();
@@ -139,7 +160,12 @@ pub(super) fn list_purpose_prefix() {
         stored_text(&litellm, LIST_FILES_LOCATION_PARAM).as_deref(),
         Some("batch")
     );
+}
 
+fn absent_purpose_stores_null() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let mut litellm = region_params();
     let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -163,7 +189,12 @@ pub(super) fn list_purpose_prefix() {
         Some(RequestValue::Raw(raw)) if raw == "null"
     ));
     assert_eq!(walked_listing_purpose(&litellm), None);
+}
 
+fn unknown_purpose_asks_for_no_keys() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let mut litellm = region_params();
     let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -185,15 +216,20 @@ pub(super) fn list_purpose_prefix() {
 }
 
 pub(super) fn input_output_bucket_walk() {
+    output_bucket_listing();
+    batch_purpose_lists_the_input_bucket();
+    environment_buckets_are_used();
+    bucket_names_resolve_from_access_and_environment();
+    output_location_unlisted_when_buckets_differ();
+    next_request_uses_the_walked_location();
+    a_batch_purpose_stops_the_walk();
+    an_empty_purpose_is_stored_verbatim();
+}
+
+fn output_bucket_listing() {
     let optional = region_params();
     let environment = empty_environment();
-    let access = access_params(&[
-        ("s3_bucket_name", TrustedValue::Text("in-bucket".to_owned())),
-        (
-            "s3_output_bucket_name",
-            TrustedValue::Text("out-bucket".to_owned()),
-        ),
-    ]);
+    let access = input_output_access();
     let mut litellm = region_params();
     let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -206,7 +242,12 @@ pub(super) fn input_output_bucket_walk() {
         signed.query.get(1),
         Some(&("prefix".to_owned(), "litellm-batch-outputs/".to_owned()))
     );
+}
 
+fn batch_purpose_lists_the_input_bucket() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = input_output_access();
     let mut litellm = region_params();
     let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -215,7 +256,10 @@ pub(super) fn input_output_bucket_walk() {
     ))
     .unwrap();
     assert_eq!(signed.url, "https://s3.us-east-1.amazonaws.com/in-bucket/");
+}
 
+fn environment_buckets_are_used() {
+    let optional = region_params();
     let environment = env_map(&[
         ("AWS_S3_BUCKET_NAME", "env-in"),
         ("AWS_S3_OUTPUT_BUCKET_NAME", "env-out"),
@@ -229,7 +273,9 @@ pub(super) fn input_output_bucket_walk() {
     ))
     .unwrap();
     assert_eq!(signed.url, "https://s3.us-east-1.amazonaws.com/env-out/");
+}
 
+fn bucket_names_resolve_from_access_and_environment() {
     let environment = env_map(&[("AWS_S3_OUTPUT_BUCKET_NAME", "env-out")]);
     let access = bucket_access("in-bucket");
     assert_eq!(
@@ -245,12 +291,12 @@ pub(super) fn input_output_bucket_walk() {
         "in-bucket"
     );
 
-    let access = access_params(&[(
+    let output_only = access_params(&[(
         "s3_output_bucket_name",
         TrustedValue::Text("out-bucket".to_owned()),
     )]);
     assert_eq!(
-        listing_bucket_name(&access, &empty_environment(), Some("batch_output")).unwrap(),
+        listing_bucket_name(&output_only, &empty_environment(), Some("batch_output")).unwrap(),
         "out-bucket"
     );
     let missing = listing_bucket_name(
@@ -260,14 +306,10 @@ pub(super) fn input_output_bucket_walk() {
     );
     let error = missing.unwrap_err();
     assert!(error.to_string().contains("S3 bucket_name is required"));
+}
 
-    let different_prefix = access_params(&[
-        ("s3_bucket_name", TrustedValue::Text("bucket/in".to_owned())),
-        (
-            "s3_output_bucket_name",
-            TrustedValue::Text("bucket/out".to_owned()),
-        ),
-    ]);
+fn output_location_unlisted_when_buckets_differ() {
+    let different_prefix = bucket_pair_access();
     let blank = params(vec![
         (
             LIST_FILES_PURPOSE_PARAM,
@@ -290,21 +332,12 @@ pub(super) fn input_output_bucket_walk() {
         !output_location_still_unlisted(&different_prefix, &empty_environment(), &empty_purpose)
             .unwrap()
     );
+}
 
-    let mut litellm = params(vec![
-        (
-            "aws_region_name",
-            RequestValue::Text("us-east-1".to_owned()),
-        ),
-        (
-            LIST_FILES_PURPOSE_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-        (
-            LIST_FILES_LOCATION_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-    ]);
+fn next_request_uses_the_walked_location() {
+    let optional = region_params();
+    let different_prefix = bucket_pair_access();
+    let mut litellm = null_location_params();
     let next = block_on(list_files_next_request(
         listing_request(
             &optional,
@@ -327,26 +360,16 @@ pub(super) fn input_output_bucket_walk() {
         stored_text(&litellm, LIST_FILES_LOCATION_PARAM).as_deref(),
         Some("batch_output")
     );
+}
 
-    let mut litellm = params(vec![
-        (
-            "aws_region_name",
-            RequestValue::Text("us-east-1".to_owned()),
-        ),
-        (
-            LIST_FILES_PURPOSE_PARAM,
-            RequestValue::Text("batch".to_owned()),
-        ),
-        (
-            LIST_FILES_LOCATION_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-    ]);
+fn a_batch_purpose_stops_the_walk() {
+    let optional = region_params();
+    let mut litellm = batch_params();
     let next = block_on(list_files_next_request(
         listing_request(
             &optional,
             &mut litellm,
-            &different_prefix,
+            &bucket_pair_access(),
             &empty_environment(),
         ),
         200,
@@ -355,13 +378,19 @@ pub(super) fn input_output_bucket_walk() {
     ))
     .unwrap();
     assert!(next.is_none());
+}
 
-    let mut litellm = empty_purpose;
+fn an_empty_purpose_is_stored_verbatim() {
+    let optional = region_params();
+    let mut litellm = params(vec![
+        (LIST_FILES_PURPOSE_PARAM, RequestValue::Text(String::new())),
+        (LIST_FILES_LOCATION_PARAM, RequestValue::Text(String::new())),
+    ]);
     let next = block_on(list_files_next_request(
         listing_request(
             &optional,
             &mut litellm,
-            &different_prefix,
+            &bucket_pair_access(),
             &empty_environment(),
         ),
         200,
@@ -377,23 +406,19 @@ pub(super) fn input_output_bucket_walk() {
 }
 
 pub(super) fn pagination_continuation() {
+    error_statuses_skip_pagination();
+    continuation_tokens_extend_the_query();
+    continuation_tokens_are_not_encoded();
+    empty_tokens_stop_pagination();
+    a_token_continues_the_walk();
+    batch_listing_requests_are_signed();
+}
+
+fn error_statuses_skip_pagination() {
     let optional = region_params();
     let environment = empty_environment();
     let access = list_access();
-    let mut litellm = params(vec![
-        (
-            "aws_region_name",
-            RequestValue::Text("us-east-1".to_owned()),
-        ),
-        (
-            LIST_FILES_PURPOSE_PARAM,
-            RequestValue::Text("batch".to_owned()),
-        ),
-        (
-            LIST_FILES_LOCATION_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-    ]);
+    let mut litellm = batch_params();
     let next = block_on(list_files_next_request(
         listing_request(&optional, &mut litellm, &access, &environment),
         500,
@@ -402,22 +427,14 @@ pub(super) fn pagination_continuation() {
     ))
     .unwrap();
     assert!(next.is_none());
+}
 
+fn continuation_tokens_extend_the_query() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let body = b"<ListBucketResult><NextContinuationToken>tok</NextContinuationToken><IsTruncated>false</IsTruncated></ListBucketResult>";
-    let mut litellm = params(vec![
-        (
-            "aws_region_name",
-            RequestValue::Text("us-east-1".to_owned()),
-        ),
-        (
-            LIST_FILES_PURPOSE_PARAM,
-            RequestValue::Text("batch".to_owned()),
-        ),
-        (
-            LIST_FILES_LOCATION_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-    ]);
+    let mut litellm = batch_params();
     let next = block_on(list_files_next_request(
         listing_request(&optional, &mut litellm, &access, &environment),
         200,
@@ -439,7 +456,12 @@ pub(super) fn pagination_continuation() {
         stored_text(&litellm, LIST_FILES_PURPOSE_PARAM).as_deref(),
         Some("batch")
     );
+}
 
+fn continuation_tokens_are_not_encoded() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let body = b"<ListBucketResult><NextContinuationToken>a/b c</NextContinuationToken></ListBucketResult>";
     let mut litellm = region_params();
     let next = block_on(list_files_next_request(
@@ -463,7 +485,12 @@ pub(super) fn pagination_continuation() {
             "54e3e2c7d78fef4bff4ddf6334da09a2fa3dcb7053b33fe5fa18eb103b113ce8"
         )
     );
+}
 
+fn empty_tokens_stop_pagination() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let body =
         b"<ListBucketResult><NextContinuationToken></NextContinuationToken></ListBucketResult>";
     let mut litellm = region_params();
@@ -475,7 +502,12 @@ pub(super) fn pagination_continuation() {
     ))
     .unwrap();
     assert!(next.is_none());
+}
 
+fn a_token_continues_the_walk() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let body = b"<ListBucketResult><NextContinuationToken>tok</NextContinuationToken><IsTruncated>true</IsTruncated></ListBucketResult>";
     let mut litellm = region_params();
     let next = block_on(list_files_next_request(
@@ -486,7 +518,12 @@ pub(super) fn pagination_continuation() {
     ))
     .unwrap();
     assert!(next.is_some());
+}
 
+fn batch_listing_requests_are_signed() {
+    let optional = region_params();
+    let environment = empty_environment();
+    let access = list_access();
     let mut litellm = region_params();
     let signed = block_on(list_files_request(
         listing_request(&optional, &mut litellm, &access, &environment),
@@ -505,6 +542,16 @@ pub(super) fn pagination_continuation() {
 }
 
 pub(super) fn namespace_xml_list() {
+    prefixed_documents_decode();
+    the_default_namespace_applies();
+    nested_contents_keep_the_outer_text();
+    managed_files_from_a_namespaced_body();
+    foreign_and_empty_bucket_names();
+    a_denied_list_keeps_the_bedrock_reply();
+    an_empty_body_is_not_a_root();
+}
+
+fn prefixed_documents_decode() {
     let prefixed = b"<s3:ListBucketResult xmlns:s3=\"http://s3.amazonaws.com/doc/2006-03-01/\"><s3:Name>in-bucket</s3:Name><s3:Contents><s3:Key>litellm-bedrock-files-a</s3:Key><s3:Size>7</s3:Size><s3:LastModified>2024-01-02T03:04:05Z</s3:LastModified></s3:Contents><s3:NextContinuationToken>tok</s3:NextContinuationToken></s3:ListBucketResult>";
     let listing = decode_s3_listing(prefixed, &DecodeLimits::DEFAULT).unwrap();
     assert_eq!(listing.name.as_deref(), Some("in-bucket"));
@@ -515,14 +562,18 @@ pub(super) fn namespace_xml_list() {
         Some("litellm-bedrock-files-a")
     );
     assert_eq!(listing.contents[0].size.as_deref(), Some("7"));
+}
 
+fn the_default_namespace_applies() {
     let defaulted = b"<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Name>in-bucket</Name><Contents xmlns=\"urn:other\"><Key>litellm-bedrock-files-b</Key></Contents></ListBucketResult>";
     let listing = decode_s3_listing(defaulted, &DecodeLimits::DEFAULT).unwrap();
     assert_eq!(
         listing.contents[0].key.as_deref(),
         Some("litellm-bedrock-files-b")
     );
+}
 
+fn nested_contents_keep_the_outer_text() {
     let nested = b"<ListBucketResult><Contents><Contents><Key>litellm-bedrock-files-inner</Key></Contents><Key>litellm-bedrock-files-outer</Key></Contents><Wrapper><Contents><Key>litellm-bedrock-files-wrapper</Key></Contents></Wrapper></ListBucketResult>";
     let listing = decode_s3_listing(nested, &DecodeLimits::DEFAULT).unwrap();
     assert_eq!(listing.contents.len(), 1);
@@ -530,20 +581,22 @@ pub(super) fn namespace_xml_list() {
         listing.contents[0].key.as_deref(),
         Some("litellm-bedrock-files-outer")
     );
+}
 
+fn managed_files_from_a_namespaced_body() {
     let body = listing_xml(&contents_entry(
         "litellm-bedrock-files-a",
         "1",
         "2024-01-02T03:04:05Z",
     ));
-    let litellm = params(vec![(
-        LIST_FILES_PURPOSE_PARAM,
-        RequestValue::Raw("null".to_owned()),
-    )]);
+    let litellm = null_purpose();
     let files = managed_files(&body, &litellm).unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].id, "s3://in-bucket/litellm-bedrock-files-a");
+}
 
+fn foreign_and_empty_bucket_names() {
+    let litellm = null_purpose();
     let foreign = b"<ListBucketResult><Name>other-bucket</Name><Contents><Key>litellm-bedrock-files-a</Key></Contents></ListBucketResult>";
     assert!(managed_files(foreign, &litellm).unwrap().is_empty());
 
@@ -551,7 +604,10 @@ pub(super) fn namespace_xml_list() {
     let files = managed_files(empty_name, &litellm).unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].id, "s3://in-bucket/litellm-bedrock-files-a");
+}
 
+fn a_denied_list_keeps_the_bedrock_reply() {
+    let litellm = null_purpose();
     let prefix_access = bucket_access("in-bucket/base");
     let environment = empty_environment();
     let context = S3ResponseContext {
@@ -563,35 +619,48 @@ pub(super) fn namespace_xml_list() {
     let denied = raw_listing(403, b"denied", &headers);
     let error = list_files_response(&denied, &context).unwrap_err();
     assert_eq!(error.status_code(), Some(403));
-    match &error {
-        S3ListingError::Bedrock(inner) => {
-            assert_eq!(inner.error.status_code, 403);
-            assert_eq!(inner.error.message, "denied");
-            assert_eq!(inner.response_headers, headers);
-            assert_eq!(inner.error.response.status_code, 403);
-            assert_eq!(inner.error.response.request.method, "GET");
-            assert_eq!(
-                inner.error.response.request.url,
-                "https://s3.us-east-1.amazonaws.com/in-bucket/?list-type=2"
-            );
-        }
-        other => panic!("expected a Bedrock error, got {other:?}"),
-    }
+    let S3ListingError::Bedrock(reply) = &error else {
+        panic!("expected a Bedrock error, got {error:?}");
+    };
+    assert_eq!(reply.error.status_code, 403);
+    assert_eq!(reply.error.message, "denied");
+    assert_eq!(reply.response_headers, headers);
+    assert_eq!(reply.error.response.status_code, 403);
+    assert_eq!(reply.error.response.request.method, "GET");
+    assert_eq!(
+        reply.error.response.request.url,
+        "https://s3.us-east-1.amazonaws.com/in-bucket/?list-type=2"
+    );
+}
 
+fn an_empty_body_is_not_a_root() {
+    let litellm = null_purpose();
+    let prefix_access = bucket_access("in-bucket/base");
+    let environment = empty_environment();
+    let context = S3ResponseContext {
+        litellm_params: &litellm,
+        access: &prefix_access,
+        environment: &environment,
+    };
     let empty = raw_listing(204, b"", &[]);
     let error = list_files_response(&empty, &context).unwrap_err();
     assert_eq!(error.status_code(), None);
-    match error {
-        S3ListingError::NoRoot => {}
-        other => panic!("expected NoRoot, got {other:?}"),
-    }
+    assert!(
+        matches!(error, S3ListingError::NoRoot),
+        "expected NoRoot, got {error:?}"
+    );
 }
 
 pub(super) fn unmanaged_key_filter() {
-    let litellm = params(vec![(
-        LIST_FILES_PURPOSE_PARAM,
-        RequestValue::Raw("null".to_owned()),
-    )]);
+    lists_only_managed_keys();
+    legacy_ids_are_listed_when_allowed();
+    strict_ids_drop_unmanaged_keys();
+    bucket_prefixes_are_stripped();
+    requested_purposes_filter_the_entries();
+}
+
+fn lists_only_managed_keys() {
+    let litellm = null_purpose();
     let mut contents = String::new();
     contents.push_str(&contents_entry("", "1", ""));
     contents.push_str("<Contents><Size>2</Size></Contents>");
@@ -622,7 +691,10 @@ pub(super) fn unmanaged_key_filter() {
     assert_eq!(files[3].filename, "litellm-bedrock-files-%41bc");
     assert_eq!(files[0].object, FileKind::File);
     assert_eq!(files[0].status, Some(FileStatus::Uploaded));
+}
 
+fn legacy_ids_are_listed_when_allowed() {
+    let litellm = null_purpose();
     let legacy_access = access_params(&[
         ("s3_bucket_name", TrustedValue::Text("in-bucket".to_owned())),
         ("allow_legacy_cloud_file_ids", TrustedValue::Boolean(true)),
@@ -638,20 +710,29 @@ pub(super) fn unmanaged_key_filter() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].id, "s3://in-bucket/custom/unmanaged.txt");
     assert_eq!(files[0].purpose, FilesPurpose::Batch);
+}
 
+fn strict_ids_drop_unmanaged_keys() {
+    let litellm = null_purpose();
     let strict_access = bucket_access("in-bucket");
+    let environment = empty_environment();
     let context = S3ResponseContext {
         litellm_params: &litellm,
         access: &strict_access,
         environment: &environment,
     };
+    let legacy = listing_xml(&contents_entry("custom/unmanaged.txt", "8", ""));
     assert!(
         list_files_response(&raw_listing(200, &legacy, &[]), &context)
             .unwrap()
             .is_empty()
     );
+}
 
+fn bucket_prefixes_are_stripped() {
+    let litellm = null_purpose();
     let prefix_access = bucket_access("in-bucket/base");
+    let environment = empty_environment();
     let context = S3ResponseContext {
         litellm_params: &litellm,
         access: &prefix_access,
@@ -662,7 +743,9 @@ pub(super) fn unmanaged_key_filter() {
     assert_eq!(files.len(), 2);
     assert_eq!(files[0].purpose, FilesPurpose::BatchOutput);
     assert_eq!(files[1].purpose, FilesPurpose::Batch);
+}
 
+fn requested_purposes_filter_the_entries() {
     let both = listing_xml(&format!(
         "{}{}",
         contents_entry("litellm-bedrock-files-a", "1", ""),
@@ -672,16 +755,16 @@ pub(super) fn unmanaged_key_filter() {
         LIST_FILES_PURPOSE_PARAM,
         RequestValue::Text("batch".to_owned()),
     )]);
-    let files = managed_files(&both, &requested_batch).unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].purpose, FilesPurpose::Batch);
+    let batch_files = managed_files(&both, &requested_batch).unwrap();
+    assert_eq!(batch_files.len(), 1);
+    assert_eq!(batch_files[0].purpose, FilesPurpose::Batch);
     let requested_output = params(vec![(
         LIST_FILES_PURPOSE_PARAM,
         RequestValue::Text("batch_output".to_owned()),
     )]);
-    let files = managed_files(&both, &requested_output).unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].purpose, FilesPurpose::BatchOutput);
+    let output_files = managed_files(&both, &requested_output).unwrap();
+    assert_eq!(output_files.len(), 1);
+    assert_eq!(output_files[0].purpose, FilesPurpose::BatchOutput);
     let requested_empty = params(vec![(
         LIST_FILES_PURPOSE_PARAM,
         RequestValue::Text(String::new()),
@@ -695,6 +778,18 @@ pub(super) fn unmanaged_key_filter() {
 }
 
 pub(super) fn last_modified_and_size() {
+    parses_sizes();
+    rejects_malformed_sizes();
+    rejects_overflowing_sizes();
+    parses_timestamps();
+    rejects_unsupported_timestamps();
+    offsets_and_pre_epoch_times();
+    rejects_bad_calendar_times();
+    managed_files_carry_size_and_time();
+    bad_size_and_bad_date_fail();
+}
+
+fn parses_sizes() {
     assert_eq!(parse_size(None).unwrap(), 0);
     assert_eq!(parse_size(Some("")).unwrap(), 0);
     assert_eq!(parse_size(Some("0")).unwrap(), 0);
@@ -702,6 +797,9 @@ pub(super) fn last_modified_and_size() {
     assert_eq!(parse_size(Some(" 42 ")).unwrap(), 42);
     assert_eq!(parse_size(Some("-5")).unwrap(), -5);
     assert_eq!(parse_size(Some("-0")).unwrap(), 0);
+}
+
+fn rejects_malformed_sizes() {
     assert!(
         matches!(parse_size(Some("1__0")), Err(S3ListingError::Size { text }) if text == "1__0")
     );
@@ -713,6 +811,9 @@ pub(super) fn last_modified_and_size() {
         parse_size(Some("_1")),
         Err(S3ListingError::Size { .. })
     ));
+}
+
+fn rejects_overflowing_sizes() {
     assert!(matches!(
         parse_size(Some("12a")),
         Err(S3ListingError::Size { .. })
@@ -725,7 +826,9 @@ pub(super) fn last_modified_and_size() {
         parse_size(Some("9223372036854775808")),
         Err(S3ListingError::Size { .. })
     ));
+}
 
+fn parses_timestamps() {
     assert_eq!(parse_created_at(None).unwrap(), 0);
     assert_eq!(parse_created_at(Some("")).unwrap(), 0);
     assert_eq!(
@@ -748,6 +851,9 @@ pub(super) fn last_modified_and_size() {
         parse_created_at(Some("2024-01-02T03:04:05")).unwrap(),
         1_704_164_645
     );
+}
+
+fn rejects_unsupported_timestamps() {
     for unsupported in [
         "20240102T030405Z",
         "2024-01-02",
@@ -762,6 +868,9 @@ pub(super) fn last_modified_and_size() {
             "{unsupported}"
         );
     }
+}
+
+fn offsets_and_pre_epoch_times() {
     assert_eq!(
         parse_created_at(Some("2024-01-02T03:04:05+02:00")).unwrap(),
         1_704_157_445
@@ -786,6 +895,9 @@ pub(super) fn last_modified_and_size() {
         parse_created_at(Some("1970-01-01T00:00:00.500Z")).unwrap(),
         0
     );
+}
+
+fn rejects_bad_calendar_times() {
     assert!(matches!(
         parse_created_at(Some("0000-01-01T00:00:00Z")),
         Err(S3ListingError::Timestamp { .. })
@@ -810,11 +922,10 @@ pub(super) fn last_modified_and_size() {
         parse_created_at(Some("2024-01-02T03:04:05+24:00")),
         Err(S3ListingError::Timestamp { .. })
     ));
+}
 
-    let litellm = params(vec![(
-        LIST_FILES_PURPOSE_PARAM,
-        RequestValue::Raw("null".to_owned()),
-    )]);
+fn managed_files_carry_size_and_time() {
+    let litellm = null_purpose();
     let body = listing_xml(&format!(
         "{}{}{}",
         contents_entry(
@@ -832,14 +943,17 @@ pub(super) fn last_modified_and_size() {
     assert_eq!(files[1].bytes, 0);
     assert_eq!(files[1].created_at, 0);
     assert_eq!(files[2].filename, "");
+}
 
+fn bad_size_and_bad_date_fail() {
+    let litellm = null_purpose();
     let bad_size = listing_xml(&contents_entry("litellm-bedrock-files-a", "1__0", ""));
-    let error = managed_files(&bad_size, &litellm).unwrap_err();
-    assert_eq!(error.status_code(), None);
-    assert!(matches!(error, S3ListingError::Size { .. }));
+    let size_error = managed_files(&bad_size, &litellm).unwrap_err();
+    assert_eq!(size_error.status_code(), None);
+    assert!(matches!(size_error, S3ListingError::Size { .. }));
 
     let bad_date = listing_xml(&contents_entry("litellm-bedrock-files-a", "1", "bad"));
-    let error = managed_files(&bad_date, &litellm).unwrap_err();
-    assert_eq!(error.status_code(), None);
-    assert!(matches!(error, S3ListingError::Timestamp { .. }));
+    let date_error = managed_files(&bad_date, &litellm).unwrap_err();
+    assert_eq!(date_error.status_code(), None);
+    assert!(matches!(date_error, S3ListingError::Timestamp { .. }));
 }

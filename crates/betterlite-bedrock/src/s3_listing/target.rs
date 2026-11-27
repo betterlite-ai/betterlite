@@ -122,7 +122,6 @@ fn endpoint_url(params: &Params, aws_region_name: &str) -> Result<String, S3List
     Ok(endpoint.trim_end_matches('/').to_owned())
 }
 
-#[must_use]
 pub fn s3_request_target(
     optional_params: &Params,
     litellm_params: &Params,

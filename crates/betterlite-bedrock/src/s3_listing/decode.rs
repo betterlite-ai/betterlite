@@ -47,12 +47,20 @@ enum Slot {
     Modified,
 }
 
+// where the open elements sit: outside the root, inside it, inside a Contents entry, or past the root
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum Place {
+    #[default]
+    Outside,
+    InsideContents,
+    AfterRoot,
+}
+
 // ElementTree keeps an element's text only up to its first child, and only the root's direct children count
 #[derive(Default)]
 struct Parser {
     depth: usize,
-    root_seen: bool,
-    in_contents: bool,
+    place: Place,
     slot: Option<Slot>,
     slot_depth: usize,
     has_child: bool,
@@ -68,7 +76,7 @@ impl Parser {
                 limit: limits.depth,
             });
         }
-        if self.depth == 0 && self.root_seen {
+        if self.depth == 0 && self.place == Place::AfterRoot {
             return Err(S3ListingError::Trailing);
         }
         self.depth = self.depth.saturating_add(1);
@@ -76,17 +84,17 @@ impl Parser {
             self.has_child = true;
             return Ok(());
         }
-        let slot = match (self.depth, local, self.in_contents) {
+        let slot = match (self.depth, local, self.place) {
             (2, b"Name", _) => Some(Slot::BucketName),
             (2, b"NextContinuationToken", _) => Some(Slot::Token),
             (2, b"Contents", _) => {
-                self.in_contents = true;
+                self.place = Place::InsideContents;
                 self.entry = S3ListedEntry::default();
                 None
             }
-            (3, b"Key", true) => Some(Slot::Key),
-            (3, b"Size", true) => Some(Slot::Size),
-            (3, b"LastModified", true) => Some(Slot::Modified),
+            (3, b"Key", Place::InsideContents) => Some(Slot::Key),
+            (3, b"Size", Place::InsideContents) => Some(Slot::Size),
+            (3, b"LastModified", Place::InsideContents) => Some(Slot::Modified),
             _ => None,
         };
         if slot.is_some() {
@@ -96,6 +104,16 @@ impl Parser {
             self.text = None;
         }
         Ok(())
+    }
+
+    fn start(
+        &mut self,
+        start: &BytesStart<'_>,
+        resolver: &NamespaceResolver,
+        limits: &DecodeLimits,
+    ) -> Result<(), S3ListingError> {
+        check_attributes(resolver, start)?;
+        self.open(start.local_name().as_ref(), limits)
     }
 
     fn close(&mut self) -> Result<(), S3ListingError> {
@@ -111,12 +129,12 @@ impl Parser {
         }
         let closing = self.depth;
         self.depth = closing.saturating_sub(1);
-        if closing == 2 && self.in_contents {
-            self.in_contents = false;
+        if closing == 2 && self.place == Place::InsideContents {
+            self.place = Place::Outside;
             self.listing.contents.push(mem::take(&mut self.entry));
         }
         if self.depth == 0 {
-            self.root_seen = true;
+            self.place = Place::AfterRoot;
         }
         Ok(())
     }
@@ -135,29 +153,24 @@ impl Parser {
     }
 
     fn reference(&mut self, node: &BytesRef<'_>) -> Result<(), S3ListingError> {
-        let resolved = match node.resolve_char_ref()? {
-            Some(character) => {
-                let mut encoded = [0_u8; 4];
-                character.encode_utf8(&mut encoded).to_owned()
-            }
-            None => {
-                let name = node.decode()?;
-                let replacement = match name.as_ref() {
-                    "amp" => "&",
-                    "lt" => "<",
-                    "gt" => ">",
-                    "apos" => "'",
-                    "quot" => "\"",
-                    _ => {
-                        return Err(S3ListingError::Entity {
-                            name: name.into_owned(),
-                        });
-                    }
-                };
-                replacement.to_owned()
-            }
+        let Some(character) = node.resolve_char_ref()? else {
+            let name = node.decode()?;
+            let replacement = match name.as_ref() {
+                "amp" => "&",
+                "lt" => "<",
+                "gt" => ">",
+                "apos" => "'",
+                "quot" => "\"",
+                _ => {
+                    return Err(S3ListingError::Entity {
+                        name: name.into_owned(),
+                    });
+                }
+            };
+            return self.push_text(replacement);
         };
-        self.push_text(&resolved)
+        let mut encoded = [0_u8; 4];
+        self.push_text(character.encode_utf8(&mut encoded))
     }
 
     fn store(&mut self, slot: Slot, text: Option<String>) {
@@ -177,7 +190,7 @@ impl Parser {
         if self.depth != 0 {
             return Err(S3ListingError::Unclosed);
         }
-        if !self.root_seen {
+        if self.place != Place::AfterRoot {
             return Err(S3ListingError::NoRoot);
         }
         Ok(self.listing)
@@ -221,13 +234,9 @@ pub fn decode_s3_listing(bytes: &[u8], limits: &DecodeLimits) -> Result<S3Listin
             });
         }
         match event {
-            Event::Start(start) => {
-                check_attributes(reader.resolver(), &start)?;
-                parser.open(start.local_name().as_ref(), limits)?;
-            }
+            Event::Start(start) => parser.start(&start, reader.resolver(), limits)?,
             Event::Empty(start) => {
-                check_attributes(reader.resolver(), &start)?;
-                parser.open(start.local_name().as_ref(), limits)?;
+                parser.start(&start, reader.resolver(), limits)?;
                 parser.close()?;
             }
             Event::End(_end) => parser.close()?,
@@ -236,7 +245,7 @@ pub fn decode_s3_listing(bytes: &[u8], limits: &DecodeLimits) -> Result<S3Listin
             Event::GeneralRef(node) => parser.reference(&node)?,
             Event::DocType(_doctype) => return Err(S3ListingError::Dtd),
             Event::Decl(_decl) => {
-                if parser.root_seen || parser.depth != 0 {
+                if parser.place == Place::AfterRoot || parser.depth != 0 {
                     return Err(S3ListingError::Trailing);
                 }
             }
@@ -272,7 +281,9 @@ fn created_at(raw: &str) -> Option<i64> {
     let moment = DateTime::parse_from_rfc3339(&normalized)
         .or_else(|_error| DateTime::parse_from_rfc3339(&format!("{normalized}+00:00")))
         .ok()?;
-    if !(1..=9999).contains(&moment.year()) || moment.timestamp_subsec_nanos() >= 1_000_000_000 {
+    if !(1_i32..=9_999_i32).contains(&moment.year())
+        || moment.timestamp_subsec_nanos() >= 1_000_000_000
+    {
         return None;
     }
     let stamp = moment.timestamp();

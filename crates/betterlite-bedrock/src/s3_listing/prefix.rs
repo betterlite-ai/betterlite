@@ -67,10 +67,7 @@ pub fn listing_bucket_name(
     let names = configured_bucket_names(access, environment)?;
     match configured_bucket_name(access, environment) {
         Ok(input) => Ok(names.get(1).cloned().unwrap_or(input)),
-        Err(error) => match names.first() {
-            Some(name) => Ok(name.clone()),
-            None => Err(error),
-        },
+        Err(error) => names.first().map_or(Err(error), |name| Ok(name.clone())),
     }
 }
 
