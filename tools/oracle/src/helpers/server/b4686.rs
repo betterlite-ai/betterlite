@@ -1,7 +1,6 @@
 mod fixtures;
 mod input;
 mod run;
-#[cfg(test)]
 mod tests;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};

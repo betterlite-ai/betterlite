@@ -1,21 +1,24 @@
 use std::collections::BTreeMap;
 
-use betterlite_core::skills::search::SkillSearchResult;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_server::agent_endpoints::search::{AgentSearchResult, SearchableSkill};
 use betterlite_server::mcp::catalog_guard::types::MCPTool;
 use betterlite_server::mcp::hook_payloads::GuardrailContext;
 use betterlite_server::mcp::search_handlers::types::{
-    AccessibleAgent, AccessibleSkill, AgentSearchOutcome, SkillSearchOutcome,
+    AgentSearchOutcome, SearchOutcome, SkillSearchOutcome,
 };
 use betterlite_server::mcp::tool_search::identity::with_mcp_proxy_identity;
 use serde::Deserialize;
 use serde_json::Value as Json;
 
-const DEFAULT_TOP_K: i64 = 5;
-const AGENT_SCORE: f64 = 0.5;
-const SKILL_SCORE: f64 = 0.25;
+mod accessible;
+mod agent_hits;
+mod skill_hits;
+mod tools;
+
+pub(super) const DEFAULT_TOP_K: i64 = 5;
+pub(super) const AGENT_SCORE: f64 = 0.5;
+pub(super) const SKILL_SCORE: f64 = 0.25;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -113,105 +116,50 @@ pub(super) struct ToolInput {
     pub(super) output_schema: Option<BTreeMap<String, JsonValue>>,
 }
 
+pub(super) trait FromFixture<T> {
+    fn from_fixture(input: &T) -> Self;
+}
+
+pub(super) fn fixture_vec<T, S>(items: &[T]) -> Vec<S>
+where
+    S: FromFixture<T>,
+{
+    let mut fixtures = Vec::with_capacity(items.len());
+    for item in items {
+        fixtures.push(S::from_fixture(item));
+    }
+    fixtures
+}
+
+fn search_outcome<T>(kind: OutcomeKind, reason: String, hits: Vec<T>) -> SearchOutcome<T> {
+    match kind {
+        OutcomeKind::Hits => SearchOutcome::Hits(hits),
+        OutcomeKind::NotConfigured => SearchOutcome::NotConfigured { reason },
+        OutcomeKind::EmbeddingFailed => SearchOutcome::EmbeddingFailed { reason },
+    }
+}
+
 impl Input {
-    pub(super) fn query_text(&self) -> &str {
-        self.query.as_deref().unwrap_or_default()
-    }
-
-    pub(super) fn top_k_value(&self) -> i64 {
-        self.top_k.unwrap_or(DEFAULT_TOP_K)
-    }
-
-    pub(super) fn accessible_agents(&self) -> Vec<AccessibleAgent> {
-        self.agents
-            .iter()
-            .map(|agent| AccessibleAgent {
-                agent_id: agent.id.clone(),
-                agent_name: agent.name.clone(),
-            })
-            .collect()
-    }
-
-    pub(super) fn accessible_skills(&self) -> Vec<AccessibleSkill> {
-        self.skills
-            .iter()
-            .map(|skill| AccessibleSkill {
-                skill_id: skill.id.clone(),
-                display_title: Some(skill.name.clone()),
-                description: skill.description.clone(),
-            })
-            .collect()
-    }
-
     pub(super) fn agent_outcome(&self) -> AgentSearchOutcome {
-        match self.agent_outcome {
-            OutcomeKind::NotConfigured => AgentSearchOutcome::NotConfigured {
-                reason: self.agent_reason.clone().unwrap_or_default(),
-            },
-            OutcomeKind::EmbeddingFailed => AgentSearchOutcome::EmbeddingFailed {
-                reason: self.agent_reason.clone().unwrap_or_default(),
-            },
-            OutcomeKind::Hits => AgentSearchOutcome::Hits(
-                self.agents
-                    .iter()
-                    .map(|agent| {
-                        let id = &agent.id;
-                        AgentSearchResult {
-                            agent_id: id.clone(),
-                            agent_name: agent.name.clone(),
-                            description: format!("agent description of {id}"),
-                            skills: vec![SearchableSkill {
-                                name: format!("skill-{id}"),
-                                description: format!("skill description of {id}"),
-                                tags: vec!["seeded".to_owned()],
-                            }],
-                            score: AGENT_SCORE,
-                        }
-                    })
-                    .collect(),
-            ),
-        }
+        search_outcome(
+            self.agent_outcome,
+            self.agent_reason.clone().unwrap_or_default(),
+            fixture_vec(&self.agents),
+        )
     }
 
     pub(super) fn skill_outcome(&self) -> SkillSearchOutcome {
-        match self.skill_outcome {
-            OutcomeKind::NotConfigured => SkillSearchOutcome::NotConfigured {
-                reason: self.skill_reason.clone().unwrap_or_default(),
-            },
-            OutcomeKind::EmbeddingFailed => SkillSearchOutcome::EmbeddingFailed {
-                reason: self.skill_reason.clone().unwrap_or_default(),
-            },
-            OutcomeKind::Hits => SkillSearchOutcome::Hits(
-                self.skills
-                    .iter()
-                    .map(|skill| SkillSearchResult {
-                        skill_id: skill.id.clone(),
-                        display_title: Some(skill.name.clone()),
-                        description: skill.description.clone(),
-                        score: SKILL_SCORE,
-                    })
-                    .collect(),
-            ),
-        }
+        search_outcome(
+            self.skill_outcome,
+            self.skill_reason.clone().unwrap_or_default(),
+            fixture_vec(&self.skills),
+        )
     }
 
     pub(super) fn listed_tools(&self) -> Vec<MCPTool> {
         self.tools
             .iter()
-            .map(|tool| {
-                let catalog_tool = MCPTool {
-                    name: tool.name.clone(),
-                    description: tool.description.clone(),
-                    title: None,
-                    input_schema: tool.input_schema.clone(),
-                    output_schema: tool.output_schema.clone(),
-                    execution: None,
-                    annotations: None,
-                    icons: None,
-                    meta: None,
-                };
-                with_mcp_proxy_identity(&catalog_tool, &tool.server_id)
-            })
+            .map(|tool| with_mcp_proxy_identity(&MCPTool::from_fixture(tool), &tool.server_id))
             .collect()
     }
 }

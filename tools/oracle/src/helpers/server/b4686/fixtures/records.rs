@@ -59,12 +59,17 @@ pub(super) fn scope_json(scope: &McpRequestScope) -> JsonValue {
 }
 
 pub(super) fn execution_scope_json(scope: &McpRequestScope) -> JsonValue {
+    let mut execution = scope_json(scope);
+    if let JsonValue::Object(fields) = &mut execution {
+        fields.remove("mcp_servers");
+    }
+    execution
+}
+
+pub(super) fn allowed_call_json(caller: &CallerScope, scope: &McpRequestScope) -> JsonValue {
     json!({
-        "client_ip": scope.client_ip,
-        "mcp_auth_header": secret_value(scope.mcp_auth_header.as_ref()),
-        "mcp_server_auth_headers": secret_headers_json(&scope.mcp_server_auth_headers),
-        "oauth2_headers": secret_map_json(&scope.oauth2_headers),
-        "raw_headers": raw_headers_json(&scope.raw_headers),
+        "caller": caller_json(caller),
+        "scope": {"client_ip": scope.client_ip, "mcp_servers": scope.mcp_servers},
     })
 }
 

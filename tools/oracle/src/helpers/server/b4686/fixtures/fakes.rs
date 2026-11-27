@@ -21,7 +21,7 @@ use serde_json::Value as JsonValue;
 use serde_json::json;
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::super::input::{Input, invalid_input};
+use super::super::input::{Input, fixture_vec, invalid_input};
 use super::records::{Records, caller_json, feature_name};
 
 pub(crate) struct Fakes<'a> {
@@ -62,6 +62,36 @@ impl<'a> Fakes<'a> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .value()
+    }
+
+    fn checked<T>(&self, caller: &CallerScope, items: Vec<T>) -> Result<Vec<T>, SearchPortError> {
+        if caller != &self.caller {
+            return Err(SearchPortError {
+                detail: "the handler resolved its data for another caller".to_owned(),
+            });
+        }
+        Ok(items)
+    }
+
+    fn record_skill_search(
+        &self,
+        query: &str,
+        skills: &[AccessibleSkill],
+        top_k: i64,
+        embedding_model: Option<&str>,
+    ) {
+        let record = json!({
+            "query": query,
+            "top_k": top_k,
+            "embedding_model": embedding_model,
+            "skill_ids": skills.iter().map(|skill| skill.skill_id.as_str()).collect::<Vec<_>>(),
+            "caller": caller_json(&self.caller),
+        });
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .skill_searches
+            .push(record);
     }
 }
 
@@ -124,12 +154,7 @@ impl SearchPorts for Fakes<'_> {
         &self,
         caller: &CallerScope,
     ) -> Result<Vec<AccessibleAgent>, SearchPortError> {
-        if caller != &self.caller {
-            return Err(SearchPortError {
-                detail: "agent search resolved agents for another caller".to_owned(),
-            });
-        }
-        Ok(self.input.accessible_agents())
+        self.checked(caller, fixture_vec(&self.input.agents))
     }
 
     async fn search_agents(
@@ -160,12 +185,7 @@ impl SearchPorts for Fakes<'_> {
         &self,
         caller: &CallerScope,
     ) -> Result<Vec<AccessibleSkill>, SearchPortError> {
-        if caller != &self.caller {
-            return Err(SearchPortError {
-                detail: "skill search resolved skills for another caller".to_owned(),
-            });
-        }
-        Ok(self.input.accessible_skills())
+        self.checked(caller, fixture_vec(&self.input.skills))
     }
 
     async fn search_skills(
@@ -174,21 +194,9 @@ impl SearchPorts for Fakes<'_> {
         skills: &[AccessibleSkill],
         top_k: i64,
         embedding_model: Option<&str>,
-        caller: &CallerScope,
+        _caller: &CallerScope,
     ) -> Result<SkillSearchOutcome, SearchPortError> {
-        let skill_ids: Vec<&str> = skills.iter().map(|skill| skill.skill_id.as_str()).collect();
-        let record = json!({
-            "query": query,
-            "top_k": top_k,
-            "embedding_model": embedding_model,
-            "skill_ids": skill_ids,
-            "caller": caller_json(caller),
-        });
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .skill_searches
-            .push(record);
+        self.record_skill_search(query, skills, top_k, embedding_model);
         Ok(self.input.skill_outcome())
     }
 }

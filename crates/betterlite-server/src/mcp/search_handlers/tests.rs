@@ -1,3 +1,9 @@
+#![cfg(test)]
+#![expect(
+    clippy::field_reassign_with_default,
+    reason = "each case scripts one fake field at a time"
+)]
+
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::Mutex;
@@ -132,6 +138,29 @@ impl Default for Fake {
     }
 }
 
+impl Fake {
+    fn record_skill_search(
+        &self,
+        query: &str,
+        skills: &[AccessibleSkill],
+        top_k: i64,
+        embedding_model: Option<&str>,
+    ) {
+        let mut seen = self.seen.lock().unwrap();
+        seen.skills = skills.iter().map(|skill| skill.skill_id.clone()).collect();
+        seen.skill_searches.push(SearchCall {
+            query: query.to_owned(),
+            top_k,
+            embedding_model: embedding_model.map(str::to_owned),
+        });
+    }
+
+    fn allowed_servers_response(&self) -> Result<Vec<String>, SearchPortError> {
+        self.seen.lock().unwrap().allowed_calls.push(());
+        Ok(self.allowed_servers.clone())
+    }
+}
+
 #[async_trait]
 impl SearchPorts for Fake {
     async fn check_feature_access_for_user(
@@ -186,13 +215,7 @@ impl SearchPorts for Fake {
         embedding_model: Option<&str>,
         _caller: &CallerScope,
     ) -> Result<SkillSearchOutcome, SearchPortError> {
-        let mut seen = self.seen.lock().unwrap();
-        seen.skills = skills.iter().map(|skill| skill.skill_id.clone()).collect();
-        seen.skill_searches.push(SearchCall {
-            query: query.to_owned(),
-            top_k,
-            embedding_model: embedding_model.map(str::to_owned),
-        });
+        self.record_skill_search(query, skills, top_k, embedding_model);
         Ok(self.skill_outcome.clone())
     }
 }
@@ -214,8 +237,7 @@ impl McpOperations for Fake {
         _caller: &CallerScope,
         _scope: &McpRequestScope,
     ) -> Result<Vec<String>, SearchPortError> {
-        self.seen.lock().unwrap().allowed_calls.push(());
-        Ok(self.allowed_servers.clone())
+        self.allowed_servers_response()
     }
 
     async fn raise_denied_scoped_mcp_access(
@@ -277,11 +299,10 @@ impl SearchSettings for Fake {
 }
 
 fn caller() -> CallerScope {
-    CallerScope {
-        user_id: Some("u1".to_owned()),
-        role: Some(UserRole::InternalUser),
-        ..CallerScope::default()
-    }
+    let mut caller_scope = CallerScope::default();
+    caller_scope.user_id = Some("u1".to_owned());
+    caller_scope.role = Some(UserRole::InternalUser);
+    caller_scope
 }
 
 fn context<'a>(
@@ -369,11 +390,9 @@ fn object_arguments(fields: &[(&str, JsonValue)]) -> BTreeMap<String, JsonValue>
 
 #[tokio::test]
 async fn agent_search_checks_agent_feature_access() {
-    let fake = Fake {
-        deny_feature: true,
-        agents: vec![accessible_agent("a1")],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.deny_feature = true;
+    fake.agents = vec![accessible_agent("a1")];
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = AgentSearchRequest {
@@ -398,11 +417,9 @@ async fn agent_search_checks_agent_feature_access() {
 #[case::kept(3, 3)]
 #[tokio::test]
 async fn agent_search_clamps_top_k_to_one(#[case] top_k: i64, #[case] expected: i64) {
-    let fake = Fake {
-        agents: vec![accessible_agent("a1")],
-        agent_outcome: AgentSearchOutcome::Hits(vec![agent_result("a1")]),
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.agents = vec![accessible_agent("a1")];
+    fake.agent_outcome = AgentSearchOutcome::Hits(vec![agent_result("a1")]);
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = AgentSearchRequest {
@@ -430,10 +447,8 @@ async fn agent_search_returns_the_reason_as_error_text(
     #[case] outcome: AgentSearchOutcome,
     #[case] reason: &str,
 ) {
-    let fake = Fake {
-        agent_outcome: outcome,
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.agent_outcome = outcome;
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = AgentSearchRequest {
@@ -453,11 +468,9 @@ async fn agent_search_returns_the_reason_as_error_text(
 #[case::past_the_maximum(500, 100)]
 #[tokio::test]
 async fn skill_search_clamps_top_k_bounds(#[case] top_k: i64, #[case] expected: i64) {
-    let fake = Fake {
-        skills: vec![accessible_skill("s1")],
-        skill_outcome: SkillSearchOutcome::Hits(vec![skill_result("s1")]),
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.skills = vec![accessible_skill("s1")];
+    fake.skill_outcome = SkillSearchOutcome::Hits(vec![skill_result("s1")]);
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = SkillSearchRequest {
@@ -485,10 +498,8 @@ async fn skill_search_returns_the_reason_as_error_text(
     #[case] outcome: SkillSearchOutcome,
     #[case] reason: &str,
 ) {
-    let fake = Fake {
-        skill_outcome: outcome,
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.skill_outcome = outcome;
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = SkillSearchRequest {
@@ -504,10 +515,8 @@ async fn skill_search_returns_the_reason_as_error_text(
 
 #[tokio::test]
 async fn mcp_tool_search_validates_config() {
-    let fake = Fake {
-        settings_valid: false,
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.settings_valid = false;
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = McpToolSearchRequest {
@@ -524,13 +533,8 @@ async fn mcp_tool_search_validates_config() {
 
 #[tokio::test]
 async fn mcp_tool_search_needs_a_router_for_its_embedding_model() {
-    let fake = Fake {
-        settings: MCPToolSearchSettings {
-            embedding_model: Some("embed".to_owned()),
-            ..MCPToolSearchSettings::default()
-        },
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.settings.embedding_model = Some("embed".to_owned());
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = McpToolSearchRequest {
@@ -549,13 +553,11 @@ async fn mcp_tool_search_needs_a_router_for_its_embedding_model() {
 
 #[tokio::test]
 async fn mcp_tool_search_without_embedding_uses_keyword_scores() {
-    let fake = Fake {
-        tools: vec![
-            tool("alpha-tool", "finds alpha", "{}", "srv"),
-            tool("beta-tool", "finds beta", "{}", "srv"),
-        ],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![
+        tool("alpha-tool", "finds alpha", "{}", "srv"),
+        tool("beta-tool", "finds beta", "{}", "srv"),
+    ];
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = McpToolSearchRequest {
@@ -574,18 +576,13 @@ async fn mcp_tool_search_without_embedding_uses_keyword_scores() {
 
 #[tokio::test]
 async fn mcp_tool_search_ranks_semantically_when_configured() {
-    let fake = Fake {
-        tools: vec![
-            tool("alpha-tool", "finds alpha", "{}", "srv"),
-            tool("beta-tool", "finds beta", "{}", "srv"),
-        ],
-        settings: MCPToolSearchSettings {
-            embedding_model: Some("embed".to_owned()),
-            ..MCPToolSearchSettings::default()
-        },
-        router: Some(Box::new(FakeRouter)),
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![
+        tool("alpha-tool", "finds alpha", "{}", "srv"),
+        tool("beta-tool", "finds beta", "{}", "srv"),
+    ];
+    fake.settings.embedding_model = Some("embed".to_owned());
+    fake.router = Some(Box::new(FakeRouter));
     let caller = caller();
     let scope = McpRequestScope::default();
     let request = McpToolSearchRequest {
@@ -607,14 +604,9 @@ async fn proxy_tool_search_returns_opaque_ids() {
     let tools: Vec<MCPTool> = (0..6)
         .map(|index| tool(&format!("tool-{index}"), "matches", "{}", "srv"))
         .collect();
-    let fake = Fake {
-        tools,
-        settings: MCPToolSearchSettings {
-            top_k: 100,
-            ..MCPToolSearchSettings::default()
-        },
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = tools;
+    fake.settings.top_k = 100;
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = object_arguments(&[("query", JsonValue::String("matches".to_owned()))]);
@@ -635,10 +627,8 @@ async fn proxy_tool_search_returns_opaque_ids() {
 async fn proxy_tool_resolves_opaque_tool_id() {
     let listed = tool("alpha", "finds alpha", "{}", "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
-    let fake = Fake {
-        tools: vec![listed],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = proxy_arguments(&tool_id);
@@ -655,10 +645,8 @@ async fn proxy_tool_resolves_opaque_tool_id() {
 
 #[tokio::test]
 async fn proxy_tool_rejects_unknown_id() {
-    let fake = Fake {
-        tools: vec![tool("alpha", "finds alpha", "{}", "srv")],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![tool("alpha", "finds alpha", "{}", "srv")];
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = proxy_arguments("does-not-exist");
@@ -677,10 +665,8 @@ async fn proxy_tool_rejects_unknown_id() {
 async fn proxy_tool_rejects_an_unknown_name() {
     let listed = tool("alpha", "finds alpha", "{}", "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
-    let fake = Fake {
-        tools: vec![listed],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = proxy_arguments(&tool_id);
@@ -702,11 +688,9 @@ const REQUIRED_SCHEMA: &str =
 async fn proxy_tool_call_validates_arguments() {
     let listed = tool("alpha", "finds alpha", REQUIRED_SCHEMA, "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
-    let fake = Fake {
-        tools: vec![listed],
-        allowed_servers: vec!["srv".to_owned()],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
+    fake.allowed_servers = vec!["srv".to_owned()];
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = object_arguments(&[
@@ -729,11 +713,9 @@ async fn proxy_tool_call_validates_arguments() {
 async fn proxy_tool_call_delegates_to_the_tool_call_handler() {
     let listed = tool("alpha", "finds alpha", REQUIRED_SCHEMA, "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
-    let fake = Fake {
-        tools: vec![listed],
-        allowed_servers: vec!["srv".to_owned()],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
+    fake.allowed_servers = vec!["srv".to_owned()];
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = object_arguments(&[
@@ -765,10 +747,8 @@ async fn proxy_tool_call_delegates_to_the_tool_call_handler() {
 
 #[tokio::test]
 async fn proxy_tool_search_validates_config() {
-    let fake = Fake {
-        settings_valid: false,
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.settings_valid = false;
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = object_arguments(&[("query", JsonValue::String("task".to_owned()))]);
@@ -788,13 +768,8 @@ async fn proxy_tool_search_validates_config() {
 
 #[tokio::test]
 async fn proxy_tool_search_needs_a_router_for_its_embedding_model() {
-    let fake = Fake {
-        settings: MCPToolSearchSettings {
-            embedding_model: Some("embed".to_owned()),
-            ..MCPToolSearchSettings::default()
-        },
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.settings.embedding_model = Some("embed".to_owned());
     let caller = caller();
     let scope = McpRequestScope::default();
     let arguments = object_arguments(&[("query", JsonValue::String("task".to_owned()))]);
@@ -834,15 +809,11 @@ async fn mcp_tool_call_checks_authorization() {
 
 #[tokio::test]
 async fn mcp_tool_call_denies_explicit_scope() {
-    let fake = Fake {
-        denial_detail: "denied srv".to_owned(),
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.denial_detail = "denied srv".to_owned();
     let caller = caller();
-    let scope = McpRequestScope {
-        mcp_servers: Some(vec!["srv".to_owned()]),
-        ..McpRequestScope::default()
-    };
+    let mut scope = McpRequestScope::default();
+    scope.mcp_servers = Some(vec!["srv".to_owned()]);
     let arguments = BTreeMap::new();
     let request = ToolCallRequest {
         tool_name: "alpha",
@@ -863,19 +834,13 @@ async fn mcp_tool_call_denies_explicit_scope() {
 
 #[tokio::test]
 async fn mcp_tool_call_preserves_guardrail_context() {
-    let fake = Fake {
-        allowed_servers: vec!["srv".to_owned()],
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.allowed_servers = vec!["srv".to_owned()];
     let caller = caller();
-    let scope = McpRequestScope {
-        client_ip: Some("10.0.0.1".to_owned()),
-        ..McpRequestScope::default()
-    };
-    let guardrail = GuardrailContext {
-        model: Some("gpt".to_owned()),
-        ..GuardrailContext::default()
-    };
+    let mut scope = McpRequestScope::default();
+    scope.client_ip = Some("10.0.0.1".to_owned());
+    let mut guardrail = GuardrailContext::default();
+    guardrail.model = Some("gpt".to_owned());
     let arguments = object_arguments(&[("x", JsonValue::String("value".to_owned()))]);
     let request = ToolCallRequest {
         tool_name: "alpha",

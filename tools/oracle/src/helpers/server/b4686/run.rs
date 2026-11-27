@@ -15,7 +15,7 @@ use serde_json::json;
 use tokio::runtime::Builder;
 
 use super::fixtures::fakes::Fakes;
-use super::input::{Handler, Input, invalid_input};
+use super::input::{DEFAULT_TOP_K, Handler, Input, invalid_input};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     let fakes = Fakes::new(input)?;
@@ -38,8 +38,8 @@ async fn dispatch(input: &Input, fakes: &Fakes<'_>) -> Result<CallToolResult, Bo
         Handler::AgentSearch => {
             handle_agent_search(
                 AgentSearchRequest {
-                    query: input.query_text(),
-                    top_k: input.top_k_value(),
+                    query: input.query.as_deref().unwrap_or_default(),
+                    top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
                 },
                 &context,
             )
@@ -48,8 +48,8 @@ async fn dispatch(input: &Input, fakes: &Fakes<'_>) -> Result<CallToolResult, Bo
         Handler::SkillSearch => {
             handle_skill_search(
                 SkillSearchRequest {
-                    query: input.query_text(),
-                    top_k: input.top_k_value(),
+                    query: input.query.as_deref().unwrap_or_default(),
+                    top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
                 },
                 &context,
             )
@@ -58,8 +58,8 @@ async fn dispatch(input: &Input, fakes: &Fakes<'_>) -> Result<CallToolResult, Bo
         Handler::McpToolSearch => {
             handle_mcp_tool_search(
                 McpToolSearchRequest {
-                    query: input.query_text(),
-                    top_k: input.top_k_value(),
+                    query: input.query.as_deref().unwrap_or_default(),
+                    top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
                 },
                 &context,
             )

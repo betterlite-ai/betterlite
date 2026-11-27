@@ -3,11 +3,12 @@ pub mod ports;
 pub mod types;
 
 mod dispatch;
-#[cfg(test)]
 mod tests;
 
 use std::collections::BTreeMap;
 
+use betterlite_core::schema::SchemaLimits;
+use betterlite_core::schema::validate::validate_schema;
 use betterlite_core::skills::search::MAX_SKILL_SEARCH_TOP_K;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::client::tools::result::{CallToolResult, ContentBlock, TextContent};
@@ -16,12 +17,12 @@ use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use betterlite_prompts::arguments::json::Object;
 use http::StatusCode;
 
-use self::dispatch::{proxy_call, proxy_search, ranked_tool_search};
+use self::dispatch::{agent_search_text, proxy_search, ranked_tool_search};
 use self::error::SearchHandlerError;
 use self::ports::ToolExecution;
 use self::types::{
-    AgentSearchOutcome, AgentSearchRequest, HandlerContext, McpToolSearchRequest, ProxyToolRequest,
-    SkillSearchOutcome, SkillSearchRequest, ToolCallRequest, json_string,
+    AgentSearchRequest, HandlerContext, McpToolSearchRequest, ProxyToolIdentity, ProxyToolRequest,
+    SearchOutcome, SkillSearchRequest, ToolCallRequest, json_string,
 };
 use crate::management_rbac::FeatureName;
 use crate::mcp::catalog_guard::types::MCPTool;
@@ -44,23 +45,7 @@ pub async fn handle_agent_search(
         .ports
         .check_feature_access_for_user(context.caller, FeatureName::Agents)
         .await?;
-    let agents = context.ports.accessible_agents(context.caller).await?;
-    let embedding_model = context.settings.agent_embedding_model();
-    let outcome = context
-        .ports
-        .search_agents(
-            request.query,
-            &agents,
-            request.top_k.max(1),
-            embedding_model,
-            context.caller,
-        )
-        .await?;
-    Ok(match outcome {
-        AgentSearchOutcome::Hits(hits) => _text_tool_result(serde_json::to_string(&hits)?, false),
-        AgentSearchOutcome::NotConfigured { reason }
-        | AgentSearchOutcome::EmbeddingFailed { reason } => _text_tool_result(reason, true),
-    })
+    agent_search_text(request.query, request.top_k.max(1), context).await
 }
 
 pub async fn handle_skill_search(
@@ -68,23 +53,24 @@ pub async fn handle_skill_search(
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
     let skills = context.ports.accessible_skills(context.caller).await?;
-    let limit = i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX);
-    let embedding_model = context.settings.skill_embedding_model();
-    let outcome = context
+    match context
         .ports
         .search_skills(
             request.query,
             &skills,
-            request.top_k.clamp(1, limit),
-            embedding_model,
+            request
+                .top_k
+                .clamp(1, i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX)),
+            context.settings.skill_embedding_model(),
             context.caller,
         )
-        .await?;
-    Ok(match outcome {
-        SkillSearchOutcome::Hits(hits) => _text_tool_result(serde_json::to_string(&hits)?, false),
-        SkillSearchOutcome::NotConfigured { reason }
-        | SkillSearchOutcome::EmbeddingFailed { reason } => _text_tool_result(reason, true),
-    })
+        .await?
+    {
+        SearchOutcome::Hits(hits) => Ok(_text_tool_result(serde_json::to_string(&hits)?, false)),
+        SearchOutcome::NotConfigured { reason } | SearchOutcome::EmbeddingFailed { reason } => {
+            Ok(_text_tool_result(reason, true))
+        }
+    }
 }
 
 pub async fn handle_mcp_tool_search(
@@ -107,12 +93,12 @@ pub async fn handle_mcp_tool_search(
         .operations
         ._list_mcp_tools(context.caller, context.scope, false)
         .await?;
-    Ok(
-        match ranked_tool_search(request.query, request.top_k, &tools, &settings, context).await {
-            Ok(results) => _text_tool_result(serde_json::to_string(&results)?, false),
-            Err(error) => _text_tool_result(error.to_string(), true),
-        },
-    )
+    let ranking =
+        ranked_tool_search(request.query, request.top_k, &tools, &settings, context).await;
+    match ranking {
+        Ok(results) => Ok(_text_tool_result(serde_json::to_string(&results)?, false)),
+        Err(error) => Ok(_text_tool_result(error.to_string(), true)),
+    }
 }
 
 pub async fn handle_mcp_proxy_tool(
@@ -127,7 +113,12 @@ pub async fn handle_mcp_proxy_tool(
         return proxy_search(request.arguments, &tools, context).await;
     }
     let tools_by_id = proxy_tools_by_id(&tools)?;
-    let Some(tool) = proxy_tool(request.arguments, &tools_by_id) else {
+    let tool = request
+        .arguments
+        .get("tool_id")
+        .and_then(json_string)
+        .and_then(|tool_id| tools_by_id.get(tool_id).copied());
+    let Some(tool) = tool else {
         return Ok(_text_tool_result(UNKNOWN_TOOL_ID.to_owned(), true));
     };
     if request.name == MCP_PROXY_SCHEMA_TOOL_NAME {
@@ -142,37 +133,51 @@ pub async fn handle_mcp_proxy_tool(
             detail: format!("Unknown MCP proxy tool: {}", request.name),
         });
     }
-    proxy_call(tool, request.arguments, context).await
+    let tool_arguments = match request.arguments.get("arguments") {
+        Some(JsonValue::Object(values)) => values.clone(),
+        Some(_) => {
+            return Ok(_text_tool_result(
+                "arguments must be an object".to_owned(),
+                true,
+            ));
+        }
+        None => BTreeMap::new(),
+    };
+    let schema = serde_json::to_value(&tool.input_schema)?;
+    let instance = serde_json::to_string(&tool_arguments)?;
+    if let Err(error) = validate_schema(&schema, &instance, &SchemaLimits::default()) {
+        return Ok(_text_tool_result(
+            format!("Invalid arguments: {error}"),
+            true,
+        ));
+    }
+    let identity = ProxyToolIdentity::from_tool(tool)?;
+    handle_mcp_tool_call(
+        ToolCallRequest {
+            tool_name: &identity.tool_name,
+            arguments: &tool_arguments,
+            requested_server_id: Some(&identity.server_id),
+            guardrail_context: None,
+        },
+        context,
+    )
+    .await
 }
 
 pub async fn handle_mcp_tool_call(
     request: ToolCallRequest<'_>,
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
+    let ToolCallRequest {
+        tool_name,
+        arguments,
+        requested_server_id,
+        guardrail_context,
+    } = request;
     let allowed_servers = context
         .operations
         ._get_allowed_mcp_servers(context.caller, context.scope)
         .await?;
-    forbid_without_allowed_servers(context, &allowed_servers).await?;
-    let call = ToolExecution {
-        scope: context.scope,
-        caller: context.caller,
-        tool_name: request.tool_name,
-        arguments: request.arguments,
-        allowed_servers: &allowed_servers,
-        requested_server_id: request.requested_server_id,
-        guardrail_context: request.guardrail_context,
-    };
-    Ok(complete_call_tool_result(
-        context.operations.execute_mcp_tool(call).await?,
-        WireCompat::Legacy,
-    ))
-}
-
-async fn forbid_without_allowed_servers(
-    context: &HandlerContext<'_>,
-    allowed_servers: &[String],
-) -> Result<(), SearchHandlerError> {
     let requested = context
         .scope
         .mcp_servers
@@ -196,7 +201,19 @@ async fn forbid_without_allowed_servers(
             detail: "User not allowed to call this tool.".to_owned(),
         });
     }
-    Ok(())
+    let call = ToolExecution {
+        scope: context.scope,
+        caller: context.caller,
+        tool_name,
+        arguments,
+        allowed_servers: &allowed_servers,
+        requested_server_id,
+        guardrail_context,
+    };
+    Ok(complete_call_tool_result(
+        context.operations.execute_mcp_tool(call).await?,
+        WireCompat::Legacy,
+    ))
 }
 
 fn proxy_tools_by_id(tools: &[MCPTool]) -> Result<BTreeMap<String, &MCPTool>, SearchHandlerError> {
@@ -205,14 +222,6 @@ fn proxy_tools_by_id(tools: &[MCPTool]) -> Result<BTreeMap<String, &MCPTool>, Se
         tools_by_id.insert(mcp_proxy_tool_id(tool)?, tool);
     }
     Ok(tools_by_id)
-}
-
-fn proxy_tool<'a>(
-    arguments: &BTreeMap<String, JsonValue>,
-    tools_by_id: &BTreeMap<String, &'a MCPTool>,
-) -> Option<&'a MCPTool> {
-    let tool_id = arguments.get("tool_id").and_then(json_string)?;
-    tools_by_id.get(tool_id).copied()
 }
 
 pub(super) fn _text_tool_result(text: String, is_error: bool) -> CallToolResult {

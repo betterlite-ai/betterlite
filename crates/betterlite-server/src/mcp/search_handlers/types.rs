@@ -49,18 +49,14 @@ pub struct AccessibleSkill {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum AgentSearchOutcome {
-    Hits(Vec<AgentSearchResult>),
+pub enum SearchOutcome<T> {
+    Hits(Vec<T>),
     NotConfigured { reason: String },
     EmbeddingFailed { reason: String },
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum SkillSearchOutcome {
-    Hits(Vec<SkillSearchResult>),
-    NotConfigured { reason: String },
-    EmbeddingFailed { reason: String },
-}
+pub type AgentSearchOutcome = SearchOutcome<AgentSearchResult>;
+pub type SkillSearchOutcome = SearchOutcome<SkillSearchResult>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyToolIdentity {
