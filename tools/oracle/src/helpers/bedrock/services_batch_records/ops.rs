@@ -1,8 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::pin::pin;
-use std::task::{Context, Poll, Waker};
-use std::thread::yield_now;
+use std::future::ready;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::batch_records::error::BatchRecordsError;
@@ -18,6 +15,7 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
+use futures_util::FutureExt as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -25,18 +23,6 @@ use uuid::Uuid;
 use super::families::{Families, FamilyFailure};
 use super::fixture::{CaseLookup, Sources, epoch, helper_error, secrets};
 use super::input::{CreateFileRequest, Input, TransformRecords};
-
-// The families run synchronous operations and a ready credential seam, so every poll has its answer.
-pub(super) fn block_on_ready<F: Future>(future: F) -> F::Output {
-    let mut context = Context::from_waker(Waker::noop());
-    let mut pinned = pin!(future);
-    loop {
-        match pinned.as_mut().poll(&mut context) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => yield_now(),
-        }
-    }
-}
 
 // An unsupported parameter answers with the status LiteLLM's UnsupportedParamsError carries.
 fn family_status(error: &BatchRecordsError) -> Option<u16> {
@@ -67,15 +53,13 @@ fn transform_records(call: &TransformRecords) -> HelperResult {
         lookup: &lookup,
         resolution: &resolution,
     };
-    let transformed = block_on_ready(transform_openai_jsonl(
-        &records,
-        &call.target_model,
-        &context,
-    ))
-    .map_err(|error| {
-        let status = family_status(&error);
-        helper_error(error, status)
-    })?;
+    let transformed = transform_openai_jsonl(&records, &call.target_model, &context)
+        .now_or_never()
+        .ok_or_else(|| helper_error("the batch transform is not ready", None))?
+        .map_err(|error| {
+            let status = family_status(&error);
+            helper_error(error, status)
+        })?;
     let answer: Vec<Json> = transformed
         .iter()
         .map(BedrockBatchRecord::to_json)
@@ -194,11 +178,11 @@ fn sign_upload(
         id: Uuid::parse_str(&call.uuid).or_value_error()?,
         now: epoch(call.now)?,
     };
-    let outcome = block_on_ready(transform_create_file_request(
-        &mut request,
-        context,
-        |_settings, _region| ready(Ok::<Credentials, CredentialError>(held.clone())),
-    ));
+    let outcome = transform_create_file_request(&mut request, context, |_settings, _region| {
+        ready(Ok::<Credentials, CredentialError>(held.clone()))
+    })
+    .now_or_never()
+    .ok_or_else(|| helper_error("the signing seam is not ready", None))?;
     Ok((outcome.ok(), litellm))
 }
 

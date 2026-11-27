@@ -34,10 +34,9 @@ use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
     OidcTokenCache,
 };
+use futures_util::FutureExt as _;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-
-use super::ops::block_on_ready;
 
 pub(super) fn helper_error<E>(error: E, status: Option<u16>) -> Box<HelperError>
 where
@@ -131,11 +130,9 @@ pub(super) fn supported_openai_params(
         provider_catalog: &provider_catalog,
         provider_generation: 0,
     };
-    Ok(block_on_ready(get_supported_openai_params(
-        model,
-        &mut environment,
-        &catalogs,
-    )))
+    get_supported_openai_params(model, &mut environment, &catalogs)
+        .now_or_never()
+        .ok_or_else(|| helper_error("the supported parameters are not ready", None))
 }
 
 // LiteLLM reads litellm.model_cost[model], so the stub answers from the case map it was handed.
