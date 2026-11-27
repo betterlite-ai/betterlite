@@ -2,12 +2,13 @@ use betterlite_core::api::batch_provider_create::error::BatchProviderCreateError
 use betterlite_core::api::batch_provider_read::error::BatchProviderReadError;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
+use betterlite_openai::batches::records::MissingBatchField;
+use betterlite_openai::batches::sdk::TimeoutError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use tokio::task::JoinError;
 
-use super::convert::request::{BodyError, DurationError};
 use super::convert::{ConvertError, SettingsError};
 use super::payload::{ErrorPayload, create_error_payload, read_error_payload};
 
@@ -21,9 +22,9 @@ pub(crate) enum DispatchFailure {
     #[error("{0}")]
     Connection(String),
     #[error(transparent)]
-    Request(#[from] BodyError),
+    Request(#[from] MissingBatchField),
     #[error(transparent)]
-    Timeout(#[from] DurationError),
+    Timeout(#[from] TimeoutError),
     #[error("retrieving a batch from provider `{provider}` is not available in this build")]
     Unsupported { provider: String },
 }

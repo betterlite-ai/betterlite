@@ -1,0 +1,21 @@
+kind: helper
+name: jwt-keys-seed-discovery
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/.well-known/openid-configuration", public_key_ttl: 300.0, public_key_stale_ttl: 1200.0}
+        steps:
+          - now: 0.0
+            kid: a
+            concurrent: true
+            http:
+              - {kind: answer, status: 200, body: '{"jwks_uri":"https://idp.example.com/tenant-a/jwks"}'}
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 0.0}
+        steps:
+          - now: 1000.0
+            kid: missing
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[]}'}
+env: {}
+compare: {ignore: []}

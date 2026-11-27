@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-services-batch-records-upload
+call:
+  bedrock_services_batch_records:
+    function: create_file_request
+    model: custom-model-v1
+    file:
+      content: "{\"custom_id\":\"a\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"custom-model-v1\",\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}]}}\n"
+      filename: input.jsonl
+      content_type: application/jsonl
+    purpose: batch
+    optional_params: {}
+    litellm_params: {s3_bucket_name: litellm-batch}
+    environment: {AWS_REGION_NAME: us-east-1}
+    model_alias_map: {}
+    model_cost: {}
+    uuid: "11111111-2222-4333-8444-555555555555"
+    now: 1704067200
+env: {}
+compare: {ignore: []}

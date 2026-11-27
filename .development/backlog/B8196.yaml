@@ -2,7 +2,7 @@ id: B8196
 milestone: M9 agents and mcp
 title: "MCP operations: auth headers, BYOK checks and token exchange"
 status: todo
-depends_on: [B8190, B8191, B4667, B8460]
+depends_on: [B8190, B8191, B4667, B8460, B10155]
 file: tasks/B8196-mcp-ops-auth.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/operations.py"

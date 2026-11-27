@@ -1,0 +1,26 @@
+kind: helper
+name: bedrock-services-s3-listing-last-modified-and-size
+call:
+  bedrock_services_s3_listing:
+    operation: list_response
+    listings:
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-a</Key><Size>-5</Size></Contents><Contents><Key>litellm-bedrock-files-b</Key><Size>007</Size></Contents><Contents><Key>litellm-bedrock-files-c</Key><Size>  +12  </Size></Contents><Contents><Key>litellm-bedrock-files-u</Key><Size>1_000</Size></Contents><Contents><Key>litellm-bedrock-files-m</Key></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size></Size><LastModified></LastModified></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size>abc</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size>3</Size><LastModified>not-a-date</LastModified></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-d1</Key><LastModified>2024-01-02T03:04:05.1234567Z</LastModified></Contents><Contents><Key>litellm-bedrock-files-d2</Key><LastModified>2024-01-02T03:04:05</LastModified></Contents><Contents><Key>litellm-bedrock-files-d3</Key><LastModified>1969-12-31T23:59:59.500Z</LastModified></Contents><Contents><Key>litellm-bedrock-files-d4</Key><LastModified>2024-01-02T03:04:05-05:30</LastModified></Contents><Contents><Key>litellm-bedrock-files-d5</Key><LastModified>2024-01-02T03:04:05+00:00</LastModified></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-dir/</Key><Size>+12</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+env: {}
+compare: {ignore: []}

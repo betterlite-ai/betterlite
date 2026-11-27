@@ -1,0 +1,3 @@
+# REQUEST_TIMEOUT loaded as a float; the SDK's retrieve and list fall back to 6000 seconds
+environment_variables:
+  REQUEST_TIMEOUT: "4.5"

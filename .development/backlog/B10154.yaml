@@ -1,0 +1,13 @@
+id: B10154
+milestone: M12 python
+title: Router generic call contract
+status: done
+depends_on: [B184, B3510, B5367, B8690]
+file: tasks/B10154-router-call-contract.yaml
+covers: []
+parent: B162
+split_from: B6021
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3368

@@ -1,0 +1,13 @@
+kind: helper
+name: select-teamless-ignores-cache
+call:
+  b10114:
+    team_details: not a list
+    team_id: null
+    row:
+      team_id: team-1
+      team_alias: Team One
+      models: [gpt-4]
+      aliases: null
+env: {}
+compare: {ignore: []}

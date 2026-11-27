@@ -1,0 +1,36 @@
+kind: helper
+name: bedrock-services-s3-listing-namespace-xml-list
+call:
+  bedrock_services_s3_listing:
+    operation: list_response
+    listings:
+      - status: 200
+        body: '<ListBucketResult><Name>in-bucket</Name><Contents><Key>litellm-bedrock-files-a</Key><Size>4</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<s3:ListBucketResult xmlns:s3="urn:x"><s3:Name>in-bucket</s3:Name><s3:Contents><s3:Key>litellm-bedrock-files-a</s3:Key><s3:Size>4</s3:Size></s3:Contents></s3:ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Contents><Key>litellm-bedrock-files-a</Key></Contents><Contents><Key>litellm-batch-outputs/b</Key></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Name>in-bucket</Name><Outer><Contents><Key>litellm-bedrock-files-x</Key></Contents></Outer><Contents><Key>litellm-bedrock-files-y</Key></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>pre/litellm-bedrock-files-a</Key><Size>3</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, bucket/pre]]
+      - status: 200
+        body: '<ListBucketResult><Name>foreign</Name><Contents><Key>litellm-bedrock-files-a</Key></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 403
+        headers: [[x-amzn-requestid, r-1]]
+        body: denied
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 204
+        body: ""
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 302
+        body: ""
+        trusted: [[s3_bucket_name, in-bucket]]
+env: {}
+compare: {ignore: []}

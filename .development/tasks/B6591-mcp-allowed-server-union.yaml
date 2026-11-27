@@ -114,7 +114,7 @@ deviations:
 out_of_scope:
   - "get_mcp_server_access, get_allowed_mcp_servers of MCPRequestHandler and admitted subject sources: B4671. admin_view_unscoped: B4670."
   - "Registry reads, lookups and table building: B4731. The MCPServer record: B6590."
-  - "invalidate_toolset_cache and get_toolset_by_name_cached: B6592 owns them. B4681 owns the toolset storage they read."
+  - "invalidate_toolset_cache and get_toolset_by_name_cached: B10147 owns them. B4681 owns the toolset storage they read."
   - "get_all_mcp_servers_with_health_and_teams and health_check_server: B6592 owns them."
   - "Wiring ServerUnion and LiveUnionReads into application state, and every route: B8621 (state), B8625, B8701 and B8626 (routes)."
 

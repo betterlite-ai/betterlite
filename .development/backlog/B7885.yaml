@@ -1,14 +1,14 @@
 id: B7885
 milestone: M12 python
 title: Python eval create, list, get, update, delete and cancel
-status: todo
+status: done
 depends_on: [B6040, B158, B167, B3421, B3422, B3423]
 file: tasks/B7885-python-evals.yaml
 covers:
   - "litellm/evals/main.py"
 parent: B161
 split_from: B161
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3355

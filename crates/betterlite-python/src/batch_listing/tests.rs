@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::{batch_provider_list, xai_identity};
@@ -14,7 +13,7 @@ use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, St
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::batches::error::{BatchesError, SdkError};
-use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
+use betterlite_openai::batches::sdk::{Timeout, TimeoutError, TimeoutPhases};
 use betterlite_openai::xai_batches::error::XaiBatchesError;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -23,12 +22,10 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use rstest::rstest;
 
 use super::convert::{CallMode, ModuleSettings, cancel_payload, parse, section_settings};
-use super::error::{DispatchFailure, payload_for};
+use super::error::{DispatchFailure, ListingError, payload_for};
 use super::register;
 use super::session::ListingCore;
-use super::transport::{
-    DurationError, ListTransport, ProviderFailure, dispatch_failure, duration_of, sdk_timeout,
-};
+use super::transport::{ListTransport, ProviderFailure, dispatch_failure, sdk_timeout};
 
 const EMPTY_ENVIRONMENT: &str = r#"{"environment":{}}"#;
 const SECRET_ENVIRONMENT: &str = r#"{"environment":{},"settings":{"api_key":"sk-module","openai_key":"sk-openai","azure_key":"sk-azure"}}"#;
@@ -284,38 +281,6 @@ fn transport_refuses_an_unwired_list_provider(#[case] provider: &str) {
 }
 
 #[test]
-fn transport_timeouts_follow_the_read_phase() {
-    let phases = TimeoutPhases {
-        connect: Some(1.0_f64),
-        read: Some(2.5_f64),
-        write: None,
-        pool: None,
-    };
-    assert_eq!(
-        duration_of(&Timeout::Phases(phases)).unwrap(),
-        Duration::try_from_secs_f64(2.5_f64).unwrap()
-    );
-    let bare = TimeoutPhases {
-        connect: None,
-        read: None,
-        write: None,
-        pool: None,
-    };
-    assert_eq!(
-        duration_of(&Timeout::Phases(bare)).unwrap(),
-        Duration::from_secs(600)
-    );
-    assert_eq!(
-        duration_of(&Timeout::Seconds(3.0_f64)).unwrap(),
-        Duration::from_secs(3)
-    );
-    assert_eq!(
-        duration_of(&Timeout::Seconds(-1.0_f64)).unwrap_err(),
-        DurationError::Invalid { seconds: -1.0_f64 }
-    );
-}
-
-#[test]
 fn transport_sdk_timeout_keeps_the_seconds() {
     assert_eq!(
         sdk_timeout(&FineTuningTimeout::Seconds(3.0_f64)),
@@ -451,4 +416,16 @@ fn cancel_with_reports_a_core_timeout() {
     let payload = payload_for(&error, "openai", None).unwrap();
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
+}
+
+// the shared TimeoutError reaches the Python exception as a 400, the deviation B10146 records
+#[test]
+fn payload_maps_a_timeout_failure() {
+    let error = ListingError::Dispatch(DispatchFailure::Timeout(TimeoutError::Invalid {
+        seconds: -1.0_f64,
+    }));
+    let payload = payload_for(&error, "xai", None).unwrap();
+    assert_eq!(payload.error_type, "BadRequestError");
+    assert_eq!(payload.status_code, Some(400));
+    assert!(payload.message.contains("-1"));
 }

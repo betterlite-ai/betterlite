@@ -1,0 +1,10 @@
+kind: helper
+name: jwt-oauth-routing-selector
+call:
+  b10161:
+    operation: selector
+    selector: ["trusted.*", "https://idp.example"]
+    claim: "trusted.example.com openid"
+    split_space_delimited: false
+env: {}
+compare: {ignore: []}

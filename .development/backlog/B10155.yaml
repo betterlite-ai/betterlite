@@ -1,0 +1,15 @@
+id: B10155
+milestone: M9 agents and mcp
+title: MCP client per-server auth header lookup and pass-through predicates
+status: done
+depends_on: [B6590, B4654]
+file: tasks/B10155-mcp-client-auth-headers.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/operations.py"
+  - "litellm/proxy/_experimental/mcp_server/utils.py"
+parent: B136
+split_from: B8196
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3398
