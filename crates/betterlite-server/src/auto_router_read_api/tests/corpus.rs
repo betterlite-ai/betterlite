@@ -9,7 +9,7 @@ use super::super::query::{
     BenchmarksQuery, ReadQueryError, SessionQuery, decode_benchmarks_query, decode_session_query,
 };
 
-fn missing_session() -> ReadQueryError {
+const fn missing_session() -> ReadQueryError {
     ReadQueryError::Invalid {
         parameter: "session_id",
         kind: "missing",

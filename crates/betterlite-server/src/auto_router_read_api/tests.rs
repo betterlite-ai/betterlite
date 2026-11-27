@@ -759,5 +759,10 @@ fn every_store_failure_answers_500_with_its_source() {
         }),
     ];
     assert!(failures.iter().all(|failure| failure.source().is_some()));
-    assert_eq!(failures.map(|failure| failure.status_code()), [500_u16; 5]);
+    assert!(
+        failures
+            .iter()
+            .map(ReadApiError::status_code)
+            .all(|code| code == 500)
+    );
 }
