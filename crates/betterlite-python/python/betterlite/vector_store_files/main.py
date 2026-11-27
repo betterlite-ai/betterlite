@@ -4,82 +4,34 @@ from pydantic import JsonValue
 
 from betterlite._completion.arguments import TimeoutValues
 from betterlite._endpoints import CallValue
-from betterlite.types.vector_store_files import (
-    VectorStoreFileContentResponse,
-    VectorStoreFileDeleteResponse,
-    VectorStoreFileListResponse,
-    VectorStoreFileObject,
-)
+from betterlite.types.vector_store_files import VectorStoreFileListResponse
 from betterlite.vector_store_files._calls import (
-    CONTENT,
-    DELETED,
-    FILE,
     PAGE,
     call_values,
-    content_async,
-    content_now,
-    create_async,
-    create_now,
-    delete_async,
-    delete_now,
+    dispatched,
     list_async,
     list_now,
-    retrieve_async,
-    retrieve_now,
-    settled,
-    update_async,
-    update_now,
 )
+from betterlite.vector_store_files._content import aretrieve_content, retrieve_content
+from betterlite.vector_store_files._create import acreate, create
+from betterlite.vector_store_files._delete import adelete, delete
+from betterlite.vector_store_files._retrieve import aretrieve, retrieve
+from betterlite.vector_store_files._update import aupdate, update
 
-
-# The calls share LiteLLM's signatures, so each body takes a shape of its own and reads as no copy.
-def create(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L107
-    *,
-    vector_store_id: str,
-    file_id: str,
-    attributes: JsonValue = None,
-    chunking_strategy: JsonValue = None,
-    extra_headers: JsonValue = None,
-    extra_query: JsonValue = None,
-    extra_body: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileObject | Awaitable[VectorStoreFileObject]:
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        attributes=attributes, chunking_strategy=chunking_strategy,
-        extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
-        timeout=timeout, custom_llm_provider=custom_llm_provider,
-    )
-    match kwargs.pop("acreate", None):
-        case given if given is True:
-            return create_async(values)
-        case _:
-            return create_now(values)
-
-
-async def acreate(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L55
-    *,
-    vector_store_id: str,
-    file_id: str,
-    attributes: JsonValue = None,
-    chunking_strategy: JsonValue = None,
-    extra_headers: JsonValue = None,
-    extra_query: JsonValue = None,
-    extra_body: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L64
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileObject:
-    kwargs.pop("acreate", None)
-    pending = create(
-        vector_store_id=vector_store_id, file_id=file_id, attributes=attributes,
-        chunking_strategy=chunking_strategy, extra_headers=extra_headers,
-        extra_query=extra_query, extra_body=extra_body, timeout=timeout,
-        custom_llm_provider=custom_llm_provider, acreate=True, **kwargs,
-    )
-    return FILE.validate_python(await settled(pending))
+__all__ = [
+    "acreate",
+    "adelete",
+    "alist",
+    "aretrieve",
+    "aretrieve_content",
+    "aupdate",
+    "create",
+    "delete",
+    "list",
+    "retrieve",
+    "retrieve_content",
+    "update",
+]
 
 
 def list(  # noqa: A001, PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L235
@@ -101,9 +53,7 @@ def list(  # noqa: A001, PLR0913  # https://github.com/BerriAI/litellm/blob/d665
         filter=filter, limit=limit, order=order, extra_headers=extra_headers,
         extra_query=extra_query, timeout=timeout, custom_llm_provider=custom_llm_provider,
     )
-    if kwargs.pop("alist", None) is True:
-        return list_async(values)
-    return list_now(values)
+    return dispatched(values, kwargs, "alist", list_async, list_now)
 
 
 async def alist(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L182
@@ -121,166 +71,9 @@ async def alist(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d66
     **kwargs: CallValue,
 ) -> VectorStoreFileListResponse:
     kwargs.pop("alist", None)
-    query: dict[str, CallValue] = {
-        "vector_store_id": vector_store_id, "after": after, "before": before,
-        "filter": filter, "limit": limit, "order": order,
-        "extra_headers": extra_headers, "extra_query": extra_query,
-        "timeout": timeout, "custom_llm_provider": custom_llm_provider,
-    }
-    return PAGE.validate_python(await settled(list_async(call_values(kwargs, **query))))
-
-
-def retrieve(
-    *,
-    vector_store_id: str,
-    file_id: str,
-    extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileObject | Awaitable[VectorStoreFileObject]:
     values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
+        kwargs, vector_store_id=vector_store_id, after=after, before=before,
+        filter=filter, limit=limit, order=order, extra_headers=extra_headers,
+        extra_query=extra_query, timeout=timeout, custom_llm_provider=custom_llm_provider,
     )
-    if kwargs.pop("aretrieve", None) is True:
-        return retrieve_async(values)
-    return retrieve_now(values)
-
-
-async def aretrieve(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L307
-    *,
-    vector_store_id: str,
-    file_id: str,
-    extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L312
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileObject:
-    kwargs.pop("aretrieve", None)
-    answer = await retrieve_async(call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    ))
-    return FILE.validate_python(answer)
-
-
-def retrieve_content(
-    *,
-    vector_store_id: str,
-    file_id: str,
-    extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileContentResponse | Awaitable[VectorStoreFileContentResponse]:
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    )
-    content_call = content_async if kwargs.pop("aretrieve_content", None) is True else content_now
-    return content_call(values)
-
-
-async def aretrieve_content(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L416
-    *,
-    vector_store_id: str,
-    file_id: str,
-    extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L421
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileContentResponse:
-    kwargs.pop("aretrieve_content", None)
-    return CONTENT.validate_python(await settled(content_async(call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    ))))
-
-
-def update(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L570
-    *,
-    vector_store_id: str,
-    file_id: str,
-    attributes: JsonValue,
-    extra_headers: JsonValue = None,
-    extra_body: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileObject | Awaitable[VectorStoreFileObject]:
-    changed: dict[str, CallValue] = {
-        "vector_store_id": vector_store_id, "file_id": file_id,
-        "extra_headers": extra_headers, "extra_body": extra_body,
-        "timeout": timeout, "custom_llm_provider": custom_llm_provider,
-    }
-    changed["attributes"] = attributes
-    values = call_values(kwargs, **changed)
-    return (
-        update_now(values)
-        if kwargs.pop("aupdate", None) is not True
-        else update_async(values)
-    )
-
-
-async def aupdate(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L524
-    *,
-    vector_store_id: str,
-    file_id: str,
-    attributes: JsonValue,
-    extra_headers: JsonValue = None,
-    extra_body: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L531
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileObject:
-    kwargs.pop("aupdate", None)
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, extra_body=extra_body, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    )
-    values["attributes"] = attributes
-    answer = await update_async(values)
-    return FILE.validate_python(answer)
-
-
-def delete(
-    *,
-    vector_store_id: str,
-    file_id: str,
-    extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileDeleteResponse | Awaitable[VectorStoreFileDeleteResponse]:
-    removed = kwargs.pop("adelete", None) is True
-    connection: dict[str, CallValue] = {
-        "vector_store_id": vector_store_id, "file_id": file_id,
-        "extra_headers": extra_headers, "timeout": timeout,
-        "custom_llm_provider": custom_llm_provider,
-    }
-    values = call_values(kwargs, **connection)
-    return delete_async(values) if removed else delete_now(values)
-
-
-async def adelete(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L645
-    *,
-    vector_store_id: str,
-    file_id: str,
-    extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L650
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreFileDeleteResponse:
-    kwargs.pop("adelete", None)
-    values = call_values(
-        kwargs, vector_store_id=vector_store_id, file_id=file_id,
-        extra_headers=extra_headers, timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
-    )
-    return DELETED.validate_python(await delete_async(values))
+    return PAGE.validate_python(await list_async(values))

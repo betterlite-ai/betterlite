@@ -1,10 +1,9 @@
 import json
-from collections.abc import Awaitable
-from typing import Final, TypeAlias
+from collections.abc import Awaitable, Callable
+from typing import Final, TypeAlias, TypeVar
 
 from pydantic import TypeAdapter
 
-from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import (
     CallValue,
     acall_native,
@@ -12,7 +11,7 @@ from betterlite._endpoints import (
     read_settings,
     to_call_payload,
 )
-from betterlite._endpoints.payload import LOGGER, LOGGER_FN_DROPPED, REFUSED
+from betterlite._endpoints.payload import is_dropped
 from betterlite._native import NativeVectorFileError, NativeVectorFileSession
 from betterlite.types.vector_store_files import (
     VectorStoreFileContentResponse,
@@ -32,48 +31,31 @@ DELETED: Final[TypeAdapter[VectorStoreFileDeleteResponse]] = TypeAdapter(
     VectorStoreFileDeleteResponse
 )
 SETTINGS: Final[tuple[str, ...]] = ("api_base", "api_key", "openai_key", "organization")
-Stored: TypeAlias = (
-    VectorStoreFileObject
-    | VectorStoreFileListResponse
-    | VectorStoreFileContentResponse
-    | VectorStoreFileDeleteResponse
-)
+Answer = TypeVar("Answer")
+SyncAnswer: TypeAlias = Callable[[dict[str, CallValue]], Answer]
+AsyncAnswer: TypeAlias = Callable[[dict[str, CallValue]], Awaitable[Answer]]
 
 
-# A call answers at once or with a coroutine under its flag, so awaiting either gives the answer
-async def settled(pending: Stored | Awaitable[Stored]) -> Stored:
-    match pending:
-        case Awaitable():
-            return await pending
-        case object():
-            return pending
-
-
-# LiteLLM's Python client and session cannot cross into the Rust transport, so they are named back
-def refuse_handles(values: dict[str, CallValue]) -> None:
-    for name in REFUSED:
-        if values.pop(name, None) is not None:
-            raise UnsupportedCallArgument(name)
-
-
-# LiteLLM's logging object and logger function are bookkeeping a Rust call cannot use
-def drop_bookkeeping(values: dict[str, CallValue]) -> None:
-    values.pop("litellm_logging_obj", None)
-    if values.pop("logger_fn", None) is not None:
-        LOGGER.warning(LOGGER_FN_DROPPED)
-
-
-def cleaned(kwargs: dict[str, CallValue]) -> dict[str, CallValue]:
-    refuse_handles(kwargs)
-    drop_bookkeeping(kwargs)
-    return kwargs
-
-
-# The call's own fields without the ones the caller left unset, then its **kwargs for the wire
+# the call's own set fields, then its kwargs without the handles a Rust transport cannot take
 def call_values(kwargs: dict[str, CallValue], **named: CallValue) -> dict[str, CallValue]:
-    requested = cleaned(kwargs)
+    for name in tuple(kwargs):
+        if is_dropped(name, kwargs[name]):
+            kwargs.pop(name)
+    kwargs.pop("litellm_logging_obj", None)
     present = {name: value for name, value in named.items() if value is not None}
-    return {**present, "kwargs": requested}
+    return {**present, "kwargs": kwargs}
+
+
+# the payload holds the caller's own dict, so the flag popped here never reaches the wire
+def dispatched(
+    values: dict[str, CallValue],
+    options: dict[str, CallValue],
+    flag: str,
+    asynchronous: AsyncAnswer[Answer],
+    synchronous: SyncAnswer[Answer],
+) -> Answer | Awaitable[Answer]:
+    flagged = options.pop(flag, False) is True
+    return asynchronous(values) if flagged else synchronous(values)
 
 
 def create_now(values: dict[str, CallValue]) -> VectorStoreFileObject:

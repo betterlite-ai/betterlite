@@ -32,7 +32,6 @@ from betterlite.vector_store_files._calls import (
     DELETED,
     FILE,
     PAGE,
-    settled,
 )
 from betterlite.vector_store_files.main import (
     acreate,
@@ -114,6 +113,12 @@ async def awaited_pair(
     ours_result = await ours
     reference_result = await reference
     return (ours_result, reference_result)
+
+
+async def awaited(awaitable: Awaitable[ResultT]) -> ResultT:
+    match await awaitable:
+        case result:
+            return result
 
 
 def test_signature_matches_litellm() -> None:
@@ -591,12 +596,12 @@ def test_async_flagged() -> None:
         assert inspect.isawaitable(flagged_content)
         assert inspect.isawaitable(flagged_update)
         assert inspect.isawaitable(flagged_delete)
-        created = asyncio.run(settled(flagged_create))
-        page = asyncio.run(settled(flagged_list))
-        found = asyncio.run(settled(flagged_read))
-        content = asyncio.run(settled(flagged_content))
-        changed = asyncio.run(settled(flagged_update))
-        removed = asyncio.run(settled(flagged_delete))
+        created = asyncio.run(awaited(flagged_create))
+        page = asyncio.run(awaited(flagged_list))
+        found = asyncio.run(awaited(flagged_read))
+        content = asyncio.run(awaited(flagged_content))
+        changed = asyncio.run(awaited(flagged_update))
+        removed = asyncio.run(awaited(flagged_delete))
     assert FILE.validate_python(created) == plain
     assert PAGE.validate_python(page) == plain_page
     assert FILE.validate_python(found) == plain_read
