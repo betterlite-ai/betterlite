@@ -130,7 +130,8 @@ class Deployment:
                 "messages": call.messages,
                 "max_tokens": call.max_tokens,
                 "timeout_seconds": int(call.timeout),
-                "metadata": call.litellm_metadata,
+                # a snapshot: litellm.acompletion adds its own timing keys to this dict
+                "metadata": dict(call.litellm_metadata),
                 "user": call.user,
                 "region": call.allowed_model_region,
             }
@@ -267,7 +268,7 @@ async def call_editor(
         edit_spec=cast(dict[str, object], scenario.edit_spec),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1166
         litellm_metadata=scenario.metadata,
         llm_router=llm_router,
-        user_api_key_auth=cast(Any, principal),
+        user_api_key_auth=cast(Any, principal),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
     )
 
 

@@ -41,7 +41,8 @@ pub(super) fn executor() -> Result<ChatExecutor, SdkHttpError> {
         client,
         deployments: Vec::new(),
         catalog: CatalogCapabilities {
-            chat_models: BTreeSet::new(),
+            // litellm.open_ai_chat_completion_models names gpt-4o-mini, so the user param is supported
+            chat_models: BTreeSet::from([String::from("gpt-4o-mini")]),
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(7)),
