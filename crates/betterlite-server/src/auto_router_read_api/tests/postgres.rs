@@ -186,7 +186,10 @@ impl Database {
         let mut parameters: Vec<&(dyn ToSql + Sync)> = Vec::new();
         match scope {
             Scope::Session => parameters.extend(shared),
-            Scope::User => parameters.push(&seed.user),
+            Scope::User => {
+                parameters.push(&seed.user);
+                parameters.extend(shared);
+            }
         }
         parameters.push(&seed.tiers);
         let statement = match scope {
