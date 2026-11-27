@@ -211,6 +211,29 @@ fn eval_run_lifecycle_exports_record_both_ids_in_logging() {
     );
 }
 
+// A metadata entry in kwargs reaches litellm_params and the call details, as update_from_kwargs records it
+#[test]
+fn eval_run_lifecycle_exports_forward_the_kwargs_metadata() {
+    let fake = Fake::default();
+    let config = RecordingConfig::default();
+    let redactor = test_redactor();
+    let deps = run_deps(&fake, &config, &redactor);
+    let mut kwargs = auth_kwargs();
+    let metadata = IndexMap::from([(
+        "user_api_key_alias".to_owned(),
+        Json::Text("alias".to_owned()),
+    )]);
+    kwargs.insert("metadata".to_owned(), Json::Object(metadata.clone()));
+    let mut logging = state("get_run");
+    get_run(&deps, &base_request(&kwargs), &mut logging).expect("the get succeeds");
+    let forwarded = Json::Object(metadata);
+    assert_eq!(logging.litellm_params.get("metadata"), Some(&forwarded));
+    let Some(Json::Object(recorded)) = logging.model_call_details.get("litellm_params") else {
+        panic!("the call details carry the litellm params");
+    };
+    assert_eq!(recorded.get("metadata"), Some(&forwarded));
+}
+
 // litellm_call_id keeps its None default when kwargs never had one
 #[test]
 fn eval_run_lifecycle_exports_default_the_logged_call_id() {
@@ -423,6 +446,8 @@ async fn eval_run_lifecycle_async_maps_a_handler_error_once() {
         .await
         .expect_err("the handler fails");
     assert!(matches!(&failure.error, EvalRunError::Handler(_)));
+    assert!(matches!(&failure.class, ErrorClass::InternalServer(_)));
+    assert_eq!(failure.class.metadata().provider.as_deref(), Some("openai"));
     assert_eq!(failure.class.metadata().status_code, 500);
 }
 
