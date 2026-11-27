@@ -1,0 +1,16 @@
+kind: helper
+name: config-redaction-depth-cap
+call:
+  b10137:
+    function: redact_secret_values
+    value: {l1: {l2: {l3: {l4: {l5: {l6: {l7: {l8: {l9: {l10: leaf}}}}}}}}}
+env: {}
+compare:
+  ignore: []
+calls:
+  - b10137:
+      function: redact_secret_values
+      value: {m1: {m2: {m3: {m4: {m5: {m6: {m7: {m8: {m9: {m10: {m11: leaf}}}}}}}}}}
+  - b10137:
+      function: redact_secret_values
+      value: {n1: {n2: {n3: {n4: {n5: {n6: {n7: {n8: {api_key: secret}}}}}}}}
