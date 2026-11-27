@@ -1,0 +1,77 @@
+kind: helper
+name: model-grant-intersection-registry-and-union
+call:
+  # an empty registry means no group carries a budget, so the walk stops after the registry read
+  model_grant_intersection:
+    function: collected
+    database: true
+    token: {models: [gpt-4o], team_id: t1}
+    models: [gpt-4o]
+    team: {team_id: t1, models: [tier-a]}
+    registry: []
+    serving: {gpt-4o: [tier-a]}
+calls:
+  # an unreadable registry treats every group serving the request as budgeted
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o, claude], team_id: t1}
+      models: [gpt-4o, claude]
+      team: {team_id: t1, models: [tier-a, tier-b]}
+      serving: {gpt-4o: [tier-a], claude: [tier-b]}
+  # the router answers for the token's team
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-a]}
+      registry: [tier-a]
+      serving: {gpt-4o: [tier-a]}
+  # without a team id the router is asked for the unscoped groups
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], project_id: p1}
+      models: [gpt-4o]
+      project: {project_id: p1, models: [tier-b]}
+      registry: [tier-b]
+      serving: {gpt-4o: [tier-b]}
+  # a group the router serves is not charged unless a grant names it
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-a]}
+      registry: [tier-a, tier-b]
+      serving: {gpt-4o: [tier-a, tier-b]}
+  # a wildcard names no group
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: ["*"]}
+      registry: [tier-a]
+      serving: {gpt-4o: [tier-a]}
+  # an empty request list asks the router for nothing
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1}
+      models: []
+      team: {team_id: t1, models: [tier-a]}
+      registry: [tier-a]
+      serving: {gpt-4o: [tier-a]}
+  # names are sorted and deduplicated
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [tier-b, tier-a], team_id: t1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-b, tier-a, tier-a]}
+      registry: [tier-b, tier-a]
+      serving: {gpt-4o: [tier-b, tier-a, tier-a]}
+env: {}
+compare: {ignore: []}

@@ -28,6 +28,14 @@ pub(super) fn record_pre_call(
     exchange: &EvalExchange<'_>,
     log: &mut EvalLogging<'_, '_>,
 ) -> Result<(), EvalHttpError> {
+    // list_runs logs its query under `params`, beside the fields every eval pre-call records
+    let passthrough = match exchange.params {
+        Some(query) => {
+            let params = complete_input_dict(query)?;
+            IndexMap::from([("params".to_owned(), Json::from(&params))])
+        }
+        None => IndexMap::new(),
+    };
     let record = PreCall {
         input: Json::Text(exchange.input.to_owned()),
         model: None,
@@ -40,7 +48,7 @@ pub(super) fn record_pre_call(
                 .transpose()?,
             request_str: None,
             openai_sdk: None,
-            passthrough: IndexMap::new(),
+            passthrough,
         },
     };
     pre_call(log.state, &record, log.env)?;
