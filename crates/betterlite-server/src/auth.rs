@@ -71,6 +71,7 @@ use crate::auth::auth_model_patterns::{
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -163,9 +164,7 @@ fn stage_input(
         AuthBackend::AuthModelBudgets => auth_model_budgets::stage(request, authenticated, body),
         TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
-        AuthBackend::OrganizationRoutePolicy => {
-            organization_route_policy::stage_input(request, authenticated, body)
-        }
+        AuthBackend::OrganizationRoutePolicy => org_route_stage_input(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
