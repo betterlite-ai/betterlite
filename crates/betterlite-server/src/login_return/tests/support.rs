@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
-
+use crate::login_return::cache::{LoginCaches, LoginCode, LoginCodeCache, LoginCodeCacheError};
+use crate::login_return::redirect::{LoginRedirect, LoginReturnError, ResumeRequest, resume_login};
+use crate::sso_pkce::VerifierEntropy;
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::payload::PayloadError;
 use betterlite_auth::auth_cache::{AuthCache, AuthCacheError, gateway_cache};
@@ -10,27 +10,20 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_config::sections::login_return::Settings as LoginSettings;
 use secrecy::{ExposeSecret as _, SecretString};
-
-use crate::login_return::cache::{LoginCaches, LoginCode, LoginCodeCache, LoginCodeCacheError};
-use crate::login_return::redirect::{LoginRedirect, LoginReturnError, ResumeRequest, resume_login};
-use crate::sso_pkce::VerifierEntropy;
-
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 pub(super) const SESSION_TOKEN: &str = "jwt.header.payload.signature";
-
 pub(super) fn session_token() -> SecretString {
     SecretString::from(SESSION_TOKEN)
 }
-
 pub(super) fn settings(control_plane_url: Option<&str>) -> LoginSettings {
     LoginSettings {
         control_plane_url: control_plane_url.map(str::to_owned),
     }
 }
-
 pub(super) fn user_only<Cache>(user: &Cache) -> LoginCaches<'_, RecordingCache, Cache> {
     LoginCaches { redis: None, user }
 }
-
 pub(super) async fn resume_relative<Cache>(
     token: &SecretString,
     destination: &[u8],
@@ -54,7 +47,6 @@ where
     )
     .await
 }
-
 pub(super) async fn resume_absolute<Cache>(
     token: &SecretString,
     destination: &[u8],
@@ -77,12 +69,10 @@ where
     )
     .await
 }
-
 #[derive(Default)]
 pub(super) struct RecordingCache {
     writes: Mutex<Vec<RecordedWrite>>,
 }
-
 #[derive(Clone, Debug)]
 pub(super) struct RecordedWrite {
     pub(super) key: String,
@@ -90,7 +80,6 @@ pub(super) struct RecordedWrite {
     pub(super) redirect_url: String,
     pub(super) ttl_seconds: f64,
 }
-
 impl RecordingCache {
     pub(super) fn writes(&self) -> Vec<RecordedWrite> {
         self.writes
@@ -99,7 +88,6 @@ impl RecordingCache {
             .clone()
     }
 }
-
 #[async_trait]
 impl LoginCodeCache for RecordingCache {
     async fn store(
@@ -121,9 +109,7 @@ impl LoginCodeCache for RecordingCache {
         Ok(())
     }
 }
-
 pub(super) struct FailingCache;
-
 #[async_trait]
 impl LoginCodeCache for FailingCache {
     async fn store(
@@ -138,9 +124,7 @@ impl LoginCodeCache for FailingCache {
         )))
     }
 }
-
 pub(super) type LocalLoginCache = AuthCache<DualCache<LocalMemoryOps>>;
-
 pub(super) fn local_cache(clock: Arc<dyn Fn() -> f64 + Send + Sync>) -> LocalLoginCache {
     let memory = Arc::new(LocalMemoryOps::new(1024, clock).unwrap());
     gateway_cache(
@@ -157,7 +141,6 @@ pub(super) fn local_cache(clock: Arc<dyn Fn() -> f64 + Send + Sync>) -> LocalLog
         45.0_f64,
     )
 }
-
 // "name=value; Attribute=value" split into its parts, so a test compares attributes and not clock bytes
 pub(super) fn cookie_attributes(header: &str) -> Vec<(String, String)> {
     header
@@ -168,7 +151,6 @@ pub(super) fn cookie_attributes(header: &str) -> Vec<(String, String)> {
         })
         .collect()
 }
-
 pub(super) fn attribute<'attributes>(
     attributes: &'attributes [(String, String)],
     name: &str,
@@ -178,7 +160,6 @@ pub(super) fn attribute<'attributes>(
         .find(|(key, _value)| key == name)
         .map(|(_key, value)| value.as_str())
 }
-
 pub(super) fn code_from_location(location: &str) -> String {
     location
         .split("code=")
@@ -186,19 +167,15 @@ pub(super) fn code_from_location(location: &str) -> String {
         .expect("the redirect location carries the login code")
         .to_owned()
 }
-
 pub(super) struct FixedEntropy;
-
 impl VerifierEntropy for FixedEntropy {
     fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         bytes.fill(0xAB);
         Ok(())
     }
 }
-
 #[derive(Default)]
 pub(super) struct CountingEntropy(pub(super) AtomicUsize);
-
 impl VerifierEntropy for CountingEntropy {
     fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         self.0.fetch_add(1, Ordering::Relaxed);
@@ -206,9 +183,7 @@ impl VerifierEntropy for CountingEntropy {
         Ok(())
     }
 }
-
 pub(super) struct FailingEntropy;
-
 impl VerifierEntropy for FailingEntropy {
     fn fill(&self, _bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         Err(getrandom::Error::UNSUPPORTED)

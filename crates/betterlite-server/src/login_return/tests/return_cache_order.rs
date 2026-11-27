@@ -1,21 +1,17 @@
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, PoisonError};
-
-use betterlite_auth::trusted_network::request::NetworkRequest;
-use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
-use betterlite_models::decisions::Json;
-use http::StatusCode;
-
-use crate::login_return::cache::LoginCaches;
-use crate::login_return::redirect::{LoginReturnError, ResumeRequest, resume_login};
-use crate::login_return::return_destination::ReturnDestinationError;
-
 use super::support::{
     CountingEntropy, FailingCache, FailingEntropy, FixedEntropy, RecordingCache, SESSION_TOKEN,
     attribute, code_from_location, cookie_attributes, local_cache, resume_absolute,
     resume_relative, session_token, settings, user_only,
 };
-
+use crate::login_return::cache::LoginCaches;
+use crate::login_return::redirect::{LoginReturnError, ResumeRequest, resume_login};
+use crate::login_return::return_destination::ReturnDestinationError;
+use betterlite_auth::trusted_network::request::NetworkRequest;
+use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
+use betterlite_models::decisions::Json;
+use http::StatusCode;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, PoisonError};
 #[tokio::test]
 async fn no_destination() {
     let token = session_token();
@@ -38,7 +34,6 @@ async fn no_destination() {
     assert!(user.writes().is_empty());
     assert_eq!(entropy.0.load(Ordering::Relaxed), 0);
 }
-
 #[tokio::test]
 async fn relative_cookie_redirect() {
     let token = session_token();
@@ -66,7 +61,6 @@ async fn relative_cookie_redirect() {
     );
     assert!(user.writes().is_empty());
 }
-
 #[tokio::test]
 async fn absolute_code_redirect() {
     let token = session_token();
@@ -102,7 +96,6 @@ async fn absolute_code_redirect() {
     );
     assert_eq!(redirect.set_cookies.len(), 1);
 }
-
 #[tokio::test]
 async fn existing_query() {
     let token = session_token();
@@ -122,7 +115,6 @@ async fn existing_query() {
         format!("https://cp.example/console?tenant=a&login=success&code={code}")
     );
 }
-
 #[tokio::test]
 async fn fragment_concatenation() {
     let token = session_token();
@@ -142,7 +134,6 @@ async fn fragment_concatenation() {
         format!("https://cp.example/console#section?login=success&code={code}")
     );
 }
-
 #[tokio::test]
 async fn redis_before_response() {
     let token = session_token();
@@ -169,7 +160,6 @@ async fn redis_before_response() {
     assert_eq!(redis.writes().len(), 1);
     assert!(user.writes().is_empty());
 }
-
 #[tokio::test]
 async fn local_cache_ttl() {
     let now = Arc::new(Mutex::new(0.0_f64));
@@ -209,13 +199,11 @@ async fn local_cache_ttl() {
         fields.get("redirect_url"),
         Some(Json::Text(text)) if text.as_str() == "https://cp.example/console"
     ));
-
     *now.lock().unwrap_or_else(PoisonError::into_inner) = 59.5_f64;
     assert!(cache.async_get(&key, true).await.is_some());
     *now.lock().unwrap_or_else(PoisonError::into_inner) = 60.5_f64;
     assert!(cache.async_get(&key, true).await.is_none());
 }
-
 #[tokio::test]
 async fn failed_cache_no_redirect() {
     let token = session_token();
@@ -228,7 +216,6 @@ async fn failed_cache_no_redirect() {
     .await;
     assert!(matches!(outcome, Err(LoginReturnError::Cache(_))));
 }
-
 #[tokio::test]
 async fn unconfigured_absolute_is_ignored() {
     let token = session_token();
@@ -249,7 +236,6 @@ async fn unconfigured_absolute_is_ignored() {
     assert!(result.is_none());
     assert!(user.writes().is_empty());
 }
-
 #[tokio::test]
 async fn invalid_destination_bytes() {
     let token = session_token();
@@ -273,7 +259,6 @@ async fn invalid_destination_bytes() {
         ))
     ));
 }
-
 #[tokio::test]
 async fn entropy_failure_propagates() {
     let token = session_token();
@@ -293,7 +278,6 @@ async fn entropy_failure_propagates() {
     assert!(matches!(result, Err(LoginReturnError::Entropy(_))));
     assert!(user.writes().is_empty());
 }
-
 #[tokio::test]
 async fn location_quoting() {
     let token = session_token();
@@ -310,7 +294,6 @@ async fn location_quoting() {
     .unwrap();
     assert_eq!(redirect.location, "/caf%C3%A9/%2F?q=%3Ctag%3E");
 }
-
 #[tokio::test]
 async fn one_shot_cookie_deletion() {
     let token = session_token();

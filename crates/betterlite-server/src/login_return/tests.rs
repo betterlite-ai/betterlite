@@ -21,7 +21,6 @@ fn return_destination_limit() {
     let at_limit = vec![b'a'; MAX_RETURN_DESTINATION_BYTES];
     let decoded = decode_return_destination(&at_limit).expect("the byte bound is inclusive");
     assert_eq!(decoded.len(), MAX_RETURN_DESTINATION_BYTES);
-
     let over = vec![b'a'; MAX_RETURN_DESTINATION_BYTES.saturating_add(1)];
     let error = decode_return_destination(&over)
         .expect_err("a destination past the byte bound is rejected");
@@ -31,7 +30,6 @@ fn return_destination_limit() {
             length: MAX_RETURN_DESTINATION_BYTES.saturating_add(1)
         }
     );
-
     let invalid = decode_return_destination(b"/ui/\xff").expect_err("invalid UTF-8 is rejected");
     assert!(matches!(invalid, ReturnDestinationError::NotUtf8(_)));
 }
