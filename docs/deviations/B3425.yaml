@@ -65,6 +65,17 @@ deviations:
       caller's value, and 400 is the status betterlite gives a caller's own malformed field.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L322-L324
+  - what: >-
+      request_timeout arrives resolved on EvalRunDeps as a Duration, where LiteLLM reads
+      litellm.constants.request_timeout from the REQUEST_TIMEOUT environment variable inside the
+      operation. The operation still resolves timeout or that value, and the tests pass LiteLLM's
+      6000-second default.
+    why: >-
+      betterlite reads environment strings into typed values once, outside the call module, and a call
+      module takes the result as a dependency. The default and the empty-means-unset rule
+      docs/compatibility.md gives for environment strings stay the caller's side of that boundary.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-L577
 kept_bugs:
   - what: >-
       A get run call never applies its timeout. The operation resolves timeout or request_timeout and
