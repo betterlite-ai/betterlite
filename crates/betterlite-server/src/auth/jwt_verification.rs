@@ -48,12 +48,12 @@ pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
     let injected_verifier = extensions.get::<Arc<JwtVerifier>>();
     let verifier = match injected_verifier {
         Some(injected) => Some(Arc::clone(injected)),
-        None => state.and_then(|state| state.jwt_verification.verifier.clone()),
+        None => state.and_then(|server| server.jwt_verification.verifier.clone()),
     };
     let injected_source = extensions.get::<Arc<dyn PublicKeySource>>();
     let source: Option<Arc<dyn PublicKeySource>> = match injected_source {
         Some(injected) => Some(Arc::clone(injected)),
-        None => match state.and_then(|state| state.jwt_keys.resolver.as_ref()) {
+        None => match state.and_then(|server| server.jwt_keys.resolver.as_ref()) {
             Some(resolver) => {
                 let source: Arc<dyn PublicKeySource> = Arc::clone(resolver);
                 Some(source)
