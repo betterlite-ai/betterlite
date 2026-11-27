@@ -56,14 +56,35 @@ def transport_args(
     }
 
 
-def managed_arguments(
-    vector_store_id: str, kwargs: dict[str, CallValue], transport: dict[str, CallValue]
+def query_fields(
+    after: str | None, before: str | None, limit: int | None, order: str | None
 ) -> dict[str, CallValue]:
     return {
-        "vector_store_id": vector_store_id,
-        "kwargs": kwargs,
-        "transport": transport,
+        "after": after, "before": before, "limit": limit, "order": order,
     }
+
+
+def update_fields(
+    store_id: str, name: str | None, expires_after: JsonValue, metadata: dict[str, str] | None
+) -> dict[str, CallValue]:
+    return {
+        "vector_store_id": store_id, "name": name,
+        "expires_after": expires_after, "metadata": metadata,
+    }
+
+
+def managed_arguments(
+    fields: dict[str, CallValue], kwargs: dict[str, CallValue], transport: dict[str, CallValue]
+) -> dict[str, CallValue]:
+    return {
+        **fields, "kwargs": kwargs, "transport": transport,
+    }
+
+
+def call_kwargs(values: dict[str, CallValue], flag: str) -> tuple[dict[str, CallValue], bool]:
+    refuse_handles(values)
+    drop_bookkeeping(values)
+    return values, values.pop(flag, None) is True
 
 
 def now(
@@ -81,102 +102,41 @@ async def later(
     return adapter.validate_python(returned)
 
 
-def retrieve(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L547
-    vector_store_id: str,
-    extra_headers: dict[str, JsonValue] | None = None,
-    extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse]:
-    refuse_handles(kwargs)
-    drop_bookkeeping(kwargs)
-    asynchronous = kwargs.pop("aretrieve", None) is True
+def retrieve(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse]:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L547
+    kwargs, asynchronous = call_kwargs(kwargs, "aretrieve")
     transport = transport_args(extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    arguments = managed_arguments(vector_store_id, kwargs, transport)
-    session = manage_session()
+    arguments = managed_arguments({"vector_store_id": vector_store_id}, kwargs, transport)
     if asynchronous:
-        return later(session.aretrieve, arguments, CREATE_RESPONSE)
-    return now(session.retrieve, arguments, CREATE_RESPONSE)
+        return later(manage_session().aretrieve, arguments, CREATE_RESPONSE)
+    return now(manage_session().retrieve, arguments, CREATE_RESPONSE)
 
 
-def list(  # noqa: A001, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L685
-    after: str | None = None,
-    before: str | None = None,
-    limit: int | None = 20,
-    order: str | None = "desc",
-    extra_headers: dict[str, JsonValue] | None = None,
-    extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]:
-    refuse_handles(kwargs)
-    drop_bookkeeping(kwargs)
-    asynchronous = kwargs.pop("alist", None) is True
+def list(after: str | None = None, before: str | None = None, limit: int | None = 20, order: str | None = "desc", extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]:  # noqa: A001, E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L685
+    kwargs, asynchronous = call_kwargs(kwargs, "alist")
     transport = transport_args(extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    arguments: dict[str, CallValue] = {
-        "after": after,
-        "before": before,
-        "limit": limit,
-        "order": order,
-        "kwargs": kwargs,
-        "transport": transport,
-    }
-    session = manage_session()
+    arguments = managed_arguments(query_fields(after, before, limit, order), kwargs, transport)
     if asynchronous:
-        return later(session.alist, arguments, JSON_OBJECT)
-    return now(session.list, arguments, JSON_OBJECT)
+        return later(manage_session().alist, arguments, JSON_OBJECT)
+    return now(manage_session().list, arguments, JSON_OBJECT)
 
 
-def update(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L837
-    vector_store_id: str,
-    name: str | None = None,
-    expires_after: JsonValue = None,
-    metadata: dict[str, str] | None = None,
-    extra_headers: dict[str, JsonValue] | None = None,
-    extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse]:
-    refuse_handles(kwargs)
-    drop_bookkeeping(kwargs)
-    asynchronous = kwargs.pop("aupdate", None) is True
+def update(vector_store_id: str, name: str | None = None, expires_after: JsonValue = None, metadata: dict[str, str] | None = None, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse | Awaitable[VectorStoreCreateResponse]:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L837
+    kwargs, asynchronous = call_kwargs(kwargs, "aupdate")
     transport = transport_args(extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    arguments: dict[str, CallValue] = {
-        **managed_arguments(vector_store_id, kwargs, transport),
-        "name": name,
-        "expires_after": expires_after,
-        "metadata": metadata,
-    }
-    session = manage_session()
+    fields = update_fields(vector_store_id, name, expires_after, metadata)
+    arguments = managed_arguments(fields, kwargs, transport)
     if asynchronous:
-        return later(session.aupdate, arguments, CREATE_RESPONSE)
-    return now(session.update, arguments, CREATE_RESPONSE)
+        return later(manage_session().aupdate, arguments, CREATE_RESPONSE)
+    return now(manage_session().update, arguments, CREATE_RESPONSE)
 
 
-def delete(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L986
-    vector_store_id: str,
-    extra_headers: dict[str, JsonValue] | None = None,
-    extra_query: dict[str, JsonValue] | None = None,
-    extra_body: dict[str, JsonValue] | None = None,
-    timeout: float | TimeoutValues | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
-) -> dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]:
-    refuse_handles(kwargs)
-    drop_bookkeeping(kwargs)
-    asynchronous = kwargs.pop("adelete", None) is True
+def delete(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L986
+    kwargs, asynchronous = call_kwargs(kwargs, "adelete")
     transport = transport_args(extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    arguments = managed_arguments(vector_store_id, kwargs, transport)
-    session = manage_session()
+    arguments = managed_arguments({"vector_store_id": vector_store_id}, kwargs, transport)
     if asynchronous:
-        return later(session.adelete, arguments, JSON_OBJECT)
-    return now(session.delete, arguments, JSON_OBJECT)
+        return later(manage_session().adelete, arguments, JSON_OBJECT)
+    return now(manage_session().delete, arguments, JSON_OBJECT)
 
 
 async def aretrieve(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse:  # noqa: ASYNC109, E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L495
