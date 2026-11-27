@@ -8,7 +8,7 @@ description: >-
 
   Own the lower write-side contracts and constants at L75-L166, _ERROR_DETAIL/_JSON_OBJECT at L175-L176,
   _UserCreateData L351-L372 and membership/roster/teams payload declarations L487-L498. B793 constructs these
-  contracts; this module never calls its orchestration. Reuse B790's BulkNewUserItem/NewUserRequestTeam.
+  contracts; this module never calls its orchestration. Reuse B2334's user_contracts::bulk_new::BulkNewUserItem and B8411's proxy_request_contracts::user::NewUserRequestTeam, both already on main.
   _UserRow ignores extra fields, requires user_id, defaults spend to 0.0 and every other optional field to
   None; retain all declared fields, including generation-only duration/key_alias/aliases/config/permissions,
   blocked/agent_id/budget_fallbacks/budget_limits/organizations for B793's subsequent work.
@@ -82,7 +82,7 @@ description: >-
 
   Sizing adds approximately 100 contract/declaration lines to the 242 helper lines before docstring
   exclusion: allow 345 production, 350 transaction/concurrency tests, 55 pure adapters and 30 wiring,
-  totaling 780 within 800. Shared row/request decoding stays with B714/B790; no new byte parser or setting.
+  totaling 780 within 800. Shared row/request decoding stays with B714/B2334/B8411; no new byte parser or setting.
 scope:
   paths:
     - crates/betterlite-server/src/bulk_user_write.rs

@@ -186,6 +186,11 @@ roles:
         effort: high
         attempts: 3
         timeout_minutes: 120
+      - runner: deepseek-worker
+        model: deepseek-flash[1m]
+        effort: max
+        attempts: 3
+        timeout_minutes: 90
   reviewer:
     instructions: roles/reviewer.md
     ladder:
