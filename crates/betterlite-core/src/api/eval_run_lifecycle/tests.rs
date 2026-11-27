@@ -273,6 +273,16 @@ fn eval_run_lifecycle_exports_use_the_given_api_base(#[case] value: Json, #[case
     );
 }
 
+// Each refused run call answers a 400 with an empty model and the caller's provider
+fn assert_bad_request(class: &ErrorClass, provider: &str) {
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("a bad request, got {class:?}");
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some(provider));
+}
+
 // A known provider without an evals config raises LiteLLM's ValueError text for each action
 #[test]
 fn eval_run_lifecycle_unsupported_known_provider_names_the_action() {
@@ -303,39 +313,9 @@ fn eval_run_lifecycle_unsupported_known_provider_names_the_action() {
         delete_failure.error.to_string(),
         "DELETE run is not supported for azure"
     );
-    let ErrorClass::BadRequest(get_details) = &get_failure.class else {
-        panic!("a bad request, got {:?}", get_failure.class);
-    };
-    let ErrorClass::BadRequest(cancel_details) = &cancel_failure.class else {
-        panic!("a bad request, got {:?}", cancel_failure.class);
-    };
-    let ErrorClass::BadRequest(delete_details) = &delete_failure.class else {
-        panic!("a bad request, got {:?}", delete_failure.class);
-    };
-    assert_eq!(
-        [
-            get_details.status.0,
-            cancel_details.status.0,
-            delete_details.status.0
-        ],
-        [400, 400, 400]
-    );
-    assert_eq!(
-        [
-            get_details.model.as_deref(),
-            cancel_details.model.as_deref(),
-            delete_details.model.as_deref()
-        ],
-        [Some(""), Some(""), Some("")]
-    );
-    assert_eq!(
-        [
-            get_details.provider.as_deref(),
-            cancel_details.provider.as_deref(),
-            delete_details.provider.as_deref()
-        ],
-        [Some("azure"), Some("azure"), Some("azure")]
-    );
+    assert_bad_request(&get_failure.class, "azure");
+    assert_bad_request(&cancel_failure.class, "azure");
+    assert_bad_request(&delete_failure.class, "azure");
     assert!(fake.calls().is_empty());
 }
 
@@ -370,43 +350,9 @@ fn eval_run_lifecycle_unsupported_unknown_provider_raises_the_lookup_error() {
         delete_failure.error.to_string(),
         "'not-a-provider' is not a valid LlmProviders"
     );
-    let ErrorClass::BadRequest(get_details) = &get_failure.class else {
-        panic!("a bad request, got {:?}", get_failure.class);
-    };
-    let ErrorClass::BadRequest(cancel_details) = &cancel_failure.class else {
-        panic!("a bad request, got {:?}", cancel_failure.class);
-    };
-    let ErrorClass::BadRequest(delete_details) = &delete_failure.class else {
-        panic!("a bad request, got {:?}", delete_failure.class);
-    };
-    assert_eq!(
-        [
-            get_details.status.0,
-            cancel_details.status.0,
-            delete_details.status.0
-        ],
-        [400, 400, 400]
-    );
-    assert_eq!(
-        [
-            get_details.model.as_deref(),
-            cancel_details.model.as_deref(),
-            delete_details.model.as_deref()
-        ],
-        [Some(""), Some(""), Some("")]
-    );
-    assert_eq!(
-        [
-            get_details.provider.as_deref(),
-            cancel_details.provider.as_deref(),
-            delete_details.provider.as_deref()
-        ],
-        [
-            Some("not-a-provider"),
-            Some("not-a-provider"),
-            Some("not-a-provider")
-        ]
-    );
+    assert_bad_request(&get_failure.class, "not-a-provider");
+    assert_bad_request(&cancel_failure.class, "not-a-provider");
+    assert_bad_request(&delete_failure.class, "not-a-provider");
     assert!(fake.calls().is_empty());
 }
 
