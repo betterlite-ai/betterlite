@@ -167,6 +167,7 @@ async fn slice_only_falls_back_to_the_last_question_only_when_empty() {
     let mut fixture = Fixture::default();
     fixture.settings = Some(Settings::default());
     let mut sample = Sample::default();
+    sample.system = None;
     sample.messages =
         list(r#"[{"role":"assistant","content":[{"type":"compaction","content":"S"}]}]"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
@@ -257,8 +258,8 @@ async fn counter_failure_warns_and_continues() {
     let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
-    assert_eq!(fixture.summary_calls(), 1);
-    assert!(result.compaction_block.is_some());
+    assert_eq!(fixture.summary_calls(), 0);
+    assert_untouched_tail(&result);
     assert!(logs.contains(
         "WARN compact_20260112: token_counter failed; assuming under threshold: either text or messages must be provided"
     ));
@@ -402,9 +403,9 @@ async fn summary_request_arguments_match_litellm() {
     assert_eq!(
         keys,
         [
-            "litellm_call_id",
             "user_api_key",
-            "user_api_key_end_user_id"
+            "user_api_key_end_user_id",
+            "litellm_call_id"
         ]
     );
     assert_eq!(
