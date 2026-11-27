@@ -69,6 +69,11 @@ scope:
   - tools/oracle/helpers/batch_precall/**
   - tools/oracle/fuzz/corpus/helper_case/batch_precall-*
   - tools/oracle/cases/helpers/batch-precall/**
+  - crates/betterlite-cache/src/dual_cache.rs
+  - crates/betterlite-cache/src/dual_cache/value.rs
+  - crates/betterlite-cache/src/handler/value.rs
+  - crates/betterlite-cache/src/batch_reads.rs
+  - crates/betterlite-cache/src/batch_reads/value.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1180-L1279
