@@ -45,7 +45,7 @@ pub fn extract_tool_calls_from_response(response: &ResponsesApiResponse) -> Vec<
     response
         .output
         .iter()
-        .filter(|item| is_function_call(*item))
+        .filter(|item| is_function_call(item))
         .map(|item| McpToolCall::Output(Box::new(item.clone())))
         .collect()
 }
