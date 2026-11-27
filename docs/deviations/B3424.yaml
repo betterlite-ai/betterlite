@@ -1,6 +1,16 @@
 task: B3424
 deviations:
   - what: >-
+      The blocking create_run and list_runs drive the handler's future with one poll and answer the call's
+      Suspended error, an ApiConnection (500), when the handler has not completed. LiteLLM's sync entries
+      block inside create_run_handler and list_runs_handler until the httpx reply arrives and return the
+      Run or ListRunsResponse.
+    why: >-
+      The transport trait hands back a future on both paths and betterlite runs the blocking one on the
+      caller's thread with no runtime to park it, so a handler that stays pending would hang the request;
+      the entry turns it into an error instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13186-L13196
+  - what: >-
       acreate_run and alist_runs are separate Rust functions: they write the acreate_run or alist_runs
       flag into kwargs, call the sync entry and await the handler future it hands back, or return the
       object a sync handler answered with. There is no thread pool, contextvars.copy_context or
