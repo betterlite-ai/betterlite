@@ -1,30 +1,44 @@
+#![cfg(test)]
+
 use axum::http::StatusCode;
 
-use super::{not_oauth_protected, python_repr};
+use super::{not_oauth_protected, upstream_failure};
 
 #[test]
-fn repr_of_a_plain_name_uses_single_quotes() {
-    assert_eq!(python_repr("test-oauth-1"), "'test-oauth-1'");
+fn the_502_detail_quotes_a_plain_name_with_single_quotes() {
+    let failure = upstream_failure(
+        "upstream",
+        "Upstream oauth-protected-resource metadata unavailable",
+    );
+    assert_eq!(failure.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        failure.detail,
+        "Upstream oauth-protected-resource metadata unavailable for MCP server 'upstream'"
+    );
 }
 
 #[test]
-fn repr_picks_double_quotes_for_a_name_with_an_apostrophe() {
-    assert_eq!(python_repr("it's"), "\"it's\"");
+fn the_502_detail_uses_double_quotes_for_a_name_with_an_apostrophe() {
+    let failure = upstream_failure(
+        "it's",
+        "Failed to fetch upstream oauth-protected-resource metadata",
+    );
+    assert_eq!(
+        failure.detail,
+        "Failed to fetch upstream oauth-protected-resource metadata for MCP server \"it's\""
+    );
 }
 
 #[test]
-fn repr_escapes_the_quote_it_uses_when_both_appear() {
-    assert_eq!(python_repr("a'\"b"), "'a\\'\"b'");
-}
-
-#[test]
-fn repr_escapes_backslash_and_whitespace_controls() {
-    assert_eq!(python_repr("a\\b\nc\rd\te"), "'a\\\\b\\nc\\rd\\te'");
-}
-
-#[test]
-fn repr_leaves_other_control_characters_raw() {
-    assert_eq!(python_repr("a\u{1}b"), "'a\u{1}b'");
+fn the_502_detail_escapes_a_control_character_like_python() {
+    let failure = upstream_failure(
+        "a\u{1}b",
+        "Upstream oauth-protected-resource metadata unavailable",
+    );
+    assert_eq!(
+        failure.detail,
+        "Upstream oauth-protected-resource metadata unavailable for MCP server 'a\\x01b'"
+    );
 }
 
 #[test]

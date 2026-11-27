@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use axum::http::StatusCode;
 use betterlite_mcp::server_record::MCPServer;
 use rstest::rstest;

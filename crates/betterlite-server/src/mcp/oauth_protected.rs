@@ -1,6 +1,5 @@
 pub mod documents;
 pub mod routes;
-#[cfg(test)]
 mod tests;
 pub mod upstream_fetch;
 

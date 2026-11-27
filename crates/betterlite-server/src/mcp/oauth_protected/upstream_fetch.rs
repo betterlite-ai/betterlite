@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod tests;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;

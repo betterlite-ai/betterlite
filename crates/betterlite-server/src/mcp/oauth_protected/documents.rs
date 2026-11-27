@@ -1,5 +1,4 @@
 pub mod errors;
-#[cfg(test)]
 mod tests;
 
 use betterlite_db::mcp_stored_contracts::MCPAuth;
@@ -124,7 +123,7 @@ where
             return Ok(NamedDocument::Gateway(GatewayResource {
                 authorization_servers: vec![format!("{base_url}/{name}")],
                 resource: resource_url,
-                scopes_supported: server_scopes(resolved),
+                scopes_supported: resolved.fields.scopes.clone().unwrap_or_default(),
             }));
         }
         if resolved.is_oauth_passthrough()
@@ -149,7 +148,7 @@ where
                 return Ok(NamedDocument::Gateway(GatewayResource {
                     authorization_servers: issuers,
                     resource: resource_url.to_owned(),
-                    scopes_supported: server_scopes(server),
+                    scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
                 }));
             }
         }
@@ -157,7 +156,7 @@ where
             return Ok(NamedDocument::Gateway(GatewayResource {
                 authorization_servers: vec![format!("{base_url}/mcp")],
                 resource: resource_url.to_owned(),
-                scopes_supported: server_scopes(server),
+                scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
             }));
         }
         if !matches!(
@@ -169,7 +168,7 @@ where
         Ok(NamedDocument::Gateway(GatewayResource {
             authorization_servers: vec![format!("{base_url}/{name}")],
             resource: resource_url.to_owned(),
-            scopes_supported: server_scopes(server),
+            scopes_supported: server.fields.scopes.clone().unwrap_or_default(),
         }))
     }
 
@@ -193,7 +192,10 @@ where
                     mcp_server = %server.fields.name,
                     "upstream oauth-protected-resource metadata is unavailable for a pass-through MCP server"
                 );
-                Err(errors::upstream_unavailable(&server.fields.name))
+                Err(errors::upstream_failure(
+                    &server.fields.name,
+                    "Upstream oauth-protected-resource metadata unavailable",
+                ))
             }
             Err(cause) => {
                 tracing::warn!(
@@ -201,7 +203,10 @@ where
                     error = %cause,
                     "fetching upstream oauth-protected-resource metadata failed for a pass-through MCP server"
                 );
-                Err(errors::upstream_fetch_failed(&server.fields.name))
+                Err(errors::upstream_failure(
+                    &server.fields.name,
+                    "Failed to fetch upstream oauth-protected-resource metadata",
+                ))
             }
         }
     }
@@ -217,10 +222,6 @@ fn origin(base_url: &str) -> String {
         }
         None => base_url.to_owned(),
     }
-}
-
-fn server_scopes(server: &MCPServer) -> Vec<String> {
-    server.fields.scopes.clone().unwrap_or_default()
 }
 
 fn rewritten_resource(mut document: JsonObject, resource_url: &str) -> JsonObject {

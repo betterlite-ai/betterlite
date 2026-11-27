@@ -1,12 +1,12 @@
 task: B7972
 deviations:
   - what: >-
-      A 502 detail that quotes a server name escapes only the backslash, the quote it chooses, newline, carriage
-      return and tab; Python's repr also escapes every other control character and every non-printable character,
-      as \\xNN, \\uNNNN or \\UXXXXXXXX.
+      A 502 detail that quotes a server name escapes the backslash, the chosen quote and every control character
+      (C0 and C1) as \xNN; Python's repr also escapes non-printable characters outside those categories, such as
+      the soft hyphen, as \uNNNN or \UXXXXXXXX, and those read raw here.
     why: >-
-      The task fixes Python's repr for a plain name, and deciding printability for every Unicode category needs
-      Python's own table, which std does not carry; a name holding such a character reads raw in the detail.
+      The name is rendered by betterlite-logging's shared Python repr, which escapes only control characters;
+      deciding printability for every Unicode category needs Python's own table, which std does not carry.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2562-L2580
   - what: >-

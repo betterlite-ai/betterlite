@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
