@@ -1,6 +1,10 @@
+use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
 use betterlite_error::error::ErrorClass;
+use betterlite_openai::evals::openai::OpenAiEvalsConfig;
+use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
 
 use crate::api::eval_create_list::call::{EvalCreation, EvalListing};
+use crate::api::eval_create_list::config::{EvalsConfigLookup, EvalsConfigs};
 use crate::api::eval_create_list::error::EvalsCreateListError;
 use crate::api::eval_create_list::tests::support::{
     Calls, Harness, create_call, eval, evals_page, list_call,
@@ -217,4 +221,20 @@ async fn list_evals_does_not_fall_back_when_the_config_is_missing() {
     );
     assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
     assert!(harness.handler.lists().is_empty());
+}
+
+#[test]
+fn evals_configs_resolves_the_openai_tag() {
+    let configs = EvalsConfigs {
+        openai: OpenAiEvalsConfig::default(),
+    };
+    let config = configs
+        .evals_config(EvalsConfigTag::OpenAI)
+        .expect("the openai tag resolves");
+    assert_eq!(
+        config
+            .get_complete_url(None, "evals", None)
+            .expect("the openai config builds its url"),
+        "https://api.openai.com/v1/evals"
+    );
 }

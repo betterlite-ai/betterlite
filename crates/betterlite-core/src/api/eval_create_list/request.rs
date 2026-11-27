@@ -29,19 +29,21 @@ pub fn create_request(
     Ok(request)
 }
 
+// create_request already put these keys into the typed request, so merging them again would change nothing
+const TYPED_REQUEST_KEYS: [&str; 4] =
+    ["name", "data_source_config", "testing_criteria", "metadata"];
+
 // the OpenAI create transform serializes the typed request only, so extra_body's other keys are merged after it
 pub fn merge_extra_body(
     body: &mut Object,
     extra_body: &IndexMap<String, Json>,
 ) -> Result<(), EvalsCreateListError> {
     for (name, value) in extra_body {
-        match name.as_str() {
-            "name" | "data_source_config" | "testing_criteria" | "metadata" => {}
-            _ => {
-                if !matches!(value, Json::Null) {
-                    body.insert(name.clone(), serde_json::to_value(value)?);
-                }
-            }
+        if TYPED_REQUEST_KEYS.contains(&name.as_str()) {
+            continue;
+        }
+        if !matches!(value, Json::Null) {
+            body.insert(name.clone(), serde_json::to_value(value)?);
         }
     }
     Ok(())
