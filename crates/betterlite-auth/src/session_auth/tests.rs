@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level};
@@ -66,10 +66,6 @@ fn span(auth: &UserAPIKeyAuth) -> Option<&JsonData> {
     }
 }
 
-fn secret(value: Option<&SecretString>) -> Option<String> {
-    value.map(|held| held.expose_secret().to_owned())
-}
-
 fn rich_auth() -> UserAPIKeyAuth {
     auth_with(
         r#"{"team_id":"test-team-1","user_id":"test-user","key_alias":"test-key",
@@ -78,6 +74,17 @@ fn rich_auth() -> UserAPIKeyAuth {
             "object_permission":{"object_permission_id":"test-permission","mcp_servers":["test-server"]},
             "parent_otel_span":{"trace_id":"test-trace"}}"#,
     )
+}
+
+fn flagged_auth() -> UserAPIKeyAuth {
+    let mut auth = rich_auth();
+    auth.extra.requires_fresh_policy = true;
+    auth.extra.mcp_access.mcp_admitted_user_subject = true;
+    auth.extra.mcp_access.mcp_explicit_grants_only = true;
+    auth.extra.mcp_session_resource_server_id = Some("test-resource".to_owned());
+    auth.extra.mcp_toolset_id = Some("test-toolset".to_owned());
+    auth.extra.provenance.via_virtual_key = true;
+    auth
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,7 +151,7 @@ impl UiSessionTeams for ScriptedTeams {
 }
 
 enum ReloadAnswer {
-    Admitted(UserAPIKeyAuth),
+    Admitted(Box<UserAPIKeyAuth>),
     Refused,
     Outage(String),
 }
@@ -157,7 +164,7 @@ struct ScriptedHuman {
 impl ScriptedHuman {
     fn admitting(admitted: UserAPIKeyAuth, log: CallLog) -> Self {
         Self {
-            answer: ReloadAnswer::Admitted(admitted),
+            answer: ReloadAnswer::Admitted(Box::new(admitted)),
             log,
         }
     }
@@ -179,7 +186,7 @@ impl DelegatedHuman for ScriptedHuman {
         self.log
             .record(PortCall::Human(user_id.to_owned(), requires_fresh_policy));
         match &self.answer {
-            ReloadAnswer::Admitted(admitted) => ready(Ok(admitted.clone())),
+            ReloadAnswer::Admitted(admitted) => ready(Ok(admitted.as_ref().clone())),
             ReloadAnswer::Refused => ready(Err(AdmittedUserError::InvalidCredential)),
             ReloadAnswer::Outage(message) => ready(Err(AdmittedUserError::DatabaseUnavailable {
                 message: message.clone(),
@@ -247,13 +254,7 @@ fn capture_log() -> (EventLog, DefaultGuard) {
 
 #[test]
 fn copy_with_team_id_changes_only_the_team_id() {
-    let mut original = rich_auth();
-    original.extra.requires_fresh_policy = true;
-    original.extra.mcp_access.mcp_admitted_user_subject = true;
-    original.extra.mcp_access.mcp_explicit_grants_only = true;
-    original.extra.mcp_session_resource_server_id = Some("test-resource".to_owned());
-    original.extra.mcp_toolset_id = Some("test-toolset".to_owned());
-    original.extra.provenance.via_virtual_key = true;
+    let original = flagged_auth();
 
     let copied = with_team_id(&original, "test-team-2");
 
@@ -270,6 +271,14 @@ fn copy_with_team_id_changes_only_the_team_id() {
         copied.view.token.object_permission_id,
         original.view.token.object_permission_id
     );
+}
+
+#[test]
+fn copy_with_team_id_keeps_the_server_only_fields() {
+    let original = flagged_auth();
+
+    let copied = with_team_id(&original, "test-team-2");
+
     assert!(copied.extra.requires_fresh_policy);
     assert!(copied.extra.mcp_access.mcp_admitted_user_subject);
     assert!(copied.extra.mcp_access.mcp_explicit_grants_only);
@@ -289,15 +298,34 @@ fn copy_with_team_id_keeps_the_secrets() {
 
     let copied = with_team_id(&original, "test-team-2");
 
-    assert_eq!(
-        secret(copied.view.token.token.as_ref()),
-        secret(original.view.token.token.as_ref())
-    );
-    assert_eq!(
-        secret(copied.extra.api_key.0.as_ref()),
-        secret(original.extra.api_key.0.as_ref())
-    );
-    assert!(secret(copied.extra.api_key.0.as_ref()).is_some());
+    let copied_token = copied
+        .view
+        .token
+        .token
+        .as_ref()
+        .map(|held| held.expose_secret().to_owned());
+    let original_token = original
+        .view
+        .token
+        .token
+        .as_ref()
+        .map(|held| held.expose_secret().to_owned());
+    let copied_key = copied
+        .extra
+        .api_key
+        .0
+        .as_ref()
+        .map(|held| held.expose_secret().to_owned());
+    let original_key = original
+        .extra
+        .api_key
+        .0
+        .as_ref()
+        .map(|held| held.expose_secret().to_owned());
+
+    assert_eq!(copied_token, original_token);
+    assert_eq!(copied_key, original_key);
+    assert!(copied.extra.api_key.0.is_some());
 }
 
 #[test]
