@@ -1,0 +1,65 @@
+kind: helper
+name: summary-model-access-backing-objects-control-scope
+call:
+  summary_model_access:
+    action: access
+    summary_model: sum
+    scenarios:
+      - principal: {user_id: user-1, project_id: project-1}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: found, row: {user_id: user-1, models: []}}
+        project: {kind: found, row: {project_id: project-1, models: []}}
+        membership: {kind: missing}
+      - principal: {user_id: null, team_id: null, project_id: null}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: found, row: {user_id: user-1, models: [key-model]}}
+        project: {kind: found, row: {project_id: project-1, models: [team-model]}}
+        membership: {kind: found, row: {user_id: user-1, team_id: team-1, litellm_budget_table: {allowed_models: [member-model]}}}
+      - principal: {user_id: user-1, team_id: team-1, project_id: project-1}
+        proxy: true
+        database: false
+        checks: scripted
+        outcomes: []
+        user: {kind: found, row: {user_id: user-1, models: [key-model]}}
+        project: {kind: found, row: {project_id: project-1, models: [team-model]}}
+        membership: {kind: found, row: {user_id: user-1, team_id: team-1, litellm_budget_table: {allowed_models: [member-model]}}}
+      - principal: {user_id: "", team_id: "", project_id: ""}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {user_id: user-1, project_id: project-1}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {user_id: user-1, project_id: project-1}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: failed}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {user_id: user-1, project_id: project-1}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: found, row: {user_id: user-1, models: [key-model]}}
+        project: {kind: failed}
+        membership: {kind: missing}
+env: {}
+compare: {ignore: []}
