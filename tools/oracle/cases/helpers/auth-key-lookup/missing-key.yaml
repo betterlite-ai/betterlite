@@ -1,0 +1,19 @@
+kind: helper
+name: auth-key-lookup-missing-key
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: hashed-token
+    reconnect: {answer: false}
+calls:
+  # the cache-only check refuses before any database read
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      reconnect: {answer: false}
+      check_cache_only: true
+      rows:
+        - kind: row
+          fields: {token: hashed-token, key_name: k1, user_id: u1}
+env: {}
+compare: {ignore: []}

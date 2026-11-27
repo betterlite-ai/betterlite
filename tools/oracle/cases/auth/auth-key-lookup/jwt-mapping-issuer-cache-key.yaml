@@ -1,0 +1,34 @@
+kind: helper
+name: auth-key-lookup-auth-jwt-mapping-issuer-cache-key
+call:
+  auth_key_lookup:
+    aspect: cache_key
+    claim_name: email
+    claim_value: ops@example.test
+    issuer: https://issuer.example
+calls:
+  # an exact-scope lookup returns the mapped key and filters on the active claim
+  - auth_key_lookup:
+      aspect: mapping
+      claim_name: email
+      claim_value: ops@example.test
+      issuer: https://issuer.example
+      lookup:
+        mode: object
+        found:
+          token: sk-hashed-b
+          jwt_claim_name: email
+          jwt_claim_value: ops@example.test
+          jwt_issuer: https://issuer.example
+  # every mapping of one key keeps its scope, duplicates included
+  - auth_key_lookup:
+      aspect: mapping
+      claim_name: email
+      claim_value: ops@example.test
+      rows:
+        - {token: sk-hashed-b, jwt_claim_name: email, jwt_claim_value: ops@example.test, jwt_issuer: https://issuer.example}
+        - {token: sk-hashed-b, jwt_claim_name: email, jwt_claim_value: ops@example.test, jwt_issuer: https://issuer.example}
+        - {token: sk-hashed-b, jwt_claim_name: sub, jwt_claim_value: u2}
+      lookup: {mode: token, hashed_token: sk-hashed-b}
+env: {}
+compare: {ignore: []}
