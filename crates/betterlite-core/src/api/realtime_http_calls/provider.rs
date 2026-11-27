@@ -146,10 +146,11 @@ pub fn credentials(
                 .or(settings.api_base.as_deref())
                 .unwrap_or(DEFAULT_API_BASE)
                 .to_owned(),
-            exposed(raw_api_key)
-                .or_else(|| exposed(settings.api_key.as_ref()))
-                .or_else(|| exposed(settings.openai_key.as_ref()))
-                .or_else(|| exposed(settings.openai_api_key.as_ref()))
+            raw_api_key
+                .or(settings.api_key.as_ref())
+                .or(settings.openai_key.as_ref())
+                .or(settings.openai_api_key.as_ref())
+                .map(|secret| secret.expose_secret().to_owned())
                 .unwrap_or_default(),
         ),
     };
@@ -158,11 +159,6 @@ pub fn credentials(
         api_base: base.trim_end_matches('/').to_owned(),
         api_key: key,
     }
-}
-
-fn exposed(secret: Option<&SecretString>) -> Option<String> {
-    let value = secret?;
-    Some(value.expose_secret().to_owned())
 }
 
 // HTTP header values are text; the realtime HTTP handlers pass no inbound headers at all.

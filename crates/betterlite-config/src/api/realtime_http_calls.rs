@@ -37,21 +37,25 @@ where
     let config = ConfigLoader { lookup }.load(source)?;
     let resource = &config.sections.resource_sdk_settings;
     Ok(RealtimeHttpCallSettings {
-        api_base: non_empty_text(resource.api_base.as_deref()),
+        api_base: resource.api_base.clone().filter(|text| !text.is_empty()),
         api_key: non_empty_secret(resource.api_key.as_ref()),
         openai_key: non_empty_secret(resource.openai_key.as_ref()),
-        openai_api_base: non_empty_text(resource.openai_api_base.as_deref()),
+        openai_api_base: resource
+            .openai_api_base
+            .clone()
+            .filter(|text| !text.is_empty()),
         openai_api_key: non_empty_secret(resource.openai_api_key.as_ref()),
-        azure_api_base: non_empty_text(resource.azure_api_base.as_deref()),
+        azure_api_base: resource
+            .azure_api_base
+            .clone()
+            .filter(|text| !text.is_empty()),
         azure_api_key: non_empty_secret(resource.azure_api_key.as_ref()),
-        azure_api_version: non_empty_text(resource.azure_api_version.as_deref()),
+        azure_api_version: resource
+            .azure_api_version
+            .clone()
+            .filter(|text| !text.is_empty()),
         request_timeout_seconds: timeout.seconds,
     })
-}
-
-fn non_empty_text(value: Option<&str>) -> Option<String> {
-    let text = value?;
-    (!text.is_empty()).then(|| text.to_owned())
 }
 
 fn non_empty_secret(value: Option<&SecretString>) -> Option<SecretString> {
