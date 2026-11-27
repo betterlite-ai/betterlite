@@ -166,7 +166,7 @@ async fn approve(
     })
 }
 
-const fn analysis_body<'call>(
+fn analysis_body<'call>(
     input: &'call AnalysisInput<'_>,
     model: &'call str,
     prompt: &'call str,
@@ -184,7 +184,7 @@ const fn analysis_body<'call>(
     )
 }
 
-const fn budget_reservation<'call, Db>(
+fn budget_reservation<'call, Db>(
     repository: &'call LensRepository<Db>,
     input: &'call AnalysisInput<'_>,
     estimate: Decimal,
@@ -205,7 +205,7 @@ where
     }
 }
 
-const fn settle_request<'call>(
+fn settle_request<'call>(
     input: &'call AnalysisInput<'_>,
     month_now: DateTime<Utc>,
     estimate: Decimal,

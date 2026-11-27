@@ -18,7 +18,7 @@ pub enum SettlementError {
 }
 
 impl SettlementError {
-    const fn from_update(error: LensUpdateError<Self>) -> Self {
+    fn from_update(error: LensUpdateError<Self>) -> Self {
         match error {
             LensUpdateError::Repository(source) => Self::Repository(source),
             LensUpdateError::Transform(inner) => inner,

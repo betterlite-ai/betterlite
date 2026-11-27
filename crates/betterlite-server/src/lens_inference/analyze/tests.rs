@@ -432,10 +432,14 @@ fn dependencies(setup: &Setup) -> Dependencies {
         run_failure: setup.run == Run::Fails,
         lens_analysis: lens_analysis.clone(),
     });
+    // Arc::clone cannot widen to the fields' trait objects, so each is cloned as its own type
+    let authorizer = Arc::clone(&fake);
+    let runner = Arc::clone(&fake);
+    let releaser = Arc::clone(&fake);
     let billing = Billing {
-        authorizer: Arc::clone(&fake),
-        runner: Arc::clone(&fake),
-        releaser: Arc::clone(&fake),
+        authorizer,
+        runner,
+        releaser,
         client_ip: Arc::new(NoIp),
     };
     let keys = KeyFake {

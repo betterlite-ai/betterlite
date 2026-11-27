@@ -148,10 +148,14 @@ fn harness(plan: Plan) -> (Billing, Arc<Fake>, Log) {
         plan,
         log: Arc::clone(&log),
     });
+    // Arc::clone cannot widen to the fields' trait objects, so each is cloned as its own type
+    let authorizer = Arc::clone(&fake);
+    let runner = Arc::clone(&fake);
+    let releaser = Arc::clone(&fake);
     let billing = Billing {
-        authorizer: Arc::clone(&fake),
-        runner: Arc::clone(&fake),
-        releaser: Arc::clone(&fake),
+        authorizer,
+        runner,
+        releaser,
         client_ip: Arc::new(Ip),
     };
     (billing, fake, log)
