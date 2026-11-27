@@ -1,0 +1,19 @@
+kind: helper
+name: responses-mcp-input-seed
+call:
+  b10124:
+    calls:
+      - function: store
+        call_params: {store: false}
+      - function: follow_up
+        response:
+          id: resp_seed
+          created_at: 1
+          output:
+            - {type: function_call, call_id: call_seed, name: weather, arguments: "{}"}
+        tool_results:
+          - {tool_call_id: call_seed, result: "42", name: weather}
+        original_input: hello
+        preserve_reasoning: true
+env: {}
+compare: {ignore: []}
