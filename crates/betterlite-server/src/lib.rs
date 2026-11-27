@@ -362,6 +362,7 @@ pub mod sse_data_generator;
 pub mod sse_error_frames;
 pub mod sso;
 pub mod sso_browser_session;
+pub mod sso_callback_input;
 pub mod sso_identity_bridge;
 pub mod sso_login_entry;
 pub mod sso_pkce;

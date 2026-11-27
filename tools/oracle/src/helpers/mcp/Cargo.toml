@@ -9,6 +9,7 @@ publish.workspace = true
 path = "lib.rs"
 
 [dependencies]
+async-trait = "0.1.92"
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }

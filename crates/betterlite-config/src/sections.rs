@@ -409,6 +409,7 @@ pub mod settings;
 pub mod smtp_transport;
 pub mod speech_call;
 pub mod spend_reseed;
+pub mod sso_callback_input;
 pub mod sso_presence;
 pub mod static_eligibility;
 pub mod stream_usage_cost;
@@ -641,7 +642,7 @@ sections! {
     routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger, secret_manager_bootstrap,
     security_headers, self_hosted_dispatch, semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
     session_iteration_limits, session_token_codec, settings, speech_call, spend_reseed,
-    sso_presence, static_eligibility, stream_usage_cost, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
+    sso_callback_input, sso_presence, static_eligibility, stream_usage_cost, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
