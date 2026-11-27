@@ -194,19 +194,16 @@ fn model_pattern_input(
     )))
 }
 
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
+pub(crate) fn auth_request_models_stage(
+    stage: &RequestModelStageInput,
+) -> Result<AuthContext, StageFailure> {
+    match resolve(stage) {
+        Ok(_) => Ok(stage.context.clone()),
+        Err(error) => {
+            tracing::debug!(error = %error, "the request model stage failed");
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
+    }
 }
 
 fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {

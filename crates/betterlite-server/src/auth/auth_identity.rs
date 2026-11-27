@@ -13,7 +13,8 @@ use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
-use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::RequestModelStageInput;
+use crate::auth::auth_request_models_stage;
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_route_policy::{self, RoutePolicyStageInput};
@@ -233,16 +234,6 @@ pub(crate) fn dispatch(
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
-    }
-}
-
-fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
-    match resolve(stage) {
-        Ok(_) => Ok(stage.context.clone()),
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
     }
 }
 
