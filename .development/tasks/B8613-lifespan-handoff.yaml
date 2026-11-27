@@ -67,7 +67,7 @@ description: >-
   B8586's routes.
   11. Deployment sync. B8381's `DeploymentSync` as one Arc: the one B8374 hands to B8372's jobs and stops at shutdown
   (make it here when B8374's merged code holds it by value). lifespan/deployment_port.rs holds `SyncPortAdapter` with
-  that Arc and the database store and implements B8611's `DeploymentSyncPort`: add_deployment calls DeploymentSync's
+  that Arc and the database store and implements B10136's `DeploymentSyncPort`: add_deployment calls DeploymentSync's
   add_deployment with the store, and does nothing without a database. Started carries it as `deployment_sync: Arc<dyn
   DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
   implements B10021's trait). With a database store, build one B9948 `ModelsReadThrough`: RegistryReadThrough::new over
