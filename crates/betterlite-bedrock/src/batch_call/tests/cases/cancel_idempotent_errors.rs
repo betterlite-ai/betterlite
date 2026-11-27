@@ -2,7 +2,7 @@ use betterlite_openai::batches::records::BatchStatus;
 
 use crate::batch_call::error::BatchCallError;
 
-use super::super::fixture::{JOB_ID, REGION, answer, answer_with, auth_parameters, cancel_job};
+use super::super::fixture::{JOB_ID, REGION, answer, answer_with, auth_parameters, run_job};
 
 const STOPPED: &str = r#"{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Stopped"}"#;
 const CANCELLING: &str = r#"{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Stopping"}"#;
@@ -42,7 +42,7 @@ fn tolerated_returns_the_lookup() {
         (typed, STOPPED, BatchStatus::Cancelled),
     ];
     for (stop, body, expected) in runs {
-        let run = cancel_job(
+        let run = run_job(
             vec![stop, answer(200, body)],
             JOB_ID,
             Some(REGION),
@@ -58,7 +58,7 @@ fn tolerated_returns_the_lookup() {
 
 fn tolerated_but_still_running() {
     let stop = answer_with(409, &[("x-amzn-errortype", "ConflictException")], "");
-    let run = cancel_job(
+    let run = run_job(
         vec![stop, answer(200, IN_PROGRESS)],
         JOB_ID,
         Some(REGION),
@@ -73,7 +73,7 @@ fn tolerated_but_still_running() {
 
 fn untolerated_code_is_rethrown() {
     let stop = answer(400, r#"{"code":"AccessDeniedException"}"#);
-    let run = cancel_job(vec![stop], JOB_ID, Some(REGION), &auth_parameters());
+    let run = run_job(vec![stop], JOB_ID, Some(REGION), &auth_parameters());
     let error = run
         .result
         .expect_err("a stop error outside the tolerated codes is rethrown");
@@ -84,7 +84,7 @@ fn untolerated_code_is_rethrown() {
 fn failed_lookup_is_the_error() {
     let stop = answer_with(400, &[("x-amzn-errortype", "ValidationException")], "");
     let lookup = answer(500, r#"{"code":"InternalServerException"}"#);
-    let run = cancel_job(vec![stop, lookup], JOB_ID, Some(REGION), &auth_parameters());
+    let run = run_job(vec![stop, lookup], JOB_ID, Some(REGION), &auth_parameters());
     let error = run
         .result
         .expect_err("a failed status lookup replaces the stop error");
@@ -106,7 +106,7 @@ fn error_code_precedence() {
     let upper_key = answer(400, r#"{"Code":"ValidationException"}"#);
     let runs = [header, body, upper_key];
     for stop in runs {
-        let run = cancel_job(
+        let run = run_job(
             vec![stop, answer(200, STOPPED)],
             JOB_ID,
             Some(REGION),
@@ -131,7 +131,7 @@ fn status_codes() {
         (answer(301, ""), Some("301"), 301_u16),
     ];
     for (stop, code, status) in cases {
-        let run = cancel_job(vec![stop], JOB_ID, Some(REGION), &auth_parameters());
+        let run = run_job(vec![stop], JOB_ID, Some(REGION), &auth_parameters());
         let error = run
             .result
             .expect_err("an untolerated stop error is rethrown");
@@ -144,7 +144,7 @@ fn status_codes() {
 }
 
 fn three_hundred_is_an_error() {
-    let run = cancel_job(
+    let run = run_job(
         vec![answer(300, "")],
         JOB_ID,
         Some(REGION),
@@ -158,7 +158,7 @@ fn three_hundred_is_an_error() {
 }
 
 fn async_identifier_stops_the_same_way() {
-    let run = cancel_job(
+    let run = run_job(
         vec![answer(200, ""), answer(200, CANCELLING)],
         ASYNC_ARN,
         Some(REGION),

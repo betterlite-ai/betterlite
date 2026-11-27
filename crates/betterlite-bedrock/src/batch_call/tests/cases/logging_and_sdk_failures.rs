@@ -43,29 +43,27 @@ fn logs_the_call() {
     let (result, snapshots) = capture(JOB_ARN);
     result.expect("the lookup succeeds");
     assert_eq!(snapshots.len(), 2);
-    assert_pre(&snapshots[0]);
-    assert_post(&snapshots[1]);
+    assert_events(&snapshots);
 }
 
-fn assert_pre(snapshot: &Json) {
-    assert_eq!(text(field(snapshot, "log_event_type")), "pre_api_call");
-    assert_eq!(text(field(snapshot, "input")), JOB_ARN);
-    let args = field(snapshot, "additional_args");
-    assert_eq!(text(field(args, "api_base")), API_BASE);
-    let complete = field(args, "complete_input_dict");
-    assert_eq!(text(field(complete, "jobIdentifier")), JOB_ARN);
-    let params = field(snapshot, "litellm_params");
+fn assert_events(snapshots: &[Json]) {
+    let pre = &snapshots[0];
+    assert_eq!(text(field(pre, "log_event_type")), "pre_api_call");
+    assert_eq!(text(field(pre, "input")), JOB_ARN);
+    let pre_args = field(pre, "additional_args");
+    assert_eq!(text(field(pre_args, "api_base")), API_BASE);
+    let pre_complete = field(pre_args, "complete_input_dict");
+    assert_eq!(text(field(pre_complete, "jobIdentifier")), JOB_ARN);
+    let params = field(pre, "litellm_params");
     assert_eq!(text(field(params, "api_base")), API_BASE);
-}
-
-fn assert_post(snapshot: &Json) {
-    assert_eq!(text(field(snapshot, "log_event_type")), "post_api_call");
-    assert_eq!(text(field(snapshot, "input")), JOB_ARN);
-    let args = field(snapshot, "additional_args");
-    assert_eq!(field(args, "api_base"), &Json::Null);
-    let complete = field(args, "complete_input_dict");
-    assert_eq!(text(field(complete, "jobIdentifier")), JOB_ARN);
-    let recorded: Json = serde_json::from_str(text(field(snapshot, "original_response")))
+    let post = &snapshots[1];
+    assert_eq!(text(field(post, "log_event_type")), "post_api_call");
+    assert_eq!(text(field(post, "input")), JOB_ARN);
+    let post_args = field(post, "additional_args");
+    assert_eq!(field(post_args, "api_base"), &Json::Null);
+    let post_complete = field(post_args, "complete_input_dict");
+    assert_eq!(text(field(post_complete, "jobIdentifier")), JOB_ARN);
+    let recorded: Json = serde_json::from_str(text(field(post, "original_response")))
         .expect("the logged response is JSON");
     let expected: Json = serde_json::from_str(LOGGED_BODY).expect("the fixture body is JSON");
     assert_eq!(recorded, expected);

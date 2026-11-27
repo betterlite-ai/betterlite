@@ -66,12 +66,6 @@ pub trait ControlPlaneFactory {
     fn client(&self, config: ClientConfig<'_>) -> Self::Client;
 }
 
-// botocore raises a ClientError from any reply of 300 and up
-#[must_use]
-pub const fn accepted(status: u16) -> bool {
-    status < 300
-}
-
 #[must_use]
 pub fn header<'headers>(
     headers: &'headers [(String, String)],

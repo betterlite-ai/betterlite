@@ -33,8 +33,7 @@ pub struct AsyncStatusCall<'source> {
     pub now: SystemTime,
 }
 
-// Twelve Labs async invoke: GetAsyncInvoke answers the job record, which the handler projects
-// onto the OpenAI batch shape with a fixed single-request count
+// Twelve Labs async invoke: the job record projected with a fixed single-request count
 pub async fn retrieve_async_status<Source, Factory>(
     call: AsyncStatusCall<'_>,
     services: &StatusServices<'_, Source, Factory>,
@@ -128,8 +127,7 @@ impl AsyncRecord {
     }
 }
 
-// the raw httpx body carries the job's own status word, which LiteLLMBatch validates against
-// the OpenAI batch statuses
+// the body carries the job's own status word, which LiteLLMBatch validates as an OpenAI status
 fn async_status(fields: &IndexMap<String, Json>) -> Result<BatchStatus, BatchCallError> {
     let name = required_text(fields, "status")?;
     match name.as_str() {

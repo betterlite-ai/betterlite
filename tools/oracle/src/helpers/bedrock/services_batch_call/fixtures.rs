@@ -170,9 +170,17 @@ impl ControlPlaneTransport for PlaneClient {
 }
 
 struct AsyncState {
-    status: u16,
-    body: Vec<u8>,
+    reply: ReplyInput,
     urls: Vec<String>,
+}
+
+impl AsyncState {
+    fn new(reply: &ReplyInput) -> Self {
+        Self {
+            reply: reply.clone(),
+            urls: Vec::new(),
+        }
+    }
 }
 
 pub(super) struct AsyncFixture {
@@ -181,13 +189,8 @@ pub(super) struct AsyncFixture {
 
 impl AsyncFixture {
     pub(super) fn new(reply: &ReplyInput) -> Self {
-        let state = AsyncState {
-            status: reply.status,
-            body: reply.body.as_bytes().to_vec(),
-            urls: Vec::new(),
-        };
         Self {
-            state: Arc::new(Mutex::new(state)),
+            state: Arc::new(Mutex::new(AsyncState::new(reply))),
         }
     }
 
@@ -225,11 +228,11 @@ impl StatusTransport for AsyncClient {
         &self,
         request: StatusWireRequest,
     ) -> impl Future<Output = Result<StatusReply, TransferError>> + Send {
-        let (status, body) = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.urls.push(request.url);
-            (state.status, state.body.clone())
-        };
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.urls.push(request.url);
+        let status = state.reply.status;
+        let body = state.reply.body.clone().into_bytes();
+        drop(state);
         ready(Ok(StatusReply { status, body }))
     }
 }

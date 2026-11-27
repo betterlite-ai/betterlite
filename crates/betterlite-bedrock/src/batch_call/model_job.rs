@@ -41,17 +41,23 @@ impl JobRecord {
         let arn = job_arn(fields, batch_id)?;
         let input_uri = nested_uri(fields, "inputDataConfig", "s3InputDataConfig")?;
         let output_prefix = nested_uri(fields, "outputDataConfig", "s3OutputDataConfig")?;
+        let status = job_status(fields);
+        let created_at = time_field(fields, "submitTime")?.unwrap_or(0);
+        let in_progress_at = time_field(fields, "lastModifiedTime")?;
+        let end_time = time_field(fields, "endTime")?;
+        let request_counts = record_counts_from_response(fields)?;
         let job_id = extract_job_id_from_arn(&arn);
+        let output_file = predict_output_file_uri(&output_prefix, &input_uri, job_id.as_deref());
         Ok(Self {
-            output_file: predict_output_file_uri(&output_prefix, &input_uri, job_id.as_deref()),
-            status: job_status(fields),
-            created_at: time_field(fields, "submitTime")?.unwrap_or(0),
-            in_progress_at: time_field(fields, "lastModifiedTime")?,
-            end_time: time_field(fields, "endTime")?,
-            request_counts: record_counts_from_response(fields)?,
             arn,
+            status,
             input_uri,
             output_prefix,
+            output_file,
+            created_at,
+            in_progress_at,
+            end_time,
+            request_counts,
         })
     }
 
@@ -85,14 +91,19 @@ impl JobRecord {
     }
 }
 
+// the ARN names the job, and a job without one is the id the caller passed in
 fn job_arn(fields: &IndexMap<String, Json>, batch_id: &str) -> Result<String, BatchCallError> {
     match fields.get("jobArn") {
         None => Ok(batch_id.to_owned()),
-        Some(Json::Text(arn)) => Ok(arn.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(BatchCallError::Field { field: "jobArn" })
-        }
+        Some(value) => text(value, "jobArn").cloned(),
     }
+}
+
+fn text<'json>(value: &'json Json, field: &'static str) -> Result<&'json String, BatchCallError> {
+    let Json::Text(text) = value else {
+        return Err(BatchCallError::Field { field });
+    };
+    Ok(text)
 }
 
 // str(response.get("status", "")) keeps a number's digits and leaves any unknown word in progress
@@ -146,8 +157,7 @@ fn nested_uri(
     }
 }
 
-// botocore turns a wire timestamp into a datetime before the handler reads it, and a number
-// keeps its digits as botocore's own epoch conversion does
+// botocore parses a wire timestamp first; a number keeps its epoch digits through int()
 fn time_field(
     fields: &IndexMap<String, Json>,
     field: &'static str,

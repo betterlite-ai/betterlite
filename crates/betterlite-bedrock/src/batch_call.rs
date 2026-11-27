@@ -11,5 +11,4 @@ pub mod request;
 pub mod status;
 pub mod transport;
 
-#[cfg(test)]
 mod tests;

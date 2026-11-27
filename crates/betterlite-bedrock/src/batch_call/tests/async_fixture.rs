@@ -127,11 +127,14 @@ fn secret_lookup() -> SecretLookup {
     }
 }
 
-pub(super) fn with_services<Output>(
+pub(super) fn with_services<Output, Invoke>(
     source: &Source,
     factory: &AsyncFactory,
-    invoke: impl FnOnce(&StatusServices<'_, Source, AsyncFactory>) -> Output,
-) -> Output {
+    invoke: Invoke,
+) -> Output
+where
+    Invoke: FnOnce(&StatusServices<'_, Source, AsyncFactory>) -> Output,
+{
     let secrets = secret_lookup();
     let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
     let signing = AwsSigningExecutor::default();

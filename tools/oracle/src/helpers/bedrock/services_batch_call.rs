@@ -3,14 +3,11 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::batch_call::async_status::{AsyncStatusCall, retrieve_async_status};
 use betterlite_bedrock::batch_call::cancel::{CancelBatchCall, cancel_batch};
-use betterlite_bedrock::batch_call::error::BatchCallError;
-use betterlite_bedrock::batch_call::logging::CallLogger;
 use betterlite_bedrock::batch_call::region::DEFAULT_REGION;
 use betterlite_bedrock::batch_call::status::{JobStatusCall, retrieve_model_job_status};
 use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::embedding_jobs::status::StatusServices;
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
-use betterlite_openai::batches::records::BatchObject;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -109,9 +106,29 @@ fn control_plane(input: &Input, cancel: bool) -> HelperResult {
     let mut events = Vec::new();
     let result = view::with_events(input.logging, &mut events, |logger| {
         if cancel {
-            cancel_call(&fixed, input, logger, &source, &factory)
+            fixed.runtime.block_on(cancel_batch(
+                CancelBatchCall {
+                    batch_id: &input.batch_id,
+                    aws_region_name: input.region.as_deref(),
+                    kwargs: &fixed.kwargs,
+                    now: fixed.now,
+                },
+                &source,
+                &factory,
+                logger,
+            ))
         } else {
-            status_call(&fixed, input, logger, &source, &factory)
+            fixed.runtime.block_on(retrieve_model_job_status(
+                JobStatusCall {
+                    batch_id: &input.batch_id,
+                    aws_region_name: input.region.as_deref(),
+                    kwargs: &fixed.kwargs,
+                    now: fixed.now,
+                },
+                &source,
+                &factory,
+                logger,
+            ))
         }
     });
     let (batch, error) = view::outcome(result);
@@ -123,46 +140,6 @@ fn control_plane(input: &Input, cancel: bool) -> HelperResult {
         "requests": [],
         "log": events,
     }))
-}
-
-fn cancel_call(
-    fixed: &Fixed,
-    input: &Input,
-    logger: Option<&mut CallLogger<'_>>,
-    source: &Source,
-    factory: &PlaneFactory,
-) -> Result<BatchObject, BatchCallError> {
-    fixed.runtime.block_on(cancel_batch(
-        CancelBatchCall {
-            batch_id: &input.batch_id,
-            aws_region_name: input.region.as_deref(),
-            kwargs: &fixed.kwargs,
-            now: fixed.now,
-        },
-        source,
-        factory,
-        logger,
-    ))
-}
-
-fn status_call(
-    fixed: &Fixed,
-    input: &Input,
-    logger: Option<&mut CallLogger<'_>>,
-    source: &Source,
-    factory: &PlaneFactory,
-) -> Result<BatchObject, BatchCallError> {
-    fixed.runtime.block_on(retrieve_model_job_status(
-        JobStatusCall {
-            batch_id: &input.batch_id,
-            aws_region_name: input.region.as_deref(),
-            kwargs: &fixed.kwargs,
-            now: fixed.now,
-        },
-        source,
-        factory,
-        logger,
-    ))
 }
 
 fn async_status(input: &Input) -> HelperResult {

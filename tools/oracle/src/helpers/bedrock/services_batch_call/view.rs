@@ -5,11 +5,14 @@ use betterlite_openai::batches::records::BatchObject;
 use serde_json::{Value, json};
 
 // the logging capture records what the handler logged instead of running the logger stack
-pub(super) fn with_events<Output>(
+pub(super) fn with_events<Output, Invoke>(
     enabled: bool,
     events: &mut Vec<Value>,
-    invoke: impl FnOnce(Option<&mut CallLogger<'_>>) -> Output,
-) -> Output {
+    invoke: Invoke,
+) -> Output
+where
+    Invoke: FnOnce(Option<&mut CallLogger<'_>>) -> Output,
+{
     let mut capture = |batch_id: &str, event: CallEvent<'_>| -> Result<(), PrePostError> {
         events.push(event_view(batch_id, &event));
         Ok(())

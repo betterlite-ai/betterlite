@@ -13,7 +13,7 @@ use super::region::resolve_region;
 use super::reply::{client_error, decode_reply};
 use super::request::sign_stop;
 use super::status::{JobStatusCall, retrieve_model_job_status};
-use super::transport::{ControlPlaneFactory, ControlPlaneReply, accepted};
+use super::transport::{ControlPlaneFactory, ControlPlaneReply};
 
 const IDEMPOTENT_STATUSES: [BatchStatus; 5] = [
     BatchStatus::Cancelling,
@@ -32,8 +32,7 @@ pub struct CancelBatchCall<'source> {
     pub now: SystemTime,
 }
 
-// StopModelInvocationJob: a ValidationException or ConflictException from the stop call is
-// tolerated only when a fresh status lookup finds the job already on its way out
+// StopModelInvocationJob: a stop error is tolerated only when the job's fresh status is terminal
 pub async fn cancel_batch<Source, Factory>(
     call: CancelBatchCall<'_>,
     source: &Source,
@@ -63,7 +62,7 @@ where
 
 // a stop reply is parsed before it is accepted, and any reply of 300 and up is a ClientError
 fn stop_failure(reply: &ControlPlaneReply) -> Result<Option<BatchCallError>, BatchCallError> {
-    if !accepted(reply.status) {
+    if reply.status >= 300 {
         return Ok(Some(client_error(reply)));
     }
     decode_reply(reply)?;

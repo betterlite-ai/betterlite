@@ -234,12 +234,14 @@ pub(super) struct Factory {
 
 impl Factory {
     pub(super) fn new(replies: Vec<Reply>) -> Self {
+        let mut state = FactoryState {
+            configs: Vec::new(),
+            requests: Vec::new(),
+            replies: VecDeque::new(),
+        };
+        state.replies.extend(replies);
         Self {
-            state: Arc::new(Mutex::new(FactoryState {
-                configs: Vec::new(),
-                requests: Vec::new(),
-                replies: replies.into(),
-            })),
+            state: Arc::new(Mutex::new(state)),
         }
     }
 
@@ -314,9 +316,10 @@ impl LogSink for DiscardingSink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) fn logged<Output>(
-    invoke: impl FnOnce(Option<&mut CallLogger<'_>>) -> Output,
-) -> (Output, Vec<Json>) {
+pub(super) fn logged<Output, Invoke>(invoke: Invoke) -> (Output, Vec<Json>)
+where
+    Invoke: FnOnce(Option<&mut CallLogger<'_>>) -> Output,
+{
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the fixture redactor builds");
     let mut state = logging_state(&redactor);
     let snapshots: Mutex<Vec<Json>> = Mutex::new(Vec::new());
@@ -406,47 +409,62 @@ pub(super) fn lookup_job(
     region: Option<&str>,
     kwargs: &BTreeMap<String, Box<RawValue>>,
 ) -> CallRun {
-    lookup_job_reply(answer(200, body), batch_id, region, kwargs)
+    run_job(answer(200, body), batch_id, region, kwargs)
 }
 
-pub(super) fn lookup_job_reply(
-    reply: Reply,
-    batch_id: &str,
-    region: Option<&str>,
-    kwargs: &BTreeMap<String, Box<RawValue>>,
-) -> CallRun {
-    let source = Source::new(credentials());
-    let factory = Factory::new(vec![reply]);
-    let call = JobStatusCall {
-        batch_id,
-        aws_region_name: region,
-        kwargs,
-        now: now(),
-    };
-    let result = runtime().block_on(retrieve_model_job_status(call, &source, &factory, None));
-    CallRun {
-        result,
-        factory,
-        source,
+pub(super) enum JobCall {
+    Lookup(Reply),
+    Stop(Vec<Reply>),
+}
+
+impl From<Reply> for JobCall {
+    fn from(reply: Reply) -> Self {
+        Self::Lookup(reply)
     }
 }
 
-// StopModelInvocationJob with the replies the fake control plane hands back in order
-pub(super) fn cancel_job(
-    replies: Vec<Reply>,
+impl From<Vec<Reply>> for JobCall {
+    fn from(replies: Vec<Reply>) -> Self {
+        Self::Stop(replies)
+    }
+}
+
+// both control plane calls run through the seam the handler uses, with canned replies in order
+pub(super) fn run_job<Call>(
+    call: Call,
     batch_id: &str,
     region: Option<&str>,
     kwargs: &BTreeMap<String, Box<RawValue>>,
-) -> CallRun {
+) -> CallRun
+where
+    JobCall: From<Call>,
+{
     let source = Source::new(credentials());
-    let factory = Factory::new(replies);
-    let call = CancelBatchCall {
-        batch_id,
-        aws_region_name: region,
-        kwargs,
-        now: now(),
+    let (factory, result) = match JobCall::from(call) {
+        JobCall::Lookup(reply) => {
+            let factory = Factory::new(vec![reply]);
+            let request = JobStatusCall {
+                batch_id,
+                aws_region_name: region,
+                kwargs,
+                now: now(),
+            };
+            let result =
+                runtime().block_on(retrieve_model_job_status(request, &source, &factory, None));
+            (factory, result)
+        }
+        JobCall::Stop(replies) => {
+            let factory = Factory::new(replies);
+            let request = CancelBatchCall {
+                batch_id,
+                aws_region_name: region,
+                kwargs,
+                now: now(),
+            };
+            let result = runtime().block_on(cancel_batch(request, &source, &factory, None));
+            (factory, result)
+        }
     };
-    let result = runtime().block_on(cancel_batch(call, &source, &factory, None));
     CallRun {
         result,
         factory,

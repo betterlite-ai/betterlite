@@ -6,8 +6,8 @@ use betterlite_openai::batches::records::BatchStatus;
 use crate::batch_call::error::BatchCallError;
 
 use super::super::fixture::{
-    ENCODED_JOB_ARN, JOB_ARN, JOB_ID, REGION, answer, auth_parameters, lookup_job,
-    lookup_job_reply, parameters,
+    ENCODED_JOB_ARN, JOB_ARN, JOB_ID, REGION, answer, auth_parameters, lookup_job, parameters,
+    run_job,
 };
 
 const STATUSES: [(&str, BatchStatus); 12] = [
@@ -36,8 +36,7 @@ pub(super) fn retrieve_model_job_status() {
     blank_body();
     rejected_bodies();
     status_below_three_hundred_is_a_success();
-    invalid_region_is_refused();
-    invalid_auth_parameter_is_refused();
+    invalid_region_and_auth_parameter_are_refused();
 }
 
 fn status_body(status: &str) -> String {
@@ -133,13 +132,13 @@ fn rejected_bodies() {
     ));
     let garbage = lookup_job("not json", JOB_ARN, Some(REGION), &BTreeMap::new());
     assert!(matches!(
-        garbage.result.expect_err("an unparseable body is an error"),
+        garbage.result.expect_err("an unparsable body is an error"),
         BatchCallError::Decode { .. }
     ));
 }
 
 fn status_below_three_hundred_is_a_success() {
-    let run = lookup_job_reply(
+    let run = run_job(
         answer(299, &status_body("Completed")),
         JOB_ARN,
         Some(REGION),
@@ -149,35 +148,35 @@ fn status_below_three_hundred_is_a_success() {
     assert_eq!(batch.status, BatchStatus::Completed);
 }
 
-fn invalid_region_is_refused() {
+fn invalid_region_and_auth_parameter_are_refused() {
     for region in ["Not A Region", "", "EU"] {
-        let run = lookup_job(
+        let bad_region = lookup_job(
             &status_body("InProgress"),
             JOB_ARN,
             Some(region),
             &BTreeMap::new(),
         );
-        let error = run
+        let error = bad_region
             .result
             .expect_err("a region outside AWS's pattern is refused");
         assert!(matches!(error, BatchCallError::Region(_)));
-        assert!(run.factory.requests().is_empty());
+        assert!(bad_region.factory.requests().is_empty());
     }
     let arn = "arn:aws:bedrock:EU:123456789012:model-invocation-job/job-1";
-    let run = lookup_job(&status_body("InProgress"), arn, None, &BTreeMap::new());
+    let arn_region = lookup_job(&status_body("InProgress"), arn, None, &BTreeMap::new());
     assert!(matches!(
-        run.result.expect_err("a region from an ARN is checked too"),
+        arn_region
+            .result
+            .expect_err("a region from an ARN is checked too"),
         BatchCallError::Region(_)
     ));
-}
-
-fn invalid_auth_parameter_is_refused() {
     let kwargs = parameters(&[("aws_access_key_id", Json::Bool(true))]);
-    let run = lookup_job(&status_body("InProgress"), JOB_ARN, Some(REGION), &kwargs);
+    let bad_auth = lookup_job(&status_body("InProgress"), JOB_ARN, Some(REGION), &kwargs);
     assert!(matches!(
-        run.result
+        bad_auth
+            .result
             .expect_err("a non-string credential field is refused"),
         BatchCallError::Auth(_)
     ));
-    assert!(run.factory.requests().is_empty());
+    assert!(bad_auth.factory.requests().is_empty());
 }

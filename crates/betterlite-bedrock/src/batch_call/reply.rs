@@ -6,8 +6,7 @@ use crate::embedding_jobs::error::FailureBody;
 use super::error::BatchCallError;
 use super::transport::{ControlPlaneReply, header};
 
-// botocore's JSON parser reads an empty success body as {} and its structure parser fails on a
-// null one
+// botocore reads an empty success body as {} and its structure parser fails on a null one
 pub fn decode_reply(reply: &ControlPlaneReply) -> Result<Json, BatchCallError> {
     if reply.body.iter().all(u8::is_ascii_whitespace) {
         return Ok(Json::Object(IndexMap::new()));
@@ -20,8 +19,7 @@ pub fn decode_reply(reply: &ControlPlaneReply) -> Result<Json, BatchCallError> {
     Ok(body)
 }
 
-// botocore raises a ClientError from every reply of 300 and up; the code it fills in comes
-// from the x-amzn-errortype header, then the body's code/Code member, then __type, then the status
+// a ClientError of 300 and up carries the header code first, then the body code, then __type
 #[must_use]
 pub fn client_error(reply: &ControlPlaneReply) -> BatchCallError {
     let text = String::from_utf8(reply.body.clone()).unwrap_or_default();

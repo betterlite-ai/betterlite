@@ -21,8 +21,7 @@ pub struct ControlPlane<Client> {
     pub transport: Client,
 }
 
-// boto3.client("bedrock", region_name=..., aws_access_key_id=..., aws_secret_access_key=...,
-// aws_session_token=..., config=Config(signature_version="v4"))
+// boto3.client("bedrock", ...) with the resolved credentials and Config(signature_version="v4")
 pub async fn control_plane<Source, Factory>(
     kwargs: &BTreeMap<String, Box<RawValue>>,
     region: &str,

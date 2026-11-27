@@ -6,7 +6,6 @@ use percent_encoding::utf8_percent_encode;
 use crate::aws_endpoints::model_id::MODEL_ID_SAFE;
 use crate::aws_settings::sources::Credentials;
 use crate::batch_status::handler::extract_job_id_from_arn;
-use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::signing::error::SigningError;
 use crate::signing::headers::{merge_computed, prepare, without_computed};
 use crate::signing::request::AwsSignedRequest;
@@ -27,16 +26,6 @@ pub fn logging_url(region: &str, batch_id: &str) -> String {
     let suffix = get_aws_partition(Some(region)).dns_suffix;
     let path_id = extract_job_id_from_arn(batch_id).unwrap_or_else(|| batch_id.to_owned());
     format!("https://bedrock.{region}.{suffix}/model-invocation-job/{path_id}")
-}
-
-pub fn sign_get(
-    credentials: &Credentials,
-    region: &str,
-    batch_id: &str,
-    now: SystemTime,
-) -> Result<AwsSignedRequest, SigningError> {
-    let url = job_url(region, batch_id);
-    sign_get_request(credentials, &url, &[], region, now)
 }
 
 pub fn sign_stop(

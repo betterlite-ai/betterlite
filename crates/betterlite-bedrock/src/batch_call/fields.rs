@@ -5,8 +5,10 @@ use serde_json::Number;
 
 use super::error::BatchCallError;
 
-// completed_at, failed_at, cancelled_at and expired_at carry the job's end time only in the
-// status that names them
+type Fields = IndexMap<String, Json>;
+type Parsed<T> = Result<T, BatchCallError>;
+
+// the end time fills only the field of the status that names it
 pub fn matching_time(status: BatchStatus, wanted: BatchStatus, time: Option<i64>) -> Option<i64> {
     if status == wanted {
         return time;
@@ -18,69 +20,46 @@ pub fn required_object<'json>(
     fields: &'json IndexMap<String, Json>,
     field: &'static str,
 ) -> Result<&'json IndexMap<String, Json>, BatchCallError> {
+    let value = fields
+        .get(field)
+        .ok_or(BatchCallError::MissingField { field })?;
+    let Json::Object(entries) = value else {
+        return Err(BatchCallError::Field { field });
+    };
+    Ok(entries)
+}
+
+pub fn required_text(fields: &Fields, field: &'static str) -> Parsed<String> {
+    text_field(fields, field)?.ok_or(BatchCallError::MissingField { field })
+}
+
+pub fn required_integer(fields: &Fields, field: &'static str) -> Parsed<i64> {
     match fields.get(field) {
+        Some(value) => integer(value, field),
         None => Err(BatchCallError::MissingField { field }),
-        Some(Json::Object(entries)) => Ok(entries),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(BatchCallError::Field { field })
-        }
     }
 }
 
-pub fn required_text(
-    fields: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<String, BatchCallError> {
-    match fields.get(field) {
-        None => Err(BatchCallError::MissingField { field }),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(BatchCallError::Field { field })
-        }
+pub fn required_optional_integer(fields: &Fields, field: &'static str) -> Parsed<Option<i64>> {
+    if !fields.contains_key(field) {
+        return Err(BatchCallError::MissingField { field });
     }
+    optional_integer(fields, field)
 }
 
-pub fn required_integer(
-    fields: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<i64, BatchCallError> {
-    match fields.get(field) {
-        None => Err(BatchCallError::MissingField { field }),
-        Some(Json::Number(number)) => number.as_i64().ok_or(BatchCallError::Field { field }),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(BatchCallError::Field { field })
-        }
-    }
+pub fn optional_integer(fields: &Fields, field: &'static str) -> Parsed<Option<i64>> {
+    fields
+        .get(field)
+        .filter(|value| !matches!(value, Json::Null))
+        .map(|value| integer(value, field))
+        .transpose()
 }
 
-pub fn required_optional_integer(
-    fields: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<i64>, BatchCallError> {
-    match fields.get(field) {
-        None => Err(BatchCallError::MissingField { field }),
-        Some(Json::Null) => Ok(None),
-        Some(value) => integer(value, field).map(Some),
-    }
-}
-
-pub fn optional_integer(
-    fields: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<i64>, BatchCallError> {
-    match fields.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(value) => integer(value, field).map(Some),
-    }
-}
-
-fn integer(value: &Json, field: &'static str) -> Result<i64, BatchCallError> {
-    match value {
-        Json::Number(number) => number.as_i64().ok_or(BatchCallError::Field { field }),
-        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(BatchCallError::Field { field })
-        }
-    }
+fn integer(value: &Json, field: &'static str) -> Parsed<i64> {
+    let Json::Number(number) = value else {
+        return Err(BatchCallError::Field { field });
+    };
+    number.as_i64().ok_or(BatchCallError::Field { field })
 }
 
 pub fn text_field(
@@ -88,9 +67,9 @@ pub fn text_field(
     field: &'static str,
 ) -> Result<Option<String>, BatchCallError> {
     match fields.get(field) {
-        None => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+        Some(Json::Null) | None => Ok(None),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(BatchCallError::Field { field })
         }
     }

@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::batches::records::BatchObject;
 use serde_json::value::RawValue;
 
+use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::image_call::plan::CredentialSource;
 
 use super::client::{control_plane, send};
@@ -13,8 +14,8 @@ use super::logging::{CallEvent, CallLogger};
 use super::model_job::project_job;
 use super::region::resolve_region;
 use super::reply::{client_error, decode_reply};
-use super::request::{logging_url, sign_get};
-use super::transport::{ControlPlaneFactory, ControlPlaneReply, accepted};
+use super::request::{job_url, logging_url};
+use super::transport::{ControlPlaneFactory, ControlPlaneReply};
 
 pub struct JobStatusCall<'source> {
     pub batch_id: &'source str,
@@ -23,8 +24,7 @@ pub struct JobStatusCall<'source> {
     pub now: SystemTime,
 }
 
-// GetModelInvocationJob: resolve the client exactly as cancel_batch does, log both sides, and
-// project the job record onto the OpenAI batch shape
+// GetModelInvocationJob: the same client and logging as cancel_batch, projected onto a batch
 pub async fn retrieve_model_job_status<Source, Factory>(
     call: JobStatusCall<'_>,
     source: &Source,
@@ -45,7 +45,13 @@ where
         },
         &mut log,
     )?;
-    let signed = sign_get(&plane.credentials, &region, call.batch_id, call.now)?;
+    let signed = sign_get_request(
+        &plane.credentials,
+        &job_url(&region, call.batch_id),
+        &[],
+        &region,
+        call.now,
+    )?;
     let reply = send(plane.transport, signed).await?;
     let response = job_response(&reply)?;
     log_event(
@@ -72,7 +78,7 @@ fn log_event(
 
 // any reply of 300 and up is a botocore ClientError, and its body is parsed before the handler
 fn job_response(reply: &ControlPlaneReply) -> Result<Json, BatchCallError> {
-    if !accepted(reply.status) {
+    if reply.status >= 300 {
         return Err(client_error(reply));
     }
     decode_reply(reply)
