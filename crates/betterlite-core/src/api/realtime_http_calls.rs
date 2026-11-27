@@ -227,7 +227,7 @@ fn session_plan<'plan>(
     operation: &'plan SessionOperation<'_>,
 ) -> Result<SessionPlan<'plan>, RecordError> {
     Ok(match operation {
-        SessionOperation::ClientSecret(call) => {
+        ClientSecret(call) => {
             let session: Option<RealtimeSessionConfig> = body::optional(call.session, "session")?;
             let expires_after = body::optional(call.expires_after, "expires_after")?;
             let hint = session.as_ref().and_then(|record| record.model.as_deref());
@@ -246,7 +246,7 @@ fn session_plan<'plan>(
                 },
             }
         }
-        SessionOperation::Transcription(call) => {
+        Transcription(call) => {
             let (record, model_name) =
                 body::transcription(call.transcription_session, call.common.model)?;
             SessionPlan {

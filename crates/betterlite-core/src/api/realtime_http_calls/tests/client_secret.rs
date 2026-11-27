@@ -18,6 +18,9 @@ use super::{
 };
 use crate::api::vector_store_http_write::service::ClientKind;
 
+// A known provider that declares no realtime HTTP config, so these calls take the fallback chain.
+const ANTHROPIC_MODEL: &str = "anthropic/claude-3-5-sonnet-latest";
+
 #[test]
 fn client_secret_takes_raw_credentials_over_every_fallback() {
     let harness = Harness::new(
@@ -113,14 +116,120 @@ fn client_secret_falls_back_to_openai_key_then_the_environment_then_defaults() {
 fn client_secret_leaves_a_known_provider_without_a_config_on_the_fallback_chain() {
     let harness = Harness::new(GLOBALS, &[]);
     let kwargs = no_kwargs();
-    let mut call = client_secret_call(&kwargs, Some("anthropic/claude-3-5-sonnet-latest"));
+    let mut call = client_secret_call(&kwargs, Some(ANTHROPIC_MODEL));
     call.common.api_base = Some("https://fallback.example/v1");
     harness.run_client_secret(call).expect("the fallback call");
     let seen = harness.seen();
     let posting = only_session(&seen);
     assert_eq!(posting.provider, ProviderTag::None);
     assert_eq!(posting.api_base, "https://fallback.example/v1");
+    assert_eq!(posting.api_key, "sk-global");
+}
+
+#[test]
+fn client_secret_no_config_keeps_the_raw_credentials() {
+    let harness = Harness::new(GLOBALS, &[]);
+    let kwargs = no_kwargs();
+    let key = secret("sk-raw");
+    let mut call = client_secret_call(&kwargs, Some(ANTHROPIC_MODEL));
+    call.common.api_base = Some("https://raw.example/v1/");
+    call.common.api_key = Some(&key);
+    harness
+        .run_client_secret(call)
+        .expect("the raw credentials");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.api_base, "https://raw.example/v1");
+    assert_eq!(posting.api_key, "sk-raw");
+}
+
+#[test]
+fn client_secret_no_config_takes_the_litellm_key() {
+    let harness = Harness::new("litellm_settings:\n  api_key: sk-global\n", &[]);
+    let kwargs = no_kwargs();
+    harness
+        .run_client_secret(client_secret_call(&kwargs, Some(ANTHROPIC_MODEL)))
+        .expect("the litellm key");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.api_base, "https://api.openai.com");
+    assert_eq!(posting.api_key, "sk-global");
+}
+
+#[test]
+fn client_secret_no_config_takes_the_litellm_base() {
+    let harness = Harness::new(
+        "litellm_settings:\n  api_base: https://global.example/v1\n",
+        &[],
+    );
+    let kwargs = no_kwargs();
+    harness
+        .run_client_secret(client_secret_call(&kwargs, Some(ANTHROPIC_MODEL)))
+        .expect("the litellm base");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.api_base, "https://global.example/v1");
+    assert_eq!(posting.api_key, "");
+}
+
+#[test]
+fn client_secret_no_config_falls_back_to_the_openai_key() {
+    let harness = Harness::new("litellm_settings:\n  openai_key: sk-openai-global\n", &[]);
+    let kwargs = no_kwargs();
+    harness
+        .run_client_secret(client_secret_call(&kwargs, Some(ANTHROPIC_MODEL)))
+        .expect("the openai key");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.api_base, "https://api.openai.com");
     assert_eq!(posting.api_key, "sk-openai-global");
+}
+
+#[test]
+fn client_secret_no_config_falls_back_to_the_openai_environment_key() {
+    let harness = Harness::new(EMPTY_SETTINGS, &[("OPENAI_API_KEY", "sk-env")]);
+    let kwargs = no_kwargs();
+    harness
+        .run_client_secret(client_secret_call(&kwargs, Some(ANTHROPIC_MODEL)))
+        .expect("the environment key");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.api_base, "https://api.openai.com");
+    assert_eq!(posting.api_key, "sk-env");
+}
+
+#[test]
+fn client_secret_no_config_sends_the_default_base_without_a_key() {
+    let harness = Harness::new(EMPTY_SETTINGS, &[]);
+    let kwargs = no_kwargs();
+    harness
+        .run_client_secret(client_secret_call(&kwargs, Some(ANTHROPIC_MODEL)))
+        .expect("the defaults");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.provider, ProviderTag::None);
+    assert_eq!(posting.api_base, "https://api.openai.com");
+    assert_eq!(posting.api_key, "");
+}
+
+#[test]
+fn client_secret_takes_the_azure_environment_credentials_through_the_config() {
+    let harness = Harness::new(
+        EMPTY_SETTINGS,
+        &[
+            ("AZURE_API_BASE", "https://azure.example"),
+            ("AZURE_API_KEY", "sk-azure"),
+        ],
+    );
+    let kwargs = no_kwargs();
+    harness
+        .run_client_secret(client_secret_call(&kwargs, Some("azure/deployment-a")))
+        .expect("the azure session");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.provider, ProviderTag::Azure);
+    assert_eq!(posting.api_base, "https://azure.example");
+    assert_eq!(posting.api_key, "sk-azure");
 }
 
 #[test]
