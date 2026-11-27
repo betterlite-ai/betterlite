@@ -382,6 +382,64 @@ async fn create_stores_a_wrong_typed_declared_param_as_sent() {
     );
 }
 
+// a rejected params value is a 400 naming the field, not LiteLLM's catch-all 500 (docs/deviations/B1069.yaml)
+#[tokio::test]
+async fn create_rejects_a_non_integer_max_retries() {
+    let database = FakeDatabase::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
+    let state = build(setup);
+    let (logs, _guard) = capture_logs(tracing::Level::ERROR);
+    let (status, _headers, body) = call_new(
+        &state,
+        r#"{"vector_store_id":"vs_r","custom_llm_provider":"openai","litellm_params":{"max_retries":"abc"}}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::BAD_REQUEST, status);
+    assert_eq!(
+        "max_retries is not a whole number: abc",
+        text(at(&body, "detail"))
+    );
+    assert_eq!(None, field(&body, "type"));
+    assert!(!logs.contents().contains("Error creating vector store"));
+    assert!(database.creates().is_empty());
+}
+
+// a rejected params value is a 400 naming the field, not LiteLLM's catch-all 500 (docs/deviations/B1069.yaml)
+#[tokio::test]
+async fn create_rejects_an_invalid_affinity_header() {
+    let database = FakeDatabase::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
+    let state = build(setup);
+    let (status, _headers, body) = call_new(
+        &state,
+        r#"{"vector_store_id":"vs_h","custom_llm_provider":"openai","litellm_params":{"provider_affinity_header":"bad header"}}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::BAD_REQUEST, status);
+    assert_eq!(
+        "provider_affinity_header is not a valid header: provider_affinity_header must be a valid HTTP header name",
+        text(at(&body, "detail"))
+    );
+    assert_eq!(None, field(&body, "type"));
+    assert!(database.creates().is_empty());
+}
+
 #[tokio::test]
 async fn create_without_a_database_answers_500() {
     let events = Events::default();

@@ -56,12 +56,9 @@ impl ManagementWriteError {
             Self::DatabaseNotConnected
             | Self::AlreadyExists { .. }
             | Self::RequiredFields
-            | Self::DeleteAccessDenied => true,
-            Self::Request(_)
-            | Self::Params(_)
-            | Self::PrivateJson(_)
-            | Self::Cache(_)
-            | Self::Json(_) => false,
+            | Self::DeleteAccessDenied
+            | Self::Params(_) => true,
+            Self::Request(_) | Self::PrivateJson(_) | Self::Cache(_) | Self::Json(_) => false,
         }
     }
 }
@@ -83,15 +80,13 @@ impl IntoResponse for ManagementWriteError {
             Self::Request(error) => error.into_response(),
             // B2486's own rendering keeps the config-owned object and the team failure statuses
             Self::Management(error) => ManagementReadError::from(error).into_response(),
-            Self::AlreadyExists { .. } | Self::RequiredFields => {
+            Self::AlreadyExists { .. } | Self::RequiredFields | Self::Params(_) => {
                 detail(StatusCode::BAD_REQUEST, self.to_string())
             }
             Self::DeleteAccessDenied => detail(StatusCode::FORBIDDEN, self.to_string()),
-            Self::DatabaseNotConnected
-            | Self::Params(_)
-            | Self::PrivateJson(_)
-            | Self::Cache(_)
-            | Self::Json(_) => detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            Self::DatabaseNotConnected | Self::PrivateJson(_) | Self::Cache(_) | Self::Json(_) => {
+                detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
+            }
         }
     }
 }
