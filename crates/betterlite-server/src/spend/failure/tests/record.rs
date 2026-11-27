@@ -70,6 +70,11 @@ impl Scenario {
         self
     }
 
+    fn with_unaliased_key(mut self) -> Self {
+        self.harness.principal.key_alias = None;
+        self
+    }
+
     fn settled(&self) -> bool {
         lock(&self.handle.0).finalized
     }
@@ -264,7 +269,7 @@ async fn the_call_log_supplies_the_start_trace_and_standard_logging_object() {
 
 #[tokio::test]
 async fn a_deadline_skips_all_enrichment_but_keeps_the_stamp() {
-    let mut scenario = Scenario::new().with_request(
+    let mut scenario = Scenario::new().with_unaliased_key().with_request(
         r#"{"user_api_key": "hash", "user_api_key_alias": null,
             "user_api_key_team_id": "team", "user_api_key_team_alias": null}"#,
     );
@@ -283,7 +288,7 @@ async fn a_deadline_skips_all_enrichment_but_keeps_the_stamp() {
 
 #[tokio::test]
 async fn a_live_failure_enriches_the_key_and_team_identity() {
-    let mut scenario = Scenario::new().with_request(
+    let mut scenario = Scenario::new().with_unaliased_key().with_request(
         r#"{"user_api_key": "hash", "user_api_key_alias": null,
             "user_api_key_team_id": "team", "user_api_key_team_alias": null}"#,
     );
@@ -303,7 +308,7 @@ async fn a_live_failure_enriches_the_key_and_team_identity() {
 
 #[tokio::test]
 async fn a_delayed_event_keeps_its_identity_and_still_fills_the_team_alias() {
-    let mut scenario = Scenario::new().with_request(
+    let mut scenario = Scenario::new().with_unaliased_key().with_request(
         r#"{"user_api_key": "hash", "user_api_key_alias": null,
                 "user_api_key_team_id": "team", "user_api_key_team_alias": null}"#,
     );

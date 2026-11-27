@@ -159,23 +159,23 @@ fn merge_preserves_truthy_nested_tags(#[case] params: &str, #[case] preserved: b
 #[case::top_level_wins(
     r#"{"proxy_server_request": {"url": "top"}}"#,
     r#"{"proxy_server_request": {"url": "params"}}"#,
-    "top"
+    r#"{"url": "top"}"#
 )]
 #[case::params_are_the_fallback(
     r#"{"litellm_params": {"proxy_server_request": {"url": "params"}}}"#,
     "{}",
-    "params"
+    r#"{"url": "params"}"#
 )]
 #[case::an_empty_top_object_is_falsey(
     r#"{"proxy_server_request": {}}"#,
     r#"{"litellm_params": {"proxy_server_request": {"url": "params"}}}"#,
-    "params"
+    r#"{"url": "params"}"#
 )]
-#[case::defaults_to_an_empty_object("{}", "{}", "")]
+#[case::defaults_to_an_empty_object("{}", "{}", "{}")]
 fn merge_preserves_the_proxy_server_request(
     #[case] request: &str,
     #[case] extra: &str,
-    #[case] url: &str,
+    #[case] proxy: &str,
 ) {
     let mut request_data = object(request);
     let extra_request = object(extra);
@@ -185,7 +185,7 @@ fn merge_preserves_the_proxy_server_request(
     merge_failure_metadata(&mut request_data, object("{}"));
     assert_eq!(
         *nested(&request_data, &["litellm_params", "proxy_server_request"]),
-        Json::Object(object(&format!(r#"{{"url": "{url}"}}"#)))
+        Json::Object(object(proxy))
     );
 }
 

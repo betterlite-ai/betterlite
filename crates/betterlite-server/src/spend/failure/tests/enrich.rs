@@ -22,6 +22,7 @@ impl Lookup {
     fn with_key(facts: KeyFacts) -> Self {
         Self {
             key: Mutex::new(Some(Ok(facts))),
+            team: Mutex::new(Some(Ok(None))),
             // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
         }
@@ -30,6 +31,7 @@ impl Lookup {
     fn failing_key() -> Self {
         Self {
             key: Mutex::new(Some(Err(KeyLookupError::NoDatabase))),
+            team: Mutex::new(Some(Ok(None))),
             // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
         }
@@ -37,6 +39,7 @@ impl Lookup {
 
     fn with_team(alias: Option<&str>) -> Self {
         Self {
+            key: Mutex::new(Some(Ok(KeyFacts::default()))),
             team: Mutex::new(Some(Ok(alias.map(str::to_owned)))),
             // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
@@ -45,6 +48,7 @@ impl Lookup {
 
     fn failing_team() -> Self {
         Self {
+            key: Mutex::new(Some(Ok(KeyFacts::default()))),
             team: Mutex::new(Some(Err(TeamLookupError::NoDatabase))),
             // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
@@ -123,6 +127,7 @@ async fn a_null_alias_fills_every_null_identity_field() {
     let mut metadata = null_metadata();
     enrich_failure_metadata(&mut metadata, Some(&lookup), true).await;
     assert_eq!(lookup.key_calls(), vec!["hash".to_owned()]);
+    assert_eq!(lookup.team_calls(), vec!["team".to_owned()]);
     assert_eq!(
         metadata["user_api_key_alias"],
         Json::Text("alias".to_owned())
