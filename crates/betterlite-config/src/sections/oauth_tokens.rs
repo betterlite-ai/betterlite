@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::Section;
+use crate::sections::settings::JsonValue;
 
 mod tests;
 
@@ -35,7 +36,7 @@ struct RawGeneral {
     #[serde(default)]
     enable_oauth2_proxy_auth: Option<bool>,
     #[serde(default)]
-    oauth2_config_mappings: Option<BTreeMap<String, String>>,
+    oauth2_config_mappings: Option<BTreeMap<String, JsonValue>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -84,7 +85,7 @@ impl Section for Raw {
 
 // The keys are the UserAPIKeyAuth identity fields and the values are the header names to read
 fn mappings<L>(
-    configured: Option<BTreeMap<String, String>>,
+    configured: Option<BTreeMap<String, JsonValue>>,
     lookup: &L,
 ) -> Result<Option<BTreeMap<String, String>>, ConfigError>
 where
@@ -96,7 +97,31 @@ where
     let mut resolved = BTreeMap::new();
     for (field, header) in entries {
         let path = format!("{CONFIG_MAPPINGS_PATH}.{field}");
-        resolved.insert(field, resolve_string(header, &path, lookup)?);
+        let text = match &header {
+            JsonValue::String(text) => text.as_str(),
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_) => return Err(invalid_scalar(&path, &header)),
+        };
+        resolved.insert(field, resolve_string(text.to_owned(), &path, lookup)?);
     }
     Ok(Some(resolved))
+}
+
+// the mapping is dict[str, str]: a scalar of another type names its path instead of becoming text
+fn invalid_scalar(path: &str, value: &JsonValue) -> ConfigError {
+    let flag = match value {
+        JsonValue::Bool(flag) => *flag,
+        JsonValue::Null
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => false,
+    };
+    ConfigError::InvalidScalar {
+        path: path.to_owned(),
+        value: flag,
+    }
 }

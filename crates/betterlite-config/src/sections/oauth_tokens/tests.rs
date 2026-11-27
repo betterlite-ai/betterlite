@@ -140,9 +140,13 @@ general_settings:
         ]))
     );
 
-    // a mapping value that is not a string is a load error rather than a runtime fallback
+    // a mapping value that is not a string names its path instead of becoming text
     let scalar = load(SCALAR_MAPPING, &[]).unwrap_err();
-    assert!(matches!(scalar, ConfigError::Yaml { .. }));
+    assert!(matches!(
+        scalar,
+        ConfigError::InvalidScalar { path, .. }
+            if path == "general_settings.oauth2_config_mappings.user_id"
+    ));
 
     let missing = load(MISSING_MAPPING, &[]).unwrap_err();
     assert!(matches!(
