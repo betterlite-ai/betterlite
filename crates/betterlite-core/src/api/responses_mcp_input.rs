@@ -4,6 +4,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use thiserror::Error;
 
 use crate::api::responses_create::call::ResponsesCreateCall;
+use crate::api::responses_mcp_events::function_call::function_call_id;
 use crate::api::responses_mcp_results::McpToolResult;
 
 mod tests;
@@ -89,7 +90,7 @@ fn append_output_item(
     match kind.as_deref() {
         Some("message") => append_content(&value, content),
         Some("function_call") => {
-            if let Some(call) = function_call_item(&value) {
+            if let Some(call) = function_call_item(item, &value) {
                 turn_items.push(ResponsesItem(call));
             }
         }
@@ -120,11 +121,11 @@ fn append_content(value: &Json, content: &mut Vec<Json>) {
     }
 }
 
-fn function_call_item(value: &Json) -> Option<Json> {
+fn function_call_item(item: &ResponseOutputItem, value: &Json) -> Option<Json> {
     let Json::Object(fields) = value else {
         return None;
     };
-    let call_id = text_field(fields, "call_id").or_else(|| text_field(fields, "id"))?;
+    let call_id = function_call_id(item).filter(|id| !id.is_empty())?;
     let name = text_field(fields, "name")?;
     let arguments = fields.get("arguments").cloned().unwrap_or(Json::Null);
     Some(Json::Object(Object::from([
@@ -132,7 +133,7 @@ fn function_call_item(value: &Json) -> Option<Json> {
             String::from("type"),
             Json::Text(String::from("function_call")),
         ),
-        (String::from("call_id"), Json::Text(call_id)),
+        (String::from("call_id"), Json::Text(call_id.to_owned())),
         (String::from("name"), Json::Text(name)),
         (String::from("arguments"), arguments),
     ])))
