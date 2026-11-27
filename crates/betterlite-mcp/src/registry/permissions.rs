@@ -44,11 +44,11 @@ impl ServerRegistry {
         &self,
         tool_permissions: Option<&BTreeMap<String, Vec<String>>>,
     ) -> BTreeMap<String, Vec<String>> {
-        let Some(tool_permissions) = tool_permissions else {
+        let Some(permissions) = tool_permissions else {
             return BTreeMap::new();
         };
         let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (identifier, tools) in tool_permissions {
+        for (identifier, tools) in permissions {
             let servers = self.expand_permission_list(from_ref(identifier));
             for server_id in servers {
                 let entry = grouped.entry(server_id).or_default();
