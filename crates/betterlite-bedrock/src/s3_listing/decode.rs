@@ -252,9 +252,7 @@ pub fn decode_s3_listing(bytes: &[u8], limits: &DecodeLimits) -> Result<S3Listin
 }
 
 pub fn parse_size(text: Option<&str>) -> Result<i64, S3ListingError> {
-    let Some(raw) = text.filter(|raw| !raw.is_empty()) else {
-        return Ok(0);
-    };
+    let raw = text.filter(|value| !value.is_empty()).unwrap_or("0");
     parse_python_int(raw).map_err(|_error| S3ListingError::Size {
         text: raw.to_owned(),
     })

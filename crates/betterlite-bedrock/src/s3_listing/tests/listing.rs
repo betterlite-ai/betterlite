@@ -6,12 +6,12 @@ use super::super::prefix::{
     managed_listing_prefix, output_location_still_unlisted, setting_text, walked_listing_purpose,
 };
 use super::super::requests::{list_files_next_request, list_files_request};
-use super::super::responses::list_files_response;
+use super::super::responses::{S3ResponseContext, list_files_response};
 use super::super::{LIST_FILES_LOCATION_PARAM, LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use super::support::{
     access, authorization, block_on, bucket_access, contents_entry, empty_environment, env_map,
     environment_credentials, header_value, list_access, listing_request, listing_xml,
-    managed_files, params, raw_listing, region_params, response_context, stored_text,
+    managed_files, params, raw_listing, region_params, stored_text,
 };
 use crate::request_policy::{Params, RequestValue};
 use crate::s3_access::{S3AccessParams, TrustedValue};
@@ -554,7 +554,11 @@ pub(super) fn namespace_xml_list() {
 
     let prefix_access = bucket_access("in-bucket/base");
     let environment = empty_environment();
-    let context = response_context(&litellm, &prefix_access, &environment);
+    let context = S3ResponseContext {
+        litellm_params: &litellm,
+        access: &prefix_access,
+        environment: &environment,
+    };
     let headers = vec![("x-amz-request-id".to_owned(), "abc".to_owned())];
     let denied = raw_listing(403, b"denied", &headers);
     let error = list_files_response(&denied, &context).unwrap_err();
@@ -619,7 +623,11 @@ pub(super) fn unmanaged_key_filter() {
         ("allow_legacy_cloud_file_ids", TrustedValue::Boolean(true)),
     ]);
     let environment = empty_environment();
-    let context = response_context(&litellm, &legacy_access, &environment);
+    let context = S3ResponseContext {
+        litellm_params: &litellm,
+        access: &legacy_access,
+        environment: &environment,
+    };
     let legacy = listing_xml(&contents_entry("custom/unmanaged.txt", "8", ""));
     let files = list_files_response(&raw_listing(200, &legacy, &[]), &context).unwrap();
     assert_eq!(files.len(), 1);
@@ -627,7 +635,11 @@ pub(super) fn unmanaged_key_filter() {
     assert_eq!(files[0].purpose, FilesPurpose::Batch);
 
     let strict_access = bucket_access("in-bucket");
-    let context = response_context(&litellm, &strict_access, &environment);
+    let context = S3ResponseContext {
+        litellm_params: &litellm,
+        access: &strict_access,
+        environment: &environment,
+    };
     assert!(
         list_files_response(&raw_listing(200, &legacy, &[]), &context)
             .unwrap()
@@ -635,7 +647,11 @@ pub(super) fn unmanaged_key_filter() {
     );
 
     let prefix_access = bucket_access("in-bucket/base");
-    let context = response_context(&litellm, &prefix_access, &environment);
+    let context = S3ResponseContext {
+        litellm_params: &litellm,
+        access: &prefix_access,
+        environment: &environment,
+    };
     let prefixed = b"<ListBucketResult><Name>in-bucket</Name><Contents><Key>base/litellm-batch-outputs/out.jsonl</Key></Contents><Contents><Key>base/litellm-bedrock-files-x</Key></Contents><Contents><Key>litellm-batch-outputs/out</Key></Contents></ListBucketResult>";
     let files = list_files_response(&raw_listing(200, prefixed, &[]), &context).unwrap();
     assert_eq!(files.len(), 2);

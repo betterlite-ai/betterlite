@@ -98,10 +98,7 @@ fn request_region(
 ) -> Result<String, S3ListingError> {
     let s3_region = text_field(params, S3_REGION_PARAM)?;
     let aws_region = text_field(params, AWS_REGION_PARAM)?;
-    let preference = match s3_region {
-        Some(region) if !region.is_empty() => Some(region),
-        Some(_) | None => aws_region,
-    };
+    let preference = s3_region.filter(|region| !region.is_empty()).or(aws_region);
     // the preference travels as _get_aws_region_name's aws_region_name with an empty model
     let region = llm_region_name(LlmRegion {
         explicit: preference.as_deref(),
@@ -116,13 +113,12 @@ fn request_region(
 
 fn endpoint_url(params: &Params, aws_region_name: &str) -> Result<String, S3ListingError> {
     let configured = text_field(params, S3_ENDPOINT_URL_PARAM)?;
-    let endpoint = match configured {
-        Some(url) if !url.is_empty() => url,
-        Some(_) | None => format!(
+    let endpoint = configured.filter(|url| !url.is_empty()).unwrap_or_else(|| {
+        format!(
             "https://s3.{aws_region_name}.{}",
             get_aws_partition(Some(aws_region_name)).dns_suffix
-        ),
-    };
+        )
+    });
     Ok(endpoint.trim_end_matches('/').to_owned())
 }
 

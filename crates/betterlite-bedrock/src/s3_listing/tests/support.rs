@@ -189,18 +189,6 @@ pub(super) fn contents_entry(key: &str, size: &str, last_modified: &str) -> Stri
     )
 }
 
-pub(super) fn response_context<'a>(
-    litellm_params: &'a Params,
-    access: &'a S3AccessParams,
-    environment: &'a BTreeMap<String, String>,
-) -> S3ResponseContext<'a> {
-    S3ResponseContext {
-        litellm_params,
-        access,
-        environment,
-    }
-}
-
 pub(super) fn raw_listing<'a>(
     status: u16,
     body: &'a [u8],
@@ -223,6 +211,10 @@ pub(super) fn managed_files(
 ) -> Result<Vec<betterlite_openai::files::records::FileObject>, S3ListingError> {
     let access = bucket_access("in-bucket");
     let environment = empty_environment();
-    let context = response_context(litellm_params, &access, &environment);
+    let context = S3ResponseContext {
+        litellm_params,
+        access: &access,
+        environment: &environment,
+    };
     list_files_response(&raw_listing(200, body, &[]), &context)
 }

@@ -6,26 +6,51 @@ use betterlite_bedrock::s3_listing::requests::{
 use betterlite_bedrock::s3_listing::responses::{
     S3RawResponse, S3ResponseContext, S3ResponseRequest, delete_file_response, list_files_response,
 };
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use super::input::{Call, Input, Operation};
 use super::support::{
     access_params, from_params, request_of, resolve_credentials, runtime, signing_now, to_params,
 };
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 const LISTING_URL: &str = "https://s3.us-east-1.amazonaws.com/bucket/?list-type=2";
 const DELETE_URL: &str =
     "https://s3.us-east-1.amazonaws.com/bucket/litellm-batch-outputs%2Fx.jsonl";
 
+#[derive(Debug, Clone, Copy)]
+enum RequestKind {
+    List,
+    Next,
+    File(S3FileMethod),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ResponseKind {
+    List,
+    Delete,
+}
+
+#[derive(Serialize)]
+struct SignedFields {
+    url: String,
+    query: Value,
+    litellm_params: Value,
+}
+
 pub(super) fn run(input: &Input) -> HelperResult {
     match input.operation {
-        Operation::ListRequest => list_requests(input),
-        Operation::NextRequest => next_requests(input),
+        Operation::ListRequest => signed_requests(&input.requests, RequestKind::List),
+        Operation::NextRequest => signed_requests(&input.next, RequestKind::Next),
         Operation::ListResponse => list_responses(input),
-        Operation::DeleteRequest => file_requests(&input.deletes, S3FileMethod::Delete),
-        Operation::ContentRequest => file_requests(&input.contents, S3FileMethod::Content),
+        Operation::DeleteRequest => {
+            signed_requests(&input.deletes, RequestKind::File(S3FileMethod::Delete))
+        }
+        Operation::ContentRequest => {
+            signed_requests(&input.contents, RequestKind::File(S3FileMethod::Content))
+        }
         Operation::DeleteResponse => delete_responses(input),
         Operation::Retrieve => retrieves(input),
     }
@@ -39,74 +64,33 @@ fn query_map(query: &[(String, String)]) -> Value {
     Value::Object(map)
 }
 
-fn signed_value(signed: &S3SignedRequest, litellm_params: &Params) -> HelperResult {
-    let query = query_map(&signed.query);
+fn signed_fields(
+    signed: &S3SignedRequest,
+    litellm_params: &Params,
+) -> Result<SignedFields, Box<HelperError>> {
+    Ok(SignedFields {
+        url: signed.url.clone(),
+        query: query_map(&signed.query),
+        litellm_params: from_params(litellm_params)?,
+    })
+}
+
+// the list and delete transforms answer (url, query), while the next-page transform nests both
+fn success_entry(signed: &S3SignedRequest, litellm_params: &Params, nested: bool) -> HelperResult {
+    let fields = signed_fields(signed, litellm_params)?;
+    if nested {
+        let next = serde_json::to_value(fields).or_value_error()?;
+        return Ok(json!({"failed": false, "next": next}));
+    }
     Ok(json!({
         "failed": false,
-        "url": signed.url.clone(),
-        "query": query,
-        "litellm_params": from_params(litellm_params)?,
+        "url": fields.url,
+        "query": fields.query,
+        "litellm_params": fields.litellm_params,
     }))
 }
 
-fn next_value(signed: &S3SignedRequest, litellm_params: &Params) -> HelperResult {
-    let next = json!({
-        "url": signed.url.clone(),
-        "query": query_map(&signed.query),
-        "litellm_params": from_params(litellm_params)?,
-    });
-    Ok(json!({"failed": false, "next": next}))
-}
-
-fn list_requests(input: &Input) -> HelperResult {
-    let executor = runtime()?;
-    let now = signing_now()?;
-    let mut results = Vec::new();
-    for call in &input.requests {
-        let optional = to_params(&call.optional_params);
-        let mut litellm = to_params(&call.litellm_params);
-        let access = access_params(call.trusted.as_deref());
-        let request = request_of(call, &mut litellm, &optional, &access, now);
-        let outcome = executor.block_on(list_files_request(
-            request,
-            call.purpose.as_deref(),
-            resolve_credentials,
-        ));
-        let entry = match outcome {
-            Ok(signed) => signed_value(&signed, &litellm)?,
-            Err(error) => json!({"failed": true, "status": error.status_code()}),
-        };
-        results.push(entry);
-    }
-    Ok(json!({"results": results}))
-}
-
-fn next_requests(input: &Input) -> HelperResult {
-    let executor = runtime()?;
-    let now = signing_now()?;
-    let mut results = Vec::new();
-    for call in &input.next {
-        let optional = to_params(&call.optional_params);
-        let mut litellm = to_params(&call.litellm_params);
-        let access = access_params(call.trusted.as_deref());
-        let request = request_of(call, &mut litellm, &optional, &access, now);
-        let outcome = executor.block_on(list_files_next_request(
-            request,
-            call.status,
-            call.body.as_bytes(),
-            resolve_credentials,
-        ));
-        let entry = match outcome {
-            Ok(Some(signed)) => next_value(&signed, &litellm)?,
-            Ok(None) => json!({"failed": false, "next": Value::Null}),
-            Err(error) => json!({"failed": true, "status": error.status_code()}),
-        };
-        results.push(entry);
-    }
-    Ok(json!({"results": results}))
-}
-
-fn file_requests(calls: &[Call], method: S3FileMethod) -> HelperResult {
+fn signed_requests(calls: &[Call], kind: RequestKind) -> HelperResult {
     let executor = runtime()?;
     let now = signing_now()?;
     let mut results = Vec::new();
@@ -115,14 +99,34 @@ fn file_requests(calls: &[Call], method: S3FileMethod) -> HelperResult {
         let mut litellm = to_params(&call.litellm_params);
         let access = access_params(call.trusted.as_deref());
         let request = request_of(call, &mut litellm, &optional, &access, now);
-        let outcome = executor.block_on(object_file_request(
-            request,
-            method,
-            call.file_id.as_deref(),
-            resolve_credentials,
-        ));
+        let outcome = match kind {
+            RequestKind::List => executor
+                .block_on(list_files_request(
+                    request,
+                    call.purpose.as_deref(),
+                    resolve_credentials,
+                ))
+                .map(Some),
+            RequestKind::Next => executor.block_on(list_files_next_request(
+                request,
+                call.status,
+                call.body.as_bytes(),
+                resolve_credentials,
+            )),
+            RequestKind::File(method) => executor
+                .block_on(object_file_request(
+                    request,
+                    method,
+                    call.file_id.as_deref(),
+                    resolve_credentials,
+                ))
+                .map(Some),
+        };
         let entry = match outcome {
-            Ok(signed) => signed_value(&signed, &litellm)?,
+            Ok(Some(signed)) => {
+                success_entry(&signed, &litellm, matches!(kind, RequestKind::Next))?
+            }
+            Ok(None) => json!({"failed": false, "next": Value::Null}),
             Err(error) => json!({"failed": true, "status": error.status_code()}),
         };
         results.push(entry);
@@ -133,62 +137,57 @@ fn file_requests(calls: &[Call], method: S3FileMethod) -> HelperResult {
 fn list_responses(input: &Input) -> HelperResult {
     let mut results = Vec::new();
     for call in &input.listings {
-        results.push(listing_value(call)?);
+        results.push(response_value(call, ResponseKind::List)?);
     }
     Ok(json!({"results": results}))
-}
-
-fn listing_value(call: &Call) -> HelperResult {
-    let litellm = to_params(&call.litellm_params);
-    let access = access_params(call.trusted.as_deref());
-    let raw = S3RawResponse {
-        status: call.status,
-        body: call.body.as_bytes(),
-        headers: &call.headers,
-        request: S3ResponseRequest {
-            method: "GET",
-            url: LISTING_URL,
-        },
-    };
-    let context = S3ResponseContext {
-        litellm_params: &litellm,
-        access: &access,
-        environment: &call.environment,
-    };
-    match list_files_response(&raw, &context) {
-        Ok(files) => Ok(json!({
-            "failed": false,
-            "files": serde_json::to_value(files).or_value_error()?,
-        })),
-        Err(error) => Ok(json!({"failed": true, "status": error.status_code()})),
-    }
 }
 
 fn delete_responses(input: &Input) -> HelperResult {
     let mut results = Vec::new();
     for call in &input.delete_responses {
-        results.push(delete_value(call)?);
+        results.push(response_value(call, ResponseKind::Delete)?);
     }
     Ok(json!({"results": results}))
 }
 
-fn delete_value(call: &Call) -> HelperResult {
-    let additional = call.additional_args.as_ref().map(to_params);
+fn response_value(call: &Call, kind: ResponseKind) -> HelperResult {
+    let (method, url) = match kind {
+        ResponseKind::List => ("GET", LISTING_URL),
+        ResponseKind::Delete => ("DELETE", DELETE_URL),
+    };
     let raw = S3RawResponse {
         status: call.status,
         body: call.body.as_bytes(),
         headers: &call.headers,
-        request: S3ResponseRequest {
-            method: "DELETE",
-            url: DELETE_URL,
-        },
+        request: S3ResponseRequest { method, url },
     };
-    match delete_file_response(&raw, additional.as_ref()) {
-        Ok(deleted) => Ok(json!({
-            "failed": false,
-            "file": serde_json::to_value(deleted).or_value_error()?,
-        })),
-        Err(error) => Ok(json!({"failed": true, "status": error.status_code()})),
+    match kind {
+        ResponseKind::List => {
+            let litellm = to_params(&call.litellm_params);
+            let access = access_params(call.trusted.as_deref());
+            let context = S3ResponseContext {
+                litellm_params: &litellm,
+                access: &access,
+                environment: &call.environment,
+            };
+            match list_files_response(&raw, &context) {
+                Ok(files) => Ok(json!({
+                    "failed": false,
+                    "files": serde_json::to_value(files).or_value_error()?,
+                })),
+                Err(error) => Ok(json!({"failed": true, "status": error.status_code()})),
+            }
+        }
+        ResponseKind::Delete => {
+            let additional = call.additional_args.as_ref().map(to_params);
+            match delete_file_response(&raw, additional.as_ref()) {
+                Ok(deleted) => Ok(json!({
+                    "failed": false,
+                    "file": serde_json::to_value(deleted).or_value_error()?,
+                })),
+                Err(error) => Ok(json!({"failed": true, "status": error.status_code()})),
+            }
+        }
     }
 }
 
