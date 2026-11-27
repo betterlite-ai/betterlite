@@ -28,14 +28,15 @@ deviations:
       working trusted-proxy setup relies on being anonymous, so the fail-closed rejection replaces it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_proxy_hook.py#L85-L94
   - what: >-
-      A request with no bearer token is rejected before any network call when the global OAuth2 branch
-      is enabled; LiteLLM reads the absent token as the literal text None and sends it to the identity
-      provider as the introspection token or as "Bearer None".
+      A request with no bearer token is rejected with the gateway's missing-key answer before any
+      network call when the global OAuth2 branch is enabled; LiteLLM reads the absent token as the
+      literal text None and sends it to the identity provider as the introspection token or as
+      "Bearer None".
     why: >-
       The absent token is not an identity assertion. Sending the four characters None to an identity
       provider leaks a request it can never validate and, on an IdP that treats that string as a
       subject, would authenticate the caller as a user named None.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L134-L135
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L61-L85
   - what: >-
       The status and transport failure messages embed betterlite's own wording of the upstream HTTP
       status and the transport error; LiteLLM embeds httpx's "Client error '401 Unauthorized' for url

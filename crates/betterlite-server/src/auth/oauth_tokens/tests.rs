@@ -147,6 +147,24 @@ async fn introspection_failure_stops_downstream() {
 }
 
 #[tokio::test]
+async fn missing_token_rejected_before_introspection() {
+    let config = introspection_config("not-a-url");
+    let reached = Arc::new(AtomicBool::new(false));
+    let request = request_from(peer([127, 0, 0, 1]), &[], &reached);
+    let response = application(&config)
+        .oneshot(request)
+        .await
+        .expect("the request reaches the router");
+    // the gateway's missing-key answer, not the introspection error the invalid endpoint would raise
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the response body is readable");
+    assert_eq!(body.as_ref(), b"Internal Server Error");
+    assert!(!reached.load(Ordering::Acquire));
+}
+
+#[tokio::test]
 async fn failure_stops_downstream() {
     let config = proxy_config();
     let reached = Arc::new(AtomicBool::new(false));

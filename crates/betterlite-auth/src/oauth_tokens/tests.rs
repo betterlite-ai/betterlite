@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -11,9 +12,11 @@ use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use rstest::rstest;
 
 use super::check::{CheckError, ValidationError, check_oauth2_token};
+use super::extract::ExtractError;
 use super::proxy_identity::{ProxyAuthError, handle_oauth2_proxy_request};
 use super::request::EndpointMode;
 use super::request::endpoint_mode as request_mode;
+use super::transport::TOKEN_INFO_TIMEOUT;
 use super::{
     DecodeError, MAX_OAUTH_RESPONSE_BYTES, MAX_OAUTH_RESPONSE_DEPTH, decode_oauth_response,
 };
@@ -209,6 +212,12 @@ async fn transport_posts_form_and_gets_without_body() {
     assert!(fetched[0].body.is_empty());
 }
 
+#[test]
+fn token_info_timeout_matches_the_client_default() {
+    // the cached async client's default total timeout, so a hung provider is cut at the same point
+    assert_eq!(TOKEN_INFO_TIMEOUT, Duration::from_secs(600));
+}
+
 #[tokio::test]
 async fn inactive_token() {
     let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
@@ -305,6 +314,19 @@ async fn missing_identity_fields() {
     assert_eq!(auth.view.token.user_id, None);
     assert_eq!(auth.view.token.team_id, None);
     assert_eq!(auth.extra.user_role, None);
+}
+
+#[tokio::test]
+async fn non_string_field_refused() {
+    let configured = settings(Some(ENDPOINT), None, None);
+    let transport = Scripted::answering(200, r#"{"sub":42}"#);
+    let error = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect_err("a non-string identity field is refused");
+    match expect_validation(error) {
+        ValidationError::Extract(ExtractError::NotAString { field }) => assert_eq!(field, "sub"),
+        other => panic!("expected a non-string field failure, got {other}"),
+    }
 }
 
 #[tokio::test]
