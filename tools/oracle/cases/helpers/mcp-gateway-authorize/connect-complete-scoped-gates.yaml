@@ -1,0 +1,111 @@
+kind: helper
+name: mcp-gateway-authorize-connect-complete-scoped-gates
+call:
+  b4675:
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback', 'https://claude.ai/api/mcp/auth_callback']
+    servers:
+      - {server_id: srv-a, name: alpha, transport: sse, auth_type: oauth2, oauth2_flow: authorization_code}
+    steps:
+      - name: mints-flow
+        kind: aggregate
+        now: 1700000000
+        path: /authorize
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: 'https://proxy.test:8443/srv-a/mcp'
+        tokens: [handle-1, jti-1]
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: vendor-absent
+        kind: complete
+        now: 1700000000
+        path: /authorize/complete
+        query: null
+        cookie_from: 1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: null
+        tokens: [code-jti-1]
+        handle: handle-1
+        delivery: null
+        team_id: null
+        decision: approve
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: deny-still-works
+        kind: complete
+        now: 1700000000
+        path: /authorize/complete
+        query: null
+        cookie_from: 1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: null
+        tokens: [code-jti-1]
+        handle: handle-1
+        delivery: null
+        team_id: null
+        decision: deny
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: unreachable
+        kind: describe
+        now: 1700000000
+        path: /ui/connect
+        query: null
+        cookie_from: 1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: null
+        tokens: []
+        handle: handle-1
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: false
+        token_exchange: false
+env: {}
+compare: {ignore: []}

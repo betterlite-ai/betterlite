@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::gateway_dcr::contracts::supported_grant_types;
 
-pub const NATIVE_CLIENT_AUTH_CONTRACT_VERSION: u8 = 1; // ast-grep-ignore: no-long-names
+pub const CONTRACT_VERSION: u8 = 1;
 
 #[derive(Debug, Serialize)]
 pub struct NativeClientAuthContract {
@@ -17,9 +17,12 @@ pub struct NativeClientAuthContract {
     pub resource: String,
     pub response_types_supported: [&'static str; 1],
     pub grant_types_supported: Vec<&'static str>,
-    pub code_challenge_methods_supported: [&'static str; 1], // ast-grep-ignore: no-long-names
-    pub token_endpoint_auth_methods_supported: [&'static str; 1], // ast-grep-ignore: no-long-names
-    pub revocation_endpoint_auth_methods_supported: [&'static str; 1], // ast-grep-ignore: no-long-names
+    #[serde(rename = "code_challenge_methods_supported")]
+    pub challenge_methods: [&'static str; 1],
+    #[serde(rename = "token_endpoint_auth_methods_supported")]
+    pub token_auth_methods: [&'static str; 1],
+    #[serde(rename = "revocation_endpoint_auth_methods_supported")]
+    pub revocation_auth_methods: [&'static str; 1],
 }
 
 #[must_use]
@@ -28,7 +31,7 @@ pub fn native_client_auth_contract(
     token_exchange_available: bool,
 ) -> NativeClientAuthContract {
     NativeClientAuthContract {
-        contract_version: NATIVE_CLIENT_AUTH_CONTRACT_VERSION,
+        contract_version: CONTRACT_VERSION,
         issuer: base_url.to_owned(),
         authorization_endpoint: format!("{base_url}/authorize"),
         token_endpoint: format!("{base_url}/token"),
@@ -37,8 +40,8 @@ pub fn native_client_auth_contract(
         resource: base_url.to_owned(),
         response_types_supported: ["code"],
         grant_types_supported: supported_grant_types(token_exchange_available),
-        code_challenge_methods_supported: ["S256"],
-        token_endpoint_auth_methods_supported: ["none"],
-        revocation_endpoint_auth_methods_supported: ["none"],
+        challenge_methods: ["S256"],
+        token_auth_methods: ["none"],
+        revocation_auth_methods: ["none"],
     }
 }

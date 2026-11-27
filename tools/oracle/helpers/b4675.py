@@ -5,9 +5,8 @@ import os
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime, tzinfo
-from typing import ClassVar, Final, Literal, Self, TypedDict
+from typing import ClassVar, Final, Generic, Literal, Self, TypeVar, TypedDict
 
-import litellm.proxy.common_utils.html_forms.native_client_consent as native_client_consent
 from litellm.caching.dual_cache import DualCache
 from litellm.proxy._experimental.mcp_server import gateway_dcr_flow
 from litellm.proxy._experimental.mcp_server.gateway_dcr_flow import (
@@ -20,6 +19,7 @@ from litellm.proxy._experimental.mcp_server.gateway_dcr_flow import (
     register_aggregate_client,
 )
 from litellm.proxy._experimental.mcp_server.mcp_server_manager import global_mcp_server_manager
+from litellm.proxy.common_utils.html_forms import native_client_consent
 from litellm.types.mcp_server.mcp_server_manager import MCPServer
 from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
@@ -27,10 +27,12 @@ from starlette.responses import Response
 from typing_extensions import override
 
 CACHE_HEADERS: Final = ("cache-control", "content-security-policy", "pragma", "x-frame-options")
+REDIRECT: Final = 303
 
 Kind = Literal["aggregate", "native", "describe", "complete", "contract"]
 VendorState = Literal["present", "absent", "unavailable"]
 ReloadFailure = Literal["unresolvable", "unavailable", "faulted", "no_active_key"]
+T = TypeVar("T")
 
 
 class ClientSeed(TypedDict):
@@ -101,17 +103,19 @@ class ScriptedTokens:
         return self.values.pop(0) if self.values and nbytes != 0 else ""
 
 
-class Answers:
+class Answer(Generic[T]):
+    def __init__(self, value: T) -> None:
+        self.value: T = value
+
+    async def __call__(self, _user_id: str, _server_id: str, /) -> T:
+        return self.value
+
+
+class Teams:
     def __init__(self, step: Step) -> None:
         self.step: Step = step
 
-    async def credential(self, _user_id: str, _server_id: str, /) -> VendorState:
-        return self.step["vendor"]
-
-    async def reach(self, _user_id: str, _server_id: str, /) -> bool:
-        return self.step["reachable"]
-
-    async def teams(self, _user_id: str, /) -> Sequence[ConsentTeam] | ReloadFailure:
+    async def __call__(self, _user_id: str, /) -> tuple[ConsentTeam, ...] | ReloadFailure:
         if self.step["teams_failure"] is not None:
             return self.step["teams_failure"]
         return tuple(
@@ -121,37 +125,25 @@ class Answers:
 
 
 def consent_page(
-    *,
-    client_origin: str,
-    user_id: str,
-    teams: Sequence[tuple[str, str]],
-    flow_handle: str,
-    complete_url: str,
+    *, client_origin: str, user_id: str, teams: Sequence[tuple[str, str]],
+    flow_handle: str, complete_url: str,
 ) -> str:
     page = {
-        "client_origin": client_origin,
-        "complete_url": complete_url,
-        "flow_handle": flow_handle,
-        "teams": [list(team) for team in teams],
-        "user_id": user_id,
+        "client_origin": client_origin, "complete_url": complete_url, "flow_handle": flow_handle,
+        "teams": [list(team) for team in teams], "user_id": user_id,
     }
     return json.dumps(page, sort_keys=True, separators=(",", ":"))
 
 
 def build_request(step: Step, captured: list[str]) -> Request:
     source = step["cookie_from"]
-    cookie = "" if source < 0 else captured[source]
     headers: list[tuple[bytes, bytes]] = [(b"host", b"proxy.test:8443")]
-    if cookie:
-        headers.append((b"cookie", cookie.encode()))
+    if source >= 0 and captured[source]:
+        headers.append((b"cookie", captured[source].encode()))
     query = step["query"]
     scope: dict[str, str | bytes | list[tuple[bytes, bytes]]] = {
-        "type": "http",
-        "method": "GET",
-        "scheme": "https",
-        "path": step["path"],
-        "query_string": b"" if query is None else query.encode(),
-        "headers": headers,
+        "type": "http", "method": "GET", "scheme": "https", "path": step["path"],
+        "query_string": b"" if query is None else query.encode(), "headers": headers,
     }
     return Request(scope)
 
@@ -188,10 +180,10 @@ def response_report(name: str, response: Response) -> tuple[dict[str, JsonValue]
     value = "" if header is None else header.partition("; ")[0]
     pairs: list[list[str]] = []
     for header_name in CACHE_HEADERS:
-        header_value = response.headers.get(header_name)
-        if header_value is not None:
-            pairs.append([header_name, header_value])
-    body = None if response.status_code == 303 else redact(bytes(response.body).decode())
+        found = response.headers.get(header_name)
+        if found is not None:
+            pairs.append([header_name, found])
+    body = None if response.status_code == REDIRECT else redact(bytes(response.body).decode())
     return {
         "name": name,
         "status": response.status_code,
@@ -219,7 +211,6 @@ def run_step(
         }, ""
     secrets.token_urlsafe = ScriptedTokens(step["tokens"])
     client_id = step["client_id"] if step["client"] < 0 else clients[step["client"]]
-    answers = Answers(step)
     if step["kind"] == "aggregate":
         response = aggregate_authorize(
             request,
@@ -243,13 +234,17 @@ def run_step(
                 step["code_challenge_method"],
                 step["response_type"],
                 step["user"],
-                answers.teams,
+                Teams(step),
             )
         )
     elif step["kind"] == "describe":
         response = asyncio.run(
             describe_connect_flow(
-                request, step["handle"], step["user"], answers.credential, answers.reach
+                request,
+                step["handle"],
+                step["user"],
+                Answer(step["vendor"]),
+                Answer(step["reachable"]),
             )
         )
     else:
@@ -262,8 +257,8 @@ def run_step(
                 step["delivery"],
                 step["team_id"],
                 step["decision"],
-                answers.credential,
-                answers.reach,
+                Answer(step["vendor"]),
+                Answer(step["reachable"]),
             )
         )
     return response_report(step["name"], response)
@@ -272,7 +267,8 @@ def run_step(
 def register_clients(seeds: list[ClientSeed]) -> list[str]:
     clients: list[str] = []
     for seed in seeds:
-        body: dict[str, JsonValue] = {"redirect_uris": seed["redirect_uris"]}
+        uris = JSON.validate_python(seed["redirect_uris"])
+        body: dict[str, JsonValue] = {"redirect_uris": uris}
         scope: dict[str, str] = {"type": "http", "path": "/register"}
         response = asyncio.run(
             register_aggregate_client(Request(scope), body, token_exchange_available=False)
@@ -288,7 +284,7 @@ def run(input_value: Input) -> JsonValue:
     gateway_dcr_flow.datetime = FrozenDatetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L709
     clients = register_clients(input_value["clients"])
     servers = [MCPServer.model_validate(raw) for raw in input_value["servers"]]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L27
-    global_mcp_server_manager.registry = {server.server_id: server for server in servers}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L46
+    global_mcp_server_manager.registry = {server.server_id: server for server in servers}
     cache = DualCache()
     captured: list[str] = []
     reports: list[dict[str, JsonValue]] = []
