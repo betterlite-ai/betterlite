@@ -1,0 +1,14 @@
+task: B1012
+deviations:
+  - what: A decrypted token payload over the caller's byte limit is refused, where LiteLLM's _decode_realtime_token_payload passes any decrypted string to json.loads.
+    why: Rule bounded-inputs gives every payload the route decrypted from the client a size cap, so a long token cannot make the route parse an unbounded document; a real payload is a handful of short fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L194-L213
+  - what: The non-standard NaN, Infinity and -Infinity literals are refused as invalid JSON, and so is a number literal that overflows a float to infinity, such as 1e400, where Python's json.loads reads them as non-finite floats.
+    why: betterlite writes standard JSON, and a decoded NaN would be handed to the calls route as a field no JSON client can read; no working setup can rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L194-L213
+  - what: A token payload nested 128 or more levels deep is refused (127 levels decode), where LiteLLM's json.loads accepts roughly a thousand levels before Python's recursion limit.
+    why: Rule bounded-inputs gives the token decoder a depth cap, so an adversarial payload cannot exhaust the stack; a real routing payload nests a handful of levels.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L194-L213
+  - what: A decrypted payload holding a lone UTF-16 surrogate escape such as "\ud800" is refused as invalid JSON, where Python's json.loads accepts it.
+    why: A lone surrogate cannot be written as UTF-8, so a decoded token would carry text betterlite cannot store or log; Rust strings hold only valid Unicode.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L194-L213

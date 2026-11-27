@@ -50,6 +50,7 @@ betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-pyhost = { path = "../betterlite-pyhost" }
+betterlite-rag = { path = "../betterlite-rag" }
 betterlite-rate-limit = { path = "../betterlite-rate-limit" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }

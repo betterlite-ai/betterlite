@@ -1,0 +1,21 @@
+kind: helper
+name: auth-model-grants-ceiling-intersection
+call:
+  auth_model_grants:
+    steps:
+      # every managed ceiling must allow: the second one intersects the first away
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1, user_id: user-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [["gpt-4o"], ["gpt-4o", "gpt-4o-mini"]]}
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1, user_id: user-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [["gpt-4o"], ["gpt-4o-mini"]]}
+      # an empty ceiling models set denies instead of allowing everything
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [[]]}
+      # no managed record: the unmanaged resolver decides, and None means no restriction
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-2}, unmanaged: ["gpt-4o"]}
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-2}}
+      # a managed record wins over the unmanaged resolver, which is never asked
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [["gpt-4o-mini"]], unmanaged: ["gpt-4o"]}
+      # the team alias resolves once before every ceiling sees the model
+      - {function: agent, model: "alias-model", token: {token: sk-agent, agent_id: agent-1, team_id: team-1, team_model_aliases: {alias-model: gpt-4o}}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [["gpt-4o"]]}
+      # a key alias dispatches to its target model
+      - {function: agent, model: "fast", token: {token: sk-agent, agent_id: agent-1, aliases: {fast: gpt-4o}}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [["gpt-4o"]]}
+env: {}
+compare: {ignore: []}

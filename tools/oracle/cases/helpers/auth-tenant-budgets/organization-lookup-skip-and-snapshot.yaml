@@ -1,0 +1,72 @@
+kind: helper
+name: auth-tenant-budgets-organization-lookup-skip-and-snapshot
+call:
+  auth_tenant_budgets:
+    calls:
+      # a row without a ceiling is still carried as the snapshot, and no counter is read
+      - function: organization
+        database: true
+        token: {token: sk-org, user_id: user-1, team_id: team-1, org_id: org-1}
+        organization:
+          organization_id: org-1
+          organization_alias: Acme Org
+          budget_id: budget-org
+          spend: 3.5
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {budget_id: budget-org}
+        spends: []
+      # a nonnull token org id wins over the team's, and the empty string answers no row
+      - function: organization
+        database: true
+        token: {token: sk-empty, org_id: ""}
+        team: {team_id: team-1, organization_id: team-org}
+        organization:
+          organization_id: team-org
+          budget_id: budget-team
+          spend: 0.0
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 1.0}
+        spends: []
+      # the team organization answers when the token carries none, and equality denies on it
+      - function: organization
+        database: true
+        token: {token: sk-team, team_id: team-1}
+        team: {team_id: team-1, organization_id: org-1}
+        organization:
+          organization_id: org-1
+          organization_alias: Team Org
+          budget_id: budget-org
+          spend: 1.0
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 1.0}
+        spends: [1.0]
+      # a missing row, a raising lookup, no database and no token all skip silently
+      - function: organization
+        database: true
+        token: {token: sk-missing, org_id: org-9}
+        spends: []
+      - function: organization
+        database: true
+        org_raises: true
+        token: {token: sk-raises, org_id: org-1}
+        organization:
+          organization_id: org-1
+          budget_id: budget-org
+          spend: 0.0
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 10.0}
+        spends: []
+      - function: organization
+        database: false
+        token: {token: sk-nodb, org_id: org-1}
+        spends: []
+      - function: organization
+        database: true
+        spends: []
+env: {}
+compare:
+  ignore: []

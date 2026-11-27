@@ -1,0 +1,49 @@
+kind: helper
+name: auth-tenant-budgets-group-budget
+call:
+  auth_tenant_budgets:
+    calls:
+      # only the matched group is priced, with the row spend as the authoritative fallback
+      - function: groups
+        database: true
+        matched_model_access_groups: ["matched"]
+        group_rows:
+          - {access_group_name: matched, spend: 3.0, max_budget: 10.0}
+          - {access_group_name: unmatched, spend: 100.0, max_budget: 1.0}
+        spends: [9.99]
+      # spend equal to the group ceiling denies, unlike the tag check
+      - function: groups
+        database: true
+        matched_model_access_groups: ["equal"]
+        group_rows:
+          - {access_group_name: equal, spend: 0.0, max_budget: 10.0}
+        spends: [10.0]
+      - function: groups
+        database: true
+        matched_model_access_groups: ["under"]
+        group_rows:
+          - {access_group_name: under, spend: 0.0, max_budget: 10.0}
+        spends: [9.99]
+      # zero and negative ceilings mean no budget, as do a missing row and a null ceiling
+      - function: groups
+        database: true
+        matched_model_access_groups: ["zero", "negative", "null-ceiling", "missing"]
+        group_rows:
+          - {access_group_name: zero, spend: 0.0, max_budget: 0.0}
+          - {access_group_name: negative, spend: 0.0, max_budget: -5.0}
+          - {access_group_name: null-ceiling, spend: 4.0}
+        spends: []
+      # no database and no matched groups skip before the batch
+      - function: groups
+        database: false
+        matched_model_access_groups: ["equal"]
+        group_rows:
+          - {access_group_name: equal, spend: 0.0, max_budget: 10.0}
+        spends: []
+      - function: groups
+        database: true
+        matched_model_access_groups: []
+        spends: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,16 @@
+kind: helper
+name: auth-model-grants-agent-caller-restriction
+call:
+  auth_model_grants:
+    steps:
+      # a falsey model, a missing token and a falsey agent id skip before any agent lookup
+      - {function: agent, model: "", token: {token: sk-agent, agent_id: agent-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [[]]}
+      - {function: agent, model: "gpt-4o", managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [[]]}
+      - {function: agent, model: "gpt-4o", token: {token: sk-key, user_id: user-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [[]]}
+      - {function: agent, model: "gpt-4o", token: {token: sk-key, agent_id: ""}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [[]]}
+      # a caller identity in the validated token payload is stripped, so the caller check never runs
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1, agent_caller: {user_id: forged-user, team_id: team-forged}}}
+      # the resolver's empty set denies where its None means no restriction
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1}, unmanaged: []}
+env: {}
+compare: {ignore: []}
