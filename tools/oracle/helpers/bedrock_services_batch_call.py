@@ -27,10 +27,16 @@ CLIENT_ERROR_STATUS: Final = 300
 EMPTY_RECORDS: Final[list[dict[str, JsonValue]]] = []
 EMPTY_REQUESTS: Final[list[str]] = []
 PROJECTED_KEYS: Final = (
-    "id", "object", "endpoint", "completion_window", "status", "created_at", "in_progress_at", "completed_at", "failed_at", "cancelled_at", "expires_at",
-    "finalizing_at", "expired_at", "cancelling_at", "error_file_id", "input_file_id", "output_file_id", "request_counts", "errors", "metadata", "model", "usage",
+    "id", "object", "endpoint", "completion_window", "status", "created_at",
+    "in_progress_at", "completed_at", "failed_at", "cancelled_at", "expires_at",
+    "finalizing_at", "expired_at", "cancelling_at", "error_file_id",
+    "input_file_id", "output_file_id", "request_counts", "errors", "metadata",
+    "model", "usage",
 )
-OPERATION_NAMES: Final[dict[str, str]] = {"StopModelInvocationJob": "stop_model_invocation_job", "GetModelInvocationJob": "get_model_invocation_job"}
+OPERATION_NAMES: Final[dict[str, str]] = {
+    "StopModelInvocationJob": "stop_model_invocation_job",
+    "GetModelInvocationJob": "get_model_invocation_job",
+}
 PARSER: Final = botocore.parsers.create_parser("rest-json")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
 BEDROCK: Final = botocore.session.get_session().get_service_model("bedrock")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
 
@@ -161,7 +167,7 @@ class FakeBoto3(ModuleType):
 class Fixture:
     def __init__(self, reply: Reply) -> None:
         self.reply = reply
-        self.requests: list[JsonValue] = []
+        self.requests: list[str] = []
 
     def respond(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(str(request.url))
@@ -251,9 +257,10 @@ def run(input_value: Input) -> JsonValue:
         region = input_value.get("region")
         if region is None:
             region = "us-east-1"
+        credential_kwargs = async_credentials(input_value)
         async_call = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
             "Callable[[str, str, None], LiteLLMBatch]",
-            partial(BedrockBatchesHandler._handle_async_invoke_status, **async_credentials(input_value)),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
+            partial(BedrockBatchesHandler._handle_async_invoke_status, **credential_kwargs),  # type: ignore[misc, arg-type]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
         )
         call = partial(async_call, input_value["batch_id"], region, None)
         return settled(call, provider, EMPTY_RECORDS, fixture.requests, EMPTY_RECORDS)
