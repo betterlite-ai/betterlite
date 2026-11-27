@@ -54,7 +54,7 @@ fn no_ip_returns_the_input_ids_in_order() {
 }
 
 #[test]
-fn no_ip_keeps_a_private_server_the_external_ip_cannot_reach() {
+fn no_ip_keeps_a_private_server() {
     let loaded = registry(&[PRIVATE]);
     let requested = ids(&["test-private"]);
     let filtered = filter_server_ids_by_ip_with_info(&loaded, &requested, None);
@@ -149,10 +149,16 @@ fn ip_counts_each_occurrence_of_a_blocked_id() {
 
 #[test]
 fn ip_mixed_input_keeps_order_and_counts_only_blocked_known_ids() {
-    let loaded = registry(&[PUBLIC, PRIVATE]);
-    let requested = ids(&["test-ghost", "test-private", "test-public", "test-private"]);
+    let loaded = registry(&[PUBLIC, SECOND_PUBLIC, PRIVATE]);
+    let requested = ids(&[
+        "test-ghost",
+        "test-public-b",
+        "test-private",
+        "test-public",
+        "test-private",
+    ]);
     let filtered = filter_server_ids_by_ip_with_info(&loaded, &requested, Some(EXTERNAL_IP));
-    assert_eq!(filtered.server_ids, ids(&["test-public"]));
+    assert_eq!(filtered.server_ids, ids(&["test-public-b", "test-public"]));
     assert_eq!(filtered.ip_blocked_count, 2);
 }
 
