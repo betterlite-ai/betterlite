@@ -1,0 +1,13 @@
+kind: helper
+name: jwt-verification-es256
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        audience: litellm-proxy
+        key: {"kty":"EC","kid":"p256-key","crv":"P-256","x":"FLffFalEF1WH42w_huasUc4HF3jAnLV2OQ2jKXWvd8w","y":"RB1z2H_5og6lW9gg0NTu29XD5dQComa17CpezaeZhN0"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJFUzI1NiIsImtpZCI6InAyNTYta2V5IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.7PCNE0B2Bngf0QP8A32C1fl9elboPKiZUKhUpQhKeAtV8V6H41QE5Fvwv7t5TrXL0xpOu51hD-49g70-A_Olww"
+env: {}
+compare: {ignore: []}

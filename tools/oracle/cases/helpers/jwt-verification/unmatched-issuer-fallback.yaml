@@ -1,0 +1,14 @@
+kind: helper
+name: jwt-verification-unmatched-issuer-fallback
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        issuers:
+          - {"issuer":"https://issuer-a.example.com","jwks_url":"https://issuer-a.example.com/jwks","audience":"litellm-proxy","user_id_jwt_field":"user.id","user_email_jwt_field":"user.email","team_id_jwt_field":"team.id","team_ids_jwt_field":"teams","org_id_jwt_field":"org.id","end_user_id_jwt_field":"end_user.id"}
+        key: {"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1rZXkiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJpc3MiOiJodHRwczovL2V2aWwuZXhhbXBsZS5jb20ifQ.PjesZNRiE0J9Qv4l_EAnAz5UoP4ThI0QnZBFRjaP-EKsK2torQlLyLkCYVF2XIvoPE5g19e797w4WC9SQ31KbekLfeeyCD2Jhnv9-TNJBLQfDO9-BcG3hQnz0_A0e1LhxkZyog2r1t5gPMQsT9PIPX8YxqGBqFMLkVprkiBBNlttIpzSxAmZ70c-lN9_b1BhSRW2EmMvfkOw7z-JdbwDNV-LHg2qfzq-H5pu8d3zSfzPFSA5DCkd5pTKprmKgQT5tUnW2gBzX-KFsZumNoqT77xKnwWg8EWVzZy8op1FpxGPDQEVFSRE_6iJVCUpjMF8ZDpzqAbr-AwFiKleGiEzjQ"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: jwt-verification-es384
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        audience: litellm-proxy
+        key: {"kty":"EC","kid":"p384-key","crv":"P-384","x":"StiQSXqMDxnxMjcw1Br1IWf7QS8C429jIRoQUHQTfx9WywJFC-tCcBGd7Gwr1JUW","y":"iYoDIRi-KpUZJqsq8-f3MkRWy1R4E5_frJhIVb-ucR-5k5HcdErioRz1rT_9mvBV"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJFUzM4NCIsImtpZCI6InAzODQta2V5IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.ylms_J4TytH8mJNFCP7cDHnXQYpbnJyCM62NeipH3OJ_VCOv17334z0d_ppx5Cfu1yuUB325Awq3CCYLsUhG0U5JAiuHxNgjFlkEVklCRxa6vqCJPrRy60-UwrLejKh2"
+env: {}
+compare: {ignore: []}

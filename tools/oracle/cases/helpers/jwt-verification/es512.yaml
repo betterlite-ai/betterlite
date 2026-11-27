@@ -1,0 +1,13 @@
+kind: helper
+name: jwt-verification-es512
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        audience: litellm-proxy
+        key: {"kty":"EC","kid":"p521-key","crv":"P-521","x":"AQaU4ZocE7X5Y0fkq6it6gM2TDrPNI5-GZkfd9cJUeupH3E75drBOjM7W4f_pCtrkcYEqSUyUZ-OzmqgQfY6WGDX","y":"AenKRE7L5CnQYEgZBTvaRZBy7z_wsQmNfIjrgHi-NQLrkzX44MoqNT1NYQAm27Co9mWuIF8W7Ty2jVgrggpCObhL"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJFUzUxMiIsImtpZCI6InA1MjEta2V5IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.AVeDxvKlzLKBnYTleuL9VxbUd_VVTgaKVkukNiwrWLwqvyiheQ9yQVnsLlVQuQ5QxpQEKCEkqfizax6sS4crO5ujACD6faXYRT3dNiATA86Yh54UbFHlGH3DqRwM8pHN4fgGAPHXMcvM9XFQjYstiVhG3u5ynX0YQOXH7PPGdCwmY1cI"
+env: {}
+compare: {ignore: []}

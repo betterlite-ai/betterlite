@@ -1,0 +1,36 @@
+name: auth-jwt-verification-bad-signature-401
+native_feature_eligibility: true
+# betterlite refuses general_settings.enable_jwt_auth until B10006, so only the LiteLLM child's root sets it
+config: |
+  general_settings:
+    master_key: oracle-master
+config_files:
+  litellm.yaml: |
+    general_settings:
+      master_key: oracle-master
+      enable_jwt_auth: true
+env:
+  JWT_AUDIENCE: "litellm-proxy"
+  JWT_PUBLIC_KEY_URL: "{{upstream}}/jwks"
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1rZXkiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.V7ZBrkzJyUsSzEd4vmmbGd4yXeKiG6GItYF0Ix7ofVumcI1nHXPm8y1oPq9zRfs62h8UMQitcxNK2L90Visz_svpeswzyftchwq7VMiz7XPwb_K4bXyG1XR_e9cWr80F6dHizq6XFDN_7kyu6QaJQpZ8PkpFajAO_qy8xMqpnOv2pFxSrCDhx6WGAwpxQCEQrOpDk8-46KB-_978B42M6Sho60aFrVhePG4oPle-EpPXuArtsw7C6LGlO7QczBCAf9bHF5PUFLt-u7OpHhx9ruO2roHP4N7dXXeIpzL3srCE46uj9TCzwnKshvHJqTDxA4vM2gz-MLTZfqFqDEVkDg
+  body:
+    model: oracle-model
+    messages:
+      - {role: user, content: hi}
+upstream:
+  # the provider publishes the key the token claims, so only the token itself can fail
+  - status: 200
+    headers: {content-type: application/json}
+    body: {"keys": [{"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own message

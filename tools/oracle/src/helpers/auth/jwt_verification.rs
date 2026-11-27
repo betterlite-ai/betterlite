@@ -1,11 +1,16 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod fakes;
+mod input;
+mod output;
+mod scenario;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("jwt_verification")
+    fn run(input: &Self::Input) -> HelperResult {
+        scenario::answer(&input.scenarios)
     }
 }

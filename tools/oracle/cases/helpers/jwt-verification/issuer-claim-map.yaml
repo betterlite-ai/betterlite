@@ -1,0 +1,14 @@
+kind: helper
+name: jwt-verification-issuer-claim-map
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        issuers:
+          - {"issuer":"https://issuer-a.example.com","jwks_url":"https://issuer-a.example.com/jwks","audience":"litellm-proxy","user_id_jwt_field":"user.id","user_email_jwt_field":"user.email","team_id_jwt_field":"team.id","team_ids_jwt_field":"teams","org_id_jwt_field":"org.id","end_user_id_jwt_field":"end_user.id"}
+        key: {"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1rZXkiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJpc3MiOiJodHRwczovL2lzc3Vlci1hLmV4YW1wbGUuY29tIiwiYXVkIjoibGl0ZWxsbS1wcm94eSIsInVzZXIiOnsiaWQiOiJ1LTEiLCJlbWFpbCI6InVzZXJAZXhhbXBsZS5jb20ifSwidGVhbSI6eyJpZCI6InQtMSJ9LCJ0ZWFtcyI6WyJ0LTEiLCJ0LTIiXSwib3JnIjp7ImlkIjoiby0xIn0sImVuZF91c2VyIjp7ImlkIjoiZS0xIn0sInByb2ZpbGUiOnsiZmxhZyI6ZmFsc2UsImNvdW50IjowLCJlbXB0eV9saXN0IjpbXSwiZW1wdHlfb2JqZWN0Ijp7fSwiZW1wdHlfdGV4dCI6IiIsIm51bGxfdmFsdWUiOm51bGx9fQ.pWyRcfHHwVLZD28sW-b93_1Ao1bE-T-ZESJlcyRLiMyuF6BMwiPBp7BGZSPseK4_vo1s58ix4hC3tpe3UZJcdrzB1o5BDZo_-yuOnLCbwXYCri6jWq7ChhTozG_jlSxidWvCctNSZzyD5LEHP9_XGgEIZeYEYSEBbLkQy6ipHcgfPgbZn9RM3JA_4U4rroX6OYiAnmlIhsvvhDQHC-ew_AE4duMw3ESifA4RiAq4RNW3qnOt3bqvZa1zs-u5G7E9txinYcFhdEiO6USL28S860W44F18r8KSbQ01joMMjPg6eeV2mCJvollhnF69m0eF8bS5D4C0GJO7Sw2p-tMtug"
+env: {}
+compare: {ignore: []}
