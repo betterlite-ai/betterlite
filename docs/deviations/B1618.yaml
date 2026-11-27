@@ -11,4 +11,10 @@ deviations:
       control character, where LiteLLM's SimpleCookie raises CookieError and the login page answers 500.
     why: The cookie is best effort, and its documented contract is that an unusable return_to never blocks sign-in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2879-L2887
+  - what: >-
+      set_session_token_cookie rejects a JWT carrying an ASCII control character with a typed CookieValue
+      error that answers 400, where LiteLLM's SimpleCookie raises CookieError out of the redirect as an
+      unhandled 500.
+    why: The encoder refuses a value it cannot serialize and answers the same typed 400 as the other bad-input paths instead of a 500 from an uncaught stdlib exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2847-L2862
 kept_bugs: []

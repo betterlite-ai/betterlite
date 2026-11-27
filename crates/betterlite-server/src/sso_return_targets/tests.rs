@@ -323,10 +323,9 @@ fn builds_the_session_cookie_without_httponly() {
         session_token_cookie(JWT, true).unwrap(),
         "token=jwt.token-value; Path=/; SameSite=lax; Secure"
     );
-    assert!(matches!(
-        session_token_cookie("bad\ntoken", false),
-        Err(SsoReturnTargetError::CookieValue)
-    ));
+    let error = session_token_cookie("bad\ntoken", false).unwrap_err();
+    assert!(matches!(error, SsoReturnTargetError::CookieValue));
+    assert_eq!(error.response().status, 400);
 }
 
 #[rstest]
