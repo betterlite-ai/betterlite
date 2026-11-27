@@ -31,7 +31,7 @@ AsyncResponse = Coroutine[object, object, httpx.Response]
 Argument: TypeAlias = JsonValue | bytes | dict[str, str] | Logging
 
 
-# litellm's @wrapper_client decorator erases the wrapper signature, so the protocol names the three calls
+# litellm's @wrapper_client erases the wrapper signature, so the protocol names the three calls
 class RealtimeCalls(Protocol):
     def acreate_realtime_client_secret(self, **kwargs: Argument) -> AsyncResponse: ...
 
