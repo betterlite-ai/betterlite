@@ -341,7 +341,7 @@ fn dispatch_uses_the_optional_region_before_the_environment() {
 #[test]
 fn dispatch_rejects_a_non_string_region_with_the_field_name() {
     let kwargs = Object::new();
-    let error = dispatch(Dispatch {
+    let Err(error) = dispatch(Dispatch {
         voice: None,
         optional_params: object(r#"{"aws_region_name": 3}"#),
         litellm_params: Object::new(),
@@ -349,8 +349,9 @@ fn dispatch_rejects_a_non_string_region_with_the_field_name() {
         api_base: None,
         api_key: None,
         environment: environment(None, None),
-    })
-    .unwrap_err();
+    }) else {
+        panic!("a non-string region is refused");
+    };
 
     assert_eq!(
         error.to_string(),
@@ -882,7 +883,9 @@ fn a_null_region_reaches_the_resolver_as_null() {
 
 #[test]
 fn a_non_string_credential_is_rejected_with_the_field_name() {
-    let error = credentials::sources(&object(r#"{"aws_access_key_id": 1}"#)).unwrap_err();
+    let Err(error) = credentials::sources(&object(r#"{"aws_access_key_id": 1}"#)) else {
+        panic!("a non-string credential is refused");
+    };
 
     assert_eq!(
         error.to_string(),

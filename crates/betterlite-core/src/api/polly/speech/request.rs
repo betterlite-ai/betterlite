@@ -24,7 +24,6 @@ pub struct Dispatch<'call> {
     pub environment: RegionEnvironment<'call>,
 }
 
-#[derive(Debug)]
 pub struct Dispatched {
     pub voice: Option<String>,
     pub optional_params: Object,
