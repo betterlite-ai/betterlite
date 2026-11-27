@@ -146,8 +146,8 @@ async fn check(input: &Input) -> Outcome {
         recorded: Mutex::new(Vec::new()),
     };
     let token = SecretString::from(input.token.clone());
-    let settings = settings(input);
-    match check_oauth2_token(&settings, &transport, &token).await {
+    let configured = settings(input);
+    match check_oauth2_token(&configured, &transport, &token).await {
         Ok(auth) => {
             let identity = key_identity(&auth);
             Outcome {

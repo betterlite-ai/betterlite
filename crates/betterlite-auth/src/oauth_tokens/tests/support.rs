@@ -116,9 +116,9 @@ impl TokenInfoTransport for Scripted {
 
 pub(super) fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        let name = HeaderName::from_bytes(name.as_bytes()).expect("the header name parses");
-        let value = HeaderValue::from_str(value).expect("the header value parses");
+    for (raw_name, raw_value) in pairs {
+        let name = HeaderName::from_bytes(raw_name.as_bytes()).expect("the header name parses");
+        let value = HeaderValue::from_str(raw_value).expect("the header value parses");
         headers.insert(name, value);
     }
     headers
@@ -247,10 +247,10 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {
     let mut content_type = None;
     let mut authorization = None;
     for line in lines {
-        let Some((name, value)) = line.split_once(':') else {
+        let Some((name, raw_value)) = line.split_once(':') else {
             continue;
         };
-        let value = value.trim();
+        let value = raw_value.trim();
         match name.trim().to_ascii_lowercase().as_str() {
             "content-length" => length = value.parse().unwrap_or_default(),
             "content-type" => content_type = Some(value.to_owned()),

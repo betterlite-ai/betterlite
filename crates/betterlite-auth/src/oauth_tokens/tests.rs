@@ -8,7 +8,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_db::budget_permission_rows::JsonData;
 use http::Method;
-use http::header::{AUTHORIZATION, CONTENT_TYPE};
+use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use rstest::rstest;
 
 use super::check::{CheckError, ValidationError, check_oauth2_token};
@@ -194,9 +194,9 @@ async fn transport_posts_form_and_gets_without_body() {
         Some(format!("Basic {credentials}").as_str())
     );
     let userinfo = format!("{}/userinfo", idp.base);
-    let configured = settings(Some(userinfo.as_str()), None, None);
+    let userinfo_settings = settings(Some(userinfo.as_str()), None, None);
     drop(
-        check_oauth2_token(&configured, &transport, &token())
+        check_oauth2_token(&userinfo_settings, &transport, &token())
             .await
             .expect("the loopback provider answers the token info request"),
     );
@@ -309,11 +309,12 @@ async fn field_mappings() {
 
     // a configured name with a dot is one literal dictionary key, not a path into nested objects
     configured.user_id_field_name = "user.name".to_owned();
-    let transport = Scripted::answering(200, r#"{"user":{"name":"nested"},"user.name":"literal"}"#);
-    let auth = check_oauth2_token(&configured, &transport, &token())
+    let dotted_transport =
+        Scripted::answering(200, r#"{"user":{"name":"nested"},"user.name":"literal"}"#);
+    let dotted_auth = check_oauth2_token(&configured, &dotted_transport, &token())
         .await
         .expect("the literal dotted key validates");
-    assert_eq!(auth.view.token.user_id.as_deref(), Some("literal"));
+    assert_eq!(dotted_auth.view.token.user_id.as_deref(), Some("literal"));
 }
 
 #[tokio::test]
@@ -417,6 +418,29 @@ async fn invalid_response_json() {
     assert!(matches!(
         expect_validation(error),
         ValidationError::Decode(DecodeError::Json(_))
+    ));
+}
+
+#[tokio::test]
+async fn non_object_response_refused() {
+    let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
+    let transport = Scripted::answering(200, "[]");
+    let error = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect_err("a non-object introspection response is refused");
+    assert!(matches!(
+        expect_validation(error),
+        ValidationError::Extract(ExtractError::NotAnObject)
+    ));
+    let token_info_settings = settings(Some("https://idp.example/userinfo"), None, None);
+    let token_info_transport = Scripted::answering(200, "5");
+    let token_info_error =
+        check_oauth2_token(&token_info_settings, &token_info_transport, &token())
+            .await
+            .expect_err("a non-object token info response is refused");
+    assert!(matches!(
+        expect_validation(token_info_error),
+        ValidationError::Extract(ExtractError::NotAnObject)
     ));
 }
 
@@ -538,10 +562,11 @@ fn untrusted_proxy_headers() {
         "OAuth2 proxy auth only accepts identity headers from configured trusted proxy ranges. Direct client IP '203.0.113.7' is not trusted."
     );
     let unknown = network(None, None);
-    let error = handle_oauth2_proxy_request(&present, Some(&mapping), &unknown, &configured)
-        .expect_err("a missing peer is refused");
+    let missing_peer_error =
+        handle_oauth2_proxy_request(&present, Some(&mapping), &unknown, &configured)
+            .expect_err("a missing peer is refused");
     assert!(
-        error
+        missing_peer_error
             .to_string()
             .contains("Direct client IP None is not trusted.")
     );
@@ -562,14 +587,14 @@ fn proxy_trust_before_mapping() {
     ));
     let unconfigured = TrustedNetworkSettings::default();
     let peer = network(TRUSTED_PEER, None);
-    let error = handle_oauth2_proxy_request(&present, None, &peer, &unconfigured)
+    let unconfigured_error = handle_oauth2_proxy_request(&present, None, &peer, &unconfigured)
         .expect_err("an unconfigured range set is refused before the missing mappings");
     assert!(matches!(
-        error,
+        unconfigured_error,
         ProxyAuthError::Trust(TrustedProxyRequirementError::NotConfigured { .. })
     ));
     assert_eq!(
-        error.to_string(),
+        unconfigured_error.to_string(),
         "OAuth2 proxy auth requires general_settings.trusted_proxy_ranges before trusting identity headers from an upstream proxy."
     );
 }
@@ -650,6 +675,22 @@ fn proxy_header_casefold(#[case] name: &str) {
 }
 
 #[test]
+fn proxy_latin1_header() {
+    let configured = trusted("10.0.0.0/8");
+    let peer = network(TRUSTED_PEER, None);
+    let mapping = mappings(&[("user_id", "X-User-Id")]);
+    let mut present = HeaderMap::new();
+    present.insert(
+        "x-user-id",
+        HeaderValue::from_bytes(b"user-\xe9").expect("the header value parses"),
+    );
+    // Starlette decodes header bytes as latin-1, so 0xE9 becomes the single character U+00E9
+    let auth = handle_oauth2_proxy_request(&present, Some(&mapping), &peer, &configured)
+        .expect("a latin-1 header value maps");
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-é"));
+}
+
+#[test]
 fn proxy_empty_header() {
     let configured = trusted("10.0.0.0/8");
     let peer = network(TRUSTED_PEER, None);
@@ -671,14 +712,14 @@ fn proxy_empty_header() {
     .expect("the present header maps and the empty one is skipped");
     assert_eq!(auth.view.token.user_id.as_deref(), Some("user-1"));
     assert_eq!(auth.view.token.team_id, None);
-    let error = handle_oauth2_proxy_request(
+    let unmapped_error = handle_oauth2_proxy_request(
         &headers(&[("x-other", "value")]),
         Some(&mapping),
         &peer,
         &configured,
     )
     .expect_err("no configured header maps to an identity");
-    assert!(matches!(error, ProxyAuthError::NoIdentity));
+    assert!(matches!(unmapped_error, ProxyAuthError::NoIdentity));
 }
 
 #[test]

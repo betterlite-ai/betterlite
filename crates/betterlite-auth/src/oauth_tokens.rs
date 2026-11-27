@@ -48,23 +48,18 @@ fn nesting_depth(document: &TypedValue) -> usize {
     let mut pending = vec![(document, 0_usize)];
     let mut deepest = 0_usize;
     while let Some((current, level)) = pending.pop() {
-        let nested = match current {
+        let nested = level.saturating_add(1);
+        match current {
             JsonValue::Array(items) => {
-                pending.extend(items.iter().map(|item| (item, level.saturating_add(1))));
-                level.saturating_add(1)
+                pending.extend(items.iter().map(|item| (item, nested)));
             }
             JsonValue::Object(fields) => {
-                pending.extend(
-                    fields
-                        .values()
-                        .map(|field| (field, level.saturating_add(1))),
-                );
-                level.saturating_add(1)
+                pending.extend(fields.values().map(|field| (field, nested)));
             }
             JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) => {
                 continue;
             }
-        };
+        }
         deepest = deepest.max(nested);
     }
     deepest

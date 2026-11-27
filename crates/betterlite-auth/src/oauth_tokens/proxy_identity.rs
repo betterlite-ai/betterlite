@@ -49,11 +49,11 @@ pub fn handle_oauth2_proxy_request(
 ) -> Result<UserAPIKeyAuth, ProxyAuthError> {
     tracing::debug!("Handling oauth2 proxy request");
     require_trusted_proxy_request(network, trusted, FEATURE_NAME, TRUSTED_PROXY_RANGES_KEY)?;
-    let Some(mappings) = mappings.filter(|entries| !entries.is_empty()) else {
+    let Some(configured_mappings) = mappings.filter(|entries| !entries.is_empty()) else {
         return Err(ProxyAuthError::MappingsMissing);
     };
     // the allowlist rejects a privilege-granting mapping before any header value is read
-    let rejected: Vec<&str> = mappings
+    let rejected: Vec<&str> = configured_mappings
         .keys()
         .map(String::as_str)
         .filter(|field| !ALLOWED_OAUTH2_PROXY_FIELDS.contains(field))
@@ -72,7 +72,7 @@ pub fn handle_oauth2_proxy_request(
                 .join(", "),
         });
     }
-    let fields = identity_fields(headers, mappings);
+    let fields = identity_fields(headers, configured_mappings);
     if fields.is_empty() {
         // LiteLLM validates an empty dict into an identity-less auth; that authenticates a header-less request
         return Err(ProxyAuthError::NoIdentity);

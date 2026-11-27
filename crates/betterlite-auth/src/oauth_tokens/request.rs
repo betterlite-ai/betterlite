@@ -57,9 +57,9 @@ pub fn prepare_introspection_request(
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static(FORM_CONTENT_TYPE));
     let mut form = vec![("token".to_owned(), token.expose_secret().to_owned())];
-    let client_id = client_id.filter(|value| !value.is_empty());
-    let client_secret = client_secret.filter(|secret| !secret.expose_secret().is_empty());
-    match (client_id, client_secret) {
+    let public_client_id = client_id.filter(|value| !value.is_empty());
+    let configured_secret = client_secret.filter(|secret| !secret.expose_secret().is_empty());
+    match (public_client_id, configured_secret) {
         (Some(id), Some(secret)) => {
             let credentials = STANDARD.encode(format!("{id}:{}", secret.expose_secret()));
             let value = HeaderValue::from_str(&format!("Basic {credentials}"))
