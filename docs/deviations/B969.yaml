@@ -1,0 +1,12 @@
+task: B969
+deviations:
+  - what: A user id that names no row is a silent skip, where LiteLLM's get_user_object raises UserNotFoundError that compact.py logs before skipping the scope.
+    why: The allow/deny decision is identical, and only the debug diagnostic for an absent row is gone, since the repository seam reports absence as Ok(None).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2720
+  - what: context_management_summary_max_tokens set to true is stored as 1, where LiteLLM's reader returns the Python bool True.
+    why: The typed Rust setting is a u64 and Python treats True and 1 as the same int, so a setup that sends true asks for max_tokens 1 either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L192
+kept_bugs:
+  - what: _model_in_team_aliases allows the summary model whenever it is a key of team_model_aliases, even if every allowlist names other models.
+    why: A working setup configures the team alias so the friendly name dispatches to the team's model, so denying it would break compaction for those setups; B747's matcher is reused as it stands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4655-L4657
