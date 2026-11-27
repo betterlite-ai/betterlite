@@ -58,18 +58,15 @@ use std::{collections::BTreeSet, sync::Arc};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
-use crate::auth::auth_key_budgets::KeyBudgetStageInput;
+use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
-use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
-use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -134,6 +131,7 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
+        AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
         }
@@ -203,17 +201,17 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
-
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
-        StageInput::AuthTagBudgets(stage) => prefetch_tag_budgets(stage).await,
-        StageInput::AuthKeyBudgets(stage) => prefetch_key_budgets(stage).await,
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
+        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => prefetch_org_lookup(stage).await,
-        StageInput::AuthEndUsers(stage) => prefetch_end_users(stage).await,
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
+        StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)
@@ -227,34 +225,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
-}
-
-async fn prefetch_tag_budgets(stage: Box<TagBudgetStageInput>) -> Result<StageInput, StageFailure> {
-    auth_tag_budgets::prefetch(&stage)
-        .await
-        .map_err(StageFailure::TagBudgets)?;
-    Ok(StageInput::AuthTagBudgets(stage))
-}
-
-async fn prefetch_key_budgets(stage: Box<KeyBudgetStageInput>) -> Result<StageInput, StageFailure> {
-    auth_key_budgets::prefetch(&stage)
-        .await
-        .map_err(StageFailure::KeyBudgets)?;
-    Ok(StageInput::AuthKeyBudgets(stage))
-}
-
-async fn prefetch_org_lookup(stage: Box<OrgStageInput>) -> Result<StageInput, StageFailure> {
-    auth_org_lookup::prefetch(&stage)
-        .await
-        .map_err(StageFailure::OrgLookup)?;
-    Ok(StageInput::AuthOrgLookup(stage))
-}
-
-async fn prefetch_end_users(stage: Box<EndUserStageInput>) -> Result<StageInput, StageFailure> {
-    auth_end_users::prefetch(&stage)
-        .await
-        .map_err(StageFailure::EndUsers)?;
-    Ok(StageInput::AuthEndUsers(stage))
 }
 
 fn default_resolver() -> Arc<RequestModelResolver> {
