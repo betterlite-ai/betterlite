@@ -5,9 +5,10 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::ui_session_token::Settings as UiSessionSettings;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::ui_session_token::{
-    UiSessionTokenError, disabled_non_admin_personal_key_creation, encode_ui_session_jwt,
-};
+use betterlite_server::ui_session_token::UiSessionTokenError;
+// ast-grep-ignore: no-long-names - LiteLLM's name for the check
+use betterlite_server::ui_session_token::disabled_non_admin_personal_key_creation;
+use betterlite_server::ui_session_token::encode_ui_session_jwt;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
@@ -94,6 +95,7 @@ fn personal_key_flag(settings: Option<&Value>) -> HelperResult {
     let source = json!({"litellm_settings": {"key_generation_settings": configured}}).to_string();
     let lookup = BTreeMap::<String, String>::new();
     let config = ConfigLoader { lookup }.load(&source).or_value_error()?;
+    // ast-grep-ignore: no-long-names
     Ok(Value::Bool(disabled_non_admin_personal_key_creation(
         &config.sections.key_access.key_generation,
     )))

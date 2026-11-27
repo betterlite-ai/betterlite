@@ -71,6 +71,7 @@ pub fn encode_ui_session_jwt(
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names - LiteLLM's name, called by the login and settings routes
 pub fn disabled_non_admin_personal_key_creation(key_generation: &KeyGeneration) -> bool {
     if !key_generation.configured {
         return false;
