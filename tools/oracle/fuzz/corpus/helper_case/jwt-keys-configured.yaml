@@ -1,0 +1,19 @@
+kind: helper
+name: jwt-keys-seed-configured
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/jwks, https://backup.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 3600.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+          - now: 1700.0
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+env: {}
+compare: {ignore: []}

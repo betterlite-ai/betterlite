@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-tool-call-no-accessible-servers
+call:
+  b4686:
+    handler: mcp_tool_call
+    tool_name: alpha-tool
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

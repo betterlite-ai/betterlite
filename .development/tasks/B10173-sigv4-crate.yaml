@@ -1,0 +1,97 @@
+id: B10173
+title: SigV4 signing and AWS credentials live in a new betterlite-sigv4 crate, and Polly signs through it
+description: >-
+  Core's Polly speech signs with its own SigV4 code. `sign_post` in crates/betterlite-core/src/api/polly/speech/signing.rs L28-L68 builds the identity, the signing parameters and the signable request itself and recases the three headers botocore returns (`litellm_casing`, L71-L78). That is a restricted copy of betterlite-bedrock's `sign_request` (crates/betterlite-bedrock/src/signing/sigv4.rs L22-L98): a POST whose only header is Content-Type goes through the same steps, since Content-Type is not in `unsigned` and no X-Amz-Content-SHA256 header is set. Polly also keeps its own credential type, `ResolvedCredentials` (polly/speech/credentials.rs L23-L28), with the same three fields as betterlite-bedrock's `Credentials` (aws_settings/sources.rs L30-L35). Core cannot call betterlite-bedrock, because betterlite-bedrock depends on betterlite-core, so the shared code moves down into a new crate both reach. The decision and the options it rejects are in .development/decisions/2026-11-27-aws-credential-chain.md.
+
+
+  The crate. crates/betterlite-sigv4 depends on no betterlite crate: only aws-sigv4, aws-credential-types =1.3.1, aws-smithy-runtime-api =1.19.2 with the client feature, secrecy and thiserror, at the versions betterlite-bedrock's Cargo.toml uses. Its Cargo.toml has name betterlite-sigv4, `version.workspace = true`, `edition.workspace = true`, `license.workspace = true`, `publish.workspace = true` and `[lints] workspace = true`, like crates/betterlite-test-ports/Cargo.toml; the workspace members glob `crates/*` picks it up, so the root Cargo.toml stays as it is. src/lib.rs declares three public modules. `credentials` holds `Credentials`, moved as it is (Debug, Clone, the three pub fields). `error` holds `SigV4Error` with the two variants that betterlite-bedrock's `SigningError` has for this step today, `Parameters(#[source] BuildError)` with the text "the signing parameters are invalid" and `Signable(#[source] SigningError)` with "the request cannot be signed". `sign` holds `Signable` and `sign_request`, with `unsigned`, `identity`, `payload` and `botocore_name`, moved from signing/sigv4.rs and returning `Result<Vec<(String, String)>, SigV4Error>`. The identity's provider name becomes "betterlite"; AWS never sees it.
+
+
+  betterlite-bedrock. signing/sigv4.rs and its `mod sigv4;` line go. aws_settings/sources.rs replaces the struct with `pub use betterlite_sigv4::credentials::Credentials;`, so the 164 files that import `aws_settings::sources::Credentials` stay as they are. signing/error.rs drops `Parameters` and `Signable` and gains `#[error(transparent)] SigV4(#[from] SigV4Error)`, so every `?` inside betterlite-bedrock keeps working and no error text changes. The ten importers of `signing::sigv4` switch to `betterlite_sigv4::sign`: batch_call/request.rs L12, bedrock_embedding_io/signed_get.rs L7, sagemaker_runtime/tests/integration.rs L57, signing/batch.rs L4, signing/endpoint.rs L8, signing/json_post.rs L4 and signing/service.rs L6 in betterlite-bedrock, betterlite-rag's bedrock_ingestion/client.rs L6, betterlite-transcribe's live/signing.rs L8 and betterlite-vertex's aws_federation.rs L8. Outside betterlite-bedrock each caller keeps its own error variant, all of which wrap betterlite-bedrock's `SigningError`, and converts with `SigningError::from`: transcribe's `ProbeError::Signing` (live/signing.rs L72; L104 wraps `sign_aws_json_post` and stays), vertex's `FederationError::Signing` (aws_federation.rs L218) and rag's `?` at client.rs L139. betterlite-rag, betterlite-transcribe and betterlite-vertex add betterlite-sigv4 to their dependencies.
+
+
+  Polly. `ResolvedCredentials` goes, and polly/speech uses `betterlite_sigv4::credentials::Credentials`. `sign_post` keeps its signature and its one-line comment and calls `sign_request` with method POST, the URL, the one header `Content-Type: application/json`, the body, service `polly`, the region, the credentials and `now`; it answers an IndexMap with Content-Type first and then the returned headers in their order, which is the order it answers today. `litellm_casing`, PROVIDER_NAME and the Identity and SigningParams code go. SpeechError's `SigningParameters`, `Signable` and `Sign` variants become one `Signing(#[source] SigV4Error)` with the text "the AWS Polly request cannot be signed"; nothing outside polly/speech matches them. The resolver seam becomes async in the same step, so B10175's credential chain can sit behind it: `#[async_trait] pub trait CredentialResolver: Send + Sync { async fn resolve(&self, sources: &CredentialSources<'_>) -> Result<Credentials, SpeechError>; }`, and `transform_request` (request.rs L77-L86) becomes `pub async fn` and awaits it. Its comment at credentials.rs L30 keeps saying betterlite-bedrock owns the resolver. The tests' FixedResolver and ExpectingResolver (polly/speech/tests.rs L85-L112) and the oracle helper's FixedResolver (tools/oracle/src/helpers/core_ops/polly_speech.rs L286-L290) implement the async trait and answer `Credentials`; the oracle helper awaits `transform_request` on a current-thread tokio runtime, as tools/oracle/src/helpers/core_ops/b10014.rs L96 does. betterlite-core drops aws-credential-types, aws-sigv4 and aws-smithy-runtime-api (Cargo.toml L10-L12; only polly/speech/error.rs and signing.rs use them) and adds betterlite-sigv4.
+
+
+  Tests. No new test: the signing cases in betterlite-bedrock's signing/tests/signing_cases.rs and the Polly tests and helper cases check the moved code against botocore's answers byte for byte, and they must pass unchanged. A unit test that only restates `sign_request` in the new crate would add nothing.
+
+
+  What users see: nothing. Every signed header, body and error text stays the same.
+scope:
+  paths:
+    - crates/betterlite-sigv4/**
+    - Cargo.lock
+    - crates/betterlite-bedrock/src/signing.rs
+    - crates/betterlite-bedrock/src/signing/sigv4.rs
+    - crates/betterlite-bedrock/src/signing/error.rs
+    - crates/betterlite-bedrock/src/signing/batch.rs
+    - crates/betterlite-bedrock/src/signing/endpoint.rs
+    - crates/betterlite-bedrock/src/signing/json_post.rs
+    - crates/betterlite-bedrock/src/signing/service.rs
+    - crates/betterlite-bedrock/src/aws_settings/sources.rs
+    - crates/betterlite-bedrock/src/batch_call/request.rs
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/signed_get.rs
+    - crates/betterlite-bedrock/src/sagemaker_runtime/tests/integration.rs
+    - crates/betterlite-bedrock/Cargo.toml
+    - crates/betterlite-rag/src/bedrock_ingestion/client.rs
+    - crates/betterlite-rag/Cargo.toml
+    - crates/betterlite-transcribe/src/live/signing.rs
+    - crates/betterlite-transcribe/Cargo.toml
+    - crates/betterlite-vertex/src/aws_federation.rs
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/polly/speech.rs
+    - crates/betterlite-core/src/api/polly/speech/**
+    - tools/oracle/src/helpers/core_ops/polly_speech.rs
+    - tools/oracle/src/helpers/core_ops/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L253-L309
+    why: _sign_polly_request, the credentials step and the SigV4 POST with only Content-Type that Polly signs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1657-L1730
+    why: _sign_request, the SigV4 step betterlite-bedrock's sign_request ports and Polly now shares.
+dod:
+  - text: crates/betterlite-sigv4 holds Credentials, SigV4Error, Signable and sign_request, depends on no betterlite crate and inherits the workspace package fields and lints.
+    proof: [crate-shape]
+  - text: betterlite-bedrock re-exports Credentials at aws_settings::sources and has no signing/sigv4.rs; every signer imports betterlite_sigv4::sign, and the signing cases still match botocore.
+    proof: [crate-shape, bedrock-signing-tests, signer-tests]
+  - text: Polly signs through betterlite_sigv4, has no ResolvedCredentials, Identity or casing code, takes an async resolver, and its tests and helper cases still pass.
+    proof: [no-polly-copy, polly-speech-tests, polly-speech-cases]
+checks:
+  optional: []
+  commands:
+    - id: crate-shape
+      why: the crate is missing, depends on a betterlite crate, skips the workspace fields, or betterlite-bedrock still has its own sigv4 module or Credentials struct
+      run: test -f crates/betterlite-sigv4/Cargo.toml && grep -q '^workspace = true' crates/betterlite-sigv4/Cargo.toml && grep -q 'license.workspace = true' crates/betterlite-sigv4/Cargo.toml && test -z "$(grep -n 'betterlite-' crates/betterlite-sigv4/Cargo.toml | grep -v 'name = .betterlite-sigv4.')" && test ! -e crates/betterlite-bedrock/src/signing/sigv4.rs && test -z "$(grep -rn 'signing::sigv4\|pub struct Credentials' crates/betterlite-bedrock/src crates/betterlite-rag/src crates/betterlite-transcribe/src crates/betterlite-vertex/src)"
+    - id: no-polly-copy
+      why: core still carries its own SigV4 steps, credential type or AWS signing dependencies
+      run: test -z "$(grep -rnE 'ResolvedCredentials|fn litellm_casing|SigningParams|Identity::new|aws_sigv4|aws_credential_types|aws_smithy_runtime_api' crates/betterlite-core/src/api/polly tools/oracle/src/helpers/core_ops/polly_speech.rs)" && test -z "$(grep -nE '^aws-(sigv4|credential-types|smithy-runtime-api) ' crates/betterlite-core/Cargo.toml)"
+    - id: polly-speech-tests
+      why: Polly mapping or exact-body signing changed after the move onto the shared signer
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::polly::speech::/)'
+    - id: polly-speech-cases
+      why: the Polly helper cases no longer match LiteLLM's signed headers and body
+      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops -- tools/oracle/cases/helpers/polly-speech
+    - id: bedrock-signing-tests
+      why: the moved signer or the new SigningError variant changed a signed header, a body or an error text
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E '(test(/^signing::/) | test(/^batch_call::/) | test(/^bedrock_embedding_io::/) | test(/^sagemaker_runtime::/)) - test(/replays_the_/)'
+    - id: signer-tests
+      why: a signer outside betterlite-bedrock lost its error mapping or its signed headers changed
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::/)' && cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^live::/)' && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^aws_federation::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The other SigV4 signers, each a copy of the same steps with its own inputs: betterlite-secret-managers aws/request_signing/sigv4.rs L17-L40, betterlite-logging s3_transport/signing.rs L77-L100, sqs_logging/signing.rs L54-L79 and legacy_dynamodb/signing.rs L34-L53, betterlite-http mcp_sigv4/signing.rs L88-L130, betterlite-openai providers/strands_decider/signing.rs L105-L155, and the two query presigners in betterlite-config sections/redis_credentials/aws.rs L89-L117 and betterlite-db rds_credentials/signer.rs L49-L60. betterlite-sigv4 is the home they can all reach; moving them is the architect's call."
+  - "Merging the credential traits and the production credential chain: B10174 and B10175."
+  - "Wiring Polly to the speech dispatch: B047."
+pitfalls:
+  - "aws_settings::sources::Credentials must stay importable at that path: B645 and B648 are running on code that names it, and 164 files do on main."
+  - "SigningError's Display texts are what callers see: SigV4Error keeps \"the signing parameters are invalid\" and \"the request cannot be signed\", and SigningError::SigV4 is transparent."
+  - "Polly's IndexMap order is Content-Type, then Authorization, X-Amz-Date and X-Amz-Security-Token as sign_request returns them; the helper cases compare the headers, so keep the order and the casing."
+  - "sign_request's `unsigned` filter and `payload` change nothing for Polly: Content-Type is signed and Polly never sends X-Amz-Content-SHA256. Don't add a Polly-only path to the shared function."
+  - "transform_request takes `&dyn CredentialResolver`, so the trait stays dyn-compatible: use async_trait (already a core dependency), not an `impl Future` return."
+  - "The new crate has no test of its own, so its checks run through betterlite-bedrock and betterlite-core; don't add a `-p betterlite-sigv4 --no-tests=fail` run."
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

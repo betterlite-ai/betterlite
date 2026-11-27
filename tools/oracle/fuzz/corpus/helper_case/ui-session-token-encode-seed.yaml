@@ -1,0 +1,21 @@
+kind: helper
+name: ui-session-token-encode-seed
+call:
+  b10118:
+    function: encode
+    token:
+      user_id: user-1
+      key: sk-virtual-key
+      user_email: user@example.com
+      user_role: internal_user
+      login_method: sso
+      premium_user: true
+      auth_header_name: Authorization
+      disabled_non_admin_personal_key_creation: false
+      server_root_path: /litellm
+      password_reset_required: false
+    master_key: sk-master-key
+    duration: 7d
+    now: "2026-01-01T12:00:00.999999+00:00"
+env: {}
+compare: {ignore: []}

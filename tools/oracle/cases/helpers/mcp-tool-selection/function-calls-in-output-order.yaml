@@ -1,0 +1,98 @@
+kind: helper
+name: mcp-tool-selection-function-calls-in-output-order
+call:
+  b10122:
+    calls:
+      - function: extract_tool_calls_from_response
+        response:
+          id: resp_tool_selection
+          created_at: 1735000000
+          output:
+            - type: message
+              id: msg_1
+              status: completed
+              role: assistant
+              content: []
+            - type: function_call
+              call_id: call_1
+              name: weather
+              arguments: '{"city":"Paris"}'
+            - type: reasoning
+              id: rs_1
+              summary: []
+            - type: function_call
+              id: fc_2
+              call_id: call_2
+              name: clock
+              arguments: "{}"
+calls:
+  - b10122:
+      calls:
+        - function: extract_tool_calls_from_response
+          response:
+            id: resp_function_extra
+            created_at: 1735000001
+            output:
+              - type: function_call
+                call_id: call_extra
+                name: top
+                arguments: '{"a":1}'
+                function:
+                  name: inner
+                  arguments: "{}"
+              - type: function_call
+                call_id: call_text_function
+                name: top
+                arguments: "{}"
+                function: text
+              - type: function_call
+                call_id: call_null_function
+                name: top
+                arguments: "{}"
+                function: null
+  - b10122:
+      calls:
+        - function: extract_tool_calls_from_response
+          response:
+            id: resp_raw_items
+            created_at: 1735000002
+            output:
+              - type: function_call
+                call_id: call_null_args
+                name: top
+                arguments: null
+                input:
+                  i: 1
+              - type: function_call
+                call_id: call_object_args
+                name: top
+                arguments:
+                  q: x
+              - type: function_call
+                call_id: call_no_args
+                name: top
+              - type: function_call
+                id: fc_empty
+                call_id: ""
+                name: top
+                arguments: "{}"
+              - type: function_call
+                name: top
+                arguments: "{}"
+  - b10122:
+      calls:
+        - function: extract_tool_calls_from_response
+          response:
+            id: resp_plain_output
+            created_at: 1735000003
+            output:
+              - type: message
+                id: msg_1
+                status: completed
+                role: assistant
+                content: []
+              - type: reasoning
+                id: rs_1
+                summary: []
+env: {}
+compare: {ignore: []}

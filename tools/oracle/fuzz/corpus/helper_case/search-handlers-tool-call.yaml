@@ -1,0 +1,11 @@
+kind: helper
+name: search-handlers-tool-call
+call:
+  b4686:
+    handler: mcp_tool_call
+    tool_name: alpha-tool
+    call_arguments: {q: 1}
+    allowed_servers: [srv]
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

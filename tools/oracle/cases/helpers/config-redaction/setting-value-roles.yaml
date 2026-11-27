@@ -1,0 +1,38 @@
+kind: helper
+name: config-redaction-setting-value-roles
+call:
+  b10137:
+    function: redact_setting_value
+    name: database_url
+    value: postgres://user:pass@host/db
+    is_full_admin: true
+env: {}
+compare:
+  ignore: []
+calls:
+  - b10137:
+      function: redact_setting_value
+      name: database_url
+      value: postgres://user:pass@host/db
+      is_full_admin: false
+  - b10137:
+      function: redact_setting_value
+      name: pass_through_endpoints
+      value:
+        - headers:
+            Authorization: Bearer abc123
+      is_full_admin: false
+  - b10137:
+      function: redact_setting_value
+      name: general_settings
+      value:
+        database_url: postgres://user:pass@host/db
+        model: gpt-4o
+      is_full_admin: false
+  - b10137:
+      function: dump_redacted_config
+      value: null
+      redact_all: false
+  - b10137:
+      function: redact_secret_values
+      value: null

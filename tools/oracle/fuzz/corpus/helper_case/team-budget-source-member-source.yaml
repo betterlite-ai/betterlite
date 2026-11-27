@@ -1,0 +1,5 @@
+kind: helper
+name: team-budget-source-member-source-seed
+call: {b10151: {op: source, pairs: [[null, null], [member-a, team-a], [team-a, team-a], [member-a, null], ['', '']]}}
+env: {}
+compare: {ignore: []}
