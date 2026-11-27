@@ -146,8 +146,11 @@ pub(super) fn network<'a>(
 
 pub(super) fn trusted(range: &str) -> TrustedNetworkSettings {
     TrustedNetworkSettings {
+        proxy_base_url: String::new(),
+        use_x_forwarded_for: false,
         trusted_proxy_ranges: Some(CidrRanges::List(vec![range.to_owned()])),
-        ..TrustedNetworkSettings::default()
+        mcp_trusted_proxy_ranges: None,
+        mcp_xff_num_trusted_hops: None,
     }
 }
 

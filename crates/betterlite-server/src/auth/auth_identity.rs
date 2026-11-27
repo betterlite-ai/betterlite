@@ -151,7 +151,6 @@ impl From<AuthenticationFailure> for StageFailure {
         Self::Authentication(Box::new(failure))
     }
 }
-
 impl StageInput {
     // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
     pub(crate) async fn prefetch_model_grants(

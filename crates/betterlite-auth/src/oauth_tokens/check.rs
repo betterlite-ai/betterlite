@@ -5,7 +5,6 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::controls::json_value::JsonValue;
 use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Number;
 use thiserror::Error;
 use url::Url;
 
@@ -139,12 +138,21 @@ fn decode_identity(
     mode: EndpointMode,
 ) -> Result<ExtractedIdentity, ValidationError> {
     let document = decode_oauth_response(&response.body)?;
-    // data.get("active", True): an absent key passes, a present one is read for truth
+    // the introspection contract types active as a boolean; an absent or null key takes the true default
     if mode == EndpointMode::Introspection {
         let JsonValue::Object(fields) = &document else {
             return Err(ValidationError::from(ExtractError::NotAnObject));
         };
-        if !fields.get("active").is_none_or(json_truthy) {
+        let active = match fields.get("active") {
+            None | Some(JsonValue::Null) => true,
+            Some(JsonValue::Bool(flag)) => *flag,
+            Some(_) => {
+                return Err(ValidationError::from(ExtractError::NotABool {
+                    field: "active".to_owned(),
+                }));
+            }
+        };
+        if !active {
             return Err(ValidationError::Inactive);
         }
     }
@@ -155,28 +163,6 @@ fn decode_identity(
         &settings.user_team_id_field_name,
     )?;
     Ok(identity)
-}
-
-// Python truthiness over the decoded document: null, false, zero, "" and empty containers are false
-fn json_truthy(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null => false,
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number_truthy(number),
-        JsonValue::Text(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
-    }
-}
-
-fn number_truthy(number: &Number) -> bool {
-    if let Some(integer) = number.as_i64() {
-        return integer != 0;
-    }
-    if let Some(unsigned) = number.as_u64() {
-        return unsigned != 0;
-    }
-    number.as_f64().is_none_or(|value| value.abs() > 0.0)
 }
 
 // UserAPIKeyAuth(api_key=token, team_id=..., user_id=..., user_role=...): the B2314 boundary validates the role

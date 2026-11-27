@@ -9,6 +9,8 @@ pub enum ExtractError {
     NotAnObject,
     #[error("the OAuth token response field {field} is not a string")]
     NotAString { field: String },
+    #[error("the OAuth token response field {field} is not a boolean")]
+    NotABool { field: String },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

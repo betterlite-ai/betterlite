@@ -61,16 +61,20 @@ class Recorder:
         self.request: RequestView | None = None
 
     def respond(self, request: httpx.Request) -> httpx.Response:
+        headers: dict[str, str] = dict(request.headers)
         self.request = RequestView(
             method=request.method,
             url=str(request.url),
-            authorization=request.headers.get("authorization"),
-            content_type=request.headers.get("content-type"),
+            authorization=headers.get("authorization"),
+            content_type=headers.get("content-type"),
             form=parse_qsl(request.content.decode("utf-8"), keep_blank_values=True),
         )
         if self.upstream.get("failure") == "network":
             raise httpx.ConnectError("the identity provider is unreachable", request=request)
-        return httpx.Response(self.upstream["status"], content=self.upstream["body"].encode("utf-8"))
+        return httpx.Response(
+            self.upstream["status"],
+            content=self.upstream["body"].encode("utf-8"),
+        )
 
 
 class ClientCache(LLMClientCache):

@@ -29,7 +29,7 @@ pub enum ProxyAuthError {
     #[error("Oauth2 config mappings not found in general_settings")]
     MappingsMissing,
     #[error(
-        "Oauth2 proxy auth refuses to map non-identity UserAPIKeyAuth fields from request headers: {rejected}. Only identity fields are accepted ({allowlist}); anything else (privileges, budgets, rate limits, metadata) would let a caller forge enforcement parameters by spoofing the matching header. If you need a trusted upstream to assert anything beyond identity, use JWT auth (signature-validated) instead of header-trust."
+        "Oauth2 proxy auth refuses to map non-identity UserAPIKeyAuth fields from request headers: [{rejected}]. Only identity fields are accepted ([{allowlist}]); anything else (privileges, budgets, rate limits, metadata) would let a caller forge enforcement parameters by spoofing the matching header. If you need a trusted upstream to assert anything beyond identity, use JWT auth (signature-validated) instead of header-trust."
     )]
     Disallowed { rejected: String, allowlist: String },
     #[error(
@@ -60,8 +60,16 @@ pub fn handle_oauth2_proxy_request(
         .collect();
     if !rejected.is_empty() {
         return Err(ProxyAuthError::Disallowed {
-            rejected: python_list(&rejected),
-            allowlist: python_list(&ALLOWED_OAUTH2_PROXY_FIELDS),
+            rejected: rejected
+                .iter()
+                .map(|name| format!("'{name}'"))
+                .collect::<Vec<String>>()
+                .join(", "),
+            allowlist: ALLOWED_OAUTH2_PROXY_FIELDS
+                .iter()
+                .map(|name| format!("'{name}'"))
+                .collect::<Vec<String>>()
+                .join(", "),
         });
     }
     let fields = identity_fields(headers, mappings);
@@ -105,9 +113,4 @@ fn identity_fields(
         fields.insert(field.clone(), data);
     }
     fields
-}
-
-fn python_list(names: &[&str]) -> String {
-    let quoted: Vec<String> = names.iter().map(|name| format!("'{name}'")).collect();
-    format!("[{}]", quoted.join(", "))
 }

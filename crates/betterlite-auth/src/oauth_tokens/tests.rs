@@ -218,55 +218,65 @@ fn token_info_timeout_matches_the_client_default() {
     assert_eq!(TOKEN_INFO_TIMEOUT, Duration::from_secs(600));
 }
 
+#[rstest]
+#[case(r#"{"active":false,"sub":"user-1"}"#)]
+// the active check runs before the identity is extracted, so this is inactive, not a field failure
+#[case(r#"{"active":false,"sub":42}"#)]
 #[tokio::test]
-async fn inactive_token() {
+async fn inactive_token(#[case] body: &str) {
     let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
-    for body in [
-        r#"{"active":false,"sub":"user-1"}"#,
-        r#"{"active":null,"sub":"user-1"}"#,
-        r#"{"active":0,"sub":"user-1"}"#,
-        r#"{"active":0.0,"sub":"user-1"}"#,
-        r#"{"active":"","sub":"user-1"}"#,
-        r#"{"active":[],"sub":"user-1"}"#,
-        r#"{"active":{},"sub":"user-1"}"#,
-        // the active check runs before the identity is extracted, so this is inactive, not a field failure
-        r#"{"active":false,"sub":42}"#,
-    ] {
-        let transport = Scripted::answering(200, body);
-        let error = check_oauth2_token(&configured, &transport, &token())
-            .await
-            .expect_err("an inactive token is refused");
-        assert!(
-            matches!(expect_validation(error), ValidationError::Inactive),
-            "{body}"
-        );
-    }
-    for body in [
-        r#"{"active":true,"sub":"user-1"}"#,
-        r#"{"active":1,"sub":"user-1"}"#,
-        r#"{"active":-2,"sub":"user-1"}"#,
-        r#"{"active":18446744073709551615,"sub":"user-1"}"#,
-        r#"{"active":0.5,"sub":"user-1"}"#,
-        r#"{"active":"yes","sub":"user-1"}"#,
-        r#"{"active":[0],"sub":"user-1"}"#,
-        r#"{"active":{"a":0},"sub":"user-1"}"#,
-    ] {
-        let transport = Scripted::answering(200, body);
-        drop(
-            check_oauth2_token(&configured, &transport, &token())
-                .await
-                .expect("an active token validates"),
-        );
+    let transport = Scripted::answering(200, body);
+    let error = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect_err("an inactive token is refused");
+    assert!(
+        matches!(expect_validation(error), ValidationError::Inactive),
+        "{body}"
+    );
+}
+
+#[rstest]
+#[case(r#"{"active":0,"sub":"user-1"}"#)]
+#[case(r#"{"active":0.0,"sub":"user-1"}"#)]
+#[case(r#"{"active":"","sub":"user-1"}"#)]
+#[case(r#"{"active":[],"sub":"user-1"}"#)]
+#[case(r#"{"active":{},"sub":"user-1"}"#)]
+#[case(r#"{"active":1,"sub":"user-1"}"#)]
+#[case(r#"{"active":"yes","sub":"user-1"}"#)]
+#[case(r#"{"active":[0],"sub":"user-1"}"#)]
+#[tokio::test]
+async fn non_bool_active_refused(#[case] body: &str) {
+    let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
+    let transport = Scripted::answering(200, body);
+    let error = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect_err("a non-boolean active is refused");
+    match expect_validation(error) {
+        ValidationError::Extract(ExtractError::NotABool { field }) => assert_eq!(field, "active"),
+        other => panic!("expected a non-boolean active failure, got {other}"),
     }
 }
 
 #[tokio::test]
-async fn missing_active_default() {
+async fn active_true_validates() {
     let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
-    let transport = Scripted::answering(200, r#"{"sub":"user-3"}"#);
+    let transport = Scripted::answering(200, r#"{"active":true,"sub":"user-1"}"#);
     let auth = check_oauth2_token(&configured, &transport, &token())
         .await
-        .expect("an absent active defaults to true");
+        .expect("an active token validates");
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-1"));
+}
+
+#[rstest]
+#[case(r#"{"sub":"user-3"}"#)]
+#[case(r#"{"active":null,"sub":"user-3"}"#)]
+#[tokio::test]
+async fn missing_active_default(#[case] body: &str) {
+    let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
+    let transport = Scripted::answering(200, body);
+    let auth = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect("an absent or null active defaults to true");
     assert_eq!(auth.view.token.user_id.as_deref(), Some("user-3"));
 }
 
@@ -410,16 +420,17 @@ async fn invalid_response_json() {
     ));
 }
 
+#[rstest]
+#[case(None)]
+#[case(Some(""))]
 #[tokio::test]
-async fn endpoint_absent() {
+async fn endpoint_absent(#[case] endpoint: Option<&str>) {
     let transport = Scripted::answering(200, INTROSPECTION_BODY);
-    for endpoint in [None, Some("")] {
-        let configured = settings(endpoint, Some("client"), Some("secret"));
-        let error = check_oauth2_token(&configured, &transport, &token())
-            .await
-            .expect_err("an absent endpoint is refused");
-        assert!(matches!(error, CheckError::EndpointAbsent), "{endpoint:?}");
-    }
+    let configured = settings(endpoint, Some("client"), Some("secret"));
+    let error = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect_err("an absent endpoint is refused");
+    assert!(matches!(error, CheckError::EndpointAbsent), "{endpoint:?}");
     assert_eq!(
         transport.sent(),
         0,
@@ -495,13 +506,23 @@ async fn oauth_secrets_redacted() {
         "{lines:?}"
     );
     let joined = lines.join("\n");
+    assert!(
+        !joined.contains(TOKEN),
+        "the log carries the token: {joined}"
+    );
+    assert!(
+        !joined.contains(CLIENT_SECRET),
+        "the log carries the client secret: {joined}"
+    );
     let credentials = STANDARD.encode(format!("client:{CLIENT_SECRET}"));
-    for secret in [TOKEN, CLIENT_SECRET, credentials.as_str(), "hidden-user"] {
-        assert!(
-            !joined.contains(secret),
-            "the log carries {secret}: {joined}"
-        );
-    }
+    assert!(
+        !joined.contains(&credentials),
+        "the log carries the Basic credentials: {joined}"
+    );
+    assert!(
+        !joined.contains("hidden-user"),
+        "the log carries the identity response: {joined}"
+    );
 }
 
 #[test]
@@ -559,15 +580,16 @@ fn proxy_mapping_absent() {
     let peer = network(TRUSTED_PEER, None);
     let present = headers(&[("x-user-id", "user-1")]);
     let empty = mappings(&[]);
-    for configured_mappings in [None, Some(&empty)] {
-        let error = handle_oauth2_proxy_request(&present, configured_mappings, &peer, &configured)
-            .expect_err("an absent mapping refuses the request");
-        assert!(matches!(error, ProxyAuthError::MappingsMissing));
-        assert_eq!(
-            error.to_string(),
-            "Oauth2 config mappings not found in general_settings"
-        );
-    }
+    let absent = handle_oauth2_proxy_request(&present, None, &peer, &configured)
+        .expect_err("an absent mapping refuses the request");
+    assert!(matches!(absent, ProxyAuthError::MappingsMissing));
+    let empty_mapping = handle_oauth2_proxy_request(&present, Some(&empty), &peer, &configured)
+        .expect_err("an empty mapping refuses the request");
+    assert!(matches!(empty_mapping, ProxyAuthError::MappingsMissing));
+    assert_eq!(
+        empty_mapping.to_string(),
+        "Oauth2 config mappings not found in general_settings"
+    );
 }
 
 #[test]
@@ -614,17 +636,17 @@ fn proxy_disallowed_fields() {
     assert!(matches!(error, ProxyAuthError::Disallowed { .. }));
 }
 
-#[test]
-fn proxy_header_casefold() {
+#[rstest]
+#[case("x-user-id")]
+#[case("X-USER-ID")]
+fn proxy_header_casefold(#[case] name: &str) {
     let configured = trusted("10.0.0.0/8");
     let peer = network(TRUSTED_PEER, None);
     let mapping = mappings(&[("user_id", "X-User-Id")]);
-    for name in ["x-user-id", "X-USER-ID"] {
-        let present = headers(&[(name, "user-folded")]);
-        let auth = handle_oauth2_proxy_request(&present, Some(&mapping), &peer, &configured)
-            .expect("a case variant of the configured header maps");
-        assert_eq!(auth.view.token.user_id.as_deref(), Some("user-folded"));
-    }
+    let present = headers(&[(name, "user-folded")]);
+    let auth = handle_oauth2_proxy_request(&present, Some(&mapping), &peer, &configured)
+        .expect("a case variant of the configured header maps");
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-folded"));
 }
 
 #[test]
@@ -728,55 +750,50 @@ fn proxy_all_identity_fields() {
     );
     assert_eq!(auth.extra.user_role, None);
     let joined = events(&logs).join("\n");
-    for name in [
-        "user_id",
-        "user_email",
-        "team_id",
-        "team_alias",
-        "org_id",
-        "models",
-    ] {
-        assert!(
-            joined.contains(name),
-            "the diagnostics name {name}: {joined}"
-        );
-    }
-    for value in [
-        "user-1",
-        "user@example.com",
-        "team-alias-7",
-        "org-9",
-        "oauth-model",
-    ] {
-        assert!(
-            !joined.contains(value),
-            "the diagnostics leak {value}: {joined}"
-        );
-    }
+    assert!(joined.contains("user_id"), "{joined}");
+    assert!(joined.contains("user_email"), "{joined}");
+    assert!(joined.contains("team_id"), "{joined}");
+    assert!(joined.contains("team_alias"), "{joined}");
+    assert!(joined.contains("org_id"), "{joined}");
+    assert!(joined.contains("models"), "{joined}");
+    assert!(!joined.contains("user-1"), "{joined}");
+    assert!(!joined.contains("user@example.com"), "{joined}");
+    assert!(!joined.contains("team-alias-7"), "{joined}");
+    assert!(!joined.contains("org-9"), "{joined}");
+    assert!(!joined.contains("oauth-model"), "{joined}");
 }
 
 #[test]
 fn replays_the_oauth_tokens_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/oauth_tokens");
-    let mut accepted = 0_usize;
-    let mut deep = 0_usize;
-    let mut malformed = 0_usize;
-    for entry in fs::read_dir(corpus).expect("the corpus directory is readable") {
-        let path = entry.expect("the corpus entry is readable").path();
-        let bytes = fs::read(&path).expect("the corpus file is readable");
-        match decode_oauth_response(&bytes) {
-            Ok(_) => accepted += 1,
-            Err(DecodeError::TooDeep { .. }) => deep += 1,
-            Err(DecodeError::TooLarge { .. }) => {
-                panic!(
-                    "a committed corpus file is over the byte limit: {}",
-                    path.display()
-                );
+    let outcomes: Vec<&str> = fs::read_dir(corpus)
+        .expect("the corpus directory is readable")
+        .map(|entry| {
+            let path = entry.expect("the corpus entry is readable").path();
+            let bytes = fs::read(&path).expect("the corpus file is readable");
+            match decode_oauth_response(&bytes) {
+                Ok(_) => "accepted",
+                Err(DecodeError::TooDeep { .. }) => "deep",
+                Err(DecodeError::TooLarge { .. }) => {
+                    panic!(
+                        "a committed corpus file is over the byte limit: {}",
+                        path.display()
+                    );
+                }
+                Err(DecodeError::Json(_)) => "malformed",
             }
-            Err(DecodeError::Json(_)) => malformed += 1,
-        }
-    }
-    assert!(accepted >= 1, "the corpus carries a decodable document");
-    assert!(deep >= 1, "the corpus crosses the depth limit");
-    assert!(malformed >= 1, "the corpus carries malformed input");
+        })
+        .collect();
+    assert!(
+        outcomes.contains(&"accepted"),
+        "the corpus carries a decodable document"
+    );
+    assert!(
+        outcomes.contains(&"deep"),
+        "the corpus crosses the depth limit"
+    );
+    assert!(
+        outcomes.contains(&"malformed"),
+        "the corpus carries malformed input"
+    );
 }

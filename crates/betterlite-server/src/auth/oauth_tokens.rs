@@ -20,7 +20,7 @@ use betterlite_auth::route_match::classifier::is_llm_api_route;
 use betterlite_auth::route_match::templates::RouteValue;
 use betterlite_auth::trusted_network::request::NetworkRequest;
 use betterlite_config::sections::oauth_tokens::Settings;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::auth::auth_identity::{AuthContext, StageFailure};
 use crate::auth::auth_key_lookup::key_headers::extract_key;
@@ -65,17 +65,8 @@ async fn introspection(
         return PreStage::Rejected(StageFailure::from(AuthenticationFailure::Missing));
     };
     let transport = state.oauth_tokens.transport.as_ref();
-    match check_oauth2_token(settings, transport, &token).await {
-        Ok(auth) => {
-            let hashed = safe_hash_api_key(token.expose_secret());
-            PreStage::Authenticated(context_for(
-                auth,
-                AuthMethod::Oauth2Introspection,
-                Some(hashed),
-            ))
-        }
-        Err(error) => PreStage::Rejected(value_error(&error)),
-    }
+    let result = check_oauth2_token(settings, transport, &token).await;
+    stage_from_result(result, AuthMethod::Oauth2Introspection, Some(&token))
 }
 
 fn proxy(state: &ServerState, settings: &Settings, request: &Request<Body>) -> PreStage {
@@ -93,14 +84,31 @@ fn proxy(state: &ServerState, settings: &Settings, request: &Request<Body>) -> P
     };
     let trusted = state.trusted_network.settings.as_ref();
     let mappings = settings.config_mappings.as_ref();
-    match handle_oauth2_proxy_request(request.headers(), mappings, &network, trusted) {
-        Ok(auth) => PreStage::Authenticated(context_for(auth, AuthMethod::Oidc, None)),
-        Err(error) => PreStage::Rejected(value_error(&error)),
-    }
+    let result = handle_oauth2_proxy_request(request.headers(), mappings, &network, trusted);
+    stage_from_result(result, AuthMethod::Oidc, None)
+}
+
+fn stage_from_result<E>(
+    result: Result<UserAPIKeyAuth, E>,
+    method: AuthMethod,
+    token: Option<&SecretString>,
+) -> PreStage
+where
+    E: Display,
+{
+    let auth = match result {
+        Ok(auth) => auth,
+        Err(error) => return PreStage::Rejected(value_error(&error)),
+    };
+    let hashed = token.map(|value| safe_hash_api_key(value.expose_secret()));
+    PreStage::Authenticated(context_for(auth, method, hashed))
 }
 
 // auth_exception_handler._as_proxy_exception: an unhandled ValueError is this public 401 auth_error
-fn value_error(error: &impl Display) -> StageFailure {
+fn value_error<E>(error: &E) -> StageFailure
+where
+    E: Display,
+{
     let failure = AuthFailure::Other {
         message: error.to_string(),
         param: None,
