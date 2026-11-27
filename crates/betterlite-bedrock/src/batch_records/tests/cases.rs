@@ -392,6 +392,23 @@ pub(super) fn malformed_jsonl_line() {
     ));
     let (missing, _) = run_upload_missing_file(&Families::default());
     assert_eq!(missing.to_string(), "file is required");
+    // a row after a failing one never becomes a partial upload
+    let partially_valid = FileData::Direct(FileBody::Bytes(
+        b"{\"custom_id\":\"a\",\"body\":{\"model\":\"openai.gpt-oss-20b-1:0\",\"messages\":[]}}\n{\"custom_id\":\"b\",\"body\":[1]}"
+            .to_vec(),
+    ));
+    let (partial_result, partial_params) = run_upload(
+        &Families::batch(),
+        &partially_valid,
+        Some(CreatePurpose::Batch),
+        "",
+        &mut booking_params(),
+    );
+    assert!(matches!(
+        partial_result.expect_err("the second row is refused"),
+        BatchRecordsError::RecordShape
+    ));
+    assert!(!partial_params.contains_key("upload_url"));
 }
 
 pub(super) fn nova_batch_record() {
