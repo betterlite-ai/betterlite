@@ -85,15 +85,20 @@ fn tool_message(result: &McpToolResult) -> Json {
     fields.insert(String::from("role"), Json::Text(String::from("tool")));
     fields.insert(
         String::from("tool_call_id"),
-        optional_text(result.tool_call_id.as_deref()),
+        result
+            .tool_call_id
+            .as_deref()
+            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
     );
-    fields.insert(String::from("name"), optional_text(result.name.as_deref()));
+    fields.insert(
+        String::from("name"),
+        result
+            .name
+            .as_deref()
+            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
+    );
     fields.insert(String::from("content"), Json::Text(result.result.clone()));
     Json::Object(fields)
-}
-
-fn optional_text(value: Option<&str>) -> Json {
-    value.map_or(Json::Null, |text| Json::Text(text.to_owned()))
 }
 
 fn annotations_json<T>(annotations: &[T]) -> Result<Json, ChatFollowupError>
