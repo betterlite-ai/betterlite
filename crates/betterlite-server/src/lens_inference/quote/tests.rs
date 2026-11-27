@@ -21,6 +21,7 @@ impl ModelInfoSource for Catalog {
     }
 }
 
+#[derive(Debug)]
 struct Unavailable;
 
 impl ModelInfoSource for Unavailable {

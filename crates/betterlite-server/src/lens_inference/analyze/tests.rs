@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::future::ready;
 use std::str::FromStr as _;
 use std::sync::{Arc, Mutex};
@@ -205,17 +205,21 @@ impl ModelCatalog for CatalogFake {
     }
 }
 
-struct PricesFake {
-    info: Option<JsonObject>,
-    unavailable: bool,
+#[derive(Debug, Clone)]
+enum Catalog {
+    Known(Option<JsonObject>),
+    Unavailable,
 }
+
+#[derive(Debug)]
+struct PricesFake(Catalog);
 
 impl ModelInfoSource for PricesFake {
     fn get_model_info(&self, _model: &str) -> Result<Option<JsonObject>, ModelInfoError> {
-        if self.unavailable {
-            return Err(ModelInfoError::Unavailable);
+        match &self.0 {
+            Catalog::Known(info) => Ok(info.clone()),
+            Catalog::Unavailable => Err(ModelInfoError::Unavailable),
         }
-        Ok(self.info.clone())
     }
 }
 
@@ -240,7 +244,7 @@ struct ClockFake {
 
 impl ClockFake {
     fn new(readings: &[DateTime<Utc>]) -> Self {
-        let mut queue = VecDeque::from(readings.to_vec());
+        let queue = VecDeque::from(readings.to_vec());
         let last = queue.back().copied().unwrap();
         Self {
             readings: Mutex::new(queue),
@@ -272,7 +276,7 @@ fn deployment() -> Deployment {
 fn response(content: Option<&str>, choices: usize) -> ChatResponse {
     let message = content.map_or_else(
         || "{\"role\":\"assistant\",\"content\":null}".to_owned(),
-        |content| format!("{{\"role\":\"assistant\",\"content\":\"{content}\"}}"),
+        |text| format!("{{\"role\":\"assistant\",\"content\":\"{text}\"}}"),
     );
     let entries: Vec<String> = (0..choices)
         .map(|index| format!("{{\"index\":{index},\"message\":{message}}}"))
@@ -295,25 +299,40 @@ fn lens_fixture(
     spent: &str,
     budget: &str,
 ) -> Lens {
-    let json = format!(concat!(
-        "{{\"id\":\"lens-1\",\"scope\":{{\"team_id\":\"team-1\"}},",
-        "\"settings\":{{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":{budget}}},",
-        "\"created_at\":\"2026-01-10T08:00:00Z\",\"next_run_at\":\"2026-02-01T00:00:00Z\",",
-        "\"budget_month\":\"2026-02\",\"spent\":{spent},\"jobs\":[{{\"id\":\"job-1\",",
-        "\"status\":\"{job_status}\",\"created_at\":\"2026-01-10T08:00:00Z\",",
+    let json = [
+        "{\"id\":\"lens-1\",\"scope\":{\"team_id\":\"team-1\"},",
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":",
+        budget,
+        "},\"created_at\":\"2026-01-10T08:00:00Z\",\"next_run_at\":\"2026-02-01T00:00:00Z\",",
+        "\"budget_month\":\"2026-02\",\"spent\":",
+        spent,
+        ",\"jobs\":[{\"id\":\"job-1\",",
+        "\"status\":\"",
+        job_status,
+        "\",\"created_at\":\"2026-01-10T08:00:00Z\",",
         "\"start\":\"2026-01-10T00:00:00Z\",\"end\":\"2026-01-10T08:00:00Z\",",
-        "\"settings\":{{\"name\":\"n\",\"model\":\"lens-model\"}},\"revision\":1,",
-        "\"worker_id\":\"{job_worker}\",\"lease_until\":\"{lease}\",\"cost\":0.5}}]}}"
-    ));
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\"},\"revision\":1,",
+        "\"worker_id\":\"",
+        job_worker,
+        "\",\"lease_until\":\"",
+        lease,
+        "\",\"cost\":0.5}]}",
+    ]
+    .concat();
     serde_json::from_str(&json).unwrap()
 }
 
 fn worker_fixture(key: Option<&str>) -> Worker {
-    let key_field = key.map_or_else(String::new, |key| format!(",\"analysis_key_id\":\"{key}\""));
-    let json = format!(concat!(
-        "{{\"id\":\"worker-1\",\"name\":\"w\",\"scope\":{{\"team_id\":\"team-1\"}},",
-        "\"last_seen\":\"2026-01-10T08:00:00Z\"{key_field}}}"
-    ));
+    let key_field = key.map_or_else(String::new, |given| {
+        format!(",\"analysis_key_id\":\"{given}\"")
+    });
+    let json = [
+        "{\"id\":\"worker-1\",\"name\":\"w\",\"scope\":{\"team_id\":\"team-1\"},",
+        "\"last_seen\":\"2026-01-10T08:00:00Z\"",
+        key_field.as_str(),
+        "}",
+    ]
+    .concat();
     serde_json::from_str(&json).unwrap()
 }
 
@@ -321,18 +340,34 @@ fn body_fixture() -> ModelRequest {
     serde_json::from_str("{\"prompt\":\"hello\",\"purpose\":\"cluster\"}").unwrap()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Router {
+    Configured,
+    Missing,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KeyState {
+    Active,
+    Blocked,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Run {
+    Answers,
+    Fails,
+}
+
 struct Setup {
-    configured: bool,
-    worker_key: Option<&'static str>,
-    blocked: bool,
+    router: Router,
+    key: KeyState,
     deployments: Vec<Deployment>,
-    prices: Option<JsonObject>,
-    prices_unavailable: bool,
+    catalog: Catalog,
     calculator: &'static str,
     billed: Option<&'static str>,
     content: Option<&'static str>,
     choices: usize,
-    run_failure: bool,
+    run: Run,
     readings: Vec<DateTime<Utc>>,
     lens: Lens,
     job: Job,
@@ -350,17 +385,15 @@ fn setup() -> Setup {
     );
     let job = lens.jobs[0].clone();
     Setup {
-        configured: true,
-        worker_key: Some(KEY),
-        blocked: false,
+        router: Router::Configured,
+        key: KeyState::Active,
         deployments: vec![deployment()],
-        prices: None,
-        prices_unavailable: false,
+        catalog: Catalog::Known(None),
         calculator: "7.5",
         billed: Some("2.5"),
         content: Some("{}"),
         choices: 1,
-        run_failure: false,
+        run: Run::Answers,
         readings: vec![timestamp(NOW), timestamp(NOW)],
         lens,
         job,
@@ -376,51 +409,71 @@ struct Facts {
     privacy_active: bool,
 }
 
-async fn execute(setup: &Setup) -> (Result<ModelResult, AnalyzeError>, Facts) {
+struct Dependencies {
+    billing: Billing,
+    log: Log,
+    keys: KeyFake,
+    models: CatalogFake,
+    prices: PricesFake,
+    costs: CalculatorFake,
+    clock: ClockFake,
+    store: Store,
+    lens_analysis: LensAnalysis,
+}
+
+fn dependencies(setup: &Setup) -> Dependencies {
     let log: Log = Log::default();
     let lens_analysis = LensAnalysis::default();
     let fake = Arc::new(BillingFake {
-        log: log.clone(),
+        log: Arc::clone(&log),
         billed: setup.billed,
         content: setup.content,
         choices: setup.choices,
-        run_failure: setup.run_failure,
+        run_failure: setup.run == Run::Fails,
         lens_analysis: lens_analysis.clone(),
     });
     let billing = Billing {
-        authorizer: fake.clone(),
-        runner: fake.clone(),
-        releaser: fake.clone(),
+        authorizer: Arc::clone(&fake),
+        runner: Arc::clone(&fake),
+        releaser: Arc::clone(&fake),
         client_ip: Arc::new(NoIp),
     };
-    let keys = KeyFake {
-        blocked: setup.blocked,
-    };
-    let models = CatalogFake {
-        configured: setup.configured,
-        deployments: setup.deployments.clone(),
-    };
-    let prices = PricesFake {
-        info: setup.prices.clone(),
-        unavailable: setup.prices_unavailable,
-    };
-    let costs = CalculatorFake {
-        amount: setup.calculator,
-    };
-    let clock = ClockFake::new(&setup.readings);
-    let store = Store(Arc::new(Mutex::new(Some(setup.lens.clone()))));
+    Dependencies {
+        billing,
+        log,
+        keys: KeyFake {
+            blocked: setup.key == KeyState::Blocked,
+        },
+        models: CatalogFake {
+            configured: setup.router == Router::Configured,
+            deployments: setup.deployments.clone(),
+        },
+        prices: PricesFake(setup.catalog.clone()),
+        costs: CalculatorFake {
+            amount: setup.calculator,
+        },
+        clock: ClockFake::new(&setup.readings),
+        store: Store(Arc::new(Mutex::new(Some(setup.lens.clone())))),
+        lens_analysis,
+    }
+}
+
+async fn execute(setup: &Setup) -> (Result<ModelResult, AnalyzeError>, Facts) {
+    let deps = dependencies(setup);
+    let store = deps.store.clone();
+    let log = Arc::clone(&deps.log);
     let repository = LensRepository {
-        database: FakeDatabase(store.clone()),
+        database: FakeDatabase(deps.store.clone()),
     };
     let incoming = Incoming::default();
     let ports = InferencePorts {
-        billing: &billing,
-        keys: &keys,
-        models: &models,
-        prices: &prices,
-        costs: &costs,
-        clock: &clock,
-        lens_analysis: &lens_analysis,
+        billing: &deps.billing,
+        keys: &deps.keys,
+        models: &deps.models,
+        prices: &deps.prices,
+        costs: &deps.costs,
+        clock: &deps.clock,
+        lens_analysis: &deps.lens_analysis,
     };
     let input = AnalysisInput {
         lens: &setup.lens,
@@ -433,8 +486,8 @@ async fn execute(setup: &Setup) -> (Result<ModelResult, AnalyzeError>, Facts) {
     let facts = Facts {
         lens: lock(&store.0).clone(),
         log: lock(&log).clone(),
-        lens_analysis_active: lens_analysis.is_lens_analysis(),
-        privacy_active: incoming.privacy.context().message_logging_disabled,
+        lens_analysis_active: deps.lens_analysis.is_lens_analysis(),
+        privacy_active: lock(&incoming.privacy.0).message_logging_disabled,
     };
     (result, facts)
 }
@@ -447,9 +500,9 @@ fn amount(text: &str) -> Decimal {
 async fn the_analysis_reserves_runs_and_settles() {
     let setup = setup();
     let (result, facts) = execute(&setup).await;
-    let result = result.unwrap();
-    assert_eq!(result.content, "{}");
-    assert_eq!(result.cost, amount("2.5"));
+    let answer = result.unwrap();
+    assert_eq!(answer.content, "{}");
+    assert_eq!(answer.cost, amount("2.5"));
     let lens = facts.lens.unwrap();
     assert_eq!(lens.spent, amount("1002.5"));
     assert_eq!(lens.jobs[0].cost, amount("3.0"));
@@ -477,8 +530,7 @@ async fn the_provider_cost_prices_an_unbilled_call() {
 #[tokio::test]
 async fn no_router_is_a_503_before_the_worker_key_is_read() {
     let mut setup = setup();
-    setup.configured = false;
-    setup.worker_key = None;
+    setup.router = Router::Missing;
     let (result, _facts) = execute(&setup).await;
     let error = result.unwrap_err();
     assert_eq!(error.status(), 503);
@@ -501,7 +553,7 @@ async fn a_worker_without_an_analysis_key_is_a_409() {
 #[tokio::test]
 async fn an_inactive_key_is_a_400() {
     let mut setup = setup();
-    setup.blocked = true;
+    setup.key = KeyState::Blocked;
     let (result, _facts) = execute(&setup).await;
     let error = result.unwrap_err();
     assert_eq!(error.status(), 400);
@@ -531,7 +583,7 @@ async fn a_catalog_outage_is_a_500() {
             output_cost_per_token: None,
         },
     }];
-    setup.prices_unavailable = true;
+    setup.catalog = Catalog::Unavailable;
     let (result, _facts) = execute(&setup).await;
     assert_eq!(result.unwrap_err().status(), 500);
 }
@@ -539,15 +591,15 @@ async fn a_catalog_outage_is_a_500() {
 #[tokio::test]
 async fn a_budget_with_no_room_is_a_402_and_writes_nothing() {
     let mut setup = setup();
-    let lens = lens_fixture(
+    let over_budget = lens_fixture(
         "running",
         "worker-1",
         "2100-01-01T00:00:00Z",
         "9000.0",
         "10000.0",
     );
-    setup.job = lens.jobs[0].clone();
-    setup.lens = lens;
+    setup.job = over_budget.jobs[0].clone();
+    setup.lens = over_budget;
     let (result, facts) = execute(&setup).await;
     let error = result.unwrap_err();
     assert_eq!(error.status(), 402);
@@ -555,9 +607,9 @@ async fn a_budget_with_no_room_is_a_402_and_writes_nothing() {
         error.detail(),
         "Monthly lens budget reached; increase it or wait for next month"
     );
-    let lens = facts.lens.unwrap();
-    assert_eq!(lens.spent, amount("9000"));
-    assert_eq!(lens.version, 0);
+    let stored = facts.lens.unwrap();
+    assert_eq!(stored.spent, amount("9000"));
+    assert_eq!(stored.version, 0);
     assert_eq!(
         facts.log,
         vec!["authorize".to_owned(), "release".to_owned()]
@@ -567,15 +619,15 @@ async fn a_budget_with_no_room_is_a_402_and_writes_nothing() {
 #[tokio::test]
 async fn a_job_claimed_by_another_worker_is_a_409() {
     let mut setup = setup();
-    let lens = lens_fixture(
+    let other_worker = lens_fixture(
         "running",
         "worker-2",
         "2100-01-01T00:00:00Z",
         "1000.0",
         "10000.0",
     );
-    setup.job = lens.jobs[0].clone();
-    setup.lens = lens;
+    setup.job = other_worker.jobs[0].clone();
+    setup.lens = other_worker;
     let (result, facts) = execute(&setup).await;
     let error = result.unwrap_err();
     assert_eq!(error.status(), 409);
@@ -586,9 +638,9 @@ async fn a_job_claimed_by_another_worker_is_a_409() {
 #[tokio::test]
 async fn an_expired_lease_is_a_409() {
     let mut setup = setup();
-    let lens = lens_fixture("running", "worker-1", NOW, "1000.0", "10000.0");
-    setup.job = lens.jobs[0].clone();
-    setup.lens = lens;
+    let expired = lens_fixture("running", "worker-1", NOW, "1000.0", "10000.0");
+    setup.job = expired.jobs[0].clone();
+    setup.lens = expired;
     let (result, _facts) = execute(&setup).await;
     assert_eq!(result.unwrap_err().status(), 409);
 }
@@ -599,10 +651,10 @@ async fn a_call_the_model_answers_without_choices_fails_after_the_reserve() {
     setup.choices = 0;
     let (result, facts) = execute(&setup).await;
     assert_eq!(result.unwrap_err().status(), 500);
-    let lens = facts.lens.unwrap();
-    assert_eq!(lens.spent, amount("5791.5"));
-    assert_eq!(lens.jobs[0].cost, amount("4792"));
-    assert_eq!(lens.version, 1);
+    let stored = facts.lens.unwrap();
+    assert_eq!(stored.spent, amount("5791.5"));
+    assert_eq!(stored.jobs[0].cost, amount("4792"));
+    assert_eq!(stored.version, 1);
     assert_eq!(facts.log.last().map(String::as_str), Some("release"));
     assert!(!facts.lens_analysis_active);
     assert!(!facts.privacy_active);
@@ -611,7 +663,7 @@ async fn a_call_the_model_answers_without_choices_fails_after_the_reserve() {
 #[tokio::test]
 async fn a_chat_failure_drops_both_scopes() {
     let mut setup = setup();
-    setup.run_failure = true;
+    setup.run = Run::Fails;
     let (result, facts) = execute(&setup).await;
     assert_eq!(result.unwrap_err().status(), 502);
     assert!(!facts.lens_analysis_active);

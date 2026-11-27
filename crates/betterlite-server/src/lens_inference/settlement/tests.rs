@@ -66,17 +66,25 @@ fn timestamp(text: &str) -> DateTime<Utc> {
 }
 
 fn lens(month: &str, spent: &str, job_id: &str, job_cost: &str) -> Lens {
-    let json = format!(concat!(
-        "{{\"id\":\"lens-1\",\"scope\":{{\"team_id\":\"team-1\"}},",
-        "\"settings\":{{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":10000.0}},",
+    let json = [
+        "{\"id\":\"lens-1\",\"scope\":{\"team_id\":\"team-1\"},",
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":10000.0},",
         "\"created_at\":\"2026-01-10T08:00:00Z\",\"next_run_at\":\"2026-02-01T00:00:00Z\",",
-        "\"budget_month\":\"{month}\",\"spent\":{spent},\"jobs\":[{{\"id\":\"{job_id}\",",
-        "\"status\":\"running\",\"created_at\":\"2026-01-10T08:00:00Z\",",
+        "\"budget_month\":\"",
+        month,
+        "\",\"spent\":",
+        spent,
+        ",\"jobs\":[{\"id\":\"",
+        job_id,
+        "\",\"status\":\"running\",\"created_at\":\"2026-01-10T08:00:00Z\",",
         "\"start\":\"2026-01-10T00:00:00Z\",\"end\":\"2026-01-10T08:00:00Z\",",
-        "\"settings\":{{\"name\":\"n\",\"model\":\"lens-model\"}},\"revision\":1,",
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\"},\"revision\":1,",
         "\"worker_id\":\"worker-1\",\"lease_until\":\"2100-01-01T00:00:00Z\",",
-        "\"cost\":{job_cost}}}]}}"
-    ));
+        "\"cost\":",
+        job_cost,
+        "}]}",
+    ]
+    .concat();
     serde_json::from_str(&json).unwrap()
 }
 

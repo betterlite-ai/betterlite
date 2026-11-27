@@ -21,11 +21,18 @@ type Log = Arc<Mutex<Vec<String>>>;
 
 #[derive(Default)]
 struct Plan {
-    budget: bool,
-    reserve_failure: bool,
-    run_failure: bool,
+    outcome: Outcome,
     billed: Option<&'static str>,
     reservation: Option<ReservationHandle>,
+}
+
+#[derive(Default)]
+enum Outcome {
+    #[default]
+    Proceed,
+    Budget,
+    ReserveFailure,
+    RunFailure,
 }
 
 struct Fake {
@@ -59,7 +66,7 @@ impl InternalAuthorizer for Fake {
         if let Some(reservation) = &self.plan.reservation {
             request.reservation.set(reservation.clone());
         }
-        if self.plan.budget {
+        if matches!(self.plan.outcome, Outcome::Budget) {
             return Err(BillingError::BudgetExceeded);
         }
         Ok(())
@@ -73,10 +80,13 @@ impl ChatRunner for Fake {
         request: &InternalRequest,
         _data: &AnalysisBody<'_>,
     ) -> Result<ChatAnswer, BillingError> {
-        let privacy = request.privacy.context().message_logging_disabled;
+        let privacy = lock(&request.privacy.0).message_logging_disabled;
         lock(&self.log).push(format!("run privacy={privacy}"));
-        if self.plan.run_failure {
-            return Err(BillingError::http(502, "upstream failed".to_owned()));
+        if matches!(self.plan.outcome, Outcome::RunFailure) {
+            return Err(BillingError::Http {
+                status: 502,
+                detail: "upstream failed".to_owned(),
+            });
         }
         Ok(ChatAnswer {
             response: response(),
@@ -89,11 +99,11 @@ impl ChatRunner for Fake {
 impl ReserveBudget for Fake {
     async fn reserve(&self) -> Result<(), BillingError> {
         lock(&self.log).push("reserve".to_owned());
-        if self.plan.reserve_failure {
-            return Err(BillingError::http(
-                409,
-                "Could not reserve analysis budget".to_owned(),
-            ));
+        if matches!(self.plan.outcome, Outcome::ReserveFailure) {
+            return Err(BillingError::Http {
+                status: 409,
+                detail: "Could not reserve analysis budget".to_owned(),
+            });
         }
         Ok(())
     }
@@ -119,7 +129,7 @@ fn response() -> ChatResponse {
     serde_json::from_str(json).unwrap()
 }
 
-fn body() -> AnalysisBody<'static> {
+const fn body() -> AnalysisBody<'static> {
     AnalysisBody::new(
         "lens-model",
         "hello",
@@ -136,12 +146,12 @@ fn harness(plan: Plan) -> (Billing, Arc<Fake>, Log) {
     let log: Log = Log::default();
     let fake = Arc::new(Fake {
         plan,
-        log: log.clone(),
+        log: Arc::clone(&log),
     });
     let billing = Billing {
-        authorizer: fake.clone(),
-        runner: fake.clone(),
-        releaser: fake.clone(),
+        authorizer: Arc::clone(&fake),
+        runner: Arc::clone(&fake),
+        releaser: Arc::clone(&fake),
         client_ip: Arc::new(Ip),
     };
     (billing, fake, log)
@@ -182,7 +192,7 @@ async fn complete_authorizes_reserves_then_runs() {
 #[tokio::test]
 async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
     let mut plan = Plan::default();
-    plan.budget = true;
+    plan.outcome = Outcome::Budget;
     plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(
@@ -206,7 +216,7 @@ async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
 #[tokio::test]
 async fn a_reserve_failure_releases_and_skips_the_chat_call() {
     let mut plan = Plan::default();
-    plan.reserve_failure = true;
+    plan.outcome = Outcome::ReserveFailure;
     plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(
@@ -226,7 +236,7 @@ async fn a_reserve_failure_releases_and_skips_the_chat_call() {
 #[tokio::test]
 async fn a_chat_failure_releases_the_reservation() {
     let mut plan = Plan::default();
-    plan.run_failure = true;
+    plan.outcome = Outcome::RunFailure;
     plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(

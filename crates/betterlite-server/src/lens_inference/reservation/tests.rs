@@ -43,16 +43,26 @@ fn timestamp(text: &str) -> DateTime<Utc> {
 }
 
 fn lens(job_status: &str, job_worker: &str, lease: &str, spent: &str, budget: &str) -> Lens {
-    let json = format!(concat!(
-        "{{\"id\":\"lens-1\",\"scope\":{{\"team_id\":\"team-1\"}},",
-        "\"settings\":{{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":{budget}}},",
-        "\"created_at\":\"2026-01-10T08:00:00Z\",\"next_run_at\":\"2026-02-01T00:00:00Z\",",
-        "\"budget_month\":\"2026-02\",\"spent\":{spent},\"jobs\":[{{\"id\":\"job-1\",",
-        "\"status\":\"{job_status}\",\"created_at\":\"2026-01-10T08:00:00Z\",",
+    let json = [
+        "{\"id\":\"lens-1\",\"scope\":{\"team_id\":\"team-1\"},",
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":",
+        budget,
+        "},\"created_at\":\"2026-01-10T08:00:00Z\",\"next_run_at\":\"2026-02-01T00:00:00Z\",",
+        "\"budget_month\":\"2026-02\",\"spent\":",
+        spent,
+        ",\"jobs\":[{\"id\":\"job-1\",",
+        "\"status\":\"",
+        job_status,
+        "\",\"created_at\":\"2026-01-10T08:00:00Z\",",
         "\"start\":\"2026-01-10T00:00:00Z\",\"end\":\"2026-01-10T08:00:00Z\",",
-        "\"settings\":{{\"name\":\"n\",\"model\":\"lens-model\"}},\"revision\":1,",
-        "\"worker_id\":\"{job_worker}\",\"lease_until\":\"{lease}\",\"cost\":0.5}}]}}"
-    ));
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\"},\"revision\":1,",
+        "\"worker_id\":\"",
+        job_worker,
+        "\",\"lease_until\":\"",
+        lease,
+        "\",\"cost\":0.5}]}",
+    ]
+    .concat();
     serde_json::from_str(&json).unwrap()
 }
 
@@ -76,7 +86,7 @@ fn a_held_job_with_room_reserves_the_estimate() {
         "1.5",
         "10000.0",
     );
-    let updated = reserve_transform(lens, &request("2026-02-01T00:00:01Z")).unwrap();
+    let updated = reserve_transform(&lens, &request("2026-02-01T00:00:01Z")).unwrap();
     assert_eq!(updated.spent, amount("4793.0"));
     assert_eq!(updated.jobs[0].cost, amount("4792.0"));
 }
@@ -84,7 +94,7 @@ fn a_held_job_with_room_reserves_the_estimate() {
 #[test]
 fn a_queued_job_is_current_too() {
     let lens = lens("queued", "worker-1", "2100-01-01T00:00:00Z", "0", "10000.0");
-    let updated = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap();
+    let updated = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap();
     assert_eq!(updated.spent, amount(ESTIMATE));
 }
 
@@ -97,7 +107,7 @@ fn a_completed_job_is_not_current() {
         "0",
         "10000.0",
     );
-    let error = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
+    let error = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
     assert!(matches!(error, ReservationError::JobUnavailable));
     assert_eq!(error.status(), 409);
 }
@@ -105,14 +115,14 @@ fn a_completed_job_is_not_current() {
 #[test]
 fn a_spend_that_lands_exactly_on_the_budget_fits() {
     let lens = lens("running", "worker-1", "2100-01-01T00:00:00Z", "0", ESTIMATE);
-    let updated = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap();
+    let updated = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap();
     assert_eq!(updated.spent, amount(ESTIMATE));
 }
 
 #[test]
 fn a_spend_over_the_budget_is_refused() {
     let lens = lens("running", "worker-1", "2100-01-01T00:00:00Z", "0", "4791.4");
-    let error = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
+    let error = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
     assert!(matches!(error, ReservationError::BudgetReached));
     assert_eq!(error.status(), 402);
 }
@@ -126,7 +136,7 @@ fn a_lease_that_expires_now_is_expired() {
         "0",
         "10000.0",
     );
-    let error = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
+    let error = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
     assert!(matches!(error, ReservationError::JobUnavailable));
 }
 
@@ -139,7 +149,7 @@ fn a_lease_a_second_ahead_still_holds() {
         "0",
         "10000.0",
     );
-    let updated = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap();
+    let updated = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap();
     assert_eq!(updated.spent, amount(ESTIMATE));
 }
 
@@ -152,7 +162,7 @@ fn a_job_claimed_by_another_worker_is_refused() {
         "0",
         "10000.0",
     );
-    let error = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
+    let error = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap_err();
     assert!(matches!(error, ReservationError::JobUnavailable));
 }
 
@@ -166,7 +176,7 @@ fn a_job_without_a_lease_is_refused() {
         "10000.0",
     );
     unleased.jobs[0].lease_until = None;
-    let error = reserve_transform(unleased, &request("2026-02-01T00:00:00Z")).unwrap_err();
+    let error = reserve_transform(&unleased, &request("2026-02-01T00:00:00Z")).unwrap_err();
     assert!(matches!(error, ReservationError::JobUnavailable));
 }
 
@@ -180,7 +190,7 @@ fn a_new_month_starts_from_zero_spend() {
         "10000.0",
     );
     lens.budget_month = "2026-01".to_owned();
-    let updated = reserve_transform(lens, &request("2026-02-01T00:00:00Z")).unwrap();
+    let updated = reserve_transform(&lens, &request("2026-02-01T00:00:00Z")).unwrap();
     assert_eq!(updated.budget_month, "2026-02");
     assert_eq!(updated.spent, amount(ESTIMATE));
 }
@@ -195,7 +205,7 @@ fn a_reserve_outside_the_decimal_range_is_an_overflow() {
         "10000.0",
     );
     huge.spent = Decimal::MAX;
-    let error = reserve_transform(huge, &request("2026-02-01T00:00:00Z")).unwrap_err();
+    let error = reserve_transform(&huge, &request("2026-02-01T00:00:00Z")).unwrap_err();
     assert!(matches!(error, ReservationError::Overflow));
     assert_eq!(error.status(), 500);
 }

@@ -62,14 +62,21 @@ fn amount(text: &str) -> Decimal {
 }
 
 fn response(prompt: u64, completion: u64) -> ChatResponse {
-    let json = format!(
-        concat!(
-            "{{\"id\":\"x\",\"object\":\"chat.completion\",\"created\":1,\"model\":\"lens-model\",",
-            "\"choices\":[],\"usage\":{{\"prompt_tokens\":{prompt},",
-            "\"completion_tokens\":{completion},\"total_tokens\":{total}}}}}"
-        ),
-        total = prompt + completion
-    );
+    let total = prompt.checked_add(completion).unwrap();
+    let prompt_text = prompt.to_string();
+    let completion_text = completion.to_string();
+    let total_text = total.to_string();
+    let json = [
+        "{\"id\":\"x\",\"object\":\"chat.completion\",\"created\":1,\"model\":\"lens-model\",",
+        "\"choices\":[],\"usage\":{\"prompt_tokens\":",
+        prompt_text.as_str(),
+        ",\"completion_tokens\":",
+        completion_text.as_str(),
+        ",\"total_tokens\":",
+        total_text.as_str(),
+        "}}",
+    ]
+    .concat();
     serde_json::from_str(&json).unwrap()
 }
 

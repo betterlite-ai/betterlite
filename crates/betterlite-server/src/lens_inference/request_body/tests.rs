@@ -2,7 +2,7 @@
 
 use super::{AnalysisBody, RequestIds, SYSTEM};
 
-fn sample(team_id: Option<&str>) -> AnalysisBody<'static> {
+const fn sample(team_id: Option<&str>) -> AnalysisBody<'_> {
     AnalysisBody::new(
         "lens-model",
         "hello",
@@ -18,19 +18,17 @@ fn sample(team_id: Option<&str>) -> AnalysisBody<'static> {
 #[test]
 fn the_body_carries_the_chat_parameters_litellm_sends() {
     let json = serde_json::to_string(&sample(Some("team-1"))).unwrap();
-    let expected = format!(
-        concat!(
-            "{{\"model\":\"lens-model\",\"messages\":[",
-            "{{\"role\":\"system\",\"content\":\"{}\"}},",
-            "{{\"role\":\"user\",\"content\":\"hello\"}}],",
-            "\"max_tokens\":4096,\"stream\":false,\"timeout\":120,\"num_retries\":0,",
-            "\"disable_fallbacks\":true,\"response_format\":{{\"type\":\"json_object\"}},",
-            "\"metadata\":{{\"tags\":[\"litellm-lens\"],\"lens_id\":\"lens-1\",",
-            "\"lens_run_id\":\"job-1\",\"lens_worker_id\":\"worker-1\",",
-            "\"user_api_key_team_id\":\"team-1\"}}}}"
-        ),
-        SYSTEM
-    );
+    let expected = [
+        "{\"model\":\"lens-model\",\"messages\":[{\"role\":\"system\",\"content\":\"",
+        SYSTEM,
+        "\"},{\"role\":\"user\",\"content\":\"hello\"}],",
+        "\"max_tokens\":4096,\"stream\":false,\"timeout\":120,\"num_retries\":0,",
+        "\"disable_fallbacks\":true,\"response_format\":{\"type\":\"json_object\"},",
+        "\"metadata\":{\"tags\":[\"litellm-lens\"],\"lens_id\":\"lens-1\",",
+        "\"lens_run_id\":\"job-1\",\"lens_worker_id\":\"worker-1\",",
+        "\"user_api_key_team_id\":\"team-1\"}}",
+    ]
+    .concat();
     assert_eq!(json, expected);
 }
 
