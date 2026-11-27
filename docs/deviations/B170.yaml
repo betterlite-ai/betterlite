@@ -1,0 +1,15 @@
+task: B170
+deviations:
+  - what: betterlite ships five compiled cp310-abi3 platform wheels only, where LiteLLM ships one pure-Python wheel and an sdist. There is no musllinux wheel, no Windows ARM wheel and no 32-bit wheel.
+    why: The core is Rust, so each wheel carries a per-platform native extension; the five cover every platform Max asked for, and any other system gets pip's "no matching distribution" error.
+    link: ""
+  - what: The Linux wheels need glibc 2.28 or newer, where LiteLLM's pure-Python wheel installs on any Linux with Python.
+    why: manylinux_2_28 is the oldest tag whose build image still gets updates, and older distributions get pip's "no matching distribution" error.
+    link: ""
+  - what: The wheel declares four pinned runtime dependencies, httpx2, pydantic, python-dotenv and typing-extensions, where B5369 recorded only the last two and LiteLLM declares its own list with ranges.
+    why: B9951 added pydantic and B8082 added httpx2 to crates/betterlite-python/pyproject.toml, the SDK imports both, and the built-wheel check runs the real wheel through check_wheel.py, so the checker allows exactly the four names the project declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L12-L37
+  - what: This task has no oracle cases.
+    why: Nothing here is LiteLLM behavior; the checks inspect wheel files and the workflow text.
+    link: ""
+kept_bugs: []
