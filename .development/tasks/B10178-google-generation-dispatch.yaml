@@ -1,0 +1,129 @@
+id: B10178
+title: The proxy's Google generation routes run the request pipeline and the GenAI SDK call
+description: >-
+  B3506 built the generateContent and streamGenerateContent routes (crates/betterlite-server/src/api/genai_routes) against a port, `GenerateContentDispatch` (genai_routes/ports.rs L45), held as `GenaiRoutesState.generation` (L17). Nothing outside tests implements it: the only impl is the oracle's ReplayGeneration fake (tools/oracle/src/http/postgres/tests.rs L510). B8774 mounts the routes and passes "whatever else its task gives it", so it has no value to pass, and its Google cases and B8992's Google guardrail cases cannot pass. This task builds the production value: LiteLLM's ProxyBaseLLMRequestProcessing.base_process_llm_request for route types agenerate_content and agenerate_content_stream (common_request_processing.py L2461-L2978) and _handle_llm_api_exception (L3625-L3774), over parts that exist or are planned. Like B081 for /v1/messages it is a per-route pipeline made of shared parts, not a shared processor class.
+
+
+  The parts. B8801's pre-call step behind `Arc<dyn PreCall<UserAPIKeyAuth>>` (B8802 builds the production step and implements PreCallKey for UserAPIKeyAuth). B9800's call steps and route choice (crates/betterlite-server/src/messages_call.rs), which port route_request's generic branches (route_llm_request.py L431-L728) and, after B10183, take the route type as their first argument. B10183's `betterlite_vertex::genai::session::GenaiSession` for the SDK call (litellm.agenerate_content and agenerate_content_stream). B8399's ProxyLogging on `state.shared.proxy_logging` (B8612 adds it to Shared) for during_call_hook, update_request_status, post_call_success_hook and post_call_response_headers_hook, B8395's post_call_failure_hook (crates/betterlite-server/src/failure_hook/hook.rs). B8632's `stream_generator(state, cleanup)` with B8633's cleanup ports for the stream. B9802's custom_headers (crates/betterlite-server/src/custom_headers.rs L21).
+
+
+  Ports (B3506's files). The routes take the caller as a generic key, the way B3508's AgentCollectionState does (api/agents/collection_routes): `GenaiRoutesState<K>`, `routes<K>(state)`, and the handler extracts `Extension<K>` in place of `Extension<AuthContext>`, with `K: PreCallKey + Clone + Send + Sync + 'static`. `GenerateContentCall<'call, K>` becomes `{ model, data, key: &K, request: &Parts }`: the pre-call step reads the path and headers from the request Parts (pre_call_step.rs L35, step.rs L157), so the handler takes axum's `Parts` and drops its HeaderMap extractor. `GenerateContentDispatch<K>` takes that call. `GenerationBody::Events` becomes `BoxStream<'static, Result<Bytes, io::Error>>`, the generator's own Stream type (sse_data_generator/generator.rs L13), and response.rs streams it as it is. B3506's tests and the oracle's ReplayGeneration (tools/oracle/src/http/postgres/tests.rs L510-L540, route_genai_request L774-L795 and genai_request L796-L811) move to the new shapes with a test key; what they check stays.
+
+
+  Module `app::inference::google_generation` (crates/betterlite-server/src/app/inference/google_generation.rs and google_generation/: pipeline.rs, sdk_call.rs, adapter.rs, tests.rs). The skeleton adds `pub mod google_generation;` to app/inference.rs.
+  `GoogleGeneration::new(state: &Arc<ServerState>, pre_call: Arc<dyn PreCall<UserAPIKeyAuth>>, environment: &BTreeMap<String, String>) -> Self` builds everything once: one GenaiSession from `config.sections.studio_identity`, `vertex_credential_sources` and `vertex_schema_shaping` (already resolved at load), a RequestTimeout with the seconds and explicitly_set of `config.sections.routing_timeouts.global` (LiteLLM's litellm.request_timeout, which litellm_settings.request_timeout sets), `state.shared.bundled_catalog`, `NativeClients::new(state.shared.client.clone(), betterlite_config::tls::user_agent(environment))`, SystemClock, a redactor with MINIMUM_CUSTOM_KEY_LENGTH, the server's UnavailableAws (server/chat_setup/vertex_embedding/executor.rs L29) as the AWS source, and `environment` as the resolution environment. B8774's google::mount passes `process_environment()`, the way app/edge.rs L27 reads it. It keeps the version the chat route on main sends, `config.sections.mock_testing_params`, B8800's CliOverrides user_model and the Arc of the state.
+  It implements `GenerateContentDispatch<UserAPIKeyAuth>`: generate runs the pipeline with route type agenerate_content and Entry::Await, stream with agenerate_content_stream and Entry::AwaitStream.
+
+
+  Pipeline (pipeline.rs), in LiteLLM's order for this route type.
+  1. Pre-call: `pre_call.pre_call(PreCallInput { data, request, key, route_type: RouteType::GenerateContent or GenerateContentStream (pre_call/route_type.rs L31-L32), version, model: Some(call.model), skip_guardrails: false })`. From here the data is the output's data, and the call id is its logging state's litellm_call_id.
+  2. Rename generationConfig to config when the data has generationConfig and no config (route_llm_request.py L489-L492).
+  3. Run `proxy_logging.during_call_hook` (route type as call type) and the call steps together; the first error ends both, as LiteLLM's gather does (L2601-L2660). The steps are built for this call: `MessagesCallSteps::new(route_type, dispatch, routing, None, mock, user_model)` where dispatch is sdk_call's `SdkCall` holding this call's logging state, and routing is `standalone_routing(route_type, executor, dispatch)` when the config has a model_list and None otherwise, since LiteLLM's llm_router is None without one. They are built per call because B9800's MessagesDispatch takes only the data, so the logging state has to ride in the dispatch value; say so in a one-line comment. is_proxy_admin is true when the key's user_role is proxy_admin. Then `proxy_logging.update_request_status(call id, "success")`.
+  4. Stream outcome (L2665-L2823): take `post_call_response_headers_hook` with no body, build custom_headers as B081's step 4 does (key view, call id, model id from the hidden model_id else the data's litellm_metadata.model_info.id, api_base, response_cost, the key's allowed_model_region, the request data, the hidden params) and put the callback headers over them. Build B8605's DisconnectCleanup the way B8633 builds it for chat, with B8633's request logging over this call's logging state and its ProxySlotRelease, call B8632's `stream_generator(&state, cleanup)` and feed `SelectDataGenerator` a `GeneratorInput { response: StreamSource { items, hidden, snapshot }, key, request_data: data, request: Some(parts), responses_stream_errors: false }`. B3506's with_stream_flags already set `_litellm_raw_sse_stream` and `_litellm_skip_openai_stream_done` (request.rs L19-L20), so the generator writes the provider's frames unchanged and no [DONE] (sse_data_generator/setup.rs L86-L94). Answer `GenerationAnswer { headers, body: Events(stream) }`.
+  5. JSON outcome (L2859-L2978): body = `post_call_success_hook(data, body, key)`; headers from custom_headers with the hidden response_cost and the guardrail cost that betterlite-models' guardrail_information_cost (guardrail_pricing/entries.rs L125) gives for the metadata's standard_logging_guardrail_information; `_hidden_params` removed from the body; guardrail_information attached when include_guardrail_response is the JSON bool true in metadata or litellm_metadata, as B081's step 5 describes (L1427-L1456); B744's check_response_size (crates/betterlite-auth/src/auth_request_policy/bytes.rs L84) on the body; and the post_call_response_headers_hook headers over the custom ones. Answer `GenerationAnswer { headers, body: Json(body) }`. A Google response has no `model` key, so _override_openai_response_model never changes it; don't port that step here.
+  6. Any failure from steps 1 to 5 goes to `api::llm_api_exception` below with the data the pipeline held at that point and the call id when known, and the dispatch returns its ProxyException.
+
+
+  SDK call (sdk_call.rs). `SdkCall` implements B9800's MessagesDispatch. It splits the data into B10183's GenaiCall the way `litellm.agenerate_content(**data)` binds keyword arguments: model, contents, config, tools, extra_headers, extra_query, extra_body, timeout and custom_llm_provider are taken out by name, and every other key (litellm_metadata, metadata, proxy_server_request, litellm_call_id, stream and the rest) goes into kwargs. When the data's litellm_metadata.model_info.id names a deployment, which StandaloneRouting writes for the router branch (standalone.rs L169-L188), it finds that ChatDeployment in `state.executor.deployments` and its model_list index, and merges that index's `config.sections.vertex_embedding_dispatch.deployments` pins (vertex_project, vertex_location, vertex_credentials and their vertex_ai_ aliases, api_base) into the data under keys the data does not carry: the router's `{**deployment litellm_params, **kwargs, model}` (router.py L5359-L5377) for the Vertex keys B9800's write_deployment does not copy. It runs `session.run(&call.request(timeout), &adapter, &mut log, entry)` with a LogContext over the held LoggingState and B10183's logging_env with betterlite-logging's TracingSink. The answer becomes a MessagesOutcome: Mock, Adapter Response and Native or AsyncNative Response become `Message { body, hidden }` with the JSON object as body; AsyncNative Stream becomes `Stream { source: SharedSource { items, snapshot: None, buffered: None }, hidden }` where each event is `StreamItem::Bytes` and an event error is a StreamFailure with kind Other and its message; Adapter Stream does the same over its byte items. A GenerateContentFailure becomes `MessagesCallError::Call(CallFailure)` with the class's status (default 500), message and error type from B3489's ErrorClass.
+
+
+  Chat adapter (adapter.rs). LiteLLM converts a model with no GenAI config (an `openai/` deployment, say) to a chat completion and calls `litellm.acompletion` (google_genai/adapters/handler.py L57-L104). `ChatAdapter` implements B3489's CompletionExecutor (crates/betterlite-core/src/api/genai/chat_call.rs L59) over `state.executor` and the deployment SdkCall found. acompletion sends `call.request` with `ChatExecutor::send(deployment, &request)` (crates/betterlite-openai/src/chat/execution.rs L93) and answers the outcome's ChatResponse, or with `ChatExecutor::stream` when the request streams, parsing its SSE with SseParser and Chunk::parse as the chat relay does (routes/chat/streaming/relay.rs L50-L68) and ending the Chunk stream at [DONE], at the end of the body, or at the first read or parse error, which it logs at warn. completion, the blocking form, is never called by the async entries and answers the adapter error. With no deployment (no model_list, so no router) both answer `AdapterError::NoDeployment`, which B3489 wraps in LiteLLM's "Error calling litellm.acompletion for generate_content: ..." text.
+
+
+  Exception handling. Module `api::llm_api_exception` (crates/betterlite-server/src/api/llm_api_exception.rs and llm_api_exception/), route-neutral so the other OpenAI-shaped routes can call it; the skeleton adds `pub mod llm_api_exception;` to api/mod.rs. `handle_llm_api_exception` is _handle_llm_api_exception (L3625-L3774) and returns `Box<ProxyException>`. In order: log "litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm_call_id={id} - {error}" at error, or info for a 499 "Client disconnected the request" (log_llm_api_exception, L1613-L1632); call post_call_failure_hook with the key, the failure and the request data, and take a returned replacement; build custom_headers with the call id, the model id from the logging state, the version, response_cost 0, the key's allowed_model_region, the request data, the failure's timeout and read_timing_from_logging false; take the failure's own headers, else the provider's response headers through get_response_headers, put the custom headers over them and the post_call_response_headers_hook headers over those (an error there is ignored); drop the headers betterlite-error's is_unsafe_header_name names (envelope.rs L111-L121, LiteLLM's UNSAFE_PROXY_RESPONSE_HEADERS). Then a ProxyException keeps its own headers minus the unsafe ones, with the safe headers over them; an HTTP failure becomes a ProxyException the way proxy_exception_from_http_exception does, with B7324's exception_detail_parts (crates/betterlite-server/src/sse_error_frames.rs L19); anything else becomes ProxyException with the redactor's redact_internal_details over its message, LiteLLM's type for the status, its param, openai code and provider_specific_fields, and code = its status when it is 400 to 599, else 500. The pipeline maps its failures into this module's input: B8801's ProxyException-shaped failures and B9800's MissingParam are ProxyExceptions; MockParamsDisabled, NotFound, B8801's HTTP failures and a hook's HTTP error are HTTP failures with status and detail; Blocked, MissingModel, CallFailure and any other hook error are plain failures with their status and message; UserConfig is a plain 400 with "user_config is not supported on agenerate_content" (see deviations).
+
+
+  Tests. app::inference::google_generation::tests build a ServerState without a database from a config whose model_list has a `gemini/gemini-2.0-flash` deployment with api_base on a betterlite_http_fixture mock upstream and an `openai/oracle-model` deployment on another mock, use a fake PreCall that passes the data through with a fresh logging state, and drive `api::genai_routes::routes(GenaiRoutesState { generation: Arc::new(GoogleGeneration::new(..)), .. })` with tower's oneshot. They check: a generateContent call reaches the mock at the Gemini path with the body's contents and the generationConfig renamed to config, and answers the mock's JSON with x-litellm-model-id and x-litellm-call-id; a streamGenerateContent call answers the mock's frames byte for byte with no `data: [DONE]`; an unknown model is the 400 "agenerate_content: Invalid model name passed in model=..."; a model_list deployment's vertex_project reaches the SDK call when the request carries none; the `openai/oracle-model` deployment answers generateContent from a chat completion in Google's shape, and a streamed one ends when the chat stream ends; with no model_list the adapter answers the 500 with "Error calling litellm.acompletion for generate_content"; a provider 401 is a ProxyException with status 401 and the provider's message; a pre-call ProxyException passes through with its headers and an x-litellm-call-id; and a failing during-call step stops the call so the mock sees no request. api::llm_api_exception::tests cover each failure kind, the unsafe-header drop, the 499 log level and the 400 to 599 status rule. Use a recording ProxyLogging the way B8399's tests do, or the test fakes it exposes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/google_generation.rs
+    - crates/betterlite-server/src/app/inference/google_generation/**
+    - crates/betterlite-server/src/api/llm_api_exception.rs
+    - crates/betterlite-server/src/api/llm_api_exception/**
+    - crates/betterlite-server/src/api/genai_routes.rs
+    - crates/betterlite-server/src/api/genai_routes/**
+    - tools/oracle/src/http/postgres/tests.rs
+    - docs/deviations/B10178.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L17-L141
+    why: The generateContent and streamGenerateContent handlers, both prefixes, the model and stream flags and the except branch into _handle_llm_api_exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2978
+    why: base_process_llm_request and _process_llm_request; the during-call gather, update_request_status, the stream branch and the JSON tail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3625-L3774
+    why: _handle_llm_api_exception, the failure hook, the header layering and the ProxyException it raises.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L469-L728
+    why: _route_request_single_attempt; the generationConfig rename at L489-L492 and the generic branches B9800 ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5414
+    why: _ageneric_api_call_with_fallbacks_helper, which agenerate_content runs through (router.py L1915, L2068-L2072); the litellm_params merge at L5359-L5377.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L18-L104
+    why: The chat adapter's acompletion call and its error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L470-L520
+    why: The per-config credential cache the deviation below names.
+dod:
+  - text: GoogleGeneration implements GenerateContentDispatch; generateContent and streamGenerateContent reach the provider through the pre-call step, the route choice and the SDK session, and answer its JSON or its raw frames with the custom headers.
+    proof: [generation-tests, routes-tests]
+  - text: A deployment's Vertex options reach the SDK call, and a model with no GenAI config answers through the chat adapter, streamed or not.
+    proof: [generation-tests]
+  - text: Every failure answers through handle_llm_api_exception with LiteLLM's status, type, message and headers.
+    proof: [exception-tests, generation-tests]
+  - text: The routes take a generic key and the request Parts, and B3506's tests and the oracle's genai replay still pass.
+    proof: [routes-tests, oracle-replay]
+  - text: docs/deviations/B10178.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: generation-tests
+      why: the pipeline skips a step, the SDK call loses a field or a Vertex pin, the adapter is not used, or a failure answers wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::google_generation::/)'
+    - id: exception-tests
+      why: a failure kind maps to the wrong status, type or headers, or an unsafe header survives
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::llm_api_exception::/)'
+    - id: routes-tests
+      why: the generic key, the Parts or the stream body type broke a B3506 route test
+      run: grep -q 'Extension<K>' crates/betterlite-server/src/api/genai_routes.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::genai_routes::/)'
+    - id: oracle-replay
+      why: the oracle's genai replay no longer builds the routes or answers its seeds
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::replays_the_http_case_corpus$/)'
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10178.yaml && grep -q 'user_config' docs/deviations/B10178.yaml
+oracle_cases: []
+deviations:
+  - what: >-
+      With a model_list, a Google generation call picks its deployment with B9800's standalone routing: a simple shuffle over the model group, no retries, no fallbacks and no cooldowns, and only the deployment's model, api_base, api_key, timeout and Vertex options (vertex_project, vertex_location, vertex_credentials and their vertex_ai_ aliases) reach the call. LiteLLM runs Router.agenerate_content through _ageneric_api_call_with_fallbacks with every litellm_params key of the deployment.
+    why: The router engine (B6021, B8631) registers only anthropic_messages, so no generic router executor serves agenerate_content yet; /v1/messages has the same limit under the same routing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5414
+  - what: A request whose data carries user_config gets a 400 with "user_config is not supported on agenerate_content", where LiteLLM builds a Router from it and runs the call.
+    why: B9800 does not build per-request routers; /v1/messages answers the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L38-L50
+  - what: A model starting with a2a/ that no deployment serves gets the 400 ProxyModelNotFoundError, where LiteLLM looks the agent up and calls agenerate_content with its URL.
+    why: The standalone routing has no agent registry (its a2a_agent answers None, standalone.rs L122-L127).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_routing.py#L17-L80
+  - what: >-
+      The chat adapter reaches a model_list deployment through the OpenAI-compatible chat executor only, so a chat-only deployment the executor cannot send (an Anthropic or Azure one, say) fails with the executor's error, and with no model_list the adapter answers a 500. A chat stream that breaks midway ends the Google stream instead of raising.
+    why: The route has no general litellm.acompletion; B3489's CompletionExecutor answers a stream of plain chunks with no error item.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L57-L104
+  - what: Vertex credentials are loaded again on every generation call, where LiteLLM's GenAI config caches them per credentials and project.
+    why: B10183's session keeps B7844's lookup; the server's credential cache lives inside the Vertex embedding executor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L470-L520
+out_of_scope:
+  - "Mounting the routes, the TranslateContents and TokenCounter values and the HTTP oracle cases: B8774. countTokens has no production counter yet (B8598 owns /utils/token_counter)."
+  - "The Google guardrail HTTP cases: B8992."
+  - "A generic router executor for agenerate_content in B6021's engine: no task owns it."
+  - "The bug-report notice on a 500 (should_report_bug): no production ProxyDiagnostics exists, and the notice is a log line only."
+  - "Reusing handle_llm_api_exception from the other OpenAI-shaped routes (B8693's passthrough mapping and the todo routes that cite _handle_llm_api_exception): their tasks."
+pitfalls:
+  - "Rename generationConfig only when config is absent; LiteLLM keeps both keys when the body has both."
+  - "The pre-call step returns new data with litellm_metadata and the call id; every later step, the SDK call included, reads that data, never the body the route decoded."
+  - "B3506's with_stream_flags already sets stream, _litellm_raw_sse_stream and _litellm_skip_openai_stream_done; the pipeline must not set them again or strip them before the generator reads them."
+  - "`stream` stays in the SDK call's kwargs, as **data passes it to agenerate_content_stream; GenaiCall has no stream field."
+  - "vertex_embedding_dispatch's deployments list is index-aligned with model_list (one entry per deployment, in file order), and so is state.executor.deployments (chat_setup.rs L130-L165); match the deployment by model_id, then use its index."
+  - "MessagesOutcome's hidden params carry model_id and api_base from StandaloneRouting (standalone.rs L110-L118); the custom headers read them there, not from the logging state."
+  - "The genai stream frames are already SSE text from the provider; wrap them as StreamItem::Bytes so B6370's guardrail wrapper sees raw bytes, as LiteLLM's iterator hook does (google_endpoints/endpoints.py L109-L112)."
+  - "B9800's trait method is still named anthropic_messages; the genai path reaches it only through MessagesCallSteps, so no genai code names it."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -19,7 +19,10 @@ description: >-
   `app::spend::budget::interaction_release(&state.shared)` as its release argument, and
   `api::agents::collection_routes::routes(..)`. B3507's and B3508's route states keep B8801's
   `Arc<dyn PreCall<UserAPIKeyAuth>>`: build `app::inference::pre_call_step(state)` (B8802) once in google::mount and
-  hand the same Arc to both. Pass each routes function whatever else its task gives it, and register no path here.
+  hand the same Arc to both. B3506's routes take UserAPIKeyAuth as their key and B10178's generation value: build
+  `app::inference::google_generation::GoogleGeneration::new(state, Arc::clone(&pre_call), &process_environment())` once in
+  google::mount with that same Arc and pass it as `GenaiRoutesState.generation`. Pass each routes function whatever else
+  its task gives it, and register no path here.
 
 
   Tests in app::inference::google::tests build a ServerState without a database, call mount on an empty Router and,
