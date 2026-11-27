@@ -4,10 +4,12 @@ use betterlite_db::managed_resource_rows::wire::{
 };
 use betterlite_db::mcp_stored_contracts::MCPTransport;
 
-use super::rows::{fill_auth, fill_flags, fill_identity, fill_limits, fill_oauth, fill_tools};
+use self::auth::{fill_auth, fill_oauth};
+use self::rows::{fill_flags, fill_identity, fill_limits, fill_tools};
 use super::servers::ServerRegistry;
 use crate::server_record::MCPServer;
 
+mod auth;
 mod rows;
 
 // Every field of the row at its empty value; the fills below copy the record over the ones it sets

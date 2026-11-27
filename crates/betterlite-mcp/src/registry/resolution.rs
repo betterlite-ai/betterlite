@@ -132,48 +132,25 @@ pub async fn resolve_server(
     temp_lookup: Option<&dyn TempLookup>,
     db_lookup: Option<&dyn DbLookup>,
 ) -> Result<Option<ResolvedServer>, ResolveError> {
-    if let Some(resolved) = resolve_temp(registry, target, temp_lookup).await? {
-        return Ok(Some(resolved));
+    if let Some(lookup) = temp_lookup
+        && let Some(runtime) = lookup.temp_server(target.server_id).await?
+    {
+        return Ok(Some(with_runtime(
+            registry,
+            runtime,
+            ResolutionSource::Temp,
+        )));
     }
-    if let Some(resolved) = resolve_db(target, db_lookup).await? {
-        return Ok(Some(resolved));
+    if let Some(lookup) = db_lookup
+        && let Some(table) = lookup.db_table(target.server_id).await?
+    {
+        return Ok(Some(ResolvedServer {
+            table,
+            runtime: None,
+            source: ResolutionSource::Db,
+        }));
     }
     Ok(resolve_registry(registry, target))
-}
-
-async fn resolve_temp(
-    registry: &ServerRegistry,
-    target: ResolveTarget<'_>,
-    temp_lookup: Option<&dyn TempLookup>,
-) -> Result<Option<ResolvedServer>, ResolveError> {
-    let Some(lookup) = temp_lookup else {
-        return Ok(None);
-    };
-    let Some(runtime) = lookup.temp_server(target.server_id).await? else {
-        return Ok(None);
-    };
-    Ok(Some(with_runtime(
-        registry,
-        runtime,
-        ResolutionSource::Temp,
-    )))
-}
-
-async fn resolve_db(
-    target: ResolveTarget<'_>,
-    db_lookup: Option<&dyn DbLookup>,
-) -> Result<Option<ResolvedServer>, ResolveError> {
-    let Some(lookup) = db_lookup else {
-        return Ok(None);
-    };
-    let Some(table) = lookup.db_table(target.server_id).await? else {
-        return Ok(None);
-    };
-    Ok(Some(ResolvedServer {
-        table,
-        runtime: None,
-        source: ResolutionSource::Db,
-    }))
 }
 
 fn resolve_registry(

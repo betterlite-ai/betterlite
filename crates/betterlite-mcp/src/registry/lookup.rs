@@ -25,13 +25,14 @@ impl ServerRegistry {
         is_internal_ip(Some(ip), Some(&networks))
     }
 
-    // LiteLLM's get_mcp_server_by_id
+    // LiteLLM's get_mcp_server_by_id: the first hit wins, and a blocked hit never falls through
     pub fn server_by_id(&self, server_id: &str, client_ip: Option<&str>) -> Option<&MCPServer> {
         let server = self
             .get_registry()
             .into_iter()
             .find(|server| server.fields.server_id == server_id)?;
-        accessible(self, server, client_ip)
+        self.is_accessible_from_ip(server, client_ip)
+            .then_some(server)
     }
 
     // LiteLLM's get_mcp_server_by_name, whose three passes stop at the first record they match
@@ -42,21 +43,27 @@ impl ServerRegistry {
             .find(|server| server.fields.alias.as_deref() == Some(server_name))
             .copied();
         if let Some(server) = by_alias {
-            return accessible(self, server, client_ip);
+            return self
+                .is_accessible_from_ip(server, client_ip)
+                .then_some(server);
         }
         let by_server_name = registry
             .iter()
             .find(|server| server.fields.server_name.as_deref() == Some(server_name))
             .copied();
         if let Some(server) = by_server_name {
-            return accessible(self, server, client_ip);
+            return self
+                .is_accessible_from_ip(server, client_ip)
+                .then_some(server);
         }
         let by_name = registry
             .iter()
             .find(|server| server.fields.name == server_name)
             .copied();
         if let Some(server) = by_name {
-            return accessible(self, server, client_ip);
+            return self
+                .is_accessible_from_ip(server, client_ip)
+                .then_some(server);
         }
         None
     }
@@ -70,14 +77,4 @@ impl ServerRegistry {
             .map(|server| (server.fields.server_id.clone(), server))
             .collect()
     }
-}
-
-// LiteLLM's next(..., None) followed by the ip gate, which a blocked hit does not fall through
-fn accessible<'a>(
-    registry: &ServerRegistry,
-    server: &'a MCPServer,
-    client_ip: Option<&str>,
-) -> Option<&'a MCPServer> {
-    let reachable = registry.is_accessible_from_ip(server, client_ip);
-    reachable.then_some(server)
 }
