@@ -273,7 +273,7 @@ fn named<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> Optio
         .filter(|value| !value.is_empty())
 }
 
-fn voice_name(voice: Option<&SpeechVoice>) -> Option<&str> {
+const fn voice_name(voice: Option<&SpeechVoice>) -> Option<&str> {
     match voice {
         Some(SpeechVoice::Name(name)) => Some(name.as_str()),
         Some(SpeechVoice::Options(_)) | None => None,

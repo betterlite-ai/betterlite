@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::io::Error as IoError;
 use std::time::{Duration, SystemTime};
 
 use betterlite_logging::python_json::dumps_object;
@@ -20,12 +21,12 @@ use super::region::{FALLBACK_REGION, RegionEnvironment, dispatch_region};
 use super::request::{
     Dispatch, SignedRequest, TextToSpeechRequest, configured_url, dispatch, transform_request,
 };
-use crate::api::speech_call::operations::{SpeechConfigOperation, SpeechMappingOptions};
+use crate::api::speech_call::operations::{SpeechConfigOperation as _, SpeechMappingOptions};
 
 const EXAMPLE_KEY: &str = "AKIDEXAMPLE";
 const EXAMPLE_SECRET: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
 const SIMPLE_BODY: &str = r#"{"Engine": "standard", "OutputFormat": "ogg_vorbis", "Text": "hello", "VoiceId": "Matthew", "TextType": "text"}"#;
-const UNICODE_TEXT: &str = "héllo 世界 😀 <speak>hi</speak>";
+const UNICODE_TEXT: &str = "h\u{e9}llo \u{4e16}\u{754c} \u{1f600} <speak>hi</speak>";
 const UNICODE_BODY: &str = concat!(
     r#"{"Engine": "neural", "OutputFormat": "mp3", "Text": "h"#,
     "\\u00e9llo \\u4e16\\u754c \\ud83d\\ude00",
@@ -52,7 +53,7 @@ fn environment<'text>(
 
 fn fixed_now() -> SystemTime {
     SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_767_225_600))
+        .checked_add(Duration::from_hours(490_896))
         .expect("the fixed signing time")
 }
 
@@ -107,9 +108,16 @@ struct ExpectingResolver;
 
 impl CredentialResolver for ExpectingResolver {
     fn resolve(&self, sources: &CredentialSources<'_>) -> Result<ResolvedCredentials, SpeechError> {
-        assert_eq!(sources.aws_region_name, Some("eu-west-1"));
-        assert_eq!(sources.aws_session_name, Some("session"));
-        assert_eq!(sources.aws_access_key_id, Some(EXAMPLE_KEY));
+        let expected = sources.aws_region_name == Some("eu-west-1")
+            && sources.aws_session_name == Some("session")
+            && sources.aws_access_key_id == Some(EXAMPLE_KEY);
+        if !expected {
+            return Err(SpeechError::Credentials {
+                source: Box::new(IoError::other(
+                    "the resolver did not receive the effective credential sources",
+                )),
+            });
+        }
         Ok(resolved(Some("session-token")))
     }
 }
@@ -265,31 +273,24 @@ fn dispatch_replaces_the_region_base_and_key_in_the_effective_params() {
     })
     .unwrap();
 
+    let effective = &dispatched.litellm_params;
     assert_eq!(dispatched.voice.as_deref(), Some("alloy"));
     assert_eq!(
-        dispatched
-            .litellm_params
+        effective
             .get("aws_region_name")
             .and_then(|value| value.as_str()),
         Some("eu-west-1")
     );
     assert_eq!(
-        dispatched
-            .litellm_params
-            .get("api_base")
-            .and_then(|value| value.as_str()),
+        effective.get("api_base").and_then(|value| value.as_str()),
         Some("https://example.test")
     );
     assert_eq!(
-        dispatched
-            .litellm_params
-            .get("api_key")
-            .and_then(|value| value.as_str()),
+        effective.get("api_key").and_then(|value| value.as_str()),
         Some("sk-test")
     );
     assert_eq!(
-        dispatched
-            .litellm_params
+        effective
             .get("aws_access_key_id")
             .and_then(|value| value.as_str()),
         Some("AKIDEXAMPLE")
