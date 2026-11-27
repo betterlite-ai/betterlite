@@ -266,8 +266,10 @@ async fn mint_token_carries_the_grant_team_and_its_scope() {
         details: Some(vec![scoped]),
         ..FakeStore::new()
     };
+    let calls = store.calls();
     let active = subjects(store);
     let credential = active.mint("user-1", Some("team-a")).await.unwrap();
+    assert_eq!(calls.lock().unwrap().teams, vec![vec!["team-a".to_owned()]]);
     assert_eq!(credential.expires_in.get(), DAY_SECONDS);
     assert_eq!(credential.user_id, "user-1");
     assert_eq!(credential.team_id.as_deref(), Some("team-a"));
