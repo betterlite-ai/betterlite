@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-admin-credential-view-empty-values-dropped
+call:
+  b10134:
+    server:
+      server_id: test-srv-3
+      transport: http
+      credentials:
+        upstream_resource: ""
+        upstream_token_header: X-Upstream-Token
+        scopes: [read, ""]
+        auth_value: test-secret
+    config_servers: []
+    db_servers: []
+    public_mcp_servers: []
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}
