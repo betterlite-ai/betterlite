@@ -157,9 +157,7 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthModelBudgets => Ok(StageInput::AuthModelBudgets(Box::new(
-            auth_model_budgets::stage_input(request, authenticated, body)?,
-        ))),
+        AuthBackend::AuthModelBudgets => auth_model_budgets::stage(request, authenticated, body),
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }

@@ -111,15 +111,15 @@ fn settings_for_request(request: &Request<Body>) -> Arc<Settings> {
     )
 }
 
-pub(crate) fn stage_input(
+pub(crate) fn stage(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     body: Option<&Bytes>,
-) -> Result<ModelBudgetStageInput, AuthenticationFailure> {
+) -> Result<StageInput, StageFailure> {
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
-    Ok(ModelBudgetStageInput {
+    let input = ModelBudgetStageInput {
         context,
         rule: rule_for_request(request),
         settings: settings_for_request(request),
@@ -129,7 +129,8 @@ pub(crate) fn stage_input(
             .get::<SharedViews>()
             .cloned()
             .unwrap_or_default(),
-    })
+    };
+    Ok(StageInput::AuthModelBudgets(Box::new(input)))
 }
 
 // the auth stage loop holds the input across the await, so the prefetched stage comes back wrapped

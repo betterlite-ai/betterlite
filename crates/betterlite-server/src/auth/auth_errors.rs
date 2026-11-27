@@ -201,3 +201,9 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         StageFailure::ModelAccess(_) => None,
     }
 }
+
+impl From<AuthenticationFailure> for StageFailure {
+    fn from(failure: AuthenticationFailure) -> Self {
+        Self::Authentication(Box::new(failure))
+    }
+}
