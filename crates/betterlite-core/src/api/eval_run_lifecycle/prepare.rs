@@ -44,7 +44,8 @@ impl Prepared<'_> {
 
 // LiteLLM's run body from the async-flag pop to the pre-call logging update, shared by the three operations
 #[rustfmt::skip]
-pub(crate) fn prepare<'deps, Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'deps, Handler>, action: RunAction, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Prepared<'deps>, EvalRunFailure> {
+pub(crate) fn prepare<'deps, Handler>(deps: &EvalRunDeps<'deps, Handler>, action: RunAction, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Prepared<'deps>, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let caller = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
     attempt(deps, action, request, request.kwargs.clone(), logging)
         .map_err(|error| failure(error, caller, deps.redactor))
@@ -52,7 +53,8 @@ pub(crate) fn prepare<'deps, Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDe
 
 // The @client wrapper sets its flag in kwargs, and the sync body pops it before GenericLiteLLMParams reads the rest
 #[rustfmt::skip]
-pub(crate) fn prepare_async<'deps, Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'deps, Handler>, action: RunAction, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Prepared<'deps>, EvalRunFailure> {
+pub(crate) fn prepare_async<'deps, Handler>(deps: &EvalRunDeps<'deps, Handler>, action: RunAction, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Prepared<'deps>, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let mut kwargs = request.kwargs.clone();
     kwargs.insert(action.async_flag().to_owned(), Json::Bool(true));
     let flagged = EvalRunRequest { kwargs: &kwargs, ..*request };
@@ -60,13 +62,16 @@ pub(crate) fn prepare_async<'deps, Handler: EvalRunHandlers + ?Sized>(deps: &Eva
 }
 
 // the steps that can fail, each error mapped with the provider once it has been defaulted
-fn attempt<'deps, Handler: EvalRunHandlers + ?Sized>(
+fn attempt<'deps, Handler>(
     deps: &EvalRunDeps<'deps, Handler>,
     action: RunAction,
     request: &EvalRunRequest<'_>,
     mut kwargs: IndexMap<String, Json>,
     logging: &mut LoggingState,
-) -> Result<Prepared<'deps>, EvalRunError> {
+) -> Result<Prepared<'deps>, EvalRunError>
+where
+    Handler: EvalRunHandlers + ?Sized,
+{
     let caller = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
     let is_async = matches!(
         kwargs.shift_remove(action.async_flag()),
@@ -104,11 +109,14 @@ fn generic_params(kwargs: &IndexMap<String, Json>) -> Result<Object, serde_json:
 }
 
 // litellm.LlmProviders(provider), then ProviderConfigManager.get_provider_evals_api_config, whose only config is OpenAI's
-fn config_for<'deps, Handler: EvalRunHandlers + ?Sized>(
+fn config_for<'deps, Handler>(
     deps: &EvalRunDeps<'deps, Handler>,
     action: RunAction,
     provider: &str,
-) -> Result<EvalConfig<'deps>, EvalRunError> {
+) -> Result<EvalConfig<'deps>, EvalRunError>
+where
+    Handler: EvalRunHandlers + ?Sized,
+{
     let Ok(id) = ProviderId::from_str(provider) else {
         return Err(EvalRunError::UnknownProvider {
             provider: provider.to_owned(),

@@ -48,7 +48,8 @@ pub struct EvalRunDeps<'deps, Handler: EvalRunHandlers + ?Sized> {
 
 // LiteLLM's get_run: the shared preparation, then the run handler driven on a runtime this call owns
 #[rustfmt::skip]
-pub fn get_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Run, EvalRunFailure> {
+pub fn get_run<Handler>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Run, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let prepared = prepare(deps, RunAction::Get, request, logging)?;
     let handler_request = prepared.handler_request();
     block(deps.handler.get_run(&handler_request, logging)).map_err(|error| failure(error, &prepared.provider, deps.redactor))
@@ -56,7 +57,8 @@ pub fn get_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler
 
 // LiteLLM's aget_run: the wrapper's kwargs flag, the same preparation, and the handler awaited on the caller's task
 #[rustfmt::skip]
-pub async fn aget_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Run, EvalRunFailure> {
+pub async fn aget_run<Handler>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Run, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let prepared = prepare_async(deps, RunAction::Get, request, logging)?;
     let handler_request = prepared.handler_request();
     deps.handler.get_run(&handler_request, logging).await.map_err(|error| failure(EvalRunError::Handler(error), &prepared.provider, deps.redactor))
@@ -64,7 +66,8 @@ pub async fn aget_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, 
 
 // LiteLLM's cancel_run: the same body as get_run with the cancel transform and handler
 #[rustfmt::skip]
-pub fn cancel_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<CancelRunResponse, EvalRunFailure> {
+pub fn cancel_run<Handler>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<CancelRunResponse, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let prepared = prepare(deps, RunAction::Cancel, request, logging)?;
     let handler_request = prepared.handler_request();
     block(deps.handler.cancel_run(&handler_request, logging)).map_err(|error| failure(error, &prepared.provider, deps.redactor))
@@ -72,7 +75,8 @@ pub fn cancel_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Hand
 
 // LiteLLM's acancel_run: the cancel body with the wrapper's kwargs flag and the handler awaited
 #[rustfmt::skip]
-pub async fn acancel_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<CancelRunResponse, EvalRunFailure> {
+pub async fn acancel_run<Handler>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<CancelRunResponse, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let prepared = prepare_async(deps, RunAction::Cancel, request, logging)?;
     let handler_request = prepared.handler_request();
     deps.handler.cancel_run(&handler_request, logging).await.map_err(|error| failure(EvalRunError::Handler(error), &prepared.provider, deps.redactor))
@@ -80,7 +84,8 @@ pub async fn acancel_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'
 
 // LiteLLM's delete_run: the same body as get_run with the delete transform and handler
 #[rustfmt::skip]
-pub fn delete_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<RunDeleteResponse, EvalRunFailure> {
+pub fn delete_run<Handler>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<RunDeleteResponse, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let prepared = prepare(deps, RunAction::Delete, request, logging)?;
     let handler_request = prepared.handler_request();
     block(deps.handler.delete_run(&handler_request, logging)).map_err(|error| failure(error, &prepared.provider, deps.redactor))
@@ -88,7 +93,8 @@ pub fn delete_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Hand
 
 // LiteLLM's adelete_run: the delete body with the wrapper's kwargs flag and the handler awaited
 #[rustfmt::skip]
-pub async fn adelete_run<Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<RunDeleteResponse, EvalRunFailure> {
+pub async fn adelete_run<Handler>(deps: &EvalRunDeps<'_, Handler>, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<RunDeleteResponse, EvalRunFailure>
+where Handler: EvalRunHandlers + ?Sized {
     let prepared = prepare_async(deps, RunAction::Delete, request, logging)?;
     let handler_request = prepared.handler_request();
     deps.handler.delete_run(&handler_request, logging).await.map_err(|error| failure(EvalRunError::Handler(error), &prepared.provider, deps.redactor))

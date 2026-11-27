@@ -8,6 +8,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http_fixture::request::Request;
 use betterlite_http_fixture::server::Serving;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
@@ -19,7 +20,7 @@ use self::support::{
     keywords, object, provider_error, proxied_client, state, url,
 };
 use crate::api::eval_run_lifecycle::error::EvalRunError;
-use crate::api::eval_run_lifecycle::handlers::HttpRunHandlers;
+use crate::api::eval_run_lifecycle::handlers::{EvalRunHandlers, HttpRunHandlers};
 use crate::api::eval_run_lifecycle::{
     EvalRunDeps, EvalRunRequest, acancel_run, adelete_run, aget_run, cancel_run, delete_run,
     get_run,
@@ -29,20 +30,23 @@ fn test_redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds")
 }
 
-fn run_deps<'deps>(
-    fake: &'deps Fake,
+fn run_deps<'deps, Handler>(
+    handler: &'deps Handler,
     config: &'deps RecordingConfig,
     redactor: &'deps Redactor,
-) -> EvalRunDeps<'deps, Fake> {
+) -> EvalRunDeps<'deps, Handler>
+where
+    Handler: EvalRunHandlers,
+{
     EvalRunDeps {
-        handler: fake,
+        handler,
         config,
         redactor,
         request_timeout: REQUEST_TIMEOUT,
     }
 }
 
-fn base_request<'call>(kwargs: &'call IndexMap<String, Json>) -> EvalRunRequest<'call> {
+fn base_request(kwargs: &IndexMap<String, Json>) -> EvalRunRequest<'_> {
     EvalRunRequest {
         eval_id: EVAL_ID,
         run_id: RUN_ID,
@@ -69,6 +73,37 @@ enum Wire {
     Delete,
 }
 
+impl Wire {
+    // Runs this operation through the production handler and hands back the id it decoded
+    async fn perform(
+        self,
+        deps: &EvalRunDeps<'_, HttpRunHandlers<'_>>,
+        request: &EvalRunRequest<'_>,
+        logging: &mut LoggingState,
+    ) -> String {
+        match self {
+            Wire::Get => {
+                aget_run(deps, request, logging)
+                    .await
+                    .expect("the get succeeds")
+                    .id
+            }
+            Wire::Cancel => {
+                acancel_run(deps, request, logging)
+                    .await
+                    .expect("the cancel succeeds")
+                    .id
+            }
+            Wire::Delete => {
+                adelete_run(deps, request, logging)
+                    .await
+                    .expect("the delete succeeds")
+                    .run_id
+            }
+        }
+    }
+}
+
 // Drives one operation over the fixture and hands back the id it decoded and the request the fixture saw
 async fn wire_request(
     server: Serving,
@@ -83,38 +118,12 @@ async fn wire_request(
         client: &client,
         env: &pre_post,
     };
-    let deps = EvalRunDeps {
-        handler: &handlers,
-        config,
-        redactor: &redactor,
-        request_timeout: REQUEST_TIMEOUT,
-    };
-    let kwargs = keywords(&[
-        ("api_key", Json::Text("sk-evals".to_owned())),
-        ("api_base", Json::Text(url(&server, ""))),
-    ]);
+    let deps = run_deps(&handlers, config, &redactor);
+    let mut kwargs = auth_kwargs();
+    kwargs.insert("api_base".to_owned(), Json::Text(url(&server, "")));
     let request = base_request(&kwargs);
     let mut logging = state("wire");
-    let id = match operation {
-        Wire::Get => {
-            aget_run(&deps, &request, &mut logging)
-                .await
-                .expect("the get succeeds")
-                .id
-        }
-        Wire::Cancel => {
-            acancel_run(&deps, &request, &mut logging)
-                .await
-                .expect("the cancel succeeds")
-                .id
-        }
-        Wire::Delete => {
-            adelete_run(&deps, &request, &mut logging)
-                .await
-                .expect("the delete succeeds")
-                .run_id
-        }
-    };
+    let id = operation.perform(&deps, &request, &mut logging).await;
     (id, server.finish().expect("the fixture receives the call"))
 }
 

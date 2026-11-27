@@ -44,7 +44,7 @@ pub(crate) const EVAL_ID: &str = "eval_1";
 pub(crate) const RUN_ID: &str = "run_1";
 pub(crate) const CALL_ID: &str = "call-1";
 pub(crate) const OPENAI_BASE: &str = "https://api.openai.com";
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 
 pub(crate) const RUN_FIXTURE: &str = r#"{"id":"run_1","object":"eval.run","created_at":1700000000,"status":"queued","data_source":{},"eval_id":"eval_1"}"#;
 pub(crate) const CANCELLED_FIXTURE: &str =
