@@ -7,6 +7,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::DeploymentSyncPort;
 
+fn assert_send_sync<T>()
+where
+    T: Send + Sync + ?Sized,
+{
+}
+
 struct RecordingSync {
     calls: Arc<AtomicUsize>,
 }
@@ -39,4 +45,9 @@ async fn awaiting_through_a_second_clone_reaches_the_same_implementation() {
     shared.add_deployment().await;
     shared.add_deployment().await;
     assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn the_port_is_dyn_compatible_and_send_and_sync() {
+    assert_send_sync::<dyn DeploymentSyncPort>();
 }
