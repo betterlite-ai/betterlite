@@ -14,6 +14,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use tower::ServiceExt as _;
 
+use super::{PreStage, pre_stage};
 use crate::auth::auth_identity::AuthContext;
 use crate::routes;
 use crate::routes::tests::state_for;
@@ -144,6 +145,28 @@ async fn introspection_failure_stops_downstream() {
         "{text}"
     );
     assert!(!reached.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn route_kind_selects_the_introspection_branch() {
+    let config = introspection_config("not-a-url");
+    let state = state_for(&config);
+    let mut info = Request::builder()
+        .method("GET")
+        .uri("/team/list")
+        .header("authorization", "Bearer opaque-token")
+        .body(Body::empty())
+        .expect("the request builds");
+    info.extensions_mut().insert(Arc::clone(&state));
+    assert!(matches!(pre_stage(&info).await, PreStage::Rejected(_)));
+    let mut other = Request::builder()
+        .method("GET")
+        .uri("/team/delete")
+        .header("authorization", "Bearer opaque-token")
+        .body(Body::empty())
+        .expect("the request builds");
+    other.extensions_mut().insert(Arc::clone(&state));
+    assert!(matches!(pre_stage(&other).await, PreStage::Skipped));
 }
 
 #[tokio::test]
