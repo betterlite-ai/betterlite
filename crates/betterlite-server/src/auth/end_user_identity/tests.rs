@@ -33,10 +33,10 @@ use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
 use super::{
-    EndUserIdentityRule, EndUserIdentityStageInput, installed_resolver, prefetch, prefetch_budget,
-    stage_input,
+    EndUserIdentityRule, EndUserIdentityStageInput, budget_stage, installed_resolver, prefetch,
+    prefetch_budget, stage_input,
 };
-use crate::auth::auth_end_users::{self, EndUserFailure, EndUserLookup, EndUserRule};
+use crate::auth::auth_end_users::{EndUserFailure, EndUserLookup, EndUserRule};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -745,7 +745,7 @@ async fn a_dropped_id_clears_a_preseeded_end_user_lookup() {
 }
 
 #[tokio::test]
-async fn disabled_validation_without_id_clears_a_preseeded_budget_id() {
+async fn absent_request_id_keeps_the_carried_budget_id() {
     let master_key = SecretString::from("secret-master-key".to_owned());
     let lookup = Arc::new(ScriptedEndUserLookup::default());
     let mut request = stage_request(&[], "{}");
@@ -754,14 +754,40 @@ async fn disabled_validation_without_id_clears_a_preseeded_budget_id() {
         .insert(state_for(&config_with_database(false)));
     request
         .extensions_mut()
-        .insert(end_user_rule(&lookup, Some("unrelated-user")));
-    let Ok(stage) = auth_end_users::stage_input(&request, Some(&master_context(&master_key)))
+        .insert(end_user_rule(&lookup, Some("carried-user")));
+    let Ok(StageInput::AuthEndUsers(stage)) =
+        budget_stage(&request, Some(&master_context(&master_key)), None)
     else {
         panic!("the budget stage input is built");
     };
-    assert_eq!(stage.rule.end_user_id.as_deref(), Some("unrelated-user"));
-    let Ok(StageInput::AuthEndUsers(budget)) = prefetch_budget(Box::new(stage)).await else {
-        panic!("an absent ID skips the end-user budget lookup");
+    assert_eq!(stage.rule.end_user_id.as_deref(), Some("carried-user"));
+    let Ok(StageInput::AuthEndUsers(budget)) = prefetch_budget(stage).await else {
+        panic!("the carried ID reaches the end-user budget lookup");
+    };
+    assert_eq!(budget.rule.end_user_id.as_deref(), Some("carried-user"));
+    assert_eq!(lookup.lookups(), vec!["carried-user".to_owned()]);
+    assert_eq!(lookup.checks(), vec!["alice /v1/files".to_owned()]);
+}
+
+#[tokio::test]
+async fn a_request_id_replaces_the_carried_budget_id() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let lookup = Arc::new(ScriptedEndUserLookup::default());
+    let mut request = stage_request(&[("x-litellm-end-user-id", "ghost")], "{}");
+    request
+        .extensions_mut()
+        .insert(state_for(&config_with_database(false)));
+    request
+        .extensions_mut()
+        .insert(end_user_rule(&lookup, Some("carried-user")));
+    let Ok(StageInput::AuthEndUsers(stage)) =
+        budget_stage(&request, Some(&master_context(&master_key)), None)
+    else {
+        panic!("the budget stage input is built");
+    };
+    assert!(stage.rule.end_user_id.is_none());
+    let Ok(StageInput::AuthEndUsers(budget)) = prefetch_budget(stage).await else {
+        panic!("the dropped ID skips the end-user budget lookup");
     };
     assert!(budget.rule.end_user_id.is_none());
     assert!(lookup.lookups().is_empty());

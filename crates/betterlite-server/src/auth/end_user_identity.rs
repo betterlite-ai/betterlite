@@ -144,26 +144,34 @@ async fn installed_resolver(stage: &EndUserIdentityStageInput) -> Option<Arc<End
     }
 }
 
-// the budget stage that follows the validation takes its variant here too, since it reads the id this stage kept
+// the budget stage that follows the validation takes its variant here too; the request's id replaces a carried one
 pub(crate) fn budget_stage(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
-    Ok(StageInput::AuthEndUsers(Box::new(
-        auth_end_users::stage_input(request, authenticated).map_err(StageFailure::from)?,
-    )))
+    let stage = auth_end_users::stage_input(request, authenticated)?;
+    Ok(with_request_id(
+        stage,
+        extracted_id(request, body).is_some(),
+    ))
+}
+
+fn with_request_id(mut stage: EndUserStageInput, supplied: bool) -> StageInput {
+    if supplied {
+        Arc::make_mut(&mut stage.rule).end_user_id = None;
+    }
+    StageInput::AuthEndUsers(Box::new(stage))
 }
 
 // LiteLLM reads the id this stage validated, and none other, when the end-user budget lookup follows
 pub(crate) async fn prefetch_budget(
     mut stage: Box<EndUserStageInput>,
 ) -> Result<StageInput, StageFailure> {
-    Arc::make_mut(&mut stage.rule).end_user_id = stage
-        .context
-        .principal
-        .end_user
-        .as_ref()
-        .map(|identity| identity.id.clone());
+    if let Some(identity) = stage.context.principal.end_user.as_ref() {
+        let validated_id = identity.id.clone();
+        Arc::make_mut(&mut stage.rule).end_user_id = Some(validated_id);
+    }
     auth_end_users::prefetched(stage).await
 }
 
