@@ -7,13 +7,12 @@ use http::StatusCode;
 use secrecy::SecretString;
 use thiserror::Error;
 
+use crate::docs_routes::redirect_location;
 use crate::login_return::cache::{
     LOGIN_CODE_PREFIX, LOGIN_CODE_TTL_SECONDS, LoginCaches, LoginCode, LoginCodeCache,
     LoginCodeCacheError,
 };
-use crate::login_return::cookie::{
-    clear_return_cookie_header, quote_location, session_cookie_header,
-};
+use crate::login_return::cookie::{clear_return_cookie_header, session_cookie_header};
 use crate::login_return::origin::{ReturnToError, validate_return_to};
 use crate::login_return::return_destination::{
     ReturnDestinationError, decode_return_destination, is_same_origin_return_path,
@@ -100,7 +99,7 @@ where
 fn relative_redirect(return_to: &str, token: &SecretString, secure: bool) -> LoginRedirect {
     LoginRedirect {
         status: StatusCode::SEE_OTHER,
-        location: quote_location(return_to),
+        location: redirect_location(None, return_to),
         set_cookies: vec![
             session_cookie_header(token, secure),
             clear_return_cookie_header(),
@@ -113,7 +112,7 @@ fn control_plane_redirect(return_to: &str, code: &str) -> LoginRedirect {
     let location = format!("{return_to}{separator}login=success&code={code}");
     LoginRedirect {
         status: StatusCode::SEE_OTHER,
-        location: quote_location(&location),
+        location: redirect_location(None, &location),
         set_cookies: vec![clear_return_cookie_header()],
     }
 }
