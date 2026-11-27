@@ -16,13 +16,13 @@ use crate::api::vector_management_read::caller::CallerView;
 // model_dump(exclude_unset=True): absent, explicit null and a value stay apart, and the id never arrives here
 #[derive(Debug, Deserialize)]
 struct UpdateFields {
-    #[serde(default)]
+    #[serde(default, with = "serde_with::rust::double_option")]
     custom_llm_provider: FieldChange<String>,
-    #[serde(default)]
+    #[serde(default, with = "serde_with::rust::double_option")]
     vector_store_name: FieldChange<String>,
-    #[serde(default)]
+    #[serde(default, with = "serde_with::rust::double_option")]
     vector_store_description: FieldChange<String>,
-    #[serde(default)]
+    #[serde(default, with = "serde_with::rust::double_option")]
     vector_store_metadata: FieldChange<BTreeMap<String, Json>>,
 }
 
@@ -105,11 +105,11 @@ fn metadata_change(
     field: FieldChange<BTreeMap<String, Json>>,
 ) -> Result<FieldChange<String>, ManagementWriteError> {
     match field {
-        FieldChange::Omitted => Ok(FieldChange::Omitted),
-        FieldChange::Null => Ok(FieldChange::Null),
-        FieldChange::Value(metadata) => {
+        None => Ok(None),
+        Some(None) => Ok(Some(None)),
+        Some(Some(metadata)) => {
             let text = safe_dumps(&metadata, DEFAULT_MAX_RECURSE_DEPTH, None)?;
-            Ok(FieldChange::Value(text))
+            Ok(Some(Some(text)))
         }
     }
 }

@@ -368,9 +368,9 @@ where
     F: Fn(&str) -> T,
 {
     match change {
-        FieldChange::Omitted => {}
-        FieldChange::Null => *field = None,
-        FieldChange::Value(text) => *field = Some(convert(text)),
+        None => {}
+        Some(None) => *field = None,
+        Some(Some(text)) => *field = Some(convert(text)),
     }
 }
 

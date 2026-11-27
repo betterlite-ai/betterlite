@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
-use crate::api::vector_management_write::rows::{
-    FieldChange, VectorStoreChanges, insert_sql, row_record,
-};
+use crate::api::vector_management_write::rows::{VectorStoreChanges, insert_sql, row_record};
 
 #[test]
 fn insert_sql_names_every_column_and_the_database_clock() {
@@ -54,10 +52,10 @@ fn row_record_decodes_the_written_row() {
 #[test]
 fn changes_document_writes_only_the_present_fields() {
     let changes = VectorStoreChanges {
-        custom_llm_provider: FieldChange::Value("openai".to_owned()),
-        vector_store_name: FieldChange::Null,
-        vector_store_description: FieldChange::Omitted,
-        vector_store_metadata: FieldChange::Value("{}".to_owned()),
+        custom_llm_provider: Some(Some("openai".to_owned())),
+        vector_store_name: Some(None),
+        vector_store_description: None,
+        vector_store_metadata: Some(Some("{}".to_owned())),
     };
     let mut expected = BTreeMap::new();
     expected.insert(

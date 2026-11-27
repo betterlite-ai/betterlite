@@ -14,7 +14,7 @@ use super::support::{
 use super::{Column, at, decoded, field, stored_column, text};
 use crate::api::vector_management_boundaries::redaction::REDACTED_BY_LITELM;
 use crate::api::vector_management_write::UPDATE_PATH;
-use crate::api::vector_management_write::rows::{FieldChange, VectorStoreChanges};
+use crate::api::vector_management_write::rows::VectorStoreChanges;
 use crate::api::vector_management_write::state::VectorManagementWriteState;
 use crate::auth::auth_identity::AuthContext;
 
@@ -52,10 +52,10 @@ async fn update_uses_exclude_unset() {
         text(at(&body, "message"))
     );
     let changes = database.updates().pop().expect("the update ran").1;
-    assert_eq!(FieldChange::Null, changes.vector_store_description);
-    assert_eq!(FieldChange::Null, changes.vector_store_metadata);
-    assert_eq!(FieldChange::Omitted, changes.vector_store_name);
-    assert_eq!(FieldChange::Omitted, changes.custom_llm_provider);
+    assert_eq!(Some(None), changes.vector_store_description);
+    assert_eq!(Some(None), changes.vector_store_metadata);
+    assert_eq!(None, changes.vector_store_name);
+    assert_eq!(None, changes.custom_llm_provider);
     // the id alone never reaches the written columns
     assert_eq!(
         vec!["vector_store_description", "vector_store_metadata"],
@@ -83,7 +83,7 @@ fn written_names(changes: &VectorStoreChanges) -> Vec<&'static str> {
     ];
     candidates
         .into_iter()
-        .filter(|(_, change)| !matches!(change, FieldChange::Omitted))
+        .filter(|(_, change)| change.is_some())
         .map(|(name, _)| name)
         .collect()
 }
@@ -173,15 +173,12 @@ async fn update_writes_the_present_values() {
     assert_eq!(StatusCode::OK, status);
     let changes = database.updates().pop().expect("the update ran").1;
     assert_eq!(
-        FieldChange::Value("bedrock".to_owned()),
+        Some(Some("bedrock".to_owned())),
         changes.custom_llm_provider
     );
-    assert_eq!(
-        FieldChange::Value("renamed".to_owned()),
-        changes.vector_store_name
-    );
-    assert_eq!(FieldChange::Omitted, changes.vector_store_description);
-    let FieldChange::Value(metadata) = changes.vector_store_metadata else {
+    assert_eq!(Some(Some("renamed".to_owned())), changes.vector_store_name);
+    assert_eq!(None, changes.vector_store_description);
+    let Some(Some(metadata)) = changes.vector_store_metadata else {
         panic!("the metadata is written as JSON text");
     };
     let parsed: Json = serde_json::from_str(&metadata).expect("the metadata is JSON");
@@ -241,7 +238,7 @@ async fn update_writes_an_explicit_null_provider() {
     .await;
     assert_eq!(StatusCode::OK, status);
     let changes = database.updates().pop().expect("the update ran").1;
-    assert_eq!(FieldChange::Null, changes.custom_llm_provider);
+    assert_eq!(Some(None), changes.custom_llm_provider);
     assert_eq!(
         None,
         database
@@ -275,7 +272,7 @@ async fn update_stores_empty_metadata_as_an_empty_object() {
     assert_eq!(StatusCode::OK, status);
     let changes = database.updates().pop().expect("the update ran").1;
     assert_eq!(
-        FieldChange::Value(String::from("{}")),
+        Some(Some(String::from("{}"))),
         changes.vector_store_metadata
     );
 }

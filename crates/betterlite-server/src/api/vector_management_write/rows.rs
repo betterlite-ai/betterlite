@@ -12,7 +12,6 @@ use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManage
 use betterlite_redis::config_sync::publish::{PublishChange, redis_config_change_publisher};
 use betterlite_redis::config_sync::table_actions::TableActions;
 use deadpool_postgres::GenericClient as _;
-use serde::{Deserialize, Deserializer};
 
 use crate::api::vector_management_boundaries::rows::VectorStoreRows;
 use crate::api::vector_management_read::database::PostgresVectorDatabase;
@@ -82,30 +81,8 @@ impl NewVectorStoreRecord {
     }
 }
 
-// exclude_unset: an omitted field is never written, an explicit null is written as null, any other value as it came
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub enum FieldChange<T> {
-    #[default]
-    Omitted,
-    Null,
-    Value(T),
-}
-
-// a present key is null or a value; an absent one keeps the default, Omitted, which serde's own types cannot express
-impl<'de, T> Deserialize<'de> for FieldChange<T>
-where
-    T: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Option::<T>::deserialize(deserializer).map(|present| match present {
-            Some(value) => Self::Value(value),
-            None => Self::Null,
-        })
-    }
-}
+// exclude_unset: None is an omitted field, Some(None) an explicit null and Some(Some(value)) a written value; the alias keeps clippy::option_option off private fields, as key_fields::policy does
+pub(super) type FieldChange<T> = Option<Option<T>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VectorStoreChanges {
@@ -127,11 +104,11 @@ impl VectorStoreChanges {
         ];
         for (name, change) in changes {
             match change {
-                FieldChange::Omitted => {}
-                FieldChange::Null => {
+                None => {}
+                Some(None) => {
                     document.insert(name.to_owned(), JsonData::Null);
                 }
-                FieldChange::Value(text) => {
+                Some(Some(text)) => {
                     document.insert(name.to_owned(), JsonData::String(text.clone()));
                 }
             }
