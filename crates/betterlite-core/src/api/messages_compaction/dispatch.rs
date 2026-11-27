@@ -4,6 +4,7 @@ use std::future::Future;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Object;
+use indexmap::IndexMap;
 
 use crate::api::messages_compaction::error::DispatchError;
 use crate::api::messages_compaction::normalize::normalize_context_edit_shapes;
@@ -170,25 +171,20 @@ async fn run_edit<Editor>(
     shared: &Shared<'_>,
     editor: &Editor,
     state: &mut State,
-    edit_spec: Json,
+    edit_spec: IndexMap<String, Json>,
 ) -> Result<(), DispatchError<Editor::Failure>>
 where
     Editor: ContextEditor,
 {
-    let edit_type = match &edit_spec {
-        Json::Object(fields) => match fields.get("type") {
-            Some(Json::Text(name)) => EditType::from_name(name),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    let edit_type = match edit_spec.get("type") {
+        Some(Json::Text(name)) => EditType::from_name(name),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
     };
     let Some(edit_type) = edit_type else {
         tracing::debug!(
             "context_management polyfill: unknown edit type '{}' \u{2014} skipping",
-            displayed_type(&edit_spec)
+            displayed_type(edit_spec.get("type"))
         );
         return Ok(());
     };
@@ -201,7 +197,7 @@ where
                 messages,
                 tools: shared.tools.clone(),
                 system: fallback_system.clone(),
-                edit_spec,
+                edit_spec: Json::Object(edit_spec),
             };
             editor
                 .clear_tool_uses(call)
@@ -214,7 +210,7 @@ where
                 messages,
                 tools: shared.tools.clone(),
                 system: fallback_system.clone(),
-                edit_spec,
+                edit_spec: Json::Object(edit_spec),
                 litellm_metadata: shared.litellm_metadata,
                 llm_router: shared.llm_router,
                 user_api_key_auth: shared.user_api_key_auth,
@@ -227,11 +223,7 @@ where
 }
 
 // the '%s' of LiteLLM's debug line: scalars read as Python prints them, and a container has no repr to copy
-fn displayed_type(edit_spec: &Json) -> String {
-    let value = match edit_spec {
-        Json::Object(fields) => fields.get("type"),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    };
+fn displayed_type(value: Option<&Json>) -> String {
     match value {
         None | Some(Json::Null) => String::from("None"),
         Some(Json::Text(text)) => text.clone(),

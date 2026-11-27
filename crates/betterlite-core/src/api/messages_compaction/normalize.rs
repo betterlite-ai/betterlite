@@ -1,10 +1,13 @@
 use betterlite_anthropic::option_primitives::context_management::map_context_management;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::api::messages_compaction::error::SpecError;
 
 // _normalize_spec: an OpenAI list goes through B2201, a native dict keeps its edits, and only dict edits survive
-pub fn normalize_context_edit_shapes(spec: Option<&Json>) -> Result<Vec<Json>, SpecError> {
+pub fn normalize_context_edit_shapes(
+    spec: Option<&Json>,
+) -> Result<Vec<IndexMap<String, Json>>, SpecError> {
     let Some(spec) = spec else {
         return Ok(Vec::new());
     };
@@ -17,7 +20,7 @@ pub fn normalize_context_edit_shapes(spec: Option<&Json>) -> Result<Vec<Json>, S
 }
 
 // _edits_from: a missing, null, non-list or empty edits value leaves nothing to run
-fn dict_edits(normalized: Option<&Json>) -> Vec<Json> {
+fn dict_edits(normalized: Option<&Json>) -> Vec<IndexMap<String, Json>> {
     let Some(Json::Object(fields)) = normalized else {
         return Vec::new();
     };
@@ -26,7 +29,9 @@ fn dict_edits(normalized: Option<&Json>) -> Vec<Json> {
     };
     entries
         .iter()
-        .filter(|entry| matches!(entry, Json::Object(_)))
-        .cloned()
+        .filter_map(|entry| match entry {
+            Json::Object(fields) => Some(fields.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+        })
         .collect()
 }

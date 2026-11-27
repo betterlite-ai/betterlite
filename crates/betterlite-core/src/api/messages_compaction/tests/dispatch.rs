@@ -158,6 +158,39 @@ async fn unknown_edits_preserve_state() {
 }
 
 #[tokio::test]
+async fn unknown_edit_type_values_print_like_python_scalars() {
+    let editor = ScriptedEditor::new(Vec::new(), Vec::new());
+    let spec = parse(
+        r#"{"edits":[{"type":null},{"type":true},{"type":false},
+            {"type":[1,"x"]},{"type":{"a":1}}]}"#,
+    );
+    let (logs, guard) = capture_logs();
+    let dispatch = request(decided(M0), None, Some(&spec));
+    let result = apply_context_management(dispatch, &editor)
+        .await
+        .expect("an unknown edit type only logs");
+    drop(guard);
+
+    assert_eq!(result.messages, decided(M0));
+    assert!(editor.calls().is_empty());
+    let messages = logs.matching("context_management polyfill: unknown edit type");
+    assert_eq!(
+        messages,
+        vec![
+            String::from("DEBUG context_management polyfill: unknown edit type 'None' — skipping"),
+            String::from("DEBUG context_management polyfill: unknown edit type 'True' — skipping"),
+            String::from("DEBUG context_management polyfill: unknown edit type 'False' — skipping"),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type '[1,\"x\"]' — skipping"
+            ),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type '{\"a\":1}' — skipping"
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn no_edits_reports_no_diagnostics() {
     let editor = ScriptedEditor::new(Vec::new(), Vec::new());
     let messages = decided(r#"[{"role":"user","content":"hello"}]"#);

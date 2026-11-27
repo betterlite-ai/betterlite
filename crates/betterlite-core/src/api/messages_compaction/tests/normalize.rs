@@ -47,8 +47,11 @@ use super::support::{decided, parse};
 )]
 fn normalize_context_edit_shapes(#[case] raw: Option<&str>, #[case] expected: &str) {
     let spec = raw.map(parse);
-    let edits: Vec<Json> =
-        normalize_context_edit_shapes(spec.as_ref()).expect("the spec normalizes");
+    let edits: Vec<Json> = normalize_context_edit_shapes(spec.as_ref())
+        .expect("the spec normalizes")
+        .into_iter()
+        .map(Json::Object)
+        .collect();
     assert_eq!(edits, decided(expected));
 }
 
