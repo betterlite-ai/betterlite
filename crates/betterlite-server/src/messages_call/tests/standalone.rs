@@ -203,3 +203,23 @@ async fn standalone_a2a_and_an_unknown_pick_answer_no_agent_and_not_found() {
     };
     assert_eq!(error.status(), 400);
 }
+
+#[tokio::test]
+async fn standalone_routing_names_its_route_type_in_not_found() {
+    let routing = standalone_routing(
+        "agenerate_content",
+        standalone_executor(DEPLOYMENT),
+        dispatch_port(Arc::new(FakeDispatch::default())),
+    );
+    let Err(error) = routing
+        .anthropic_messages(object(&[("model", text("mystery"))]), false)
+        .await
+    else {
+        panic!("an unknown model cannot be picked");
+    };
+    assert_eq!(error.status(), 400);
+    assert_eq!(
+        error.to_string(),
+        "agenerate_content: Invalid model name passed in model=mystery. Call `/v1/models` to view available models for your key."
+    );
+}
