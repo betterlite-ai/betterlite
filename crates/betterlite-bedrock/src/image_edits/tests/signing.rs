@@ -5,7 +5,7 @@ use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_redact::secret::Redactor;
 use tokio::runtime::Builder;
 
-use super::cases::{Run, STABILITY_MODEL, answered, auth_params, call, image_list, run, secret};
+use super::cases::{Answer, STABILITY_MODEL, answered, auth_params, call, image_list, run, secret};
 use super::fixture::{Factory, FixtureClient, Reply};
 use crate::image_call::transport::{ClientKind, SuppliedClient};
 use crate::image_edits::execute::dispatch_request;
@@ -48,18 +48,34 @@ fn signed_signature(redactor: &Redactor) {
     ));
     assert!(headers["Authorization"].contains("SignedHeaders=content-type;host;x-amz-date"));
     assert_eq!(headers["X-Amz-Date"], "20231114T221320Z");
-    signed_pre_call_log(&signed);
+    signed_pre_call_log(redactor);
 }
 
-fn signed_pre_call_log(signed: &Run) {
-    // pre_call records the signed headers, the endpoint and the prepared body
-    let arguments = match signed.state.model_call_details.get("additional_args") {
+fn signed_pre_call_log(redactor: &Redactor) {
+    // a failed status skips post_call, so the details still hold what pre_call recorded
+    let supplied = image_list(&["aW1n"]);
+    let mut failed_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    failed_call.images = &supplied;
+    let failed = run(
+        failed_call,
+        "{}",
+        Answer {
+            reply: Reply::status(500, &[], "{}"),
+            supplied: Some(ClientKind::Sync),
+        },
+        redactor,
+    );
+    assert_eq!(
+        failed.state.model_call_details.get("input"),
+        Some(&Json::Text("edit it".to_owned()))
+    );
+    let arguments = match failed.state.model_call_details.get("additional_args") {
         Some(Json::Object(arguments)) => arguments,
         other => panic!("pre_call records its arguments, got {other:?}"),
     };
     assert_eq!(
         arguments.get("api_base"),
-        Some(&Json::Text(signed.posted().url.clone()))
+        Some(&Json::Text(failed.posted().url.clone()))
     );
     assert!(matches!(
         arguments.get("headers"),
@@ -69,7 +85,7 @@ fn signed_pre_call_log(signed: &Run) {
         arguments
             .get("complete_input_dict")
             .map(|value| serde_json::to_value(value).unwrap()),
-        Some(serde_json::to_value(signed.body()).unwrap())
+        Some(serde_json::to_value(failed.body()).unwrap())
     );
 }
 
