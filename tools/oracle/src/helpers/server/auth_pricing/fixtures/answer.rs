@@ -95,8 +95,10 @@ fn request_checks(
         .err()
         .map(|error| user_envelope(&error.to_string()));
     let budget = global_proxy_budget_check(
-        budget_money(call.max_budget),
-        global_spend(call.global_spend),
+        call.max_budget
+            .map_or(Money::Finite(Decimal::ZERO), Money::from_f64),
+        call.global_spend
+            .and_then(|value| Money::from_f64(value).finite_value()),
         skip,
         route,
     )
@@ -216,20 +218,6 @@ fn budget_exception(denial: &Denial) -> ProxyException {
     };
     let client = as_proxy_exception(&failure);
     client.exception().clone()
-}
-
-fn budget_money(budget: Option<f64>) -> Money {
-    match budget {
-        Some(value) => Money::from_f64(value),
-        None => Money::Finite(Decimal::ZERO),
-    }
-}
-
-fn global_spend(spend: Option<f64>) -> Option<Decimal> {
-    match spend {
-        Some(value) => Money::from_f64(value).finite_value(),
-        None => None,
-    }
 }
 
 #[derive(Debug, thiserror::Error)]

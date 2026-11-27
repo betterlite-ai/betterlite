@@ -136,8 +136,8 @@ pub(crate) fn envelope(exception: &ProxyException) -> Value {
 }
 
 pub(crate) fn amount_value(value: Decimal) -> Value {
-    match value.to_f64().and_then(Number::from_f64) {
-        Some(number) => Value::Number(number),
-        None => Value::Null,
-    }
+    value
+        .to_f64()
+        .and_then(Number::from_f64)
+        .map_or(Value::Null, Value::Number)
 }

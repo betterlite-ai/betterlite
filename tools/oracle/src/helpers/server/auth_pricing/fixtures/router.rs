@@ -112,10 +112,9 @@ impl ScriptedCatalog {
 
     // the cache as the call left it, or null when this router instance carries none
     pub(crate) fn cache_value(&self) -> Value {
-        match &self.cache {
-            Some(cache) => json!(cache.entries()),
-            None => Value::Null,
-        }
+        self.cache
+            .as_ref()
+            .map_or(Value::Null, |cache| json!(cache.entries()))
     }
 
     pub(crate) fn lookups(&self) -> Vec<String> {
@@ -125,7 +124,7 @@ impl ScriptedCatalog {
         }
     }
 
-    fn fail(&self) -> Result<(), PricingError> {
+    const fn fail(&self) -> Result<(), PricingError> {
         if self.failing {
             return Err(PricingError::Unavailable);
         }
