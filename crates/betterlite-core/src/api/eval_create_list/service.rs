@@ -43,16 +43,6 @@ struct ProviderCall<'deps> {
     timeout: Duration,
 }
 
-impl ProviderCall<'_> {
-    // the provider call's own fields as the transform context, borrowed for the transform's lifetime
-    const fn context(&self) -> EvalsRequestContext<'_> {
-        EvalsRequestContext {
-            litellm_params: &self.litellm_params,
-            headers: &self.headers,
-        }
-    }
-}
-
 // which operation asks, for the ValueError LiteLLM raises when the manager answers None
 #[derive(Clone, Copy)]
 enum Operation {
@@ -118,25 +108,27 @@ where
     ) -> Result<Eval, EvalsCreateListError> {
         let request = create_request(call)?;
         let prepared = self.prepare(&call.params, Operation::Create)?;
-        let context = prepared.context();
+        let context = EvalsRequestContext {
+            litellm_params: &prepared.litellm_params,
+            headers: &prepared.headers,
+        };
         let mut body = prepared
             .config
             .transform_create_eval_request(&request, &context)?;
         merge_extra_body(&mut body, call.extra_body)?;
-        let url = prepared.config.get_complete_url(
-            Some(api_base(&prepared.litellm_params)),
-            "evals",
-            None,
-        )?;
-        log_pre_call(
-            logging,
-            &call.params,
-            &prepared.provider,
-            json_object(&body),
-        )?;
+        let config = prepared.config;
+        let base = api_base(&prepared.litellm_params);
+        let url = config.get_complete_url(Some(base), "evals", None)?;
+        let optional_params = json_object(&body);
+        log_pre_call(logging, &call.params, &prepared.provider, optional_params)?;
         self.handler
             .create_eval(CreateEvalHttpCall {
-                connection: connection(prepared.config, self.client, &prepared.headers, &url),
+                connection: EvalConnection {
+                    config,
+                    client: self.client,
+                    url: &url,
+                    headers: &prepared.headers,
+                },
                 logging: EvalLogging {
                     state: logging,
                     env,
@@ -156,19 +148,23 @@ where
     ) -> Result<ListEvalsResponse, EvalsCreateListError> {
         let params = list_params(call)?;
         let prepared = self.prepare(&call.params, Operation::List)?;
-        let context = prepared.context();
+        let context = EvalsRequestContext {
+            litellm_params: &prepared.litellm_params,
+            headers: &prepared.headers,
+        };
         let (url, query) = prepared
             .config
             .transform_list_evals_request(&params, &context)?;
-        log_pre_call(
-            logging,
-            &call.params,
-            &prepared.provider,
-            json_object(&query),
-        )?;
+        let optional_params = json_object(&query);
+        log_pre_call(logging, &call.params, &prepared.provider, optional_params)?;
         self.handler
             .list_evals(ListEvalsHttpCall {
-                connection: connection(prepared.config, self.client, &prepared.headers, &url),
+                connection: EvalConnection {
+                    config: prepared.config,
+                    client: self.client,
+                    url: &url,
+                    headers: &prepared.headers,
+                },
                 logging: EvalLogging {
                     state: logging,
                     env,
@@ -207,21 +203,6 @@ where
             litellm_params,
             timeout,
         })
-    }
-}
-
-// the connection both operations hand the handler, so the provider config, client, headers and url share one borrow
-fn connection<'call>(
-    config: EvalConfig<'call>,
-    client: &'call ProxiedClient,
-    headers: &'call Headers,
-    url: &'call str,
-) -> EvalConnection<'call> {
-    EvalConnection {
-        config,
-        client,
-        url,
-        headers,
     }
 }
 
