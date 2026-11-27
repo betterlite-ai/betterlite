@@ -17,6 +17,7 @@ mod session_auth;
 #[path = "byok_consent/session_liveness/tests.rs"]
 mod session_liveness;
 #[cfg(test)]
+#[path = "byok_consent/tests/support.rs"]
 pub(crate) mod test_support;
 
 use http::StatusCode;
