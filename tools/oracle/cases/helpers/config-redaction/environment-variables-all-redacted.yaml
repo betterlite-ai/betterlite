@@ -1,0 +1,36 @@
+kind: helper
+name: config-redaction-environment-variables-all-redacted
+call:
+  b10137:
+    function: redact_param_for_logging
+    param_name: environment_variables
+    value:
+      DATABASE_URL: postgres://user:pass@host/db
+      PLAIN: one
+env: {}
+compare:
+  ignore: []
+calls:
+  - b10137:
+      function: dump_redacted_config
+      value:
+        DATABASE_URL: postgres://user:pass@host/db
+        PLAIN: one
+      redact_all: true
+  - b10137:
+      function: dump_redacted_config
+      value:
+        DATABASE_URL: postgres://user:pass@host/db
+        api_key: sk-live
+      redact_all: false
+  - b10137:
+      function: redact_param_for_logging
+      param_name: general_settings
+      value:
+        DATABASE_URL: postgres://user:pass@host/db
+        api_key: sk-live
+  - b10137:
+      function: redact_param_for_logging
+      param_name: environment_variables
+      value:
+        - DATABASE_URL

@@ -1,0 +1,130 @@
+id: B10137
+title: Config setting redaction and the config audit log
+description: >-
+  Every LiteLLM route that writes a config setting records an audit row with its secrets hidden, and /config/field/info
+  hides secret settings from admin viewers. The helpers sit in proxy_server.py next to /config/update, so B8594 owned
+  them, and B8595, B8596, B8612 and the settings writers (B066, B1658, B1660, B1661) all waited for the whole
+  /config/update route. This task builds them alone. The pure redaction goes in betterlite-redact, the crate that already
+  has LiteLLM's SensitiveDataMasker (B244), so betterlite-config can call it too; the audit write goes in
+  betterlite-server next to B2330's audit sink. Both files are empty stubs their crate's lib.rs already declares.
+
+
+  Redaction, module setting_redaction (crates/betterlite-redact/src/setting_redaction.rs, tests in
+  setting_redaction/tests.rs). Values are `structured::Payload`, the existing JSON alias, and the text is
+  `structured::REDACTED`, so the module needs no new #[expect]. `is_secret_setting(name: &str) -> bool` is
+  _is_secret_general_setting_field: true for database_url, database_extra_connection_params, pass_through_endpoints and
+  alert_to_webhook_url (_EXTRA_SECRET_GENERAL_SETTINGS_FIELDS), or when `SensitiveDataMasker::default()` says
+  is_sensitive_key(name, &[]). `redact_secret_values(value: &Payload) -> Payload` is _redact_secret_values_in_obj from
+  depth 0: at depth 10 or deeper the whole value, scalar or not, becomes "REDACTED"; an object keeps every key, puts
+  "REDACTED" on each key is_secret_setting flags (a null value too) and walks the others one level deeper; an array walks
+  each item one level deeper; any other value is returned as it is. `redact_param_for_logging(name: Option<&str>, value:
+  &Payload) -> Payload`: for environment_variables with an object value, every value is "REDACTED" whatever its key;
+  otherwise an object or array is walked and a scalar returned as it is. `redact_setting_value(name: &str, value:
+  &Payload, is_full_admin: bool) -> Payload`: the value unchanged for a full admin, "REDACTED" when is_secret_setting(name),
+  else the walked object or array or the scalar. `dump_redacted_config(value: Option<&Payload>, redact_all: bool) ->
+  Option<String>`: None for None; with redact_all and an object value, the object with every value "REDACTED"; otherwise
+  the walked value; both as serde_json text.
+
+
+  One walk. B736 already ported the L6454 debug line (`_redact_general_setting_value(key,
+  litellm.default_internal_user_params, is_full_admin=False)`) as a private copy, the four-name list and the depth-10 walk
+  over JsonData in crates/betterlite-config/src/sections/auth_user_lookup/redact.rs. Replace that list and walk with a
+  call to redact_secret_values, so the workspace keeps one walk: `redacted_params` turns the map into a Payload with
+  serde_json::to_value and renders "REDACTED" for the whole map if that ever fails, failing closed. Keep its name and its
+  caller in auth_user_lookup.rs as they are, and keep B736's tests defaults_debug_redacted and
+  user_defaults_diagnostic_is_redacted passing.
+
+
+  Audit, module config_audit (crates/betterlite-server/src/config_audit.rs, tests in config_audit/tests.rs). `pub struct
+  ConfigChange<'entry>` holds `param: &str`, `action: AuditAction`, `table: AuditTable`, `before: Option<&JsonValue>`,
+  `after: Option<&JsonValue>` and `caller: &CallerIdentity` (B2330's audit_events types; JsonValue is
+  betterlite_config::sections::settings::JsonValue). `pub async fn config_audit_log(sink: &AuditEventSink, change:
+  ConfigChange<'_>)` is create_config_audit_log: redact_all is true only when param is environment_variables, before and
+  after go through dump_redacted_config with it, and the row goes out through `sink.create_object_audit_log` with
+  object_id = param, the action and table given, litellm_changed_by None and litellm_proxy_admin_name
+  Some("default_user_id") (LITELLM_PROXY_ADMIN_NAME). Reuse an existing pub "default_user_id" const, such as
+  organization_create::caller::DEFAULT_ADMIN_USER_ID, instead of adding another copy. Callers pass AuditTable::Config for
+  the config rows (LiteLLM's default table_name) and their own table where LiteLLM passes one, and they spawn the call,
+  so it returns nothing and never fails the write it records.
+
+
+  Tests. setting_redaction::tests cover each flagged name, a masker-flagged name such as master_key, a nested
+  aws_web_identity_token under database_args, a secret key with a null value, arrays of objects, a value nested 10 and
+  11 levels deep, environment_variables with a harmless-looking key such as DATABASE_URL, and the full admin pass-through.
+  config_audit::tests build an AuditEventSink over a recording AuditLogRepository fake with audit logging on, as
+  audit_events/tests/support.rs does, and assert the stored row's object_id, table, action, both texts parsed back,
+  None staying None, every environment_variables value hidden on both sides, and changed_by "default_user_id" for a
+  caller without user_id. Helper cases run the four pure functions against LiteLLM through the b10137 operation; the
+  Python side calls proxy_server's _redact_secret_values_in_obj, _redact_config_param_value_for_logging,
+  _redact_general_setting_value and _dump_redacted_config and answers the dumped text parsed back with json.loads, so
+  json.dumps spacing is not compared.
+scope:
+  paths:
+    - crates/betterlite-redact/src/setting_redaction.rs
+    - crates/betterlite-redact/src/setting_redaction/**
+    - crates/betterlite-server/src/config_audit.rs
+    - crates/betterlite-server/src/config_audit/**
+    - crates/betterlite-config/src/sections/auth_user_lookup/redact.rs
+    - tools/oracle/cases/helpers/config-redaction/**
+    - tools/oracle/helpers/b10137.py
+    - tools/oracle/helpers/b10137/**
+    - tools/oracle/src/helpers/redact/b10137.rs
+    - tools/oracle/src/helpers/redact/b10137/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L985-L994
+    why: Owned. _EXTRA_SECRET_GENERAL_SETTINGS_FIELDS and why each name is secret.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18373-L18458
+    why: Owned. _is_secret_general_setting_field, the depth cap, the four redaction helpers and create_config_audit_log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6450-L6456
+    why: The default_internal_user_params debug line B736's redact.rs ports, which now calls the shared walk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py
+    why: create_object_audit_log, which B2330's AuditEventSink already ports; read it for the changed_by order.
+dod:
+  - text: is_secret_setting, redact_secret_values, redact_param_for_logging, redact_setting_value and dump_redacted_config match LiteLLM for flagged names, nested secrets, null secret values, the depth cap, environment_variables and the full admin pass-through.
+    proof: [redaction-tests, oracle, helper-python]
+  - text: config_audit_log writes one row through B2330's sink with the param as object_id, the given action and table, both values redacted, every environment_variables value hidden, None kept as None and changed_by falling back to default_user_id.
+    proof: [audit-tests]
+  - text: B736's default_internal_user_params Debug output redacts through redact_secret_values, its own name list and walk are gone, and its tests still pass.
+    proof: [one-walk]
+checks:
+  optional: [mutants]
+  commands:
+    - id: redaction-tests
+      why: a redaction helper differs from LiteLLM on a secret key, a nested value, the depth cap or environment_variables
+      run: cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(/^setting_redaction::/)'
+    - id: audit-tests
+      why: the config audit row has the wrong object, table, action, actor or unredacted values
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^config_audit::/)'
+    - id: one-walk
+      why: auth_user_lookup still keeps its own copy of the secret list and walk, or its redacted Debug output broke
+      run: >-
+        grep -q 'setting_redaction' crates/betterlite-config/src/sections/auth_user_lookup/redact.rs &&
+        ! grep -q 'database_extra_connection_params' crates/betterlite-config/src/sections/auth_user_lookup/redact.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::auth_user_lookup::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10137)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b10137 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b10137/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/config-redaction/nested-secret-keys.yaml
+  - tools/oracle/cases/helpers/config-redaction/depth-cap.yaml
+  - tools/oracle/cases/helpers/config-redaction/environment-variables-all-redacted.yaml
+  - tools/oracle/cases/helpers/config-redaction/setting-value-roles.yaml
+deviations: []
+out_of_scope:
+  - "The routes that record or redact through these: /config/update B8594, /config/field and /config/list B8595, callback config B8596; the settings writers B066, B1658, B1660 and B1661; B8612's ConfigAuditLog over B1656's ConfigAudit port."
+  - "_EXTRA_SECRET_CALLBACK_ENV_VARS, _redact_callback_env_vars and the callback, alerting and webhook role gates (L18461-L18508): B8596."
+  - "create_object_audit_log, the row masking and changed_by: B2330. B065's bounded audit service: B065."
+  - "_redact_worker_config_for_logging (L997-L1014): B8374. The load_config debug lines at L6591 and L6625 that call _redact_general_setting_value: load_config, composed by B8374 and B8613 with per-key sections from B002. The rest of proxy_server.py: B124 and the parts its out_of_scope names."
+pitfalls:
+  - "A secret key whose value is null still becomes \"REDACTED\"; the existing structured walker (walk.rs Kind::Redact) leaves null as null, so don't reuse that kind for this walk."
+  - "The depth cap replaces scalars as well: a string 10 levels down is \"REDACTED\", unlike the masker's mapping-only depth check."
+  - "environment_variables hides every value, even keys the masker would pass such as DATABASE_URL, in the audit and in redact_param_for_logging alike; any other param name with redact_all false only hides flagged keys."
+  - "redact_setting_value checks the field name itself before walking, so pass_through_endpoints is one \"REDACTED\" string for a viewer, not a list with redacted headers."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,7 +2,7 @@ id: B10026
 milestone: M5 api families
 title: Mount the VLLM, GigaChat and Watsonx pass-through routes
 status: todo
-depends_on: [B8640, B3627]
+depends_on: [B8640, B3627, B10157]
 file: tasks/B10026-passthrough-vgw-mount.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"

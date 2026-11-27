@@ -4,9 +4,12 @@ description: >-
   Build the policy pipeline executor and the route POST /policies/test-pipeline in betterlite-server. A pipeline is an ordered list of
   steps, each naming one guardrail and what to do on pass, fail and error. The executor runs the steps one at a time and stops at the
   first terminal action. B3240 already gives the types (`PipelineStep`, `GuardrailPipeline`, `PipelineMode`, `PipelineAction`,
-  `PipelineStepResult`, `PipelineExecutionResult`) in betterlite-policy. B3246 gives the lookup and capability checks
-  (`find_guardrail_callback`, `supports_unified_execution`, `supports_streaming_execution`) and the streaming step
-  (`_run_streaming_step`, with `_release_original_chunks`). B3680 gives `UnifiedGuardrailHooks::pre_call` and `post_call_success`. This
+  `PipelineStepResult`, `PipelineExecutionResult`) in betterlite-policy. B3246 gives the lookup
+  (`find_guardrail_callback` in betterlite-core guardrails::streaming_rewrite::capability). B10182 gives the capability checks
+  (`supports_unified_execution` and `supports_streaming_execution` on betterlite_guardrails::streaming_rewrite::callback::StepCallback)
+  and the streaming step (`run_streaming_step`, with `release_original_chunks`, in betterlite_guardrails::streaming_rewrite::step). That
+  step runs on any BaseTranslation whose LogTarget is GuardrailLogTarget and whose Failure is GuardrailFailure, and its StreamingStep
+  takes the caller as `principal` beside `user_api_key_dict`. B3680 gives `UnifiedGuardrailHooks::pre_call` and `post_call_success`. This
   task calls all of those and re-implements none of them. Use their exact names and types as they exist when you start. Request data is
   `BTreeMap<String, GuardrailValue>` like the other guardrail tasks, a failure is B5471's `GuardrailFailure`
   (`ModifyResponse` stands for LiteLLM's `ModifyResponseException`, `Http { status, detail }` for `HTTPException`), and the key's
@@ -16,13 +19,15 @@ description: >-
   step.rs (`_run_step` and `_prepare_hook_input`), data.rs (the request-data helpers) and error.rs. Each file that can fail owns its error
   enum. The route goes in crates/betterlite-server/src/pipeline_test_route.rs and pipeline_test_route/. Inputs the executor needs come in
   through the constructor of `PipelineExecutor`: the guardrail lookup from B3246, the `UnifiedGuardrailHooks` from B3680 and the logging
-  of applied guardrails that B3246 already takes. No module-level state.
+  of applied guardrails that B10182's step already takes. No module-level state.
 
   Signature, chosen to fit B6370's `PipelineRunner`. `PipelineExecutor::execute_steps(&self, request: ExecuteSteps<'_, T>) ->
   Result<PipelineExecutionResult, PipelineExecError>` where `T` is B3661's `BaseTranslation` type. `ExecuteSteps<'a, T>` holds `steps:
   &'a [PipelineStep]`, `mode: PipelineMode`, `data: &'a mut BTreeMap<String, GuardrailValue>`, `user_api_key_dict: &'a` B732's principal,
   `call_type: &'a str`, `policy_name: &'a str`, `raw_request_snapshot: Option<&'a BTreeMap<String, GuardrailValue>>`, `streaming_chunks:
-  Option<&'a mut Vec<serde_json::Value>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  Option<&'a mut Vec<StreamItem>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  StreamItem is the stream item B10169 moves into betterlite-core (guardrails::streaming_rewrite::shapes), a parsed object as Json and a
+  raw frame as Bytes, the same list B10182's `StreamingStep.streaming_chunks` takes, so the buffered stream reaches the step as it came.
   B6370's `PipelineRunner::execute_steps(...)` is a thin forward to this call, so keep this one struct and do not add a second entry point.
 
   `execute_steps` (pipeline_executor.py L311-L426). Make `working_data` a copy of `data`, with its own copy of `metadata` when the key
@@ -45,12 +50,12 @@ description: >-
   `scan_raw_request` on and a snapshot was given, the payload is B2204's `independent_snapshot` of it with the same
   `metadata.guardrails` override set, and otherwise it is the data itself. Count the guardrail-information entries already in the payload.
   The mode switch then works like this.
-  - `pre_call`. When the guardrail uses the unified path (B3246's `supports_unified_execution`) and `streaming_chunks` is none, call B3680's
+  - `pre_call`. When the guardrail uses the unified path (B10182's `supports_unified_execution`) and `streaming_chunks` is none, call B3680's
     `pre_call` with the guardrail as its typed guardrail argument, in place of LiteLLM's `hook_input["guardrail_to_apply"]` key and
     `UnifiedLLMGuardrails()` target. Otherwise call the guardrail's own pre-call hook with `cache` none. Then call the guardrail's
     `mark_pre_call_hook_ran` (B3666) on `data`, and again on the returned map when the hook returned a map.
   - `post_call` with `streaming_chunks` set. With no `endpoint_translation` return outcome `error`, detail `Guardrail '<name>' cannot run
-    on a stream without an endpoint translation`. Otherwise call B3246's streaming step with the payload and `data`'s logging object and
+    on a stream without an endpoint translation`. Otherwise call B10182's streaming step with the payload and `data`'s logging object and
     take the response as none.
   - `post_call` without chunks. Call the unified `post_call_success` (guardrail given only when the guardrail is unified and the payload is
     `data` itself) or the guardrail's own post-call hook, with `data` and `data["response"]`.
@@ -109,7 +114,7 @@ description: >-
   `loop_` (action routing, step order, pass_data and post_call merge, default allow after the last step, empty steps), `step_` (missing
   guardrail, each mode arm, unified versus own hook, scan_raw_request drops data, intervention versus error classification, the finally
   append), `data_` (every helper in data.rs, including the aliasing rule above and `_restore_request_guardrails` branches) and `stream_`
-  (the streaming arm: no translation, chunks given, the logging object passed on, the B3246 step called once with the payload and
+  (the streaming arm: no translation, chunks given, the logging object passed on, the B10182 step called once with the payload and
   `data`). Route tests live in `pipeline_test_route::tests`. A fake guardrail and a fake unified hook set stand in for the real ones.
 
   Oracle. The helper operation for this task takes `function` and its arguments and runs LiteLLM's own functions: `restore_request_guardrails`,
@@ -185,7 +190,7 @@ dod:
       is kept for the block result.
     proof: [executor-step-tests, oracle, helper-python]
   - text: >-
-      A streaming post_call step with chunks and a translation calls B3246's streaming step with the payload and the request's logging object, and
+      A streaming post_call step with chunks and a translation calls B10182's streaming step with the payload and the request's logging object, and
       reports pass.
     proof: [executor-stream-tests]
   - text: >-
@@ -215,7 +220,7 @@ checks:
       why: a request-data helper or the merge rules are missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_executor::.*tests::data_/)'
     - id: executor-stream-tests
-      why: the streaming arm does not call the B3246 step the way the description says
+      why: the streaming arm does not call the B10182 step the way the description says
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_executor::.*tests::stream_/)'
     - id: route-tests
       why: the test-pipeline route or its errors are missing or wrong
@@ -247,11 +252,11 @@ deviations:
     why: LiteLLM's unified hooks pop that key before returning, so no data ever carries it; the typed argument is the same in effect (B3680 states the same deviation).
 
 out_of_scope:
-  - "B3246 owns UndeliverableStreamRewrite, _StreamRewriteObserver, _ScannedTextRecorder, _LegacyHookStreamAdapter, _release_original_chunks, _run_streaming_step, supports_unified_execution, supports_streaming_execution and find_guardrail_callback (pipeline_executor.py L52-L266, L292-L304, L428-L484, L600-L625). This task only calls them."
+  - "B3246 owns UndeliverableStreamRewrite and find_guardrail_callback, and B10182 owns _StreamRewriteObserver, _ScannedTextRecorder, _LegacyHookStreamAdapter, _release_original_chunks, _run_streaming_step, supports_unified_execution and supports_streaming_execution, moved from B3246 onto BaseTranslation (pipeline_executor.py L52-L266, L292-L304, L428-L484, L600-L625). This task only calls them."
   - "B3240 owns PipelineStep, GuardrailPipeline, PipelineStepResult, PipelineExecutionResult and the action and mode validation (pipeline_types.py)."
   - "B3680 owns UnifiedLLMGuardrails pre_call and post_call_success; B3666 owns mark_pre_call_hook_ran; B5471 owns CustomGuardrail's is_guardrail_intervention (as GuardrailFailure::is_intervention) and scan_raw_request."
   - "B2204 owns independent_snapshot; B206 owns get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket."
-  - "B3244 and B3248 own the other routes of policy_endpoints.py; B8393 owns ProxyLogging._handle_pipeline_result and _maybe_execute_pipelines (the execute_steps caller at L2218 of litellm/proxy/utils.py), B8391 owns _policy_pipelines, and B6370 owns _pipeline_gated_stream (the caller at L4056)."
+  - "B3244 and B3248 own the other routes of policy_endpoints.py; B10160 owns ProxyLogging._handle_pipeline_result and _maybe_execute_pipelines (the execute_steps caller at L2218 of litellm/proxy/utils.py), B8391 owns _policy_pipelines, and B6370 owns _pipeline_gated_stream (the caller at L4056)."
   - "B8666 implements the guardrail handle's own pre-call and post-call hooks for registered non-unified guardrails; this task defines how it calls them (see notes) and tests with fakes."
 
 pitfalls:

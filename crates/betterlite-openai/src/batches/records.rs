@@ -1,6 +1,9 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use thiserror::Error;
+
+use crate::api::batch_records::{CreateBatchRequest, RetrieveBatchRequest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum CompletionWindow {
@@ -73,6 +76,54 @@ pub struct BatchQuery {
     pub extra_body: Option<IndexMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<f64>,
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum MissingBatchField {
+    #[error("the batch request is missing its {field}")]
+    Missing { field: &'static str },
+}
+
+impl BatchCreate {
+    pub fn from_request(body: &CreateBatchRequest) -> Result<Self, MissingBatchField> {
+        let Some(completion_window) = body.completion_window else {
+            return Err(MissingBatchField::Missing {
+                field: "completion_window",
+            });
+        };
+        let Some(endpoint) = body.endpoint else {
+            return Err(MissingBatchField::Missing { field: "endpoint" });
+        };
+        let Some(input_file_id) = body.input_file_id.clone() else {
+            return Err(MissingBatchField::Missing {
+                field: "input_file_id",
+            });
+        };
+        Ok(Self {
+            completion_window,
+            endpoint,
+            input_file_id,
+            metadata: body.metadata.clone(),
+            output_expires_after: body.output_expires_after,
+            extra_headers: body.extra_headers.clone(),
+            extra_body: body.extra_body.clone(),
+            timeout: body.timeout,
+        })
+    }
+}
+
+impl BatchQuery {
+    pub fn from_request(request: &RetrieveBatchRequest) -> Result<Self, MissingBatchField> {
+        let batch_id = request.batch_id.clone();
+        batch_id
+            .map(|given| Self {
+                batch_id: given,
+                extra_headers: request.extra_headers.clone(),
+                extra_body: request.extra_body.clone(),
+                timeout: request.timeout,
+            })
+            .ok_or(MissingBatchField::Missing { field: "batch_id" })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

@@ -50,7 +50,7 @@ description: >-
   field update must get the real 403 bodies. The Fallbacks tab, the callback and alert forms
   and the cache settings tab are other tasks' (B9772 and B9771); do not cover them here.
   Coverage audit: no case on disk sends POST /config/update, /config/field/update or
-  /config/field/delete, and B8594's planned cases are helper cases on redaction. About 420
+  /config/field/delete, and the redaction helper cases are B10137's. About 420
   case lines.
 scope:
   paths:

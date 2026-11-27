@@ -1,0 +1,3 @@
+general_settings:
+  disable_error_logs: "true"
+  disable_spend_updates: 1

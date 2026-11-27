@@ -1,0 +1,55 @@
+id: B10157
+title: GigaChat API base config section
+description: >-
+  Fill the gigachat_route section of betterlite-config: crates/betterlite-config/src/sections/gigachat_route.rs, with its tests in sections/gigachat_route/tests.rs. The stub file, its `pub mod` line in sections.rs and its entry in the sections! list are on main already. Two tasks read the section: B3627's GigaChat pass-through route (passthrough_vgw_routes in betterlite-server, mounted by B10026) and B8312's GigaChat chat and embedding dispatch (regional_host_dispatch in betterlite-provider). It exists so that both read GIGACHAT_API_BASE from one place, since no code outside betterlite-config reads the environment. This task builds only the section; nothing reads it yet.
+
+
+  Settings. One field, `api_base: Option<String>`, read from the env var GIGACHAT_API_BASE and reached as config.sections.gigachat_route.api_base. It mirrors LiteLLM's get_secret_str("GIGACHAT_API_BASE") on a proxy with no secret manager. An unset var gives None, and so does an empty value (docs/compatibility.md). A value that B8500's text_to_bool (betterlite_secret_managers::secret_lookup) reads as true or false also gives None, because get_secret turns that text into a bool and get_secret_str then drops anything that is not a string. Any other text is kept exactly as written. The section reads no YAML key, so shape it like gigachat_auth.rs: a Raw struct whose only field is a skipped marker, so the section stays a YAML mapping, and a Section impl whose convert reads the EnvironmentLookup. Filter with text_to_bool the way vigil_runtime.rs does; don't write a second true/false parser.
+
+
+  The default host is not applied here. LiteLLM falls back to GIGACHAT_BASE_URL, https://gigachat.devices.sberbank.ru/api/v1, at each reader, and B8177 already built that rule as betterlite_openai::gigachat_utils::get_api_base(api_base, env_base) with the constant next to it. betterlite-openai depends on betterlite-config, so the section can't import that constant, and a second copy of the URL is not allowed. The readers pass this field as env_base instead: B3627's direct path calls get_api_base(None, api_base), which is LiteLLM's `get_secret_str("GIGACHAT_API_BASE") or GIGACHAT_BASE_URL`, and B8312 hands it to B8177's chat and embedding request inputs. Both callers already depend on betterlite-openai.
+
+
+  Tests in sections::gigachat_route::tests load an empty document through ConfigLoader with an injected BTreeMap environment, as gigachat_auth's tests do. Cover a URL in the var, the var unset, an empty value, the texts `true` and ` False ` (both None), and a URL with a trailing space, which stays as written.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/gigachat_route.rs
+    - crates/betterlite-config/src/sections/gigachat_route/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3868-L3870
+    why: The /gigachat direct path reads GIGACHAT_API_BASE through get_secret_str and falls back to GIGACHAT_BASE_URL; B3627 builds that path over this section.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/utils.py#L24-L25
+    why: get_api_base, the same fallback for chat and embedding, which B8177 ported and both readers call with this field as env_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L150
+    why: str_to_bool and get_secret_str, the reason a true or false value reads as unset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L354-L359
+    why: get_secret's environment branch with no secret manager, the path this section reproduces.
+dod:
+  - text: The gigachat_route section keeps GIGACHAT_API_BASE as written and gives None when the var is unset, empty, or text that reads as true or false.
+    proof: [config-tests, mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: The gigachat_route section is still a stub, or it keeps an empty or true/false value, or it changes the text it read.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::gigachat_route::/)'
+oracle_cases: []
+deviations:
+  - what: GIGACHAT_API_BASE comes from the process environment only.
+    why: get_secret_str asks a configured secret manager before the environment, but a config section only gets the EnvironmentLookup it is loaded with. B7325's gigachat_auth settings are read the same way; whether these names should also go through B8500's SecretLookup is an open question for the architect.
+out_of_scope:
+  - "The /gigachat pass-through route, its URL join and its Bearer header: B3627, which reads this section."
+  - "get_api_base and GIGACHAT_BASE_URL in litellm/llms/gigachat/utils.py: B8177 (done). Both readers apply the default through them."
+  - "Passing the value to the GigaChat chat and embedding configs: B8312."
+  - "GigaChatPassthroughConfig.get_api_base, which reads the same var for the SDK pass-through call: B8178 (done) takes it as api_base_env."
+  - "The gigachat default in get_llm_provider (get_llm_provider_logic.py L927): B211's provider defaults table in betterlite-models."
+  - "GIGACHAT_ACCESS_TOKEN, GIGACHAT_CREDENTIALS, GIGACHAT_API_KEY, GIGACHAT_AUTH_URL and GIGACHAT_SCOPE: B7325's gigachat_auth section."
+pitfalls:
+  - "Don't give the field a default URL: a String holding https://gigachat.devices.sberbank.ru/api/v1 would make B8177's get_api_base see a set env_base every time and would copy the constant into a third crate."
+  - "GIGACHAT_API_BASE=true is not a base URL of `true`: get_secret_str drops it, and the reader falls back to the default host."
+  - "Only an empty value and true/false text read as unset; LiteLLM neither trims nor checks the URL, so a value with spaces around it is passed on as written."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

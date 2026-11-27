@@ -58,6 +58,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
+use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
@@ -68,7 +69,6 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::failures::request_model_failure;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
-use crate::auth::team_budget_admission::stage_input as team_budget_stage_input;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
@@ -76,7 +76,7 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -108,8 +108,10 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
+        AuthBackend::AuthKeyLookup => Ok(identity_store::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
+        AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
+        AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -130,7 +132,7 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::TeamBudgetAdmission => team_budget_stage_input(request, authenticated),
+        TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
@@ -199,6 +201,8 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
+        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
+        StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
@@ -211,6 +215,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthPricing(stage) => auth_pricing::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
+        | StageInput::TrustedNetwork(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthVirtualKeyRoutes(_)
@@ -220,6 +225,23 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
+}
+
+fn master_key_stage(
+    input: &StageInput,
+    master_key: &SecretString,
+) -> Result<AuthContext, AuthenticationFailure> {
+    let StageInput::MasterKey(presented) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
+    if let Some(context) = auth_identity::master_key_context(presented.as_ref(), master_key) {
+        return Ok(context);
+    }
+    let failure = match presented.as_ref() {
+        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+        Some(_) | None => AuthenticationFailure::Missing,
+    };
+    Err(failure)
 }
 
 fn default_resolver() -> Arc<RequestModelResolver> {

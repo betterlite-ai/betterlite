@@ -11,7 +11,12 @@ description: >-
 
   Code goes in crates/betterlite-server/src/guardrails/proxy_stream_wrapper.rs and proxy_stream_wrapper/. Files: kind.rs, chain.rs,
   pipeline_gate.rs, enrichment.rs, serve_log.rs, env.rs and error.rs. A file that can fail owns its error enum, and error.rs holds
-  `StreamWrapError`. Items are `serde_json::Value`, the same as B6260. The caller (the streaming response generator) owns the
+  `StreamWrapError`. Items are `StreamItem`, the stream item B10169 moves into betterlite-core (guardrails::streaming_rewrite::shapes, also
+  reachable as betterlite_guardrails::guardrail_message_scope::StreamItem): a parsed chunk is Json and a raw SSE frame is Bytes, so an
+  Anthropic or Google frame reaches every guardrail as it came. B6260's hook takes the same item and yields `StreamOutput`: an `Item` passes on to the next
+  callback as it is, and a `BlockChunks` output becomes one `StreamItem::Bytes` per frame, in order, since LiteLLM's hook
+  yields each block chunk as bytes. Wherever a list of items becomes a GuardrailValue (the `original_response` below), build it with
+  B10169's `stream_item_value`. The caller (the streaming response generator) owns the
   `ProxyStreamWrapper` value and builds it once with the pieces it needs, so no module-level state is added.
 
   `env.rs`: the inputs this task needs but does not own, as traits that the caller implements. `CallbackSet` has
@@ -26,7 +31,7 @@ description: >-
   user_api_key_dict)` (LiteLLM `_streamable_post_call_pipelines`), `gated_names(pipelines)` (`_pipeline_step_guardrail_names`),
   `merge_model_level_guardrails(request_data)` (`_check_and_merge_model_level_guardrails`) and `handle_pipeline_result(result,
   request_data, policy_name, original_response)` (`_handle_pipeline_result`). `PipelineRunner` has `execute_steps(&self, request: ExecuteSteps<'_, T>) -> Result<PipelineExecutionResult, PipelineExecError>`, a plain forward to B3247's `PipelineExecutor::execute_steps` with the same signature (`T` is B3661's `BaseTranslation` type; B6370 sets `mode = post_call`, `streaming_chunks` and `endpoint_translation` in the `ExecuteSteps` it builds). None of these functions has a
-  task file at this commit. B8391 and B8393 own them, and B8399 implements these traits. Tests use fakes.
+  task file at this commit. B8391 and B10160 own them, and B8399 implements these traits. Tests use fakes.
 
   `kind.rs`. `IteratorKind` is `Override` or `ApplyGuardrail`. `classify_iterator_kind(facts: CallbackFacts) -> Option<IteratorKind>` is the
   branch at lines 2826-2836, and the order matters: when the callback's own type defines the iterator hook the kind is `Override`; else
@@ -39,8 +44,8 @@ description: >-
   or a route with no call types, else true when the first call type from B207's `get_call_types_for_route` is `anthropic_messages`. The set
   is `NON_OPENAI_STREAM_GUARDRAIL_TRANSLATION_CALL_TYPES`, one member at the pin.
 
-  `chain.rs`: `ProxyStreamWrapper::wrap(&self, response: impl Stream<Item = Result<Value, UpstreamError>>, user_api_key_dict,
-  request_data) -> impl Stream<Item = Result<Value, StreamWrapError>>`. In order:
+  `chain.rs`: `ProxyStreamWrapper::wrap(&self, response: impl Stream<Item = Result<StreamItem, UpstreamError>>, user_api_key_dict,
+  request_data) -> impl Stream<Item = Result<StreamItem, StreamWrapError>>`. In order:
   1. Read the callback set and `streamable_post_call_pipelines`. With no iterator overrides and no pipelines, send every item as it
      comes. On a cancel or drop, stop quietly. On an upstream error, call `discard_for_failure` and, when it returns false, `fire`, then end with the error.
      After the last item call `fire` and end. Nothing else runs on this path.
@@ -59,7 +64,7 @@ description: >-
   empty list ends the stream with nothing sent. For each pipeline in order it calls `PipelineRunner::execute_steps` with `streaming_chunks`
   as the buffered list, `call_type`, `policy_name` and `endpoint_translation`, then `handle_pipeline_result(result, ..., original_response =
   buffered)`. A `ModifyResponse` failure sets `original_response` to the buffered list if unset, sends B3679's `handle_streaming_block(failure,
-  translation, stream_started = false, responses_so_far = empty)` output and ends. An HTTP failure sends B3679's `emit_streaming_http_error(error,
+  translation, stream_started = false, responses_so_far = empty)` frames as Bytes items and ends. An HTTP failure sends B3679's `emit_streaming_http_error(error,
   call_type, buffered, request_data)` output and ends. Any other error leaves the stream as an error item. If no pipeline stops the stream,
   send the buffered items in order. The executor may rewrite the buffered items in place (B3246), so send what the list holds after the last pipeline.
 
@@ -107,7 +112,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4089-L4132
     why: The served-output record and the deferred stream logging fire and discard.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2241-L2317
-    why: handle_pipeline_result, to see which errors the pipeline gate has to catch (owned by B8393).
+    why: handle_pipeline_result, to see which errors the pipeline gate has to catch (owned by B10160).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9859-L9880
     why: The only caller, which wraps the upstream only when a callback needs the iterator wrap.
 
@@ -167,7 +172,7 @@ out_of_scope:
   - "B6260 owns the unified hook that runs one guardrail's scan; this task only calls it."
   - "B3246 owns the stream rewrite observation inside a pipeline step, and B3247 owns PipelineExecutor.execute_steps and `_run_step`, including the `use_unified and streaming_chunks is None` choice near pipeline_executor.py line 522."
   - "B3679 owns handle_streaming_block, emit_streaming_http_error and resolve_endpoint_translation."
-  - "B8390 owns _callback_capabilities, _CallbackCapabilities and needs_iterator_wrap; B8391 owns _streamable_post_call_pipelines, _pipeline_step_guardrail_names and _check_and_merge_model_level_guardrails; B8393 owns _handle_pipeline_result; B8399 implements CallbackSet and PipelineSource over them."
+  - "B8390 owns _callback_capabilities, _CallbackCapabilities and needs_iterator_wrap; B8391 owns _streamable_post_call_pipelines, _pipeline_step_guardrail_names and _check_and_merge_model_level_guardrails; B10160 owns _handle_pipeline_result; B8399 implements CallbackSet and PipelineSource over them."
   - "async_post_call_streaming_hook (the per-chunk hook, lines 3816-3903) is not this task and has no task file at this commit."
   - "The proxy_server.py generator that calls this wrapper belongs to the streaming route tasks."
 
