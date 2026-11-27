@@ -9,7 +9,7 @@ deviations:
   - what: The failure event cannot see litellm_params.proxy_rejected_before_routing, since the proxy stamps it on litellm_params while LoggerEvent keeps only the payload and litellm_metadata; the flag reaches B3881's emitter only when a producer copies it into the metadata.
     why: B3881 keys the partial-outage suppression on that flag, so a request the proxy rejected before routing can still mark a deployment unhealthy.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2365-L2424
-  - what: The caught-error log line says "Exception occurred" where LiteLLM logs "Exception occured" in both hooks; the repository's typos check rejects the misspelling.
+  - what: The caught-error log line says "Exception occurred", where LiteLLM's line misspells "occurred" in both hooks; the repository's typos check rejects that misspelling.
     why: Only the spelling of the log text differs; the same caught error is logged in the same catch-all and stays swallowed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2424
 kept_bugs:
