@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageParams, ImageUsage};
 use betterlite_redact::secret::Redactor;
 use rstest::rstest;
+use serde_json::Number;
 use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{
@@ -266,8 +267,11 @@ fn canvas_edit_dispatch(redactor: &Redactor) {
     // the raw model_cost flag picks the Nova Canvas config, and its body names the task first
     let supplied = image_list(&["aW1n"]);
     let mut options = auth_params();
-    options.insert("numberOfImages".to_owned(), Json::Number(2_i64.into()));
-    options.insert("width".to_owned(), Json::Number(512_i64.into()));
+    options.insert(
+        "numberOfImages".to_owned(),
+        Json::Number(Number::from(2_i64)),
+    );
+    options.insert("width".to_owned(), Json::Number(Number::from(512_i64)));
     let mut canvas = call(CANVAS_MODEL, Some("edit it"), options);
     canvas.images = &supplied;
     let variation = run(
@@ -304,7 +308,10 @@ fn canvas_edit_dispatch(redactor: &Redactor) {
         "taskType".to_owned(),
         Json::Text("BACKGROUND_REMOVAL".to_owned()),
     );
-    removal_options.insert("numberOfImages".to_owned(), Json::Number(2_i64.into()));
+    removal_options.insert(
+        "numberOfImages".to_owned(),
+        Json::Number(Number::from(2_i64)),
+    );
     let mut removal = call(CANVAS_MODEL, None, removal_options);
     removal.images = &supplied;
     let removed = run(
@@ -324,7 +331,7 @@ fn stability_edit_dispatch(redactor: &Redactor) {
     let supplied = image_list(&["aW1n"]);
     let mut options = auth_params();
     options.insert("aspect_ratio".to_owned(), Json::Text("16:9".to_owned()));
-    options.insert("seed".to_owned(), Json::Number(7_i64.into()));
+    options.insert("seed".to_owned(), Json::Number(Number::from(7_i64)));
     options.insert("quality".to_owned(), Json::Text("standard".to_owned()));
     let mut stability = call(STABILITY_MODEL, Some("edit it"), options);
     stability.images = &supplied;

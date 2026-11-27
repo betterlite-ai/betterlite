@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_redact::secret::Redactor;
 use secrecy::ExposeSecret;
+use serde_json::Number;
 
 use super::cases::{Answer, Run, auth_params, call, run_with_source};
 use super::fixture::{Reply, Source};
@@ -27,7 +28,7 @@ fn params_for(access: &str, secret_key: &str, seed: i64) -> ImageParams {
         "aws_secret_access_key".to_owned(),
         Json::Text(secret_key.to_owned()),
     );
-    params.insert("seed".to_owned(), Json::Number(seed.into()));
+    params.insert("seed".to_owned(), Json::Number(Number::from(seed)));
     params
 }
 
@@ -80,8 +81,14 @@ fn image_edit_call_credential_identity_isolation() {
         first_headers["Authorization"],
         second_headers["Authorization"]
     );
-    assert_eq!(first.body().get("seed"), Some(&Json::Number(1_i64.into())));
-    assert_eq!(second.body().get("seed"), Some(&Json::Number(2_i64.into())));
+    assert_eq!(
+        first.body().get("seed"),
+        Some(&Json::Number(Number::from(1_i64)))
+    );
+    assert_eq!(
+        second.body().get("seed"),
+        Some(&Json::Number(Number::from(2_i64)))
+    );
     let first_calls = first_source.calls.lock().unwrap();
     let second_calls = second_source.calls.lock().unwrap();
     assert_eq!(first_calls.len(), 1, "each call resolves its own identity");
