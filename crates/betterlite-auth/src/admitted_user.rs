@@ -141,6 +141,7 @@ impl AdmittedUserError {
 }
 
 #[must_use]
+// ast-grep-ignore: no-long-names - the name B4673 calls
 pub fn with_session_resource_server_id(
     mut auth: UserAPIKeyAuth,
     resource_server_id: Option<String>,
