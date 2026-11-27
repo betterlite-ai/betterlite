@@ -220,7 +220,7 @@ fn set_or_update_overwrites_the_header_maps_and_client_ip() {
             .map(ExposeSecret::expose_secret),
         Some(NEXT_SERVER_HEADER)
     );
-    assert!(snapshot.mcp_server_auth_headers.get(SERVER).is_none());
+    assert!(!snapshot.mcp_server_auth_headers.contains_key(SERVER));
     assert_eq!(
         snapshot
             .oauth2_headers
