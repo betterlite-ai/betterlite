@@ -103,10 +103,8 @@ impl ScriptedFiles {
     }
 
     fn outcome(&self, managed: bool) -> BatchFileFetch {
-        if managed {
-            if let Some(reason) = self.managed.unavailable() {
-                return BatchFileFetch::ManagedUnavailable(reason);
-            }
+        if managed && let Some(reason) = self.managed.unavailable() {
+            return BatchFileFetch::ManagedUnavailable(reason);
         }
         self.content.outcome()
     }
