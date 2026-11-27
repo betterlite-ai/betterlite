@@ -17,6 +17,14 @@ const REGION: &str = r#"{"aws_region_name": "us-east-1"}"#;
 // The Rust-only invariants: an arm this provider does not run, a request built for another provider, and an absent model
 #[tokio::test]
 async fn bedrock_image_dispatch_unsupported_operation() {
+    unsupported_arm().await;
+    mismatched_request().await;
+    generation_without_a_model().await;
+    edit_without_a_model().await;
+    edit_before_the_epoch().await;
+}
+
+async fn unsupported_arm() {
     let specified = run(
         BedrockImageOperation::Unsupported {
             operation: "image_edit",
@@ -36,7 +44,9 @@ async fn bedrock_image_dispatch_unsupported_operation() {
     ));
     assert_eq!(specified.error().status(), None);
     assert!(specified.requests().is_empty());
+}
 
+async fn mismatched_request() {
     let mismatched = run_request(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
         BedrockImageOperation::Unsupported {
@@ -54,7 +64,9 @@ async fn bedrock_image_dispatch_unsupported_operation() {
         BedrockImageError::UnsupportedOperation
     ));
     assert!(mismatched.requests().is_empty());
+}
 
+async fn generation_without_a_model() {
     let generation = GenerateFixture::new(None, "a cat", params(REGION));
     let generated = run(
         BedrockImageOperation::Generate(generation.operation()),
@@ -70,7 +82,9 @@ async fn bedrock_image_dispatch_unsupported_operation() {
         BedrockImageError::ModelRequired
     ));
     assert!(generated.requests().is_empty());
+}
 
+async fn edit_without_a_model() {
     let model_cost = model_cost();
     let catalog = Catalog::empty().expect("the empty catalog parses");
     let context = catalog.context();
@@ -96,7 +110,16 @@ async fn bedrock_image_dispatch_unsupported_operation() {
     );
     assert!(matches!(missing.error(), BedrockImageError::ModelRequired));
     assert!(missing.requests().is_empty());
+}
 
+async fn edit_before_the_epoch() {
+    let model_cost = model_cost();
+    let catalog = Catalog::empty().expect("the empty catalog parses");
+    let context = catalog.context();
+    let plan = EditPlan {
+        model_cost: &model_cost,
+        resolution: &context,
+    };
     let mut early = EditFixture::new(
         Some(STABILITY_MODEL),
         Some("edit it"),

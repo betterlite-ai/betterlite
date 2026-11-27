@@ -289,13 +289,7 @@ pub(crate) async fn run_request(
         calls: Mutex::new(Vec::new()),
         seen: Seen::default(),
     };
-    let source = Source {
-        credentials: Credentials {
-            access_key_id: SecretString::from(ACCESS_KEY.to_owned()),
-            secret_access_key: SecretString::from(SECRET_KEY.to_owned()),
-            session_token: None,
-        },
-    };
+    let source = fixture_source();
     let result = {
         let mut log = LogContext {
             state: &mut state,
@@ -318,5 +312,16 @@ pub(crate) async fn run_request(
         calls: factory.calls(),
         requests: factory.seen_requests(),
         state,
+    }
+}
+
+// The identity the fixture source answers with; the operation's own aws keys never reach the body
+fn fixture_source() -> Source {
+    Source {
+        credentials: Credentials {
+            access_key_id: SecretString::from(ACCESS_KEY.to_owned()),
+            secret_access_key: SecretString::from(SECRET_KEY.to_owned()),
+            session_token: None,
+        },
     }
 }

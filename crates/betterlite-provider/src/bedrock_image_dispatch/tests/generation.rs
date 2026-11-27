@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_models::decisions::Json;
 
-use super::fixture::{GenerateFixture, NOW_SECONDS, answer, params, run};
+use super::fixture::{GenerateFixture, NOW_SECONDS, Run, answer, params, run};
 use crate::bedrock_image_dispatch::call::BedrockImageOperation;
 use crate::bedrock_image_dispatch::error::BedrockImageError;
 
@@ -37,6 +37,16 @@ async fn titan_success() {
         answer(200, TITAN_BODY),
     )
     .await;
+    titan_request(&run);
+    assert_eq!(
+        run.images(),
+        vec!["dGl0YW4".to_owned(), "dGl0YW4y".to_owned()]
+    );
+    assert_eq!(run.post_call(), Some(&Json::Text(TITAN_BODY.to_owned())));
+    assert_eq!(run.input(), Some(&Json::Text("a cat".to_owned())));
+}
+
+fn titan_request(run: &Run) {
     assert_eq!(run.calls().len(), 1);
     assert_eq!(run.calls()[0], (ClientKind::Sync, None));
     assert_eq!(
@@ -49,19 +59,13 @@ async fn titan_success() {
             r#"{"taskType": "TEXT_IMAGE", "textToImageParams": {"text": "a cat"}, "imageGenerationConfig": {"width": 1024, "height": 512, "numberOfImages": 2}}"#,
         )
     );
+    assert_eq!(run.created(), Some(NOW_SECONDS));
     // LiteLLM's generation arm reads extra_headers and forwards neither it nor headers to the handler
     assert_eq!(run.header("x-betterlite-probe"), None);
     assert!(
         run.authorization()
             .is_some_and(|value| { value.starts_with("AWS4-HMAC-SHA256") })
     );
-    assert_eq!(run.created(), Some(NOW_SECONDS));
-    assert_eq!(
-        run.images(),
-        vec!["dGl0YW4".to_owned(), "dGl0YW4y".to_owned()]
-    );
-    assert_eq!(run.post_call(), Some(&Json::Text(TITAN_BODY.to_owned())));
-    assert_eq!(run.input(), Some(&Json::Text("a cat".to_owned())));
 }
 
 async fn titan_asynchronous() {

@@ -4,7 +4,7 @@ use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_bedrock::image_edits::plan::EditImage;
 
 use super::fixture::{
-    Catalog, EditFixture, EditPlan, NOW_SECONDS, answer, image_params, model_cost, run,
+    Catalog, EditFixture, EditPlan, NOW_SECONDS, Run, answer, image_params, model_cost, run,
 };
 use crate::bedrock_image_dispatch::call::BedrockImageOperation;
 use crate::bedrock_image_dispatch::error::BedrockImageError;
@@ -47,6 +47,16 @@ async fn canvas_variation() {
         answer(200, CANVAS_REPLY),
     )
     .await;
+    canvas_variation_request(&run);
+    assert_eq!(run.edited().response.created, NOW_SECONDS);
+    assert_eq!(
+        run.edit_images(),
+        vec!["b3V0".to_owned(), "b3V0Mg==".to_owned()]
+    );
+    assert_eq!(run.cost(), Some(0.5));
+}
+
+fn canvas_variation_request(run: &Run) {
     assert_eq!(run.calls().len(), 1);
     assert_eq!(run.calls()[0], (ClientKind::Sync, None));
     assert_eq!(
@@ -61,12 +71,6 @@ async fn canvas_variation() {
         )
     );
     assert_eq!(run.header("x-betterlite-probe"), Some("kept"));
-    assert_eq!(run.edited().response.created, NOW_SECONDS);
-    assert_eq!(
-        run.edit_images(),
-        vec!["b3V0".to_owned(), "b3V0Mg==".to_owned()]
-    );
-    assert_eq!(run.cost(), Some(0.5));
 }
 
 async fn canvas_inpainting() {
