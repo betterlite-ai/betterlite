@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 
+use betterlite_auth::auth_model_budgets::checks::ModelMaxBudget;
 use betterlite_auth::auth_model_budgets::end_user::{
     EndUserParams, apply_end_user_limits, update_end_user_token,
 };
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
+use betterlite_db::identity_rows::end_user::Region;
+use rust_decimal::Decimal;
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -30,20 +34,30 @@ fn budget_of(call: &Call) -> Result<LiteLLMBudgetTable, Failure> {
 pub(super) fn update_value(call: &Call) -> Result<Value, Failure> {
     let mut token = token_of(call)?;
     update_end_user_token(&mut token, &params_of(call)?);
-    let params = EndUserParams {
-        end_user_id: token.view.end_user_id.clone(),
-        end_user_tpm_limit: token.view.end_user_tpm_limit,
-        end_user_rpm_limit: token.view.end_user_rpm_limit,
-        end_user_tpd_limit: token.view.end_user_tpd_limit,
-        end_user_max_budget: token.view.end_user_max_budget,
-        end_user_model_max_budget: token
-            .view
-            .end_user_model_max_budget
-            .clone()
-            .map(|payload| payload.0),
-        allowed_model_region: token.extra.allowed_model_region.clone(),
-    };
-    Ok(limits_json(&params))
+    let fields: TokenEndUserFields = serde_json::from_value(serde_json::to_value(&token)?)?;
+    Ok(limits_json(&EndUserParams {
+        end_user_id: fields.end_user_id,
+        end_user_tpm_limit: fields.end_user_tpm_limit,
+        end_user_rpm_limit: fields.end_user_rpm_limit,
+        end_user_tpd_limit: fields.end_user_tpd_limit,
+        end_user_max_budget: fields.end_user_max_budget,
+        end_user_model_max_budget: fields.end_user_model_max_budget,
+        allowed_model_region: fields.allowed_model_region,
+    }))
+}
+
+// the token keeps its view and extra private, so the end-user fields come back through its serde form
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct TokenEndUserFields {
+    end_user_id: Option<String>,
+    end_user_tpm_limit: Option<i64>,
+    end_user_rpm_limit: Option<i64>,
+    end_user_tpd_limit: Option<i64>,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    end_user_max_budget: Option<Decimal>,
+    end_user_model_max_budget: Option<ModelMaxBudget>,
+    allowed_model_region: Option<Region>,
 }
 
 fn limits_json(params: &EndUserParams) -> Value {
@@ -75,7 +89,10 @@ fn params_of(call: &Call) -> Result<EndUserParams, Failure> {
 }
 
 // the case sends the field as JSON her type declares it, so one round-trip covers string, count, amount, map and region
-fn json_as<T: DeserializeOwned>(params: &BTreeMap<String, JsonData>, name: &str) -> Option<T> {
+fn json_as<T>(params: &BTreeMap<String, JsonData>, name: &str) -> Option<T>
+where
+    T: DeserializeOwned,
+{
     serde_json::to_value(params.get(name)?)
         .ok()
         .and_then(|value| serde_json::from_value(value).ok())
