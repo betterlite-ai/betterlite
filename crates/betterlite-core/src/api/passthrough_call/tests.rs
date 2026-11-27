@@ -1,9 +1,11 @@
 #![cfg(test)]
 
+mod environment;
 mod support;
 mod units;
 
 use std::net::TcpListener;
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -24,8 +26,8 @@ use url::Url;
 use url::form_urlencoded;
 
 use self::support::{
-    MODEL, bedrock_args, client_timeouts, header, logging_state, mantle_args, object, proxy_client,
-    resolved, vllm_args,
+    MODEL, bedrock_args, client_timeouts, empty_environment, header, logging_state, mantle_args,
+    object, proxy_client, resolved, vllm_args,
 };
 use super::config::PassthroughCallConfig;
 use super::params;
@@ -64,7 +66,7 @@ async fn call_vllm_gets_the_url_the_headers_and_the_swapped_model() {
     ])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(answer.status, 200);
@@ -94,7 +96,7 @@ async fn call_mantle_signs_the_body_before_the_model_swap() {
     )])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(answer.status, 200);
@@ -118,7 +120,7 @@ async fn call_content_wins_over_data_and_json() {
     )])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
@@ -144,7 +146,7 @@ async fn call_data_is_form_encoded_when_no_content_is_given() {
     args.data = Some(data);
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
@@ -181,7 +183,7 @@ async fn call_files_build_a_multipart_body_after_the_data_fields() {
     }]);
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(answer.status, 200);
@@ -219,7 +221,7 @@ async fn call_files_expand_a_list_field_into_one_part_per_item() {
     }]);
     let mut state = logging_state();
     let http = proxy_client(1024);
-    allm_passthrough_route(args, &mut state, &http)
+    allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     let sent = serving.finish().unwrap();
@@ -238,7 +240,7 @@ async fn call_forwarded_headers_need_the_x_pass_prefix() {
     ]);
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(answer.status, 200);
@@ -253,7 +255,7 @@ async fn call_a_redirect_is_returned_as_a_full_reply() {
     let args = vllm_args(&format!("http://{}/v1", serving.address));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("a redirect is an answer");
     assert_eq!(answer.status, 302);
@@ -269,6 +271,7 @@ async fn call_bedrock_inference_profile_url_is_arn_encoded() {
     let profile_endpoint = format!("model/{MODEL_ARN}/converse");
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::Bedrock,
+        environment: Arc::new(empty_environment()),
     };
     let params = Object::new();
     let request = PassthroughUrlRequest {
@@ -324,7 +327,7 @@ async fn stream_vllm_relays_the_chunks_and_sets_the_stream_flag() {
     )])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the stream starts");
     assert_eq!(state.stream, Some(true));
@@ -356,7 +359,7 @@ async fn stream_without_the_key_is_not_streaming() {
     args.json = Some(JsonValue::Object(json_object(&[("input", "hi")])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("the upstream answers");
     assert_eq!(state.stream, Some(false));
@@ -380,7 +383,7 @@ async fn stream_redirect_answer_becomes_a_relay() {
     )])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let answer = allm_passthrough_route(args, &mut state, &http)
+    let answer = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .expect("a redirect still streams");
     assert_eq!(answer.status, 307);
@@ -491,7 +494,7 @@ async fn error_upstream_4xx_is_reported_with_its_body() {
     args.json = Some(JsonValue::Object(json_object(&[("input", "hi")])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let error = allm_passthrough_route(args, &mut state, &http)
+    let error = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .err()
         .expect("429 is an error");
@@ -529,7 +532,7 @@ async fn error_a_streaming_5xx_is_reported_before_the_stream() {
     )])));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let error = allm_passthrough_route(args, &mut state, &http)
+    let error = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .err()
         .expect("503 is an error");
@@ -554,7 +557,7 @@ async fn error_a_provider_without_a_passthrough_config_is_named() {
     args.custom_llm_provider = Some(String::from("openai"));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let error = allm_passthrough_route(args, &mut state, &http)
+    let error = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .err()
         .expect("openai has no passthrough config");
@@ -572,7 +575,7 @@ async fn error_a_model_without_a_provider_is_a_resolution_error() {
     args.api_base = None;
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let error = allm_passthrough_route(args, &mut state, &http)
+    let error = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .err()
         .expect("no provider can be found for the model");
@@ -587,7 +590,7 @@ async fn error_a_send_failure_goes_through_handle_error() {
     let args = vllm_args(&format!("http://{address}/v1"));
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let error = allm_passthrough_route(args, &mut state, &http)
+    let error = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .err()
         .expect("the connection is refused");
@@ -604,7 +607,7 @@ async fn error_bedrock_without_credentials_is_a_mapped_value_error() {
     let args = bedrock_args(BEDROCK_RUNTIME);
     let mut state = logging_state();
     let http = proxy_client(1024);
-    let error = allm_passthrough_route(args, &mut state, &http)
+    let error = allm_passthrough_route(args, &mut state, &http, &empty_environment())
         .await
         .err()
         .expect("signing has no credentials");
