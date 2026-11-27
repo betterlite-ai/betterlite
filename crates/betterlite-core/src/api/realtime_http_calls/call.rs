@@ -14,42 +14,36 @@ pub struct SuppliedClient<'call> {
     pub transport: &'call ProxiedClient,
 }
 
-// The declared arguments and the kwargs each SDK call reads; anything else in kwargs only feeds the pre-call log.
-pub struct ClientSecretCall<'call> {
+// The arguments the three SDK methods share; anything else in kwargs only feeds the pre-call log.
+#[derive(Clone)]
+pub struct CallCommon<'call> {
     pub model: Option<&'call str>,
+    pub timeout: Option<f64>,
+    pub api_base: Option<&'call str>,
+    pub api_key: Option<&'call SecretString>,
+    pub api_version: Option<&'call str>,
+    pub extra_headers: Option<&'call BTreeMap<String, String>>,
+    pub client: Option<SuppliedClient<'call>>,
+    pub kwargs: &'call IndexMap<String, Json>,
+}
+
+// acreate_realtime_client_secret's declared arguments.
+pub struct ClientSecretCall<'call> {
+    pub common: CallCommon<'call>,
     pub session: Option<&'call Json>,
     pub expires_after: Option<&'call Json>,
-    pub timeout: Option<f64>,
-    pub api_base: Option<&'call str>,
-    pub api_key: Option<&'call SecretString>,
-    pub api_version: Option<&'call str>,
-    pub extra_headers: Option<&'call BTreeMap<String, String>>,
-    pub client: Option<SuppliedClient<'call>>,
-    pub kwargs: &'call IndexMap<String, Json>,
 }
 
+// acreate_realtime_transcription_session's declared arguments.
 pub struct TranscriptionSessionCall<'call> {
-    pub model: Option<&'call str>,
+    pub common: CallCommon<'call>,
     pub transcription_session: Option<&'call Json>,
-    pub timeout: Option<f64>,
-    pub api_base: Option<&'call str>,
-    pub api_key: Option<&'call SecretString>,
-    pub api_version: Option<&'call str>,
-    pub extra_headers: Option<&'call BTreeMap<String, String>>,
-    pub client: Option<SuppliedClient<'call>>,
-    pub kwargs: &'call IndexMap<String, Json>,
 }
 
+// arealtime_calls' declared arguments.
 pub struct RealtimeCallsCall<'call> {
+    pub common: CallCommon<'call>,
     pub openai_ephemeral_key: &'call str,
     pub sdp_body: &'call [u8],
-    pub model: Option<&'call str>,
     pub session: Option<&'call Json>,
-    pub timeout: Option<f64>,
-    pub api_base: Option<&'call str>,
-    pub api_key: Option<&'call SecretString>,
-    pub api_version: Option<&'call str>,
-    pub extra_headers: Option<&'call BTreeMap<String, String>>,
-    pub client: Option<SuppliedClient<'call>>,
-    pub kwargs: &'call IndexMap<String, Json>,
 }

@@ -30,8 +30,8 @@ fn client_secret_takes_raw_credentials_over_every_fallback() {
     let kwargs = no_kwargs();
     let key = secret("sk-raw");
     let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.api_base = Some("https://raw.example/v1/");
-    call.api_key = Some(&key);
+    call.common.api_base = Some("https://raw.example/v1/");
+    call.common.api_key = Some(&key);
     harness.run_client_secret(call).expect("the client secret");
     let seen = harness.seen();
     let posting = only_session(&seen);
@@ -113,7 +113,7 @@ fn client_secret_leaves_a_known_provider_without_a_config_on_the_fallback_chain(
     let harness = Harness::new(GLOBALS, &[]);
     let kwargs = no_kwargs();
     let mut call = client_secret_call(&kwargs, Some("anthropic/claude-3-5-sonnet-latest"));
-    call.api_base = Some("https://fallback.example/v1");
+    call.common.api_base = Some("https://fallback.example/v1");
     harness.run_client_secret(call).expect("the fallback call");
     let seen = harness.seen();
     let posting = only_session(&seen);
@@ -304,9 +304,9 @@ fn client_secret_forwards_headers_api_version_and_the_callers_client() {
     ]);
     let kwargs = no_kwargs();
     let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.extra_headers = Some(&extra_headers);
-    call.api_version = Some("2024-10-01");
-    call.client = Some(SuppliedClient {
+    call.common.extra_headers = Some(&extra_headers);
+    call.common.api_version = Some("2024-10-01");
+    call.common.client = Some(SuppliedClient {
         kind: ClientKind::Sync,
         transport: &client,
     });
@@ -359,7 +359,7 @@ fn client_secret_logs_the_raw_optional_params_and_the_resolved_api_base() {
     let mut call = client_secret_call(&kwargs, None);
     call.session = Some(&session);
     call.expires_after = Some(&expires_after);
-    call.api_base = Some("https://raw.example/v1");
+    call.common.api_base = Some("https://raw.example/v1");
     harness.run_client_secret(call).expect("the client secret");
     let logging = harness
         .logging

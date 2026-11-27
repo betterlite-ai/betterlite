@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::api::realtime_contracts::records::{
     RealtimeExpiresAfter, RealtimeSessionConfig, TranscriptionSessionRequest,
@@ -10,40 +9,32 @@ use crate::api::realtime_contracts::records::{
 use super::error::RecordError;
 use super::{DEFAULT_REALTIME_MODEL, DEFAULT_TRANSCRIPTION_MODEL};
 
-// RealtimeSessionConfig.model_validate(session) if session else None: an empty mapping is falsy.
-pub fn session(value: Option<&Json>) -> Result<Option<RealtimeSessionConfig>, RecordError> {
+// A record decoded from the caller's JSON: an absent, null or empty mapping is None (pydantic's falsy check).
+pub(super) fn optional<To>(
+    value: Option<&Json>,
+    field: &'static str,
+) -> Result<Option<To>, RecordError>
+where
+    To: DeserializeOwned,
+{
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) if fields.is_empty() => Ok(None),
-        Some(value) => decode(value, "session").map(Some),
-    }
-}
-
-pub fn expires_after(value: Option<&Json>) -> Result<Option<RealtimeExpiresAfter>, RecordError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) if fields.is_empty() => Ok(None),
-        Some(value) => decode(value, "expires_after").map(Some),
+        Some(other) => converted(other, field).map(Some),
     }
 }
 
 // (req.session.model if req.session is not None else None) or req.model or "gpt-4o-realtime-preview"
 pub fn client_secret_model(session: Option<&RealtimeSessionConfig>, model: Option<&str>) -> String {
-    if let Some(nested) = session.and_then(|session| session.model.as_deref())
-        && !nested.is_empty()
-    {
-        return nested.to_owned();
-    }
-    model
-        .filter(|model| !model.is_empty())
-        .unwrap_or(DEFAULT_REALTIME_MODEL)
-        .to_owned()
+    let nested = session
+        .and_then(|record| record.model.as_deref())
+        .filter(|name| !name.is_empty());
+    model_or_default(nested.or(model))
 }
 
-// model or "gpt-4o-realtime-preview"
-pub fn calls_model(model: Option<&str>) -> String {
+pub fn model_or_default(model: Option<&str>) -> String {
     model
-        .filter(|model| !model.is_empty())
+        .filter(|name| !name.is_empty())
         .unwrap_or(DEFAULT_REALTIME_MODEL)
         .to_owned()
 }
@@ -76,15 +67,13 @@ pub fn transcription(
     transcription_session: Option<&Json>,
     model: Option<&str>,
 ) -> Result<(TranscriptionSessionRequest, String), RecordError> {
-    let fields: IndexMap<String, Json> = match transcription_session {
-        None | Some(Json::Null) => IndexMap::new(),
-        Some(value) => decode(value, "transcription_session")?,
-    };
+    let fields: IndexMap<String, Json> =
+        optional(transcription_session, "transcription_session")?.unwrap_or_default();
     if fields.contains_key("model") {
         return Err(RecordError::ConflictingModel);
     }
     let mut request: TranscriptionSessionRequest =
-        decode(&Json::Object(fields), "transcription_session")?;
+        converted(&Json::Object(fields), "transcription_session")?;
     request.model = model.map(str::to_owned);
     let model_name = request
         .resolved_model()
@@ -114,16 +103,18 @@ pub fn calls_session(
     let Some(session) = session.filter(|value| !matches!(value, Json::Null)) else {
         return Ok(None);
     };
-    let mut fields: IndexMap<String, Json> = decode(session, "session")?;
+    let mut fields: IndexMap<String, Json> = converted(session, "session")?;
     if fields.contains_key("model") {
         fields.insert(String::from("model"), Json::Text(model.to_owned()));
     }
     Ok(Some(fields))
 }
 
-fn decode<T>(value: &Json, field: &'static str) -> Result<T, RecordError>
+// The pydantic record and the wire JSON both come from one serde round trip.
+fn converted<From, To>(value: &From, field: &'static str) -> Result<To, RecordError>
 where
-    T: DeserializeOwned,
+    From: Serialize + ?Sized,
+    To: DeserializeOwned,
 {
     let encoded =
         serde_json::to_value(value).map_err(|source| RecordError::Invalid { field, source })?;
@@ -135,10 +126,7 @@ fn dumping<T>(value: &T, field: &'static str) -> Result<IndexMap<String, Json>, 
 where
     T: Serialize + ?Sized,
 {
-    let encoded =
-        serde_json::to_value(value).map_err(|source| RecordError::Invalid { field, source })?;
-    let fields: IndexMap<String, Json> =
-        serde_json::from_value(encoded).map_err(|source| RecordError::Invalid { field, source })?;
+    let fields: IndexMap<String, Json> = converted(value, field)?;
     Ok(fields
         .into_iter()
         .filter(|(_, value)| !matches!(value, Json::Null))

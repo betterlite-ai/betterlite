@@ -1,41 +1,41 @@
-use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
+use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
 use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolvedModel;
 use indexmap::IndexMap;
 
-// What litellm_logging_obj.update_from_kwargs receives: the call's kwargs, the resolved routing and the raw optional params.
-pub struct PreCall<'call> {
-    pub kwargs: &'call IndexMap<String, Json>,
-    pub model: &'call str,
-    pub provider: &'call str,
-    pub api_base: &'call str,
-    pub optional_params: IndexMap<String, Json>,
-}
+use super::call::CallCommon;
 
+// update_from_kwargs receives the call's kwargs, the resolved routing, litellm_params' api_base and the raw optional params.
 pub fn log_pre_call(
     logging: &mut LoggingState,
-    call: PreCall<'_>,
+    common: &CallCommon<'_>,
+    resolved: &ResolvedModel,
+    api_base: &str,
+    optional_params: IndexMap<String, Json>,
 ) -> Result<(), LoggingStateError> {
-    let mut litellm_params = IndexMap::new();
-    litellm_params.insert(
-        String::from("api_base"),
-        Json::Text(call.api_base.to_owned()),
-    );
-    let mut additional_params = IndexMap::new();
-    additional_params.insert(
-        String::from("custom_llm_provider"),
-        Json::Text(call.provider.to_owned()),
-    );
+    let litellm_params = params([("api_base", Json::Text(api_base.to_owned()))]);
+    let additional_params = params([(
+        "custom_llm_provider",
+        Json::Text(resolved.provider.slug().to_owned()),
+    )]);
     update_from_kwargs(
         logging,
-        call.kwargs,
+        common.kwargs,
         Some(&litellm_params),
         CallUpdate {
-            model: Some(call.model.to_owned()),
+            model: Some(resolved.model.clone()),
             user: None,
-            optional_params: call.optional_params,
+            optional_params,
             additional_params,
         },
     )
+}
+
+// The maps update_from_kwargs reads, keyed as LiteLLM names them.
+pub fn params<const N: usize>(entries: [(&'static str, Json); N]) -> IndexMap<String, Json> {
+    entries
+        .into_iter()
+        .map(|(name, value)| (String::from(name), value))
+        .collect()
 }

@@ -4,13 +4,14 @@
 mod client_secret;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error as StdError;
-use std::fmt;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::api::realtime_http_calls::{RealtimeHttpCallSettings, load_settings};
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_state::LoggingInit;
 use betterlite_logging::logging_state::LoggingState;
@@ -24,17 +25,20 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{ResolutionContext, ResolutionError};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use http::header::HeaderMap;
+use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
 
 use super::RealtimeHttpCalls;
-use super::call::{ClientSecretCall, RealtimeCallsCall, TranscriptionSessionCall};
+use super::call::{
+    CallCommon, ClientSecretCall, RealtimeCallsCall, SuppliedClient, TranscriptionSessionCall,
+};
 use super::dispatch::{RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint};
 use super::error::{RealtimeHttpCallsError, RecordError};
 use super::provider::RealtimeHttpConfig;
 use super::{DEFAULT_REALTIME_MODEL, DEFAULT_TRANSCRIPTION_MODEL};
+use crate::api::vector_store_http_write::service::ClientKind;
 
 const INIT: &str = r#"{"model":"gpt-4o-realtime-preview","call_type":"realtime","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const EMPTY_SETTINGS: &str = "litellm_settings: {}";
@@ -49,10 +53,10 @@ fn timeout_none_and_zero_select_the_request_timeout() {
         .run_client_secret(client_secret_call(&kwargs, Some(OPENAI_MODEL)))
         .expect("the client secret");
     let mut zero = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    zero.timeout = Some(0.0);
+    zero.common.timeout = Some(0.0);
     harness.run_client_secret(zero).expect("the zero timeout");
     let mut transcription = transcription_call(&kwargs, None);
-    transcription.timeout = Some(0.0);
+    transcription.common.timeout = Some(0.0);
     harness
         .run_transcription(transcription)
         .expect("the transcription session");
@@ -69,11 +73,11 @@ fn timeout_a_positive_value_is_kept() {
     let harness = Harness::new(EMPTY_SETTINGS, &[("REQUEST_TIMEOUT", "12.5")]);
     let kwargs = no_kwargs();
     let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.timeout = Some(2.5);
+    call.common.timeout = Some(2.5);
     harness.run_client_secret(call).expect("the client secret");
     let mut calls = calls_call(&kwargs, "ep-caller");
-    calls.model = Some(OPENAI_MODEL);
-    calls.timeout = Some(2.5);
+    calls.common.model = Some(OPENAI_MODEL);
+    calls.common.timeout = Some(2.5);
     harness.run_calls(calls).expect("the realtime call");
     let expected = Duration::try_from_secs_f64(2.5).expect("a duration");
     let seen = harness.seen();
@@ -230,9 +234,9 @@ fn transcription_sends_azure_credentials_and_ignores_a_custom_llm_provider_kwarg
     );
     let key = secret("azure-key");
     let mut call = transcription_call(&kwargs, Some("azure/deployment-a"));
-    call.api_base = Some("https://azure.example");
-    call.api_key = Some(&key);
-    call.api_version = Some("2024-10-01");
+    call.common.api_base = Some("https://azure.example");
+    call.common.api_key = Some(&key);
+    call.common.api_version = Some("2024-10-01");
     harness
         .run_transcription(call)
         .expect("the transcription session");
@@ -301,7 +305,7 @@ fn calls_keeps_the_callers_ephemeral_key() {
     );
     let kwargs = no_kwargs();
     let mut call = calls_call(&kwargs, "ep-caller");
-    call.model = Some(OPENAI_MODEL);
+    call.common.model = Some(OPENAI_MODEL);
     call.sdp_body = b"v=0\r\n".as_slice();
     harness.run_calls(call).expect("the realtime call");
     let seen = harness.seen();
@@ -313,12 +317,37 @@ fn calls_keeps_the_callers_ephemeral_key() {
 }
 
 #[test]
+fn calls_forwards_the_api_base_version_and_the_callers_client() {
+    let harness = Harness::new(EMPTY_SETTINGS, &[]);
+    let environment = BTreeMap::new();
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &environment).expect("the proxy policy"),
+    );
+    let client = ProxiedClient::outbound(&policy).expect("the proxied client");
+    let kwargs = no_kwargs();
+    let mut call = calls_call(&kwargs, "ep-caller");
+    call.common.model = Some(OPENAI_MODEL);
+    call.common.api_base = Some("https://calls.example/v1");
+    call.common.api_version = Some("2024-10-01");
+    call.common.client = Some(SuppliedClient {
+        kind: ClientKind::Sync,
+        transport: &client,
+    });
+    harness.run_calls(call).expect("the realtime call");
+    let seen = harness.seen();
+    let posting = only_calls(&seen);
+    assert_eq!(posting.api_base, "https://calls.example/v1");
+    assert_eq!(posting.api_version.as_deref(), Some("2024-10-01"));
+    assert_eq!(posting.client_kind, Some(ClientKind::Sync));
+}
+
+#[test]
 fn calls_rewrites_an_existing_session_model() {
     let harness = Harness::new(EMPTY_SETTINGS, &[]);
     let kwargs = no_kwargs();
     let session = json(r#"{"type":"transcription","model":null,"voice":"alloy"}"#);
     let mut call = calls_call(&kwargs, "ep-caller");
-    call.model = Some(OPENAI_MODEL);
+    call.common.model = Some(OPENAI_MODEL);
     call.session = Some(&session);
     harness.run_calls(call).expect("the realtime call");
     let seen = harness.seen();
@@ -345,7 +374,7 @@ fn calls_leaves_an_absent_session_model_absent() {
     let kwargs = no_kwargs();
     let session = json(r#"{"type":"transcription"}"#);
     let mut call = calls_call(&kwargs, "ep-caller");
-    call.model = Some(OPENAI_MODEL);
+    call.common.model = Some(OPENAI_MODEL);
     call.session = Some(&session);
     harness.run_calls(call).expect("the realtime call");
     let seen = harness.seen();
@@ -358,7 +387,7 @@ fn calls_without_a_session_logs_null() {
     let harness = Harness::new(EMPTY_SETTINGS, &[]);
     let kwargs = no_kwargs();
     let mut call = calls_call(&kwargs, "ep-caller");
-    call.model = Some(OPENAI_MODEL);
+    call.common.model = Some(OPENAI_MODEL);
     harness.run_calls(call).expect("the realtime call");
     let seen = harness.seen();
     let posting = only_calls(&seen);
@@ -381,7 +410,7 @@ fn calls_forwards_the_sdp_and_returns_the_raw_response() {
     harness.recorder.reply(200, b"v=0\r\na=answer\r\n", headers);
     let kwargs = no_kwargs();
     let mut call = calls_call(&kwargs, "ep-caller");
-    call.model = Some(OPENAI_MODEL);
+    call.common.model = Some(OPENAI_MODEL);
     call.sdp_body = b"v=0\r\no=offer\r\n".as_slice();
     let response = harness.run_calls(call).expect("the realtime call");
     let seen = harness.seen();
@@ -397,6 +426,8 @@ fn calls_forwards_the_sdp_and_returns_the_raw_response() {
         Some("application/sdp")
     );
 }
+
+type RunResult = Result<UpstreamResponse, RealtimeHttpCallsError<FakeFailure>>;
 
 struct Harness {
     settings: RealtimeHttpCallSettings,
@@ -448,10 +479,7 @@ impl Harness {
         }
     }
 
-    fn run_client_secret(
-        &self,
-        call: ClientSecretCall<'_>,
-    ) -> Result<UpstreamResponse, RealtimeHttpCallsError<FakeFailure>> {
+    fn run_client_secret(&self, call: ClientSecretCall<'_>) -> RunResult {
         let mut logging = self.logging.lock().unwrap_or_else(PoisonError::into_inner);
         runtime().block_on(
             self.calls()
@@ -459,10 +487,7 @@ impl Harness {
         )
     }
 
-    fn run_transcription(
-        &self,
-        call: TranscriptionSessionCall<'_>,
-    ) -> Result<UpstreamResponse, RealtimeHttpCallsError<FakeFailure>> {
+    fn run_transcription(&self, call: TranscriptionSessionCall<'_>) -> RunResult {
         let mut logging = self.logging.lock().unwrap_or_else(PoisonError::into_inner);
         runtime().block_on(
             self.calls()
@@ -470,10 +495,7 @@ impl Harness {
         )
     }
 
-    fn run_calls(
-        &self,
-        call: RealtimeCallsCall<'_>,
-    ) -> Result<UpstreamResponse, RealtimeHttpCallsError<FakeFailure>> {
+    fn run_calls(&self, call: RealtimeCallsCall<'_>) -> RunResult {
         let mut logging = self.logging.lock().unwrap_or_else(PoisonError::into_inner);
         runtime().block_on(self.calls().arealtime_calls(call, &mut logging))
     }
@@ -524,14 +546,42 @@ fn no_kwargs() -> IndexMap<String, Json> {
     IndexMap::new()
 }
 
-fn client_secret_call<'call>(
+impl<'call> From<CallCommon<'call>> for ClientSecretCall<'call> {
+    fn from(common: CallCommon<'call>) -> Self {
+        Self {
+            common,
+            session: None,
+            expires_after: None,
+        }
+    }
+}
+
+impl<'call> From<CallCommon<'call>> for TranscriptionSessionCall<'call> {
+    fn from(common: CallCommon<'call>) -> Self {
+        Self {
+            common,
+            transcription_session: None,
+        }
+    }
+}
+
+impl<'call> From<(CallCommon<'call>, &'call str)> for RealtimeCallsCall<'call> {
+    fn from((common, openai_ephemeral_key): (CallCommon<'call>, &'call str)) -> Self {
+        Self {
+            common,
+            openai_ephemeral_key,
+            sdp_body: b"",
+            session: None,
+        }
+    }
+}
+
+fn common<'call>(
     kwargs: &'call IndexMap<String, Json>,
     model: Option<&'call str>,
-) -> ClientSecretCall<'call> {
-    ClientSecretCall {
+) -> CallCommon<'call> {
+    CallCommon {
         model,
-        session: None,
-        expires_after: None,
         timeout: None,
         api_base: None,
         api_key: None,
@@ -540,42 +590,27 @@ fn client_secret_call<'call>(
         client: None,
         kwargs,
     }
+}
+
+fn client_secret_call<'call>(
+    kwargs: &'call IndexMap<String, Json>,
+    model: Option<&'call str>,
+) -> ClientSecretCall<'call> {
+    ClientSecretCall::from(common(kwargs, model))
 }
 
 fn transcription_call<'call>(
     kwargs: &'call IndexMap<String, Json>,
     model: Option<&'call str>,
 ) -> TranscriptionSessionCall<'call> {
-    TranscriptionSessionCall {
-        model,
-        transcription_session: None,
-        timeout: None,
-        api_base: None,
-        api_key: None,
-        api_version: None,
-        extra_headers: None,
-        client: None,
-        kwargs,
-    }
+    TranscriptionSessionCall::from(common(kwargs, model))
 }
 
 fn calls_call<'call>(
     kwargs: &'call IndexMap<String, Json>,
     ephemeral_key: &'call str,
 ) -> RealtimeCallsCall<'call> {
-    RealtimeCallsCall {
-        openai_ephemeral_key: ephemeral_key,
-        sdp_body: b"",
-        model: None,
-        session: None,
-        timeout: None,
-        api_base: None,
-        api_key: None,
-        api_version: None,
-        extra_headers: None,
-        client: None,
-        kwargs,
-    }
+    RealtimeCallsCall::from((common(kwargs, None), ephemeral_key))
 }
 
 #[derive(Debug, Clone)]
@@ -654,18 +689,11 @@ fn record(request: RealtimeHttpRequest<'_>) -> Seen {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 struct FakeFailure {
     message: &'static str,
 }
-
-impl fmt::Display for FakeFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.message)
-    }
-}
-
-impl StdError for FakeFailure {}
 
 #[derive(Default)]
 struct Recorder {
