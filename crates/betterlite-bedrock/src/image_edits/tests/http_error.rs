@@ -15,7 +15,10 @@ pub(super) fn edit_http_error(redactor: &Redactor) {
 
 fn provider_error(error: &ImageEditError) -> (u16, &BedrockError) {
     match error {
-        ImageEditError::Provider { status, error } => (*status, error),
+        ImageEditError::Provider {
+            status,
+            error: detail,
+        } => (*status, detail),
         other @ (ImageEditError::Canvas(_)
         | ImageEditError::CanvasReply(_)
         | ImageEditError::Stability(_)

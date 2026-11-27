@@ -117,7 +117,7 @@ pub(super) fn observe(
             .ok_or_else(|| outcome.err().unwrap_or(Failure::Shape)),
         Function::Result => Ok(run.result(&outcome)),
         Function::Error => Ok(run.error(&outcome)),
-        Function::ModelError => Ok(run.model_error(&outcome)),
+        Function::ModelError => Ok(model_error(&outcome)),
         Function::Selection => {
             outcome?;
             Ok(run.selection())
@@ -158,14 +158,6 @@ impl Run {
                "post_call": post_call_json(&self.state).is_some()})
     }
 
-    fn model_error(&self, outcome: &Outcome) -> Value {
-        match outcome {
-            Ok(_) => json!({"ok": true, "status": null, "message": null}),
-            Err(error) => json!({"ok": false, "status": error.status(),
-                                 "message": error.to_string()}),
-        }
-    }
-
     fn selection(&self) -> Value {
         let last = self.factory_calls.last();
         let kind = last.map(|(kind, _)| kind);
@@ -181,6 +173,14 @@ impl Run {
             "factory_requests": self.factory_requests.len(),
             "posted_url": self.posted().map(|request| request.url.as_str()),
         })
+    }
+}
+
+fn model_error(outcome: &Outcome) -> Value {
+    match outcome {
+        Ok(_) => json!({"ok": true, "status": null, "message": null}),
+        Err(error) => json!({"ok": false, "status": error.status(),
+                             "message": error.to_string()}),
     }
 }
 

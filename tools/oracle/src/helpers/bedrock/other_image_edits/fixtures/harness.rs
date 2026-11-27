@@ -50,7 +50,9 @@ impl<'probe> Harness<'probe> {
             .configured_bearer_token
             .as_ref()
             .map(|token| SecretString::from(token.clone()));
-        let now = UNIX_EPOCH + Duration::from_secs(NOW_EPOCH_SECONDS);
+        let now = UNIX_EPOCH
+            .checked_add(Duration::from_secs(NOW_EPOCH_SECONDS))
+            .unwrap_or(UNIX_EPOCH);
         let extra_headers = probe.extra_headers.as_ref().map(|headers| {
             headers
                 .iter()
