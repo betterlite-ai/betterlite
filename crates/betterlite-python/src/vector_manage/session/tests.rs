@@ -9,14 +9,15 @@ use chrono::{DateTime, FixedOffset};
 use pyo3_async_runtimes::tokio::get_runtime;
 use uuid::Uuid;
 
-use super::super::convert::{UpdateWire, parse};
+use super::super::convert::{WriteWire, parse};
 use super::{Pending, SessionCore, SystemClock, SystemIds};
 
 const SESSION_TEXT: &str =
     r#"{"environment":{},"api_key":"sk-test","api_base":"http://127.0.0.1:9/v1"}"#;
-const RETRIEVE_TEXT: &str = r#"{"vector_store_id":"vs"}"#;
-const LIST_TEXT: &str = "{}";
-const UPDATE_TEXT: &str = r#"{"vector_store_id":"vs_1","custom_llm_provider":"azure"}"#;
+const RETRIEVE_TEXT: &str = r#"{"vector_store_id":"vs","transport":{}}"#;
+const LIST_TEXT: &str = r#"{"transport":{}}"#;
+const UPDATE_TEXT: &str =
+    r#"{"vector_store_id":"vs_1","transport":{"custom_llm_provider":"azure"}}"#;
 const FIXED_SECONDS: i64 = 1_700_000_000;
 const MILLIS_PER_SECOND: f64 = 1000.0;
 const WAIT: Duration = Duration::from_millis(5);
@@ -84,45 +85,25 @@ fn a_session_reads_the_injected_clock_and_ids() {
 
 #[test]
 fn each_pending_names_the_call_type_it_runs() {
-    assert_eq!(
-        Pending::Retrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
-        "retrieve"
-    );
-    assert_eq!(
-        Pending::Aretrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
-        "aretrieve"
-    );
-    assert_eq!(
-        Pending::List(parse(LIST_TEXT, 0).expect("the wire parses")).call_type(),
-        "list"
-    );
-    assert_eq!(
-        Pending::Alist(parse(LIST_TEXT, 0).expect("the wire parses")).call_type(),
-        "alist"
-    );
-    assert_eq!(
-        Pending::Update(parse(UPDATE_TEXT, 0).expect("the wire parses")).call_type(),
-        "update"
-    );
-    assert_eq!(
-        Pending::Aupdate(parse(UPDATE_TEXT, 0).expect("the wire parses")).call_type(),
-        "aupdate"
-    );
-    assert_eq!(
-        Pending::Delete(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
-        "delete"
-    );
-    assert_eq!(
-        Pending::Adelete(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
-        "adelete"
-    );
+    let retrieve = Pending::Retrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses"));
+    assert_eq!(retrieve.call_type(false), "retrieve");
+    assert_eq!(retrieve.call_type(true), "aretrieve");
+    let list = Pending::List(parse(LIST_TEXT, 0).expect("the wire parses"));
+    assert_eq!(list.call_type(false), "list");
+    assert_eq!(list.call_type(true), "alist");
+    let update = Pending::Update(parse(UPDATE_TEXT, 0).expect("the wire parses"));
+    assert_eq!(update.call_type(false), "update");
+    assert_eq!(update.call_type(true), "aupdate");
+    let delete = Pending::Delete(parse(UPDATE_TEXT, 0).expect("the wire parses"));
+    assert_eq!(delete.call_type(false), "delete");
+    assert_eq!(delete.call_type(true), "adelete");
 }
 
 #[test]
 fn a_configured_provider_without_a_write_service_is_refused_locally() {
     let session = build_session();
-    let wire: UpdateWire = parse(UPDATE_TEXT, 0).expect("the update wire parses");
-    let outcome = get_runtime().block_on(session.run(Pending::Update(wire)));
+    let wire: WriteWire = parse(UPDATE_TEXT, 0).expect("the update wire parses");
+    let outcome = get_runtime().block_on(session.run(Pending::Update(wire), false));
     let error = outcome.expect_err("the azure tag has no write service in this build");
     assert!(
         error

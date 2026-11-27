@@ -2,134 +2,62 @@ use std::sync::Mutex;
 
 use betterlite_core::api::vector_store_read::VectorStoreReads;
 use betterlite_core::api::vector_store_read::error::VectorStoreReadFailure;
+use betterlite_core::api::vector_store_read::{VectorStoreListRequest, VectorStoreReadRequest};
+use betterlite_core::api::vector_store_write::VectorStoreWriteDeps;
+use betterlite_core::api::vector_store_write::VectorStoreWrites;
 use betterlite_core::api::vector_store_write::error::VectorStoreWriteFailure;
 use betterlite_core::api::vector_store_write::service::Operation as WriteOperation;
-use betterlite_core::api::vector_store_write::{
-    VectorStoreWriteDeps, VectorStoreWriteRequest, VectorStoreWrites,
-};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 
-use super::super::convert::params;
-use super::super::convert::requests::{
-    delete_request, list_request, retrieve_request, update_request,
-};
-use super::super::convert::{DeleteWire, ListWire, RetrieveWire, UpdateWire};
+use super::super::convert::{WriteWire, params, write_request};
 use super::super::error::NativeFailure;
-use super::super::service::{ReadService, WriteAdapter};
 use super::{DEFAULT_PROVIDER, SessionCore};
 
+pub(super) enum ReadRequest<'request> {
+    Retrieve(VectorStoreReadRequest<'request>),
+    List(VectorStoreListRequest<'request>),
+}
+
 impl SessionCore {
-    pub(super) async fn retrieve(
+    // retrieve and list: B2485's provider over the session's clients, with the async façade the call's flag picks
+    pub(super) async fn read(
         &self,
-        wire: &RetrieveWire,
+        request: ReadRequest<'_>,
         asynchronous: bool,
         logging: &Mutex<LoggingState>,
     ) -> Result<Json, NativeFailure> {
-        let transport = params(&wire.kwargs)?;
-        let request = retrieve_request(wire, &transport);
-        let configs = self.configs();
-        let service = ReadService {
-            source: &self.source,
-            redactor: &self.redactor,
-            clock: self.clock.as_ref(),
-        };
-        let deps = self.read_deps(&configs, logging);
+        let adapter = self.service();
+        let deps = self.read_deps(&adapter, logging);
         let reads = VectorStoreReads {
-            provider: &service,
+            provider: &adapter,
             deps,
         };
-        let answer = if asynchronous {
-            reads.aretrieve(&request).await
-        } else {
-            reads.retrieve(&request).await
+        let requested = match &request {
+            ReadRequest::Retrieve(retrieve) => retrieve.transport.custom_llm_provider,
+            ReadRequest::List(list) => list.transport.custom_llm_provider,
         };
-        answer.map_err(|failure| read_failure(failure, wire.custom_llm_provider.as_deref()))
+        let answer = match (&request, asynchronous) {
+            (ReadRequest::Retrieve(retrieve), false) => reads.retrieve(retrieve).await,
+            (ReadRequest::Retrieve(retrieve), true) => reads.aretrieve(retrieve).await,
+            (ReadRequest::List(list), false) => reads.list(list).await,
+            (ReadRequest::List(list), true) => reads.alist(list).await,
+        };
+        answer.map_err(|failure| read_failure(failure, requested))
     }
 
-    pub(super) async fn list(
-        &self,
-        wire: &ListWire,
-        asynchronous: bool,
-        logging: &Mutex<LoggingState>,
-    ) -> Result<Json, NativeFailure> {
-        let transport = params(&wire.kwargs)?;
-        let request = list_request(wire, &transport);
-        let configs = self.configs();
-        let service = ReadService {
-            source: &self.source,
-            redactor: &self.redactor,
-            clock: self.clock.as_ref(),
-        };
-        let deps = self.read_deps(&configs, logging);
-        let reads = VectorStoreReads {
-            provider: &service,
-            deps,
-        };
-        let answer = if asynchronous {
-            reads.alist(&request).await
-        } else {
-            reads.list(&request).await
-        };
-        answer.map_err(|failure| read_failure(failure, wire.custom_llm_provider.as_deref()))
-    }
-
-    pub(super) async fn update(
-        &self,
-        wire: &UpdateWire,
-        asynchronous: bool,
-        logging: &Mutex<LoggingState>,
-    ) -> Result<Json, NativeFailure> {
-        let transport = params(&wire.kwargs)?;
-        let request = update_request(wire, &transport);
-        let requested = wire.custom_llm_provider.as_deref();
-        self.write(
-            WriteOperation::Update,
-            &request,
-            asynchronous,
-            requested,
-            logging,
-        )
-        .await
-    }
-
-    pub(super) async fn delete(
-        &self,
-        wire: &DeleteWire,
-        asynchronous: bool,
-        logging: &Mutex<LoggingState>,
-    ) -> Result<Json, NativeFailure> {
-        let transport = params(&wire.kwargs)?;
-        let request = delete_request(wire, &transport);
-        let requested = wire.custom_llm_provider.as_deref();
-        self.write(
-            WriteOperation::Delete,
-            &request,
-            asynchronous,
-            requested,
-            logging,
-        )
-        .await
-    }
-
-    // update and delete: the write core's service, with the resolution its provider selection reads
-    async fn write(
+    // update and delete: B2402's service, with the resolution its provider selection reads
+    pub(super) async fn write(
         &self,
         operation: WriteOperation,
-        request: &VectorStoreWriteRequest<'_>,
+        wire: &WriteWire,
         asynchronous: bool,
-        requested: Option<&str>,
         logging: &Mutex<LoggingState>,
     ) -> Result<Json, NativeFailure> {
+        let parameters = params(&wire.transport.kwargs)?;
+        let request = write_request(wire, &parameters);
         let resolution = self.resolution();
-        let service = WriteAdapter {
-            credentials: &self.credentials,
-            globals: &self.globals,
-            env_api_key: &self.env_api_key,
-            source: &self.source,
-            redactor: &self.redactor,
-            clock: self.clock.as_ref(),
-        };
+        let adapter = self.service();
         let deps = VectorStoreWriteDeps {
             logging,
             redactor: &self.redactor,
@@ -137,16 +65,18 @@ impl SessionCore {
             request_timeout_seconds: self.write_timeout,
         };
         let writes = VectorStoreWrites {
-            service: &service,
+            service: &adapter,
             deps,
         };
         let answer = match (operation, asynchronous) {
-            (WriteOperation::Update, false) => writes.update(request).await,
-            (WriteOperation::Update, true) => writes.aupdate(request).await,
-            (WriteOperation::Delete, false) => writes.delete(request).await,
-            (WriteOperation::Delete, true) => writes.adelete(request).await,
+            (WriteOperation::Update, false) => writes.update(&request).await,
+            (WriteOperation::Update, true) => writes.aupdate(&request).await,
+            (WriteOperation::Delete, false) => writes.delete(&request).await,
+            (WriteOperation::Delete, true) => writes.adelete(&request).await,
         };
-        answer.map_err(|failure| write_failure(failure, requested))
+        answer.map_err(|failure| {
+            write_failure(failure, wire.transport.custom_llm_provider.as_deref())
+        })
     }
 }
 

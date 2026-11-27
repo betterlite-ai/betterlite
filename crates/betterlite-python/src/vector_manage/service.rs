@@ -2,6 +2,9 @@ use std::sync::PoisonError;
 
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_context::resource_config_selection::vector_stores::VectorStoresConfigTag;
+use betterlite_core::api::vector_store_http_create_read::config::{
+    CreateReadConfig, OpenAiCreateReadConfig,
+};
 use betterlite_core::api::vector_store_http_create_read::error::CreateReadError;
 use betterlite_core::api::vector_store_http_create_read::service::{
     CreateReadCall, CreateReadDeps, CreateReadTarget, ListCall as HttpListCall,
@@ -16,8 +19,9 @@ use betterlite_core::api::vector_store_http_write::service::{
     WriteTarget, prepare as prepare_write, send as send_write,
 };
 use betterlite_core::api::vector_store_read::service::{
-    Operation as ReadOperation, ReadCall, ReadProvider,
+    Operation as ReadOperation, ReadCall, ReadConfig, ReadProvider, VectorStoreReadConfigs,
 };
+use betterlite_core::api::vector_store_search::provider::ResolvedProvider;
 use betterlite_core::api::vector_store_write::service::{
     Operation as WriteOperation, WriteCall as CoreWriteCall, WriteService,
 };
@@ -30,17 +34,40 @@ use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_wrapper::ports::WrapperClock;
 use secrecy::SecretString;
 
-use super::seams::globals;
 use super::source::{ProxiedSource, SilentSink};
 
-// The read core's provider: B2485's prepare and send over the session's client pool
-pub(crate) struct ReadService<'core> {
+mod tests;
+
+// The credentials and clients one session's calls are served from: B010's read config, B2485's read provider and B2402's write service
+pub(crate) struct SessionService<'core> {
+    pub(crate) credentials: &'core OpenAiCredentialsSettings,
+    pub(crate) globals: &'core LiteLlmGlobals,
+    pub(crate) env_api_key: &'core Option<SecretString>,
     pub(crate) source: &'core ProxiedSource,
     pub(crate) redactor: &'core Redactor,
     pub(crate) clock: &'core dyn WrapperClock,
 }
 
-impl ReadProvider for ReadService<'_> {
+impl VectorStoreReadConfigs for SessionService<'_> {
+    fn read_config<'source>(
+        &'source self,
+        resolved: &ResolvedProvider,
+    ) -> Option<ReadConfig<'source>> {
+        // B010 serves OpenAI's vector stores only
+        if resolved.tag != VectorStoresConfigTag::OpenAI {
+            return None;
+        }
+        let config: Box<dyn CreateReadConfig + 'source> = Box::new(OpenAiCreateReadConfig::new(
+            self.credentials,
+            globals(self.globals),
+            self.env_api_key.clone(),
+            self.globals.api_base.clone(),
+        ));
+        Some(ReadConfig(config))
+    }
+}
+
+impl ReadProvider for SessionService<'_> {
     type Client = ProxiedClient;
 
     async fn read(&self, call: &ReadCall<'_, ProxiedClient>) -> Result<Json, CreateReadError> {
@@ -114,17 +141,7 @@ fn missing_id() -> CreateReadError {
     }))
 }
 
-// The write core's service: B2402's prepare and send over the OpenAI config this build serves
-pub(crate) struct WriteAdapter<'core> {
-    pub(crate) credentials: &'core OpenAiCredentialsSettings,
-    pub(crate) globals: &'core LiteLlmGlobals,
-    pub(crate) env_api_key: &'core Option<SecretString>,
-    pub(crate) source: &'core ProxiedSource,
-    pub(crate) redactor: &'core Redactor,
-    pub(crate) clock: &'core dyn WrapperClock,
-}
-
-impl WriteService for WriteAdapter<'_> {
+impl WriteService for SessionService<'_> {
     async fn write(&self, call: &CoreWriteCall<'_>) -> Result<Json, WriteError> {
         // B010 serves OpenAI's vector stores only; a tag with no config here names its provider back
         if call.config != VectorStoresConfigTag::OpenAI {
@@ -141,23 +158,7 @@ impl WriteService for WriteAdapter<'_> {
             source: self.source,
             supplied: None,
         };
-        let target = WriteTarget {
-            vector_store_id: call.vector_store_id,
-            params: call.params,
-            extra_headers: call.extra_headers,
-            timeout: Some(call.timeout),
-        };
-        let write = match call.operation {
-            WriteOperation::Update => HttpWriteCall::Update(UpdateCall {
-                target,
-                optional_params: call.optional_params,
-                extra_body: call.extra_body,
-            }),
-            WriteOperation::Delete => HttpWriteCall::Delete(DeleteCall {
-                target,
-                extra_body: call.extra_body,
-            }),
-        };
+        let write = write_call(call);
         let sink = SilentSink;
         let env = pre_post(self.redactor, &sink, self.clock);
         let prepared = {
@@ -173,6 +174,27 @@ impl WriteService for WriteAdapter<'_> {
             )
         };
         send_write(prepared?).await
+    }
+}
+
+// B2402's HTTP call for a write: update's optional fields, or delete's bare target
+fn write_call<'call>(call: &CoreWriteCall<'call>) -> HttpWriteCall<'call> {
+    let target = WriteTarget {
+        vector_store_id: call.vector_store_id,
+        params: call.params,
+        extra_headers: call.extra_headers,
+        timeout: Some(call.timeout),
+    };
+    match call.operation {
+        WriteOperation::Update => HttpWriteCall::Update(UpdateCall {
+            target,
+            optional_params: call.optional_params,
+            extra_body: call.extra_body,
+        }),
+        WriteOperation::Delete => HttpWriteCall::Delete(DeleteCall {
+            target,
+            extra_body: call.extra_body,
+        }),
     }
 }
 
@@ -209,5 +231,15 @@ fn pre_post<'env>(
         sentry: None,
         logger_fn: None,
         now: clock.now(),
+    }
+}
+
+// B527 owns the credential source rules, so the globals are copied into the shape its resolver reads
+fn globals(source: &LiteLlmGlobals) -> LiteLlmGlobals {
+    LiteLlmGlobals {
+        api_base: source.api_base.clone(),
+        api_key: source.api_key.clone(),
+        openai_key: source.openai_key.clone(),
+        organization: source.organization.clone(),
     }
 }

@@ -1,7 +1,6 @@
 mod convert;
 mod error;
 mod native;
-mod seams;
 mod service;
 mod session;
 mod source;

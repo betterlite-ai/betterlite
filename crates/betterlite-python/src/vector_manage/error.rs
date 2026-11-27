@@ -1,17 +1,13 @@
 use std::ffi::CStr;
 
-use betterlite_config::api::vector_store_read::SettingsError;
-use betterlite_config::loader::ConfigError;
 use betterlite_core::api::vector_store_read::error::VectorStoreReadFailure;
 use betterlite_core::api::vector_store_write::error::VectorStoreWriteFailure;
-use betterlite_env::EnvError;
-use betterlite_redact::error::RedactionError;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::PyType;
 
-use super::convert::{ConvertError, FieldError, NativeErrorPayload, read_payload, write_payload};
+use super::convert::{ConvertError, NativeErrorPayload, ProviderError, payload_of, provider_name};
 
 const CLASS_NAME: &str = "NativeVectorManageError";
 // CPython's PyErr_NewException takes a <module>.<ExceptionName> name; a bare one aborts _native's init
@@ -41,12 +37,22 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 // What a caller sees when a call fails: the SDK exception class, or the local refusal of a value
 pub(crate) fn raise(py: Python<'_>, failure: &NativeFailure) -> PyErr {
     match failure {
-        NativeFailure::Field(error) => PyValueError::new_err(error.to_string()),
+        NativeFailure::Convert(error) => PyValueError::new_err(error.to_string()),
         NativeFailure::Setup { message } => PyRuntimeError::new_err(message.clone()),
-        NativeFailure::Read { failure, provider } => exception(py, read_payload(failure, provider)),
-        NativeFailure::Write { failure, provider } => {
-            exception(py, write_payload(failure, provider))
-        }
+        NativeFailure::Read { failure, provider } => exception(
+            py,
+            payload_of(
+                &failure.class,
+                provider_name(ProviderError::Read(&failure.error), provider),
+            ),
+        ),
+        NativeFailure::Write { failure, provider } => exception(
+            py,
+            payload_of(
+                &failure.class,
+                provider_name(ProviderError::Write(&failure.error), provider),
+            ),
+        ),
     }
 }
 
@@ -65,8 +71,8 @@ fn exception(py: Python<'_>, payload: NativeErrorPayload) -> PyErr {
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum NativeFailure {
     #[error(transparent)]
-    Field(#[from] FieldError),
-    #[error("the vector store call could not be logged: {message}")]
+    Convert(#[from] ConvertError),
+    #[error("{message}")]
     Setup { message: String },
     #[error("{failure}")]
     Read {
@@ -80,60 +86,15 @@ pub(crate) enum NativeFailure {
     },
 }
 
-// Everything that can fail while a session is built, before any request is made
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum SessionError {
-    #[error(transparent)]
-    Json(#[from] ConvertError),
-    #[error("the configuration the session reads could not be loaded: {source}")]
-    Config {
-        #[source]
-        source: ConfigError,
-    },
-    #[error("the request timeout setting could not be read: {source}")]
-    Settings {
-        #[source]
-        source: SettingsError,
-    },
-    #[error("the write timeout setting could not be read: {source}")]
-    Timeout {
-        #[source]
-        source: ConfigError,
-    },
-    #[error("the proxy environment could not be read: {source}")]
-    Proxy {
-        #[source]
-        source: EnvError,
-    },
-    #[error("the credential redactor could not be built: {source}")]
-    Redactor {
-        #[source]
-        source: RedactionError,
-    },
+// A session that cannot be built names the value that failed, before any request is made
+pub(crate) fn setup(what: &str, source: &dyn std::fmt::Display) -> NativeFailure {
+    NativeFailure::Setup {
+        message: format!("{what}: {source}"),
+    }
 }
 
 impl From<ConvertError> for PyErr {
     fn from(error: ConvertError) -> Self {
-        let text = error.to_string();
-        match &error {
-            ConvertError::Json { .. } | ConvertError::Files { .. } => PyValueError::new_err(text),
-            ConvertError::Encode { .. } => PyRuntimeError::new_err(text),
-        }
-    }
-}
-
-impl From<SessionError> for PyErr {
-    fn from(error: SessionError) -> Self {
-        match &error {
-            SessionError::Json(ConvertError::Json { .. } | ConvertError::Files { .. }) => {
-                PyValueError::new_err(error.to_string())
-            }
-            SessionError::Json(ConvertError::Encode { .. })
-            | SessionError::Config { .. }
-            | SessionError::Settings { .. }
-            | SessionError::Timeout { .. }
-            | SessionError::Proxy { .. }
-            | SessionError::Redactor { .. } => PyRuntimeError::new_err(error.to_string()),
-        }
+        PyValueError::new_err(error.to_string())
     }
 }

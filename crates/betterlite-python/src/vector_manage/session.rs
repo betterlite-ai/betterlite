@@ -11,7 +11,11 @@ use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::{
     Raw as OpenAiCredentialsRaw, Settings as OpenAiCredentialsSettings,
 };
-use betterlite_core::api::vector_store_read::VectorStoreReadDeps;
+use betterlite_core::api::vector_store_read::{
+    TransportRequest as ReadTransport, VectorStoreListRequest, VectorStoreReadDeps,
+    VectorStoreReadRequest,
+};
+use betterlite_core::api::vector_store_write::service::Operation as WriteOperation;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -37,9 +41,10 @@ use uuid::Uuid;
 
 use crate::completion::setup::openai_defaults;
 
-use super::convert::{DeleteWire, ListWire, RetrieveWire, UpdateWire, parse};
-use super::error::{NativeFailure, SessionError};
-use super::seams::Configs;
+use self::operations::ReadRequest;
+use super::convert::{ListWire, RetrieveWire, WriteWire, params, parse, read_transport};
+use super::error::{NativeFailure, setup};
+use super::service::SessionService;
 use super::source::ProxiedSource;
 
 mod operations;
@@ -58,35 +63,30 @@ struct SessionWire {
     organization: Option<String>,
 }
 
-// What one native call runs: each operation's wire, and its async twin so the flag reaches the core's handler choice
+// What one native call runs: each operation's wire, with the flag its method passes on
 pub(crate) enum Pending {
     Retrieve(RetrieveWire),
-    Aretrieve(RetrieveWire),
     List(ListWire),
-    Alist(ListWire),
-    Update(UpdateWire),
-    Aupdate(UpdateWire),
-    Delete(DeleteWire),
-    Adelete(DeleteWire),
+    Update(WriteWire),
+    Delete(WriteWire),
 }
 
 impl Pending {
     // the call_type the SDK's @client wrapper names after the function it decorates
-    const fn call_type(&self) -> &'static str {
-        match self {
-            Self::Retrieve(_) => "retrieve",
-            Self::Aretrieve(_) => "aretrieve",
-            Self::List(_) => "list",
-            Self::Alist(_) => "alist",
-            Self::Update(_) => "update",
-            Self::Aupdate(_) => "aupdate",
-            Self::Delete(_) => "delete",
-            Self::Adelete(_) => "adelete",
+    const fn call_type(&self, asynchronous: bool) -> &'static str {
+        match (self, asynchronous) {
+            (Self::Retrieve(_), false) => "retrieve",
+            (Self::Retrieve(_), true) => "aretrieve",
+            (Self::List(_), false) => "list",
+            (Self::List(_), true) => "alist",
+            (Self::Update(_), false) => "update",
+            (Self::Update(_), true) => "aupdate",
+            (Self::Delete(_), false) => "delete",
+            (Self::Delete(_), true) => "adelete",
         }
     }
 }
 
-// Everything one Python session owns: the environment snapshot, the credentials it resolves and the clients its requests use.
 pub(crate) struct SessionCore {
     credentials: OpenAiCredentialsSettings,
     globals: LiteLlmGlobals,
@@ -105,28 +105,32 @@ pub(crate) struct SessionCore {
 
 impl SessionCore {
     // The clock and the id source are fields so a test pins every time and id the session writes
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one flat list of every setting a session reads, with no branches"
+    )]
     pub(crate) fn build(
         text: &str,
         clock: Arc<dyn WrapperClock>,
         ids: Arc<dyn IdSource>,
-    ) -> Result<Self, SessionError> {
+    ) -> Result<Self, NativeFailure> {
         let wire: SessionWire = parse(text, 0)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
         let config = ConfigLoader {
             lookup: environment.clone(),
         }
         .load("{}")
-        .map_err(|source| SessionError::Config { source })?;
+        .map_err(|source| setup("the configuration could not be loaded", &source))?;
         let credentials = OpenAiCredentialsRaw::default()
             .convert(&environment)
-            .map_err(|source| SessionError::Config { source })?;
-        let read_timeout =
-            loads_read_timeout(&environment).map_err(|source| SessionError::Settings { source })?;
+            .map_err(|source| setup("the credentials could not be read", &source))?;
+        let read_timeout = loads_read_timeout(&environment)
+            .map_err(|source| setup("the read timeout could not be read", &source))?;
         let write_timeout = loads_request_timeout(&environment)
-            .map_err(|source| SessionError::Timeout { source })?;
+            .map_err(|source| setup("the write timeout could not be read", &source))?;
         let routing = Arc::new(
             ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment)
-                .map_err(|source| SessionError::Proxy { source })?,
+                .map_err(|source| setup("the proxy environment could not be read", &source))?,
         );
         let env_api_key = openai_defaults(&environment).api_keys.first().cloned();
         let globals = LiteLlmGlobals {
@@ -147,48 +151,69 @@ impl SessionCore {
             read_timeout,
             write_timeout,
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-                .map_err(|source| SessionError::Redactor { source })?,
+                .map_err(|source| setup("the redactor could not be built", &source))?,
             clock,
             ids,
         })
     }
 
     // One logging state for this call, and the read or write core's service behind the session's clients
-    pub(crate) async fn run(&self, pending: Pending) -> Result<Json, NativeFailure> {
-        let state =
-            self.logging_state(pending.call_type())
-                .map_err(|error| NativeFailure::Setup {
-                    message: error.to_string(),
-                })?;
+    pub(crate) async fn run(&self, pending: Pending, flag: bool) -> Result<Json, NativeFailure> {
+        let state = self
+            .logging_state(pending.call_type(flag))
+            .map_err(|error| NativeFailure::Setup {
+                message: format!("the vector store call could not be logged: {error}"),
+            })?;
         let logging = Mutex::new(state);
         match pending {
-            Pending::Retrieve(wire) => self.retrieve(&wire, false, &logging).await,
-            Pending::Aretrieve(wire) => self.retrieve(&wire, true, &logging).await,
-            Pending::List(wire) => self.list(&wire, false, &logging).await,
-            Pending::Alist(wire) => self.list(&wire, true, &logging).await,
-            Pending::Update(wire) => self.update(&wire, false, &logging).await,
-            Pending::Aupdate(wire) => self.update(&wire, true, &logging).await,
-            Pending::Delete(wire) => self.delete(&wire, false, &logging).await,
-            Pending::Adelete(wire) => self.delete(&wire, true, &logging).await,
+            Pending::Retrieve(wire) => {
+                let parameters = params(&wire.transport.kwargs)?;
+                let request = ReadRequest::Retrieve(VectorStoreReadRequest {
+                    transport: read_transport!(wire, &parameters),
+                    vector_store_id: &wire.vector_store_id,
+                });
+                self.read(request, flag, &logging).await
+            }
+            Pending::List(wire) => {
+                let parameters = params(&wire.transport.kwargs)?;
+                let request = ReadRequest::List(VectorStoreListRequest {
+                    transport: read_transport!(wire, &parameters),
+                    after: wire.after.as_deref(),
+                    before: wire.before.as_deref(),
+                    limit: Some(wire.limit),
+                    order: Some(wire.order.as_deref()),
+                });
+                self.read(request, flag, &logging).await
+            }
+            Pending::Update(wire) => {
+                self.write(WriteOperation::Update, &wire, flag, &logging)
+                    .await
+            }
+            Pending::Delete(wire) => {
+                self.write(WriteOperation::Delete, &wire, flag, &logging)
+                    .await
+            }
         }
     }
 
-    // B010's read configs, built per call from the credentials this session holds
-    fn configs(&self) -> Configs<'_> {
-        Configs {
+    fn service(&self) -> SessionService<'_> {
+        SessionService {
             credentials: &self.credentials,
             globals: &self.globals,
             env_api_key: &self.env_api_key,
+            source: &self.source,
+            redactor: &self.redactor,
+            clock: self.clock.as_ref(),
         }
     }
 
     fn read_deps<'deps>(
         &'deps self,
-        configs: &'deps Configs<'deps>,
+        adapter: &'deps SessionService<'deps>,
         logging: &'deps Mutex<LoggingState>,
     ) -> VectorStoreReadDeps<'deps, ProxiedClient> {
         VectorStoreReadDeps {
-            configs,
+            configs: adapter,
             logging,
             redactor: &self.redactor,
             supplied: None,

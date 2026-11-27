@@ -1,11 +1,15 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::vector_store_http_write::config::WriteParams;
+use betterlite_core::api::vector_store_read::TransportRequest as ReadTransport;
 use betterlite_core::api::vector_store_read::error::{
     VectorStoreReadError, VectorStoreReadFailure,
 };
 use betterlite_core::api::vector_store_write::error::{
     VectorStoreWriteError, VectorStoreWriteFailure,
+};
+use betterlite_core::api::vector_store_write::{
+    TransportRequest as WriteTransport, VectorStoreWriteRequest,
 };
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_models::decisions::Json;
@@ -16,96 +20,48 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde::Serialize;
 
-pub(crate) mod requests;
 mod tests;
 
-// vector_store_retrieve's arguments: the id, the call's **kwargs and its HTTP extras
+// the kwargs and HTTP overrides every vector store call carries; extra_query is accepted and never forwarded
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TransportWire {
+    #[serde(default)]
+    pub(crate) kwargs: IndexMap<String, Json>,
+    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
+    pub(crate) extra_query: Option<IndexMap<String, Json>>,
+    pub(crate) extra_body: Option<IndexMap<String, Json>>,
+    pub(crate) timeout: Option<f64>,
+    pub(crate) custom_llm_provider: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RetrieveWire {
     pub(crate) vector_store_id: String,
-    #[serde(default)]
-    pub(crate) kwargs: IndexMap<String, Json>,
-    #[serde(default)]
-    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub(crate) extra_query: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) extra_body: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) timeout: Option<f64>,
-    #[serde(default)]
-    pub(crate) custom_llm_provider: Option<String>,
+    pub(crate) transport: TransportWire,
 }
 
-// vector_store_list's arguments: its four cursor fields, where an explicit null stays distinct from an absent default
+// vector_store_list's arguments: the four cursors the Python signature always sends, a null one left out of the request
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ListWire {
-    #[serde(default)]
     pub(crate) after: Option<String>,
-    #[serde(default)]
     pub(crate) before: Option<String>,
-    #[serde(default)]
-    pub(crate) limit: Option<Option<i64>>,
-    #[serde(default)]
-    pub(crate) order: Option<Option<String>>,
-    #[serde(default)]
-    pub(crate) kwargs: IndexMap<String, Json>,
-    #[serde(default)]
-    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub(crate) extra_query: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) extra_body: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) timeout: Option<f64>,
-    #[serde(default)]
-    pub(crate) custom_llm_provider: Option<String>,
+    pub(crate) limit: Option<i64>,
+    pub(crate) order: Option<String>,
+    pub(crate) transport: TransportWire,
 }
 
-// vector_store_update's arguments: the id, the three named fields and the call's **kwargs
+// the arguments update and delete share: the id and the three create fields a delete leaves unset
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct UpdateWire {
+pub(crate) struct WriteWire {
     pub(crate) vector_store_id: String,
-    #[serde(default)]
     pub(crate) name: Option<String>,
-    #[serde(default)]
     pub(crate) expires_after: Option<VectorStoreExpirationPolicy>,
-    #[serde(default)]
     pub(crate) metadata: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) kwargs: IndexMap<String, Json>,
-    #[serde(default)]
-    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub(crate) extra_query: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) extra_body: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) timeout: Option<f64>,
-    #[serde(default)]
-    pub(crate) custom_llm_provider: Option<String>,
-}
-
-// vector_store_delete's arguments: the id and the shared transport
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteWire {
-    pub(crate) vector_store_id: String,
-    #[serde(default)]
-    pub(crate) kwargs: IndexMap<String, Json>,
-    #[serde(default)]
-    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub(crate) extra_query: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) extra_body: Option<IndexMap<String, Json>>,
-    #[serde(default)]
-    pub(crate) timeout: Option<f64>,
-    #[serde(default)]
-    pub(crate) custom_llm_provider: Option<String>,
+    pub(crate) transport: TransportWire,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -117,19 +73,12 @@ pub(crate) enum ConvertError {
     },
     #[error("the vector store call takes no files, and {count} were attached")]
     Files { count: usize },
-    #[error("the answer could not be written as JSON: {source}")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
-}
-
-// a kwargs value whose type GenericLiteLLMParams cannot hold, named where it entered
-#[derive(Debug, thiserror::Error)]
-#[error("{field} must be {expected}")]
-pub(crate) struct FieldError {
-    pub(crate) field: &'static str,
-    pub(crate) expected: &'static str,
+    #[error("api_base must be a string")]
+    ApiBase,
+    #[error("api_key must be a string")]
+    ApiKey,
+    #[error("ssl_verify must be a boolean")]
+    SslVerify,
 }
 
 // the boundary every native method crosses: a wire of the shape that method takes, and no attached file
@@ -143,41 +92,72 @@ where
     serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
 }
 
-// GenericLiteLLMParams(**kwargs): the three transport fields the handlers read, each named when its type is wrong
-pub(crate) fn params(kwargs: &IndexMap<String, Json>) -> Result<WriteParams, FieldError> {
+// GenericLiteLLMParams(**kwargs): the three transport fields the handlers read, each named when its Json type is wrong
+pub(crate) fn params(kwargs: &IndexMap<String, Json>) -> Result<WriteParams, ConvertError> {
+    let mut api_base = None;
+    let mut api_key = None;
+    let mut ssl_verify = None;
+    for (field, value) in kwargs {
+        match (field.as_str(), value) {
+            ("api_base", Json::Null) | ("api_key", Json::Null) | ("ssl_verify", Json::Null) => {}
+            ("api_base", Json::Text(base)) => api_base = Some(base.clone()),
+            ("api_key", Json::Text(key)) => api_key = Some(SecretString::from(key.clone())),
+            ("ssl_verify", Json::Bool(flag)) => ssl_verify = Some(*flag),
+            ("api_base", _) => return Err(ConvertError::ApiBase),
+            ("api_key", _) => return Err(ConvertError::ApiKey),
+            ("ssl_verify", _) => return Err(ConvertError::SslVerify),
+            _ => {}
+        }
+    }
     Ok(WriteParams {
-        api_base: text(kwargs, "api_base")?,
-        api_key: text(kwargs, "api_key")?.map(SecretString::from),
-        ssl_verify: flag(kwargs, "ssl_verify")?,
+        api_base,
+        api_key,
+        ssl_verify,
     })
 }
 
-fn text(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<String>, FieldError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(FieldError {
-                field,
-                expected: "a string",
-            })
+// the transport fields every read carries, expanded into the read core's request records
+macro_rules! read_transport {
+    ($wire:ident, $params:expr) => {
+        ReadTransport {
+            extra_headers: $wire.transport.extra_headers.as_ref(),
+            extra_query: $wire.transport.extra_query.as_ref(),
+            extra_body: $wire.transport.extra_body.as_ref(),
+            timeout: $wire.transport.timeout,
+            custom_llm_provider: $wire.transport.custom_llm_provider.as_deref(),
+            params: $params,
+            kwargs: &$wire.transport.kwargs,
         }
-    }
+    };
 }
 
-fn flag(kwargs: &IndexMap<String, Json>, field: &'static str) -> Result<Option<bool>, FieldError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(FieldError {
-                field,
-                expected: "a boolean",
-            })
+pub(crate) use read_transport;
+
+macro_rules! write_transport {
+    ($wire:ident, $params:expr) => {
+        WriteTransport {
+            vector_store_id: &$wire.vector_store_id,
+            extra_headers: $wire.transport.extra_headers.as_ref(),
+            extra_query: $wire.transport.extra_query.as_ref(),
+            extra_body: $wire.transport.extra_body.as_ref(),
+            timeout: $wire.transport.timeout,
+            custom_llm_provider: $wire.transport.custom_llm_provider.as_deref(),
+            params: $params,
+            kwargs: &$wire.transport.kwargs,
         }
+    };
+}
+
+// the call the write core takes for update and delete: a None field is left out and an empty metadata still travels
+pub(crate) fn write_request<'wire>(
+    wire: &'wire WriteWire,
+    params: &'wire WriteParams,
+) -> VectorStoreWriteRequest<'wire> {
+    VectorStoreWriteRequest {
+        transport: write_transport!(wire, params),
+        name: wire.name.as_deref(),
+        expires_after: wire.expires_after.as_ref(),
+        metadata: wire.metadata.as_ref(),
     }
 }
 
@@ -193,7 +173,7 @@ pub(crate) struct NativeErrorPayload {
 }
 
 // exception_type(model=None, custom_llm_provider=<the call's provider>, original_exception=...) for one mapped class
-fn payload_of(class: &ErrorClass, provider: String) -> NativeErrorPayload {
+pub(crate) fn payload_of(class: &ErrorClass, provider: String) -> NativeErrorPayload {
     NativeErrorPayload {
         kind: class_name(class).to_owned(),
         message: class_message(class),
@@ -203,38 +183,30 @@ fn payload_of(class: &ErrorClass, provider: String) -> NativeErrorPayload {
     }
 }
 
-// exception_type names the resolved provider, and an unconfigured read names the one it could not find
-pub(crate) fn read_payload(
-    failure: &VectorStoreReadFailure,
-    requested: &str,
-) -> NativeErrorPayload {
-    payload_of(&failure.class, read_provider(&failure.error, requested))
+// the provider a failure names: the one the core resolved, or the caller's declaration
+pub(crate) enum ProviderError<'failure> {
+    Read(&'failure VectorStoreReadError),
+    Write(&'failure VectorStoreWriteError),
 }
 
-fn read_provider(error: &VectorStoreReadError, requested: &str) -> String {
+pub(crate) fn provider_name(error: ProviderError<'_>, requested: &str) -> String {
     match error {
-        VectorStoreReadError::Unconfigured { provider, .. } => provider.clone(),
-        VectorStoreReadError::Resolution(_)
-        | VectorStoreReadError::Logging(_)
-        | VectorStoreReadError::Read(_) => requested.to_owned(),
-    }
-}
-
-pub(crate) fn write_payload(
-    failure: &VectorStoreWriteFailure,
-    requested: &str,
-) -> NativeErrorPayload {
-    payload_of(&failure.class, write_provider(&failure.error, requested))
-}
-
-fn write_provider(error: &VectorStoreWriteError, requested: &str) -> String {
-    match error {
-        VectorStoreWriteError::InvalidProvider { provider }
-        | VectorStoreWriteError::Unsupported { provider, .. } => provider.clone(),
-        VectorStoreWriteError::Resolution(_)
-        | VectorStoreWriteError::Params(_)
-        | VectorStoreWriteError::Timeout { .. }
-        | VectorStoreWriteError::Logging(_)
-        | VectorStoreWriteError::Write(_) => requested.to_owned(),
+        ProviderError::Read(VectorStoreReadError::Unconfigured { provider, .. })
+        | ProviderError::Write(
+            VectorStoreWriteError::InvalidProvider { provider }
+            | VectorStoreWriteError::Unsupported { provider, .. },
+        ) => provider.clone(),
+        ProviderError::Read(
+            VectorStoreReadError::Resolution(_)
+            | VectorStoreReadError::Logging(_)
+            | VectorStoreReadError::Read(_),
+        )
+        | ProviderError::Write(
+            VectorStoreWriteError::Resolution(_)
+            | VectorStoreWriteError::Params(_)
+            | VectorStoreWriteError::Timeout { .. }
+            | VectorStoreWriteError::Logging(_)
+            | VectorStoreWriteError::Write(_),
+        ) => requested.to_owned(),
     }
 }
