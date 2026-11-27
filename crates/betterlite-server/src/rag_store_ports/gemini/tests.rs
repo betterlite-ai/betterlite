@@ -175,6 +175,29 @@ async fn send_reports_a_url_that_is_not_a_url() {
 }
 
 #[tokio::test]
+async fn send_reports_a_reply_over_the_client_body_cap() {
+    let answer = Reply::json("0123456789abcdef");
+    let (result, _seen) = with_server(answer, |base| async move {
+        let mut capped = client();
+        capped.limits.body_bytes = 8;
+        GeminiHttp {
+            client: Arc::new(capped),
+        }
+        .send(TransportRequest {
+            method: TransportMethod::Post,
+            url: format!("{base}/fileSearchStores"),
+            headers: json_headers(),
+            body: TransportBody::Json(json("{}")),
+            timeout: Duration::from_secs(60),
+        })
+        .await
+    })
+    .await;
+    let error = result.expect_err("the reply over the cap is a transport error");
+    assert!(error.to_string().contains("larger than 8 bytes"));
+}
+
+#[tokio::test]
 async fn the_port_debug_names_the_type_only() {
     assert_eq!(format!("{:?}", port()), "GeminiHttp { .. }");
 }
