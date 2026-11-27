@@ -5,7 +5,7 @@ from litellm.proxy._experimental.mcp_server.mcp_server_manager import (
     global_mcp_server_manager,
 )
 from litellm.proxy._types import LiteLLM_MCPServerTable
-from litellm.proxy.management_endpoints.mcp_management_endpoints import _redact_mcp_credentials  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L639
+from litellm.proxy.management_endpoints.mcp_management_endpoints import _redact_mcp_credentials  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L639
 from pydantic import JsonValue, TypeAdapter
 
 from b10079 import servers_by_id
@@ -40,7 +40,7 @@ def run(input_value: Input) -> Answer:
         global_mcp_server_manager.registry = servers_by_id(input_value["db_servers"])
         litellm.public_mcp_servers = input_value["public_mcp_servers"]
         litellm.public_mcp_hub_strict_whitelist = input_value["public_hub_strict"]
-        server = LiteLLM_MCPServerTable.model_validate(input_value["server"])  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/mcp_server.py#L49
+        server = LiteLLM_MCPServerTable.model_validate(input_value["server"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/mcp_server.py#L49
         return ANSWER.validate_json(_redact_mcp_credentials(server).model_dump_json())
     finally:
         global_mcp_server_manager.config_mcp_servers = saved_config
