@@ -164,6 +164,15 @@ pub(crate) async fn prefetch_budget(
     auth_end_users::prefetch(stage).await
 }
 
+pub(crate) async fn prefetched_budget(
+    mut stage: Box<EndUserStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch_budget(&mut stage)
+        .await
+        .map_err(StageFailure::EndUsers)?;
+    Ok(StageInput::AuthEndUsers(stage))
+}
+
 // LiteLLM lets a cache failure escape the auth path as an unhandled internal server error.
 fn exception(error: &ResolveError) -> ProxyException {
     tracing::error!(error = %error, "the end-user id validation failed");
