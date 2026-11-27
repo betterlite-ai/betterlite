@@ -73,3 +73,5 @@ call:
           completion_tokens: 3
       - usage:
           prompt_tokens: bad
+env: {}
+compare: {ignore: []}

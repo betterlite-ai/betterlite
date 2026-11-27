@@ -32,6 +32,7 @@ const BUDGETED: &str = r#"{
     "user_id": "u1",
     "user_model_max_budget": {"sum": {"budget_limit": 1.0, "time_period": "1d"}}
 }"#;
+const INSTRUCTIONS: &str = "Keep the error budget and the tool calls";
 
 fn augmented(summary: &str) -> String {
     format!("{COMPACT_SUMMARY_SYSTEM_PREFIX}{summary}\n\nBASE SYSTEM")
@@ -467,6 +468,28 @@ async fn declared_tools_add_the_no_tools_suffix() {
     let prompt = serde_json::to_string(call.messages.last().expect("the prompt turn"))
         .expect("the prompt encodes");
     assert!(prompt.ends_with(&format!("{COMPACT_NO_TOOL_CALLS_SUFFIX}\"}}")));
+}
+
+#[tokio::test]
+async fn client_instructions_replace_the_summary_prompt() {
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
+    sample.spec = spec(&format!(
+        r#"{{"type":"compact_20260112","instructions":"{INSTRUCTIONS}"}}"#
+    ));
+    run(&fixture, sample.request(MODEL), Port::Routed)
+        .await
+        .expect("the editor runs");
+    let call = fixture
+        .router
+        .calls()
+        .first()
+        .expect("one summary call")
+        .clone();
+    let prompt = serde_json::to_string(call.messages.last().expect("the prompt turn"))
+        .expect("the prompt encodes");
+    assert!(prompt.ends_with(&format!("{INSTRUCTIONS}\"}}")));
+    assert!(!prompt.contains(COMPACT_DEFAULT_INSTRUCTIONS));
 }
 
 #[tokio::test]
