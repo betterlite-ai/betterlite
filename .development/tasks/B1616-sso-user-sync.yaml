@@ -77,7 +77,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/sso-user-values/nonempty-db-models-win.yaml
 deviations: []
 out_of_scope:
-  - B1624 owns get_disabled_non_admin_personal_key_creation and browser session issuance; B1615 owns CLI completion orchestration.
+  - B10118 owns get_disabled_non_admin_personal_key_creation and B1624 browser session issuance; B1615 owns CLI completion orchestration.
   - Provider exchange and route ownership for the remainder of ui_sso.py is recorded in B063.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as sso_user_values in the server group. Replace the stub Op in tools/oracle/src/helpers/server/sso_user_values.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_user_values.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

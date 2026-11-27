@@ -1,0 +1,60 @@
+kind: sdk_http
+name: vector-file-read-retrieve-attachment-and-text
+call:
+  vector_file_read:
+    runs:
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-1}
+        extra_headers: {X-Trace: t}
+        timeout_seconds: 30
+      - operation: retrieve
+        mode: async
+        vector_store_id: vs_a
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-2}
+        extra_headers: {X-Trace: t}
+      - operation: content
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-3}
+        extra_headers: {X-Trace: t}
+      - operation: content
+        mode: async
+        vector_store_id: vs_a
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-4}
+        extra_headers: {X-Trace: t}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      file_id: file_a
+      filename: a
+      attributes: {tag: x}
+      content:
+        - {type: text, text: hello}
+        - {type: text, text: world}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      file_id: file_a
+      filename: a
+      attributes: {tag: x}
+      content:
+        - {type: text, text: hello}
+        - {type: text, text: world}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-trace]
+  ignore: []

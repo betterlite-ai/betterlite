@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-missing
+call:
+  b4655:
+    cookie_header: null
+    master_key: sk-oracle-master
+    key_resolves: true
+    now: 1700000000
+env: {}
+compare:
+  ignore: []
