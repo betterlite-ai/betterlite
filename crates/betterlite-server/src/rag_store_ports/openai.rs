@@ -10,7 +10,7 @@ use betterlite_core::api::vector_file_http_create_list::config::{
 use betterlite_core::api::vector_store_http_create_read::config::{
     CreateReadConfig, OpenAiCreateReadConfig,
 };
-use betterlite_core::api::vector_store_http_write::config::{WriteConfig, WriteParams};
+use betterlite_core::api::vector_store_http_write::config::WriteParams;
 use betterlite_core::api::vector_store_http_write::error::header_map;
 use betterlite_core::rag::openai_ingestion::{
     AttachFile, CreateStore, PortError, VectorFilePort, VectorStorePort,
