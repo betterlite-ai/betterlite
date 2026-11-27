@@ -219,8 +219,8 @@ async fn the_summary_wire_drops_null_message_fields() {
         user: None,
         allowed_model_region: None,
     };
-    let (answer, request) = tokio::join!(completion.complete(call), answer_with(listener));
-    let answer = answer.expect("the summary call runs");
+    let (outcome, request) = tokio::join!(completion.complete(call), answer_with(listener));
+    let answer = outcome.expect("the summary call runs");
     assert!(answer.usage.is_some(), "the provider answered with usage");
     assert_the_wire_assistant(&request);
 }
