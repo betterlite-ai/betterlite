@@ -70,4 +70,12 @@ deviations:
       reservation left behind after a failed post-call save or a failed failure-hook refund; the error line, the
       unaffected response and the refund itself are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5271-L5277
+  - what: >-
+      The cache hook's two verbose lines ("cache_key_name: ..." and "redis keys: [...]") show the caller's API key
+      as REDACTED. The namespace written into the request's metadata and the keys the hook scans keep the raw key, so
+      the redis entries a working setup already shares still match.
+    why: >-
+      secrets-stay-secret: a key in a log line is a leaked key, and LiteLLM writes both lines with the raw key from
+      the principal at ERROR/DEBUG level and to stdout. Every other part of both lines is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L68-L74
 kept_bugs: []
