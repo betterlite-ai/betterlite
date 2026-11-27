@@ -1,24 +1,31 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use serde_json::Number;
 
 use crate::api::batch_enqueued_refund::record::ReservationRecord;
+use crate::api::batch_enqueued_refund::{BatchEnqueuedRefundInput, BatchEnqueuedRefundResult};
 use crate::api::batch_input_accounting::error::BatchHttpError;
+use crate::api::batch_limit_descriptors::input::BatchLimitPrincipal;
+use crate::api::batch_precall::BatchPrecall;
 use crate::api::batch_precall::BatchPrecallError;
-use crate::api::batch_precall::input::BatchPrecallInput;
-use crate::api::batch_precall::ports::BatchPrecallSkip;
+use crate::api::batch_precall::input::{BatchPrecallCall, BatchPrecallInput, BatchRetrieveCall};
+use crate::api::batch_precall::ports::{BatchPrecallSkip, BatchRefundSink};
 use crate::api::batch_precall::result::{
     BatchCreateOutcome, BatchDiagnostic, BatchPrecallResult, BatchTerminalResult,
 };
 use crate::api::request_destination::RequestData;
 
 use self::support::{
-    CACHE_KEY, CACHE_NAME, CALL_TYPE, Effect, RemoteAnswer, Rig, ScriptedStash, StageName,
-    batch_response, break_counter, create_data, create_input, debug_line, descriptor, envelope,
-    error_line, failure_input, key_scope, namespaced, operation, plain_principal,
-    principal_with_scope, rejection, reservation, retrieve_data, retrieve_input,
+    CACHE_KEY, CACHE_NAME, CALL_TYPE, Effect, RETRIEVE_CALL_TYPE, RemoteAnswer, Rig, ScriptedStash,
+    StageName, batch_response, break_counter, create_data, create_input, debug_line, descriptor,
+    envelope, error_line, failure_input, key_scope, namespaced, namespaced_as, operation,
+    plain_principal, principal_with_scope, rejection, reservation, retrieve_data, retrieve_input,
     retrieve_input_with_metadata, seed_counter, stored_counter, stored_record, terminal_input,
 };
 
@@ -198,6 +205,10 @@ async fn create_precall_reraises_http() {
         ]
     );
     assert_eq!(rig.stages.effects().len(), 3);
+    assert_eq!(
+        created.data["_batch_token_count"],
+        Json::Number(Number::from(120_i64))
+    );
 }
 
 // any other failure is logged and the request goes on without the counts
@@ -223,6 +234,37 @@ async fn create_precall_swallows_stage_failure() {
     );
 }
 
+// a failure after the counts were written keeps them on the request the route continues with
+#[tokio::test]
+async fn create_precall_swallows_settle_failure() {
+    let mut rig = Rig::new();
+    rig.stages.fail_at = Some(StageName::Reserve);
+    let input = create_input(CALL_TYPE, principal_with_scope(), create_data("file-1"));
+    let BatchPrecallResult::Create(created) = rig.run(&input).await.unwrap() else {
+        panic!("a create call answers with the create result");
+    };
+    assert_eq!(created.outcome, BatchCreateOutcome::Passed);
+    assert_eq!(
+        created.data["_batch_token_count"],
+        Json::Number(Number::from(120_i64))
+    );
+    assert_eq!(
+        created.data["_batch_request_count"],
+        Json::Number(Number::from(2_i64))
+    );
+    assert_eq!(
+        created.diagnostics,
+        vec![
+            debug_line("Batch rate limiter: Handling batch creation rate limiting"),
+            debug_line("Counting tokens from batch input file: file-1"),
+            debug_line("Batch input file usage - Tokens: 120, Requests: 2"),
+            error_line(String::from(
+                "Error in batch rate limiting: the scripted stage Reserve failed"
+            )),
+        ]
+    );
+}
+
 // a request field the typed record cannot hold is named, where the source would have carried the value into the limiter
 #[rstest]
 #[case::input_file_id("input_file_id")]
@@ -233,6 +275,24 @@ async fn create_precall_names_wrong_fields(#[case] field: &str) {
     let mut data = create_data("file-1");
     data.insert(field.to_owned(), Json::Number(Number::from(7_i64)));
     let input = create_input(CALL_TYPE, plain_principal(), data);
+    let failure = rig.run(&input).await.unwrap_err();
+    assert!(matches!(failure, BatchPrecallError::Field { name } if name == field));
+}
+
+// a principal field the typed record cannot hold is named, on the scope resolution and on the cache key
+#[rstest]
+#[case::api_key("api_key")]
+#[case::metadata("metadata")]
+#[tokio::test]
+async fn create_precall_names_wrong_principal_fields(#[case] field: &str) {
+    let rig = Rig::new();
+    let mut fields = BTreeMap::new();
+    fields.insert(field.to_owned(), JsonData::Number(Number::from(7_i64)));
+    let input = create_input(
+        CALL_TYPE,
+        BatchLimitPrincipal(fields),
+        create_data("file-1"),
+    );
     let failure = rig.run(&input).await.unwrap_err();
     assert!(matches!(failure, BatchPrecallError::Field { name } if name == field));
 }
@@ -542,6 +602,31 @@ async fn retrieve_without_cache_key() {
     assert_eq!(retrieved.data, namespaced_data());
 }
 
+// a caller without an api_key is named None in the cache namespace, like the source's f-string
+#[tokio::test]
+async fn retrieve_names_the_namespace_without_api_key() {
+    let rig = Rig::new();
+    let input = BatchPrecallInput {
+        call: BatchPrecallCall::Retrieve(BatchRetrieveCall {
+            call_type: String::from(RETRIEVE_CALL_TYPE),
+            principal: BatchLimitPrincipal(BTreeMap::new()),
+            data: retrieve_data(),
+            cache_key: None,
+            cache_control: None,
+        }),
+    };
+    let BatchPrecallResult::Retrieve(retrieved) = rig.run(&input).await.unwrap() else {
+        panic!("a retrieve answers with the retrieve result");
+    };
+    assert_eq!(retrieved.cached, None);
+    let mut expected = retrieve_data();
+    expected.insert(
+        String::from("metadata"),
+        namespaced_as("litellm:None:aretrieve_batch"),
+    );
+    assert_eq!(retrieved.data, expected);
+}
+
 // without litellm.cache the hook only sets the namespace
 #[tokio::test]
 async fn retrieve_without_cache() {
@@ -764,4 +849,57 @@ async fn terminal_retrieve_refunds_in_one_call() {
     assert!(outcome.refunded);
     assert_eq!(stored_counter(&rig.counters), Some(200));
     assert!(stored_record(&rig.counters, "batch-1").is_none());
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the refund store is down")]
+struct RefundStoreError;
+
+struct FailingRefunds;
+
+impl BatchRefundSink for FailingRefunds {
+    type Error = RefundStoreError;
+
+    async fn run(
+        &self,
+        _input: &BatchEnqueuedRefundInput,
+    ) -> Result<BatchEnqueuedRefundResult, RefundStoreError> {
+        Err(RefundStoreError)
+    }
+}
+
+// the post-call hook never fails the response: a store error is one error line and an outcome that saved and refunded nothing
+#[tokio::test]
+async fn terminal_retrieve_reports_store_error() {
+    let mut rig = Rig::new();
+    rig.stash = ScriptedStash::holding(reservation(300), Vec::new());
+    let refunds = FailingRefunds;
+    let service = BatchPrecall {
+        stages: &rig.stages,
+        stash: &rig.stash,
+        refunds: &refunds,
+        applier: &rig.applier,
+        memory: &rig.memory,
+        remote: Some(&rig.remote),
+        verbose_stdout: rig.verbose_stdout,
+        clock: Arc::clone(&rig.clock),
+        limits: rig.limits,
+    };
+    let result = service
+        .run(&terminal_input("batch-1", "completed"))
+        .await
+        .unwrap();
+    let BatchPrecallResult::TerminalRetrieve(outcome) = result else {
+        panic!("a terminal retrieve answers with the terminal result");
+    };
+    assert_eq!(outcome.batch_id, "batch-1");
+    assert!(!outcome.saved);
+    assert!(!outcome.refunded);
+    assert_eq!(
+        outcome.diagnostics,
+        vec![error_line(String::from(
+            "Error in batch enqueued-token post-call hook: the refund store is down"
+        ))]
+    );
+    assert_eq!(rig.stash.reservation(), None);
 }

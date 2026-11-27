@@ -170,11 +170,12 @@ pub(crate) fn envelope(timestamp: Option<f64>, response: Json) -> Json {
 }
 
 pub(crate) fn namespaced() -> Json {
+    namespaced_as(CACHE_NAME)
+}
+
+pub(crate) fn namespaced_as(name: &str) -> Json {
     let mut fields = IndexMap::new();
-    fields.insert(
-        String::from("redis_namespace"),
-        Json::Text(String::from(CACHE_NAME)),
-    );
+    fields.insert(String::from("redis_namespace"), Json::Text(name.to_owned()));
     Json::Object(fields)
 }
 
