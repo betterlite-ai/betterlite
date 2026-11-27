@@ -36,6 +36,7 @@ use crate::mcp::tool_search::{
 pub(super) const EMBEDDING_WITHOUT_ROUTER: &str =
     "litellm_settings.mcp_tool_search.embedding_model needs a model_list so it can be called";
 const UNKNOWN_TOOL_ID: &str = "Unknown or unauthorized tool_id";
+const UNAUTHORIZED_TOOL_CALL: &str = "User not allowed to call this tool.";
 
 pub async fn handle_agent_search(
     request: AgentSearchRequest<'_>,
@@ -176,10 +177,6 @@ async fn proxy_call_text(
     .await
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "the no-padded hook forbids a one-line delegation"
-)]
 pub async fn handle_mcp_tool_call(
     request: ToolCallRequest<'_>,
     context: &HandlerContext<'_>,
@@ -194,12 +191,8 @@ pub async fn handle_mcp_tool_call(
         .operations
         ._get_allowed_mcp_servers(context.caller, context.scope)
         .await?;
-    let requested = context
-        .scope
-        .mcp_servers
-        .as_deref()
-        .filter(|servers| !servers.is_empty());
-    if let Some(servers) = requested
+    if let Some(servers) = context.scope.mcp_servers.as_deref()
+        && !servers.is_empty()
         && allowed_servers.is_empty()
     {
         let denial = context
@@ -209,9 +202,7 @@ pub async fn handle_mcp_tool_call(
         return Err(SearchHandlerError::forbidden(&denial.detail));
     }
     if allowed_servers.is_empty() {
-        return Err(SearchHandlerError::forbidden(
-            "User not allowed to call this tool.",
-        ));
+        return Err(SearchHandlerError::forbidden(UNAUTHORIZED_TOOL_CALL));
     }
     let call = ToolExecution {
         scope: context.scope,
