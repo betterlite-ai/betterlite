@@ -135,7 +135,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L282
 out_of_scope:
   - "Production implementations of the provider logging ports: B658's BedrockPassthroughPlan selector, transform and assembler (crates/betterlite-bedrock/src/passthrough.rs L50-L57), reached through B10166's AwsPassthrough port; Azure's ChatReplyProjection and ChatStreamAssembly (crates/betterlite-azure/src/passthrough/logging.rs L33-L60 has only the no-op pair); and GigaChat's chunk assembly, where stream_chunk_builder (crates/betterlite-streaming/src/streamed_response_assembly.rs L126) is async and a collector's build_logged_response is sync. B10184 builds Bedrock's, and B10186 Azure's and GigaChat's."
-  - "Building the server's OwnedSuccessHandler: B10185 builds it, B8610 puts it in Shared and B8631 passes it to the hop."
+  - "Building the server's OwnedSuccessHandler: B10185 builds it, B8610 keeps it in ServerState and B8631 passes it to the hop."
   - "The @client failure log for a failed pass-through call."
   - "The wrapper's other post-call steps for the reply (_update_response_metadata, post_call_processing, the success deployment hook, utils.py L2144-L2196)."
 pitfalls:
