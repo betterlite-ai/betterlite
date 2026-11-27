@@ -1,0 +1,43 @@
+kind: helper
+name: auth-key-lookup-auth-ui-session-grants-refreshed
+call:
+  auth_key_lookup:
+    aspect: session
+    auth:
+      token: sess-b
+      key_name: ui-login
+      user_id: u2
+      team_id: t2
+      team_alias: minted-b
+      models: [minted]
+      team_models: [minted-team]
+      user_role: internal_user
+      is_session_token: true
+    user:
+      user_id: u2
+      user_email: u2@example.test
+      user_role: internal_user
+      models: [claude-3-haiku]
+      teams: [t2]
+    team: {team_id: t2, team_alias: beta-live, models: [claude-3], tpm_limit: 5}
+    membership: {user_id: u2, team_id: t2}
+calls:
+  # the live user's own models replace the minted list when the session has no team
+  - auth_key_lookup:
+      aspect: session
+      auth:
+        token: sess-b
+        key_name: ui-login
+        user_id: u2
+        models: [minted]
+        team_models: [minted-team]
+        user_role: internal_user
+        is_session_token: true
+      user:
+        user_id: u2
+        user_email: u2@example.test
+        user_role: internal_user
+        models: [claude-3-haiku]
+        teams: [t2]
+env: {}
+compare: {ignore: []}
