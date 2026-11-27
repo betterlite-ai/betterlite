@@ -120,9 +120,25 @@ fn required_ports_missing() {
 #[tokio::test]
 async fn failure_stops_downstream() {
     missing_key_refused().await;
+    empty_key_is_a_missing_key().await;
     no_database_refused().await;
     valid_key_reaches_handler().await;
     master_key_wins_before_the_store().await;
+}
+
+// LiteLLM raises a plain exception for a key it never got, and its server answers that with FastAPI's 500 text
+async fn empty_key_is_a_missing_key() {
+    let state = state_for(&config());
+    let (port_set, writer) = ports(Some(reader(None)));
+    state
+        .identity_store
+        .install(port_set)
+        .expect("the ports install");
+    let (status, body, reached) = run(state, "").await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body, "Internal Server Error");
+    assert!(!reached);
+    assert!(writer.writes().is_empty());
 }
 
 async fn missing_key_refused() {
