@@ -68,12 +68,12 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::OrganizationRoutePolicy,
-    AuthBackend::AuthRoutePolicy,
     AuthBackend::AuthTenantBudgets,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
     AuthBackend::ModelGrantIntersection,
+    AuthBackend::AuthRoutePolicy,
 ];
 
 #[derive(Clone, Debug)]

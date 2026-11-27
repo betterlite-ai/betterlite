@@ -145,14 +145,15 @@ async fn run_request(
 
 #[test]
 fn stage_is_registered() {
+    // LiteLLM runs the route check after the model, budget and organization checks
     let position = INSTALLED_STAGES
         .iter()
         .position(|stage| *stage == AuthBackend::AuthRoutePolicy);
-    let after_organization = INSTALLED_STAGES
+    let after_grants = INSTALLED_STAGES
         .iter()
-        .position(|stage| *stage == AuthBackend::OrganizationRoutePolicy)
+        .position(|stage| *stage == AuthBackend::ModelGrantIntersection)
         .map(|index| index.saturating_add(1));
-    assert_eq!(position, after_organization);
+    assert_eq!(position, after_grants);
     let master = master_key();
     let denied = stage_from(rule(), ROUTE, "POST", "");
     let Err(StageFailure::AuthRoutePolicy(exception)) = dispatch(
