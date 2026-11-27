@@ -113,6 +113,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_services_batch_records"
+path = "fuzz_targets/bedrock_services_batch_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_other_embedding_jobs"
 path = "fuzz_targets/bedrock_other_embedding_jobs.rs"
 test = false
