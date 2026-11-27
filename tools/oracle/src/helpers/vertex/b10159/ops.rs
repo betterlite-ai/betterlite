@@ -110,17 +110,30 @@ where
 
 fn projection(config: &PartnerResponseConfig, answer: &Json) -> Result<Value, Box<HelperError>> {
     let answer = serde_json::to_value(answer).or_value_error()?;
+    let choice_items = answer
+        .get("choices")
+        .and_then(Value::as_array)
+        .map_or_else(Vec::new, |items| items.iter().map(choice).collect());
     let mut projected = Map::new();
     projected.insert(
         String::from("class"),
         Value::String(class_name(*config).to_owned()),
     );
-    projected.insert(String::from("id"), field(&answer, "id"));
-    projected.insert(String::from("model"), field(&answer, "model"));
-    projected.insert(String::from("choices"), choices(&answer));
+    projected.insert(
+        String::from("id"),
+        answer.get("id").cloned().unwrap_or(Value::Null),
+    );
+    projected.insert(
+        String::from("model"),
+        answer.get("model").cloned().unwrap_or(Value::Null),
+    );
+    projected.insert(String::from("choices"), Value::Array(choice_items));
     projected.insert(String::from("usage"), usage(&answer));
     if matches!(config, PartnerResponseConfig::Llama3(_)) {
-        projected.insert(String::from("created"), field(&answer, "created"));
+        projected.insert(
+            String::from("created"),
+            answer.get("created").cloned().unwrap_or(Value::Null),
+        );
     }
     Ok(Value::Object(projected))
 }
@@ -131,15 +144,6 @@ const fn class_name(config: PartnerResponseConfig) -> &'static str {
         PartnerResponseConfig::Ai21(_) => "VertexAIAi21Config",
         PartnerResponseConfig::Llama3(_) => "VertexAILlama3Config",
     }
-}
-
-fn field(answer: &Value, name: &str) -> Value {
-    answer.get(name).cloned().unwrap_or(Value::Null)
-}
-
-fn choices(answer: &Value) -> Value {
-    let items = answer.get("choices").and_then(Value::as_array);
-    Value::Array(items.map_or_else(Vec::new, |items| items.iter().map(choice).collect()))
 }
 
 fn choice(item: &Value) -> Value {

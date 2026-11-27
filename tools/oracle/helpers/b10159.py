@@ -5,7 +5,8 @@ import httpx
 import litellm
 from litellm.llms.vertex_ai.vertex_ai_partner_models import get_vertex_ai_partner_model_config
 from litellm.types.utils import ModelResponse
-from pydantic import ConfigDict, JsonValue as Json, TypeAdapter
+from pydantic import ConfigDict, TypeAdapter
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
 STARTING_ID: Final = "chatcmpl-b10159"
