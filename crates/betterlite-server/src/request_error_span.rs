@@ -15,7 +15,7 @@ mod tests;
 
 // the proxy's open_telemetry_logger slot: LiteLLM holds the legacy class or B3853's callback, never both
 pub enum ServerSpanLogger {
-    // boxed so both variants stay within 3x of each other, the limit variant_size_differences enforces
+    // boxed so the variants stay the same size; variant_size_differences denies a 3x gap
     Legacy(Box<ErrorInformationConfig>),
     V2(Arc<V2Callback>),
 }

@@ -38,7 +38,6 @@ use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::trace::{
     InMemorySpanExporter, SdkTracer, SdkTracerProvider, SimpleSpanProcessor, SpanData,
 };
-use rstest::rstest;
 
 use super::{ServerSpanLogger, close_error_span, exception_facts};
 
@@ -313,32 +312,39 @@ fn legacy_success_status_ends_the_span_ok_without_error_attributes() {
     );
 }
 
-#[rstest]
-#[case::four_hundred(400, Status::error(""))]
-#[case::three_hundred_ninety_nine(399, Status::Ok)]
-fn legacy_span_status_follows_the_error_boundary(#[case] status: u16, #[case] expected: Status) {
+#[test]
+fn legacy_four_hundred_ends_the_span_as_an_error() {
     let rig = Rig::new();
     let mut slot = Some(rig.span());
     let logger = legacy_logger();
     let error = exception_facts("ProxyException", &proxy_exception());
 
-    close_error_span(&mut slot, Some(&logger), false, status, Some(&error));
+    close_error_span(&mut slot, Some(&logger), false, 400, Some(&error));
 
     let spans = rig.finished();
     let data = spans.first().expect("the close ends the span");
-    assert_eq!(data.status, expected);
-    assert_eq!(
-        i64_attribute(data, "http.response.status_code"),
-        i64::from(status)
+    assert_eq!(data.status, Status::error(""));
+    assert_eq!(i64_attribute(data, "http.response.status_code"), 400);
+    assert_eq!(text_attribute(data, "error.type"), "ProxyException");
+}
+
+#[test]
+fn legacy_three_hundred_ninety_nine_ends_the_span_ok() {
+    let rig = Rig::new();
+    let mut slot = Some(rig.span());
+    let logger = legacy_logger();
+    let error = exception_facts("ProxyException", &proxy_exception());
+
+    close_error_span(&mut slot, Some(&logger), false, 399, Some(&error));
+
+    let spans = rig.finished();
+    let data = spans.first().expect("the close ends the span");
+    assert_eq!(data.status, Status::Ok);
+    assert_eq!(i64_attribute(data, "http.response.status_code"), 399);
+    assert!(
+        !has_error_attribute(data),
+        "below 400 only the status code attribute is stamped"
     );
-    if status >= 400 {
-        assert_eq!(text_attribute(data, "error.type"), "ProxyException");
-    } else {
-        assert!(
-            !has_error_attribute(data),
-            "below 400 only the status code attribute is stamped"
-        );
-    }
 }
 
 #[test]
@@ -384,6 +390,31 @@ fn v2_error_status_stamps_the_error_and_leaves_the_span_open() {
     assert!(
         attribute(data, "http.response.status_code").is_none(),
         "the instrumentor writes the status code, not this close"
+    );
+}
+
+#[test]
+fn v2_four_hundred_stamps_the_error_and_keeps_the_span_open() {
+    let rig = Rig::new();
+    let live = rig.span();
+    let mut slot = Some(live.clone());
+    let logger = rig.v2_logger();
+    let error = exception_facts("ProxyException", &proxy_exception());
+
+    close_error_span(&mut slot, Some(&logger), true, 400, Some(&error));
+
+    assert!(
+        rig.finished().is_empty(),
+        "the instrumentor still owns and ends the span"
+    );
+    assert!(slot.is_some(), "a v2 close keeps the span in the slot");
+    live.lock().end();
+    let spans = rig.finished();
+    let data = spans.first().expect("the test ends the span");
+    assert_eq!(
+        text_attribute(data, "error.type"),
+        "ProxyException",
+        "400 is the first status that stamps the error"
     );
 }
 
