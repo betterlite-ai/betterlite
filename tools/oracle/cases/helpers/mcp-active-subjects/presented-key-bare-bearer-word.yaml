@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-active-subjects-presented-key-bare-bearer-word
+call:
+  b4658:
+    operation: presented_key
+    headers:
+      - ["authorization", "Bearer "]
+env: {}
+compare: {ignore: []}
