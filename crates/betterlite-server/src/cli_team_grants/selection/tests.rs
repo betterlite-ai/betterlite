@@ -69,6 +69,10 @@ fn no_team_id_ignores_a_corrupt_cache() {
         selected_cached_cli_sso_team_detail(Some(&cached), None),
         Some(TEAMLESS_CLI_SSO_TEAM_DETAIL)
     );
+    assert_eq!(
+        selected_cached_cli_sso_team_detail(None, None),
+        Some(TEAMLESS_CLI_SSO_TEAM_DETAIL)
+    );
 }
 
 #[test]
