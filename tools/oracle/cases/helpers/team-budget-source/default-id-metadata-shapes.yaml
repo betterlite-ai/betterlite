@@ -1,0 +1,20 @@
+kind: helper
+name: team-budget-source-default-id-metadata-shapes
+call:
+  b10151:
+    op: default_id
+    metadata:
+      - null
+      - {}
+      - {team_name: core}
+      - {team_member_budget_id: budget-a}
+      - {team_member_budget_id: ''}
+      - {team_member_budget_id: null}
+      - {team_member_budget_id: true}
+      - {team_member_budget_id: 7}
+      - {team_member_budget_id: 1.5}
+      - {team_member_budget_id: [b]}
+      - {team_member_budget_id: {budget_id: b}}
+env: {}
+compare:
+  ignore: []

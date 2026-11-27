@@ -1,0 +1,19 @@
+kind: helper
+name: team-budget-source-empty-string-ids
+call:
+  b10151:
+    op: default_id
+    metadata:
+      - {team_member_budget_id: ''}
+calls:
+  - b10151:
+      op: source
+      pairs:
+        - ['', '']
+        - ['', budget-a]
+        - [budget-a, '']
+        - ['', null]
+        - [null, '']
+env: {}
+compare:
+  ignore: []
