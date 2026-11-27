@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::watsonx_auth::environment::WatsonxEnvironment;
 
@@ -34,114 +34,62 @@ const NAMES: [(&str, &str); 20] = [
     ("SPACE_ID", "space-id"),
 ];
 
+// each variable beside the field that must read it, so a wrong pairing fails the comparison
+fn values_by_variable(built: &WatsonxEnvironment) -> Vec<(&'static str, Option<&str>)> {
+    let secret = |value: Option<&SecretString>| value.map(ExposeSecret::expose_secret);
+    vec![
+        ("WATSONX_IAM_URL", built.watsonx_iam_url.as_deref()),
+        ("WX_API_KEY", secret(built.wx_api_key.as_ref())),
+        ("WATSONX_API_KEY", secret(built.watsonx_api_key.as_ref())),
+        ("WATSONX_APIKEY", secret(built.watsonx_apikey.as_ref())),
+        (
+            "WATSONX_ZENAPIKEY",
+            secret(built.watsonx_zenapikey.as_ref()),
+        ),
+        ("WATSONX_TOKEN", secret(built.watsonx_token.as_ref())),
+        ("WATSONX_API_BASE", built.watsonx_api_base.as_deref()),
+        ("WATSONX_URL", built.watsonx_url.as_deref()),
+        ("WX_URL", built.wx_url.as_deref()),
+        ("WML_URL", built.wml_url.as_deref()),
+        ("WATSONX_PROJECT_ID", built.watsonx_project_id.as_deref()),
+        ("WX_PROJECT_ID", built.wx_project_id.as_deref()),
+        ("PROJECT_ID", built.project_id.as_deref()),
+        ("WATSONX_REGION", built.watsonx_region.as_deref()),
+        ("WX_REGION", built.wx_region.as_deref()),
+        ("REGION", built.region.as_deref()),
+        (
+            "WATSONX_DEPLOYMENT_SPACE_ID",
+            built.watsonx_deployment_space_id.as_deref(),
+        ),
+        ("WATSONX_SPACE_ID", built.watsonx_space_id.as_deref()),
+        ("WX_SPACE_ID", built.wx_space_id.as_deref()),
+        ("SPACE_ID", built.space_id.as_deref()),
+    ]
+}
+
 #[test]
 fn from_lookup_fills_each_field_from_its_variable() {
     let built = WatsonxEnvironment::from_lookup(&environment(&NAMES));
-
-    assert_eq!(built.watsonx_iam_url.as_deref(), Some("watsonx-iam-url"));
-    assert_eq!(
-        built.wx_api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("wx-api-key")
-    );
-    assert_eq!(
-        built
-            .watsonx_api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("watsonx-api-key")
-    );
-    assert_eq!(
-        built
-            .watsonx_apikey
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("watsonx-apikey")
-    );
-    assert_eq!(
-        built
-            .watsonx_zenapikey
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("watsonx-zenapikey")
-    );
-    assert_eq!(
-        built
-            .watsonx_token
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("watsonx-token")
-    );
-    assert_eq!(built.watsonx_api_base.as_deref(), Some("watsonx-api-base"));
-    assert_eq!(built.watsonx_url.as_deref(), Some("watsonx-url"));
-    assert_eq!(built.wx_url.as_deref(), Some("wx-url"));
-    assert_eq!(built.wml_url.as_deref(), Some("wml-url"));
-    assert_eq!(
-        built.watsonx_project_id.as_deref(),
-        Some("watsonx-project-id")
-    );
-    assert_eq!(built.wx_project_id.as_deref(), Some("wx-project-id"));
-    assert_eq!(built.project_id.as_deref(), Some("project-id"));
-    assert_eq!(built.watsonx_region.as_deref(), Some("watsonx-region"));
-    assert_eq!(built.wx_region.as_deref(), Some("wx-region"));
-    assert_eq!(built.region.as_deref(), Some("region-name"));
-    assert_eq!(
-        built.watsonx_deployment_space_id.as_deref(),
-        Some("watsonx-deployment-space-id")
-    );
-    assert_eq!(built.watsonx_space_id.as_deref(), Some("watsonx-space-id"));
-    assert_eq!(built.wx_space_id.as_deref(), Some("wx-space-id"));
-    assert_eq!(built.space_id.as_deref(), Some("space-id"));
+    let expected: Vec<(&str, Option<&str>)> = NAMES
+        .iter()
+        .map(|(name, value)| (*name, Some(*value)))
+        .collect();
+    assert_eq!(values_by_variable(&built), expected);
 }
 
 #[test]
 fn from_lookup_leaves_an_empty_variable_unset() {
     let blanked: Vec<(&str, &str)> = NAMES.iter().map(|(name, _value)| (*name, "")).collect();
     let built = WatsonxEnvironment::from_lookup(&environment(&blanked));
-
-    assert_eq!(built.watsonx_iam_url, None);
-    assert!(built.wx_api_key.is_none());
-    assert!(built.watsonx_api_key.is_none());
-    assert!(built.watsonx_apikey.is_none());
-    assert!(built.watsonx_zenapikey.is_none());
-    assert!(built.watsonx_token.is_none());
-    assert_eq!(built.watsonx_api_base, None);
-    assert_eq!(built.watsonx_url, None);
-    assert_eq!(built.wx_url, None);
-    assert_eq!(built.wml_url, None);
-    assert_eq!(built.watsonx_project_id, None);
-    assert_eq!(built.wx_project_id, None);
-    assert_eq!(built.project_id, None);
-    assert_eq!(built.watsonx_region, None);
-    assert_eq!(built.wx_region, None);
-    assert_eq!(built.region, None);
-    assert_eq!(built.watsonx_deployment_space_id, None);
-    assert_eq!(built.watsonx_space_id, None);
-    assert_eq!(built.wx_space_id, None);
-    assert_eq!(built.space_id, None);
+    let expected: Vec<(&str, Option<&str>)> =
+        NAMES.iter().map(|(name, _value)| (*name, None)).collect();
+    assert_eq!(values_by_variable(&built), expected);
 }
 
 #[test]
 fn from_lookup_leaves_a_missing_variable_unset() {
     let built = WatsonxEnvironment::from_lookup(&environment(&[]));
-
-    assert_eq!(built.watsonx_iam_url, None);
-    assert!(built.wx_api_key.is_none());
-    assert!(built.watsonx_api_key.is_none());
-    assert!(built.watsonx_apikey.is_none());
-    assert!(built.watsonx_zenapikey.is_none());
-    assert!(built.watsonx_token.is_none());
-    assert_eq!(built.watsonx_api_base, None);
-    assert_eq!(built.watsonx_url, None);
-    assert_eq!(built.wx_url, None);
-    assert_eq!(built.wml_url, None);
-    assert_eq!(built.watsonx_project_id, None);
-    assert_eq!(built.wx_project_id, None);
-    assert_eq!(built.project_id, None);
-    assert_eq!(built.watsonx_region, None);
-    assert_eq!(built.wx_region, None);
-    assert_eq!(built.region, None);
-    assert_eq!(built.watsonx_deployment_space_id, None);
-    assert_eq!(built.watsonx_space_id, None);
-    assert_eq!(built.wx_space_id, None);
-    assert_eq!(built.space_id, None);
+    let expected: Vec<(&str, Option<&str>)> =
+        NAMES.iter().map(|(name, _value)| (*name, None)).collect();
+    assert_eq!(values_by_variable(&built), expected);
 }
