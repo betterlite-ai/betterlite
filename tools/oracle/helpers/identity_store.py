@@ -8,7 +8,7 @@ from litellm.proxy.auth.resolvers.exceptions import (
     KeyNotFoundError,
     KeyNotInCacheError,
     NoDatabaseConnectionError,
-    PrincipalMissingSourceKeyError as MissingSourceKeyError,
+    PrincipalMissingSourceKeyError,
 )
 from litellm.proxy.auth.resolvers.models import CredentialRef
 from litellm.proxy.auth.resolvers.store import IdentityStore
@@ -30,6 +30,14 @@ class Call(BaseModel):
     keep_source_key: bool = True
     kind: Literal["missing_key", "no_database", "not_in_cache", "missing_source_key"] | None = None
     hashed_token: str = ""
+
+
+class ErrorEnvelope(BaseModel):
+    kind: str | None
+    message: str
+    error_type: str = Field(alias="type")
+    param: str | None
+    code: str
 
 
 def _row(value: Row | None) -> Row:
@@ -74,10 +82,10 @@ def _carrier(fields: Call) -> JsonValue:
         credential_ref=CredentialRef(token_id=auth.token),
     )
     if not fields.keep_source_key:
-        projected = projected.model_copy(update={"source_key": None})
+        projected = projected.model_copy(update={"source_key": None})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/models.py#L82
     try:
         carried = IdentityStore.key_from_principal(projected)
-    except MissingSourceKeyError as error:
+    except PrincipalMissingSourceKeyError as error:
         return {"outcome": "missing_source_key", "message": str(error)}
     return {"outcome": "carried", "key": _key_fields(carried)}
 
@@ -90,19 +98,20 @@ def _build_error(fields: Call) -> Exception:
     if fields.kind == "not_in_cache":
         return KeyNotInCacheError(fields.hashed_token)
     if fields.kind == "missing_source_key":
-        return MissingSourceKeyError()
+        return PrincipalMissingSourceKeyError()
     raise ValueError("an error call needs a kind")
 
 
 def _error(fields: Call) -> JsonValue:
     proxy = _as_proxy_exception(_build_error(fields))
-    return {
-        "kind": fields.kind,
-        "message": proxy.message,
-        "type": proxy.type,
-        "param": proxy.param,
-        "code": proxy.code,
-    }
+    envelope = ErrorEnvelope(
+        kind=fields.kind,
+        message=proxy.message,
+        error_type=proxy.type,
+        param=proxy.param,
+        code=proxy.code,
+    )
+    return JSON_OBJECT.validate_json(envelope.model_dump_json(by_alias=True))
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:

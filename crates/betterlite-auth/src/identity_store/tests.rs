@@ -7,6 +7,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::budget_permission_rows::JsonData;
 use opentelemetry::trace::SpanContext;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::IdentityStore;
@@ -64,24 +65,29 @@ async fn cache_copy_isolation() {
     assert!(writer.writes().is_empty());
 }
 
+#[rstest]
+#[case::open(false)]
+#[case::cache_only(true)]
 #[tokio::test]
-async fn no_db_before_cache() {
-    for check_cache_only in [false, true] {
-        let cache = FakeCache::new(CacheAnswer::Hit(Box::new(auth_from_fields(KEY_ROW))));
-        let store = StoreSetup {
-            cache: Arc::clone(&cache),
-            check_cache_only,
-            ..setup()
-        }
-        .store();
-        let error = store.resolve_key("hashed-token").await.unwrap_err();
-        assert_eq!(error.to_string(), NO_DATABASE);
-        assert!(matches!(
-            &error,
-            IdentityStoreError::KeyLookup(KeyLookupError::NoDatabase)
-        ));
-        assert!(cache.reads().is_empty());
+async fn no_db_before_cache(#[case] check_cache_only: bool) {
+    let cache = FakeCache::new(CacheAnswer::Hit(Box::new(auth_from_fields(KEY_ROW))));
+    let store = StoreSetup {
+        cache: Arc::clone(&cache),
+        check_cache_only,
+        ..setup()
     }
+    .store();
+    let error = store.resolve_key("hashed-token").await.unwrap_err();
+    assert_eq!(error.to_string(), NO_DATABASE);
+    assert!(matches!(
+        &error,
+        IdentityStoreError::KeyLookup(KeyLookupError::NoDatabase)
+    ));
+    assert!(cache.reads().is_empty());
+}
+
+#[tokio::test]
+async fn resolve_rejects_an_absent_database() {
     let error = setup().store().resolve("hashed-token").await.unwrap_err();
     assert_eq!(error.to_string(), NO_DATABASE);
 }
@@ -221,38 +227,35 @@ async fn permission_failure_debug_then_cache() {
     ));
 }
 
+#[rstest]
+#[case::carried_permission(
+    r#"{"token":"hashed-token","user_id":"u1","object_permission_id":"op-1","object_permission":{"object_permission_id":"op-1","models":["gpt-4"]}}"#,
+    true
+)]
+#[case::no_permission_id(r#"{"token":"hashed-token","user_id":"u1"}"#, false)]
+#[case::empty_permission_id(
+    r#"{"token":"hashed-token","user_id":"u1","object_permission_id":""}"#,
+    false
+)]
 #[tokio::test]
-async fn permission_skip_and_none() {
-    let cases = [
-        (
-            r#"{"token":"hashed-token","user_id":"u1","object_permission_id":"op-1","object_permission":{"object_permission_id":"op-1","models":["gpt-4"]}}"#,
-            true,
-        ),
-        (r#"{"token":"hashed-token","user_id":"u1"}"#, false),
-        (
-            r#"{"token":"hashed-token","user_id":"u1","object_permission_id":""}"#,
-            false,
-        ),
-    ];
-    for (row, carries_permission) in cases {
-        let permissions = FakePermissions::new(vec![Ok(Some(permission_table()))]);
-        let writer = FakeWriter::new(false);
-        let store = StoreSetup {
-            reader: Some(reader(FakeSource::new(vec![Ok(Some(view_from_text(row)))]))),
-            permissions: Arc::clone(&permissions),
-            writer: Arc::clone(&writer),
-            ..setup()
-        }
-        .store();
-        let key = store.resolve_key("hashed-token").await.unwrap();
-        assert!(permissions.calls().is_empty());
-        assert_eq!(writer.writes(), vec!["hashed-token".to_owned()]);
-        assert_eq!(
-            key.view.token.object_permission.is_some(),
-            carries_permission
-        );
-        assert_eq!(writer.seen_permission(), vec![carries_permission]);
+async fn permission_skip_and_none(#[case] row: &str, #[case] carries_permission: bool) {
+    let permissions = FakePermissions::new(vec![Ok(Some(permission_table()))]);
+    let writer = FakeWriter::new(false);
+    let store = StoreSetup {
+        reader: Some(reader(FakeSource::new(vec![Ok(Some(view_from_text(row)))]))),
+        permissions: Arc::clone(&permissions),
+        writer: Arc::clone(&writer),
+        ..setup()
     }
+    .store();
+    let key = store.resolve_key("hashed-token").await.unwrap();
+    assert!(permissions.calls().is_empty());
+    assert_eq!(writer.writes(), vec!["hashed-token".to_owned()]);
+    assert_eq!(
+        key.view.token.object_permission.is_some(),
+        carries_permission
+    );
+    assert_eq!(writer.seen_permission(), vec![carries_permission]);
 }
 
 #[tokio::test]

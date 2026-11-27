@@ -10,8 +10,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_end_users::EndUserStageInput;
-use crate::auth::auth_key_budgets::KeyBudgetStageInput;
-use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
@@ -26,6 +24,7 @@ use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput}
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
+use crate::auth::{auth_key_budgets::KeyBudgetStageInput, auth_key_lookup::KeyLookupStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -167,9 +166,8 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
-            Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
-                AuthBackend::AuthKeyLookup
-            }
+            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
+            Self::AuthIdentity(_) => AuthBackend::AuthKeyLookup,
             Self::MasterKey(_) => AuthBackend::MasterKey,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
@@ -201,9 +199,8 @@ pub(crate) fn dispatch(
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
-        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
+        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
+        StageInput::AuthIdentity(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         StageInput::Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::AuthRequestPolicy(stage) => {

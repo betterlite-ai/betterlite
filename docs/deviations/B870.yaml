@@ -3,7 +3,7 @@ deviations:
   - what: A cached key object that fails to decode fails the request with a 401 auth_error carrying the decode failure; LiteLLM logs the deserialization failure and treats the entry as a cache miss, refetching the key from the database.
     why: The task requires cache read errors to propagate, and B733 surfaces the typed decode error, so a corrupt entry is reported instead of being masked by a database read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L198-L206
-  - what: A store composed without its cache, permission loader or cache writer fails startup with "the identity store is missing required ports: ..."; LiteLLM takes those collaborators as required constructor arguments whose absence surfaces later as an AttributeError on the first request.
+  - what: A store composed without its cache, permission loader or cache writer fails startup with a named missing-ports error; LiteLLM takes those collaborators as required constructor arguments whose absence surfaces later as an AttributeError on the first request.
     why: The task requires an absent required implementation to be a named startup error while a configured absence of the database stays the runtime NoDatabaseConnectionError.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L59-L72
   - what: The store takes no logging sink; the permission-read failure is logged through the process tracing subscriber instead of a proxy_logging_obj argument.
