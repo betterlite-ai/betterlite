@@ -1,0 +1,34 @@
+kind: helper
+name: budget-lookups-user-assembly-carried-fills-max-budget-when-fetched-none
+call:
+  b3883:
+    function: user
+    user_id: user-2
+    user_email: null
+    user_spend: 1.0
+    user_max_budget: null
+    response_cost: 0.5
+    carried:
+      budget_reset_at: null
+      max_budget: 20.0
+      user_alias: null
+    lookup:
+      kind: missing
+    now: '2026-01-01T00:00:00Z'
+    noop: false
+    labels_by_metric:
+      litellm_remaining_user_budget_metric:
+      - user
+      - user_email
+      - user_alias
+      litellm_user_max_budget_metric:
+      - user
+      - user_email
+      - user_alias
+      litellm_user_budget_remaining_hours_metric:
+      - user
+      - user_email
+      - user_alias
+env: {}
+compare:
+  ignore: []

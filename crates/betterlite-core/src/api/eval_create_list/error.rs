@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use super::DEFAULT_EVALS_PROVIDER;
 use super::call::EvalsCallParams;
-use crate::api::eval_http::error::EvalHttpError;
+use crate::api::eval_http::error::{EvalHttpError, unsupported_provider};
 
 // what create_eval and list_evals raise before litellm.exception_type maps it
 #[derive(Debug, Error)]
@@ -72,11 +72,13 @@ pub fn failure(
         EvalsCreateListError::Handler(EvalHttpError::Api(EvalsError::Provider {
             provider: provider_error,
         })) => provider_class(provider_error, provider, redactor),
-        // everything outside the provider family reaches exception_type as a ValueError
         EvalsCreateListError::UnknownProvider { .. }
         | EvalsCreateListError::CreateUnsupported { .. }
-        | EvalsCreateListError::ListUnsupported { .. }
-        | EvalsCreateListError::Timeout { .. }
+        | EvalsCreateListError::ListUnsupported { .. } => {
+            unsupported_provider(error.to_string(), provider)
+        }
+        // everything else outside the provider family reaches exception_type as a ValueError
+        EvalsCreateListError::Timeout { .. }
         | EvalsCreateListError::Params(_)
         | EvalsCreateListError::Logging(_)
         | EvalsCreateListError::Handler(_) => {

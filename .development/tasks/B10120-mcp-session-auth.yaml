@@ -1,0 +1,71 @@
+id: B10120
+title: MCP session auth handle
+description: >-
+  LiteLLM keeps the caller of an MCP request in auth_context_var, a ContextVar holding an MCPAuthenticatedUser, and keeps that same object per stateful session in _stateful_session_auth_contexts. Two tasks hold it: B8723's session registry stores one per mcp-session-id, and B8720's protocol handler reads it before each method. Neither needs the other's code, so the handle is its own task and B8723 does not wait for the protocol handler. Code goes in betterlite-server, module mcp::session_auth (crates/betterlite-server/src/mcp/session_auth.rs), with its tests in session_auth/tests.rs. The file is an empty stub that mcp.rs already declares.
+
+
+  SessionAuth is a cheap clone handle, Arc<std::sync::Mutex<McpAuthenticatedUser>>, over B8200's McpAuthenticatedUser in crates/betterlite-server/src/mcp/auth_user.rs. Clones share one value, so a write through one clone shows through every other. Fields come in as B8200's McpAuthFields; do not add a second field struct. unwrap is banned, so take the lock with lock().unwrap_or_else(PoisonError::into_inner), as betterlite-a2a's watsonx_credentials/token_cache.rs does, and never hold it across an await.
+
+  1. SessionAuth::new(fields: McpAuthFields) is set_auth_context: a new handle over McpAuthenticatedUser::new(fields). B8200's constructor already turns mcp_server_auth_headers None into an empty map, so this task does not normalize it again. LiteLLM's set_auth_context never passes mcp_protocol_version, and no caller at the pin sets it.
+
+  2. set_or_update(existing: Option<&SessionAuth>, fields: McpAuthFields, copy_existing: bool) -> SessionAuth is _set_or_update_auth_context after the caller has looked the session up. With a handle and copy_existing false it is _update_auth_context: under the lock it overwrites user_api_key_auth, mcp_auth_header, mcp_servers, mcp_server_auth_headers (None becomes an empty map), oauth2_headers, raw_headers and client_ip of that same handle, keeps the stored mcp_protocol_version, and returns a clone of the handle. With copy_existing true, or with no handle, it returns SessionAuth::new(fields) and leaves the given handle as it was.
+
+  3. snapshot(&self) -> McpAuthenticatedUser is get_auth_context: it clones the value under the lock and lets the lock go. The clone is the request's own copy, so a later set_or_update on the session does not change a snapshot already taken, just as LiteLLM's tuple keeps the attribute values it read. It returns the struct rather than get_auth_context's seven-value tuple; the fields are the same.
+
+  The in place overwrite matters: a stateful session keeps one handler for its whole life, and each later request on that session must make the handler see the newest caller's headers, as LiteLLM's mutated object does. B8727 passes the session's stored handle to set_or_update on every request, B8723 stores it at registration, and B8720's GatewayServer holds it and calls snapshot. No static, thread local or task local holds a SessionAuth.
+
+  Debug for SessionAuth goes through McpAuthenticatedUser's redacting Debug, so no header value reaches a log line.
+
+
+  Tests build McpAuthFields with UserAPIKeyAuth::construct, as auth_user/tests.rs does, and header values that start with test-. Every set_or_update test has set_or_update in its name and no other test does, so the two checks below select them apart.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/session_auth.rs
+    - crates/betterlite-server/src/mcp/session_auth/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2514-L2610
+    why: Owned. _update_auth_context, set_auth_context and _set_or_update_auth_context. The session lookup and last seen stamp at L2575-L2578 are B8723's and B8727's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2638-L2665
+    why: Owned. get_auth_context and the order of its seven values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2240-L2251
+    why: Call site in B8727. The streamable HTTP dispatch updates the session's auth and copies it on initialize.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2403-L2411
+    why: Call site in B8727. The SSE entry builds a fresh auth for each connection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/litellm_auth_handler.py#L6-L37
+    why: MCPAuthenticatedUser and the constructor default for per-server headers, built by B8200.
+dod:
+  - text: SessionAuth::new makes a fresh handle whose missing per-server headers read as an empty map, and snapshot returns the seven values the fields gave.
+    proof: [handle-tests]
+  - text: A snapshot taken before an update keeps the old values, and Debug of a handle shows no header value.
+    proof: [handle-tests]
+  - text: set_or_update with a handle and copy_existing false overwrites the seven fields of that same handle so every clone sees the new caller, turns missing per-server headers into an empty map and keeps the stored protocol version.
+    proof: [update-tests]
+  - text: set_or_update with copy_existing true, or without a handle, returns a new handle and leaves the old one's values unchanged.
+    proof: [update-tests]
+checks:
+  optional: []
+  commands:
+    - id: handle-tests
+      why: the new handle, the header default, the snapshot copy or the redacted Debug is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::session_auth::/) - test(/set_or_update/)'
+    - id: update-tests
+      why: the in place overwrite, the copy rule or the kept protocol version differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::session_auth::.*set_or_update/)'
+oracle_cases: []
+deviations:
+  - what: The per request auth is a SessionAuth handle passed to the session's handler and registry instead of a ContextVar plus a dict keyed by session id.
+    why: The Rust rules forbid module state and task locals; sharing one handle gives every holder the same newest-caller view.
+out_of_scope:
+  - "_wrap_send_with_stateful_session_auth_context and the session maps keyed by mcp-session-id: B8723. Looking the session up before set_or_update and stamping its last seen time: B8727, through B8723's session_auth and touch."
+  - "get_or_extract_auth_context, _cache_auth_context_lazily, _recover_auth_from_session, _get_current_session, get_active_mcp_session and get_active_auth_context: B8720, where they collapse into the handler holding its SessionAuth and the request's rmcp Peer."
+  - "MCPAuthenticatedUser, McpAuthFields and the redacting Debug: B8200, already on main. This task calls them."
+  - "The other server.py functions: B8720 to B8728, B6593 and B8971."
+pitfalls:
+  - "copy_existing true (an initialize that arrives with an existing session id) must build a new handle; writing into the stored one would rewrite the old session's caller."
+  - "_update_auth_context writes seven attributes and never mcp_protocol_version, so an update that rebuilds the whole McpAuthenticatedUser from the fields wipes the stored protocol version."
+  - "Replacing the Arc inside a clone instead of writing through the lock leaves the registry's copy on the old caller, so set_or_update must write into the shared value."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
