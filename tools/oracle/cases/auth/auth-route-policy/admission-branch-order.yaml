@@ -20,7 +20,27 @@ request:
     messages:
       - {role: user, content: Say hello.}
     stream: false
-upstream: []
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-route-policy-admission
+      object: chat.completion
+      created: 1700000000
+      model: route-policy-inference-upstream-2024
+      system_fingerprint: fp_oracle
+      service_tier: default
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          logprobs: null
+          finish_reason: stop
+      usage:
+        prompt_tokens: 5
+        completion_tokens: 2
+        total_tokens: 7
+        prompt_tokens_details: {cached_tokens: 0, audio_tokens: 0}
+        completion_tokens_details: {reasoning_tokens: 0, audio_tokens: 0, accepted_prediction_tokens: 0, rejected_prediction_tokens: 0}
 compare:
   headers: [content-type]
   headers_present: []

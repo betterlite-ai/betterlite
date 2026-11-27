@@ -818,9 +818,17 @@ fn route_group_template() {
         &self_managed,
         None
     ));
-    assert!(!allowed_routes_check(
+    // the path convertor swallows separators, so the extra segment is the callback name
+    assert!(allowed_routes_check(
         UserRole::ProxyAdmin,
         "/team/org/team-1/callback/extra",
+        &self_managed,
+        None
+    ));
+    // one segment past the callback name matches neither callback template
+    assert!(!allowed_routes_check(
+        UserRole::ProxyAdmin,
+        "/team/org/team-1/callback/extra/more",
         &self_managed,
         None
     ));
