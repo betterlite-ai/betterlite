@@ -26,6 +26,11 @@ async fn delete_eval_returns_the_provider_delete_response() {
     let seen = serving.finish().expect("the fixture finishes");
     assert_line(&seen, "DELETE", "/v1/evals/eval_1");
     assert!(seen.body.is_empty(), "a delete carries no body");
+    assert_eq!(
+        head_value(&seen.head, "authorization"),
+        Some("Bearer sk-test"),
+        "the environment is validated even without extra headers"
+    );
     assert_eq!(response.eval_id, "eval_1");
     assert_eq!(response.object, "eval.deleted");
     assert!(response.deleted);
@@ -266,6 +271,38 @@ async fn adelete_eval_answers_like_delete_eval() {
     let seen = serving.finish().expect("the fixture finishes");
     assert_line(&seen, "DELETE", "/v1/evals/eval_1");
     assert_eq!(response.eval_id, "eval_1");
+}
+
+// adelete_eval hands the caller's eval id, headers, api base and keywords to the same body
+#[tokio::test]
+async fn adelete_eval_forwards_the_caller_arguments() {
+    let serving = json_server("200 OK", DELETED, Duration::ZERO);
+    let base = url(&serving);
+    let mut rig = Rig::new(
+        RecordingLookup::new(base),
+        TransportLimits::DEFAULT,
+        REQUEST_TIMEOUT,
+    );
+    let params = kwargs(&[
+        ("api_key", text("sk-test")),
+        ("api_base", text("https://records.example")),
+    ]);
+    let extra = headers(&[("x-extra", "one")]);
+    let request = EvalLifecycleCall {
+        extra_headers: Some(&extra),
+        ..call("eval_7", &params)
+    };
+    let _answer = run(&mut rig, Operation::AsyncDelete, &request)
+        .await
+        .expect("the fixture answers");
+    serving.finish().expect("the fixture finishes");
+    let asked = rig.configs.recorder().only_call();
+    assert_eq!(asked.eval_id, "eval_7");
+    assert_eq!(asked.api_base, "https://records.example");
+    assert_eq!(
+        asked.headers.get("x-extra").map(String::as_str),
+        Some("one")
+    );
 }
 
 // kwargs.pop("adelete_eval", False) runs before GenericLiteLLMParams, so the flag never reaches the provider config

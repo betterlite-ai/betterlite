@@ -29,6 +29,11 @@ async fn cancel_eval_returns_the_provider_cancel_response() {
         head_value(&seen.head, "content-type"),
         Some("application/json")
     );
+    assert_eq!(
+        head_value(&seen.head, "authorization"),
+        Some("Bearer sk-test"),
+        "the environment is validated even without extra headers"
+    );
     assert_eq!(response.id, "eval_1");
     assert_eq!(response.object, "eval");
     assert_eq!(response.status, CancelledStatus::Cancelled);
@@ -225,6 +230,39 @@ async fn acancel_eval_answers_like_cancel_eval() {
     let seen = serving.finish().expect("the fixture finishes");
     assert_line(&seen, "POST", "/v1/evals/eval_1/cancel");
     assert_eq!(response.id, "eval_1");
+}
+
+// acancel_eval hands the caller's eval id, headers, api base and keywords to the same body
+#[tokio::test]
+async fn acancel_eval_forwards_the_caller_arguments() {
+    let serving = json_server("200 OK", CANCELLED, Duration::ZERO);
+    let base = url(&serving);
+    let mut rig = Rig::new(
+        RecordingLookup::new(base),
+        TransportLimits::DEFAULT,
+        REQUEST_TIMEOUT,
+    );
+    let params = kwargs(&[
+        ("api_key", text("sk-test")),
+        ("api_base", text("https://records.example")),
+    ]);
+    let extra = headers(&[("x-extra", "one")]);
+    let request = EvalLifecycleCall {
+        extra_headers: Some(&extra),
+        ..call("eval_7", &params)
+    };
+    let _answer = run(&mut rig, Operation::AsyncCancel, &request)
+        .await
+        .expect("the fixture answers");
+    serving.finish().expect("the fixture finishes");
+    let asked = rig.configs.recorder().only_call();
+    assert_eq!(asked.eval_id, "eval_7");
+    assert_eq!(asked.api_base, "https://records.example");
+    assert_eq!(
+        asked.headers.get("x-extra").map(String::as_str),
+        Some("one")
+    );
+    assert!(asked.cancel, "the cancel transform built the request");
 }
 
 // kwargs.pop("acancel_eval", False) runs before GenericLiteLLMParams, so the flag never reaches the provider config
