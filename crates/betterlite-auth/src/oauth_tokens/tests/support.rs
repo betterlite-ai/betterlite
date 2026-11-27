@@ -348,18 +348,12 @@ async fn read_body(
     head_end: usize,
     length: usize,
 ) -> io::Result<String> {
-    let end = head_end.saturating_add(length);
-    let mut chunk = [0_u8; 1024];
-    while buffer.len() < end {
-        let read = stream.read(&mut chunk).await?;
-        if read == 0 {
-            break;
-        }
-        buffer.extend_from_slice(&chunk[..read]);
-    }
-    Ok(from_utf8(&buffer[head_end..end.min(buffer.len())])
-        .unwrap_or_default()
-        .to_owned())
+    let buffered = buffer.len().saturating_sub(head_end).min(length);
+    let mut body = buffer[head_end..head_end.saturating_add(buffered)].to_vec();
+    let mut tail = vec![0_u8; length.saturating_sub(buffered)];
+    let tail_read = stream.read_exact(&mut tail).await?;
+    body.extend_from_slice(&tail[..tail_read]);
+    Ok(from_utf8(&body).unwrap_or_default().to_owned())
 }
 
 #[derive(Clone, Default)]
