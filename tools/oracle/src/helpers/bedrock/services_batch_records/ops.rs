@@ -5,6 +5,7 @@ use std::task::{Context, Poll, Waker};
 use std::thread::yield_now;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::batch_records::error::BatchRecordsError;
 use betterlite_bedrock::batch_records::jsonl::{BatchRecordContext, transform_openai_jsonl};
 use betterlite_bedrock::batch_records::record::{BedrockBatchRecord, decode_batch_input_line};
 use betterlite_bedrock::batch_records::upload::{
@@ -21,12 +22,12 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::families::Families;
+use super::families::{Families, FamilyFailure};
 use super::fixture::{CaseLookup, Sources, epoch, helper_error, secrets};
 use super::input::{CreateFileRequest, Input, TransformRecords};
 
 // The families run synchronous operations and a ready credential seam, so every poll has its answer.
-fn block_on_ready<F>(future: F) -> F::Output
+pub(super) fn block_on_ready<F>(future: F) -> F::Output
 where
     F: Future,
 {
@@ -38,6 +39,14 @@ where
             Poll::Pending => yield_now(),
         }
     }
+}
+
+// An unsupported parameter answers with the status LiteLLM's UnsupportedParamsError carries.
+fn family_status(error: &BatchRecordsError) -> Option<u16> {
+    let BatchRecordsError::Family { source, .. } = error else {
+        return None;
+    };
+    source.downcast_ref::<FamilyFailure>()?.status
 }
 
 fn transform_records(call: &TransformRecords) -> HelperResult {
@@ -66,7 +75,10 @@ fn transform_records(call: &TransformRecords) -> HelperResult {
         &call.target_model,
         &context,
     ))
-    .map_err(|error| helper_error(error, None))?;
+    .map_err(|error| {
+        let status = family_status(&error);
+        helper_error(error, status)
+    })?;
     let answer: Vec<Json> = transformed
         .iter()
         .map(BedrockBatchRecord::to_json)

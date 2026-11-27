@@ -12,12 +12,20 @@ use betterlite_core::api::file_storage_contracts::batch::responses_batch_to_chat
 use betterlite_core::api::responses_chat_options::RequestAssembly;
 use betterlite_core::api::responses_chat_options::capabilities::CompletionBridgeProbe;
 use betterlite_core::responses_bridge::{BridgeRequest, ModelInfoError};
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
+use betterlite_models::params::{
+    CallType, ChatParameters, ParameterError, ParameterPolicy, map_listed_parameters,
+};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Value, json};
+
+use super::fixture::supported_openai_params;
+
+const ALLOWED_OPENAI_PARAMS: &str = "allowed_openai_params";
 
 type Attempt<T> = Result<T, Failure>;
 
@@ -47,6 +55,7 @@ impl CompletionBridgeProbe for NoProbe {
 #[error("{message}")]
 pub(super) struct FamilyFailure {
     message: String,
+    pub(super) status: Option<u16>,
 }
 
 fn failure<E>(error: E) -> Failure
@@ -55,6 +64,7 @@ where
 {
     Box::new(FamilyFailure {
         message: error.to_string(),
+        status: None,
     })
 }
 
@@ -85,6 +95,7 @@ fn part(operation: &str, input: Value, pointer: &str) -> Attempt<Value> {
 // The provider passes run through the operations that already bind them, so the seam never copies an algorithm.
 pub(super) struct Families {
     model_cost: Value,
+    packaged: Arc<ModelCatalog>,
     cache: DualLocalCache,
 }
 
@@ -103,6 +114,7 @@ impl Families {
         );
         Ok(Self {
             model_cost: serde_json::to_value(model_cost).or_value_error()?,
+            packaged: BundledCatalog::default().get(),
             cache,
         })
     }
@@ -156,8 +168,51 @@ impl Families {
 #[async_trait::async_trait]
 impl BatchFamilies for Families {
     async fn anthropic_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
-        let mapped = self.claude("map_params", mapping_model, &[], params)?;
-        serde_json::from_value(mapped).map_err(failure)
+        let mut remaining = params.clone();
+        let allowed: Vec<String> = match remaining.shift_remove(ALLOWED_OPENAI_PARAMS) {
+            Some(Json::Null) | None => Vec::new(),
+            Some(value) => {
+                let encoded = serde_json::to_value(&value).map_err(failure)?;
+                serde_json::from_value(encoded).map_err(failure)?
+            }
+        };
+        let body_encoded = serde_json::to_value(&remaining).map_err(failure)?;
+        let parameters: ChatParameters = serde_json::from_value(body_encoded).map_err(failure)?;
+        let policy = ParameterPolicy {
+            allowed_openai_params: allowed,
+            ..ParameterPolicy::default()
+        };
+        let supported = supported_openai_params(&self.model_cost, &self.packaged, mapping_model)
+            .map_err(|error| failure(error.message))?;
+        let mapping = map_listed_parameters(
+            &supported,
+            mapping_model,
+            CallType::ChatCompletion,
+            &parameters,
+            &policy,
+        )
+        .map_err(|error| {
+            let encoded = matches!(&error, ParameterError::Encode { .. });
+            let status = Some(if encoded { 500_u16 } else { 400_u16 });
+            Box::new(FamilyFailure {
+                message: error.to_string(),
+                status,
+            })
+        })?;
+        let mapped_value = self.claude("map_params", mapping_model, &[], &remaining)?;
+        let mut mapped_params: Params = serde_json::from_value(mapped_value).map_err(failure)?;
+        for (name, value) in mapping.provider_fields {
+            mapped_params.insert(name, serde_json::from_value(value).map_err(failure)?);
+        }
+        for name in &policy.allowed_openai_params {
+            if let Some(value) = remaining.get(name.as_str())
+                && !matches!(value, Json::Null)
+                && !mapped_params.contains_key(name.as_str())
+            {
+                mapped_params.insert(name.clone(), value.clone());
+            }
+        }
+        Ok(mapped_params)
     }
 
     async fn anthropic_body(

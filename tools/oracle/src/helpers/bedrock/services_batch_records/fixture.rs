@@ -5,12 +5,26 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_bedrock::bedrock_model_capabilities::ModelInfoLookup;
+use betterlite_bedrock::claude_invoke::params::get_supported_openai_params;
+use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_bedrock::model_routes::{ParamMap, ParamValue};
+use betterlite_context::anthropic_catalog_lookup::RawCatalog;
+use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
+use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
+use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
+use betterlite_models::fireworks_catalog_metadata::Catalog;
 use betterlite_models::full_model_metadata::record::ModelInfo;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::model_capability_predicates::CapabilityEnvironment;
+use betterlite_models::model_catalog_keys::ModelCostKeys;
+use betterlite_models::model_metadata_resolution::MetadataEnvironment;
+use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
+use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL, HfConfigClient};
+use betterlite_models::model_metadata_resolution::names::{ModelCostMap, NameNormalizers};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
@@ -22,6 +36,8 @@ use betterlite_secret_managers::secret_lookup::ports::{
 };
 use indexmap::IndexMap;
 use secrecy::SecretString;
+
+use super::ops::block_on_ready;
 
 pub(super) fn helper_error<E>(error: E, status: Option<u16>) -> Box<HelperError>
 where
@@ -67,6 +83,59 @@ impl Sources {
             environment: &self.environment,
         }
     }
+}
+
+const NORMALIZERS: NameNormalizers = NameNormalizers {
+    bedrock_base_model: get_bedrock_base_model,
+    bedrock_routing_prefix: strip_bedrock_routing_prefix,
+    mantle_region_split: split_region_prefix,
+};
+
+// The supported list answers from the model cost map the case hands over, as the real route does.
+pub(super) fn supported_openai_params(
+    model_cost: &serde_json::Value,
+    packaged: &ModelCatalog,
+    model: &str,
+) -> Result<Vec<&'static str>, Box<HelperError>> {
+    let bytes = serde_json::to_vec(model_cost).map_err(|error| helper_error(error, None))?;
+    let entries = ModelCostMap::parse(&bytes).map_err(|error| helper_error(error, None))?;
+    let patterns = CandidatePatterns::new().map_err(|error| helper_error(error, None))?;
+    let runtime: RawCatalog =
+        serde_json::from_slice(&bytes).map_err(|error| helper_error(error, None))?;
+    let unlisted = RawCatalog::new();
+    let catalogs = CatalogSources {
+        patterns: &patterns,
+        runtime: &runtime,
+        packaged: &unlisted,
+    };
+    let sources = Sources::new()?;
+    let resolution = sources.resolution();
+    let hf = HfConfigClient {
+        client: NoHfConfig,
+        base_url: HF_CONFIG_BASE_URL.to_owned(),
+    };
+    let provider_catalog = Catalog::new();
+    let mut keys = ModelCostKeys::default();
+    let dynamic = NoDynamicMetadata;
+    let mut environment = CapabilityEnvironment {
+        metadata: MetadataEnvironment {
+            model_cost: &entries.entries,
+            vertex: &entries.vertex,
+            generalizations: &packaged.generalizations,
+            resolution: &resolution,
+            normalizers: NORMALIZERS,
+        },
+        keys: &mut keys,
+        dynamic: &dynamic,
+        hf: &hf,
+        provider_catalog: &provider_catalog,
+        provider_generation: 0,
+    };
+    Ok(block_on_ready(get_supported_openai_params(
+        model,
+        &mut environment,
+        &catalogs,
+    )))
 }
 
 // LiteLLM reads litellm.model_cost[model], so the stub answers from the case map it was handed.
