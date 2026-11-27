@@ -88,8 +88,8 @@ impl Helper for Op {
         match input {
             Input::Quote(call) => estimate_value(call),
             Input::Charge(call) => charge_value(call),
-            Input::Reserve(call) => reserve_value(call),
-            Input::Settle(call) => settle_value(call),
+            Input::Reserve(call) => update_value(call, Update::Reserve),
+            Input::Settle(call) => update_value(call, Update::Settle),
             Input::RequestBody(call) => body_value(call),
         }
     }
@@ -189,61 +189,68 @@ fn updated_state(prepared: &Prepared) -> HelperResult {
     serde_json::to_value(lens_state(&lens)).map_err(|error| invalid(&error.to_string()))
 }
 
-fn reserve_value(call: &AnalyzeInput) -> HelperResult {
+#[derive(Clone, Copy)]
+enum Update {
+    Reserve,
+    Settle,
+}
+
+fn update_value(call: &AnalyzeInput, update: Update) -> HelperResult {
     let prepared = prepare(call)?;
-    let (month_now, lease_now) = match call.now.as_slice() {
-        [month, lease] => (*month, *lease),
-        _ => return Err(invalid("reserve needs two clock readings")),
-    };
-    let request = ReserveRequest {
-        lens_id: &call.lens.id,
-        job_id: &call.job_id,
-        worker_id: &call.worker_id,
-        month_now,
-        lease_now,
-        estimate: prepared.estimate,
-    };
-    prepared
-        .runtime
-        .block_on(reservation::reserve(&prepared.repository, &request))
-        .map_err(|error| http_error(error.status(), error.to_string()))?;
+    match update {
+        Update::Reserve => {
+            let (month_now, lease_now) = match call.now.as_slice() {
+                [month, lease] => (*month, *lease),
+                _ => return Err(invalid("reserve needs two clock readings")),
+            };
+            let request = ReserveRequest {
+                lens_id: &call.lens.id,
+                job_id: &call.job_id,
+                worker_id: &call.worker_id,
+                month_now,
+                lease_now,
+                estimate: prepared.estimate,
+            };
+            prepared
+                .runtime
+                .block_on(reservation::reserve(&prepared.repository, &request))
+                .map_err(|error| http_error(error.status(), error.to_string()))?;
+        }
+        Update::Settle => {
+            let Some(cost) = call.cost else {
+                return Err(invalid("settle needs the billed cost"));
+            };
+            let Some(month_now) = call.now.first().copied() else {
+                return Err(invalid("settle needs one clock reading"));
+            };
+            let request = SettleRequest {
+                lens_id: &call.lens.id,
+                job_id: &call.job_id,
+                month_now,
+                estimate: prepared.estimate,
+                cost,
+            };
+            prepared
+                .runtime
+                .block_on(settlement::settle(&prepared.repository, &request))
+                .map_err(|error| http_error(500, error.to_string()))?;
+        }
+    }
     updated_state(&prepared)
 }
 
-fn settle_value(call: &AnalyzeInput) -> HelperResult {
-    let prepared = prepare(call)?;
-    let Some(cost) = call.cost else {
-        return Err(invalid("settle needs the billed cost"));
-    };
-    let Some(month_now) = call.now.first().copied() else {
-        return Err(invalid("settle needs one clock reading"));
-    };
-    let request = SettleRequest {
-        lens_id: &call.lens.id,
-        job_id: &call.job_id,
-        month_now,
-        estimate: prepared.estimate,
-        cost,
-    };
-    prepared
-        .runtime
-        .block_on(settlement::settle(&prepared.repository, &request))
-        .map_err(|error| http_error(500, error.to_string()))?;
-    updated_state(&prepared)
+fn job_of(call: &AnalyzeInput) -> Option<&Job> {
+    match &call.job {
+        Some(job) => Some(job),
+        None => call.lens.jobs.iter().find(|job| job.id == call.job_id),
+    }
 }
 
 fn body_value(call: &AnalyzeInput) -> HelperResult {
-    let job = match &call.job {
-        Some(job) => job.clone(),
-        None => call
-            .lens
-            .jobs
-            .iter()
-            .find(|job| job.id == call.job_id)
-            .cloned()
-            .ok_or_else(|| invalid("the lens has no such job"))?,
+    let Some(job) = job_of(call) else {
+        return Err(invalid("the lens has no such job"));
     };
-    let data = AnalysisBody::new(
+    let body = AnalysisBody::new(
         &job.settings.model,
         &call.prompt,
         RequestIds {
@@ -253,7 +260,7 @@ fn body_value(call: &AnalyzeInput) -> HelperResult {
             team_id: call.team_id.as_deref(),
         },
     );
-    serde_json::to_value(&data).map_err(|error| invalid(&error.to_string()))
+    Ok(serde_json::to_value(body)?)
 }
 
 fn invalid(message: &str) -> Box<HelperError> {

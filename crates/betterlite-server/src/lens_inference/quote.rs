@@ -72,35 +72,45 @@ pub enum QuoteError {
     Overflow,
 }
 
-fn rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Option<Decimal>, QuoteError> {
-    let Some(value) = info.get(key) else {
-        return Ok(None);
-    };
-    match value {
-        Json::Null => Ok(None),
-        Json::Number(number) => Decimal::from_str(&number.to_string())
-            .map(Some)
-            .map_err(|_| QuoteError::InvalidRate {
-                model: model.to_owned(),
-                rate: key,
-            }),
-        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(QuoteError::InvalidRate {
-                model: model.to_owned(),
-                rate: key,
-            })
-        }
+#[derive(Clone, Copy)]
+enum Rule {
+    Required,
+    Optional,
+}
+
+fn missing_rate(model: &str, key: &'static str, rule: Rule) -> Result<Decimal, QuoteError> {
+    match rule {
+        Rule::Required => Err(QuoteError::MissingRate {
+            model: model.to_owned(),
+            rate: key,
+        }),
+        Rule::Optional => Ok(Decimal::ZERO),
     }
 }
 
-fn base_rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Decimal, QuoteError> {
-    let Some(amount) = rate(model, info, key)? else {
-        return Err(QuoteError::MissingRate {
+fn rate(
+    model: &str,
+    info: &JsonObject,
+    key: &'static str,
+    rule: Rule,
+) -> Result<Decimal, QuoteError> {
+    let Some(value) = info.get(key) else {
+        return missing_rate(model, key, rule);
+    };
+    if matches!(value, Json::Null) {
+        return missing_rate(model, key, rule);
+    }
+    let Json::Number(number) = value else {
+        return Err(QuoteError::InvalidRate {
             model: model.to_owned(),
             rate: key,
         });
     };
-    if amount.is_sign_negative() {
+    let amount = Decimal::from_str(&number.to_string()).map_err(|_| QuoteError::InvalidRate {
+        model: model.to_owned(),
+        rate: key,
+    })?;
+    if matches!(rule, Rule::Required) && amount.is_sign_negative() {
         return Err(QuoteError::NegativeRate {
             model: model.to_owned(),
             rate: key,
@@ -111,21 +121,14 @@ fn base_rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Decima
 }
 
 // a tier the catalog leaves out or nulls prices at zero, which LiteLLM's Prices model rejects
-fn tier_rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Decimal, QuoteError> {
-    match rate(model, info, key)? {
-        Some(amount) => Ok(amount),
-        None => Ok(Decimal::ZERO),
-    }
-}
-
 fn prices_from_info(model: &str, info: &JsonObject) -> Result<Prices, QuoteError> {
     Ok(Prices {
-        input_cost_per_token: base_rate(model, info, INPUT_RATE)?,
-        output_cost_per_token: base_rate(model, info, OUTPUT_RATE)?,
-        input_cost_above_200k: tier_rate(model, info, INPUT_200K_RATE)?,
-        output_cost_above_200k: tier_rate(model, info, OUTPUT_200K_RATE)?,
-        input_cost_above_128k: tier_rate(model, info, INPUT_128K_RATE)?,
-        output_cost_above_128k: tier_rate(model, info, OUTPUT_128K_RATE)?,
+        input_cost_per_token: rate(model, info, INPUT_RATE, Rule::Required)?,
+        output_cost_per_token: rate(model, info, OUTPUT_RATE, Rule::Required)?,
+        input_cost_above_200k: rate(model, info, INPUT_200K_RATE, Rule::Optional)?,
+        output_cost_above_200k: rate(model, info, OUTPUT_200K_RATE, Rule::Optional)?,
+        input_cost_above_128k: rate(model, info, INPUT_128K_RATE, Rule::Optional)?,
+        output_cost_above_128k: rate(model, info, OUTPUT_128K_RATE, Rule::Optional)?,
     })
 }
 
