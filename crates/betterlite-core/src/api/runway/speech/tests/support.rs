@@ -231,10 +231,7 @@ impl TextToSpeechHandler for Recorder {
         record.insert(String::from("extra_headers"), json!(request.extra_headers));
         record.insert(String::from("aspeech"), json!(request.aspeech));
         self.seen.push(record.clone());
-        let answer: Result<Object, HandlerFailure> = self
-            .failure
-            .clone()
-            .map_or(Ok(record), |failure| Err(failure));
+        let answer: Result<Object, HandlerFailure> = self.failure.clone().map_or(Ok(record), Err);
         ready(answer)
     }
 }
