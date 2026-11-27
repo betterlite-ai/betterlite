@@ -42,7 +42,7 @@ impl RequestTimeout {
     }
 
     // both reads run before the choice, so an invalid REQUEST_TIMEOUT still fails a config that sets request_timeout
-    pub(crate) fn resolve_configured<L>(
+    pub fn resolve_configured<L>(
         configured: Option<RawNumber>,
         lookup: &L,
     ) -> Result<Self, ConfigError>
