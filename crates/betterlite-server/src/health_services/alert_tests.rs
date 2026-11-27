@@ -13,9 +13,9 @@ use crate::health_services::service_probes::{
 };
 use crate::health_services::service_routes::{ServiceBody, SlackBody, SuccessBody};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct UserBudgetAlert {
-    pub token: String,
+    pub token: SecretString,
     pub user_id: Option<String>,
     pub key_alias: Option<String>,
     pub team_id: Option<String>,
@@ -205,7 +205,7 @@ pub async fn email(
         spend: Decimal::ZERO,
         max_budget: Some(Decimal::ZERO),
         soft_budget: None,
-        token: Some(SecretString::from(caller.token.clone())),
+        token: Some(caller.token.clone()),
         customer_id: None,
         user_id: caller.user_id.clone(),
         team_id: caller.team_id.clone(),

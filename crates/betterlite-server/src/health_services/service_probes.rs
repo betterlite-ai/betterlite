@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use axum::http::StatusCode;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_logging::exporter_options::health::{HealthState, IntegrationHealthStatus};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::auth::auth_identity::AuthContext;
@@ -43,9 +43,9 @@ pub enum ServiceError {
 }
 
 // user_api_key_dict as the alert tests read it, plus B4446's admin role check
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct Caller {
-    pub token: String,
+    pub token: SecretString,
     pub user_id: Option<String>,
     pub key_alias: Option<String>,
     pub team_id: Option<String>,
@@ -57,9 +57,7 @@ impl Caller {
         let health = HealthCaller::from_context(context)?;
         let proxy_admin = is_proxy_admin(&health);
         let fields = key_alert_fields(context.principal.source_key.0.as_ref())?;
-        let token = fields
-            .token
-            .map_or_else(String::new, |secret| secret.expose_secret().to_owned());
+        let token = fields.token.unwrap_or_default();
         Ok(Self {
             token,
             user_id: health.user_id,

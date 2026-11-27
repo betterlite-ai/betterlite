@@ -6,7 +6,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 
-use crate::health_services::alert_tests::{TeamsDelivery, UserBudgetAlert};
+use crate::health_services::alert_tests::TeamsDelivery;
 
 use super::support::{
     ADMIN_KEY, FakeAlerts, USER_KEY, World, key_context, master_context, user_context,
@@ -45,15 +45,12 @@ async fn alert_webhook_admin_sends_the_budget_test_and_answers_null() {
         .await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.text(), "null");
-    assert_eq!(
-        world.alerts.budget_tests(),
-        vec![UserBudgetAlert {
-            token: "hashed-admin-key".to_owned(),
-            user_id: Some("admin-user".to_owned()),
-            key_alias: Some("admin-alias".to_owned()),
-            team_id: Some("admin-team".to_owned()),
-        }]
-    );
+    let tests = world.alerts.budget_tests();
+    assert_eq!(tests.len(), 1);
+    assert_eq!(tests[0].token.expose_secret(), "hashed-admin-key");
+    assert_eq!(tests[0].user_id.as_deref(), Some("admin-user"));
+    assert_eq!(tests[0].key_alias.as_deref(), Some("admin-alias"));
+    assert_eq!(tests[0].team_id.as_deref(), Some("admin-team"));
 }
 
 #[tokio::test(start_paused = true)]
@@ -64,15 +61,12 @@ async fn alert_webhook_view_only_admin_passes() {
         .await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.text(), "null");
-    assert_eq!(
-        world.alerts.budget_tests(),
-        vec![UserBudgetAlert {
-            token: String::new(),
-            user_id: None,
-            key_alias: None,
-            team_id: None,
-        }]
-    );
+    let tests = world.alerts.budget_tests();
+    assert_eq!(tests.len(), 1);
+    assert!(tests[0].token.expose_secret().is_empty());
+    assert!(tests[0].user_id.is_none());
+    assert!(tests[0].key_alias.is_none());
+    assert!(tests[0].team_id.is_none());
 }
 
 #[rstest]
