@@ -107,7 +107,7 @@ impl CredentialCache {
         let lock = self.stripes.get(stripe).ok_or(CacheError::Unavailable)?;
         let _guard = lock.lock().await;
         if let Some(CacheValue::Credential(handle)) = self.storage.get(&key) {
-            return credentials_from_handle(handle);
+            return credentials_from_handle(&handle);
         }
         let resolved = fetch().await?;
         self.storage.set(
@@ -131,7 +131,7 @@ fn credential_handle(credentials: Credentials) -> CredentialHandle {
     }))
 }
 
-fn credentials_from_handle(handle: CredentialHandle) -> Result<Credentials, CacheError> {
+fn credentials_from_handle(handle: &CredentialHandle) -> Result<Credentials, CacheError> {
     let access_key_id = handle
         .0
         .headers
