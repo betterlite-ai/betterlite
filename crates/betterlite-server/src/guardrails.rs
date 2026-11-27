@@ -13,6 +13,7 @@ pub mod form_tables_a;
 pub mod form_tables_b;
 pub mod hook_execution;
 pub mod image_translation;
+pub mod pipeline_execution;
 pub mod pipeline_executor;
 pub mod pipeline_slots;
 pub mod post_call_hooks;

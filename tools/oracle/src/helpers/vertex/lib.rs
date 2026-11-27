@@ -5,7 +5,7 @@
 )]
 
 betterlite_oracle_helper_api::helper_group! {
-    "b3480" => b3480, "b9961" => b9961, "b9965" => b9965,
+    "b10159" => b10159, "b3480" => b3480, "b9961" => b9961, "b9965" => b9965,
     "chirp_backend_policy" => chirp_backend_policy,
     "chirp_stream_records" => chirp_stream_records,
     "gemini_cache_prefix" => gemini_cache_prefix, "gemini_candidates" => gemini_candidates,

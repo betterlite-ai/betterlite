@@ -1,0 +1,16 @@
+kind: sdk_http
+name: compaction-validation-precedes-calls
+call:
+  summary_execution:
+    scenarios:
+      - model: main-model
+        messages:
+          - role: user
+            content: recent question
+        edit_spec:
+          type: compact_20260112
+          trigger:
+            type: input_tokens
+            value: 49999
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

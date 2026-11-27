@@ -59,7 +59,7 @@ description: >-
   that B4731's registry reads, pointing at the prefix. list_tools takes B6591's allowed servers,
   lists each one at the same time (a missing server logs "MCP Server <id> not found"; a failure
   logs "Failed to list tools from server <name>: <error>. Continuing with other servers." and gives
-  no tools), picks the per-server header with B6594's lookup_mcp_server_auth_in_headers before the
+  no tools), picks the per-server header with B10155's lookup_server_auth before the
   global header, and flattens the results in allowed-server order. get_tools_for_server returns an
   empty list with a warning for a missing server or any error.
 

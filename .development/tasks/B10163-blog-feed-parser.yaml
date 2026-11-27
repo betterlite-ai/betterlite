@@ -1,0 +1,125 @@
+id: B10163
+title: Production blog feed parser
+description: >-
+  B9300's production BlogFeed has to parse the LiteLLM blog RSS, but the only parser lives in the oracle helper under tools/oracle/src/helpers/server/blog_feed/, written by B4264 and corrected by B5100. Move it into betterlite-server as public_endpoints::blog_feed_parser, so the gateway and the oracle helper call one copy. This task builds no fetch, no cache, no settings and no BlogFeed; B9300 builds those on top of this module.
+
+
+  Files. Move with git mv, then fix paths and visibility. tools/oracle/src/helpers/server/blog_feed/parser.rs replaces the one-line stub crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs (its `pub mod blog_feed_parser;` line in public_endpoints.rs is on main). parser/collector.rs becomes blog_feed_parser/collector.rs, parser/tests.rs becomes blog_feed_parser/tests.rs and date_parse/tests.rs becomes blog_feed_parser/date_parse/tests.rs. Replace the #[path] attributes with plain `mod` lines like the rest of the crate. That is 351 lines of source (143 parser, 208 collector) and 194 lines of tests. The helper's 288-line date_parse.rs is deleted, not moved; the next paragraph says what replaces it.
+
+
+  One date port. date_parse.rs ports email.utils._parsedate_tz, and B10167 moves the one shared port of that function into betterlite-core as email_date, where the router's and core's Retry-After readers already call it. betterlite-server depends on betterlite-core, so there is no new crate edge. blog_feed_parser/date_parse.rs is about 40 lines over betterlite_core::email_date::parsedate_tz: parse_date(raw) returns the raw text when parsedate_tz gives None, when its zone_offset is 86,400 seconds or more in either direction (datetime.timezone's bound), or when the fields make no valid datetime (year 1 to 9999, a day that exists in the month, hour under 24, minute and second under 60); otherwise it returns the parsed fields as YYYY-MM-DD without converting the zone. collector.rs reaches it as super::date_parse::parse_date. The moved date tests must pass unchanged; add the case underscore_in_day ("Thu, 1_2 Mar 2026 10:00:00 GMT" gives "2026-03-12") to formats_valid_dates. Against the helper's port, a named zone such as EST now resolves to an offset instead of counting as no zone, and the date stays the same; an underscore in a date field now parses as Python's int() reads it instead of keeping the raw text.
+
+
+  Public surface, used by the oracle helper and by B9300: BlogPost with pub title, description, date and url Strings (Debug, Clone, PartialEq, Eq, Serialize and Deserialize with deny_unknown_fields, as today), ParseFailure (the module's one thiserror enum: Xml, Decode, Escape, MissingChannel, UnclosedElement, OutsideRoot and the new TooDeep below) and parse_rss_to_posts(xml: &str, max_posts: usize, max_depth: usize) -> Result<Vec<BlogPost>, ParseFailure>. The collector, the event handlers and parse_date stay private or pub(super), since the workspace denies unreachable_pub.
+
+
+  Depth limit. B9300 serves the feed to public requests and promises a nesting cap of 64 in its deviation, so the parser takes the cap as max_depth. The document root is depth 1; an element that opens deeper than max_depth stops the parse with ParseFailure::TooDeep, whose message names the limit. The oracle helper passes usize::MAX, so it keeps ElementTree's unbounded parse and no blog_feed case changes; B9300 passes 64. Tests nesting_at_the_limit_is_accepted (an item title wrapping inline elements so the deepest element sits at depth 64, giving the post) and nesting_past_the_limit_is_refused (the same document one level deeper, with limit 64) go in blog_feed_parser/tests.rs.
+
+
+  Lints. The oracle server group's lib.rs carries a crate-wide #[expect] for clippy::disallowed_methods, and betterlite-server does not. open_tag and handle_end call String::from_utf8_lossy. clippy.toml disallows it, so decode tag names fallibly into the existing ParseFailure::Decode instead: BytesStart::decoder().decode(...) in open_tag, and std::str::from_utf8 through EncodingError::from in handle_end, since BytesEnd has no decoder. The input is already &str, so no output changes. Add no #[expect].
+
+
+  Oracle helper. tools/oracle/src/helpers/server/blog_feed.rs drops `mod date_parse;` and `mod parser;` and imports BlogPost, ParseFailure and parse_rss_to_posts from betterlite_server::public_endpoints::blog_feed_parser; betterlite-oracle-server already depends on betterlite-server, so there is no new crate edge. ParseRssToPosts and logic.rs's fetch_and_parse call parse_rss_to_posts with usize::MAX as max_depth, local_posts builds the production BlogPost, Failure::Parse wraps the production ParseFailure, and parse_failure_class maps TooDeep to "ParseError" beside the other syntax failures. The fetch mock, the cache, validate_blog_posts, the sequence runners and blog_feed/tests.rs (matches_pinned_blog_feed over cases/helpers/blog_feed/*.yaml) stay where they are; that test now runs production code. Drop `quick-xml.workspace = true` from tools/oracle/src/helpers/server/Cargo.toml: blog_feed/parser.rs was its only user there, and the gate's cargo shear check refuses an unused dependency.
+
+
+  Fuzz. One target stays, in the decoder's crate: crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs, already a [[bin]] in crates/betterlite-server/fuzz/Cargo.toml with an empty body, skips bytes that are not UTF-8 as the oracle target did and calls parse_rss_to_posts(xml, 1, 64). Delete tools/oracle/fuzz/fuzz_targets/blog_feed_xml.rs and its [[bin]] block in tools/oracle/fuzz/Cargo.toml, plus that manifest's chrono and quick-xml dependencies and their entries in [package.metadata.cargo-shear] ignored, since blog_feed_xml.rs's #[path] includes were their only users; betterlite-logging, serde, thiserror and tl stay for browser_form.rs. Move the ten seeds in tools/oracle/fuzz/corpus/blog_feed/ to crates/betterlite-server/fuzz/corpus/blog_feed/ and add deep-nesting.xml, an item whose title nests more than 64 levels deep. The helper's replays_xml_fuzz_corpus becomes replays_the_blog_feed_corpus in blog_feed_parser/tests.rs: it reads fuzz/corpus/blog_feed under CARGO_MANIFEST_DIR, the way public_endpoints/router_presets/tests.rs reads its corpus, and runs parse_rss_to_posts(xml, 1, 64) on every seed.
+
+
+  Cargo. Add `quick-xml.workspace = true` to crates/betterlite-server/Cargo.toml [dependencies]. The workspace pins 0.41.0 and B5100 made Cargo.lock resolve one quick-xml version; keep both as they are. Cargo.lock only changes its dependency lists.
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs
+    - crates/betterlite-server/src/public_endpoints/blog_feed_parser/**
+    - crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs
+    - crates/betterlite-server/fuzz/corpus/blog_feed/**
+    - tools/oracle/src/helpers/server/Cargo.toml
+    - tools/oracle/src/helpers/server/blog_feed.rs
+    - tools/oracle/src/helpers/server/blog_feed/**
+    - tools/oracle/fuzz/Cargo.toml
+    - tools/oracle/fuzz/fuzz_targets/blog_feed_xml.rs
+    - tools/oracle/fuzz/corpus/blog_feed/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L68-L111
+    why: parse_rss_to_posts, the behavior the moved parser keeps; root.find("channel"), channel.findall("item") and item.find() pick only direct children.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L94-L100
+    why: The pubDate branch, parsedate_to_datetime with the raw text kept on any exception; date_parse.rs builds it on B10167's email_date.parsedate_tz.
+  - url: https://docs.python.org/3/library/email.utils.html#email.utils.parsedate_to_datetime
+    why: parsedate_to_datetime, the datetime and 24-hour zone checks date_parse.rs adds on top of email_date.parsedate_tz, including the zone bound B5100 fixed.
+  - url: https://docs.rs/quick-xml/0.41.0/quick_xml/events/struct.BytesStart.html#method.decoder
+    why: The decoder that replaces String::from_utf8_lossy for start tag names.
+dod:
+  - text: crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs and its children hold the parser, the collector and the date parsing with their unit tests, and those tests pass at the new module path.
+    proof: [behavior-tests]
+  - text: The oracle helper calls the production parser, its own parser and date files are gone, and every blog_feed helper case B4264 and B5100 own still matches LiteLLM unchanged.
+    proof: [helper-cases, oracle, one-parser]
+  - text: parse_rss_to_posts refuses an element deeper than max_depth with ParseFailure::TooDeep and accepts one exactly at the limit.
+    proof: [depth-tests]
+  - text: Exactly one blog parser and one fuzz target remain, in betterlite-server; the oracle fuzz target is gone and the production module uses no String::from_utf8_lossy.
+    proof: [one-parser]
+  - text: The blog date parsing calls betterlite-core's email_date.parsedate_tz and keeps no tokenizer of its own, and its moved tests plus underscore_in_day pass.
+    proof: [one-parser, behavior-tests]
+  - text: The production blog_feed fuzz target calls parse_rss_to_posts, and its corpus, the moved seeds plus a new deep-nesting seed, replays through the production parser.
+    proof: [blog-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: The moved parser and date tests are missing from betterlite-server or fail there.
+      run: grep -q 'case::underscore_in_day(' crates/betterlite-server/src/public_endpoints/blog_feed_parser/date_parse/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::/) - test(/::replays_the_blog_feed_corpus/)'
+    - id: depth-tests
+      why: The nesting limit B9300 relies on is missing or off by one.
+      run: grep -q 'fn nesting_at_the_limit_is_accepted' crates/betterlite-server/src/public_endpoints/blog_feed_parser/tests.rs && grep -q 'fn nesting_past_the_limit_is_refused' crates/betterlite-server/src/public_endpoints/blog_feed_parser/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::tests::nesting_(at|past)_the_limit_is_(accepted|refused)$/)'
+    - id: helper-cases
+      why: The helper still carries its own parser, or a blog_feed case stops matching LiteLLM once the helper calls the production parser.
+      run: test ! -e tools/oracle/src/helpers/server/blog_feed/parser.rs && test ! -e tools/oracle/src/helpers/server/blog_feed/date_parse.rs && grep -q 'blog_feed_parser' tools/oracle/src/helpers/server/blog_feed.rs && cargo nextest run --locked -p betterlite-oracle-server --no-tests=fail -E 'test(/^blog_feed::/)'
+    - id: one-parser
+      why: A second copy of the parser, the date parsing or the oracle fuzz target survives, or the production module mangles bytes it should refuse.
+      run: grep -q 'fn parse_rss_to_posts' crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs && ! grep -rqE 'fn parse_rss_to_posts|fn parse_date|struct Collector' tools/oracle/src/helpers/server/blog_feed.rs tools/oracle/src/helpers/server/blog_feed tools/oracle/fuzz/fuzz_targets && ! grep -q 'blog_feed_xml' tools/oracle/fuzz/Cargo.toml && ! grep -rq 'from_utf8_lossy' crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs crates/betterlite-server/src/public_endpoints/blog_feed_parser && grep -q 'parsedate_tz' crates/betterlite-server/src/public_endpoints/blog_feed_parser/date_parse.rs && ! grep -qE 'MONTHNAMES|DAYNAMES|fn python_int_digits|fn split_glued_timezone|fn resolve_month' crates/betterlite-server/src/public_endpoints/blog_feed_parser/date_parse.rs
+    - id: blog-corpus
+      why: The production fuzz target does not reach the parser, or its corpus has no deep-nesting seed or does not replay.
+      run: grep -q 'parse_rss_to_posts' crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs && test -n "$(git diff --no-renames --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/blog_feed/deep-nesting.xml)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::tests::replays_the_blog_feed_corpus/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/blog_feed/cache-hit-ttl.yaml
+  - tools/oracle/cases/helpers/blog_feed/cache-miss-fetch.yaml
+  - tools/oracle/cases/helpers/blog_feed/cache-sequential-expiry.yaml
+  - tools/oracle/cases/helpers/blog_feed/crlf-in-description-normalizes.yaml
+  - tools/oracle/cases/helpers/blog_feed/empty-first-channel.yaml
+  - tools/oracle/cases/helpers/blog_feed/fetch-5sec-timeout.yaml
+  - tools/oracle/cases/helpers/blog_feed/fetch-failure-fallback.yaml
+  - tools/oracle/cases/helpers/blog_feed/fetch-timeout-override.yaml
+  - tools/oracle/cases/helpers/blog_feed/invalid-date-raw.yaml
+  - tools/oracle/cases/helpers/blog_feed/local-only-override.yaml
+  - tools/oracle/cases/helpers/blog_feed/local-posts-load.yaml
+  - tools/oracle/cases/helpers/blog_feed/malformed-document-fallback.yaml
+  - tools/oracle/cases/helpers/blog_feed/missing-title-url-skipped.yaml
+  - tools/oracle/cases/helpers/blog_feed/multiple-items-limited.yaml
+  - tools/oracle/cases/helpers/blog_feed/namespace-channel.yaml
+  - tools/oracle/cases/helpers/blog_feed/parse-failure-fallback.yaml
+  - tools/oracle/cases/helpers/blog_feed/parse-nested-tail.yaml
+  - tools/oracle/cases/helpers/blog_feed/parse-rss-items.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-empty-list.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-nonempty-list.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-non-list.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-object.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-scalar.yaml
+  - tools/oracle/cases/helpers/blog_feed/validation-failure-fallback.yaml
+deviations: []
+out_of_scope:
+  - "B9300 owns load_local_blog_posts, fetch_rss_feed, validate_blog_posts, get_blog_posts and the module-level get_blog_posts wrapper in get_blog_posts.py, the production BlogFeed and BlogPostsResponse, the 16 MiB response cap and the choice of 64 as the public nesting cap."
+  - "The oracle helper's fetch mock, cache, validate_blog_posts and sequence runners in blog_feed.rs and blog_feed/logic.rs keep their logic here and only change their parser calls; B9300 switches them to its BlogFeed, so get_blog_posts exists once after it lands."
+  - "No new helper operation and no new oracle case: the existing blog_feed operation and its 24 cases prove the move."
+  - "B10167 owns betterlite-core's email_date (python_int, parsedate_tz, mktime_tz) and both Retry-After readers; this task only calls parsedate_tz."
+pitfalls:
+  - The gate counts the diff with --no-renames, so the move and the date rewrite cost about 1,130 of the 1,500 changed lines (the moved tests.rs files and the corpus do not count); make no edits beyond the ones the description lists.
+  - email_date.parsedate_tz saturates a huge zone instead of dropping it, so timezone_overflows_i64 keeps its raw text only if parse_date checks the offset bound with unsigned_abs and does not treat a saturated i64::MIN as small.
+  - The corpus replay used to sit at "../../../fuzz/corpus/blog_feed" from the oracle group crate; under crates/betterlite-server the path is "fuzz/corpus/blog_feed", and an rstest files glob or a read_dir on the old path finds nothing.
+  - The helper's parse_failure_class matches ParseFailure exhaustively, so the new TooDeep variant has to get its arm there in the same change or the oracle server group stops compiling.
+  - The oracle fuzz manifest lists chrono and quick-xml under [package.metadata.cargo-shear] ignored only because the path includes hid their use; remove the ignore entries with the dependencies, or cargo shear reports them.
+  - A git mv of the corpus shows up as a rename in plain git diff, so a corpus check without --no-renames never sees an added seed; the new deep-nesting.xml is the one file the blog-corpus check looks for.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,7 +2,7 @@ id: B8631
 milestone: M8 platform
 title: Router generic, single, batch and call type ports
 status: todo
-depends_on: [B8610, B8611, B4261, B8630, B6021, B8352, B312, B398, B309, B401, B399, B306, B364, B844, B303, B016, B310, B370, B8691]
+depends_on: [B8610, B8611, B4261, B8630, B6021, B8352, B312, B398, B309, B401, B399, B306, B364, B844, B303, B016, B310, B370, B8691, B10154]
 file: tasks/B8631-router-generic-ports.yaml
 covers: []
 parent: null
