@@ -1,3 +1,5 @@
+mod tests;
+
 use std::sync::Arc;
 
 use thiserror::Error;
