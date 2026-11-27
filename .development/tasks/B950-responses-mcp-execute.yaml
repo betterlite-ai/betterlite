@@ -1,11 +1,11 @@
 id: B950
 title: Responses mcp execute
 description: >-
-  Execute extracted MCP function/custom calls through B8465's MCPServerManager.call_tool (mcp::tool_call), with B8195's _resolve_display_name_to_original for display names, using typed parsed arguments and normalized
+  Execute extracted MCP function/custom calls through this task's McpToolExecution::call_tool port, with B8195's _resolve_display_name_to_original mirrored by its display-name port, using typed parsed arguments and normalized
   tool results. The four MCP header values (mcp_auth_header, mcp_server_auth_headers, oauth2_headers, raw_headers)
-  arrive as arguments (B905's McpHeaders on main holds the same four) and go to call_tool unchanged; B8465's call_tool
-  turns them into upstream credentials through B8196's checks and B4667's resolver, so this task resolves no
-  credential. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
+  arrive as B905's McpHeaders, already on main, and go to the port unchanged; B140 later binds that port to
+  B8465's call_tool and its B8196/B4667 credential resolution. Build and test this task against its own port,
+  without waiting for those server implementations. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
   name as permission to access another server.
 
 
@@ -75,7 +75,7 @@ description: >-
   code.
 
 
-  Direct inputs come from B8465 (the call_tool McpToolExecution mirrors), B8195 (the display name resolution it mirrors),
+  This task declares the call_tool contract in McpToolExecution; B140 owns the later B8465 binding. Direct inputs come from B905 (McpHeaders), B8195 (the display name resolution the port mirrors),
   B171 (Direct helper oracle and URL path encoding),
   B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1106 (Principal metadata
   and tags), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family

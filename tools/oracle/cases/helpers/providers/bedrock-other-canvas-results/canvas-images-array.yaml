@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-other-canvas-results-canvas-images-array
+call:
+  bedrock_other_canvas_results:
+    model_cost: {}
+    calls:
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["aGVsbG8=","",null,"d29ybGQ="]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["eA==","eQ=="],"created":7,"usage":{"total_tokens":9},"size":"1024x1024","model":"upstream"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 201
+        body: '{"images":["eA=="]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 500
+        body: '{"images":["eA=="]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 500
+        body: not json
+env: {}
+compare: {ignore: []}
