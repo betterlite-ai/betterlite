@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support::{
@@ -9,6 +10,10 @@ use super::support::{
 };
 use crate::logging_success::dispatch::dispatch_success_handlers;
 use crate::logging_success::payload_state::standard_logging_object;
+use crate::registry::Registration;
+use crate::registry::identity::CallbackIdentity;
+use crate::registry::phases::CallbackList;
+use crate::registry::sink::CallbackSink;
 
 #[rstest]
 #[case::sync_failure(false)]
@@ -93,6 +98,38 @@ async fn a_failed_callback_counts_once_through_the_first_counting_logger(
     assert_eq!(first_counter.calls(), ["prometheus"]);
     assert!(second_counter.calls().is_empty());
     assert_eq!(second_calls.events().len(), 1);
+}
+
+#[tokio::test]
+async fn a_counter_in_the_success_list_is_found_after_the_callbacks_list() {
+    let mut fixture = Fixture::new();
+    let failing_calls = Arc::new(CallLog::default());
+    let mut failing = FakeLogger::new("langfuse", &failing_calls);
+    failing.fail = true;
+    fixture.add(&Arc::new(failing));
+    let counting_calls = Arc::new(CallLog::default());
+    let counter = Arc::new(RecordingCounter::default());
+    let counting = counting_logger("prometheus", &counting_calls, &counter);
+    let identity = CallbackIdentity {
+        class_name: "prometheus".to_owned(),
+        attributes: IndexMap::new(),
+    };
+    let sink = CallbackSink::Logger(counting);
+    let registration = fixture.register(identity, sink, CallbackList::Success);
+    assert_ne!(registration, Registration::SkippedCapacity);
+    let mut state = state(Some(false));
+    state
+        .litellm_params
+        .insert("acompletion".to_owned(), Json::Bool(true));
+    let mut correlation = correlation();
+    dispatch_success_handlers(
+        &fixture.handler(),
+        &mut state,
+        &mut correlation,
+        &request(chat_result()),
+    )
+    .await;
+    assert_eq!(counter.calls(), ["langfuse"]);
 }
 
 #[rstest]
