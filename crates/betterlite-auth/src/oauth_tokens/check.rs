@@ -141,7 +141,7 @@ fn decode_identity(
     // the introspection contract types active as a boolean; an absent or null key takes the true default
     if mode == EndpointMode::Introspection {
         let JsonValue::Object(fields) = &document else {
-            return Err(ValidationError::from(ExtractError::NotAnObject));
+            return Err(ValidationError::from(ExtractError::ResponseNotObject));
         };
         let active = match fields.get("active") {
             None | Some(JsonValue::Null) => true,
@@ -152,7 +152,7 @@ fn decode_identity(
                 | JsonValue::Array(_)
                 | JsonValue::Object(_),
             ) => {
-                return Err(ValidationError::from(ExtractError::NotABool {
+                return Err(ValidationError::from(ExtractError::FieldNotBool {
                     field: "active".to_owned(),
                 }));
             }

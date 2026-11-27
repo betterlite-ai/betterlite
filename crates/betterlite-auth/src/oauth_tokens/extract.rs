@@ -6,11 +6,11 @@ use crate::oauth_tokens::TypedValue;
 #[derive(Debug, Error)]
 pub enum ExtractError {
     #[error("the OAuth token response is not a JSON object")]
-    NotAnObject,
+    ResponseNotObject,
     #[error("the OAuth token response field {field} is not a string")]
-    NotAString { field: String },
+    FieldNotString { field: String },
     #[error("the OAuth token response field {field} is not a boolean")]
-    NotABool { field: String },
+    FieldNotBool { field: String },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -28,7 +28,7 @@ pub fn extract_user_info(
     user_team_id_field_name: &str,
 ) -> Result<ExtractedIdentity, ExtractError> {
     let JsonValue::Object(fields) = document else {
-        return Err(ExtractError::NotAnObject);
+        return Err(ExtractError::ResponseNotObject);
     };
     Ok(ExtractedIdentity {
         user_id: field_text(fields.get(user_id_field_name), user_id_field_name)?,
@@ -43,7 +43,7 @@ fn field_text(value: Option<&JsonValue>, name: &str) -> Result<Option<String>, E
         Some(JsonValue::Text(text)) => Ok(Some(text.clone())),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(ExtractError::NotAString {
+        ) => Err(ExtractError::FieldNotString {
             field: name.to_owned(),
         }),
     }

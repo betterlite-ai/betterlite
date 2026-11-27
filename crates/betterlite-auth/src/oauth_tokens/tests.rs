@@ -286,7 +286,9 @@ async fn non_bool_active_refused(#[case] body: &str) {
         .await
         .expect_err("a non-boolean active is refused");
     match expect_validation(error) {
-        ValidationError::Extract(ExtractError::NotABool { field }) => assert_eq!(field, "active"),
+        ValidationError::Extract(ExtractError::FieldNotBool { field }) => {
+            assert_eq!(field, "active")
+        }
         other => panic!("expected a non-boolean active failure, got {other}"),
     }
 }
@@ -371,7 +373,9 @@ async fn non_string_field_refused() {
         .await
         .expect_err("a non-string identity field is refused");
     match expect_validation(error) {
-        ValidationError::Extract(ExtractError::NotAString { field }) => assert_eq!(field, "sub"),
+        ValidationError::Extract(ExtractError::FieldNotString { field }) => {
+            assert_eq!(field, "sub")
+        }
         other => panic!("expected a non-string field failure, got {other}"),
     }
 }
@@ -468,7 +472,7 @@ async fn non_object_response_refused() {
         .expect_err("a non-object introspection response is refused");
     assert!(matches!(
         expect_validation(error),
-        ValidationError::Extract(ExtractError::NotAnObject)
+        ValidationError::Extract(ExtractError::ResponseNotObject)
     ));
     let token_info_settings = settings(Some("https://idp.example/userinfo"), None, None);
     let token_info_transport = Scripted::answering(200, "5");
@@ -478,7 +482,7 @@ async fn non_object_response_refused() {
             .expect_err("a non-object token info response is refused");
     assert!(matches!(
         expect_validation(token_info_error),
-        ValidationError::Extract(ExtractError::NotAnObject)
+        ValidationError::Extract(ExtractError::ResponseNotObject)
     ));
 }
 
