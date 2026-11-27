@@ -1,0 +1,15 @@
+task: B4658
+deviations:
+  - what: When the CLI token can't be built (no salt key and no master key), the mint gives unresolvable, so B4676's route answers 500 with the OAuth error server_error.
+    why: LiteLLM lets the ValueError escape and answers an uncaught 500. B4674's MintProxyCredential port has no error channel beyond its failure enum, and the status stays 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/proxy_api_credentials.py#L27-L92
+  - what: An expiry text of a bare date followed by Z, such as 2099-01-01Z, parses as midnight UTC instead of counting as unparseable.
+    why: decode_billed_at rewrites Z to +00:00 before it parses, and that text then reads as a date with a time of 00:00. The key table's expires column is a DateTime, so a stored row can't hold this text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L136-L149
+  - what: key_owner_deactivated gives false for an inactive key without reading its owner.
+    why: The owner comes from active_key_user_id because UserAPIKeyAuth fields are crate-private. Both callers also reject an inactive key, so the answer a client sees is the same and only one user read is skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L356-L405
+  - what: A non-positive cli_token_hours makes the mint give unresolvable instead of minting a credential whose expires_in is zero or negative.
+    why: B4674's MintedProxyCredential.expires_in is a NonZeroU64, so betterlite can't represent the value LiteLLM would return for a misconfigured CLI_JWT_EXPIRATION_HOURS; the token B1223 builds would already be expired.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1748-L1752
+kept_bugs: []
