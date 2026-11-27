@@ -237,8 +237,11 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
 def set_module_globals(
     monkeypatch: pytest.MonkeyPatch, module: ModuleType, url: str, key: str
 ) -> None:
+    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "api_base", url)
+    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "api_key", key)
+    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "openai_key", key)
 
 
