@@ -1,7 +1,8 @@
 use std::ops::{Add as _, Mul as _};
 
 use jiff::Timestamp;
-use jiff::fmt::rfc2822::DateTimeParser;
+
+use crate::email_date::{mktime_tz, parsedate_tz, python_int};
 
 mod tests;
 
@@ -38,25 +39,26 @@ pub const fn should_retry(status_code: u16) -> bool {
     }
 }
 
-// A whole number of seconds, or an HTTP date turned into seconds from `now`; -1 when neither parses.
+// A whole number of seconds, or an email date turned into seconds from `now`; -1 when neither parses.
 #[must_use]
 pub fn retry_after_from_header(header: Option<&str>, now: Timestamp) -> i64 {
     let Some(text) = header else {
         return -1;
     };
-    if let Ok(seconds) = text.trim().parse::<i64>() {
+    let trimmed = text.trim();
+    if let Some(seconds) = python_int(trimmed) {
         return seconds;
     }
-    // RFC 2822 covers the usual form with any zone; the other two forms RFC 9110 names are RFC 850 and asctime.
-    if let Ok(date) = DateTimeParser::new().parse_timestamp(text) {
-        return date.duration_since(now).as_secs();
-    }
-    if let Ok(time) = httpdate::parse_http_date(text)
-        && let Ok(date) = Timestamp::try_from(time)
-    {
-        return date.duration_since(now).as_secs();
-    }
-    -1
+    let Some(parsed) = parsedate_tz(trimmed) else {
+        return -1;
+    };
+    let Some(seconds) = mktime_tz(&parsed) else {
+        return -1;
+    };
+    let Ok(date) = Timestamp::from_second(seconds) else {
+        return -1;
+    };
+    date.duration_since(now).as_secs()
 }
 
 // `random_unit` is the value of random.random(), in 0 up to 1, so a caller or a test can pin the jitter.
