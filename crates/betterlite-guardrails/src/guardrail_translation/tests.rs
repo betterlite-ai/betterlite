@@ -10,6 +10,7 @@ use super::{
     BaseTranslation, StreamTransformSink, StreamingScanKey, TranslationCall,
     merge_user_key_metadata, transform_user_key_metadata,
 };
+use crate::guardrail_message_scope::StreamItem;
 
 fn call() -> TranslationCall<'static, ()> {
     TranslationCall {
@@ -266,7 +267,7 @@ async fn translation_runs_required_hooks_and_keeps_stream_chunks() {
         BTreeMap::from([("response".to_owned(), text("answer"))])
     );
 
-    let mut responses_so_far = vec![text("chunk")];
+    let mut responses_so_far = vec![StreamItem::Json(text("chunk"))];
     let original_chunks = responses_so_far.clone();
     translation
         .process_streaming_response(&mut responses_so_far, &guardrail, call())

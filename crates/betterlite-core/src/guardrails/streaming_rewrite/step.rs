@@ -1,8 +1,6 @@
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-
 use super::legacy::LegacyHookStreamAdapter;
 use super::observer::StreamRewriteObserver;
-use super::shapes::RequestData;
+use super::shapes::{RequestData, StreamItem};
 use super::traits::{
     GuardrailCallback, RewriteFailure as _, StreamCall, StreamGuardrail, StreamTranslation,
     UserApiKey,
@@ -10,7 +8,7 @@ use super::traits::{
 
 pub struct StreamingStep<'step, Log> {
     pub guardrail: &'step str,
-    pub streaming_chunks: &'step mut Vec<GuardrailValue>,
+    pub streaming_chunks: &'step mut Vec<StreamItem>,
     pub hook_input: &'step mut RequestData,
     pub user_api_key_dict: &'step UserApiKey,
     pub logging_obj: Option<&'step mut Log>,
@@ -25,8 +23,8 @@ pub enum StepOutcome {
 fn release_original_chunks(
     guardrail_name: &str,
     reason: &str,
-    streaming_chunks: &mut Vec<GuardrailValue>,
-    originals: Vec<GuardrailValue>,
+    streaming_chunks: &mut Vec<StreamItem>,
+    originals: Vec<StreamItem>,
 ) {
     *streaming_chunks = originals;
     tracing::warn!(

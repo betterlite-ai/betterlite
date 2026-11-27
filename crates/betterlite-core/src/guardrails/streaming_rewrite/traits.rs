@@ -4,7 +4,7 @@ use std::future::Future;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::failure::UndeliverableStreamRewrite;
-use super::shapes::{RequestData, StreamInputs};
+use super::shapes::{RequestData, StreamInputs, StreamItem};
 
 pub type UserApiKey = BTreeMap<String, GuardrailValue>;
 
@@ -117,7 +117,7 @@ pub trait StreamTranslation<Log: Send>: Sync {
 
     fn process_streaming_response<Guardrail>(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &mut Guardrail,
         call: StreamCall<'_, Log>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send

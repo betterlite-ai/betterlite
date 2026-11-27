@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::guardrail_message_scope::StreamItem;
 use crate::guardrail_translation::{BaseTranslation, StreamingScanKey, TranslationCall};
 use crate::unified_dispatch::emit::{
     HttpErrorDetail, StreamErrorEmission, StreamHttpError, a2a_jsonrpc_error_chunk, a2a_request_id,
@@ -126,7 +127,7 @@ enum BlockBehavior {
 
 struct ProbeTranslation {
     block: BlockBehavior,
-    error_items: Option<Vec<GuardrailValue>>,
+    error_items: Option<Vec<StreamItem>>,
 }
 
 impl BaseTranslation for ProbeTranslation {
@@ -156,9 +157,9 @@ impl BaseTranslation for ProbeTranslation {
         &self,
         _failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
-        let count = responses_so_far.map_or(0, <[GuardrailValue]>::len);
+        let count = responses_so_far.map_or(0, <[StreamItem]>::len);
         let summary = format!("started={stream_started};items={count}");
         block_chunks(&self.block, &summary)
     }
@@ -166,8 +167,8 @@ impl BaseTranslation for ProbeTranslation {
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         self.error_items
             .as_ref()
             .map(|items| echo_error_items(items, responses_so_far, failure))
@@ -183,11 +184,11 @@ fn block_chunks(behavior: &BlockBehavior, summary: &str) -> Option<Vec<Vec<u8>>>
 }
 
 fn echo_error_items(
-    items: &[GuardrailValue],
-    carried: Option<&[GuardrailValue]>,
+    items: &[StreamItem],
+    carried: Option<&[StreamItem]>,
     failure: &GuardrailFailure,
-) -> Vec<GuardrailValue> {
-    let count = carried.map(<[GuardrailValue]>::len).unwrap_or_default();
+) -> Vec<StreamItem> {
+    let count = carried.map(<[StreamItem]>::len).unwrap_or_default();
     let status = match failure {
         GuardrailFailure::Http { status, .. } | GuardrailFailure::HttpObject { status, .. } => {
             *status
@@ -199,7 +200,9 @@ fn echo_error_items(
         | GuardrailFailure::Other(_) => 0,
     };
     let mut echoed = items.to_vec();
-    echoed.push(text(&format!("status={status};items={count};{failure}")));
+    echoed.push(StreamItem::Json(text(&format!(
+        "status={status};items={count};{failure}"
+    ))));
     echoed
 }
 
@@ -261,7 +264,7 @@ fn dispatch_route_selects_the_first_call_type() {
         &registry,
         &routes,
         Some("/chat/completions"),
-        Some(&chunk("hi")),
+        Some(&StreamItem::Json(chunk("hi"))),
     );
     assert_eq!(
         resolved.map(|(call_type, translation)| (call_type, *translation)),
@@ -276,8 +279,12 @@ fn dispatch_route_first_call_type_without_entry_is_none() {
         "/completions",
         vec![CallType::TextCompletion, CallType::Completion],
     )]);
-    let resolved =
-        resolve_endpoint_translation(&registry, &routes, Some("/completions"), Some(&chunk("hi")));
+    let resolved = resolve_endpoint_translation(
+        &registry,
+        &routes,
+        Some("/completions"),
+        Some(&StreamItem::Json(chunk("hi"))),
+    );
     assert!(resolved.is_none());
 }
 
@@ -288,8 +295,12 @@ fn dispatch_route_wins_over_the_item_inference() {
         ("embedding", CallType::Embedding, false),
     ]);
     let routes = catalog(vec![("/embeddings", vec![CallType::Embedding])]);
-    let resolved =
-        resolve_endpoint_translation(&registry, &routes, Some("/embeddings"), Some(&chunk("hi")));
+    let resolved = resolve_endpoint_translation(
+        &registry,
+        &routes,
+        Some("/embeddings"),
+        Some(&StreamItem::Json(chunk("hi"))),
+    );
     assert_eq!(
         resolved.map(|(call_type, translation)| (call_type, *translation)),
         Some((CallType::Embedding, "embedding"))
@@ -300,7 +311,12 @@ fn dispatch_route_wins_over_the_item_inference() {
 fn dispatch_missing_route_infers_a_completion_from_a_chunk() {
     let registry = registry(vec![("chat", CallType::Completion, true)]);
     let routes = catalog(Vec::new());
-    let resolved = resolve_endpoint_translation(&registry, &routes, None, Some(&chunk("hi")));
+    let resolved = resolve_endpoint_translation(
+        &registry,
+        &routes,
+        None,
+        Some(&StreamItem::Json(chunk("hi"))),
+    );
     assert_eq!(
         resolved.map(|(call_type, _)| call_type),
         Some(CallType::Completion)
@@ -311,7 +327,12 @@ fn dispatch_missing_route_infers_a_completion_from_a_chunk() {
 fn dispatch_empty_route_infers_from_the_item() {
     let registry = registry(vec![("chat", CallType::Completion, true)]);
     let routes = catalog(vec![("/chat/completions", vec![CallType::Completion])]);
-    let resolved = resolve_endpoint_translation(&registry, &routes, Some(""), Some(&chunk("hi")));
+    let resolved = resolve_endpoint_translation(
+        &registry,
+        &routes,
+        Some(""),
+        Some(&StreamItem::Json(chunk("hi"))),
+    );
     assert_eq!(
         resolved.map(|(call_type, _)| call_type),
         Some(CallType::Completion)
@@ -329,14 +350,22 @@ fn dispatch_no_route_and_no_item_is_none() {
 fn dispatch_unmapped_inferred_call_type_is_none() {
     let registry = registry(vec![("embedding", CallType::Embedding, false)]);
     let routes = catalog(Vec::new());
-    assert!(resolve_endpoint_translation(&registry, &routes, None, Some(&chunk("hi"))).is_none());
+    assert!(
+        resolve_endpoint_translation(
+            &registry,
+            &routes,
+            None,
+            Some(&StreamItem::Json(chunk("hi")))
+        )
+        .is_none()
+    );
 }
 
 #[test]
 fn dispatch_inferred_non_chat_item_is_none() {
     let registry = registry(vec![("chat", CallType::Completion, true)]);
     let routes = catalog(Vec::new());
-    let frame = text("data: {}");
+    let frame = StreamItem::Json(text("data: {}"));
     assert!(resolve_endpoint_translation(&registry, &routes, None, Some(&frame)).is_none());
 }
 
@@ -428,7 +457,7 @@ fn dispatch_infer_call_type_maps_every_kind(
 )]
 #[case::null(GuardrailValue::Null, ResponseKind::Other)]
 fn dispatch_of_stream_item_kinds(#[case] item: GuardrailValue, #[case] kind: ResponseKind) {
-    assert_eq!(ResponseKind::of_stream_item(&item), kind);
+    assert_eq!(ResponseKind::of_stream_item(&StreamItem::Json(item)), kind);
 }
 
 #[test]
@@ -497,7 +526,7 @@ fn emit_block_starts_a_new_message_when_the_stream_did_not_start() {
         block: BlockBehavior::Summary,
         error_items: None,
     };
-    let so_far = [chunk("hi")];
+    let so_far = [StreamItem::Json(chunk("hi"))];
     let chunks = handle_streaming_block(
         &translation,
         GuardrailFailure::Other("blocked".to_owned()),
@@ -514,7 +543,10 @@ fn emit_block_continues_the_message_when_the_stream_started() {
         block: BlockBehavior::Summary,
         error_items: None,
     };
-    let so_far = [chunk("hi"), chunk("there")];
+    let so_far = [
+        StreamItem::Json(chunk("hi")),
+        StreamItem::Json(chunk("there")),
+    ];
     let chunks = handle_streaming_block(
         &translation,
         GuardrailFailure::Other("blocked".to_owned()),
@@ -536,13 +568,13 @@ fn emit_block_gives_back_the_failure_when_the_translation_has_none() {
 fn emit_http_error_returns_the_a2a_chunk_before_the_stream_starts() {
     let translation = ProbeTranslation {
         block: BlockBehavior::Missing,
-        error_items: Some(vec![text("translation")]),
+        error_items: Some(vec![StreamItem::Json(text("translation"))]),
     };
     let error = StreamHttpError {
         status_code: 400,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
-    let so_far = [parsed(r#"{"id": 9}"#)];
+    let so_far = [StreamItem::Json(parsed(r#"{"id": 9}"#))];
     let request_data = BTreeMap::new();
     let emission = StreamErrorEmission {
         call_type: Some(CallType::SendMessage),
@@ -557,20 +589,20 @@ fn emit_http_error_returns_the_a2a_chunk_before_the_stream_starts() {
     let expected = parsed(
         r#"{"jsonrpc": "2.0", "id": 9, "error": {"code": -32603, "message": "blocked", "data": {}}}"#,
     );
-    assert_eq!(items.first(), Some(&expected));
+    assert_eq!(items.first(), Some(&StreamItem::Json(expected)));
 }
 
 #[test]
 fn emit_http_error_a2a_wins_over_a_started_stream_translation() {
     let translation = ProbeTranslation {
         block: BlockBehavior::Missing,
-        error_items: Some(vec![text("translation")]),
+        error_items: Some(vec![StreamItem::Json(text("translation"))]),
     };
     let error = StreamHttpError {
         status_code: 400,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
-    let so_far = [parsed(r#"{"id": 9}"#)];
+    let so_far = [StreamItem::Json(parsed(r#"{"id": 9}"#))];
     let request_data = BTreeMap::new();
     let emission = StreamErrorEmission {
         call_type: Some(CallType::AsendMessage),
@@ -584,21 +616,25 @@ fn emit_http_error_a2a_wins_over_a_started_stream_translation() {
     let expected = parsed(
         r#"{"jsonrpc": "2.0", "id": 9, "error": {"code": -32603, "message": "blocked", "data": {}}}"#,
     );
-    assert_eq!(items, vec![expected]);
+    assert_eq!(items, vec![StreamItem::Json(expected)]);
 }
 
 #[test]
 fn emit_http_error_uses_the_yielded_items_not_the_so_far_items() {
     let translation = ProbeTranslation {
         block: BlockBehavior::Missing,
-        error_items: Some(vec![text("frame")]),
+        error_items: Some(vec![StreamItem::Json(text("frame"))]),
     };
     let error = StreamHttpError {
         status_code: 422,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
-    let so_far = [chunk("a"), chunk("b"), chunk("c")];
-    let yielded = [chunk("sent")];
+    let so_far = [
+        StreamItem::Json(chunk("a")),
+        StreamItem::Json(chunk("b")),
+        StreamItem::Json(chunk("c")),
+    ];
+    let yielded = [StreamItem::Json(chunk("sent"))];
     let request_data = BTreeMap::new();
     let emission = StreamErrorEmission {
         call_type: Some(CallType::Completion),
@@ -610,14 +646,17 @@ fn emit_http_error_uses_the_yielded_items_not_the_so_far_items() {
     };
     let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(items.len(), 2);
-    assert_eq!(items.get(1), Some(&text("status=422;items=1;blocked")));
+    assert_eq!(
+        items.get(1),
+        Some(&StreamItem::Json(text("status=422;items=1;blocked")))
+    );
 }
 
 #[test]
 fn emit_http_error_not_started_gives_back_the_error() {
     let translation = ProbeTranslation {
         block: BlockBehavior::Missing,
-        error_items: Some(vec![text("frame")]),
+        error_items: Some(vec![StreamItem::Json(text("frame"))]),
     };
     let error = StreamHttpError {
         status_code: 400,
@@ -695,7 +734,10 @@ fn emit_http_error_hands_a_text_detail_to_the_translation() {
         responses_yielded: None,
     };
     let items = emit_streaming_http_error(error, &emission).unwrap();
-    assert_eq!(items, vec![text("status=403;items=0;denied")]);
+    assert_eq!(
+        items,
+        vec![StreamItem::Json(text("status=403;items=0;denied"))]
+    );
 }
 
 #[test]
@@ -721,13 +763,15 @@ fn emit_http_error_hands_an_object_detail_to_the_translation() {
     let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(
         items,
-        vec![text(r#"status=403;items=0;{"message":"denied"}"#)]
+        vec![StreamItem::Json(text(
+            r#"status=403;items=0;{"message":"denied"}"#
+        ))]
     );
 }
 
 #[test]
 fn a2a_request_id_reads_an_object_item() {
-    let responses = [parsed(r#"{"id": 42, "jsonrpc": "2.0"}"#)];
+    let responses = [StreamItem::Json(parsed(r#"{"id": 42, "jsonrpc": "2.0"}"#))];
     assert_eq!(
         a2a_request_id(&responses, &BTreeMap::new()),
         GuardrailValue::SignedInteger(42)
@@ -736,13 +780,16 @@ fn a2a_request_id_reads_an_object_item() {
 
 #[test]
 fn a2a_request_id_reads_a_json_string_item() {
-    let responses = [text(" {\"id\": \"req-1\"} ")];
+    let responses = [StreamItem::Json(text(" {\"id\": \"req-1\"} "))];
     assert_eq!(a2a_request_id(&responses, &BTreeMap::new()), text("req-1"));
 }
 
 #[test]
 fn a2a_request_id_null_in_an_object_item_ends_the_search() {
-    let responses = [parsed(r#"{"id": null}"#), parsed(r#"{"id": 7}"#)];
+    let responses = [
+        StreamItem::Json(parsed(r#"{"id": null}"#)),
+        StreamItem::Json(parsed(r#"{"id": 7}"#)),
+    ];
     assert_eq!(
         a2a_request_id(&responses, &BTreeMap::new()),
         GuardrailValue::Null
@@ -751,7 +798,10 @@ fn a2a_request_id_null_in_an_object_item_ends_the_search() {
 
 #[test]
 fn a2a_request_id_skips_strings_without_an_id() {
-    let responses = [text(r#"{"jsonrpc": "2.0"}"#), parsed(r#"{"id": 7}"#)];
+    let responses = [
+        StreamItem::Json(text(r#"{"jsonrpc": "2.0"}"#)),
+        StreamItem::Json(parsed(r#"{"id": 7}"#)),
+    ];
     assert_eq!(
         a2a_request_id(&responses, &BTreeMap::new()),
         GuardrailValue::SignedInteger(7)
@@ -761,10 +811,10 @@ fn a2a_request_id_skips_strings_without_an_id() {
 #[test]
 fn a2a_request_id_skips_unparsable_strings() {
     let responses = [
-        text("not json"),
-        text("[1, 2]"),
-        text("null"),
-        parsed(r#"{"id": 7}"#),
+        StreamItem::Json(text("not json")),
+        StreamItem::Json(text("[1, 2]")),
+        StreamItem::Json(text("null")),
+        StreamItem::Json(parsed(r#"{"id": 7}"#)),
     ];
     assert_eq!(
         a2a_request_id(&responses, &BTreeMap::new()),
@@ -792,6 +842,55 @@ fn a2a_request_id_without_a_body_id_is_null() {
     let request_data = BTreeMap::from([("body".to_owned(), parsed(r#"{"jsonrpc": "2.0"}"#))]);
     assert_eq!(a2a_request_id(&[], &request_data), GuardrailValue::Null);
     assert_eq!(a2a_request_id(&[], &BTreeMap::new()), GuardrailValue::Null);
+}
+
+#[test]
+fn raw_bytes_first_item_infers_no_call_type() {
+    let registry = registry(vec![("chat", CallType::Completion, true)]);
+    let routes = catalog(Vec::new());
+    let frame = StreamItem::Bytes(b"data: {\"object\": \"chat.completion.chunk\"}".to_vec());
+    assert_eq!(ResponseKind::of_stream_item(&frame), ResponseKind::Other);
+    assert!(resolve_endpoint_translation(&registry, &routes, None, Some(&frame)).is_none());
+}
+
+#[test]
+fn raw_a2a_request_id_skips_bytes() {
+    let responses = [
+        StreamItem::Bytes(b"{\"id\": \"x\"}".to_vec()),
+        StreamItem::Json(parsed(r#"{"id": "y"}"#)),
+    ];
+    assert_eq!(a2a_request_id(&responses, &BTreeMap::new()), text("y"));
+}
+
+#[test]
+fn raw_http_error_keeps_translation_bytes() {
+    let frame = b"event: error\ndata: {\"type\":\"error\"}\n\n".to_vec();
+    let translation = ProbeTranslation {
+        block: BlockBehavior::Missing,
+        error_items: Some(vec![StreamItem::Bytes(frame.clone())]),
+    };
+    let error = StreamHttpError {
+        status_code: 422,
+        detail: HttpErrorDetail::Text("blocked".to_owned()),
+    };
+    let yielded = [StreamItem::Json(chunk("sent"))];
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &[],
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: true,
+        responses_yielded: Some(&yielded),
+    };
+    let items = emit_streaming_http_error(error, &emission).unwrap();
+    assert_eq!(
+        items,
+        vec![
+            StreamItem::Bytes(frame),
+            StreamItem::Json(text("status=422;items=1;blocked")),
+        ]
+    );
 }
 
 #[test]

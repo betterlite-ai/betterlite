@@ -15,7 +15,8 @@ use super::failure::UndeliverableStreamRewrite;
 use super::legacy::LegacyHookStreamAdapter;
 use super::observer::StreamRewriteObserver;
 use super::shapes::{
-    RequestData, StreamInputs, ToolShape, count_change, tool_call_mismatch_reason, tool_call_shape,
+    RequestData, StreamInputs, StreamItem, ToolShape, count_change, tool_call_mismatch_reason,
+    tool_call_shape,
 };
 use super::step::{StepOutcome, StreamingStep, run_streaming_step};
 use super::traits::{
@@ -189,6 +190,27 @@ fn texts_of(items: &[GuardrailValue]) -> Vec<String> {
     texts
 }
 
+fn texts_of_items(items: &[StreamItem]) -> Vec<String> {
+    let mut texts = Vec::new();
+    for item in items {
+        if let StreamItem::Json(GuardrailValue::Text(text)) = item {
+            texts.push(text.clone());
+        }
+    }
+    texts
+}
+
+fn item_kinds(items: &[StreamItem]) -> GuardrailValue {
+    let kinds = items
+        .iter()
+        .map(|item| match item {
+            StreamItem::Json(_) => GuardrailValue::Text("json".to_owned()),
+            StreamItem::Bytes(_) => GuardrailValue::Text("bytes".to_owned()),
+        })
+        .collect();
+    GuardrailValue::Array(kinds)
+}
+
 fn assembled(texts: &[&str], tools: &[GuardrailValue]) -> GuardrailValue {
     let text_items = texts
         .iter()
@@ -248,7 +270,7 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<DELIVERS> {
 
     async fn process_streaming_response<Guardrail>(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &mut Guardrail,
         call: StreamCall<'_, ()>,
     ) -> Result<(), FakeError>
@@ -256,7 +278,9 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<DELIVERS> {
         Guardrail: StreamGuardrail<(), Failure = FakeError>,
     {
         let request_data = call.request_data.unwrap();
-        let texts = texts_of(responses_so_far);
+        let texts = texts_of_items(responses_so_far);
+        let text_count = texts.len();
+        request_data.insert("seen_kinds".to_owned(), item_kinds(responses_so_far));
         let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
         let tools = self.tools.clone().unwrap_or_default();
         match self.stored {
@@ -280,9 +304,18 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<DELIVERS> {
         };
         let outputs = guardrail.apply_guardrail(inputs, call_args).await?;
         if let Some(rewritten) = outputs.texts
-            && rewritten.len() == responses_so_far.len()
+            && rewritten.len() == text_count
         {
-            *responses_so_far = rewritten.into_iter().map(GuardrailValue::Text).collect();
+            let mut pending_texts = rewritten.into_iter();
+            for item in responses_so_far.iter_mut() {
+                let StreamItem::Json(GuardrailValue::Text(_)) = item else {
+                    continue;
+                };
+                let Some(text) = pending_texts.next() else {
+                    break;
+                };
+                *item = StreamItem::Json(GuardrailValue::Text(text));
+            }
         }
         request_data.insert(
             "delivered_tools".to_owned(),
@@ -306,10 +339,10 @@ fn tool(name: &str, arguments: &str) -> GuardrailValue {
     )]))
 }
 
-fn chunks(texts: &[&str]) -> Vec<GuardrailValue> {
+fn chunks(texts: &[&str]) -> Vec<StreamItem> {
     texts
         .iter()
-        .map(|text| GuardrailValue::Text((*text).to_owned()))
+        .map(|text| StreamItem::Json(GuardrailValue::Text((*text).to_owned())))
         .collect()
 }
 
@@ -324,7 +357,7 @@ fn record_applied(request_data: &mut RequestData, guardrail_name: &str) {
 
 struct Run {
     outcome: Result<StepOutcome, FakeError>,
-    chunks: Vec<GuardrailValue>,
+    chunks: Vec<StreamItem>,
     hook_input: RequestData,
 }
 
@@ -333,7 +366,15 @@ async fn run<const DELIVERS: bool>(
     translation: &Translation<DELIVERS>,
     texts: &[&str],
 ) -> Run {
-    let mut streaming_chunks = chunks(texts);
+    let streaming_chunks = chunks(texts);
+    run_items(fake, translation, streaming_chunks).await
+}
+
+async fn run_items<const DELIVERS: bool>(
+    fake: &mut Fake,
+    translation: &Translation<DELIVERS>,
+    mut streaming_chunks: Vec<StreamItem>,
+) -> Run {
     let mut hook_input = RequestData::from([(
         "response".to_owned(),
         GuardrailValue::Text("stale".to_owned()),
@@ -472,6 +513,48 @@ async fn streaming_rewrite_errors(
     assert_eq!(result.outcome, expected);
     assert_eq!(result.chunks, chunks(&["a"]));
     assert_eq!(applied_names(&result.hook_input), None);
+}
+
+#[tokio::test]
+async fn bytes_item_reaches_the_translation_in_place() {
+    let mut fake = Fake::new(UNIFIED);
+    fake.texts_out = Some(vec!["A".to_owned(), "B".to_owned()]);
+    let translation = Translation::<true>::new(None);
+    let raw = b"data: {\"delta\":\"x\"}".to_vec();
+    let items = vec![
+        StreamItem::Json(GuardrailValue::Text("a".to_owned())),
+        StreamItem::Bytes(raw.clone()),
+        StreamItem::Json(GuardrailValue::Text("b".to_owned())),
+    ];
+    let result = run_items(&mut fake, &translation, items.clone()).await;
+    assert_eq!(result.outcome, Ok(StepOutcome::Applied));
+    assert_eq!(
+        result.hook_input.get("seen_kinds"),
+        Some(&item_kinds(&items))
+    );
+    let rewritten = vec![
+        StreamItem::Json(GuardrailValue::Text("A".to_owned())),
+        StreamItem::Bytes(raw),
+        StreamItem::Json(GuardrailValue::Text("B".to_owned())),
+    ];
+    assert_eq!(result.chunks, rewritten);
+}
+
+#[tokio::test]
+async fn bytes_item_survives_a_discarded_rewrite() {
+    let mut fake = Fake::new(UNIFIED);
+    fake.texts_out = Some(vec!["A".to_owned()]);
+    let translation = Translation::<false>::new(None);
+    let items = vec![
+        StreamItem::Json(GuardrailValue::Text("a".to_owned())),
+        StreamItem::Bytes(b"data: raw".to_vec()),
+    ];
+    let result = run_items(&mut fake, &translation, items.clone()).await;
+    let outcome = StepOutcome::Discarded {
+        reason: NO_WRITE_BACK.to_owned(),
+    };
+    assert_eq!(result.outcome, Ok(outcome));
+    assert_eq!(result.chunks, items);
 }
 
 #[tokio::test]

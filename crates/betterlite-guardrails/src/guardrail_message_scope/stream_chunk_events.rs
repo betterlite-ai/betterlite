@@ -14,8 +14,16 @@ pub fn anthropic_stream_chunk_events(item: &StreamItem) -> Vec<Object> {
     }
 }
 
+#[must_use]
+pub fn stream_item_value(item: &StreamItem) -> GuardrailValue {
+    match item {
+        StreamItem::Json(value) => value.clone(),
+        StreamItem::Bytes(bytes) => GuardrailValue::Text(decode_replacing_invalid(bytes)),
+    }
+}
+
 // Python's errors="replace": one U+FFFD per invalid sequence. String::from_utf8_lossy does the same but clippy.toml bans it.
-fn decode_replacing_invalid(bytes: &[u8]) -> String {
+pub fn decode_replacing_invalid(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len());
     for chunk in bytes.utf8_chunks() {
         text.push_str(chunk.valid());

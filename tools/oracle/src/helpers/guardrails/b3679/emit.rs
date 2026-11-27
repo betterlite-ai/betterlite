@@ -4,6 +4,8 @@ use std::future::{Future, ready};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
 use betterlite_guardrails::unified_dispatch::emit::{
     HttpErrorDetail, StreamErrorEmission, StreamHttpError, emit_streaming_http_error,
@@ -53,7 +55,7 @@ pub(crate) struct EmissionRequest {
 }
 
 pub(super) struct ScriptedTranslation {
-    error_items: Option<Vec<GuardrailValue>>,
+    error_items: Option<Vec<StreamItem>>,
 }
 
 impl BaseTranslation for ScriptedTranslation {
@@ -82,12 +84,14 @@ impl BaseTranslation for ScriptedTranslation {
     fn build_stream_error_items(
         &self,
         _failure: &Self::Failure,
-        responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         let items = self.error_items.as_ref()?;
-        let count = responses_so_far.map_or(0, <[GuardrailValue]>::len);
+        let count = responses_so_far.map_or(0, <[StreamItem]>::len);
         let mut echoed = items.clone();
-        echoed.push(GuardrailValue::Text(format!("items={count}")));
+        echoed.push(StreamItem::Json(GuardrailValue::Text(format!(
+            "items={count}"
+        ))));
         Some(echoed)
     }
 }
@@ -101,22 +105,41 @@ pub(super) fn emission(request: &EmissionRequest) -> HelperResult {
         .translation
         .as_ref()
         .map(|script| ScriptedTranslation {
-            error_items: script.error_items.clone(),
+            error_items: script
+                .error_items
+                .as_ref()
+                .map(|items| items.iter().cloned().map(StreamItem::Json).collect()),
         });
+    let responses_so_far: Vec<StreamItem> = request
+        .responses_so_far
+        .iter()
+        .cloned()
+        .map(StreamItem::Json)
+        .collect();
+    let responses_yielded = request.responses_yielded.as_ref().map(|items| {
+        items
+            .iter()
+            .cloned()
+            .map(StreamItem::Json)
+            .collect::<Vec<_>>()
+    });
     let outcome = emit_streaming_http_error(
         error,
         &StreamErrorEmission {
             call_type: request.call_type,
-            responses_so_far: &request.responses_so_far,
+            responses_so_far: &responses_so_far,
             request_data: &request.request_data,
             translation: scripted.as_ref(),
             stream_started: request.stream_started,
-            responses_yielded: request.responses_yielded.as_deref(),
+            responses_yielded: responses_yielded.as_deref(),
         },
     );
     match outcome {
         Ok(items) => {
-            let collected: Result<Vec<Value>, _> = items.iter().map(to_json).collect();
+            let collected: Result<Vec<Value>, _> = items
+                .iter()
+                .map(|item| to_json(&stream_item_value(item)))
+                .collect();
             Ok(json!({"items": collected?}))
         }
         Err(failure) => Ok(json!({"error": error_json(&failure)?})),

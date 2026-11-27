@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
-use super::anthropic_stream_chunk_events;
+use super::{anthropic_stream_chunk_events, stream_item_value};
 use crate::guardrail_message_scope::StreamItem;
 
 fn text_item(chunk: &str) -> StreamItem {
@@ -94,6 +94,21 @@ fn invalid_utf8_becomes_a_replacement_character() {
 fn a_truncated_sequence_is_one_replacement_character() {
     let item = StreamItem::Bytes(b"data: {\"type\":\"\xe2\x82\"}".to_vec());
     assert_eq!(parsed_types(&item), ["\u{FFFD}"]);
+}
+
+#[test]
+fn item_value_decodes_bytes_with_replacement() {
+    let item = StreamItem::Bytes(b"a\xffb".to_vec());
+    assert_eq!(
+        stream_item_value(&item),
+        GuardrailValue::Text("a\u{FFFD}b".to_owned())
+    );
+}
+
+#[test]
+fn item_value_returns_json_unchanged() {
+    let value = serde_json::from_str::<GuardrailValue>("{\"type\":\"a\",\"n\":1}").unwrap();
+    assert_eq!(stream_item_value(&StreamItem::Json(value.clone())), value);
 }
 
 #[rstest]

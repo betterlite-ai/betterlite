@@ -3,7 +3,9 @@ use std::future::{Future, ready};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::guardrails::streaming_rewrite::failure::UndeliverableStreamRewrite;
-use betterlite_core::guardrails::streaming_rewrite::shapes::{RequestData, StreamInputs};
+use betterlite_core::guardrails::streaming_rewrite::shapes::{
+    RequestData, StreamInputs, StreamItem,
+};
 use betterlite_core::guardrails::streaming_rewrite::traits::{
     ApplySurface, GuardrailCall, GuardrailCallback, HookSurface, InputType, NamedGuardrail,
     PostCallHook, PostCallSurface, RewriteFailure, StreamCall, StreamGuardrail, StreamTranslation,
@@ -120,6 +122,16 @@ fn texts_of(items: &[GuardrailValue]) -> Vec<String> {
     texts
 }
 
+fn texts_of_items(items: &[StreamItem]) -> Vec<String> {
+    let mut texts = Vec::with_capacity(items.len());
+    for item in items {
+        if let StreamItem::Json(GuardrailValue::Text(text)) = item {
+            texts.push(text.clone());
+        }
+    }
+    texts
+}
+
 fn scanned_inputs(response: &GuardrailValue) -> Option<StreamInputs> {
     let GuardrailValue::Object(fields) = response else {
         return None;
@@ -170,7 +182,7 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
 
     async fn process_streaming_response<Guardrail>(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &mut Guardrail,
         call: StreamCall<'_, ()>,
     ) -> Result<(), StepError>
@@ -178,7 +190,8 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
         Guardrail: StreamGuardrail<(), Failure = StepError>,
     {
         let request_data = call.request_data.ok_or(StepError::NoRequestData)?;
-        let texts = texts_of(responses_so_far);
+        let texts = texts_of_items(responses_so_far);
+        let text_count = texts.len();
         let tool_calls = self.script.tool_calls.clone();
         let stored_tools = tool_calls.clone().unwrap_or_default();
         request_data.insert(
@@ -198,9 +211,18 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
         let outputs = guardrail.apply_guardrail(inputs, call_args).await?;
         if call.deliver_ended_stream_rewrites
             && let Some(rewritten) = outputs.texts
-            && rewritten.len() == responses_so_far.len()
+            && rewritten.len() == text_count
         {
-            *responses_so_far = rewritten.into_iter().map(GuardrailValue::Text).collect();
+            let mut pending_texts = rewritten.into_iter();
+            for item in responses_so_far.iter_mut() {
+                let StreamItem::Json(GuardrailValue::Text(_)) = item else {
+                    continue;
+                };
+                let Some(text) = pending_texts.next() else {
+                    break;
+                };
+                *item = StreamItem::Json(GuardrailValue::Text(text));
+            }
         }
         if let Some(delivered) = outputs.tool_calls {
             request_data.insert(

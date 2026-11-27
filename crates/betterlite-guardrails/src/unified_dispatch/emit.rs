@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::guardrail_message_scope::StreamItem;
 use crate::guardrail_translation::BaseTranslation;
 use crate::unified_dispatch::registry::A2A_CALL_TYPES;
 
@@ -32,17 +33,20 @@ fn display_detail(detail: &HttpErrorDetail) -> String {
 
 #[must_use]
 pub fn a2a_request_id(
-    responses_so_far: &[GuardrailValue],
+    responses_so_far: &[StreamItem],
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> GuardrailValue {
     for item in responses_so_far {
-        if let GuardrailValue::Object(fields) = item {
+        let StreamItem::Json(value) = item else {
+            continue;
+        };
+        if let GuardrailValue::Object(fields) = value {
             if let Some(id) = fields.get("id") {
                 return id.clone();
             }
             continue;
         }
-        let GuardrailValue::Text(frame) = item else {
+        let GuardrailValue::Text(frame) = value else {
             continue;
         };
         let Ok(GuardrailValue::Object(fields)) =
@@ -130,7 +134,7 @@ pub fn handle_streaming_block<T>(
     translation: &T,
     failure: GuardrailFailure,
     stream_started: bool,
-    responses_so_far: &[GuardrailValue],
+    responses_so_far: &[StreamItem],
 ) -> Result<Vec<Vec<u8>>, GuardrailFailure>
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
@@ -143,17 +147,17 @@ where
 // one value for the state emit_streaming_http_error reads, since the six arguments pass the five-argument limit
 pub struct StreamErrorEmission<'state, T: ?Sized> {
     pub call_type: Option<CallType>,
-    pub responses_so_far: &'state [GuardrailValue],
+    pub responses_so_far: &'state [StreamItem],
     pub request_data: &'state BTreeMap<String, GuardrailValue>,
     pub translation: Option<&'state T>,
     pub stream_started: bool,
-    pub responses_yielded: Option<&'state [GuardrailValue]>,
+    pub responses_yielded: Option<&'state [StreamItem]>,
 }
 
 pub fn emit_streaming_http_error<T>(
     error: StreamHttpError,
     emission: &StreamErrorEmission<'_, T>,
-) -> Result<Vec<GuardrailValue>, StreamHttpError>
+) -> Result<Vec<StreamItem>, StreamHttpError>
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {
@@ -162,7 +166,8 @@ where
         .is_some_and(|candidate| A2A_CALL_TYPES.contains(&candidate))
     {
         let request_id = a2a_request_id(emission.responses_so_far, emission.request_data);
-        return Ok(vec![a2a_jsonrpc_error_chunk(&error, request_id)]);
+        let chunk = a2a_jsonrpc_error_chunk(&error, request_id);
+        return Ok(vec![StreamItem::Json(chunk)]);
     }
     if emission.stream_started
         && let Some(handler) = emission.translation

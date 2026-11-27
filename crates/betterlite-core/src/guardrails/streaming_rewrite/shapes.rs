@@ -4,6 +4,13 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 pub type RequestData = BTreeMap<String, GuardrailValue>;
 
+// One streamed item as LiteLLM's guardrails see it: a parsed object or a raw frame
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamItem {
+    Json(GuardrailValue),
+    Bytes(Vec<u8>),
+}
+
 // LiteLLM's GenericGuardrailAPIInputs, reduced to the keys the rewrite step reads
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StreamInputs {

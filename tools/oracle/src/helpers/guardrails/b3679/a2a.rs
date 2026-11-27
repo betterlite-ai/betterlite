@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::unified_dispatch::emit::{
     StreamHttpError, a2a_jsonrpc_error_chunk, a2a_request_id,
 };
@@ -18,10 +19,13 @@ pub(crate) struct RequestIdRequest {
 }
 
 pub(super) fn request_id(request: &RequestIdRequest) -> HelperResult {
-    to_json(&a2a_request_id(
-        &request.responses_so_far,
-        &request.request_data,
-    ))
+    let responses_so_far: Vec<StreamItem> = request
+        .responses_so_far
+        .iter()
+        .cloned()
+        .map(StreamItem::Json)
+        .collect();
+    to_json(&a2a_request_id(&responses_so_far, &request.request_data))
 }
 
 #[derive(Debug, Deserialize)]
