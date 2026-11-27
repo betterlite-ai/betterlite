@@ -612,7 +612,7 @@ impl UserStore for ScriptedUserStore {
 
 #[derive(Default)]
 pub(super) struct UserCachePort {
-    pub(super) cached: Mutex<Option<LiteLLMUserTable>>,
+    pub(super) cached: Mutex<BTreeMap<String, LiteLLMUserTable>>,
     pub(super) reads: Mutex<Vec<String>>,
     pub(super) writes: Mutex<Vec<String>>,
 }
@@ -630,7 +630,12 @@ impl UserCache for UserCachePort {
             .lock()
             .expect("the user cache reads")
             .push(key.to_owned());
-        Ok(self.cached.lock().expect("the cached user").clone())
+        Ok(self
+            .cached
+            .lock()
+            .expect("the cached users")
+            .get(key)
+            .cloned())
     }
 
     async fn write(
@@ -643,7 +648,10 @@ impl UserCache for UserCachePort {
             .lock()
             .expect("the user cache writes")
             .push(key.to_owned());
-        *self.cached.lock().expect("the cached user") = Some(user.clone());
+        self.cached
+            .lock()
+            .expect("the cached users")
+            .insert(key.to_owned(), user.clone());
         Ok(())
     }
 
