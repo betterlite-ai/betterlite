@@ -1,6 +1,6 @@
 id: B10149
 milestone: M4 keys, spend and management
-title: User search predicate for the user list and UI user search
+title: User search predicate and user filter SQL for the user list and UI user search
 status: todo
 depends_on: [B700, B716, B770, B897, B2334]
 file: tasks/B10149-user-search-predicate.yaml

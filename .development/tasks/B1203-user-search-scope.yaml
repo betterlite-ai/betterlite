@@ -29,10 +29,10 @@ description: >-
 
   Reject a missing database before the try block with HTTPException 500 and detail.error No db connected.
   Inside the try block, scope first, then compute skip=(page-1)*page_size. Truthy user_id and user_email
-  each add an insensitive contains condition, combined with AND. The search OR is B10149's: call its
+  each add an insensitive contains condition, combined with AND in one UserSearchTerm rendered by B10149's user_term_sql. The search OR is B10149's: call its
   user_search_where(search) and, when it gives Some, AND its user_search_sql fragment with the individual
   filters, writing no OR of your own. Empty strings add nothing. A non-null org
-  list adds organization_memberships.some.organization_id.in. Drop None-valued predicates and call B790's
+  list adds organization_memberships.some.organization_id.in through B10149's organization_membership_sql. Drop None-valued predicates and call B790's
   user-table accessor once with take=page_size and created_at descending, without a tiebreaker or count.
   No rows returns []; populated rows validate through the two-field response projection.
 

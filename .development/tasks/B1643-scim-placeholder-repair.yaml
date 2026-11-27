@@ -11,7 +11,7 @@ description: >-
   non-null sso_user_id (even an empty string), any owned key, no matched account, or more
   than one matched account. These refusals occur before memberships are changed.
   On the single-target path, snapshot placeholder.teams, add the real account to each team
-  through B1637's idempotent add helper, invoke B10150's ScimUserDeletion::delete_user for
+  through B10024's patch_team_membership (one Add per team, where an existing member is a no-op), invoke B10150's ScimUserDeletion::delete_user for
   the placeholder, then recompute the target's global role through B1635. Return
   placeholder_user_id, merged_into_user_id and the original ordered team_ids, with default
   200 JSON semantics. The merge has no encompassing transaction: an add or delete failure

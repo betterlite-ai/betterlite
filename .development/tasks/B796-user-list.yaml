@@ -29,11 +29,11 @@ description: >-
   edge in empty_org_id_filter_gap instead of inventing validation in this handler.
 
   Build conjunctive filters: truthy role is exact, with no role-enum validation; truthy user_ids
-  splits/strips/drops blanks, then ONE ID uses case-insensitive contains, zero or multiple use
-  exact IN. Non-null user_email uses insensitive contains even for empty string. Non-null team
+  splits/strips/drops blanks, then ONE ID uses case-insensitive contains (B10149's user_term_sql), zero or multiple use
+  exact IN. Non-null user_email uses insensitive contains even for empty string (user_term_sql too). Non-null team
   uses teams.has even for empty string. Non-null sso_user_ids uses split/strip/drop-blank exact
   IN, including empty IN. Truthy organization_ids adds membership.some organization_id IN only
-  when the stripped list is nonempty. Merge B10149's user_search_where through its user_search_sql
+  when the stripped list is nonempty, rendered by B10149's organization_membership_sql. Merge B10149's user_search_where through its user_search_sql
   fragment, writing no OR of your own: falsey search adds nothing, otherwise OR of insensitive
   user_id/user_email contains without trimming. AND it with other filters, removing only top-level
   null predicates. Cases role_unknown_empty_result,
