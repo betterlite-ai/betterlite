@@ -186,9 +186,7 @@ impl StageInput {
 
 // the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
 fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
-    if backend == input.backend()
-        || (backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_)))
-    {
+    if backend == input.backend() || (backend == MasterKey && matches!(input, Authenticated(_))) {
         return Ok(());
     }
     Err(StageFailure::from(AuthenticationFailure::Missing))
@@ -203,7 +201,7 @@ pub(crate) fn dispatch(
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
-        StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
+        StageInput::MasterKey(presented) => master_key_stage(presented.as_ref(), master_key),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
@@ -252,20 +250,15 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
 }
 
 fn master_key_stage(
-    input: &StageInput,
+    presented: Option<&SecretString>,
     master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
+) -> Result<AuthContext, StageFailure> {
+    master_key_context(presented, master_key)
+        .ok_or_else(|| match presented {
+            Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+            Some(_) | None => AuthenticationFailure::Missing,
+        })
+        .map_err(StageFailure::from)
 }
 
 // The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
@@ -281,10 +274,7 @@ pub(crate) fn master_key_context(
                     .ct_eq(master_key.expose_secret().as_bytes()),
             )
     });
-    if !matched {
-        return None;
-    }
-    Some(AuthContext {
+    matched.then(|| AuthContext {
         principal: Principal {
             principal_type: PrincipalType::ServiceAccount,
             subject: "master_key".to_owned(),
