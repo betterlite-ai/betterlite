@@ -39,7 +39,11 @@ fn run_method(method: &str, payload: &str, blobs: Vec<Vec<u8>>) -> PyResult<Stri
     Python::attach(|py| {
         let module = PyModule::new(py, "video_edit_test")?;
         register(&module)?;
-        assert!(module.hasattr("NativeVideoEditError")?);
+        if !module.hasattr("NativeVideoEditError")? {
+            return Err(PyRuntimeError::new_err(
+                "register did not expose NativeVideoEditError",
+            ));
+        }
         let session = module
             .getattr("NativeVideoEditSession")?
             .call1((r#"{"environment":{}}"#,))?;
