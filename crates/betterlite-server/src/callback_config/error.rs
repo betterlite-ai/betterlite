@@ -24,15 +24,17 @@ pub enum CallbackConfigError {
     StorageDisabled,
     #[error("Callback '{name}' not found in active configuration")]
     CallbackNotFound { name: String },
-    #[error("{}", .0.error)]
-    ConfigOwned(Box<ConfigOwnedDetail>),
     #[error("{field} must be {expected}")]
     InvalidConfig {
         field: String,
         expected: &'static str,
     },
-    #[error("{message}")]
-    Failure { message: String },
+    #[error("{0}")]
+    Overlay(#[from] ConfigOverlayPortError),
+    #[error("{0}")]
+    State(#[from] ConfigStateError),
+    #[error("{0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl CallbackConfigError {
@@ -56,10 +58,13 @@ impl CallbackConfigError {
                 StatusCode::NOT_FOUND,
                 &format!("Callback '{name}' not found in active configuration"),
             ),
-            Self::ConfigOwned(detail) => {
+            Self::State(ConfigStateError::ConfigOwned(detail)) => {
                 (StatusCode::BAD_REQUEST, Json(OwnedDetail { detail })).into_response()
             }
-            other @ (Self::InvalidConfig { .. } | Self::Failure { .. }) => proxy_failure(
+            other @ (Self::InvalidConfig { .. }
+            | Self::Overlay(_)
+            | Self::State(_)
+            | Self::Json(_)) => proxy_failure(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 &format!("{DELETE_FAILURE_PREFIX}{other}"),
                 "internal_server_error",
@@ -77,25 +82,6 @@ impl CallbackConfigError {
             "None",
             "400",
         )
-    }
-}
-
-impl From<ConfigOverlayPortError> for CallbackConfigError {
-    fn from(error: ConfigOverlayPortError) -> Self {
-        Self::Failure {
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<ConfigStateError> for CallbackConfigError {
-    fn from(error: ConfigStateError) -> Self {
-        if let ConfigStateError::ConfigOwned(detail) = error {
-            return Self::ConfigOwned(detail);
-        }
-        Self::Failure {
-            message: error.to_string(),
-        }
     }
 }
 

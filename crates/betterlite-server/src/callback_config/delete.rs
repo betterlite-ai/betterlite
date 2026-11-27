@@ -44,21 +44,11 @@ pub(crate) async fn delete_callback(
     };
     let identity = match caller_identity(&context.principal) {
         Ok(identity) => identity,
-        Err(error) => {
-            return CallbackConfigError::Failure {
-                message: error.to_string(),
-            }
-            .into_delete_response();
-        }
+        Err(error) => return CallbackConfigError::Json(error).into_delete_response(),
     };
     let audit_identity = match audit_caller(&identity, &context.principal) {
         Ok(audit_identity) => audit_identity,
-        Err(error) => {
-            return CallbackConfigError::Failure {
-                message: error.to_string(),
-            }
-            .into_delete_response();
-        }
+        Err(error) => return CallbackConfigError::Json(error).into_delete_response(),
     };
     match remove_callback(&state, &identity, &audit_identity, &request.callback_name).await {
         Ok(reply) => Json(reply).into_response(),

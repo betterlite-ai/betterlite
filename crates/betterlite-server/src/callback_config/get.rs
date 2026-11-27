@@ -50,12 +50,7 @@ pub(crate) async fn get_config(
     };
     let identity = match caller_identity(&context.principal) {
         Ok(identity) => identity,
-        Err(error) => {
-            return CallbackConfigError::Failure {
-                message: error.to_string(),
-            }
-            .into_get_response();
-        }
+        Err(error) => return CallbackConfigError::Json(error).into_get_response(),
     };
     match config_callbacks(&state, &identity).await {
         Ok(reply) => Json(reply).into_response(),
