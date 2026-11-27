@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::ffi::{CString, OsStr};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -612,6 +613,10 @@ fn does_not_fall_back_when_soxr_fails() {
     assert_eq!(
         error.to_string(),
         "soxr.resample failed: RuntimeError: soxr failed"
+    );
+    assert_eq!(
+        error.source().unwrap().to_string(),
+        "builtins.RuntimeError: soxr failed"
     );
     assert_eq!(probe_events(&host), vec!["soxr.resample:8000:16000"]);
 }
