@@ -7,7 +7,6 @@ use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::exporter_options::failure_counter::CallbackFailureCounter;
-use betterlite_logging::exporter_options::redaction::ResponseStamp;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -16,6 +15,7 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_success::owned::OwnedSuccessHandler;
 use betterlite_logging::logging_success::ports::{
     StandardPayloadBuilder, StreamAssembler, SuccessClock,
 };
@@ -33,7 +33,7 @@ use indexmap::IndexMap;
 use crate::caching::hit_callbacks::context::{
     CACHING_DETAILS, CacheHitContext, record_cache_hit_context,
 };
-use crate::caching::hit_callbacks::job::{CacheHitCallbacks, OwnedSuccessHandler};
+use crate::caching::hit_callbacks::job::CacheHitCallbacks;
 
 pub(super) const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -193,12 +193,18 @@ pub(super) struct FakeLogger {
     pub(super) name: String,
     pub(super) calls: Arc<Calls>,
     pub(super) fail: bool,
+    pub(super) counter: Option<Arc<RecordingCounter>>,
 }
 
 #[async_trait]
 impl CallbackLogger for FakeLogger {
     fn callback_name(&self) -> &str {
         &self.name
+    }
+
+    fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter> {
+        let counter = self.counter.as_deref()?;
+        Some(counter)
     }
 
     async fn async_log_success_event(&self, _event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
@@ -301,11 +307,12 @@ impl Fixture {
         }
     }
 
-    pub(super) fn owned_handler(&self) -> OwnedSuccessHandler {
+    pub(super) fn owned_handler(&self) -> Arc<OwnedSuccessHandler> {
         let logger = Arc::new(FakeLogger {
             name: "langfuse".to_owned(),
             calls: Arc::clone(&self.calls),
             fail: self.fail,
+            counter: Some(Arc::clone(&self.counter)),
         });
         let mut registry = CallbackRegistry::new(10);
         let identity = CallbackIdentity {
@@ -316,9 +323,7 @@ impl Fixture {
         let sink = CallbackSink::Logger(handle);
         let registration = registry.register(identity, sink, CallbackList::Callbacks);
         assert_ne!(registration, Registration::SkippedCapacity);
-        let counter = Arc::clone(&self.counter);
-        let counter_handle: Arc<dyn CallbackFailureCounter + Send + Sync> = counter;
-        OwnedSuccessHandler {
+        Arc::new(OwnedSuccessHandler {
             registry: Arc::new(registry),
             payload_builder: Arc::new(FakeBuilder {
                 payload: Some(serde_json::from_str(PAYLOAD).unwrap()),
@@ -328,15 +333,10 @@ impl Fixture {
             clock: Arc::new(FixedClock {
                 now: time("2024-01-01T00:00:02+00:00"),
             }),
-            failure_counters: vec![counter_handle],
             excluded_fields: Vec::new(),
             known_callback: Arc::new(|_name: &str| false),
-            stamp: ResponseStamp {
-                id: "chatcmpl-1".to_owned(),
-                created: 1_704_067_200,
-            },
             privacy: Settings::default(),
-        }
+        })
     }
 
     pub(super) fn callbacks(&self, result: &Json) -> CacheHitCallbacks {
