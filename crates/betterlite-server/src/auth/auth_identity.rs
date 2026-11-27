@@ -11,6 +11,7 @@ use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
+use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
@@ -29,6 +30,7 @@ use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
+    AuthKeyLookup,
     MasterKey,
     AuthRequestPolicy,
     RequestBodySafety,
@@ -50,6 +52,7 @@ pub enum AuthBackend {
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
+    AuthBackend::AuthKeyLookup,
     AuthBackend::MasterKey,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
@@ -71,6 +74,8 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 
 #[derive(Clone, Debug)]
 pub enum StageInput {
+    AuthKeyLookup(Box<KeyLookupStageInput>),
+    Authenticated(Box<AuthContext>),
     MasterKey(Option<SecretString>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
@@ -128,6 +133,7 @@ pub trait BudgetAdmission {
 
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
+    KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
     EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
@@ -164,6 +170,7 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
+            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
             Self::MasterKey(_) => AuthBackend::MasterKey,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
@@ -190,10 +197,14 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if backend != input.backend() {
+    let key_pass_through =
+        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
+    if backend != input.backend() && !key_pass_through {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
+        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
+        StageInput::Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
@@ -246,7 +257,22 @@ fn master_key_stage(
     let StageInput::MasterKey(presented) = input else {
         return Err(AuthenticationFailure::Missing);
     };
-    let matched = presented.as_ref().is_some_and(|key| {
+    if let Some(context) = master_key_context(presented.as_ref(), master_key) {
+        return Ok(context);
+    }
+    let failure = match presented.as_ref() {
+        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+        Some(_) | None => AuthenticationFailure::Missing,
+    };
+    Err(failure)
+}
+
+// The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
+pub(crate) fn master_key_context(
+    presented: Option<&SecretString>,
+    master_key: &SecretString,
+) -> Option<AuthContext> {
+    let matched = presented.is_some_and(|key| {
         !key.expose_secret().is_empty()
             && bool::from(
                 key.expose_secret()
@@ -254,32 +280,28 @@ fn master_key_stage(
                     .ct_eq(master_key.expose_secret().as_bytes()),
             )
     });
-    if matched {
-        return Ok(AuthContext {
-            principal: Principal {
-                principal_type: PrincipalType::ServiceAccount,
-                subject: "master_key".to_owned(),
-                issuer: None,
-                audience: Vec::new(),
-                user: None,
-                organization: None,
-                teams: Vec::new(),
-                project: None,
-                end_user: None,
-                roles: Vec::new(),
-                scopes: Vec::new(),
-                auth_method: AuthMethod::ApiKey,
-                credential_ref: CredentialRef::default(),
-                network: NetworkContext::default(),
-                source_key: SourceKey::default(),
-            },
-        });
+    if !matched {
+        return None;
     }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
+    Some(AuthContext {
+        principal: Principal {
+            principal_type: PrincipalType::ServiceAccount,
+            subject: "master_key".to_owned(),
+            issuer: None,
+            audience: Vec::new(),
+            user: None,
+            organization: None,
+            teams: Vec::new(),
+            project: None,
+            end_user: None,
+            roles: Vec::new(),
+            scopes: Vec::new(),
+            auth_method: AuthMethod::ApiKey,
+            credential_ref: CredentialRef::default(),
+            network: NetworkContext::default(),
+            source_key: SourceKey::default(),
+        },
+    })
 }
 
 mod tests;

@@ -1,0 +1,21 @@
+kind: helper
+name: auth-key-lookup-auth-db-reconnect
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: sk-hashed-b
+    rows:
+      - kind: transport
+      - kind: row
+        fields: {token: sk-hashed-b, key_name: sk-ops, user_id: u2, team_id: t2, team_alias: beta}
+    reconnect: {answer: true}
+calls:
+  # the reconnect attempt carries the client's own timeouts
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: sk-hashed-b
+      rows:
+        - kind: transport
+      reconnect: {answer: false, timeout: 3.0, lock: 0.5}
+env: {}
+compare: {ignore: []}
