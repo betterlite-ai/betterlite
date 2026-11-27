@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::super::*;
 use crate::gateway_authorize::reply::{GatewayReply, RequestView};
 use crate::gateway_authorize::tests::support::{
@@ -121,43 +123,46 @@ async fn a_signed_out_native_request_goes_to_the_login_page() {
     );
 }
 
+#[rstest]
+#[case::unavailable(
+    ReloadUserFailure::Unavailable,
+    503,
+    OauthErrorCode::TemporarilyUnavailable,
+    DB_UNAVAILABLE_DESCRIPTION
+)]
+#[case::faulted(
+    ReloadUserFailure::Faulted,
+    503,
+    OauthErrorCode::TemporarilyUnavailable,
+    DB_FAULTED_DESCRIPTION
+)]
+#[case::unresolvable(
+    ReloadUserFailure::Unresolvable,
+    500,
+    OauthErrorCode::ServerError,
+    "the gateway is not configured to resolve users"
+)]
+#[case::no_active_key(
+    ReloadUserFailure::NoActiveKey,
+    403,
+    OauthErrorCode::AccessDenied,
+    "the signed-in user is not active"
+)]
 #[tokio::test]
-async fn a_consent_lookup_failure_maps_to_its_error() {
+async fn a_consent_lookup_failure_maps_to_its_error(
+    #[case] failure: ReloadUserFailure,
+    #[case] status: u16,
+    #[case] code: OauthErrorCode,
+    #[case] description: &str,
+) {
     let db_cipher = cipher(SALT);
-    for (failure, status, code, description) in [
-        (
-            ReloadUserFailure::Unavailable,
-            503,
-            OauthErrorCode::TemporarilyUnavailable,
-            DB_UNAVAILABLE_DESCRIPTION,
-        ),
-        (
-            ReloadUserFailure::Faulted,
-            503,
-            OauthErrorCode::TemporarilyUnavailable,
-            DB_FAULTED_DESCRIPTION,
-        ),
-        (
-            ReloadUserFailure::Unresolvable,
-            500,
-            OauthErrorCode::ServerError,
-            "the gateway is not configured to resolve users",
-        ),
-        (
-            ReloadUserFailure::NoActiveKey,
-            403,
-            OauthErrorCode::AccessDenied,
-            "the signed-in user is not active",
-        ),
-    ] {
-        let reply = consent_failure(failure, &db_cipher).await;
-        let GatewayReply::Error(error) = reply else {
-            panic!("expected an error");
-        };
-        assert_eq!(error.status, status);
-        assert_eq!(error.error, code);
-        assert_eq!(error.description, description);
-    }
+    let reply = consent_failure(failure, &db_cipher).await;
+    let GatewayReply::Error(error) = reply else {
+        panic!("expected an error");
+    };
+    assert_eq!(error.status, status);
+    assert_eq!(error.error, code);
+    assert_eq!(error.description, description);
 }
 
 #[tokio::test]

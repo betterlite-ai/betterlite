@@ -13,7 +13,10 @@ use crate::gateway_authorize::reply::{
 use crate::gateway_authorize::scope::{FlowTarget, flow_target};
 use crate::gateway_authorize::url_parts::{flow_cookie_name, origin_only};
 use crate::gateway_dcr::contracts::{
-    CONNECT_FLOW_DEBUG_KEY, DB_UNAVAILABLE_DESCRIPTION, MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS,
+    CONNECT_FLOW_DEBUG_KEY,
+    DB_UNAVAILABLE_DESCRIPTION,
+    // ast-grep-ignore: no-long-names
+    MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS,
 };
 use crate::gateway_dcr::models::ConnectFlow;
 use crate::gateway_dcr::oauth_error::OauthError;
@@ -27,6 +30,8 @@ use crate::gateway_dcr::sealed::open_sealed;
 use crate::gateway_dcr::single_use::{ClaimBackend, SingleUseGuard};
 use crate::registry::servers::ServerRegistry;
 use crate::server_record::MCPServer;
+
+const UNKNOWN_FLOW_DESCRIPTION: &str = "unknown or expired connect flow";
 
 pub struct ConnectFlowCall<'call> {
     pub view: &'call RequestView,
@@ -60,13 +65,13 @@ pub fn open_flow_for(
     cipher: &DbCipher,
 ) -> Result<ConnectFlow, OauthError> {
     let Some(sealed) = view.cookie(&flow_cookie_name(handle)) else {
-        return Err(unknown_connect_flow());
+        return Err(oauth_error(400, InvalidRequest, UNKNOWN_FLOW_DESCRIPTION));
     };
     let Some(flow) = open_sealed::<ConnectFlow>(sealed, "", cipher, CONNECT_FLOW_DEBUG_KEY) else {
-        return Err(unknown_connect_flow());
+        return Err(oauth_error(400, InvalidRequest, UNKNOWN_FLOW_DESCRIPTION));
     };
     if now >= flow.exp {
-        return Err(unknown_connect_flow());
+        return Err(oauth_error(400, InvalidRequest, UNKNOWN_FLOW_DESCRIPTION));
     }
     let Some(user_id) = session_user_id else {
         return Err(oauth_error(
@@ -149,7 +154,10 @@ where
     V: LookupVendorCredential + ?Sized,
     R: LookupServerReachability + ?Sized,
 {
-    GatewayReply::from(described_reply(call, ports, cipher).await)
+    match described_reply(call, ports, cipher).await {
+        Ok(reply) => reply,
+        Err(error) => GatewayReply::Error(error),
+    }
 }
 
 pub async fn complete_connect_flow<G, V, R>(
@@ -164,7 +172,10 @@ where
     V: LookupVendorCredential + ?Sized,
     R: LookupServerReachability + ?Sized,
 {
-    GatewayReply::from(completed(call, ports, cipher, guard, tokens).await)
+    match completed(call, ports, cipher, guard, tokens).await {
+        Ok(reply) => reply,
+        Err(error) => GatewayReply::Error(error),
+    }
 }
 
 fn flow_description(
@@ -198,6 +209,7 @@ fn server_display_name(server: &MCPServer) -> Option<String> {
 #[must_use]
 pub fn manual_delivery_page(callback_url: &str) -> String {
     let safe_url = escape_html(callback_url);
+    // ast-grep-ignore: no-long-names
     let minutes = MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS.div_euclid(60);
     format!(
         "<html><head><title>Finish connecting</title></head><body><h2>Almost done</h2>\
@@ -217,8 +229,4 @@ fn escape_html(text: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
-}
-
-fn unknown_connect_flow() -> OauthError {
-    oauth_error(400, InvalidRequest, "unknown or expired connect flow")
 }

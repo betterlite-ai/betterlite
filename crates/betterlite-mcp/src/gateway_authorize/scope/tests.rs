@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::*;
 use crate::gateway_authorize::tests::support::{
     BASE, DELEGATED_SERVER, M2M_SERVER, OAUTH_SERVER, Reach, flow, registry,
@@ -21,23 +23,19 @@ fn a_server_resource_selects_the_gateway_server() {
     assert_eq!(scoped.fields.server_id, "srv-a");
 }
 
-#[test]
-fn every_other_resource_shape_stays_unscoped() {
+#[rstest]
+#[case::absent(None)]
+#[case::aggregate(Some("https://proxy.test:8443/mcp"))]
+#[case::proxy_api(Some("https://proxy.test:8443"))]
+#[case::foreign_host(Some("https://other.test/srv-a/mcp"))]
+#[case::several_servers(Some("https://proxy.test:8443/srv-a/srv-c/mcp"))]
+#[case::unknown_server(Some("https://proxy.test:8443/unknown/mcp"))]
+#[case::delegated_only(Some("https://proxy.test:8443/srv-c/mcp"))]
+#[case::without_suffix(Some("https://proxy.test:8443/srv-a"))]
+fn every_other_resource_shape_stays_unscoped(#[case] resource: Option<&'static str>) {
     let registry = registry(&[OAUTH_SERVER, DELEGATED_SERVER]);
-    let shapes = [
-        None,
-        Some(format!("{BASE}/mcp")),
-        Some(BASE.to_owned()),
-        Some("https://other.test/srv-a/mcp".to_owned()),
-        Some(format!("{BASE}/srv-a/srv-c/mcp")),
-        Some(format!("{BASE}/unknown/mcp")),
-        Some(format!("{BASE}/srv-c/mcp")),
-        Some(format!("{BASE}/srv-a")),
-    ];
-    for resource in shapes {
-        let scoped = resolve_scoped_resource_server(&registry, BASE, resource.as_deref());
-        assert!(scoped.is_none(), "{resource:?}");
-    }
+    let scoped = resolve_scoped_resource_server(&registry, BASE, resource);
+    assert!(scoped.is_none(), "{resource:?}");
 }
 
 #[tokio::test]

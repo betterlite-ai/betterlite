@@ -12,8 +12,13 @@ use crate::gateway_authorize::url_parts::{
     append_query_params, cookie_path_and_secure, flow_cookie_name,
 };
 use crate::gateway_dcr::contracts::{
-    CLAIM_TTL_BUFFER_SECONDS, CONNECT_FLOW_TTL_SECONDS, FLOW_CLAIM_KEY_PREFIX,
-    GATEWAY_AUTH_CODE_PREFIX, GATEWAY_AUTH_CODE_TTL_SECONDS, MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS,
+    CLAIM_TTL_BUFFER_SECONDS,
+    CONNECT_FLOW_TTL_SECONDS,
+    FLOW_CLAIM_KEY_PREFIX,
+    GATEWAY_AUTH_CODE_PREFIX,
+    GATEWAY_AUTH_CODE_TTL_SECONDS,
+    // ast-grep-ignore: no-long-names
+    MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS,
     PROXY_API_AUDIENCE,
 };
 use crate::gateway_dcr::models::{ConnectFlow, GatewayAuthCode};

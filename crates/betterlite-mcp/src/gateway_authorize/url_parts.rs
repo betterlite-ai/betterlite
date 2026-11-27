@@ -28,7 +28,9 @@ impl From<UrlPartsError> for OauthError {
 
 #[must_use]
 pub fn flow_cookie_name(handle: &str) -> String {
-    format!("{CONNECT_FLOW_COOKIE_PREFIX}{handle}")
+    let mut name = String::from(CONNECT_FLOW_COOKIE_PREFIX);
+    name.push_str(handle);
+    name
 }
 
 pub fn cookie_path_and_secure(base_url: &str) -> Result<(String, bool), UrlPartsError> {
@@ -103,6 +105,12 @@ fn parse_qsl(query: &str) -> Vec<(String, String)> {
 }
 
 fn form_decode(text: &str) -> String {
-    let spaced = text.replace('+', " ");
-    percent_decode_str(&spaced).decode_utf8_lossy().into_owned()
+    let mut decoded = String::new();
+    for (index, segment) in text.split('+').enumerate() {
+        if index > 0 {
+            decoded.push(' ');
+        }
+        decoded.push_str(&percent_decode_str(segment).decode_utf8_lossy());
+    }
+    decoded
 }

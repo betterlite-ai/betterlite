@@ -4,6 +4,7 @@ mod native;
 
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
+use rstest::rstest;
 
 use super::*;
 use crate::gateway_authorize::reply::GatewayReply;
@@ -104,22 +105,26 @@ fn response_type_must_be_code() {
     assert_eq!(error.description, "response_type must be 'code'");
 }
 
+#[rstest]
+#[case::missing_challenge(None, Some("S256"))]
+#[case::empty_challenge(Some(""), Some("S256"))]
+#[case::plain_method(Some("c"), Some("plain"))]
+fn pkce_is_required_with_s256(
+    #[case] challenge: Option<&'static str>,
+    #[case] method: Option<&'static str>,
+) {
+    let mut case = Case::valid();
+    case.challenge = challenge;
+    case.method = method;
+    let error = rejected_authorize_request(&case.request(), &cipher(SALT)).unwrap();
+    assert_eq!(error.status, 400);
+    assert_eq!(error.error, OauthErrorCode::InvalidRequest);
+    assert_eq!(error.description, PKCE_DESCRIPTION);
+}
+
 #[test]
-fn pkce_is_required_with_s256() {
+fn a_valid_pkce_request_is_accepted() {
     let db_cipher = cipher(SALT);
-    for (challenge, method) in [
-        (None, Some("S256")),
-        (Some(""), Some("S256")),
-        (Some("c"), Some("plain")),
-    ] {
-        let mut case = Case::valid();
-        case.challenge = challenge;
-        case.method = method;
-        let error = rejected_authorize_request(&case.request(), &db_cipher).unwrap();
-        assert_eq!(error.status, 400);
-        assert_eq!(error.error, OauthErrorCode::InvalidRequest);
-        assert_eq!(error.description, PKCE_DESCRIPTION);
-    }
     assert!(rejected_authorize_request(&Case::valid().request(), &db_cipher).is_none());
 }
 

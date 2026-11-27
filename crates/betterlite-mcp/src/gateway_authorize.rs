@@ -31,5 +31,8 @@ pub(crate) fn no_cache_headers() -> Vec<(String, String)> {
 
 #[must_use]
 pub(crate) fn is_loopback_uri(redirect_uri: &str) -> bool {
-    urlparse(redirect_uri, "").is_ok_and(|parsed| is_loopback_redirect_host(&parsed))
+    let Ok(parsed) = urlparse(redirect_uri, "") else {
+        return false;
+    };
+    is_loopback_redirect_host(&parsed)
 }

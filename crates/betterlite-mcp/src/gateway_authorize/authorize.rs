@@ -146,7 +146,10 @@ pub fn aggregate_authorize(
     cipher: &DbCipher,
     tokens: &dyn FlowTokenSource,
 ) -> GatewayReply {
-    GatewayReply::from(aggregate_reply(call, registry, cipher, tokens))
+    match aggregate_reply(call, registry, cipher, tokens) {
+        Ok(reply) => reply,
+        Err(error) => GatewayReply::Error(error),
+    }
 }
 
 fn aggregate_reply(
