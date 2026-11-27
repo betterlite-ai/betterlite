@@ -142,9 +142,8 @@ def run(input_value: Input) -> JsonValue:
     reset_environment(environment)
     litellm.model_alias_map = input_value["model_alias_map"]
     litellm.model_cost = input_value["model_cost"]
-    if input_value["function"] == "transform_records":
-        config = BatchRecordsConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L392-L394
-        return config.converted(input_value["records"], input_value["target_model"])
     config = BatchRecordsConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L392-L394
+    if input_value["function"] == "transform_records":
+        return config.converted(input_value["records"], input_value["target_model"])
     botocore.auth.get_current_datetime = FixedNow(input_value["now"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1172
     return upload(config, input_value)

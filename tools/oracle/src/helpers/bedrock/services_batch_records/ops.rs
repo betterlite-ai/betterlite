@@ -27,10 +27,7 @@ use super::fixture::{CaseLookup, Sources, epoch, helper_error, secrets};
 use super::input::{CreateFileRequest, Input, TransformRecords};
 
 // The families run synchronous operations and a ready credential seam, so every poll has its answer.
-pub(super) fn block_on_ready<F>(future: F) -> F::Output
-where
-    F: Future,
-{
+pub(super) fn block_on_ready<F: Future>(future: F) -> F::Output {
     let mut context = Context::from_waker(Waker::noop());
     let mut pinned = pin!(future);
     loop {
@@ -160,14 +157,6 @@ fn held_credentials(environment: &BTreeMap<String, String>) -> Credentials {
     }
 }
 
-fn upload_file(call: &CreateFileRequest) -> FileData {
-    FileData::Tuple3 {
-        filename: call.file.filename.clone(),
-        content: FileBody::Bytes(call.file.content.as_bytes().to_vec()),
-        content_type: call.file.content_type.clone(),
-    }
-}
-
 fn upload_answer(handoff: &FileUploadHandoff, litellm: &RequestParams) -> Value {
     json!({
         "failed": false,
@@ -226,7 +215,11 @@ fn upload(call: &CreateFileRequest) -> HelperResult {
         lookup: &lookup,
         resolution: &resolution,
     };
-    let file = upload_file(call);
+    let file = FileData::Tuple3 {
+        filename: call.file.filename.clone(),
+        content: FileBody::Bytes(call.file.content.as_bytes().to_vec()),
+        content_type: call.file.content_type.clone(),
+    };
     let (signed, litellm) = sign_upload(call, &context, &file)?;
     signed.map_or_else(
         || Ok(json!({ "failed": true })),

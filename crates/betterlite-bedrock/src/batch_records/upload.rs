@@ -6,13 +6,10 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_logging::python_json;
-use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::CreatePurpose;
 use betterlite_prompts::media_metadata::FileData;
 use betterlite_prompts::media_metadata::extract_file_data;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use secrecy::ExposeSecret as _;
-use serde_json::value::RawValue;
 use uuid::Uuid;
 
 use super::error::BatchRecordsError;
@@ -21,7 +18,7 @@ use super::record::{LINE_BOUNDARIES, decode_batch_input_line};
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::credentials::error::CredentialError;
-use crate::request_policy::aws_params::merge_aws_request_params;
+use crate::request_policy::aws_params::{merge_aws_request_params, raw_params};
 use crate::request_policy::{Params, RequestValue};
 use crate::s3_access::settings::{
     S3Setting, S3SettingSources, SettingMap, SettingValue, resolve_s3_setting,
@@ -149,12 +146,12 @@ where
             environment: request.environment,
         },
     )?;
-    let raw_params = raw_params(&request_params)?;
+    let encoded_params = raw_params(&request_params).map_err(BatchRecordsError::Wire)?;
     sign_s3_request(
         S3PutRequest {
             content,
             api_base,
-            optional_params: &raw_params,
+            optional_params: &encoded_params,
             encryption_key_id: encryption_key_id.as_ref(),
             region_inputs: request.region_inputs,
             now: request.now,
@@ -241,38 +238,6 @@ fn setting_map(params: &Params) -> SettingMap {
             (name.clone(), setting)
         })
         .collect()
-}
-
-fn raw_params(params: &Params) -> Result<BTreeMap<String, Box<RawValue>>, BatchRecordsError> {
-    let mut raw = BTreeMap::new();
-    for (name, value) in params {
-        let text = match value {
-            RequestValue::Raw(text) => text.clone(),
-            other
-            @ (RequestValue::Text(_) | RequestValue::Secret(_) | RequestValue::Mapping(_)) => {
-                serde_json::to_string(&policy_json(other)).map_err(BatchRecordsError::Wire)?
-            }
-        };
-        raw.insert(
-            name.clone(),
-            RawValue::from_string(text).map_err(BatchRecordsError::Wire)?,
-        );
-    }
-    Ok(raw)
-}
-
-fn policy_json(value: &RequestValue) -> Json {
-    match value {
-        RequestValue::Text(text) => Json::Text(text.clone()),
-        RequestValue::Secret(secret) => Json::Text(secret.expose_secret().to_owned()),
-        RequestValue::Mapping(fields) => Json::Object(
-            fields
-                .iter()
-                .map(|(name, entry)| (name.clone(), policy_json(entry)))
-                .collect(),
-        ),
-        RequestValue::Raw(text) => serde_json::from_str(text).unwrap_or(Json::Null),
-    }
 }
 
 // The handoff carries signed headers and the converted content, so Debug lists header names and lengths only.

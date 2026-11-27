@@ -29,9 +29,9 @@ const ALLOWED_OPENAI_PARAMS: &str = "allowed_openai_params";
 
 type Attempt<T> = Result<T, Failure>;
 
-struct NoParameters;
+struct NoPorts;
 
-impl SupportedParameterSource for NoParameters {
+impl SupportedParameterSource for NoPorts {
     type Error = Infallible;
 
     fn supported_openai_params(
@@ -43,9 +43,7 @@ impl SupportedParameterSource for NoParameters {
     }
 }
 
-struct NoProbe;
-
-impl CompletionBridgeProbe for NoProbe {
+impl CompletionBridgeProbe for NoPorts {
     fn bridges_back(&self, _request: &BridgeRequest<'_>) -> Result<bool, ModelInfoError> {
         Ok(false)
     }
@@ -68,7 +66,7 @@ where
     })
 }
 
-fn call(operation: &str, input: Value) -> Attempt<Value> {
+fn part(operation: &str, input: Value, pointer: &str) -> Attempt<Value> {
     let output = invoke(
         &[crate::GROUP],
         &HelperCall {
@@ -81,12 +79,7 @@ fn call(operation: &str, input: Value) -> Attempt<Value> {
     }
     output
         .value
-        .ok_or_else(|| failure("the nested helper returned no value"))
-}
-
-fn part(operation: &str, input: Value, pointer: &str) -> Attempt<Value> {
-    let value = call(operation, input)?;
-    value
+        .ok_or_else(|| failure("the nested helper returned no value"))?
         .pointer(pointer)
         .cloned()
         .ok_or_else(|| failure("the family pass returned no value"))
@@ -128,22 +121,11 @@ impl Families {
     ) -> Attempt<Value> {
         let (call_input, pointer) = match function {
             "map_params" => (
-                json!({
-                    "model": model,
-                    "non_default_params": params,
-                    "optional_params": {},
-                    "drop_params": false,
-                }),
+                json!({"model": model, "non_default_params": params, "optional_params": {}, "drop_params": false}),
                 "/calls/0/optional_params",
             ),
             "transform" => (
-                json!({
-                    "model": model,
-                    "messages": messages,
-                    "optional_params": params,
-                    "litellm_params": {},
-                    "headers": {},
-                }),
+                json!({"model": model, "messages": messages, "optional_params": params, "litellm_params": {}, "headers": {}}),
                 "/calls/0/body",
             ),
             other => return Err(failure(format!("unknown Claude pass {other}"))),
@@ -179,8 +161,9 @@ impl BatchFamilies for Families {
         let body_encoded = serde_json::to_value(&remaining).map_err(failure)?;
         let parameters: ChatParameters = serde_json::from_value(body_encoded).map_err(failure)?;
         let policy = ParameterPolicy {
+            drop_params: false,
+            additional_drop_params: Vec::new(),
             allowed_openai_params: allowed,
-            ..ParameterPolicy::default()
         };
         let supported = supported_openai_params(&self.model_cost, &self.packaged, mapping_model)
             .map_err(|error| failure(error.message))?;
@@ -233,8 +216,8 @@ impl BatchFamilies for Families {
         let mut assembly = RequestAssembly {
             limits: ApiLimits::default(),
             cache: &self.cache,
-            parameters: &NoParameters,
-            probe: &NoProbe,
+            parameters: &NoPorts,
+            probe: &NoPorts,
             logging: None,
             route_all_openai_to_responses: false,
         };

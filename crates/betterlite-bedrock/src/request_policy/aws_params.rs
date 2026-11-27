@@ -1,4 +1,8 @@
+use std::collections::BTreeMap;
+
+use betterlite_models::decisions::Json;
 use secrecy::ExposeSecret as _;
+use serde_json::value::RawValue;
 
 use crate::request_policy::{Params, RequestValue};
 
@@ -36,6 +40,33 @@ pub fn merge_aws_request_params(deployment: &Params, request: &Params) -> Params
             .retain(|name, _| !AUTH_KEYS.contains(&name.as_str()) || deployment.contains_key(name));
     }
     merged
+}
+
+// A raw parameter passes through as sent; the other kinds are serialized as policy JSON.
+pub fn raw_params(params: &Params) -> Result<BTreeMap<String, Box<RawValue>>, serde_json::Error> {
+    let mut raw = BTreeMap::new();
+    for (name, value) in params {
+        let text = match value {
+            RequestValue::Raw(text) => text.clone(),
+            other => serde_json::to_string(&policy_json(other))?,
+        };
+        raw.insert(name.clone(), RawValue::from_string(text)?);
+    }
+    Ok(raw)
+}
+
+fn policy_json(value: &RequestValue) -> Json {
+    match value {
+        RequestValue::Text(text) => Json::Text(text.clone()),
+        RequestValue::Secret(secret) => Json::Text(secret.expose_secret().to_owned()),
+        RequestValue::Mapping(fields) => Json::Object(
+            fields
+                .iter()
+                .map(|(name, entry)| (name.clone(), policy_json(entry)))
+                .collect(),
+        ),
+        RequestValue::Raw(text) => serde_json::from_str(text).unwrap_or(Json::Null),
+    }
 }
 
 pub fn map_auth_aliases(non_default: &Params, optional: &mut Params) {
