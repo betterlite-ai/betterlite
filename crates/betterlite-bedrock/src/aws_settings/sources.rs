@@ -11,6 +11,7 @@ use aws_types::{
     region::Region,
 };
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_sigv4::credentials::Credentials as SigV4Credentials;
 use secrecy::SecretString;
 
 #[derive(thiserror::Error)]
@@ -27,7 +28,8 @@ impl fmt::Debug for SourceError {
     }
 }
 
-pub use betterlite_sigv4::credentials::Credentials;
+// the restriction lints deny pub use, so the old import path is kept as an alias
+pub type Credentials = SigV4Credentials;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedCredentials {
