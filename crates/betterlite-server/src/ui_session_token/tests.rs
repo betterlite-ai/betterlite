@@ -171,11 +171,18 @@ fn keeps_a_null_email_as_null() {
 #[test]
 fn keeps_a_non_ascii_email() {
     let database = TimeZoneDatabase::from_env();
-    let token = sample_token(VIRTUAL_KEY, Some("josé@exämple.com"), LoginMethod::Sso);
+    let token = sample_token(
+        VIRTUAL_KEY,
+        Some("jos\u{e9}@ex\u{e4}mple.com"),
+        LoginMethod::Sso,
+    );
     let encoded =
         encode_ui_session_jwt(&token, &secret(MASTER), &settings("24h"), now(), &database).unwrap();
     let claims = decode_claims(&encoded, MASTER);
-    assert_eq!(claims.user_email.as_deref(), Some("josé@exämple.com"));
+    assert_eq!(
+        claims.user_email.as_deref(),
+        Some("jos\u{e9}@ex\u{e4}mple.com")
+    );
 }
 
 // the expected epochs are the login instant with its fraction cut, plus each duration
