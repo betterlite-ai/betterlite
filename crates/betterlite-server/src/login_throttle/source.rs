@@ -47,9 +47,8 @@ pub fn source_group(client_ip: &str) -> String {
 pub fn source_limit(settings: &Settings, client_ip: &str) -> i64 {
     let default = settings.source_limit;
     match &settings.source_limit_overrides {
-        SourceOverrides::Absent => default,
         // the config section already warned about the shape; the throttle only uses the default
-        SourceOverrides::Invalid => default,
+        SourceOverrides::Absent | SourceOverrides::Invalid => default,
         SourceOverrides::Mapping(entries) => source_override(entries, client_ip, default),
     }
 }

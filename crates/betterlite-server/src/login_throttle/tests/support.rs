@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -109,9 +110,17 @@ impl LocalStore for FakeLocalStore {
 
     fn set(&self, key: &str, value: CacheValue, seconds: i64) -> Result<(), LoginThrottleError> {
         let stored = match value {
-            CacheValue::Float(value) => value,
-            CacheValue::Integer(value) => num_traits::cast::<i64, f64>(value).unwrap_or_default(),
-            _other => {
+            CacheValue::Float(float) => float,
+            CacheValue::Integer(integer) => {
+                num_traits::cast::<i64, f64>(integer).unwrap_or_default()
+            }
+            CacheValue::Null
+            | CacheValue::Boolean(_)
+            | CacheValue::Text(_)
+            | CacheValue::Array(_)
+            | CacheValue::Object(_)
+            | CacheValue::Bytes(_)
+            | CacheValue::Credential(_) => {
                 return Err(LoginThrottleError::InvalidCount {
                     key: key.to_owned(),
                 });
@@ -199,11 +208,11 @@ impl FakeRedis {
 
     pub fn block(&self, key: &str, seconds: i64) {
         let now = (*self.clock)();
-        let seconds = num_traits::cast::<i64, f64>(seconds).unwrap_or_default();
+        let ttl = num_traits::cast::<i64, f64>(seconds).unwrap_or_default();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state
             .blocks
-            .insert(key.to_owned(), now.mul_add(1.0_f64, seconds));
+            .insert(key.to_owned(), now.mul_add(1.0_f64, ttl));
         drop(state);
     }
 
@@ -256,7 +265,7 @@ fn ttl_of(expiries: &BTreeMap<String, f64>, key: &str, now: f64) -> i64 {
                 .unwrap_or_default()
                 .max(0)
         }
-        _other => -2,
+        Some(_) | None => -2,
     }
 }
 
@@ -376,14 +385,14 @@ impl WarningLog {
 }
 
 impl io::Write for WarningLog {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let Ok(text) = std::str::from_utf8(buffer) else {
-            return Ok(buffer.len());
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let Ok(text) = from_utf8(buf) else {
+            return Ok(buf.len());
         };
         let mut lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         lines.extend(text.lines().map(str::to_owned));
         drop(lines);
-        Ok(buffer.len())
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -561,8 +570,8 @@ fn oracle_runtime(input: &OracleInput, clock: &FakeClock) -> ThrottleRuntime {
             .iter()
             .map(|(operation, fault)| (operation.as_str(), fault.as_str()))
             .collect();
-        let store: Arc<dyn LoginRedis> = Arc::new(FakeRedis::new(clock.clock(), &faults));
-        store
+        let handle: Arc<dyn LoginRedis> = Arc::new(FakeRedis::new(clock.clock(), &faults));
+        handle
     });
     ThrottleRuntime {
         stores,
@@ -627,7 +636,7 @@ async fn run_phase(
 
 async fn run_steps(throttle: &LoginThrottle, steps: &[Step]) -> Vec<StepView> {
     let mut pending = None;
-    let mut views = Vec::with_capacity(steps.len());
+    let mut step_views = Vec::with_capacity(steps.len());
     for step in steps {
         let view = match step.kind.as_str() {
             "attempt" => attempt_step(throttle, step, &mut pending).await,
@@ -637,9 +646,9 @@ async fn run_steps(throttle: &LoginThrottle, steps: &[Step]) -> Vec<StepView> {
             "clear_pair" => clear_step(throttle, step).await,
             _other => StepView::of(&step.kind, "unknown"),
         };
-        views.push(view);
+        step_views.push(view);
     }
-    views
+    step_views
 }
 
 async fn attempt_step<'throttle>(

@@ -11,7 +11,7 @@ use super::{
     DEFAULT_BLOCK_SECONDS, DEFAULT_SOURCE_LIMIT, DEFAULT_WINDOW_SECONDS, DISABLE_ENV,
     OverrideLimit, ProxyTopology, Raw, SourceOverride, SourceOverrides,
 };
-use crate::loader::{ConfigLoader, EnvironmentLookup, parse_view};
+use crate::loader::{ConfigLoader, EnvironmentLookup as _, parse_view};
 use crate::sections::Section as _;
 use crate::sections::login_throttle::Settings;
 
@@ -97,28 +97,36 @@ fn invalid_integer_warns() {
     assert_eq!(output.matches(super::BLOCK_KEY).count(), 1, "{output}");
 
     // a fractional float, a negative integer and a sign with no digits all fall back too
-    let (configured, output) = logged(|| {
+    let (fractional, fractional_output) = logged(|| {
         loaded(
             "general_settings:\n  max_failed_login_attempts_per_source: 1.5\n  failed_login_window_seconds: -3\n  failed_login_block_seconds: \"+\"\n",
         )
     });
-    assert_eq!(configured, Settings::default());
+    assert_eq!(fractional, Settings::default());
     assert_eq!(
-        output.matches(super::SOURCE_LIMIT_KEY).count(),
+        fractional_output.matches(super::SOURCE_LIMIT_KEY).count(),
         1,
-        "{output}"
+        "{fractional_output}"
     );
-    assert_eq!(output.matches(super::WINDOW_KEY).count(), 1, "{output}");
-    assert_eq!(output.matches(super::BLOCK_KEY).count(), 1, "{output}");
+    assert_eq!(
+        fractional_output.matches(super::WINDOW_KEY).count(),
+        1,
+        "{fractional_output}"
+    );
+    assert_eq!(
+        fractional_output.matches(super::BLOCK_KEY).count(),
+        1,
+        "{fractional_output}"
+    );
 
     // int() rejects two underscores in a row, so the digits never join across the empty group
-    let (configured, output) =
+    let (underscored, underscored_output) =
         logged(|| loaded("general_settings:\n  max_failed_login_attempts_per_source: \"1__2\"\n"));
-    assert_eq!(configured.source_limit, DEFAULT_SOURCE_LIMIT);
+    assert_eq!(underscored.source_limit, DEFAULT_SOURCE_LIMIT);
     assert_eq!(
-        output.matches(super::SOURCE_LIMIT_KEY).count(),
+        underscored_output.matches(super::SOURCE_LIMIT_KEY).count(),
         1,
-        "{output}"
+        "{underscored_output}"
     );
 }
 

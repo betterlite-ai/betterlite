@@ -125,10 +125,10 @@ impl LoginRedis for RedisLogin {
             .admin
             .async_delete_cache(key)
             .await
-            .map(|_count| ())
             .map_err(|error| ThrottleRedisError::Unavailable {
                 reason: error.to_string(),
-            })
+            })?;
+        Ok(())
     }
 }
 

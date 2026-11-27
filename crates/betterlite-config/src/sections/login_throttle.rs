@@ -141,11 +141,15 @@ impl Section for Raw {
 // the proxy resolves os.environ/ references across the loaded config before any request reads a setting
 fn resolved_environment(value: Json, lookup: &dyn EnvironmentLookup) -> Json {
     match value {
-        Json::Text(text) => match text.strip_prefix("os.environ/") {
-            Some(name) => lookup.lookup(name).map_or(Json::Null, Json::Text),
-            None => Json::Text(text),
-        },
-        other => other,
+        Json::Text(text) => {
+            let reference = text.strip_prefix("os.environ/").map(str::to_owned);
+            reference.map_or_else(
+                || Json::Text(text),
+                |name| lookup.lookup(&name).map_or(Json::Null, Json::Text),
+            )
+        }
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => other,
     }
 }
 
@@ -156,7 +160,11 @@ where
 {
     match resolved_environment(raw?, lookup) {
         Json::Null => None,
-        value => Some(value),
+        value @ (Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_)) => Some(value),
     }
 }
 
@@ -165,15 +173,15 @@ fn topology<L>(raw: Option<Json>, lookup: &L) -> ProxyTopology
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = resolved(raw, lookup) else {
+    let Some(value) = resolved(raw, lookup) else {
         return ProxyTopology::Unknown;
     };
-    if let Json::Text(text) = &raw {
+    if let Json::Text(text) = &value {
         return ProxyTopology::Entries(
             text.split(',').map(|part| part.trim().to_owned()).collect(),
         );
     }
-    if let Json::List(items) = &raw {
+    if let Json::List(items) = &value {
         return ProxyTopology::Entries(
             items
                 .iter()
@@ -192,10 +200,10 @@ fn positive_int<L>(raw: Option<Json>, key: &str, default: i64, lookup: &L) -> i6
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
+    let Some(value) = raw else {
         return default;
     };
-    let text = text_of(&resolved_environment(raw, lookup));
+    let text = text_of(&resolved_environment(value, lookup));
     match int_of(&text) {
         Some(value) if value >= 1 => value,
         Some(value) => {
@@ -221,7 +229,7 @@ where
                 .into_iter()
                 .map(|(range, value)| SourceOverride {
                     range,
-                    limit: override_limit(resolved_environment(value, lookup)),
+                    limit: override_limit(&resolved_environment(value, lookup)),
                 })
                 .collect(),
         ),
@@ -235,8 +243,8 @@ where
 }
 
 // _override_limit: only a stripped 0 exempts, otherwise the value must be a positive integer
-fn override_limit(raw: Json) -> OverrideLimit {
-    let text = text_of(&raw);
+fn override_limit(raw: &Json) -> OverrideLimit {
+    let text = text_of(raw);
     if text.trim() == "0" {
         return OverrideLimit::Exempt;
     }
@@ -262,10 +270,10 @@ fn text_of(value: &Json) -> String {
 // int(text) for a str: surrounding whitespace, one sign and digits in single-underscore groups
 fn int_of(text: &str) -> Option<i64> {
     let trimmed = text.trim();
-    let (negative, unsigned) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (negative, unsigned) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
     let mut digits = String::with_capacity(unsigned.len());
     for group in unsigned.split('_') {
         if group.is_empty() || !group.bytes().all(|byte| byte.is_ascii_digit()) {

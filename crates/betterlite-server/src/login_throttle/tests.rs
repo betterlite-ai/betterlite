@@ -57,8 +57,8 @@ fn fixture_request(
     };
     let redis = faults.map(|entries| Arc::new(FakeRedis::new(clock.clock(), entries)));
     let shared: Option<Arc<dyn LoginRedis>> = redis.as_ref().map(|value| {
-        let store: Arc<dyn LoginRedis> = Arc::clone(value);
-        store
+        let handle: Arc<dyn LoginRedis> = Arc::clone(value);
+        handle
     });
     let runtime = ThrottleRuntime {
         stores,
@@ -592,12 +592,12 @@ async fn malformed_store_reply_propagates() {
         1000.0,
         Some(&[("record_failure", "malformed")]),
     );
-    let error = match built_record.throttle.record_failure("bob").await {
-        Err(error) => error,
+    let record_error = match built_record.throttle.record_failure("bob").await {
+        Err(failure) => failure,
         Ok(_) => panic!("a malformed reply must propagate"),
     };
     assert!(matches!(
-        error,
+        record_error,
         LoginThrottleError::Shared(ThrottleRedisError::MalformedBlockTtls)
     ));
 }
