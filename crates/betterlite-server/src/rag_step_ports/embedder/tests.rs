@@ -8,10 +8,12 @@ use rstest::rstest;
 
 use super::ListEmbedder;
 
+type Calls = Arc<Mutex<Vec<(String, Vec<String>)>>>;
+
 #[derive(Clone)]
 struct ScriptedEmbedder {
-    calls: Arc<Mutex<Vec<(String, Vec<String>)>>>,
-    answer: Arc<Vec<Vec<f64>>>,
+    calls: Calls,
+    answer: Vec<Vec<f64>>,
     failure: Option<String>,
 }
 
@@ -20,7 +22,7 @@ impl RagEmbedder for ScriptedEmbedder {
     async fn embed(&self, model: &str, input: Vec<String>) -> Result<Vec<Vec<f64>>, EmbedError> {
         self.calls.lock().unwrap().push((model.to_owned(), input));
         self.failure.as_ref().map_or_else(
-            || Ok(self.answer.as_ref().clone()),
+            || Ok(self.answer.clone()),
             |message| {
                 Err(EmbedError::Failed {
                     model: model.to_owned(),
@@ -34,7 +36,7 @@ impl RagEmbedder for ScriptedEmbedder {
 fn scripted(answer: Vec<Vec<f64>>) -> ScriptedEmbedder {
     ScriptedEmbedder {
         calls: Arc::new(Mutex::new(Vec::new())),
-        answer: Arc::new(answer),
+        answer,
         failure: None,
     }
 }
@@ -119,7 +121,7 @@ async fn list_embedder_rejects_a_vector_count_mismatch(#[case] answer: Vec<Vec<f
 async fn list_embedder_passes_a_native_failure_through() {
     let native = ScriptedEmbedder {
         calls: Arc::new(Mutex::new(Vec::new())),
-        answer: Arc::new(Vec::new()),
+        answer: Vec::new(),
         failure: Some("the provider refused".to_owned()),
     };
     let embedder = ListEmbedder {

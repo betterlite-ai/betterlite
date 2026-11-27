@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::credentials::{CredentialItem, CredentialValues};
-use betterlite_core::rag::ingestion::credentials::{
-    CredentialLookup as CredentialLookupPort, CredentialLookupError,
-};
+use betterlite_core::rag::ingestion::credentials::{CredentialLookup as _, CredentialLookupError};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 

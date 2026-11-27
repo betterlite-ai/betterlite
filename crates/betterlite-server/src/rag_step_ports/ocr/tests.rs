@@ -55,7 +55,7 @@ impl OcrOperation for ScriptedRouter {
 #[derive(Clone)]
 struct ScriptedBackend {
     requests: Arc<Mutex<Vec<LiteLLMOcrRequest<OcrDocumentInput>>>>,
-    pages: Arc<Vec<(i64, String)>>,
+    pages: Vec<(i64, String)>,
     failure: Arc<Mutex<Option<NativeOcrError>>>,
 }
 
@@ -157,12 +157,10 @@ fn ocr_client() -> OcrClient {
 fn scripted_backend(pages: &[(i64, &str)]) -> ScriptedBackend {
     ScriptedBackend {
         requests: Arc::new(Mutex::new(Vec::new())),
-        pages: Arc::new(
-            pages
-                .iter()
-                .map(|(index, markdown)| (*index, (*markdown).to_owned()))
-                .collect(),
-        ),
+        pages: pages
+            .iter()
+            .map(|(index, markdown)| (*index, (*markdown).to_owned()))
+            .collect(),
         failure: Arc::new(Mutex::new(None)),
     }
 }
@@ -170,7 +168,7 @@ fn scripted_backend(pages: &[(i64, &str)]) -> ScriptedBackend {
 fn failing_backend(error: NativeOcrError) -> ScriptedBackend {
     ScriptedBackend {
         requests: Arc::new(Mutex::new(Vec::new())),
-        pages: Arc::new(Vec::new()),
+        pages: Vec::new(),
         failure: Arc::new(Mutex::new(Some(error))),
     }
 }
@@ -261,13 +259,12 @@ async fn ocr_call_uses_the_native_operation_without_a_router() {
     assert_eq!(text.as_deref(), Some("page five\n\npage one"));
     let requests = backend.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
-    let request = &requests[0];
-    assert_eq!(request.model, "mistral-ocr-latest");
-    assert!(request.custom_llm_provider.is_none());
-    assert!(request.optional_params.is_empty());
-    assert_eq!(request.config, OcrConfigKind::Mistral);
+    assert_eq!(requests[0].model, "mistral-ocr-latest");
+    assert!(requests[0].custom_llm_provider.is_none());
+    assert!(requests[0].optional_params.is_empty());
+    assert_eq!(requests[0].config, OcrConfigKind::Mistral);
     assert_eq!(
-        request.document,
+        requests[0].document,
         OcrDocumentInput::Document(NativeDocument::DocumentUrl {
             document_url: format!("data:application/pdf;base64,{}", STANDARD.encode(b"%PDF")),
             extra: BTreeMap::new(),
