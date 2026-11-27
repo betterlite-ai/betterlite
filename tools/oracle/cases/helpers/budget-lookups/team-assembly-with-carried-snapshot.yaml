@@ -1,0 +1,30 @@
+kind: helper
+name: budget-lookups-team-assembly-with-carried-snapshot
+call:
+  b3883:
+    function: team
+    team_id: team-1
+    team_alias: Alpha
+    team_spend: 1.5
+    team_max_budget: null
+    response_cost: 0.25
+    carried:
+      budget_reset_at: '2026-01-06T00:00:00Z'
+      max_budget: 20.0
+    lookup:
+      kind: missing
+    now: '2026-01-01T00:00:00Z'
+    noop: false
+    labels_by_metric:
+      litellm_remaining_team_budget_metric:
+      - team
+      - team_alias
+      litellm_team_max_budget_metric:
+      - team
+      - team_alias
+      litellm_team_budget_remaining_hours_metric:
+      - team
+      - team_alias
+env: {}
+compare:
+  ignore: []
