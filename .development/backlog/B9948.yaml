@@ -2,7 +2,7 @@ id: B9948
 milestone: M8 platform
 title: Production models read-through over the database deployment sync
 status: todo
-depends_on: [B8231, B8381, B8611, B836, B8612]
+depends_on: [B8231, B8381, B8611, B10132, B8612]
 file: tasks/B9948-model-read-through.yaml
 covers: []
 parent: null

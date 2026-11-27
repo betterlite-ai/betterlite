@@ -29,7 +29,7 @@ description: >-
   runtime environment overlay, consumed by the SSO composition's per-request snapshot.
   Encrypt string values with B1600 through B10074's encrypt_env (_encrypt_env_variables) contract, preserving
   non-string nulls and structured mappings, and upsert the JSON-string row. Submit config audit
-  with action updated and the SSO table name after the upsert; audit redaction stays B8594's.
+  with action updated and the SSO table name after the upsert; audit redaction stays B10137's.
   Finally read the environment_variables config row, parse string storage when needed, remove
   only the sixteen mapped environment names, update its JSON representation and invalidate
   that parameter. A missing row needs no cleanup. Cleanup failure returns the source's 500

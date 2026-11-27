@@ -167,14 +167,14 @@ out_of_scope:
   L159-L163, LiteLLM_Proxy_MCP_Handler._split_mcp_tools L166-L179, LiteLLM_Proxy_MCP_Handler.routes_through_gateway
   L182-L188, LiteLLM_Proxy_MCP_Handler._apply_toolset_permissions L191-L232, LiteLLM_Proxy_MCP_Handler._deduplicate_mcp_tools
   L355-L386, LiteLLM_Proxy_MCP_Handler._filter_mcp_tools_by_allowed_tools L389-L414.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
-  L540-L563, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
-  L580-L601, LiteLLM_Proxy_MCP_Handler._extract_tool_call_details L604-L635, LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10121 owns MCPToolResult L54-L57. B10122 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
+  L540-L563, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577 and LiteLLM_Proxy_MCP_Handler._extract_tool_call_details
+  L604-L635. B950 owns LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response L580-L601, LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
   L638-L648, LiteLLM_Proxy_MCP_Handler._parse_mcp_result L651-L684, LiteLLM_Proxy_MCP_Handler._execute_tool_calls
   L687-L972, LiteLLM_Proxy_MCP_Handler._log_mcp_tool_failure L1121-L1143.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B951 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
-  L975-L1017, LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022, LiteLLM_Proxy_MCP_Handler._create_follow_up_input
-  L1025-L1101, LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10123 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
+  L975-L1017. B10124 owns LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022 and LiteLLM_Proxy_MCP_Handler._create_follow_up_input
+  L1025-L1101. B951 owns LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
   L1146-L1188, LiteLLM_Proxy_MCP_Handler._build_request_params L1191-L1222, LiteLLM_Proxy_MCP_Handler._create_tool_execution_events
   L1225-L1272, LiteLLM_Proxy_MCP_Handler._prepare_initial_call_params L1275-L1288, LiteLLM_Proxy_MCP_Handler._prepare_follow_up_call_params
   L1291-L1308, LiteLLM_Proxy_MCP_Handler._add_mcp_output_elements_to_response L1311-L1357.'

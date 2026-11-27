@@ -1,0 +1,100 @@
+id: B10142
+title: Router batch retrieval across deployments
+description: >-
+  LiteLLM's proxy finds a batch through `Router.aretrieve_batch` when the batch id is a unified id or `litellm_settings.enable_loadbalancing_on_batch_endpoints` is true, and the Python `Router` has the same method. The route is B1051; the Python side reaches it through B8353's RouterBatchCalls and B8355. The router does not know which deployment created the batch, so it asks every deployment of the group at once and returns the first batch one of them knows. B1051 used to wait for all six of B8353's file and batch calls for this one method, so retrieval is its own task.
+
+
+  Layout. The router logic goes in betterlite-sdk, module `router_batch_retrieve` (crates/betterlite-sdk/src/router_batch_retrieve.rs and its folder, tests in router_batch_retrieve/tests.rs). The server adapters go in betterlite-server, module `app::inference::router_calls::batch_retrieve` (crates/betterlite-server/src/app/inference/router_calls/batch_retrieve.rs and its folder, tests in batch_retrieve/tests.rs). Both files are empty stubs that lib.rs and router_calls.rs already declare; edit neither parent. betterlite-sdk may not depend on betterlite-router or betterlite-server (deny.toml), so the two router lookups this call needs are ports here, and the server module implements them.
+
+
+  Ports. `ModelDeploymentList` has one method, `model_list(model_name: Option<&str>)`, which is LiteLLM's `Router.get_model_list(model_name)` without a team id and answers a `Vec` of deployments. `HealthyDeploymentList` has one async method, `healthy_deployments(model, messages, specific_deployment, request)`, which is `Router.async_get_healthy_deployments` and answers `HealthyAnswer::One(deployment)` when the request names one deployment (LiteLLM's dict answer) or `HealthyAnswer::Many(deployments)`. A deployment is a `serde_json::Map` in LiteLLM's DeploymentTypedDict shape: `model_name`, `litellm_params`, `model_info`. Keep both ports general, with an optional model name, because B8353 reuses them for `acreate_file` and `alist_batches`. Each port declares its own error type. The request update (B303's `_update_kwargs_with_deployment`) is B6020's port inside `RouterCompletionParts`; use it and do not declare a third trait. The provider lookup (LiteLLM's `get_llm_provider`) is the one B6021's generic attempt uses in the merged router_generic.rs; if router_generic.rs has none, stop and report a blocker instead of building a resolution context here.
+
+
+  `RouterBatchRetrieve` is built by its constructor from a `&RouterCompletionParts` (B6020; only the request update is used), an `Arc<dyn ModelDeploymentList>`, an `Arc<dyn HealthyDeploymentList>` and one `Arc<dyn GenericCallExecutor>` (B6021's trait) for the call type `aretrieve_batch`. It touches no counter, slot, client or fallback executor, since LiteLLM's method uses none.
+
+
+  `aretrieve_batch(model: Option<&str>, request: Map)` (router.py L6314-L6422), in order:
+
+  1. The metadata key is `litellm_metadata`, what `_get_router_metadata_variable_name("aretrieve_batch")` answers because the name holds `batch`. The Rust copy of that helper is private to betterlite-core's batch_records module, so write the literal with a one-line comment naming the helper.
+
+  2. With a model, take `specific_deployment` out of the request and ask the healthy list with that model, messages `[{"role":"user","content":"retrieve-api-fake-text"}]`, the taken value and the request. Without a model, take the whole model list (`model_list(None)`), and `specific_deployment` stays in the request. A list error goes back unchanged.
+
+  3. `HealthyAnswer::One` is tried alone. An empty list fails with `No healthy deployments found.`.
+
+  4. Every try runs at once. Read `litellm_params.model`; a deployment without one fails its try with `Model not found in litellm_params for deployment: ` followed by the deployment. Copy `litellm_params` as `data`. The provider is data's `custom_llm_provider` when it is set and not empty, otherwise the provider lookup on the model alone, with no provider hint. Deep copy the request and update the copy with the deployment through B6020's port under the function name `aretrieve_batch`. When the copy's `litellm_metadata.model_group` is missing, null or empty, set it to the requested model, or to the deployment's `model_name` when no model was given. Remove `custom_llm_provider` from the copy and from data. Call the executor with the call type `aretrieve_batch` and one map built in this order, later keys winning: data, then `custom_llm_provider` set to the provider, then the copy. An error anywhere in a try (lookup, update, executor) is recorded, and that try gives no answer.
+
+  5. Return the answer of the first try, in deployment order, whose outcome is a finished JSON body; that is LiteLLM's `isinstance(result, LiteLLMBatch)`. A byte stream or an `Http` outcome is not a batch and is passed over. With no batch, return the first recorded error unchanged. With no batch and no error, fail with `Unable to find batch in any model. Received errors - []`.
+
+
+  `BatchRetrieveError` is this module's error enum: one variant for each list port's error, one for `No healthy deployments found.`, one for `Unable to find batch in any model. Received errors - []`, one for the missing model, and one that carries a try's lookup, update or executor error as it came, so B1051's error mapping still sees the provider's status. The Display text of each LiteLLM message variant is the exact text above.
+
+
+  Server adapters. In router_calls/batch_retrieve.rs write one plain struct per port that holds `state.shared.router` (an `Arc<RouterHandle>`) and reads the current router on every call, the way B8631's adapters in router_calls do. The model list adapter forwards to B844's `get_model_list(model_name, None)` in crates/betterlite-router/src/model_catalog_lookup/lookup.rs. The healthy list adapter forwards to B016's healthy deployment path in crates/betterlite-router/src/router_core/pipeline.rs (`healthy_deployments`), where `Candidates::Single` becomes `HealthyAnswer::One` and `Candidates::Pool` becomes `HealthyAnswer::Many`. Both turn each DeploymentSpec into the LiteLLM-shaped map above and map every router error into the port's error. `batch_retrieve(state: &ServerState, executor: Arc<dyn GenericCallExecutor>) -> Result<RouterBatchRetrieve, RouterPortError>` builds the object from B8631's `completion_parts(state)` (a function in router_calls.rs that this child module can call), the two adapters and the executor. The caller passes the executor, because the provider read is the caller's: B1051 builds it over B1037's provider read, and B8353 reuses the two adapters for its own calls.
+
+
+  Tests. router_batch_retrieve/tests.rs drives the object with fake lists, a fake request update and fake executors, with no network and no clock. Every test of an error path has `failure` in its name and no other test does, so the two checks below select them apart. batch_retrieve/tests.rs builds a real Router from a two-deployment config.yaml the way router_calls/tests.rs does and checks that the model list returns both deployments in config order with their `model_name` and `litellm_params`, that the healthy list leaves out a deployment the router has cooled down while the model list keeps it, and that `batch_retrieve` with a recording executor returns the batch one deployment answers while the other fails.
+scope:
+  paths:
+    - crates/betterlite-sdk/src/router_batch_retrieve.rs
+    - crates/betterlite-sdk/src/router_batch_retrieve/**
+    - crates/betterlite-server/src/app/inference/router_calls/batch_retrieve.rs
+    - crates/betterlite-server/src/app/inference/router_calls/batch_retrieve/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6314-L6422
+    why: Owned. aretrieve_batch and its nested try_retrieve_batch, the order of the merged arguments and the error order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12078
+    why: get_model_list always answers a list, which the model list port mirrors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12995-L13047
+    why: async_get_healthy_deployments answers a dict for one named deployment and a list after the cooldown filter otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3992-L4066
+    why: _update_kwargs_with_deployment writes litellm_metadata and model_info on the copy, behind B6020's port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/batch_utils.py#L153-L173
+    why: The metadata key helper that answers litellm_metadata for this call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L724-L738
+    why: Call site in B1051. The route takes this path for a unified id or the load balancing flag.
+dod:
+  - text: With a model the healthy list is asked with `retrieve-api-fake-text` and the `specific_deployment` taken out of the request; without one every deployment of the model list is tried and `specific_deployment` stays in the request.
+    proof: [retrieve-calls]
+  - text: Each try gets its own copy of the request, updated under `aretrieve_batch`, with `litellm_metadata.model_group` filled only when it is missing or empty, and the resolved provider replaces any `custom_llm_provider` the request carried.
+    proof: [retrieve-calls]
+  - text: The batch of the first deployment in list order is returned, even when an earlier deployment failed or answered a stream.
+    proof: [retrieve-calls]
+  - text: A deployment without `litellm_params.model` fails only its own try; the first recorded error comes back unchanged when no try finds the batch; LiteLLM's `No healthy deployments found.` and `Unable to find batch in any model. Received errors - []` texts are kept.
+    proof: [retrieve-failures]
+  - text: The server adapters return the router's model list in config order and leave a cooled-down deployment out of the healthy list, and `batch_retrieve` answers through a real router.
+    proof: [retrieve-adapters]
+checks:
+  optional: []
+  commands:
+    - id: retrieve-calls
+      why: the wrong list is asked, a try shares the request, the provider is not the deployment's, or the answer is not the first batch in list order
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_retrieve::/) - test(/failure/)'
+    - id: retrieve-failures
+      why: one bad deployment stops the search, the wrong error is returned, or LiteLLM's message text differs
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_retrieve::.*failure/)'
+    - id: retrieve-adapters
+      why: an adapter forwards to the wrong router call or drops the cooldown filter, or batch_retrieve cannot be built
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::router_calls::batch_retrieve::/)'
+oracle_cases: []
+deviations:
+  - what: Each deployment's retrieve goes to the GenericCallExecutor the constructor was given, where LiteLLM calls the module function `litellm.aretrieve_batch`.
+    why: betterlite has no module-level call table; the server route and the Python crate pass the provider read in, as the rules ask for constructor wiring.
+out_of_scope:
+  - "acreate_file, avector_store_create, acancel_batch, alist_batches and RouterBatchCalls: B8353, which reuses this task's two list ports and their server adapters. acreate_batch and _acreate_batch: B10143."
+  - "retrieve_batch in litellm/proxy/batches_endpoints/endpoints.py and the aretrieve_batch executor over B1037's provider read: B1051. The Python method: B8355."
+  - "get_model_list is B844's, async_get_healthy_deployments B016's, _update_kwargs_with_deployment B303's behind B6020's port, and get_llm_provider sits behind B6021's lookup. This task calls them."
+  - "The `Router not yet initialized.` branch has no way in at the pin: get_model_list always answers a list, and async_get_healthy_deployments answers a deployment, a list or an error."
+  - "send_llm_exception_alert, fired in the background when the method fails, returns at once without a router slack_alerting_logger, and betterlite refuses router_settings.alerting_config at load, so there is nothing to call."
+pitfalls:
+  - "`specific_deployment` leaves the request only on the path with a model; on the model list path it stays in and reaches every executor call."
+  - "asyncio.gather keeps list order for the answers, but each try appends its error as it fails, so the batch is picked by lowest deployment index and the error by time; a FuturesUnordered over tries tagged with their index gives both."
+  - "The request copy is spread last, so leaving its `custom_llm_provider` in place would let a client value override the deployment's provider; drop it from the copy and from data before adding the resolved one."
+  - "The provider lookup runs only when the deployment names no provider, and it gets the model alone, without the deployment's api_base or key."
+  - "When a model was given, `model_group` comes from the requested group name, not the deployment's `model_name`; the deployment's name is used only on the model list path."
+  - "If every deployment answers with a stream or an Http outcome and none fails, the answer is the `Received errors - []` error, not a success."
+  - "The healthy list adapter must go through the router's async path that applies cooldowns; the model list must not, so a cooled-down deployment is still in it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

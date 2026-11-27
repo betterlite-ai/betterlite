@@ -67,7 +67,7 @@ description: >-
   prompt routes. B8293's init_prompts and B4060's mutations take &mut, so it is an Arc of a RwLock: use the lock type
   the merged prompt route modules (B4061, B4062) take. `periodic_reloads: Arc<PeriodicReloads>` (B10055, a
   betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
-  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
+  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B10136's port; B8613 implements it over B8381's DeploymentSync, which
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
   AutoRouterCatalog>` (B10021's trait, backed by the same DeploymentSync) for B379's availability route. `config_overlay: Arc<dyn
   ConfigOverlayPort>` (B8379's port in betterlite-server's config_overlay_port; B8379's OverlayPortAdapter implements it

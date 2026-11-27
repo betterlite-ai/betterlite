@@ -1,0 +1,66 @@
+kind: sdk_http
+name: vector-file-create-list-attach-file-projection
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_create_list:
+    runs:
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create:
+          file_id: file_a
+          attributes: {tag: x, count: 2}
+          chunking_strategy:
+            type: static
+            static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}
+        options: {api_key: sk-caller, litellm_call_id: call-a}
+        extra_query: {ignored: y}
+        unknown: 1
+      - operation: create
+        mode: async
+        vector_store_id: vs_a
+        create:
+          file_id: file_a
+          attributes: {tag: x, count: 2}
+          chunking_strategy:
+            type: static
+            static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}
+        options: {api_key: sk-caller, litellm_call_id: call-b}
+        extra_body: {file_id: file_b}
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create: {file_id: file_a, attributes: {tag: x}}
+        options: {api_key: sk-caller, litellm_call_id: call-c}
+        extra_body: {file_id: file_b}
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create: {file_id: file_a}
+        options: {api_key: sk-caller, litellm_call_id: call-d}
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create: {file_id: file_a, attributes: {}}
+        options: {api_key: sk-caller, litellm_call_id: call-e}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_b, object: vector_store.file, status: in_progress}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_b, object: vector_store.file, status: in_progress}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

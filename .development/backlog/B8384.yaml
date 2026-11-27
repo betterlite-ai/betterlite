@@ -2,7 +2,7 @@ id: B8384
 milestone: M8 platform
 title: Database object loaders for guardrails, policies, prompts and agents
 status: todo
-depends_on: [B8379, B8380, B8383, B8385, B8397, B836, B1606, B3243, B3271, B3273, B10013, B3683, B4059, B4060, B4776, B10012, B8502, B8520, B8614]
+depends_on: [B8379, B8380, B8383, B8385, B8397, B10132, B1606, B3243, B3271, B3273, B10013, B3683, B4059, B4060, B4776, B10012, B8502, B8520, B8614]
 file: tasks/B8384-db-object-sync.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
