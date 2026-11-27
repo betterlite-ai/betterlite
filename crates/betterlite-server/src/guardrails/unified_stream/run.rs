@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_guardrails::unified_dispatch::stream_items::{
     chunk_carries_text, chunk_has_finish_reason, chunk_has_tool_calls, held_choices,
@@ -29,8 +30,8 @@ pub(crate) struct LoopState<'run, T, G, S, E> {
     params: StreamLoopParams<'run, T, G>,
     source: Pin<Box<S>>,
     transform: TransformState,
-    responses_so_far: Vec<GuardrailValue>,
-    responses_yielded: Vec<GuardrailValue>,
+    responses_so_far: Vec<StreamItem>,
+    responses_yielded: Vec<StreamItem>,
     outputs: VecDeque<StreamOutput>,
     last_chunk: Option<GuardrailValue>,
     chunk_counter: usize,
@@ -50,7 +51,7 @@ where
         + Sync
         + 'run,
     G: GuardrailContract + 'run,
-    S: Stream<Item = Result<GuardrailValue, E>> + Send + 'run,
+    S: Stream<Item = Result<StreamItem, E>> + Send + 'run,
     E: Error + Send + Sync + 'static,
 {
     let start = LoopState {
@@ -97,19 +98,26 @@ where
     G: GuardrailContract,
     S: Stream + Send,
 {
-    async fn consume_item(&mut self, item: GuardrailValue) {
-        if chunk_has_tool_calls(&item) {
-            self.consume_tool_call_chunk(item).await;
-        } else if is_trailing_metadata_chunk(&item) {
-            self.responses_so_far.push(item);
+    async fn consume_item(&mut self, item: StreamItem) {
+        let value = match item {
+            StreamItem::Json(value) => value,
+            StreamItem::Bytes(bytes) => {
+                self.responses_so_far.push(StreamItem::Bytes(bytes));
+                return;
+            }
+        };
+        if chunk_has_tool_calls(&value) {
+            self.consume_tool_call_chunk(value).await;
+        } else if is_trailing_metadata_chunk(&value) {
+            self.responses_so_far.push(StreamItem::Json(value));
         } else {
-            self.consume_text_chunk(item).await;
+            self.consume_text_chunk(value).await;
         }
     }
 
     async fn consume_tool_call_chunk(&mut self, item: GuardrailValue) {
         self.seen.tool_calls = true;
-        self.responses_so_far.push(item.clone());
+        self.responses_so_far.push(StreamItem::Json(item.clone()));
         self.last_chunk = Some(item.clone());
         if self.seen.text_content {
             let flushed = self.run_round(&item, false).await;
@@ -121,13 +129,15 @@ where
         let held = held_choices(&self.transform.held_chars);
         let passthrough =
             tool_call_passthrough_chunk(&item, Some(&mut self.transform.finish_reasons), &held);
-        self.responses_yielded.push(passthrough.clone());
-        self.outputs.push_back(StreamOutput::Item(passthrough));
+        self.responses_yielded
+            .push(StreamItem::Json(passthrough.clone()));
+        self.outputs
+            .push_back(StreamOutput::Item(StreamItem::Json(passthrough)));
     }
 
     async fn consume_text_chunk(&mut self, item: GuardrailValue) {
         self.chunk_counter = self.chunk_counter.saturating_add(1);
-        self.responses_so_far.push(item.clone());
+        self.responses_so_far.push(StreamItem::Json(item.clone()));
         self.last_chunk = Some(item.clone());
         record_finish_reasons(&item, &mut self.transform.finish_reasons);
         if chunk_carries_text(&item) {

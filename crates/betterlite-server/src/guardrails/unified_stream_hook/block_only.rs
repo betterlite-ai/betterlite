@@ -7,6 +7,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, StreamingScanKey};
 use betterlite_guardrails::unified_dispatch::emit::{
     HttpErrorDetail, StreamErrorEmission, StreamHttpError, emit_streaming_http_error,
@@ -32,10 +34,10 @@ pub(crate) struct Scanner<'run, T, G> {
 // LiteLLM's loop locals; its chunks_yielded is always !responses_yielded.is_empty(), so only the list is kept
 pub(crate) struct Window<E> {
     pub(crate) chunk_counter: usize,
-    pub(crate) responses_so_far: Vec<GuardrailValue>,
-    pub(crate) responses_yielded: Vec<GuardrailValue>,
-    pub(crate) withheld_items: Vec<GuardrailValue>,
-    pub(crate) pending_items: Vec<GuardrailValue>,
+    pub(crate) responses_so_far: Vec<StreamItem>,
+    pub(crate) responses_yielded: Vec<StreamItem>,
+    pub(crate) withheld_items: Vec<StreamItem>,
+    pub(crate) pending_items: Vec<StreamItem>,
     pub(crate) last_scan_key: Option<StreamingScanKey>,
     pub(crate) tool_calls_in_flight: bool,
     pub(crate) outputs: VecDeque<HookOutput<E>>,
@@ -48,7 +50,7 @@ where
     pub(crate) async fn scan_item<T, G>(
         &mut self,
         scanner: &mut Scanner<'_, T, G>,
-        item: GuardrailValue,
+        item: StreamItem,
     ) -> ControlFlow<()>
     where
         T: BaseTranslation<
@@ -78,7 +80,7 @@ where
     }
 
     // a chunk after the stream ended waits for the final scan, so a block can replace the finish
-    fn hold_for_end<T, G>(&mut self, scanner: &Scanner<'_, T, G>, item: GuardrailValue)
+    fn hold_for_end<T, G>(&mut self, scanner: &Scanner<'_, T, G>, item: StreamItem)
     where
         T: StreamEndCheck,
     {
@@ -99,7 +101,7 @@ where
     async fn sampled_round<T, G>(
         &mut self,
         scanner: &mut Scanner<'_, T, G>,
-        item: GuardrailValue,
+        item: StreamItem,
     ) -> ControlFlow<()>
     where
         T: BaseTranslation<
@@ -176,7 +178,7 @@ where
         ControlFlow::Continue(())
     }
 
-    pub(crate) fn send(&mut self, item: GuardrailValue) {
+    pub(crate) fn send(&mut self, item: StreamItem) {
         self.responses_yielded.push(item.clone());
         self.outputs.push_back(Ok(StreamOutput::Item(item)));
     }
@@ -225,7 +227,12 @@ where
         T: BaseTranslation<Failure = GuardrailFailure>,
     {
         if details.original_response.is_none() {
-            details.original_response = Some(GuardrailValue::Array(self.responses_so_far.clone()));
+            details.original_response = Some(GuardrailValue::Array(
+                self.responses_so_far
+                    .iter()
+                    .map(stream_item_value)
+                    .collect(),
+            ));
         }
         let blocked = GuardrailFailure::ModifyResponse(details);
         let chunks = handle_streaming_block(

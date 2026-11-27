@@ -112,12 +112,3 @@ pub(crate) fn modify_response(failure: &GuardrailFailure) -> Option<&ModifyRespo
         | GuardrailFailure::Other(_) => None,
     }
 }
-
-// Chat and Anthropic carry an in-stream error as the SSE frame text LiteLLM returns as string items
-#[must_use]
-pub(crate) fn frames_into_items(frames: Vec<Vec<u8>>) -> Option<Vec<GuardrailValue>> {
-    frames
-        .into_iter()
-        .map(|frame| String::from_utf8(frame).ok().map(GuardrailValue::Text))
-        .collect()
-}

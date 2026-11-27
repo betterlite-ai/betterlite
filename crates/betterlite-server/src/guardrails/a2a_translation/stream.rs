@@ -6,6 +6,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{StreamingScanKey, transform_user_key_metadata};
 
 use super::{A2aTranslationError, paths};
@@ -19,7 +21,7 @@ struct ParsedChunk {
 }
 
 pub async fn process_streaming_response<G>(
-    responses_so_far: &mut [GuardrailValue],
+    responses_so_far: &mut [StreamItem],
     guardrail: &G,
     logging_obj: Option<&mut GuardrailLogTarget>,
     user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>,
@@ -67,7 +69,7 @@ where
 }
 
 fn write_chunks(
-    responses_so_far: &mut [GuardrailValue],
+    responses_so_far: &mut [StreamItem],
     chunks: &mut [ParsedChunk],
     first_chunk: Option<usize>,
     first_text: &str,
@@ -79,16 +81,16 @@ fn write_chunks(
         };
         let object = mem::replace(&mut chunk.object, GuardrailValue::Null);
         *slot = if chunk.original_text {
-            GuardrailValue::Text(compact_line(&object)?)
+            StreamItem::Json(GuardrailValue::Text(compact_line(&object)?))
         } else {
-            object
+            StreamItem::Json(object)
         };
     }
     Ok(())
 }
 
 #[must_use]
-pub fn get_streaming_scan_key(responses_so_far: &[GuardrailValue]) -> StreamingScanKey {
+pub fn get_streaming_scan_key(responses_so_far: &[StreamItem]) -> StreamingScanKey {
     let mut combined = String::new();
     for chunk in parse_streaming_responses(responses_so_far) {
         if let Ok(text) = a2a_response_text(&chunk.object) {
@@ -105,12 +107,14 @@ pub fn get_streaming_scan_key(responses_so_far: &[GuardrailValue]) -> StreamingS
 
 fn add_stream_context(
     request_data: &mut BTreeMap<String, GuardrailValue>,
-    responses_so_far: &[GuardrailValue],
+    responses_so_far: &[StreamItem],
     user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>,
 ) {
     request_data
         .entry("responses_so_far".to_owned())
-        .or_insert_with(|| GuardrailValue::Array(responses_so_far.to_vec()));
+        .or_insert_with(|| {
+            GuardrailValue::Array(responses_so_far.iter().map(stream_item_value).collect())
+        });
     if request_data.contains_key("litellm_metadata") {
         return;
     }
@@ -124,9 +128,12 @@ fn add_stream_context(
     );
 }
 
-fn parse_streaming_responses(responses_so_far: &[GuardrailValue]) -> Vec<ParsedChunk> {
+fn parse_streaming_responses(responses_so_far: &[StreamItem]) -> Vec<ParsedChunk> {
     let mut parsed = Vec::new();
-    for (index, item) in responses_so_far.iter().enumerate() {
+    for (index, entry) in responses_so_far.iter().enumerate() {
+        let StreamItem::Json(item) = entry else {
+            continue;
+        };
         let (object, original_text) = match item {
             GuardrailValue::Object(_) => (item.clone(), false),
             GuardrailValue::Text(text) => {

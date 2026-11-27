@@ -7,6 +7,8 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, TranslationCall, transform_user_key_metadata,
 };
@@ -124,13 +126,13 @@ impl<G: GuardrailContract> BaseTranslation for GoogleGenAiTranslation<G> {
 
     async fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
         let frames = responses_so_far
             .iter()
-            .map(converted)
+            .map(|item| converted(&stream_item_value(item)))
             .collect::<Result<Vec<Json>, _>>()?;
         scan_output(GuardedOutput::Frames(&frames), guardrail, call).await
     }

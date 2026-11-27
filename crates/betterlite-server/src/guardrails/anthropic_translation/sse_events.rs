@@ -12,8 +12,10 @@
 )]
 
 use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_message_scope::fingerprint::stream_item_fingerprint;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::decode_replacing_invalid;
 use betterlite_guardrails::guardrail_translation::StreamingScanKey;
 use serde_json::{Map, Value};
 use std::borrow::Cow;
@@ -33,16 +35,19 @@ fn trim_sse(text: &str) -> &str {
     })
 }
 
-// Python's errors="replace": one U+FFFD per invalid sequence. String::from_utf8_lossy does the same but clippy.toml bans it.
-fn utf8_replacing_invalid(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    for chunk in bytes.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push('\u{FFFD}');
-        }
+// One stream item as the Anthropic handler reads it: a parsed event, a raw frame's bytes, or a value it leaves alone
+pub fn stream_item_chunk(item: &StreamItem) -> Result<SseChunk, serde_json::Error> {
+    match item {
+        StreamItem::Json(value) => match serde_json::to_value(value)? {
+            Value::Object(fields) => Ok(SseChunk::Event(fields)),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Array(_) => Ok(SseChunk::Other),
+        },
+        StreamItem::Bytes(bytes) => Ok(SseChunk::Bytes(bytes.clone())),
     }
-    text
 }
 
 #[must_use]
@@ -59,7 +64,7 @@ pub fn parse_sse_data_line(raw_line: &str) -> Option<Map<String, Value>> {
 pub fn iter_sse_events(item: &SseChunk) -> Vec<Map<String, Value>> {
     match item {
         SseChunk::Event(event) => vec![event.clone()],
-        SseChunk::Bytes(bytes) => utf8_replacing_invalid(bytes)
+        SseChunk::Bytes(bytes) => decode_replacing_invalid(bytes)
             .split("\n\n")
             .flat_map(|block| block.split('\n').filter_map(parse_sse_data_line))
             .collect(),

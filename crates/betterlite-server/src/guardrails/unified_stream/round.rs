@@ -5,6 +5,8 @@ use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamTransformSink, TranslationCall,
 };
@@ -38,8 +40,8 @@ enum RoundCallError {
 struct FailureContext<'context, T: ?Sized> {
     translation: &'context T,
     call_type: CallType,
-    responses_so_far: &'context [GuardrailValue],
-    responses_yielded: &'context [GuardrailValue],
+    responses_so_far: &'context [StreamItem],
+    responses_yielded: &'context [StreamItem],
 }
 
 pub(crate) async fn emit_transform_round<T, G, E>(
@@ -73,8 +75,8 @@ where
         }
     };
     if let Some(chunk) = synthetic {
-        responses_yielded.push(chunk.clone());
-        outputs.push_back(StreamOutput::Item(chunk));
+        responses_yielded.push(StreamItem::Json(chunk.clone()));
+        outputs.push_back(StreamOutput::Item(StreamItem::Json(chunk)));
     }
     Ok(())
 }
@@ -82,7 +84,7 @@ where
 // LiteLLM's process_output_streaming_response call, shared with the block-only inspection
 pub(crate) async fn call_streaming<T, G>(
     params: &mut StreamLoopParams<'_, T, G>,
-    responses_so_far: &mut Vec<GuardrailValue>,
+    responses_so_far: &mut Vec<StreamItem>,
     sink: Option<&mut StreamTransformSink>,
 ) -> Result<(), GuardrailFailure>
 where
@@ -107,7 +109,7 @@ where
 async fn run_round_call<T, G>(
     params: &mut StreamLoopParams<'_, T, G>,
     state: &mut TransformState,
-    responses_so_far: &mut Vec<GuardrailValue>,
+    responses_so_far: &mut Vec<StreamItem>,
     reference_chunk: &GuardrailValue,
     is_final: bool,
 ) -> Result<Option<GuardrailValue>, RoundCallError>
@@ -153,8 +155,13 @@ where
         RoundCallError::Http(error) => terminate_with_http(error, &emission, outputs),
         RoundCallError::Guardrail(GuardrailFailure::ModifyResponse(mut details)) => {
             if details.original_response.is_none() {
-                details.original_response =
-                    Some(GuardrailValue::Array(context.responses_so_far.to_vec()));
+                details.original_response = Some(GuardrailValue::Array(
+                    context
+                        .responses_so_far
+                        .iter()
+                        .map(stream_item_value)
+                        .collect(),
+                ));
             }
             terminate_with_block(
                 context.translation,
@@ -195,7 +202,7 @@ where
 pub(crate) fn terminate_with_block<T, E>(
     translation: &T,
     failure: GuardrailFailure,
-    responses_yielded: &[GuardrailValue],
+    responses_yielded: &[StreamItem],
     outputs: &mut VecDeque<StreamOutput>,
 ) -> Result<(), RoundFailure<E>>
 where

@@ -2,17 +2,17 @@ use std::collections::BTreeMap;
 use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamingScanKey, TranslationCall,
 };
 use thiserror::Error;
 
 use super::stamps::StampSource;
-use super::{GuardrailToApply, failure_message, frames_into_items, modify_response};
+use super::{GuardrailToApply, failure_message, modify_response};
 use crate::guardrails::anthropic_translation::block_continuation::{self, BlockedException};
 use crate::guardrails::anthropic_translation::output_scan;
 use crate::guardrails::anthropic_translation::output_scan::error::ProcessOutputError;
@@ -117,11 +117,15 @@ where
 
     async fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
-        let mut chunks = to_chunks(responses_so_far).map_err(ProcessStreamError::Convert)?;
+        let mut chunks = responses_so_far
+            .iter()
+            .map(sse_events::stream_item_chunk)
+            .collect::<Result<Vec<SseChunk>, serde_json::Error>>()
+            .map_err(ProcessStreamError::Convert)?;
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
         let logged = call.logging_obj;
@@ -144,11 +148,11 @@ where
         Ok(())
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
-        let chunks = to_chunks(responses_so_far).ok()?;
+    fn get_streaming_scan_key(&self, responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
+        let mut chunks = Vec::with_capacity(responses_so_far.len());
+        for item in responses_so_far {
+            chunks.push(sse_events::stream_item_chunk(item).ok()?);
+        }
         Some(sse_events::streaming_scan_key(&chunks))
     }
 
@@ -156,13 +160,21 @@ where
         &self,
         failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
         let stamp = self.stamps.stamp();
         let original = serde_json::to_value(details.original_response.as_ref()).ok()?;
         let original_response = blocked_original_response(Some(&original));
-        let chunks = responses_so_far.map(to_chunks).transpose().ok()?;
+        let chunks = responses_so_far
+            .map(|items| {
+                items
+                    .iter()
+                    .map(sse_events::stream_item_chunk)
+                    .collect::<Result<Vec<SseChunk>, serde_json::Error>>()
+            })
+            .transpose()
+            .ok()?;
         let blocked = BlockedException {
             message: &details.message,
             model: &details.model,
@@ -175,41 +187,30 @@ where
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        _responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        _responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         let (_, message) = failure_message(failure.guardrail()?)?;
-        block_continuation::build_stream_error_items(&message)
-            .ok()
-            .and_then(frames_into_items)
+        let frames = block_continuation::build_stream_error_items(&message).ok()?;
+        Some(frames.into_iter().map(StreamItem::Bytes).collect())
     }
 }
 
-// The chat handler needs every chunk, so a value that is not an object stays a chunk B3676 leaves alone
-fn to_chunks(items: &[GuardrailValue]) -> Result<Vec<SseChunk>, serde_json::Error> {
-    items
-        .iter()
-        .map(|item| match serde_json::to_value(item)? {
-            JsonValue::Object(fields) => Ok(SseChunk::Event(fields)),
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_) => Ok(SseChunk::Other),
-        })
-        .collect()
-}
-
-fn write_chunks(items: &mut [GuardrailValue], chunks: &[SseChunk]) {
+fn write_chunks(items: &mut [StreamItem], chunks: &[SseChunk]) {
     for (slot, chunk) in items.iter_mut().zip(chunks) {
-        let SseChunk::Event(fields) = chunk else {
-            continue;
-        };
-        *slot = GuardrailValue::Object(
-            fields
-                .iter()
-                .map(|(key, value)| (key.clone(), to_guardrail(value)))
-                .collect(),
-        );
+        match chunk {
+            SseChunk::Event(fields) => {
+                *slot = StreamItem::Json(GuardrailValue::Object(
+                    fields
+                        .iter()
+                        .map(|(key, value)| (key.clone(), to_guardrail(value)))
+                        .collect(),
+                ));
+            }
+            SseChunk::Bytes(bytes) => {
+                *slot = StreamItem::Bytes(bytes.clone());
+            }
+            SseChunk::Other => {}
+        }
     }
 }
 

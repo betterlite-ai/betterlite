@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamingScanKey, TranslationCall,
 };
@@ -54,7 +55,7 @@ impl<G: GuardrailContract> BaseTranslation for A2ATranslation<G> {
 
     fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
@@ -67,10 +68,7 @@ impl<G: GuardrailContract> BaseTranslation for A2ATranslation<G> {
         )
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
+    fn get_streaming_scan_key(&self, responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
         Some(stream::get_streaming_scan_key(responses_so_far))
     }
 }

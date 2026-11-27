@@ -35,7 +35,7 @@ use crate::guardrails::chat_guardrail_translation::streaming::streaming_scan_key
 use crate::guardrails::responses_translation::block_events::guardrail_json::blocked_original_response;
 
 use super::stamps::StampSource;
-use super::{GuardrailToApply, UNKNOWN_GUARDRAIL_NAME, frames_into_items, modify_response};
+use super::{GuardrailToApply, UNKNOWN_GUARDRAIL_NAME, modify_response};
 
 #[derive(Debug, Error)]
 pub enum ChatTranslationError {
@@ -123,7 +123,7 @@ where
 
     async fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
@@ -151,22 +151,15 @@ where
         Ok(())
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
-        let items: Vec<StreamItem> = responses_so_far
-            .iter()
-            .map(|item| StreamItem::Json(item.clone()))
-            .collect();
-        streaming_scan_key::get_streaming_scan_key(&items).ok()
+    fn get_streaming_scan_key(&self, responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
+        streaming_scan_key::get_streaming_scan_key(responses_so_far).ok()
     }
 
     fn build_block_sse_chunks(
         &self,
         failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
         let stamp = self.stamps.stamp();
@@ -194,11 +187,11 @@ where
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        _responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        _responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         let error = failure_error_object(failure.guardrail()?)?;
         let frames = error_items::build_stream_error_items(&error).ok()?;
-        frames_into_items(frames)
+        Some(frames.into_iter().map(StreamItem::Bytes).collect())
     }
 
     fn get_structured_messages(
