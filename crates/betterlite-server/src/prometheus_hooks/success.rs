@@ -59,7 +59,6 @@ struct SuccessRecord<'record> {
     values: &'record UserApiKeyLabelValues,
     context: &'record PrometheusLabelFactoryContext,
     labels: UsageLabels<'record>,
-    end_user: EndUserCostTrackingSettings,
     now: Instant,
 }
 
@@ -103,7 +102,6 @@ pub(crate) async fn record_success(
             context: &context,
             settings: &hooks.settings.labels,
         },
-        end_user: hooks.settings.end_user,
         now: Instant::now(),
     };
     emit_success(hooks, &record).await
@@ -148,11 +146,14 @@ async fn record_budget(
         .await;
 }
 
-fn usage_label_inputs<'record>(record: &SuccessRecord<'record>) -> LabelInputs<'record> {
+const fn usage_label_inputs<'record>(
+    record: &SuccessRecord<'record>,
+    end_user: EndUserCostTrackingSettings,
+) -> LabelInputs<'record> {
     LabelInputs {
         values: record.values,
         settings: record.labels.settings,
-        end_user_settings: record.end_user,
+        end_user_settings: end_user,
         context: Some(record.context),
     }
 }
@@ -175,7 +176,11 @@ fn record_rate_limits(
             end_user_settings: hooks.settings.end_user,
         },
     )?;
-    key_and_team_rate_limits(&record.metrics, record.payload, usage_label_inputs(record))?;
+    key_and_team_rate_limits(
+        &record.metrics,
+        record.payload,
+        usage_label_inputs(record, hooks.settings.end_user),
+    )?;
     Ok(())
 }
 
@@ -211,7 +216,7 @@ fn record_latency(
     set_latency_metrics(
         &latency_histograms(hooks),
         &latency_observation(hooks, record, queue_time),
-        &usage_label_inputs(record),
+        &usage_label_inputs(record, hooks.settings.end_user),
     )?;
     Ok(())
 }
