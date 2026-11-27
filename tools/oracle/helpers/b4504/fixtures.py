@@ -158,12 +158,16 @@ def job_of(call: Call, lens: Lens) -> Job:
     raise ValueError("the lens has no such job")
 
 
-def worker_of(call: Call) -> Worker:
+def worker_id_of(call: Call) -> str:
     worker_id = call.get("worker_id")
     if worker_id is None:
         raise ValueError("an analysis call needs worker_id")
+    return worker_id
+
+
+def worker_of(call: Call) -> Worker:
     return Worker(
-        id=worker_id,
+        id=worker_id_of(call),
         name="worker",
         scope=Scope(),
         last_seen=datetime(2026, 1, 1, tzinfo=UTC),
