@@ -12,13 +12,12 @@ pub(super) fn canonical(value: Value) -> Value {
                 if value.is_null() {
                     continue;
                 }
-                if JSON_TEXT_FIELDS.contains(&key.as_str()) {
-                    if let Value::String(text) = &value {
-                        if let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                            out.insert(key, canonical(parsed));
-                            continue;
-                        }
-                    }
+                if JSON_TEXT_FIELDS.contains(&key.as_str())
+                    && let Value::String(text) = &value
+                    && let Ok(parsed) = serde_json::from_str::<Value>(text)
+                {
+                    out.insert(key, canonical(parsed));
+                    continue;
                 }
                 out.insert(key, canonical(value));
             }

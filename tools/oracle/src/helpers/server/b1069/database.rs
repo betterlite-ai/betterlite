@@ -16,7 +16,7 @@ const UPDATED_AT: &str = "2024-02-03T04:05:06.000";
 
 type Found = Result<Option<LiteLlmManagedVectorStore>, TableError>;
 type Stored = Result<LiteLlmManagedVectorStore, TableError>;
-type Rows<'a> = MutexGuard<'a, DbState>;
+type Rows<'guard> = MutexGuard<'guard, DbState>;
 
 // the rows the management writes change, with every call recorded like the table's
 #[derive(Clone)]
@@ -61,8 +61,8 @@ impl FakeDatabase {
             .cloned()
     }
 
-    fn insert(&self, record: NewVectorStoreRecord) -> LiteLlmManagedVectorStore {
-        let store = record_to_store(&record);
+    fn insert(&self, record: &NewVectorStoreRecord) -> LiteLlmManagedVectorStore {
+        let store = record_to_store(record);
         self.begin("db:create").rows.push(store.clone());
         store
     }
@@ -101,7 +101,7 @@ impl VectorStoreRows for FakeDatabase {
 
 impl VectorStoreWrites for FakeDatabase {
     fn create(&self, record: NewVectorStoreRecord) -> impl Future<Output = Stored> + Send {
-        ready(Ok(self.insert(record)))
+        ready(Ok(self.insert(&record)))
     }
 
     fn update(

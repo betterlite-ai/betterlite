@@ -15,7 +15,6 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_config::sections::management_rbac::{FeatureSwitches, Settings};
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
-use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::api::vector_management_read::state::VectorManagementReadState;
 use betterlite_server::api::vector_management_write::state::VectorManagementWriteState;
@@ -44,8 +43,14 @@ impl Helper for Op {
     }
 }
 
-// one call: a fresh database and registry seeded from the case, the one request, then their state
-async fn answer(call: &Call) -> HelperResult {
+// the per-call state: the event log, the table the writes change, and their registry
+struct Fixture {
+    events: Arc<Mutex<Vec<String>>>,
+    database: Option<FakeDatabase>,
+    registry: Option<Arc<Mutex<VectorStoreRegistry>>>,
+}
+
+fn fixture(call: &Call) -> Fixture {
     let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let database = call
         .setup
@@ -59,6 +64,20 @@ async fn answer(call: &Call) -> HelperResult {
             credentials: Arc::new(CredentialSnapshot::default()),
         }))
     });
+    Fixture {
+        events,
+        database,
+        registry,
+    }
+}
+
+// one call: a fresh database and registry seeded from the case, the one request, then their state
+async fn answer(call: &Call) -> HelperResult {
+    let Fixture {
+        events,
+        database,
+        registry,
+    } = fixture(call);
     let state = write_state(call, database.clone(), registry.clone());
     let request = Request::builder()
         .method("POST")
@@ -77,30 +96,12 @@ async fn answer(call: &Call) -> HelperResult {
         .await
         .map_err(|error| failure(error.to_string()))?;
     let body: Value = serde_json::from_slice(&bytes).map_err(|error| failure(error.to_string()))?;
-    let database_rows = match &database {
-        Some(database) => {
-            let db_state = database
-                .inner
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            json!(db_state.rows)
-        }
-        None => Value::Null,
-    };
-    let cache_rows = match &registry {
-        Some(registry) => json!(stores_of(registry)),
-        None => Value::Null,
-    };
-    let writes = events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
     Ok(canonical(json!({
         "status": status,
         "body": body,
-        "database": database_rows,
-        "cache": cache_rows,
-        "writes": writes,
+        "database": rows_of(&database),
+        "cache": stores_of(&registry),
+        "writes": events.lock().unwrap_or_else(PoisonError::into_inner).clone(),
     })))
 }
 
@@ -137,10 +138,29 @@ fn write_state(
     Arc::new(VectorManagementWriteState::from(reads))
 }
 
-fn stores_of(registry: &Arc<Mutex<VectorStoreRegistry>>) -> Vec<LiteLlmManagedVectorStore> {
-    registry
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .stores
-        .clone()
+// the rows the table holds after the call, or null when the case seeds no database
+fn rows_of(database: &Option<FakeDatabase>) -> Value {
+    match database {
+        Some(database) => {
+            let state = database
+                .inner
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            json!(state.rows)
+        }
+        None => Value::Null,
+    }
+}
+
+// the stores the registry holds after the call, or null when the case seeds no registry
+fn stores_of(registry: &Option<Arc<Mutex<VectorStoreRegistry>>>) -> Value {
+    match registry {
+        Some(registry) => json!(
+            registry
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .stores
+        ),
+        None => Value::Null,
+    }
 }
