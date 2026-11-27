@@ -1,14 +1,14 @@
 id: B10145
 milestone: M9 agents and mcp
 title: MCP registry IP filter
-status: todo
+status: done
 depends_on: [B4731, B6590, B10020]
 file: tasks/B10145-mcp-registry-ip-filter.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
 parent: B139
 split_from: B4726
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3394

@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-client-auth-headers-lookup-by-alias
+call:
+  b10155:
+    calls:
+      - function: lookup
+        headers:
+          GitHub: {Authorization: "Bearer test-github"}
+        alias: GitHub
+        server_name: null
+        access_groups: []
+      - function: lookup
+        headers:
+          GitHub: {authorization: "Bearer test-lower"}
+        alias: github
+        server_name: null
+        access_groups: []
+env: {}
+compare: {ignore: []}

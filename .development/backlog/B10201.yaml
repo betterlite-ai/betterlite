@@ -1,13 +1,13 @@
 id: B10201
 milestone: R2 bug fixes
 title: GlobalTimeout goes, and one RequestTimeout resolution serves every config section that reads request_timeout
-status: todo
+status: done
 depends_on: []
 file: tasks/B10201-request-timeout-copies.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3401

@@ -1,0 +1,38 @@
+kind: helper
+name: mcp-client-auth-headers-per-server-authorization
+call:
+  b10155:
+    calls:
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers: null
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers: {}
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers:
+          github: {AUTHORIZATION: "Bearer test-upper"}
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers:
+          github: {authorization: ""}
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers:
+          github: {X-Api-Key: "test-key"}
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: [team-a]}
+        server_auth_headers:
+          team-a: {Authorization: "Bearer test-group"}
+      - function: per_server_authorization
+        server: {alias: github, server_name: null, access_groups: [team-a, team-b]}
+        server_auth_headers:
+          team-a: {Authorization: "Bearer test-a"}
+          team-b: {Authorization: "Bearer test-b"}
+      - function: per_server_authorization
+        server: {alias: My Server, server_name: null, access_groups: null}
+        server_auth_headers:
+          my_server: {Authorization: "Bearer test-sanitized"}
+env: {}
+compare: {ignore: []}
