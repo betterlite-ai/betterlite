@@ -75,6 +75,7 @@ pub mod customer_read;
 pub mod customer_update;
 pub mod cyberark_config_routes;
 pub mod daily_activity;
+pub mod daily_activity_common;
 pub mod daily_activity_entities;
 pub mod daily_activity_export;
 pub mod daily_activity_router;
