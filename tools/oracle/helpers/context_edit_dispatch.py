@@ -138,25 +138,18 @@ class ScriptedEditor:
     def clear_tool_uses(
         self, **arguments: JsonValue
     ) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
-        return self.record(CLEAR_TOOL_USES_EDIT_TYPE, arguments, {}, self.clear)
+        entry = {**arguments, "editor": CLEAR_TOOL_USES_EDIT_TYPE}
+        self.calls.append(JSON_OBJECT.validate_python(entry))
+        return take(self.clear)
 
     # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L112-L132
     async def compact_uses(
         self, **arguments: JsonValue
     ) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
         request_wide = marked_request_wide(arguments)
-        return self.record(COMPACT_EDIT_TYPE, arguments, request_wide, self.compact)
-
-    def record(
-        self,
-        editor: str,
-        arguments: dict[str, JsonValue],
-        request_wide: dict[str, JsonValue],
-        scripts: list[Script],
-    ) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
-        entry = {**arguments, "editor": editor, **request_wide}
+        entry = {**arguments, "editor": COMPACT_EDIT_TYPE, **request_wide}
         self.calls.append(JSON_OBJECT.validate_python(entry))
-        return take(scripts)
+        return take(self.compact)
 
 
 class LogCapture(logging.Handler):
