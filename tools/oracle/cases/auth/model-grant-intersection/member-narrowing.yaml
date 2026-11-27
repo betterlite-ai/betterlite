@@ -1,0 +1,33 @@
+kind: helper
+name: auth-model-grant-intersection-member-narrowing
+call:
+  # the member scope narrows the enforcement list and leaves the team list whole
+  model_grant_intersection:
+    function: enforced
+    database: true
+    token: {models: [gpt-4o], team_id: t1, user_id: u1}
+    team: {team_id: t1, models: [tier-a, tier-b]}
+    membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+calls:
+  # attribution unions the team grant with the member scope
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      membership_loaded: true
+      team: {team_id: t1, models: [tier-a, tier-b]}
+      membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+      serving: {gpt-4o: [tier-a, tier-b]}
+  # an empty member scope grants no group of its own
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      membership_loaded: true
+      team: {team_id: t1, models: [tier-a, tier-b]}
+      membership: {user_id: u1, team_id: t1, allowed_models: []}
+      serving: {gpt-4o: [tier-a, tier-b]}
+env: {}
+compare: {ignore: []}

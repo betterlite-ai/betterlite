@@ -1,3 +1,5 @@
+use axum::body::Body;
+use axum::http::Request;
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -18,6 +20,7 @@ use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
@@ -41,6 +44,7 @@ pub enum AuthBackend {
     AuthOrgLookup,
     AuthEndUsers,
     AuthPolicySupport,
+    ModelGrantIntersection,
     AuthContextSources,
 }
 
@@ -61,6 +65,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
+    AuthBackend::ModelGrantIntersection,
     AuthBackend::AuthContextSources,
 ];
 
@@ -81,12 +86,28 @@ pub enum StageInput {
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
     AuthPolicySupport(Box<AuthPolicySupportStageInput>),
+    ModelGrantIntersection(Box<GrantStageInput>),
     AuthContextSources(Box<RequestModelStageInput>),
 }
 
 #[derive(Clone, Debug)]
 pub struct AuthContext {
     pub principal: Principal,
+}
+
+// the resource grant stage reads the request's rule and database switch, so its input is built here
+pub(crate) fn resource_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, AuthenticationFailure> {
+    let stage = ResourceGrantStageInput {
+        context: authenticated
+            .cloned()
+            .ok_or(AuthenticationFailure::Missing)?,
+        rule: auth_resource_grants::rule_for_request(request),
+        database: auth_resource_grants::database_for_request(request),
+    };
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 #[derive(Clone, Debug)]
@@ -120,6 +141,7 @@ pub(crate) enum StageFailure {
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
     AuthPolicySupport(Box<ProxyException>),
+    ModelGrants(Box<ProxyException>),
     AuthContextSources(Box<ProxyException>),
 }
 
@@ -130,6 +152,16 @@ impl From<AuthenticationFailure> for StageFailure {
 }
 
 impl StageInput {
+    // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
+    pub(crate) async fn prefetch_model_grants(
+        stage: Box<GrantStageInput>,
+    ) -> Result<Self, StageFailure> {
+        model_grant_intersection::prefetch(&stage)
+            .await
+            .map_err(StageFailure::ModelGrants)?;
+        Ok(Self::ModelGrantIntersection(stage))
+    }
+
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::MasterKey(_) => AuthBackend::MasterKey,
@@ -147,6 +179,7 @@ impl StageInput {
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
             Self::AuthPolicySupport(_) => AuthBackend::AuthPolicySupport,
+            Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
             Self::AuthContextSources(_) => AuthBackend::AuthContextSources,
         }
     }
@@ -189,6 +222,7 @@ pub(crate) fn dispatch(
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
+        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
         StageInput::AuthContextSources(stage) => {
             auth_context_sources::run_stage(stage).map_err(StageFailure::AuthContextSources)
         }
