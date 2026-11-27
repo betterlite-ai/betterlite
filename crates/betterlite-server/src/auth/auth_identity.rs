@@ -156,6 +156,33 @@ impl StageInput {
             Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
         }
     }
+
+    // the stages after the key lookup only carry the context an earlier stage resolved
+    fn forwarded_context(&self) -> Option<AuthContext> {
+        match self {
+            Self::Authenticated(context) => Some((**context).clone()),
+            Self::EntityModelAccess(stage) => Some(stage.context.clone()),
+            Self::AuthModelGrants(stage) => Some(stage.context.clone()),
+            Self::AuthTagBudgets(stage) => Some(stage.context.clone()),
+            Self::AuthKeyBudgets(stage) => Some(stage.context.clone()),
+            Self::TeamBudgetAdmission(stage) => Some(stage.context.clone()),
+            Self::AuthTenantBudgets(stage) => Some(stage.context.clone()),
+            Self::AuthOrgLookup(stage) => Some(stage.context.clone()),
+            Self::AuthEndUsers(stage) => Some(stage.context.clone()),
+            Self::ModelGrantIntersection(stage) => Some(stage.context.clone()),
+            Self::AuthKeyLookup(_)
+            | Self::AuthIdentity(_)
+            | Self::MasterKey(_)
+            | Self::AuthRequestPolicy(_)
+            | Self::RequestBodySafety(_)
+            | Self::AuthVirtualKeyRoutes(_)
+            | Self::AuthRequestModels(_)
+            | Self::AuthModelPatterns(_)
+            | Self::AuthResourceGrants(_)
+            | Self::OrganizationRoutePolicy(_)
+            | Self::AuthPolicySupport(_) => None,
+        }
+    }
 }
 
 pub(crate) fn dispatch(
@@ -168,18 +195,10 @@ pub(crate) fn dispatch(
     if backend != input.backend() && !key_pass_through {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
-    run_stage_input(input, master_key)
-}
-
-fn run_stage_input(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
-        StageInput::Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
@@ -194,23 +213,17 @@ fn run_stage_input(
         StageInput::AuthModelPatterns(stage) => {
             run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
         }
-        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
-        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
-        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
-        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
-        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
+        other => Ok(other
+            .forwarded_context()
+            .ok_or(AuthenticationFailure::Missing)?),
     }
 }
 

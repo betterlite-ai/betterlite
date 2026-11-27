@@ -126,7 +126,7 @@ async fn failure_stops_downstream() {
     master_key_wins_before_the_store().await;
 }
 
-// LiteLLM raises a plain exception for a key it never got, and its server answers that with FastAPI's 500 text
+// the empty key becomes AuthenticationFailure::Missing, and the shared auth stage answers it with its own 500 (B757's split) where LiteLLM returns a 401 auth_error
 async fn empty_key_is_a_missing_key() {
     let state = state_for(&config());
     let (port_set, writer) = ports(Some(reader(None)));
