@@ -92,26 +92,20 @@ fn helper_error<CounterFailure>(error: &PartnerResponseError<CounterFailure>) ->
 where
     CounterFailure: StdError + Send + Sync + 'static,
 {
+    let class = match error {
+        PartnerResponseError::Claude(_) => "AnthropicError",
+        PartnerResponseError::Ai21(_) => "OpenAIError",
+        PartnerResponseError::Llama(_) => "VertexAIError",
+        PartnerResponseError::Json(_) => "ValidationError",
+    };
     Box::new(HelperError {
-        class: class_of(error).to_owned(),
+        class: class.to_owned(),
         status: error.status_code(),
         error_type: None,
         param: None,
         code: None,
         message: error.to_string(),
     })
-}
-
-const fn class_of<CounterFailure>(error: &PartnerResponseError<CounterFailure>) -> &'static str
-where
-    CounterFailure: StdError + Send + Sync + 'static,
-{
-    match error {
-        PartnerResponseError::Claude(_) => "AnthropicError",
-        PartnerResponseError::Ai21(_) => "OpenAIError",
-        PartnerResponseError::Llama(_) => "VertexAIError",
-        PartnerResponseError::Json(_) => "ValidationError",
-    }
 }
 
 fn projection(config: &PartnerResponseConfig, answer: &Json) -> Result<Value, Box<HelperError>> {
