@@ -7,10 +7,10 @@ from collections.abc import Awaitable, Coroutine
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self
-from typing_extensions import TypedDict, override
 
 import pytest
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from typing_extensions import TypedDict, override
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints.payload import CallValue
@@ -473,9 +473,8 @@ def test_calls_get() -> None:
     fetched = made_answer(ours)
     assert dumped(fetched) == dumped(reference)
     assert dumped(fetched)["name"] == "fetched"
-    assert len(calls) == 2
     first, second = calls
-    assert first["method"] == second["method"] == "GET"
+    assert [first["method"], second["method"]] == ["GET", "GET"]
     assert first["path"] == second["path"] == f"{EVALS_PATH}/{EVAL_ID}"
     assert header_of(first, CUSTOM_HEADER) == CUSTOM_VALUE
 
