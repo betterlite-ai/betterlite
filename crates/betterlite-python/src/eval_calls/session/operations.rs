@@ -1,3 +1,8 @@
+use std::time::Duration;
+
+use betterlite_config::env_integer::timeout::RequestTimeout;
+use betterlite_config::loader::startup::process_environment;
+use betterlite_context::core_settings::CoreSettings;
 use betterlite_core::api::eval_create_list::call::{
     CreateEvalCall, EvalCreation, EvalListing, EvalsCallParams, ListEvalsCall,
 };
@@ -11,15 +16,19 @@ use betterlite_core::api::eval_http::exchange::EvalLogging;
 use betterlite_core::api::eval_lifecycle::{EvalLifecycleCall, EvalLifecycleDeps, EvalLifecycles};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::EvalCore;
 use super::logging::{self, SILENT_SINK};
-use crate::eval_calls::error::{EvalOperationFailure, FailureGroup};
+use crate::completion::setup::outbound_client;
+use crate::eval_calls::configs::EvalConfigs;
+use crate::eval_calls::convert::{SessionWire, parse};
+use crate::eval_calls::error::{EvalOperationFailure, FailureGroup, SessionError};
 use crate::eval_calls::payload::{CreatePayload, IdPayload, ListPayload, Params, UpdatePayload};
 
 // The operation one Python call asks for: the four requests the evals API serves, and the two lifecycle calls.
 pub(super) enum EvalCall {
-    Request(RequestCall),
+    Request(Box<RequestCall>),
     Delete(IdPayload),
     Cancel(IdPayload),
 }
@@ -50,6 +59,33 @@ impl RequestCall {
 }
 
 impl EvalCore {
+    pub(super) fn build(text: &str) -> Result<Self, SessionError> {
+        let wire: SessionWire = parse(text)?;
+        let environment = wire.environment.unwrap_or_else(process_environment);
+        let client = outbound_client(&environment)?;
+        let timeout = RequestTimeout::resolve(&environment)?;
+        let request_timeout = Duration::try_from_secs_f64(timeout.seconds).map_err(|source| {
+            SessionError::Duration {
+                seconds: timeout.seconds,
+                source,
+            }
+        })?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
+        let configs = EvalConfigs::new(wire.settings, &environment);
+        Ok(Self {
+            configs,
+            client,
+            core: CoreSettings {
+                request_timeout_seconds: timeout.seconds,
+                request_timeout_explicit: timeout.explicitly_set,
+                litellm_request_timeout: None,
+                model_timeout_overrides: Vec::new(),
+            },
+            redactor,
+            request_timeout,
+        })
+    }
+
     pub(super) async fn execute(&self, call: EvalCall) -> Result<String, EvalOperationFailure> {
         match call {
             EvalCall::Request(request) => self.request(&request).await,

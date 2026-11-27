@@ -7,17 +7,17 @@ use std::time::Duration;
 
 use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
 use betterlite_core::api::eval_create_list::config::EvalsConfigLookup;
-use betterlite_core::api::eval_lifecycle::EvalLifecycleConfigLookup;
+use betterlite_core::api::eval_lifecycle::EvalLifecycleConfigLookup as _;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::error::EvalsError;
-use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
+use betterlite_openai::evals::transformation::BaseEvalsAPIConfig as _;
 use betterlite_openai::openai_base_config::Headers;
 use indexmap::IndexMap;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyModule};
+use pyo3::types::{PyDict, PyModule};
 use secrecy::SecretString;
 
 use super::EvalCore;
@@ -80,8 +80,15 @@ fn list_call(base: &str) -> String {
     call(base, r#""limit":5,"#)
 }
 
-fn message(py: Python<'_>, error: PyErr) -> String {
+fn message(py: Python<'_>, error: &PyErr) -> String {
     error.value(py).to_string()
+}
+
+// the fixture answered this call with the body whose marker the reply carries, and saw the request line the operation builds
+fn assert_reply_and_request(serving: Serving, reply: &str, marker: &str, request_line: &str) {
+    assert!(reply.contains(marker), "{reply}");
+    let request = serving.finish().expect("the fixture answers once");
+    assert!(request.line.starts_with(request_line), "{}", request.line);
 }
 
 #[test]
@@ -103,9 +110,9 @@ fn register_adds_the_eval_classes() {
 fn session_bad_settings_text_is_a_value_error() {
     Python::initialize();
     Python::attach(|py| {
-        let error = NativeEvalSession::new("not json")
-            .err()
-            .expect("settings must parse");
+        let Err(error) = NativeEvalSession::new("not json") else {
+            panic!("settings must parse");
+        };
         assert!(error.is_instance_of::<PyValueError>(py));
     });
 }
@@ -117,10 +124,82 @@ fn session_bad_json_is_a_value_error() {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
         let error = session
             .create_eval(py, "not json", Vec::new())
-            .err()
-            .expect("a bad payload must fail");
+            .expect_err("a bad payload must fail");
         assert!(error.is_instance_of::<PyValueError>(py));
     });
+}
+
+fn sync_create(session: &NativeEvalSession, py: Python<'_>) {
+    let serving = serve_answer(CREATED);
+    let reply = session
+        .create_eval(py, &create_call(&base(&serving)), Vec::new())
+        .expect("create answers");
+    assert_reply_and_request(serving, &reply, "eval_created", "POST /v1/evals HTTP/1.1");
+}
+
+fn sync_list(session: &NativeEvalSession, py: Python<'_>) {
+    let serving = serve_answer(LISTED);
+    let reply = session
+        .list_evals(py, &list_call(&base(&serving)), Vec::new())
+        .expect("list answers");
+    assert_reply_and_request(
+        serving,
+        &reply,
+        r#""object":"list""#,
+        "GET /v1/evals?limit=5 HTTP/1.1",
+    );
+}
+
+fn sync_get(session: &NativeEvalSession, py: Python<'_>) {
+    let serving = serve_answer(FETCHED);
+    let reply = session
+        .get_eval(py, &eval_call(&base(&serving)), Vec::new())
+        .expect("get answers");
+    assert_reply_and_request(
+        serving,
+        &reply,
+        "eval_fetched",
+        "GET /v1/evals/eval_1 HTTP/1.1",
+    );
+}
+
+fn sync_update(session: &NativeEvalSession, py: Python<'_>) {
+    let serving = serve_answer(UPDATED);
+    let reply = session
+        .update_eval(py, &update_call(&base(&serving)), Vec::new())
+        .expect("update answers");
+    assert_reply_and_request(
+        serving,
+        &reply,
+        "eval_updated",
+        "POST /v1/evals/eval_1 HTTP/1.1",
+    );
+}
+
+fn sync_delete(session: &NativeEvalSession, py: Python<'_>) {
+    let serving = serve_answer(DELETED);
+    let reply = session
+        .delete_eval(py, &eval_call(&base(&serving)), Vec::new())
+        .expect("delete answers");
+    assert_reply_and_request(
+        serving,
+        &reply,
+        r#""deleted":true"#,
+        "DELETE /v1/evals/eval_1 HTTP/1.1",
+    );
+}
+
+fn sync_cancel(session: &NativeEvalSession, py: Python<'_>) {
+    let serving = serve_answer(CANCELLED);
+    let reply = session
+        .cancel_eval(py, &eval_call(&base(&serving)), Vec::new())
+        .expect("cancel answers");
+    assert_reply_and_request(
+        serving,
+        &reply,
+        r#""status":"cancelled""#,
+        "POST /v1/evals/eval_1/cancel HTTP/1.1",
+    );
 }
 
 #[test]
@@ -128,91 +207,12 @@ fn session_sync_calls_reach_their_own_operation() {
     Python::initialize();
     Python::attach(|py| {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
-        let created = serve_answer(CREATED);
-        let created_answer = session
-            .create_eval(py, &create_call(&base(&created)), Vec::new())
-            .expect("create answers");
-        assert!(created_answer.contains("eval_created"), "{created_answer}");
-        let created_request = created.finish().expect("the fixture answers once");
-        assert!(
-            created_request.line.starts_with("POST /v1/evals HTTP/1.1"),
-            "{}",
-            created_request.line
-        );
-        let listed = serve_answer(LISTED);
-        let listed_answer = session
-            .list_evals(py, &list_call(&base(&listed)), Vec::new())
-            .expect("list answers");
-        assert!(
-            listed_answer.contains(r#""object":"list""#),
-            "{listed_answer}"
-        );
-        let listed_request = listed.finish().expect("the fixture answers once");
-        assert!(
-            listed_request
-                .line
-                .starts_with("GET /v1/evals?limit=5 HTTP/1.1"),
-            "{}",
-            listed_request.line
-        );
-        let fetched = serve_answer(FETCHED);
-        let fetched_answer = session
-            .get_eval(py, &eval_call(&base(&fetched)), Vec::new())
-            .expect("get answers");
-        assert!(fetched_answer.contains("eval_fetched"), "{fetched_answer}");
-        let fetched_request = fetched.finish().expect("the fixture answers once");
-        assert!(
-            fetched_request
-                .line
-                .starts_with("GET /v1/evals/eval_1 HTTP/1.1"),
-            "{}",
-            fetched_request.line
-        );
-        let updated = serve_answer(UPDATED);
-        let updated_answer = session
-            .update_eval(py, &update_call(&base(&updated)), Vec::new())
-            .expect("update answers");
-        assert!(updated_answer.contains("eval_updated"), "{updated_answer}");
-        let updated_request = updated.finish().expect("the fixture answers once");
-        assert!(
-            updated_request
-                .line
-                .starts_with("POST /v1/evals/eval_1 HTTP/1.1"),
-            "{}",
-            updated_request.line
-        );
-        let deleted = serve_answer(DELETED);
-        let deleted_answer = session
-            .delete_eval(py, &eval_call(&base(&deleted)), Vec::new())
-            .expect("delete answers");
-        assert!(
-            deleted_answer.contains(r#""deleted":true"#),
-            "{deleted_answer}"
-        );
-        let deleted_request = deleted.finish().expect("the fixture answers once");
-        assert!(
-            deleted_request
-                .line
-                .starts_with("DELETE /v1/evals/eval_1 HTTP/1.1"),
-            "{}",
-            deleted_request.line
-        );
-        let cancelled = serve_answer(CANCELLED);
-        let cancelled_answer = session
-            .cancel_eval(py, &eval_call(&base(&cancelled)), Vec::new())
-            .expect("cancel answers");
-        assert!(
-            cancelled_answer.contains(r#""status":"cancelled""#),
-            "{cancelled_answer}"
-        );
-        let cancelled_request = cancelled.finish().expect("the fixture answers once");
-        assert!(
-            cancelled_request
-                .line
-                .starts_with("POST /v1/evals/eval_1/cancel HTTP/1.1"),
-            "{}",
-            cancelled_request.line
-        );
+        sync_create(&session, py);
+        sync_list(&session, py);
+        sync_get(&session, py);
+        sync_update(&session, py);
+        sync_delete(&session, py);
+        sync_cancel(&session, py);
     });
 }
 
@@ -226,102 +226,96 @@ async def main():
 answers = asyncio.run(main())
 ";
 
+// every async twin answers on the loop the facade calls it from, one after another, in call order
+fn await_calls(
+    py: Python<'_>,
+    session: NativeEvalSession,
+    calls: Vec<(&str, String)>,
+) -> Vec<String> {
+    let globals = PyDict::new(py);
+    globals
+        .set_item("session", session)
+        .expect("the globals take the session");
+    globals
+        .set_item("calls", calls)
+        .expect("the globals take the calls");
+    py.run(AWAIT_CALLS, Some(&globals), None)
+        .expect("the awaits finish");
+    globals
+        .get_item("answers")
+        .expect("the globals hold the answers")
+        .expect("the answers were set")
+        .extract()
+        .expect("the answers are text")
+}
+
 #[test]
-fn session_async_calls_reach_their_own_operation() {
+fn session_async_calls_reach_create_list_and_get() {
     Python::initialize();
     let created = serve_answer(CREATED);
     let listed = serve_answer(LISTED);
     let fetched = serve_answer(FETCHED);
+    let calls = vec![
+        ("acreate_eval", create_call(&base(&created))),
+        ("alist_evals", list_call(&base(&listed))),
+        ("aget_eval", eval_call(&base(&fetched))),
+    ];
+    let answers = Python::attach(|py| {
+        let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
+        await_calls(py, session, calls)
+    });
+    assert_reply_and_request(
+        created,
+        &answers[0],
+        "eval_created",
+        "POST /v1/evals HTTP/1.1",
+    );
+    assert_reply_and_request(
+        listed,
+        &answers[1],
+        r#""object":"list""#,
+        "GET /v1/evals?limit=5 HTTP/1.1",
+    );
+    assert_reply_and_request(
+        fetched,
+        &answers[2],
+        "eval_fetched",
+        "GET /v1/evals/eval_1 HTTP/1.1",
+    );
+}
+
+#[test]
+fn session_async_calls_reach_update_delete_and_cancel() {
+    Python::initialize();
     let updated = serve_answer(UPDATED);
     let deleted = serve_answer(DELETED);
     let cancelled = serve_answer(CANCELLED);
-    Python::attach(|py| {
+    let calls = vec![
+        ("aupdate_eval", update_call(&base(&updated))),
+        ("adelete_eval", eval_call(&base(&deleted))),
+        ("acancel_eval", eval_call(&base(&cancelled))),
+    ];
+    let answers = Python::attach(|py| {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
-        let calls = PyList::empty(py);
-        calls
-            .append(("acreate_eval", create_call(&base(&created))))
-            .expect("the call list grows");
-        calls
-            .append(("alist_evals", list_call(&base(&listed))))
-            .expect("the call list grows");
-        calls
-            .append(("aget_eval", eval_call(&base(&fetched))))
-            .expect("the call list grows");
-        calls
-            .append(("aupdate_eval", update_call(&base(&updated))))
-            .expect("the call list grows");
-        calls
-            .append(("adelete_eval", eval_call(&base(&deleted))))
-            .expect("the call list grows");
-        calls
-            .append(("acancel_eval", eval_call(&base(&cancelled))))
-            .expect("the call list grows");
-        let globals = PyDict::new(py);
-        globals
-            .set_item("session", session)
-            .expect("the globals take the session");
-        globals
-            .set_item("calls", calls)
-            .expect("the globals take the calls");
-        py.run(AWAIT_CALLS, Some(&globals), None)
-            .expect("the awaits finish");
-        let answers = globals
-            .get_item("answers")
-            .expect("the globals hold the answers")
-            .expect("the answers were set");
-        let texts: Vec<String> = answers.extract().expect("the answers are text");
-        assert!(texts[0].contains("eval_created"), "{}", texts[0]);
-        assert!(texts[1].contains(r#""object":"list""#), "{}", texts[1]);
-        assert!(texts[2].contains("eval_fetched"), "{}", texts[2]);
-        assert!(texts[3].contains("eval_updated"), "{}", texts[3]);
-        assert!(texts[4].contains(r#""deleted":true"#), "{}", texts[4]);
-        assert!(texts[5].contains(r#""status":"cancelled""#), "{}", texts[5]);
+        await_calls(py, session, calls)
     });
-    let created_request = created.finish().expect("the fixture answers once");
-    assert!(
-        created_request.line.starts_with("POST /v1/evals HTTP/1.1"),
-        "{}",
-        created_request.line
+    assert_reply_and_request(
+        updated,
+        &answers[0],
+        "eval_updated",
+        "POST /v1/evals/eval_1 HTTP/1.1",
     );
-    let listed_request = listed.finish().expect("the fixture answers once");
-    assert!(
-        listed_request
-            .line
-            .starts_with("GET /v1/evals?limit=5 HTTP/1.1"),
-        "{}",
-        listed_request.line
+    assert_reply_and_request(
+        deleted,
+        &answers[1],
+        r#""deleted":true"#,
+        "DELETE /v1/evals/eval_1 HTTP/1.1",
     );
-    let fetched_request = fetched.finish().expect("the fixture answers once");
-    assert!(
-        fetched_request
-            .line
-            .starts_with("GET /v1/evals/eval_1 HTTP/1.1"),
-        "{}",
-        fetched_request.line
-    );
-    let updated_request = updated.finish().expect("the fixture answers once");
-    assert!(
-        updated_request
-            .line
-            .starts_with("POST /v1/evals/eval_1 HTTP/1.1"),
-        "{}",
-        updated_request.line
-    );
-    let deleted_request = deleted.finish().expect("the fixture answers once");
-    assert!(
-        deleted_request
-            .line
-            .starts_with("DELETE /v1/evals/eval_1 HTTP/1.1"),
-        "{}",
-        deleted_request.line
-    );
-    let cancelled_request = cancelled.finish().expect("the fixture answers once");
-    assert!(
-        cancelled_request
-            .line
-            .starts_with("POST /v1/evals/eval_1/cancel HTTP/1.1"),
-        "{}",
-        cancelled_request.line
+    assert_reply_and_request(
+        cancelled,
+        &answers[2],
+        r#""status":"cancelled""#,
+        "POST /v1/evals/eval_1/cancel HTTP/1.1",
     );
 }
 
@@ -332,9 +326,8 @@ fn session_a_wrong_typed_field_is_a_bad_request() {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
         let error = session
             .list_evals(py, r#"{"limit": "many"}"#, Vec::new())
-            .err()
-            .expect("a wrong-typed limit must fail");
-        let text = message(py, error);
+            .expect_err("a wrong-typed limit must fail");
+        let text = message(py, &error);
         assert!(text.contains(r#""type":"BadRequestError""#), "{text}");
         assert!(text.contains(r#""status_code":400"#), "{text}");
         assert!(text.contains(r#""llm_provider":"openai""#), "{text}");
@@ -354,9 +347,8 @@ fn session_a_refused_connection_is_a_synthesized_500() {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
         let error = session
             .get_eval(py, &eval_call(&base), Vec::new())
-            .err()
-            .expect("a refused connection must fail");
-        let text = message(py, error);
+            .expect_err("a refused connection must fail");
+        let text = message(py, &error);
         assert!(text.contains(r#""type":"InternalServerError""#), "{text}");
         assert!(text.contains(r#""status_code":500"#), "{text}");
         assert!(text.contains(r#""llm_provider":"openai""#), "{text}");
@@ -367,7 +359,7 @@ fn environment() -> BTreeMap<String, String> {
     BTreeMap::from([("OPENAI_API_KEY".to_owned(), "env-key".to_owned())])
 }
 
-fn authorization(configs: &EvalConfigs) -> Option<String> {
+fn authorization(configs: &EvalConfigs) -> String {
     let lookup: &dyn EvalsConfigLookup = configs;
     let config = lookup
         .evals_config(EvalsConfigTag::OpenAI)
@@ -375,7 +367,10 @@ fn authorization(configs: &EvalConfigs) -> Option<String> {
     let headers = config
         .validate_environment(Headers::new(), None)
         .expect("a key resolves");
-    headers.get("Authorization").cloned()
+    headers
+        .get("Authorization")
+        .cloned()
+        .expect("the key is sent")
 }
 
 #[test]
@@ -385,24 +380,24 @@ fn configs_read_the_module_key_before_the_openai_key_and_the_environment() {
         openai_key: Some(SecretString::from("openai-key")),
     };
     assert_eq!(
-        authorization(&EvalConfigs::new(both, &environment())).as_deref(),
-        Some("Bearer module-key")
+        authorization(&EvalConfigs::new(both, &environment())),
+        "Bearer module-key"
     );
     let fallback = ModuleSettings {
         api_key: None,
         openai_key: Some(SecretString::from("openai-key")),
     };
     assert_eq!(
-        authorization(&EvalConfigs::new(fallback, &environment())).as_deref(),
-        Some("Bearer openai-key")
+        authorization(&EvalConfigs::new(fallback, &environment())),
+        "Bearer openai-key"
     );
     let empty = ModuleSettings {
         api_key: Some(SecretString::from("")),
         openai_key: None,
     };
     assert_eq!(
-        authorization(&EvalConfigs::new(empty, &environment())).as_deref(),
-        Some("Bearer env-key")
+        authorization(&EvalConfigs::new(empty, &environment())),
+        "Bearer env-key"
     );
     let none = ModuleSettings::default();
     let configs = EvalConfigs::new(none, &BTreeMap::new());

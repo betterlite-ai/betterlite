@@ -1,3 +1,4 @@
+use std::mem;
 use std::time::Duration;
 
 use betterlite_core::api::eval_create_list::DEFAULT_EVALS_PROVIDER;
@@ -53,7 +54,7 @@ impl Params {
 
     // every name left after the named arguments were read is one of the caller's **kwargs
     fn take_keywords(mut self, arguments: &mut Fields) -> Self {
-        self.kwargs = std::mem::take(arguments);
+        self.kwargs = mem::take(arguments);
         self
     }
 }
