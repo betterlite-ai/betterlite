@@ -12,22 +12,23 @@ pub(super) fn resample<'py>(
     source_rate: i64,
 ) -> Result<Bound<'py, PyAny>, RivaAudioError> {
     let numpy = import_numpy(py)?;
-    let target_rate = i64::from(TARGET_SAMPLE_RATE_HZ);
+    let rates = Rates {
+        source: source_rate,
+        target: i64::from(TARGET_SAMPLE_RATE_HZ),
+    };
     let size = samples
         .getattr("size")
         .and_then(|size| as_int(py, &size))
         .map_err(|error| call_failure(py, "samples.size", &error))?;
-    if source_rate == target_rate || size == 0 {
+    if rates.source == rates.target || size == 0 {
         return Ok(samples.clone());
     }
     for resampler in [Resampler::Soxr, Resampler::Scipy] {
-        if let Some(converted) =
-            try_resampler(py, &numpy, resampler, samples, source_rate, target_rate)?
-        {
+        if let Some(converted) = try_resampler(py, &numpy, resampler, samples, rates)? {
             return Ok(converted);
         }
     }
-    linear(py, &numpy, samples, source_rate, target_rate)
+    linear(py, &numpy, samples, rates.source, rates.target)
 }
 
 #[derive(Clone, Copy)]
@@ -36,21 +37,26 @@ enum Resampler {
     Scipy,
 }
 
+#[derive(Clone, Copy)]
+struct Rates {
+    source: i64,
+    target: i64,
+}
+
 fn try_resampler<'py>(
     py: Python<'py>,
     numpy: &Bound<'py, PyModule>,
     resampler: Resampler,
     samples: &Bound<'py, PyAny>,
-    source_rate: i64,
-    target_rate: i64,
+    rates: Rates,
 ) -> Result<Option<Bound<'py, PyAny>>, RivaAudioError> {
     let outcome = match resampler {
         Resampler::Soxr => py
             .import("soxr")
             .and_then(|soxr| soxr.getattr("resample"))
-            .and_then(|call| call.call1((samples, source_rate, target_rate)))
+            .and_then(|call| call.call1((samples, rates.source, rates.target)))
             .and_then(|converted| as_float32(py, numpy, &converted)),
-        Resampler::Scipy => scipy_resample(py, samples, source_rate, target_rate)
+        Resampler::Scipy => scipy_resample(py, samples, rates)
             .and_then(|converted| as_float32(py, numpy, &converted)),
     };
     match outcome {
@@ -63,11 +69,10 @@ fn try_resampler<'py>(
 fn scipy_resample<'py>(
     py: Python<'py>,
     samples: &Bound<'py, PyAny>,
-    source_rate: i64,
-    target_rate: i64,
+    rates: Rates,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let target_int = PyInt::new(py, target_rate);
-    let source_int = PyInt::new(py, source_rate);
+    let target_int = PyInt::new(py, rates.target);
+    let source_int = PyInt::new(py, rates.source);
     let divisor = py
         .import("math")?
         .getattr("gcd")?

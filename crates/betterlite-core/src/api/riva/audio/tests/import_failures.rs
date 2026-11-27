@@ -9,14 +9,14 @@ use super::{
 const FINDER: &str = "import sys
 class _BrokenFinder:
     def find_spec(self, name, path=None, target=None):
-        if name == '{blocked}':
-            raise RuntimeError('{blocked} import exploded')
+        if name == '__BLOCKED__':
+            raise RuntimeError('__BLOCKED__ import exploded')
         return None
 sys.meta_path.insert(0, _BrokenFinder())
 ";
 
 fn install_broken_import(host: &PythonHost, blocked: &str, soundfile: &str) {
-    let source = FINDER.replace("{blocked}", blocked);
+    let source = FINDER.replace("__BLOCKED__", blocked);
     host.attach(|py| {
         install(py, "riva_audio_probe", PROBE);
         install(py, "soundfile", soundfile);

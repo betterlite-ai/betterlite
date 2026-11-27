@@ -50,7 +50,9 @@ pub fn decode_riva_audio_attached(
     py: Python<'_>,
     file_bytes: &[u8],
 ) -> Result<ResampledAudio, RivaAudioError> {
-    let size = u64::try_from(file_bytes.len()).map_err(|_| RivaAudioError::TooLarge)?;
+    let Ok(size) = u64::try_from(file_bytes.len()) else {
+        return Err(RivaAudioError::TooLarge);
+    };
     if size > MAX_AUDIO_BYTES {
         return Err(RivaAudioError::TooLarge);
     }
@@ -61,10 +63,10 @@ pub fn decode_riva_audio_attached(
     pcm(&resampled)
 }
 
-fn downmix<'py>(
-    py: Python<'py>,
+fn downmix(
+    py: Python<'_>,
     decoded: decode::DecodedAudio,
-) -> Result<Bound<'py, PyAny>, RivaAudioError> {
+) -> Result<Bound<'_, PyAny>, RivaAudioError> {
     let numpy = import_numpy(py)?;
     let samples = mono(py, decoded.samples.into_bound(py))?;
     let keywords = PyDict::new(py);
@@ -98,7 +100,7 @@ fn mono<'py>(
     }
     let channels = data
         .getattr("shape")
-        .and_then(|shape| shape.get_item(1))
+        .and_then(|shape| shape.get_item(1_i32))
         .and_then(|channels| as_int(py, &channels))
         .map_err(|error| call_failure(py, "samples.shape", &error))?;
     if channels <= 1 {
@@ -139,8 +141,10 @@ fn pcm(samples: &Bound<'_, PyAny>) -> Result<ResampledAudio, RivaAudioError> {
         .call_method0("tobytes")
         .and_then(|bytes| bytes.extract())
         .map_err(|error| call_failure(py, "pcm.tobytes", &error))?;
-    let samples = u64::try_from(count).map_err(|_| RivaAudioError::Duration)?;
-    let duration_seconds = Decimal::from(samples)
+    let Ok(sample_count) = u64::try_from(count) else {
+        return Err(RivaAudioError::Duration);
+    };
+    let duration_seconds = Decimal::from(sample_count)
         .checked_div(Decimal::from(TARGET_SAMPLE_RATE_HZ))
         .ok_or(RivaAudioError::Duration)?;
     Ok(ResampledAudio {

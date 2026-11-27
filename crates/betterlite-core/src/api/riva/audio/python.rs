@@ -4,7 +4,7 @@ use pyo3::{Bound, PyAny, PyErr, PyResult, Python};
 
 use super::error::{RivaAudioError, call_failure};
 
-pub(super) fn import_numpy<'py>(py: Python<'py>) -> Result<Bound<'py, PyModule>, RivaAudioError> {
+pub(super) fn import_numpy(py: Python<'_>) -> Result<Bound<'_, PyModule>, RivaAudioError> {
     match py.import("numpy") {
         Ok(module) => Ok(module),
         Err(error) if error.is_instance_of::<PyImportError>(py) => {

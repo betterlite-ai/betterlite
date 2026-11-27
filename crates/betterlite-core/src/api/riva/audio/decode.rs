@@ -99,8 +99,8 @@ fn soundfile_samples(
         .getattr("read")
         .and_then(|read| read.call((&buffer,), Some(&keywords)))
         .map_err(SoundfileError::Python)?;
-    let data = read.get_item(0).map_err(SoundfileError::Python)?;
-    let rate = read.get_item(1).map_err(SoundfileError::Python)?;
+    let data = read.get_item(0_i32).map_err(SoundfileError::Python)?;
+    let rate = read.get_item(1_i32).map_err(SoundfileError::Python)?;
     let source_rate = as_int(py, &rate).map_err(SoundfileError::Python)?;
     Ok(DecodedAudio {
         samples: data.unbind(),
@@ -110,9 +110,9 @@ fn soundfile_samples(
 
 fn exceeds_limit(frames: i64, channels: i64) -> bool {
     let limits = u64::try_from(frames).ok().zip(u64::try_from(channels).ok());
-    limits.is_some_and(|(frames, channels)| {
-        frames
-            .checked_mul(channels)
+    limits.is_some_and(|(frame_count, channel_count)| {
+        frame_count
+            .checked_mul(channel_count)
             .and_then(|samples| samples.checked_mul(4))
             .is_none_or(|bytes| bytes > MAX_AUDIO_BYTES)
     })
@@ -169,7 +169,10 @@ fn staged_file(file_bytes: &[u8]) -> Result<(OwnedTempDir, String), RivaAudioErr
         .map_err(|error| fail(error.to_string()))?;
     fs::write(&path, file_bytes).map_err(|error| fail(error.to_string()))?;
     let text = path.to_str().ok_or_else(|| RivaAudioError::Staging {
-        message: format!("the staged audio path {path:?} is not valid UTF-8"),
+        message: format!(
+            "the staged audio path {} is not valid UTF-8",
+            path.display()
+        ),
     })?;
     Ok((folder, text.to_owned()))
 }

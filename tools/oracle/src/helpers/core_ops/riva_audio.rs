@@ -82,7 +82,7 @@ fn site_packages() -> Result<PathBuf, Box<HelperError>> {
     let Ok(entries) = fs::read_dir(&lib) else {
         return Err(helper_error(
             "PyHostError",
-            format!("the oracle venv is not synced under {lib:?}"),
+            format!("the oracle venv is not synced under {}", lib.display()),
         ));
     };
     for entry in entries.flatten() {
@@ -93,7 +93,10 @@ fn site_packages() -> Result<PathBuf, Box<HelperError>> {
     }
     Err(helper_error(
         "PyHostError",
-        format!("the oracle venv holds no site-packages under {lib:?}"),
+        format!(
+            "the oracle venv holds no site-packages under {}",
+            lib.display()
+        ),
     ))
 }
 

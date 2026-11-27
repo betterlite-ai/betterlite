@@ -1,8 +1,7 @@
 #![cfg(test)]
 
-use std::ffi::CString;
+use std::ffi::{CString, OsStr};
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -70,10 +69,10 @@ fn modules(py: Python<'_>) -> Bound<'_, PyAny> {
 }
 
 fn install<'py>(py: Python<'py>, name: &str, source: &str) -> Bound<'py, PyModule> {
-    let source = CString::new(source).unwrap();
+    let code = CString::new(source).unwrap();
     let file_name = CString::new(format!("{name}.py")).unwrap();
     let module_name = CString::new(name).unwrap();
-    PyModule::from_code(py, &source, &file_name, &module_name).unwrap()
+    PyModule::from_code(py, &code, &file_name, &module_name).unwrap()
 }
 
 fn install_scipy(py: Python<'_>) {
@@ -93,12 +92,7 @@ struct Hidden<'host> {
 
 impl<'host> Hidden<'host> {
     fn new(host: &'host PythonHost, name: &'static str) -> Self {
-        let previous = host.attach(|py| {
-            modules(py)
-                .get_item(name)
-                .ok()
-                .map(|module| module.unbind())
-        });
+        let previous = host.attach(|py| modules(py).get_item(name).ok().map(Bound::unbind));
         host.attach(|py| modules(py).set_item(name, py.None()).unwrap());
         Self {
             host,
@@ -275,8 +269,10 @@ fn wav_bytes(samples: &[i16], channels: u16, rate: u32) -> Vec<u8> {
 fn pcm_values(audio: &ResampledAudio) -> Vec<i16> {
     audio
         .pcm_bytes
-        .chunks_exact(2)
-        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| i16::from_le_bytes(*pair))
         .collect()
 }
 
@@ -367,7 +363,10 @@ fn falls_back_to_audioread_when_soundfile_fails() {
     assert_eq!(audio.duration_seconds, duration(1, TARGET_SAMPLE_RATE_HZ));
     let staging = probe_staging(&host);
     assert_eq!(staging.len(), 1);
-    assert!(staging[0].ends_with(".audio"));
+    assert_eq!(
+        Path::new(&staging[0]).extension(),
+        Some(OsStr::new("audio"))
+    );
     assert!(!Path::new(&staging[0]).exists());
     assert_eq!(
         probe_events(&host),
@@ -925,25 +924,18 @@ fn replays_the_riva_audio_corpus() {
         return;
     }
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/riva_audio");
-    let (valid, broken) = fs::read_dir(&folder)
+    let (valid, broken): (Vec<bool>, Vec<bool>) = fs::read_dir(&folder)
         .unwrap()
-        .try_fold((0_usize, 0_usize), |(valid, broken), entry| {
-            let is_valid = replay_corpus_file(&host, &entry?.path())?;
-            let counts = if is_valid {
-                (valid.checked_add(1).unwrap(), broken)
-            } else {
-                (valid, broken.checked_add(1).unwrap())
-            };
-            Ok::<(usize, usize), io::Error>(counts)
-        })
-        .unwrap();
-    assert!(valid > 0, "no valid corpus files ran");
-    assert!(broken > 0, "no broken corpus files ran");
+        .map(|entry| entry.unwrap().path())
+        .map(|path| replay_corpus_file(&host, &path))
+        .partition(|is_valid| *is_valid);
+    assert!(!valid.is_empty(), "no valid corpus files ran");
+    assert!(!broken.is_empty(), "no broken corpus files ran");
 }
 
-fn replay_corpus_file(host: &PythonHost, path: &Path) -> io::Result<bool> {
+fn replay_corpus_file(host: &PythonHost, path: &Path) -> bool {
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-    let bytes = fs::read(path)?;
+    let bytes = fs::read(path).unwrap();
     let outcome = decode(host, &bytes);
     if name.starts_with("valid-") {
         let audio = outcome.unwrap();
@@ -955,9 +947,9 @@ fn replay_corpus_file(host: &PythonHost, path: &Path) -> io::Result<bool> {
             duration(sample_count(&audio), TARGET_SAMPLE_RATE_HZ),
             "{name}"
         );
-        return Ok(true);
+        return true;
     }
     let error = outcome.unwrap_err();
     assert_eq!(error.response().status_code, 400, "{name}: {error}");
-    Ok(false)
+    false
 }
