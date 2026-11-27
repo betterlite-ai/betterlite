@@ -506,6 +506,7 @@ async fn contexts_keep_the_team_copies_when_the_admitted_context_exists() {
 #[rstest]
 #[case::no_user_row(TeamsAnswer::NoUser)]
 #[case::no_teams(TeamsAnswer::Teams(Vec::new()))]
+#[case::teams_read_failure(TeamsAnswer::Failure)]
 #[tokio::test]
 async fn contexts_without_resolved_teams_are_the_session_then_the_admitted_user(
     #[case] answer: TeamsAnswer,
