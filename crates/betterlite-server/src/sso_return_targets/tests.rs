@@ -1,16 +1,32 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::error::Error as StdError;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, Response, StatusCode, header};
+use betterlite_auth::auth_cache::{AuthCache, gateway_cache};
 use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
+use betterlite_models::decisions::Json;
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
+use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
+use betterlite_redis::redis_client_reuse::store::RedisClientStore;
+use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
+use betterlite_redis::redis_live_client::LiveClientFactory;
 use rstest::rstest;
 
 use super::SsoReturnTargetError;
@@ -163,6 +179,67 @@ fn login_caches<'caches, Cache: LoginCodeCache>(
     LoginCodeCaches { redis, user }
 }
 
+fn clock() -> Arc<dyn Fn() -> f64 + Send + Sync> {
+    Arc::new(|| 1_000.0_f64)
+}
+
+fn local_auth_cache() -> AuthCache<DualCache<LocalMemoryOps>> {
+    gateway_cache(
+        Arc::new(LocalMemoryOps::new(1024, clock()).unwrap()),
+        Arc::new(LocalMemoryOps::new(1024, clock()).unwrap()),
+        None,
+        DualCacheSettings {
+            default_in_memory_ttl: None,
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: 1000,
+            redis_delete_chunk_size: 1000,
+        },
+        45.0_f64,
+    )
+}
+
+struct SilentHooks;
+
+impl ServiceHooks for SilentHooks {
+    fn success(&self, _event: &ServiceEvent) {}
+
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn StdError + Send + Sync)) {}
+}
+
+struct OpenGate;
+
+impl BreakerGate for OpenGate {
+    fn enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Err(BreakerOpen { name })
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn StdError + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
+}
+
+// The breaker refuses every operation before a connection opens, so the write returns the Redis error itself
+async fn open_breaker_redis_cache() -> RedisCache {
+    let options = RedisCacheOptions {
+        overrides: RedisOverrides::default(),
+        family: RedisCacheFamily::Standalone,
+        namespace: None,
+        default_ttl: 60,
+        redis_flush_size: None,
+        default_major_version: 7,
+        factory: Arc::new(LiveClientFactory::new(None)),
+        store: Arc::new(RedisClientStore::new()),
+        hooks: Arc::new(SilentHooks),
+        gate: Arc::new(OpenGate),
+    };
+    connect(options, &BTreeMap::<String, String>::new())
+        .await
+        .unwrap()
+}
+
 #[rstest]
 #[case::root("/", true)]
 #[case::relative("/dashboard?tab=1", true)]
@@ -259,6 +336,8 @@ fn builds_the_session_cookie_without_httponly() {
 #[case::quotes("/a\"b", "\"/a\\\"b\"")]
 #[case::backslash("/a\\b", "\"/a\\\\b\"")]
 #[case::unicode("/résumé", "\"/r\\351sum\\351\"")]
+#[case::code_255("/\u{00ff}", "\"/\\377\"")]
+#[case::above_255("/\u{20ac}", "\"/\u{20ac}\"")]
 #[case::empty("", "\"\"")]
 fn quotes_cookie_values_like_the_stdlib(#[case] value: &str, #[case] expected: &str) {
     let cookie = return_to_cookie(value).unwrap();
@@ -583,6 +662,42 @@ async fn reports_a_cache_write_failure() {
     .unwrap_err();
     assert!(matches!(error, SsoReturnTargetError::CacheWrite(_)));
     assert_eq!(error.response().status, 500);
+}
+
+#[tokio::test]
+async fn stores_the_login_code_in_the_user_cache() {
+    let cache = local_auth_cache();
+    let stored = LoginCode {
+        token: JWT,
+        redirect_url: "https://cp.example.com/done",
+    };
+    cache
+        .store_login_code("login_code:abc", &stored, 60.0_f64)
+        .await
+        .unwrap();
+    let readback = cache.async_get("login_code:abc", false).await.unwrap();
+    let Json::Object(fields) = readback else {
+        panic!("the login code is stored as a JSON object");
+    };
+    assert_eq!(fields.get("token"), Some(&Json::Text(JWT.to_owned())));
+    assert_eq!(
+        fields.get("redirect_url"),
+        Some(&Json::Text("https://cp.example.com/done".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn reports_a_redis_usage_cache_write_failure() {
+    let cache = open_breaker_redis_cache().await;
+    let stored = LoginCode {
+        token: JWT,
+        redirect_url: "https://cp.example.com/done",
+    };
+    let error = cache
+        .store_login_code("login_code:abc", &stored, 60.0_f64)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CacheWriteError::RedisUsage(_)));
 }
 
 #[rstest]
