@@ -75,13 +75,6 @@ fn authenticate<'a>(
     }
 }
 
-fn flags(error_is_401: bool, bearer_presented: bool) -> FallbackFlags {
-    FallbackFlags {
-        error_is_401,
-        bearer_presented,
-    }
-}
-
 fn denied() -> io::Error {
     io::Error::other("denied")
 }
@@ -101,7 +94,10 @@ fn passthrough_cold_start_defers_admission() {
         &query(&registry, "/mcp/pt", None),
         &ctx,
         &auth,
-        flags(true, false),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: false,
+        },
         denied(),
     );
     assert!(is_anonymous(&result.unwrap()));
@@ -117,7 +113,10 @@ fn passthrough_cold_start_holds_with_a_bearer() {
         &query(&registry, "/mcp/pt", None),
         &ctx,
         &auth,
-        flags(true, true),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: true,
+        },
         denied(),
     );
     assert!(is_anonymous(&result.unwrap()));
@@ -133,7 +132,10 @@ fn legacy_delegate_cold_start_needs_no_bearer() {
         &query(&registry, "/mcp/legacy", None),
         &ctx,
         &auth,
-        flags(true, false),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: false,
+        },
         denied(),
     );
     assert!(is_anonymous(&result.unwrap()));
@@ -149,7 +151,10 @@ fn legacy_delegate_with_a_bearer_keeps_the_error() {
         &query(&registry, "/mcp/legacy", None),
         &ctx,
         &auth,
-        flags(true, true),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: true,
+        },
         denied(),
     )
     .unwrap_err();
@@ -166,7 +171,10 @@ fn client_mcp_auth_refuses_the_bypass() {
         &query(&registry, "/mcp/pt", None),
         &ctx,
         &auth,
-        flags(true, false),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: false,
+        },
         denied(),
     )
     .unwrap_err();
@@ -183,7 +191,10 @@ fn non_401_error_keeps_the_bypass_closed() {
         &query(&registry, "/mcp/pt", None),
         &ctx,
         &auth,
-        flags(false, false),
+        FallbackFlags {
+            error_is_401: false,
+            bearer_presented: false,
+        },
         denied(),
     )
     .unwrap_err();
@@ -201,7 +212,10 @@ fn header_naming_another_server_refuses_the_bypass() {
         &query(&registry, "/mcp/pt", Some(&header_servers)),
         &ctx,
         &auth,
-        flags(true, false),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: false,
+        },
         denied(),
     )
     .unwrap_err();
@@ -218,7 +232,10 @@ fn aggregate_401_returns_the_gateway_challenge() {
         &query(&registry, "/mcp", None),
         &ctx,
         &auth,
-        flags(true, false),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: false,
+        },
         denied(),
     )
     .unwrap_err();
@@ -246,7 +263,10 @@ fn aggregate_401_with_a_bearer_sets_invalid_token() {
         &query(&registry, "/mcp", None),
         &ctx,
         &auth,
-        flags(true, true),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: true,
+        },
         denied(),
     )
     .unwrap_err();
@@ -273,7 +293,10 @@ fn named_target_without_gateway_sign_in_keeps_the_error() {
         &query(&registry, "/mcp/plain", None),
         &ctx,
         &auth,
-        flags(true, false),
+        FallbackFlags {
+            error_is_401: true,
+            bearer_presented: false,
+        },
         denied(),
     )
     .unwrap_err();

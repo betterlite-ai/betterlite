@@ -90,10 +90,10 @@ pub fn gateway_dcr_challenge(
     query: &TargetQuery<'_>,
     invalid_token: bool,
 ) -> ChallengeResponse {
-    let resource_metadata_url = match challenge_target(query) {
-        Some(target) => per_server_metadata_url(ctx, &target),
-        None => aggregate_metadata_url(ctx),
-    };
+    let resource_metadata_url = challenge_target(query).map_or_else(
+        || aggregate_metadata_url(ctx),
+        |target| per_server_metadata_url(ctx, &target),
+    );
     ChallengeResponse {
         status: UNAUTHORIZED_STATUS,
         detail: gateway_detail(),
