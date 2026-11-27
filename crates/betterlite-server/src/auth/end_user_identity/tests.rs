@@ -251,7 +251,9 @@ fn extracted(config: &Config, headers: &[(&str, &str)], body: &str) -> Option<St
     let mut request = stage_request(headers, body);
     request.extensions_mut().insert(state_for(config));
     let bytes = Bytes::from(body.to_owned());
-    let Ok(stage) = stage_input(&request, Some(&context), Some(&bytes)) else {
+    let Ok(StageInput::AuthEndUserIdentity(stage)) =
+        stage_input(&request, Some(&context), Some(&bytes))
+    else {
         panic!("the authenticated request builds its stage input");
     };
     stage.raw_end_user_id
@@ -265,14 +267,17 @@ fn database_flag_comes_from_the_state() {
     without
         .extensions_mut()
         .insert(state_for(&config_with_master_key()));
-    let Ok(without_stage) = stage_input(&without, Some(&context), None) else {
+    let Ok(StageInput::AuthEndUserIdentity(without_stage)) =
+        stage_input(&without, Some(&context), None)
+    else {
         panic!("the authenticated request builds its stage input");
     };
     assert!(!without_stage.database);
     let mut with = stage_request(&[], "{}");
     with.extensions_mut()
         .insert(state_for(&config_with_database(true)));
-    let Ok(with_stage) = stage_input(&with, Some(&context), None) else {
+    let Ok(StageInput::AuthEndUserIdentity(with_stage)) = stage_input(&with, Some(&context), None)
+    else {
         panic!("the authenticated request builds its stage input");
     };
     assert!(with_stage.database);
@@ -285,7 +290,8 @@ fn stage_uses_the_server_tracker() {
     let context = master_context(&master_key);
     let mut request = stage_request(&[], "{}");
     request.extensions_mut().insert(tasks.clone());
-    let Ok(stage) = stage_input(&request, Some(&context), None) else {
+    let Ok(StageInput::AuthEndUserIdentity(stage)) = stage_input(&request, Some(&context), None)
+    else {
         panic!("the authenticated request builds its stage input");
     };
     let inherited = stage.tasks.expect("the server tracker reaches the stage");
@@ -319,7 +325,9 @@ fn stage_debug_hides_server_state() {
         .extensions_mut()
         .insert(state_for(&config_with_database(false)));
     request.extensions_mut().insert(TaskTracker::new());
-    let Ok(mut stage) = stage_input(&request, Some(&context), None) else {
+    let Ok(StageInput::AuthEndUserIdentity(mut stage)) =
+        stage_input(&request, Some(&context), None)
+    else {
         panic!("the authenticated request builds its stage input");
     };
     let wired = format!("{stage:?}");
@@ -559,7 +567,9 @@ async fn the_production_resolver_needs_the_validation_flag() {
         .insert(state_for(&config_with_database(false)));
     let tasks = TaskTracker::new();
     request.extensions_mut().insert(tasks.clone());
-    let Ok(stage) = stage_input(&request, Some(&master_context(&master_key)), None) else {
+    let Ok(StageInput::AuthEndUserIdentity(stage)) =
+        stage_input(&request, Some(&master_context(&master_key)), None)
+    else {
         panic!("the authenticated request builds its stage input");
     };
     assert!(

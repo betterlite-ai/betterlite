@@ -72,32 +72,24 @@ fn extracted_id(request: &Request<Body>, body: Option<&Bytes>) -> Option<String>
     request_end_user_id(&object, Some(request.headers()), &settings)
 }
 
-// the dispatcher builds this stage's variant here, as auth_key_lookup does for its two stages
-pub(crate) fn stage(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-    body: Option<&Bytes>,
-) -> Result<StageInput, StageFailure> {
-    let input = stage_input(request, authenticated, body)?;
-    Ok(StageInput::AuthEndUserIdentity(Box::new(input)))
-}
-
+// the dispatcher builds this stage's variant here, as organization_route_policy does for its own
 pub(crate) fn stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     body: Option<&Bytes>,
-) -> Result<EndUserIdentityStageInput, AuthenticationFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    Ok(EndUserIdentityStageInput {
-        context,
-        raw_end_user_id: extracted_id(request, body),
-        rule: rule_for_request(request),
-        database: database_for_request(request),
-        state: request.extensions().get::<Arc<ServerState>>().cloned(),
-        tasks: request.extensions().get::<TaskTracker>().cloned(),
-    })
+) -> Result<StageInput, StageFailure> {
+    Ok(StageInput::AuthEndUserIdentity(Box::new(
+        EndUserIdentityStageInput {
+            context: authenticated
+                .cloned()
+                .ok_or(AuthenticationFailure::Missing)?,
+            raw_end_user_id: extracted_id(request, body),
+            rule: rule_for_request(request),
+            database: database_for_request(request),
+            state: request.extensions().get::<Arc<ServerState>>().cloned(),
+            tasks: request.extensions().get::<TaskTracker>().cloned(),
+        },
+    )))
 }
 
 // the validation is asynchronous, so the stage keeps its own input and the caller awaits the prefetch
@@ -161,13 +153,14 @@ pub(crate) async fn prefetched(
     Ok(StageInput::AuthEndUserIdentity(stage))
 }
 
-// the budget stage that follows the validation takes this module's wrapper too, since it reads the id this stage kept
+// the budget stage that follows the validation takes its variant here too, since it reads the id this stage kept
 pub(crate) fn budget_stage(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
 ) -> Result<StageInput, StageFailure> {
-    let input = auth_end_users::stage_input(request, authenticated)?;
-    Ok(StageInput::AuthEndUsers(Box::new(input)))
+    Ok(StageInput::AuthEndUsers(Box::new(
+        auth_end_users::stage_input(request, authenticated).map_err(StageFailure::from)?,
+    )))
 }
 
 // LiteLLM reads the id this stage validated, and none other, when the end-user budget lookup follows
