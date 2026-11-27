@@ -12,4 +12,10 @@ deviations:
   - what: "`client` and `shared_session` raise UnsupportedCallArgument instead of being used for the request."
     why: A Python HTTP client or session object cannot cross into Rust, and ignoring it would send the request somewhere the caller did not configure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L183
+  - what: No logging callbacks receive these calls, and no request log record is written.
+    why: The session builds its logging state in Rust with no callbacks and a silent sink, where LiteLLM calls logging_obj.pre_call before each of the three requests, so a registered input callback fires and the call's log record is written.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6406-L6414
+  - what: A transport failure of a provider with no realtime HTTP config raises betterlite.APIConnectionError with status_code 500, where LiteLLM's handler re-raises the raw httpx exception, so a refused connection reaches the caller as httpx.ConnectError.
+    why: The native exception bridge maps every transport failure to its connection class, and LiteLLM's bare raise in the except clause lets the httpx exception escape when provider_config is None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6423-L6429
 kept_bugs: []
