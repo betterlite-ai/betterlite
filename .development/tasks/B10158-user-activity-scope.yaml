@@ -1,0 +1,99 @@
+id: B10158
+title: User daily activity scope
+description: >-
+  LiteLLM decides whose spend a user analytics call may read in one small function, resolve_user_daily_activity_entity_ids (internal_user_endpoints.py L2866-L2875). Two tasks call it: B798's GET /user/daily/activity route and B3094's user resolver for the shared daily activity routes. It used to be B798's, so B3094 waited for the whole route. This task builds only the function. Code goes in betterlite-server, module user_activity_scope (crates/betterlite-server/src/user_activity_scope.rs), with its error enum in user_activity_scope/error.rs and its tests in user_activity_scope/tests.rs, declared with `mod tests;` so test paths start with `user_activity_scope::tests::`. The file is an empty stub that lib.rs already declares.
+
+
+  `pub fn resolve_user_daily_activity_entity_ids(user_id: Option<&str>, auth: &UserAPIKeyAuth) -> Result<Option<Vec<String>>, UserActivityScopeError>`. auth is B2314's resolved key record (betterlite_auth::resolved_key::auth::UserAPIKeyAuth), the same caller type B3094 and B3095 hold. The Ok value is LiteLLM's tuple: None means every user, and Some holds exactly one id. It goes straight into DailyActivityScopeInput.entity_ids (Option<Vec<String>>), so B3094 passes it on without converting and B798 reads its first element.
+
+  1. Admin view. When B2314's `user_api_key_has_admin_view(auth)` is true (user_role proxy_admin or proxy_admin_viewer), return `user_id.map(|id| vec![id.to_owned()])`: an absent id selects every user and a supplied id, an empty string included, selects exactly that one.
+
+  2. Caller id. Otherwise read the caller's own id with B738's `betterlite_auth::auth_key_lookup::key_identity(auth).user_id`. When it is None the caller is a service-account key: return `UserActivityScopeError::Caller(ManagementGuardError::ServiceAccountAnalytics)`, B861's variant in crates/betterlite-server/src/management_guards/error.rs, so the 403 status and the text "Service-account keys cannot query user analytics. Use a user-bound key, or call as a proxy admin." come from B861 and are not typed again. This runs before the requested id is compared. Do not call B861's `caller_user_id_for_non_admin(principal)`: it reads Principal.user, which the key and master-key auth stages leave None (crates/betterlite-server/src/auth/auth_key_lookup.rs L133, auth/auth_identity.rs L280), while LiteLLM reads user_api_key_dict.user_id.
+
+  3. Self only. When user_id is Some and differs from the caller's id (exact string comparison, no trimming or case folding), return `UserActivityScopeError::Denied(ScopeDenied { status: ScopeDenial::Forbidden, reason: "Non-admin users can only view their own spend data.".to_owned() })` with B3090's types from betterlite_analytics::canonical_date. Otherwise return `Some(vec![caller_id])`, so an omitted id selects the caller.
+
+
+  `UserActivityScopeError` is a thiserror enum with two variants: `Caller(#[from] ManagementGuardError)`, displayed transparently, and `Denied(ScopeDenied)`, displayed as its reason. LiteLLM raises the first as an HTTPException and returns the second as a value; the callers keep that split. B798 answers both as 403 with detail `{"error": <text>}` (the second through B3090's raise_public). B3094 hands back the Denied value unchanged and passes the Caller error through as a #[from] variant of its ScopesError. Nothing here builds an HTTP response.
+
+
+  Tests in user_activity_scope::tests build UserAPIKeyAuth through `UserAPIKeyAuth::construct(AuthInput::Dict(..))` with only user_id and user_role set, the way crates/betterlite-server/src/lens_access/scope.rs builds one, with synthetic ids like test-user-1. Names starting admin_ cover rule 1: proxy_admin and proxy_admin_viewer each with an absent id (None), another user's id and an empty string, and an admin key with no user_id of its own. Names starting self_ cover rule 3's success: an internal_user with an omitted id and with its own id, a key whose user_id is "" with an omitted id (Some([""])), and org_admin, team and internal_user_viewer keys, which are not admin view and get their own id. Names starting denied_ cover the errors: a key with no user_id and no role, with an omitted id and with another id (both the B861 variant, status 403, its exact text), an internal_user asking for another user and for "" (Denied, 403, the exact reason), and a case-only difference ("Test-User-1" against "test-user-1") that is denied.
+
+
+  Oracle. The helper operation is b10158 in the server group. Its input is `{"calls": [{"user_id": str | null, "caller": {"user_id": str | null, "user_role": role | null}}]}`, role being one of LiteLLM's seven LitellmUserRoles values. The Python adapter builds `UserAPIKeyAuth(user_id=..., user_role=LitellmUserRoles(role) or None)`, calls the pinned resolve_user_daily_activity_entity_ids and answers per call `{"entity_ids": list | null}`, `{"denied": {"status_code", "reason"}}` for a returned ScopeDenied, or `{"raised": {"status_code", "detail"}}` for a raised HTTPException; tools/oracle/helpers/b10015.py builds a caller and catches the exception the same way. The Rust adapter builds the key record with UserAPIKeyAuth::construct from the same two fields, calls this module and maps Ok, Denied (status from ScopeDenial::status_code) and Caller (status from ManagementGuardError::status_code, detail `{"error": <its text>}`) into the same three shapes. Add helper_case corpus seeds named user-activity-scope-*. No route reaches this module yet; B798's HTTP cases cover it through /user/daily/activity.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_activity_scope.rs
+    - crates/betterlite-server/src/user_activity_scope/**
+    - tools/oracle/cases/helpers/user-activity-scope/**
+    - "tools/oracle/fuzz/corpus/helper_case/user-activity-scope-*"
+    - tools/oracle/helpers/b10158.py
+    - tools/oracle/helpers/b10158/**
+    - tools/oracle/src/helpers/server/b10158.rs
+    - tools/oracle/src/helpers/server/b10158/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2866-L2875
+    why: Owned. resolve_user_daily_activity_entity_ids, with the admin branch first, the caller id check before the comparison and the self-only denial.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L126-L150
+    why: require_caller_user_id_for_non_admin, whose 403 B861 built as ManagementGuardError::ServiceAccountAnalytics; only a None user_id is rejected.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3554-L3564
+    why: user_api_key_has_admin_view, imported as _user_has_admin_view (common_utils.py L61) and built by B2314; only proxy_admin and proxy_admin_viewer count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L48-L66
+    why: ScopeDenied and raise_public, built by B3090; the callers turn the denial into a 403.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2971-L2978
+    why: B798's call site inside the route's try, which raises the denial and reads the first id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L103-L120
+    why: B3094's call site in _resolve_user, which passes the first requested id and returns the denial unchanged.
+dod:
+  - text: An admin-view caller (proxy_admin or proxy_admin_viewer) gets None for an absent id and exactly the supplied id otherwise, an empty string included; no other role counts as admin view.
+    proof: [admin-tests, oracle, helper-python]
+  - text: A non-admin caller gets its own id for an omitted id or its own id, a key whose user_id is "" included.
+    proof: [self-tests, oracle, helper-python]
+  - text: A non-admin key with no user_id gets B861's ServiceAccountAnalytics error (403, its text) before the requested id is compared, and any other requested id, "" and a case-only difference included, gets ScopeDenied 403 with "Non-admin users can only view their own spend data."
+    proof: [denied-tests, oracle, helper-python]
+  - text: New user-activity-scope seeds for b10158 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: admin-tests
+      why: An admin-view caller does not get every user for an absent id or the exact supplied id, or another role is treated as admin view.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_activity_scope::tests::admin_/)'
+    - id: self-tests
+      why: A non-admin caller does not get its own id for an omitted or matching id.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_activity_scope::tests::self_/)'
+    - id: denied-tests
+      why: A service-account key or a request for another user is let through, or answers the wrong error, status or text.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_activity_scope::tests::denied_/)'
+    - id: helper-python
+      why: The b10158 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10158.py tools/oracle/helpers/b10158)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10158 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user-activity-scope-*")" &&
+        grep -lE 'b10158"?:' tools/oracle/fuzz/corpus/helper_case/user-activity-scope-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/user-activity-scope/admin-selection.yaml
+  - tools/oracle/cases/helpers/user-activity-scope/self-only.yaml
+  - tools/oracle/cases/helpers/user-activity-scope/cross-user-denied.yaml
+  - tools/oracle/cases/helpers/user-activity-scope/service-account.yaml
+deviations: []
+out_of_scope:
+  - "_resolve_user_email_metadata (L2878-L2889) and get_user_daily_activity (L2899-L3004), with the route, its dates, paging, metadata lookup, the 403 response body and turning a master-key or JWT principal into a UserAPIKeyAuth: B798, which calls this function."
+  - "_resolve_user (daily_activity_scopes.py L103-L120), which passes the first requested id and builds the user scope: B3094."
+  - "user_api_key_has_admin_view: B2314. require_caller_user_id_for_non_admin and ManagementGuardError: B861. ScopeDenied, ScopeDenial and raise_public: B3090. key_identity: B738."
+  - "The other functions of internal_user_endpoints.py: B056, B790, B791, B792, B795, B796, B797, B1203 and B1226, as B798's out_of_scope lists them; add_internal_user_to_organization has no caller at the pin."
+pitfalls:
+  - "A key with no user_id that asks for another user gets the service-account text, not \"Non-admin users can only view their own spend data.\", because the caller id is read before the comparison."
+  - "Only a missing user_id is a service account: a key whose user_id is \"\" passes and is scoped to [\"\"], a filter that matches no real user."
+  - "For an admin, an absent id (None, every user) and \"\" (one user named \"\") are different results; folding \"\" into None would widen the report to every tenant."
+  - "org_admin is not admin view here, so an org admin sees only its own spend even for a user in its organization."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

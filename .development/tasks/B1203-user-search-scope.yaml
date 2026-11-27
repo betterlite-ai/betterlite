@@ -177,8 +177,8 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B796 owns get_user_key_counts (L2067-L2101),
     _validate_sort_params (L2104-L2133), _authorize_user_list_request (L2136-L2199), get_users (L2224-L2388).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B797 owns delete_user (L2397-L2604).'
-  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
-    (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10158 owns resolve_user_daily_activity_entity_ids
+    (L2866-L2875); B798 owns _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization

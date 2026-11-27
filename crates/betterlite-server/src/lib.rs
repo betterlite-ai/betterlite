@@ -433,6 +433,7 @@ pub mod ui_theme_routes;
 pub mod usage_ai_chat;
 pub mod usage_ai_chat_route;
 pub mod user_activity;
+pub mod user_activity_scope;
 pub mod user_agent_analytics;
 pub mod user_banner_routes;
 pub mod user_bulk_create;
