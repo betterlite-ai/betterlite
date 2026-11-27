@@ -103,6 +103,7 @@ fn bad_request(error: ConfigFieldError) -> String {
     match error {
         ConfigFieldError::BadRequest { detail } => detail,
         ConfigFieldError::Unauthenticated
+        | ConfigFieldError::Unprocessable { .. }
         | ConfigFieldError::Unavailable
         | ConfigFieldError::Save(_)
         | ConfigFieldError::Internal => panic!("expected a 400, got {error:?}"),

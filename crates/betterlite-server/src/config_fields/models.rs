@@ -36,6 +36,20 @@ fn only_known(entries: &JsonObject, names: &[&str]) -> bool {
     entries.keys().all(|key| names.contains(&key.as_str()))
 }
 
+// an object holding the rules' fields
+fn object_rules(value: &JsonValue, rules: &[Rule]) -> bool {
+    value
+        .as_object()
+        .is_some_and(|entries| check_fields(entries, rules))
+}
+
+// an object that also carries no key outside the given names
+fn known_object(value: &JsonValue, names: &[&str], rules: &[Rule]) -> bool {
+    value
+        .as_object()
+        .is_some_and(|entries| only_known(entries, names) && check_fields(entries, rules))
+}
+
 // PluginConfig's own deserializer: name and url strings, display_name and plugin_key optional, extras dropped
 #[must_use]
 pub fn plugins(value: &JsonValue) -> bool {
@@ -45,57 +59,53 @@ pub fn plugins(value: &JsonValue) -> bool {
 // PassThroughGenericEndpoint, one entry of pass_through_endpoints
 #[must_use]
 pub fn endpoints(value: &JsonValue) -> bool {
-    value.as_array().is_some_and(|items| {
-        items.iter().all(|item| {
-            item.as_object()
-                .is_some_and(|entries| check_fields(entries, &ENDPOINT_RULES))
-        })
-    })
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    items.iter().all(|item| object_rules(item, &ENDPOINT_RULES))
 }
 
 fn is_guardrails(value: &JsonValue) -> bool {
-    value.as_object().is_some_and(|entries| {
-        entries.values().all(|entry| {
-            entry.is_null()
-                || entry
-                    .as_object()
-                    .is_some_and(|fields| check_fields(fields, &GUARDRAIL_RULES))
-        })
-    })
+    let Some(entries) = value.as_object() else {
+        return false;
+    };
+    entries
+        .values()
+        .all(|entry| entry.is_null() || object_rules(entry, &GUARDRAIL_RULES))
 }
 
 // UserHeaderMapping forbids unknown keys
 #[must_use]
 pub fn header_mappings(value: &JsonValue) -> bool {
-    value.as_array().is_some_and(|items| {
-        items.iter().all(|item| {
-            item.as_object().is_some_and(|entries| {
-                only_known(entries, &HEADER_KEYS) && check_fields(entries, &HEADER_RULES)
-            })
-        })
-    })
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    items
+        .iter()
+        .all(|item| known_object(item, &HEADER_KEYS, &HEADER_RULES))
 }
 
 // MCPAdvertisedVersions: the four legacy revisions, at least one
 #[must_use]
 pub fn advertised_versions(value: &JsonValue) -> bool {
-    value.as_array().is_some_and(|items| {
-        !items.is_empty()
-            && items
-                .iter()
-                .all(|item| matches!(item.as_str(), Some(text) if VERSIONS.contains(&text)))
-    })
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    if items.is_empty() {
+        return false;
+    }
+    items
+        .iter()
+        .all(|item| matches!(item.as_str(), Some(text) if VERSIONS.contains(&text)))
 }
 
 // MCPAllowedClient: an alias and a value, each a non-empty string
 #[must_use]
 pub fn allowed_clients(value: &JsonValue) -> bool {
-    value.as_array().is_some_and(|items| {
-        items.iter().all(|item| {
-            item.as_object()
-                .is_some_and(|entries| check_fields(entries, &CLIENT_RULES))
-        })
-    })
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    items.iter().all(|item| object_rules(item, &CLIENT_RULES))
 }
 
 // DynamoDBArgs
@@ -118,23 +128,29 @@ pub fn redis(value: &JsonValue) -> bool {
 
 fn is_redis_nodes(value: &JsonValue) -> bool {
     value.as_array().is_some_and(|nodes| {
-        nodes.iter().all(|node| {
-            node.as_object()
-                .is_some_and(|entries| check_fields(entries, &REDIS_NODE_RULES))
-        })
+        nodes
+            .iter()
+            .all(|node| object_rules(node, &REDIS_NODE_RULES))
     })
 }
 
 fn is_sentinel_nodes(value: &JsonValue) -> bool {
-    value.as_array().is_some_and(|pairs| {
-        pairs.iter().all(|pair| {
-            pair.as_array().is_some_and(|parts| {
-                parts
-                    .iter()
-                    .all(|part| part.is_string() || is_integer(part))
-            })
-        })
-    })
+    let Some(pairs) = value.as_array() else {
+        return false;
+    };
+    pairs.iter().all(sentinel_pair)
+}
+
+fn sentinel_pair(pair: &JsonValue) -> bool {
+    pair.as_array()
+        .is_some_and(|parts| parts.iter().all(sentinel_part))
+}
+
+fn sentinel_part(part: &JsonValue) -> bool {
+    if part.is_string() {
+        return true;
+    }
+    is_integer(part)
 }
 
 // ScheduledJobStaggerSettings forbids unknown keys and a window_seconds below zero

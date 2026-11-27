@@ -14,29 +14,35 @@ use super::records::UiFieldResponse;
 
 const LITELLM_SETTINGS: &str = "litellm_settings";
 
-// _persist_general_settings_ui_litellm_field: validate, refuse a config-owned key, reload, set litellm's attribute, save
-pub async fn persist_ui_litellm_field(
-    services: ConfigFieldServices<'_>,
-    caller: &ConfigFieldCaller,
-    field: UiLitellmField,
-    value: &JsonValue,
-) -> Result<UiFieldResponse, ConfigFieldError> {
-    let validated = validate_ui_value(field, value)?;
-    let message = write_ui_field(services, caller, field, validated, false).await?;
-    Ok(UiFieldResponse {
-        message,
-        status: "success",
-    })
+// one admin UI edit: the value the caller sent, or the default a reset puts back
+#[derive(Clone, Copy)]
+pub enum UiFieldEdit<'value> {
+    Persist(&'value JsonValue),
+    Reset,
 }
 
-// _reset_general_settings_ui_litellm_field: the default goes into litellm, the key leaves the stored section
-pub async fn reset_ui_litellm_field(
+impl UiFieldEdit<'_> {
+    const fn reset(self) -> bool {
+        match self {
+            Self::Persist(_) => false,
+            Self::Reset => true,
+        }
+    }
+}
+
+// _persist_general_settings_ui_litellm_field and _reset_general_settings_ui_litellm_field:
+// validate or default, refuse a config-owned key, reload, set litellm's attribute, save
+pub async fn edit_ui_litellm_field(
     services: ConfigFieldServices<'_>,
     caller: &ConfigFieldCaller,
     field: UiLitellmField,
+    edit: UiFieldEdit<'_>,
 ) -> Result<UiFieldResponse, ConfigFieldError> {
-    let reset = true;
-    let message = write_ui_field(services, caller, field, default_value(field), reset).await?;
+    let validated = match edit {
+        UiFieldEdit::Persist(value) => validate_ui_value(field, value)?,
+        UiFieldEdit::Reset => default_value(field),
+    };
+    let message = write_ui_field(services, caller, field, validated, edit.reset()).await?;
     Ok(UiFieldResponse {
         message,
         status: "success",

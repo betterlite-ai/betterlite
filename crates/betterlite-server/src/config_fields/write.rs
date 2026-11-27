@@ -17,7 +17,7 @@ use super::records::{
     ConfigFieldDelete, ConfigFieldUpdate, ConfigFieldUpdateResponse, GENERAL_SETTINGS,
     GeneralSettingsRow,
 };
-use super::ui::{persist_ui_litellm_field, reset_ui_litellm_field};
+use super::ui::{UiFieldEdit, edit_ui_litellm_field};
 use super::validation::{kind_of, validate, validate_alerting_args};
 
 const ALERTING_ARGS: &str = "alerting_args";
@@ -33,7 +33,8 @@ pub async fn update_config_general_settings(
     require_admin(caller, AdminGate::Proxy)?;
     let field_name = update.field_name.as_str();
     if let Some(field) = ui_field(field_name) {
-        let body = persist_ui_litellm_field(services, caller, field, &update.field_value).await?;
+        let edit = UiFieldEdit::Persist(&update.field_value);
+        let body = edit_ui_litellm_field(services, caller, field, edit).await?;
         return Ok(ConfigFieldUpdateResponse::Ui(body));
     }
     let Some(kind) = kind_of(field_name) else {
@@ -57,7 +58,7 @@ pub async fn delete_config_general_settings(
     require_admin(caller, AdminGate::ProxyWithRole)?;
     let field_name = delete.field_name.as_str();
     if let Some(field) = ui_field(field_name) {
-        let body = reset_ui_litellm_field(services, caller, field).await?;
+        let body = edit_ui_litellm_field(services, caller, field, UiFieldEdit::Reset).await?;
         return Ok(ConfigFieldUpdateResponse::Ui(body));
     }
     let Some(_kind) = kind_of(field_name) else {

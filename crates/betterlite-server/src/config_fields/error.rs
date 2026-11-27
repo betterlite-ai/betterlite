@@ -22,6 +22,8 @@ pub enum ConfigFieldError {
     Unauthenticated,
     #[error("{detail}")]
     BadRequest { detail: String },
+    #[error("{detail}")]
+    Unprocessable { detail: &'static str },
     #[error("the config database is not reachable")]
     Unavailable,
     #[error(transparent)]
@@ -40,11 +42,21 @@ struct DetailText<'text> {
     error: &'text str,
 }
 
+// FastAPI's 422 answer when the request itself doesn't parse: {"detail": "<sentence>"}
+#[derive(Serialize)]
+struct ParseDetail<'text> {
+    detail: &'text str,
+}
+
 impl IntoResponse for ConfigFieldError {
     fn into_response(self) -> Response {
         match self {
             Self::Unauthenticated => unauthenticated(),
             Self::BadRequest { detail } => bad_request(&detail),
+            Self::Unprocessable { detail } => {
+                let status = StatusCode::UNPROCESSABLE_ENTITY;
+                (status, Json(ParseDetail { detail })).into_response()
+            }
             Self::Unavailable => {
                 SettingsUpdateError::from(ConfigOverlayPortError::DatabaseUnavailable)
                     .into_response()

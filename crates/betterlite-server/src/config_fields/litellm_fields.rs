@@ -115,40 +115,36 @@ pub fn validate_ui_value(
         return Ok(default_value(field));
     }
     match field.kind {
-        UiFieldType::Boolean => match value {
-            JsonValue::Bool(flag) => Ok(JsonValue::Bool(*flag)),
-            JsonValue::Null
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_) => Err(ConfigFieldError::BadRequest {
-                detail: format!("{} must be true or false", field.name),
-            }),
-        },
+        UiFieldType::Boolean => boolean_value(field, value),
         UiFieldType::Select => select_value(field, value),
         UiFieldType::Float => numeric_value(field, value, false),
         UiFieldType::Dollar => numeric_value(field, value, true),
     }
 }
 
+fn boolean_value(field: UiLitellmField, value: &JsonValue) -> Result<JsonValue, ConfigFieldError> {
+    let JsonValue::Bool(flag) = value else {
+        return Err(ui_bad_request(field, "must be true or false"));
+    };
+    Ok(JsonValue::Bool(*flag))
+}
+
 fn select_value(field: UiLitellmField, value: &JsonValue) -> Result<JsonValue, ConfigFieldError> {
     let options = field.options.unwrap_or_default();
-    match value {
-        JsonValue::String(text) if options.contains(&text.as_str()) => {
-            Ok(JsonValue::String(text.clone()))
-        }
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => Err(ConfigFieldError::BadRequest {
-            detail: format!(
-                "{} must be one of: {}, or empty",
-                field.name,
-                options.join(", ")
-            ),
-        }),
+    let message = format!("must be one of: {}, or empty", options.join(", "));
+    let JsonValue::String(text) = value else {
+        return Err(ui_bad_request(field, &message));
+    };
+    if !options.contains(&text.as_str()) {
+        return Err(ui_bad_request(field, &message));
+    }
+    Ok(JsonValue::String(text.clone()))
+}
+
+// <field name> <rule>, the sentences _validate_general_settings_ui_litellm_value raises
+fn ui_bad_request(field: UiLitellmField, message: &str) -> ConfigFieldError {
+    ConfigFieldError::BadRequest {
+        detail: format!("{} {message}", field.name),
     }
 }
 

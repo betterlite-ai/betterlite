@@ -4,7 +4,6 @@ use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Extension, Query, State};
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
@@ -17,7 +16,9 @@ use super::ConfigFieldState;
 use super::error::ConfigFieldError;
 use super::ports::{ConfigFieldCaller, ConfigFieldServices};
 use super::read::{get_config_general_settings, list_config_general_settings};
-use super::records::{ConfigFieldDelete, ConfigFieldUpdate, GENERAL_SETTINGS};
+use super::records::{
+    ConfigFieldDelete, ConfigFieldUpdate, ConfigFieldUpdateResponse, ConfigList, GENERAL_SETTINGS,
+};
 use super::write::{delete_config_general_settings, update_config_general_settings};
 
 const INVALID_BODY: &str = "Invalid request body";
@@ -40,11 +41,6 @@ struct ListQuery {
     config_type: Option<String>,
 }
 
-#[derive(Serialize)]
-struct ErrorBody<'text> {
-    detail: &'text str,
-}
-
 pub(super) fn router(state: ConfigFieldState, overlay: Arc<dyn ConfigOverlayPort>) -> Router {
     Router::new()
         .route("/config/field/update", post(update))
@@ -61,20 +57,16 @@ async fn update(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
-) -> Response {
-    let Ok(update) = serde_json::from_slice::<ConfigFieldUpdate>(&body) else {
-        return unprocessable(INVALID_BODY);
-    };
-    let client = match client(caller.as_ref()) {
-        Ok(client) => client,
-        Err(error) => return error.into_response(),
-    };
+) -> Result<Json<ConfigFieldUpdateResponse>, ConfigFieldError> {
+    let update: ConfigFieldUpdate =
+        serde_json::from_slice(&body).map_err(|_error| ConfigFieldError::Unprocessable {
+            detail: INVALID_BODY,
+        })?;
+    let client = caller_of(caller.as_ref())?;
     let mut config = state.fields.config.lock().await;
     let services = services(&state, &mut config);
-    match update_config_general_settings(services, &client, &update).await {
-        Ok(body) => Json(body).into_response(),
-        Err(error) => error.into_response(),
-    }
+    let row = update_config_general_settings(services, &client, &update).await?;
+    Ok(Json(row))
 }
 
 async fn delete(
@@ -83,18 +75,17 @@ async fn delete(
     body: Bytes,
 ) -> Response {
     let Ok(delete) = serde_json::from_slice::<ConfigFieldDelete>(&body) else {
-        return unprocessable(INVALID_BODY);
+        return ConfigFieldError::Unprocessable {
+            detail: INVALID_BODY,
+        }
+        .into_response();
     };
-    let client = match client(caller.as_ref()) {
+    let client = match caller_of(caller.as_ref()) {
         Ok(client) => client,
         Err(error) => return error.into_response(),
     };
     let mut config = state.fields.config.lock().await;
-    let services = services(&state, &mut config);
-    match delete_config_general_settings(services, &client, &delete).await {
-        Ok(body) => Json(body).into_response(),
-        Err(error) => error.into_response(),
-    }
+    respond(delete_config_general_settings(services(&state, &mut config), &client, &delete).await)
 }
 
 async fn info(
@@ -103,16 +94,18 @@ async fn info(
     Query(query): Query<InfoQuery>,
 ) -> Response {
     let Some(field_name) = query.field_name else {
-        return unprocessable(FIELD_REQUIRED);
+        return ConfigFieldError::Unprocessable {
+            detail: FIELD_REQUIRED,
+        }
+        .into_response();
     };
-    let client = match client(caller.as_ref()) {
-        Ok(client) => client,
-        Err(error) => return error.into_response(),
-    };
-    let mut config = state.fields.config.lock().await;
-    let services = services(&state, &mut config);
-    match get_config_general_settings(services, &client, &field_name).await {
-        Ok(body) => Json(body).into_response(),
+    match caller_of(caller.as_ref()) {
+        Ok(client) => {
+            let mut config = state.fields.config.lock().await;
+            let info =
+                get_config_general_settings(services(&state, &mut config), &client, &field_name);
+            respond(info.await)
+        }
         Err(error) => error.into_response(),
     }
 }
@@ -121,26 +114,27 @@ async fn list(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     Query(query): Query<ListQuery>,
-) -> Response {
+) -> Result<Json<Vec<ConfigList>>, ConfigFieldError> {
     let Some(config_type) = query.config_type else {
-        return unprocessable(FIELD_REQUIRED);
+        return Err(ConfigFieldError::Unprocessable {
+            detail: FIELD_REQUIRED,
+        });
     };
     if config_type != GENERAL_SETTINGS {
-        return unprocessable(LITERAL_ERROR);
+        return Err(ConfigFieldError::Unprocessable {
+            detail: LITERAL_ERROR,
+        });
     }
-    let client = match client(caller.as_ref()) {
-        Ok(client) => client,
-        Err(error) => return error.into_response(),
-    };
+    let client = caller_of(caller.as_ref())?;
     let mut config = state.fields.config.lock().await;
-    let services = services(&state, &mut config);
-    match list_config_general_settings(services, &client).await {
-        Ok(body) => Json(body).into_response(),
-        Err(error) => error.into_response(),
-    }
+    let fields = list_config_general_settings(services(&state, &mut config), &client).await?;
+    Ok(Json(fields))
 }
 
-fn client(caller: Option<&Extension<AuthContext>>) -> Result<ConfigFieldCaller, ConfigFieldError> {
+// user_api_key_dict for these routes: the caller the role gates and the config audit log read
+fn caller_of(
+    caller: Option<&Extension<AuthContext>>,
+) -> Result<ConfigFieldCaller, ConfigFieldError> {
     let Some(Extension(context)) = caller else {
         return Err(ConfigFieldError::Unauthenticated);
     };
@@ -162,7 +156,9 @@ fn services<'run>(
     }
 }
 
-fn unprocessable(message: &'static str) -> Response {
-    let status = StatusCode::UNPROCESSABLE_ENTITY;
-    (status, Json(ErrorBody { detail: message })).into_response()
+fn respond<T: Serialize>(result: Result<T, ConfigFieldError>) -> Response {
+    match result {
+        Ok(body) => Json(body).into_response(),
+        Err(error) => error.into_response(),
+    }
 }
