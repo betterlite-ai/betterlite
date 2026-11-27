@@ -1,14 +1,14 @@
 id: B10129
 milestone: M4 keys, spend and management
 title: Deleted-key archive records
-status: todo
+status: done
 depends_on: [B700, B720, B860, B2330]
 file: tasks/B10129-key-archive.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
 parent: B055
 split_from: B777
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3352

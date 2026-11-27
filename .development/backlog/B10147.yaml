@@ -1,14 +1,14 @@
 id: B10147
 milestone: M9 agents and mcp
 title: MCP cached toolset lookup and invalidation
-status: todo
+status: done
 depends_on: [B4681]
 file: tasks/B10147-mcp-toolset-cache.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
 parent: B139
 split_from: B6592
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3387

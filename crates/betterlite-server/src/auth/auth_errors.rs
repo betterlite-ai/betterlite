@@ -23,43 +23,12 @@ use secrecy::SecretString;
 
 use super::auth_resource_grants::denial_response;
 use super::extract_key;
-use crate::auth::auth_model_patterns::ModelAccessRejection;
+use crate::auth::failures::StageFailure;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use crate::state::auth_errors::AuthFailureHook;
 
 mod tests;
-
-// the failure each auth stage yields; this module turns it into the response the proxy sends
-pub(crate) enum StageFailure {
-    JwtKeys(Box<ProxyException>),
-    Authentication(Box<AuthenticationFailure>),
-    KeyLookup(Box<ProxyException>),
-    ModelAccess(Box<ModelAccessRejection>),
-    AuthModelGrants(Box<ProxyException>),
-    EntityModelAccess(Box<ProxyException>),
-    TrustedNetwork(Box<ProxyException>),
-    AuthRequestPolicy(Box<ProxyException>),
-    ResourceGrants(Box<ProxyException>),
-    TagBudgets(Box<ProxyException>),
-    RequestBodySafety(Box<ProxyException>),
-    VirtualKeyRoutes(Box<ProxyException>),
-    KeyBudgets(Box<ProxyException>),
-    ModelBudgets(Box<ProxyException>),
-    TeamBudgets(Box<ProxyException>),
-    TenantBudgets(Box<ProxyException>),
-    OrganizationRoutePolicy(Box<ProxyException>),
-    OrgLookup(Box<ProxyException>),
-    EndUsers(Box<ProxyException>),
-    AuthPolicySupport(Box<ProxyException>),
-    ModelGrants(Box<ProxyException>),
-}
-
-impl From<AuthenticationFailure> for StageFailure {
-    fn from(failure: AuthenticationFailure) -> Self {
-        Self::Authentication(Box::new(failure))
-    }
-}
 
 struct ServerPorts {
     hook: Option<Arc<dyn AuthFailureHook>>,

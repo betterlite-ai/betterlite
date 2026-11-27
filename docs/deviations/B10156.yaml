@@ -1,0 +1,22 @@
+task: B10156
+deviations:
+  - what: >-
+      close_error_span takes the span slot as &mut Option<LiveSpan> and the logger as Option<&ServerSpanLogger>. LiteLLM's _close_dangling_otel_server_span reads request.state.parent_otel_span and the module-level open_telemetry_logger.
+    why: >-
+      betterlite keeps no proxy_server globals, so the caller hands in the slot it keeps for its request and the logger the proxy holds. The span and slot outcomes match LiteLLM's, as the legacy_ and skip_ tests check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1928-L1933
+  - what: >-
+      The LITELLM_OTEL_V2 flag arrives as a resolved bool. LiteLLM imports is_otel_v2_enabled inside a try and treats any exception from the import as V2 being off.
+    why: >-
+      B3842's otel_settings section resolves the flag at load, so there is no import left to fail and the caller passes the same bool the auth code reads as SpanRequest.otel_v2. No input reaches the fallback here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1941-L1947
+  - what: >-
+      With the V2 logger and otel_v2 false, close_error_span writes the debug line "Error closing dangling OTEL SERVER span: 'OpenTelemetryV2' object has no attribute 'set_response_status_code_attribute'" itself. LiteLLM calls the missing method, catches the AttributeError and logs str(e) from the except block.
+    why: >-
+      Rust has no dynamic attribute lookup, so the missing method is the V2 variant of the enum and the match names it. The span stays unstamped and open and the slot is cleared, the state and log text LiteLLM leaves; skip_v2_logger_with_v2_off_clears_the_slot_and_leaves_the_span_open checks it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1954-L1963
+  - what: >-
+      exception_facts takes the class name from the caller and copies ProxyException.code as written, so the code "None" stays "None". LiteLLM's get_error_information reads __class__.__name__ off the exception and replaces a code of None or "" with the exception's status.
+    why: >-
+      Rust has no runtime class name, so the caller passes the name of the type it holds, ProxyException or ModelAccessDeniedProxyException through as_proxy_exception. Both recorders pin error.code to the response status, the error.code the span carries under LiteLLM, while the raw code stays readable on the facts; facts_keep_a_none_code_and_the_access_denied_class checks it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6114-L6123

@@ -1,0 +1,13 @@
+kind: helper
+name: identity-store-auth-valid-key-reaches-provider
+call:
+  identity_store:
+    aspect: carrier
+    key:
+      token: sk-hashed-valid
+      key_name: sk-valid
+      user_id: u1
+      team_id: t1
+    keep_source_key: true
+env: {}
+compare: {ignore: []}
