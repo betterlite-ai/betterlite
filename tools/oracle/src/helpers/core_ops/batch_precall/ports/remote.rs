@@ -22,8 +22,11 @@ impl BatchPrecallRemote for Scripted {
         _pattern: &str,
         _count: usize,
     ) -> impl Future<Output = Result<Vec<String>, BatchCacheError>> + Send {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.effects.push("scan");
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .effects
+            .push("scan");
         if let Some(error) = cache_error(&self.remote.faults, Function::Scan) {
             return ready(Err(error));
         }
@@ -34,8 +37,11 @@ impl BatchPrecallRemote for Scripted {
         &self,
         _keys: &[String],
     ) -> impl Future<Output = Result<Vec<(String, Json)>, BatchCacheError>> + Send {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.effects.push("batch_get");
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .effects
+            .push("batch_get");
         let entries = self
             .remote
             .batch_entries
@@ -58,13 +64,12 @@ impl BatchPrecallRemote for Scripted {
 
 // the backing store's read: record the call, then the scripted fault or the stored value
 fn remote_get_answer(scripted: &Scripted) -> Result<Option<Json>, BatchCacheError> {
-    let mut state = scripted
+    scripted
         .state
         .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    state.effects.push("get");
-    match cache_error(&scripted.remote.faults, Function::Get) {
-        Some(error) => Err(error),
-        None => Ok(scripted.remote.get_value.clone()),
-    }
+        .unwrap_or_else(PoisonError::into_inner)
+        .effects
+        .push("get");
+    cache_error(&scripted.remote.faults, Function::Get)
+        .map_or_else(|| Ok(scripted.remote.get_value.clone()), Err)
 }

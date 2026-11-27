@@ -14,12 +14,15 @@ pub(super) fn report(scripted: &Scripted, result: &BatchPrecallResult) -> Value 
         .state
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
+    let effects = state.effects.clone();
+    let held = state.held.clone();
+    drop(state);
     match result {
         BatchPrecallResult::Create(create) => json!({
             "data": &create.data,
             "diagnostics": diagnostics(&create.diagnostics),
-            "effects": &state.effects,
-            "reservation": state.held.as_ref().map(reservation_json),
+            "effects": &effects,
+            "reservation": held.as_ref().map(reservation_json),
         }),
         BatchPrecallResult::CreateFailure(failure) => json!({
             "refunded": failure.refunded.as_ref().map(record_json),
@@ -29,7 +32,7 @@ pub(super) fn report(scripted: &Scripted, result: &BatchPrecallResult) -> Value 
             "data": &retrieve.data,
             "cached": &retrieve.cached,
             "diagnostics": diagnostics(&retrieve.diagnostics),
-            "effects": &state.effects,
+            "effects": &effects,
         }),
         BatchPrecallResult::TerminalRetrieve(terminal) => json!({
             "batch_id": &terminal.batch_id,
