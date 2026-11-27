@@ -1,0 +1,21 @@
+kind: helper
+name: jwt-oauth-routing-selector-claim-cross-product
+env: {}
+compare: {ignore: []}
+call:
+  b10161: {operation: selector, selector: [x, y], claim: [a, y], split_space_delimited: false}
+calls:
+  - b10161: {operation: selector, selector: [x, z], claim: [a, b], split_space_delimited: false}
+  - b10161: {operation: selector, selector: b, claim: [a, b], split_space_delimited: false}
+  - b10161: {operation: selector, selector: "*", claim: [a, b], split_space_delimited: false}
+  - b10161: {operation: selector, selector: ["a*", "*c"], claim: [abc], split_space_delimited: false}
+  - b10161: {operation: selector, selector: '', claim: ['', x], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [''], claim: [''], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [a], claim: [], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [a, b], claim: [c, d], split_space_delimited: false}
+  - b10161: {operation: selector, selector: ["a b"], claim: "a b", split_space_delimited: false}
+  - b10161: {operation: selector, selector: ["a b"], claim: "a  b", split_space_delimited: false}
+  - b10161: {operation: selector, selector: ["a b"], claim: "a  b", split_space_delimited: true}
+  - b10161: {operation: selector, selector: [b], claim: [b, b], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [z, b], claim: [a], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [z, b], claim: [b, a], split_space_delimited: true}
