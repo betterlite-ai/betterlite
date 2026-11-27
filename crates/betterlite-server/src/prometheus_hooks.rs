@@ -1,4 +1,3 @@
-// LiteLLM's PrometheusLogger callbacks: the order of the emitter calls, the label values they get and the skip rules around them
 mod budget;
 mod error;
 mod event;
@@ -15,7 +14,6 @@ mod settings;
 mod shared;
 mod success;
 
-#[cfg(test)]
 mod tests;
 
 pub use budget::BudgetLookupPort;

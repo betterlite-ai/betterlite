@@ -21,5 +21,4 @@ impl PrometheusHooks {
     }
 }
 
-#[cfg(test)]
 mod tests;

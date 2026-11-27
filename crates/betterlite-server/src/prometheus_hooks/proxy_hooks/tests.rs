@@ -1,9 +1,12 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::logged_api_key;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_error::normalize::class::Class;
 use betterlite_logging::prometheus::failure::exception::LabelException;
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
 use betterlite_openai::openai_base_config::Object as JsonMap;
@@ -32,7 +35,12 @@ fn exception(status_code: Option<&str>) -> LabelException {
         class_name: "AuthenticationError".to_owned(),
         message: Some("the call failed".to_owned()),
         status_code: status_code.map(str::to_owned),
-        ..LabelException::default()
+        class: Class::default(),
+        code: None,
+        llm_provider: None,
+        category: None,
+        rate_limit_type: None,
+        legacy_class_name: None,
     }
 }
 

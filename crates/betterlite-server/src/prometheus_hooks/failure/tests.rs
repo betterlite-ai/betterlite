@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger as _;

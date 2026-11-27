@@ -244,5 +244,4 @@ fn proxy_stream_text(fields: Option<&IndexMap<String, Json>>) -> String {
     }
 }
 
-#[cfg(test)]
 mod tests;

@@ -17,6 +17,7 @@ use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits
 use betterlite_models::decisions::Json;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 use betterlite_prometheus::collector_registry::CollectorRegistry;
+use betterlite_prometheus::collector_registry::metric::sample::Sample;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
@@ -176,7 +177,7 @@ pub(crate) fn fixture_with_settings(settings: PrometheusHookSettings) -> Fixture
         settings.end_user,
     ));
     let budget =
-        RemainingBudgetFanOut::new(Arc::clone(&port), Duration::from_secs(1), port.gauges());
+        RemainingBudgetFanOut::new(Arc::clone(&port), Duration::from_secs(1), &port.gauges);
     let hooks = PrometheusHooks::new(
         collectors,
         settings,
@@ -214,18 +215,30 @@ pub(crate) fn event_with_metadata(
 
 pub(crate) fn error_information(message: &str) -> ErrorInformation {
     ErrorInformation {
+        error_code: None,
         error_class: Some(Some("BadRequestError".to_owned())),
+        llm_provider: None,
+        traceback: None,
         error_message: Some(Some(message.to_owned())),
-        ..ErrorInformation::default()
+        error_provider_request_id: None,
+        error_rate_limit_category: None,
+        error_rate_limit_type: None,
+        error_budget_entity_type: None,
+        error_budget_entity_id: None,
+        normalized_error: None,
+        error_budget_limit: None,
+        error_budget_spend: None,
     }
 }
 
+fn series(registry: &CollectorRegistry, metric: &str) -> Vec<(Vec<String>, Sample)> {
+    registry
+        .get(metric)
+        .map_or_else(Vec::new, |collector| collector.series_in_use_order())
+}
+
 pub(crate) fn totals(registry: &CollectorRegistry, metric: &str) -> Vec<Decimal> {
-    let Some(collector) = registry.get(metric) else {
-        return Vec::new();
-    };
-    let series = collector.series_in_use_order();
-    series
+    series(registry, metric)
         .iter()
         .filter_map(|(_labels, sample)| match sample.total {
             MetricValue::Finite(amount) => Some(amount),
@@ -237,22 +250,14 @@ pub(crate) fn totals(registry: &CollectorRegistry, metric: &str) -> Vec<Decimal>
 }
 
 pub(crate) fn observations(registry: &CollectorRegistry, metric: &str) -> Vec<u64> {
-    let Some(collector) = registry.get(metric) else {
-        return Vec::new();
-    };
-    let series = collector.series_in_use_order();
-    series
+    series(registry, metric)
         .iter()
         .map(|(_labels, sample)| sample.count)
         .collect()
 }
 
 pub(crate) fn labels_seen(registry: &CollectorRegistry, metric: &str) -> Vec<String> {
-    let Some(collector) = registry.get(metric) else {
-        return Vec::new();
-    };
-    collector
-        .series_in_use_order()
+    series(registry, metric)
         .into_iter()
         .flat_map(|(labels, _sample)| labels)
         .collect()
