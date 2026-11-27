@@ -12,7 +12,7 @@ use super::super::service::BatchInputAccounting;
 use super::support::{CallsFailure, Harness, RecordedFetch, block_on, input_wire, row_usage};
 use super::{CAP_ROW, MALFORMED_ROW, OTPM_CALLER};
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::batch_limit_counters::rejections::PROJECT_OTPM_DESCRIPTOR_KEY;
+use crate::api::batch_limit_counters::rejections::PROJECT_OTPM_DESCRIPTOR_KEY as OTPM_KEY;
 use crate::api::batch_limit_descriptors::BatchLimitDescriptors;
 use crate::api::batch_limit_descriptors::descriptors::BatchLimitDescriptor;
 use crate::api::batch_limit_descriptors::limiter::BatchLimiterSource;
@@ -27,7 +27,7 @@ struct ScriptedLimiter {
 impl BatchLimiterSource for ScriptedLimiter {
     type Error = CallsFailure;
 
-    const PROJECT_OTPM_DESCRIPTOR_KEY: &'static str = PROJECT_OTPM_DESCRIPTOR_KEY;
+    const PROJECT_OTPM_DESCRIPTOR_KEY: &'static str = OTPM_KEY;
 
     fn descriptors_for(
         &self,
@@ -80,7 +80,7 @@ fn estimates_and_fetch_params_run_through_the_descriptor_service() {
         limits: ApiLimits::default(),
         warned_unsupported_model_skip: AtomicBool::new(false),
     };
-    let harness = Harness::new(concat!(CAP_ROW, "\n", MALFORMED_ROW));
+    let harness = Harness::new(&format!("{CAP_ROW}\n{MALFORMED_ROW}"));
     harness.counter.script(&[3]);
     let service = BatchInputAccounting::new(
         &descriptors,

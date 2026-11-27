@@ -39,7 +39,7 @@ pub struct BatchInputAccounting<'slice, Calls, Files, Access> {
     calls: &'slice Calls,
     files: &'slice Files,
     access: &'slice Access,
-    counter: &'slice dyn BatchTokenCounter,
+    counter: &'slice (dyn BatchTokenCounter + 'static),
     limits: ApiLimits,
 }
 
@@ -54,7 +54,7 @@ where
         calls: &'slice Calls,
         files: &'slice Files,
         access: &'slice Access,
-        counter: &'slice dyn BatchTokenCounter,
+        counter: &'slice (dyn BatchTokenCounter + 'static),
         limits: ApiLimits,
     ) -> Self {
         Self {

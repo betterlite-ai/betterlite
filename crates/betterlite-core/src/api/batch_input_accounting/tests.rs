@@ -21,7 +21,6 @@ use super::input::BatchInputAccountingInput;
 use super::ports::{BatchAccessCheck, BatchKeyGrant, BatchTeamLookup};
 use super::result::BatchInputAccountingResult;
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
-use crate::api::request_destination::RequestData;
 use support::{
     AccessMethod, FakeError, Harness, RecordedFetch, Team, block_on, input_wire, managed_file_id,
     row_usage,
@@ -120,7 +119,7 @@ fn model_denial(model: &str, reason: &str) -> String {
 }
 
 fn team_harness(content: &str) -> Harness {
-    let harness = Harness::new(content);
+    let mut harness = Harness::new(content);
     harness.access.database = true;
     harness
         .access
@@ -134,13 +133,6 @@ fn raw_of<'raw>(line: &DecodedBatchInputLine<'raw>) -> &'raw [u8] {
     }
 }
 
-fn entry_of<'raw>(line: &DecodedBatchInputLine<'raw>) -> Option<&RequestData> {
-    match line {
-        DecodedBatchInputLine::Entry { entry, .. } => Some(entry),
-        DecodedBatchInputLine::Fallback { .. } => None,
-    }
-}
-
 #[test]
 fn decode_keeps_entries_and_fallbacks() {
     let bytes = b" {\"body\": true}\r\n\nnot json\n\xef\xbb\xbf{\"body\": {}}\n[1]\n\xff\xfe\n";
@@ -148,16 +140,16 @@ fn decode_keeps_entries_and_fallbacks() {
         decode_batch_input_accounting(bytes, &ApiLimits::default()).expect("the lines decode");
     assert_eq!(lines.len(), 5);
     assert_eq!(raw_of(&lines[0]), b"{\"body\": true}");
-    assert_eq!(
-        entry_of(&lines[0]).and_then(|entry| entry.get("body")),
-        Some(&Json::Bool(true))
-    );
-    assert!(entry_of(&lines[1]).is_none());
+    let DecodedBatchInputLine::Entry { entry, .. } = &lines[0] else {
+        panic!("the first line parses as an entry");
+    };
+    assert_eq!(entry.get("body"), Some(&Json::Bool(true)));
+    assert!(matches!(&lines[1], DecodedBatchInputLine::Fallback { .. }));
     assert_eq!(raw_of(&lines[1]), b"not json");
-    assert!(entry_of(&lines[2]).is_some());
-    assert!(entry_of(&lines[3]).is_none());
+    assert!(matches!(&lines[2], DecodedBatchInputLine::Entry { .. }));
+    assert!(matches!(&lines[3], DecodedBatchInputLine::Fallback { .. }));
     assert_eq!(raw_of(&lines[3]), b"[1]");
-    assert!(entry_of(&lines[4]).is_none());
+    assert!(matches!(&lines[4], DecodedBatchInputLine::Fallback { .. }));
     assert_eq!(raw_of(&lines[4]), b"\xff\xfe");
 }
 
@@ -439,7 +431,7 @@ struct EstimateCase {
     min: Some(3),
 })]
 fn batch_output_estimate(#[case] case: EstimateCase) {
-    let mut harness = Harness::new(concat!(CAP_ROW, "\n", MALFORMED_ROW));
+    let mut harness = Harness::new(&format!("{CAP_ROW}\n{MALFORMED_ROW}"));
     harness.counter.script(&[3]);
     harness.calls.script(&[3]);
     harness.calls.floor = 7;
@@ -665,7 +657,7 @@ fn unsupported_row_estimate(#[case] case: UnsupportedCase) {
 fn the_provider_slug_is_forwarded(#[case] extra: &str, #[case] slug: &str) {
     let harness = Harness::new("");
     let wire = format!(r#"{{"file_id": "file-abc"{extra}}}"#);
-    drop(harness.run(&wire).expect("the empty file accounts"));
+    harness.run(&wire).expect("the empty file accounts");
     assert_eq!(
         harness.calls.resolves(),
         vec![("file-abc".to_owned(), slug.to_owned())]
@@ -721,7 +713,7 @@ fn team_lookup_http_failure_passes_through() {
 
 #[test]
 fn a_team_grant_lifts_a_team_denial() {
-    let harness = team_harness(COUNTING_ROW);
+    let mut harness = team_harness(COUNTING_ROW);
     harness.counter.script(&[2]);
     harness
         .access
@@ -778,7 +770,7 @@ fn empty_upload_targets_fall_back_to_row_models() {
     let principal = input.caller.expect("the caller decodes");
     let caller =
         UserAPIKeyAuth::construct(AuthInput::Dict(principal.0)).expect("the caller builds");
-    let harness = Harness::new(COUNTING_ROW);
+    let mut harness = Harness::new(COUNTING_ROW);
     harness
         .access
         .key_checks
@@ -800,7 +792,7 @@ fn empty_upload_targets_fall_back_to_row_models() {
 #[test]
 fn a_key_http_outcome_passes_through() {
     let detail = json_detail(r#"{"error":"slow down"}"#);
-    let harness = Harness::new(COUNTING_ROW);
+    let mut harness = Harness::new(COUNTING_ROW);
     harness.access.key_checks.insert(
         "gpt-4o".to_owned(),
         BatchAccessCheck::Http(BatchHttpError {
@@ -840,7 +832,7 @@ fn access_port_failure_is_logged() {
 
 #[test]
 fn non_bytes_content_names_the_class() {
-    let harness = Harness::new("");
+    let harness = Harness::default();
     harness.files.not_bytes("NoneType");
     let error = harness
         .run(&input_wire("file-abc", Some(KEY_CALLER), "[]"))
@@ -865,7 +857,7 @@ fn non_bytes_content_names_the_class() {
 #[case::not_file_endpoints(BatchManagedFileError::NotFileEndpoints)]
 #[case::router_missing(BatchManagedFileError::RouterMissing)]
 fn managed_hook_failures_keep_their_text(#[case] reason: BatchManagedFileError) {
-    let harness = Harness::new(MANAGED_ROW);
+    let harness = Harness::default();
     harness.files.managed_unavailable(reason);
     let file_id = managed_file_id("target-model");
     let error = harness
@@ -888,7 +880,7 @@ fn managed_hook_failures_keep_their_text(#[case] reason: BatchManagedFileError) 
 #[case::unavailable(503)]
 fn a_file_http_failure_keeps_its_status(#[case] status: u16) {
     let detail = json_detail(r#"{"error":"file read failed"}"#);
-    let harness = Harness::new("");
+    let harness = Harness::default();
     harness.files.http(BatchHttpError {
         status,
         detail: detail.clone(),
@@ -918,7 +910,7 @@ fn a_file_http_failure_keeps_its_status(#[case] status: u16) {
 
 #[test]
 fn a_file_port_failure_is_logged() {
-    let harness = Harness::new("");
+    let harness = Harness::default();
     harness.files.fail();
     let error = harness
         .run(&input_wire("file-abc", Some(KEY_CALLER), "[]"))
