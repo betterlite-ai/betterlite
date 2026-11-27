@@ -2,7 +2,7 @@ from datetime import UTC, datetime, tzinfo
 from typing import ClassVar, Literal, NotRequired, Self, TypeAlias, TypedDict
 
 from litellm.proxy.lens import inference
-from litellm.proxy.lens.models import Job, Lens, ModelRequest, Worker
+from litellm.proxy.lens.models import Job, Lens, ModelRequest, Scope, Worker
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -162,12 +162,11 @@ def worker_of(call: Call) -> Worker:
     worker_id = call.get("worker_id")
     if worker_id is None:
         raise ValueError("an analysis call needs worker_id")
-    scope: dict[str, JsonValue] = {}
     return Worker(
         id=worker_id,
         name="worker",
-        scope=scope,
-        last_seen="2026-01-01T00:00:00Z",
+        scope=Scope(),
+        last_seen=datetime(2026, 1, 1, tzinfo=UTC),
         analysis_key_id=KEY,
     )
 

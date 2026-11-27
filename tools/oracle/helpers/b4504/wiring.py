@@ -113,10 +113,14 @@ class LiteLLMModule(ModuleType):
             raise ValueError(message)
         input_rate = custom_cost_per_token["input_cost_per_token"]
         output_rate = custom_cost_per_token["output_cost_per_token"]
-        return self.usage["prompt_tokens"] * input_rate + self.usage["completion_tokens"] * output_rate
+        prompt = self.usage["prompt_tokens"] * input_rate
+        completion = self.usage["completion_tokens"] * output_rate
+        return prompt + completion
 
 
-def reload_inference(litellm_module: LiteLLMModule, billing: BillingModule, clock: DatetimeModule) -> None:
+def reload_inference(
+    litellm_module: LiteLLMModule, billing: BillingModule, clock: DatetimeModule
+) -> None:
     saved: dict[str, ModuleType | None] = {
         LITELLM_MODULE: sys.modules.get(LITELLM_MODULE),
         BILLING_MODULE: sys.modules.get(BILLING_MODULE),

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import io
 import sys
+from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import Request
@@ -29,16 +30,25 @@ from .fixtures import (
     worker_of,
 )
 from .wiring import (
+    PROXY_MODULE,
     BillingModule,
     DatetimeModule,
     Key,
     LiteLLMModule,
-    PROXY_MODULE,
     ProxyServer,
     Recorder,
     Router,
     reload_inference,
 )
+
+
+@dataclass(frozen=True)
+class Subject:
+    lens: Lens
+    job: Job
+    worker: Worker
+    body: ModelRequest
+    store: Store
 
 
 def activate(call: Call, recorder: Recorder) -> None:
@@ -61,14 +71,7 @@ def charge_value(call: Call) -> JsonValue:
     return inference.completion_charge(deployments_of(call), ModelResponse(**payload), estimate)
 
 
-def analyze_call(
-    call: Call,
-    lens: Lens,
-    job: Job,
-    worker: Worker,
-    body: ModelRequest,
-    store: Store,
-) -> None:
+def analyze_call(call: Call, subject: Subject) -> None:
     saved = sys.modules.get(PROXY_MODULE)
     sys.modules[PROXY_MODULE] = ProxyServer(Router(deployment_calls(call)))
     scope: dict[str, JsonValue] = {"type": "http"}
@@ -76,7 +79,12 @@ def analyze_call(
         with contextlib.redirect_stdout(io.StringIO()):
             asyncio.run(
                 inference.analyze(
-                    LensRepository(store), lens, job, worker, body, Request(scope)
+                    LensRepository(subject.store),
+                    subject.lens,
+                    subject.job,
+                    subject.worker,
+                    subject.body,
+                    Request(scope),
                 )
             )
     finally:
@@ -88,24 +96,25 @@ def analyze_call(
 
 def analyze_value(call: Call, mode: Literal["reserve", "settle", "body"]) -> JsonValue:
     lens = lens_of(call)
-    job = job_of(call, lens)
-    worker = worker_of(call)
-    body = body_of(call)
-    store = Store(lens)
+    subject = Subject(
+        lens=lens,
+        job=job_of(call, lens),
+        worker=worker_of(call),
+        body=body_of(call),
+        store=Store(lens),
+    )
     recorder = Recorder(mode, call.get("cost"))
     Clock.readings = readings_of(call)
     Clock.position = 0
     activate(call, recorder)
-    try:
-        analyze_call(call, lens, job, worker, body, store)
-    except StopEarlyError:
-        pass
+    with contextlib.suppress(StopEarlyError):
+        analyze_call(call, subject)
     if mode == "body":
         data = recorder.data
         if data is None:
             raise ValueError("the analysis body was not recorded")
         return TypeAdapter(JsonValue).validate_python(data)
-    return lens_state(store)
+    return lens_state(subject.store)
 
 
 def run(input_value: Call) -> JsonValue:
