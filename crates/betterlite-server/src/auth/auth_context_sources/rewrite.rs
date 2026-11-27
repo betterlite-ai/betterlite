@@ -81,15 +81,16 @@ pub(crate) async fn prepare(
     else {
         return Ok(request);
     };
-    buffered(request, &state, failure_response).await
+    buffered(&mut request, &state, failure_response).await?;
+    Ok(request)
 }
 
 async fn buffered(
-    mut request: Request<Body>,
+    request: &mut Request<Body>,
     state: &ServerState,
     failure_response: fn(&StageFailure) -> Response,
-) -> Result<Request<Body>, Box<Response>> {
-    let limit = max_body_bytes(&request);
+) -> Result<(), Box<Response>> {
+    let limit = max_body_bytes(request);
     let stream = mem::replace(request.body_mut(), Body::empty());
     let bytes = read_body(stream, limit).await.map_err(|error| {
         Box::new(match error {
@@ -116,11 +117,11 @@ async fn buffered(
         cached_body: None,
         form_fields: None,
     };
-    let rewritten = rewrite(&mut request, state, &mut input)
+    let rewritten = rewrite(request, state, &mut input)
         .await
         .map_err(|failure| Box::new(failure_response(&failure)))?;
-    restore_body(&mut request, bytes, rewritten);
-    Ok(request)
+    restore_body(request, bytes, rewritten);
+    Ok(())
 }
 
 fn restore_body(request: &mut Request<Body>, bytes: Bytes, rewritten: Option<Vec<u8>>) {
