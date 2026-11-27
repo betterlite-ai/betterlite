@@ -710,6 +710,31 @@ async fn proxy_tool_call_validates_arguments() {
 }
 
 #[tokio::test]
+async fn proxy_tool_call_rejects_non_object_arguments() {
+    let listed = tool("alpha", "finds alpha", "{}", "srv");
+    let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
+    fake.allowed_servers = vec!["srv".to_owned()];
+    let caller = caller();
+    let scope = McpRequestScope::default();
+    let arguments = object_arguments(&[
+        ("tool_id", JsonValue::String(tool_id)),
+        ("arguments", JsonValue::String("not an object".to_owned())),
+    ]);
+    let request = ProxyToolRequest {
+        name: "call_tool",
+        arguments: &arguments,
+    };
+    let result = handle_mcp_proxy_tool(request, &context(&fake, &caller, &scope))
+        .await
+        .expect("a non-object arguments value is a tool error");
+    assert!(result.is_error);
+    assert_eq!(text_of(&result), "arguments must be an object");
+    assert!(fake.seen.lock().unwrap().executions.is_empty());
+}
+
+#[tokio::test]
 async fn proxy_tool_call_delegates_to_the_tool_call_handler() {
     let listed = tool("alpha", "finds alpha", REQUIRED_SCHEMA, "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
