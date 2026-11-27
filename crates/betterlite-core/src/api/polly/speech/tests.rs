@@ -81,6 +81,14 @@ fn region_params(region: &str, api_base: Option<&str>) -> Object {
     params
 }
 
+fn resolved(session_token: Option<&str>) -> ResolvedCredentials {
+    ResolvedCredentials {
+        access_key_id: SecretString::from(EXAMPLE_KEY.to_owned()),
+        secret_access_key: SecretString::from(EXAMPLE_SECRET.to_owned()),
+        session_token: session_token.map(|token| SecretString::from(token.to_owned())),
+    }
+}
+
 struct FixedResolver {
     with_token: bool,
 }
@@ -90,13 +98,8 @@ impl CredentialResolver for FixedResolver {
         &self,
         _sources: &CredentialSources<'_>,
     ) -> Result<ResolvedCredentials, SpeechError> {
-        Ok(ResolvedCredentials {
-            access_key_id: SecretString::from(EXAMPLE_KEY.to_owned()),
-            secret_access_key: SecretString::from(EXAMPLE_SECRET.to_owned()),
-            session_token: self
-                .with_token
-                .then_some(SecretString::from("session-token".to_owned())),
-        })
+        let token = self.with_token.then_some("session-token");
+        Ok(resolved(token))
     }
 }
 
@@ -107,11 +110,7 @@ impl CredentialResolver for ExpectingResolver {
         assert_eq!(sources.aws_region_name, Some("eu-west-1"));
         assert_eq!(sources.aws_session_name, Some("session"));
         assert_eq!(sources.aws_access_key_id, Some(EXAMPLE_KEY));
-        Ok(ResolvedCredentials {
-            access_key_id: SecretString::from(EXAMPLE_KEY.to_owned()),
-            secret_access_key: SecretString::from(EXAMPLE_SECRET.to_owned()),
-            session_token: Some(SecretString::from("session-token".to_owned())),
-        })
+        Ok(resolved(Some("session-token")))
     }
 }
 
