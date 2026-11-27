@@ -149,29 +149,42 @@ fn resolved_environment(value: Json, lookup: &dyn EnvironmentLookup) -> Json {
     }
 }
 
+// absent and null both leave the setting at its default; an os.environ/ reference resolves first
+fn resolved<L>(raw: Option<Json>, lookup: &L) -> Option<Json>
+where
+    L: EnvironmentLookup,
+{
+    match resolved_environment(raw?, lookup) {
+        Json::Null => None,
+        value => Some(value),
+    }
+}
+
 // _configured_range_entries: a string splits on commas, an iterable stringifies its entries, anything else is unknown
 fn topology<L>(raw: Option<Json>, lookup: &L) -> ProxyTopology
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
+    let Some(raw) = resolved(raw, lookup) else {
         return ProxyTopology::Unknown;
     };
-    let entries = match resolved_environment(raw, lookup) {
-        Json::Null => return ProxyTopology::Unknown,
-        Json::Text(text) => text.split(',').map(|part| part.trim().to_owned()).collect(),
-        Json::List(items) => items
-            .iter()
-            .map(|item| text_of(item).trim().to_owned())
-            .collect(),
-        Json::Bool(_) | Json::Number(_) | Json::Object(_) => {
-            warn!(
-                "Invalid {TRUSTED_PROXY_RANGES_KEY} value: expected a list of address ranges, got a scalar or mapping"
-            );
-            return ProxyTopology::Unknown;
-        }
-    };
-    ProxyTopology::Entries(entries)
+    if let Json::Text(text) = &raw {
+        return ProxyTopology::Entries(
+            text.split(',').map(|part| part.trim().to_owned()).collect(),
+        );
+    }
+    if let Json::List(items) = &raw {
+        return ProxyTopology::Entries(
+            items
+                .iter()
+                .map(|item| text_of(item).trim().to_owned())
+                .collect(),
+        );
+    }
+    warn!(
+        "Invalid {TRUSTED_PROXY_RANGES_KEY} value: expected a list of address ranges, got a scalar or mapping"
+    );
+    ProxyTopology::Unknown
 }
 
 // _positive_int: int(str(value)) at least 1, otherwise the default with a warning
@@ -201,12 +214,9 @@ fn overrides<L>(raw: Option<Json>, lookup: &L) -> SourceOverrides
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
-        return SourceOverrides::Absent;
-    };
-    match resolved_environment(raw, lookup) {
-        Json::Null => SourceOverrides::Absent,
-        Json::Object(entries) => SourceOverrides::Mapping(
+    match resolved(raw, lookup) {
+        None => SourceOverrides::Absent,
+        Some(Json::Object(entries)) => SourceOverrides::Mapping(
             entries
                 .into_iter()
                 .map(|(range, value)| SourceOverride {
@@ -215,7 +225,7 @@ where
                 })
                 .collect(),
         ),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             warn!(
                 "Invalid {SOURCE_LIMIT_OVERRIDES_KEY} value; expected a mapping of address or range to limit"
             );

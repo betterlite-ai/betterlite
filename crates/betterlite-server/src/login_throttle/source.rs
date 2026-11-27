@@ -29,15 +29,16 @@ pub fn declared_proxy_ranges(topology: &ProxyTopology) -> Option<Vec<String>> {
 // source_group: IPv4 as is, IPv6 by its /64, an unparsable address by its literal text
 #[must_use]
 pub fn source_group(client_ip: &str) -> String {
-    match parse_mapped(client_ip) {
-        None => client_ip.to_owned(),
-        Some(IpAddr::V4(version_four)) => version_four.to_string(),
-        Some(IpAddr::V6(version_six)) => {
-            IpNet::new(IpAddr::V6(version_six), IPV6_SOURCE_PREFIX_LENGTH).map_or_else(
+    let Some(parsed) = parse_address(client_ip) else {
+        return client_ip.to_owned();
+    };
+    match parsed.to_canonical() {
+        IpAddr::V4(version_four) => version_four.to_string(),
+        IpAddr::V6(version_six) => IpNet::new(IpAddr::V6(version_six), IPV6_SOURCE_PREFIX_LENGTH)
+            .map_or_else(
                 |_error| client_ip.to_owned(),
                 |network| network.trunc().to_string(),
-            )
-        }
+            ),
     }
 }
 
@@ -55,9 +56,10 @@ pub fn source_limit(settings: &Settings, client_ip: &str) -> i64 {
 
 // only a matching range evaluates its value, so an invalid one warns once that address reaches it
 fn source_override(entries: &[SourceOverride], client_ip: &str, default: i64) -> i64 {
-    let Some(address) = parse_mapped(client_ip) else {
+    let Some(parsed) = parse_address(client_ip) else {
         return default;
     };
+    let address = parsed.to_canonical();
     let mut best: Option<(u8, bool, i64)> = None;
     for entry in entries {
         let Some(network) = parse_network(&entry.range, SOURCE_LIMIT_OVERRIDES_KEY) else {
@@ -107,17 +109,5 @@ fn parse_address(text: &str) -> Option<IpAddr> {
             address.parse().ok()
         }
         Some(_) => None,
-    }
-}
-
-// _parse_address: an IPv4-mapped IPv6 address is the IPv4 address it embeds
-fn parse_mapped(text: &str) -> Option<IpAddr> {
-    match parse_address(text)? {
-        IpAddr::V4(version_four) => Some(IpAddr::V4(version_four)),
-        IpAddr::V6(version_six) => Some(
-            version_six
-                .to_ipv4_mapped()
-                .map_or(IpAddr::V6(version_six), IpAddr::V4),
-        ),
     }
 }

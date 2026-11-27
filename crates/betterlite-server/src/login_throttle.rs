@@ -10,5 +10,4 @@ pub mod warnings;
 #[cfg(any(test, feature = "testing"))]
 #[path = "login_throttle/tests/support.rs"]
 pub mod support;
-#[cfg(test)]
 mod tests;

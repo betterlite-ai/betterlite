@@ -69,7 +69,7 @@ impl FakeLocalStore {
     pub fn contains(&self, key: &str) -> bool {
         let now = (*self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.purge(now);
+        purge_expired(&mut state.values, &mut state.expiries, now);
         state.values.contains_key(key)
     }
 
@@ -77,24 +77,25 @@ impl FakeLocalStore {
     pub fn value(&self, key: &str) -> Option<f64> {
         let now = (*self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.purge(now);
+        purge_expired(&mut state.values, &mut state.expiries, now);
         state.values.get(key).copied()
     }
 }
 
-impl LocalState {
-    // InMemoryCache expires lazily and only on a read; a read or a probe drops what has expired
-    fn purge(&mut self, now: f64) {
-        let expired: Vec<String> = self
-            .expiries
-            .iter()
-            .filter(|(_key, expiry)| **expiry <= now)
-            .map(|(key, _expiry)| key.clone())
-            .collect();
-        for key in &expired {
-            self.values.remove(key);
-            self.expiries.remove(key);
-        }
+// InMemoryCache expires lazily and only on a read; a read or a probe drops what has expired
+fn purge_expired<T>(
+    values: &mut BTreeMap<String, T>,
+    expiries: &mut BTreeMap<String, f64>,
+    now: f64,
+) {
+    let expired: Vec<String> = expiries
+        .iter()
+        .filter(|(_key, expiry)| **expiry <= now)
+        .map(|(key, _expiry)| key.clone())
+        .collect();
+    for key in &expired {
+        values.remove(key);
+        expiries.remove(key);
     }
 }
 
@@ -102,7 +103,7 @@ impl LocalStore for FakeLocalStore {
     fn get(&self, key: &str) -> Result<Option<CacheValue>, LoginThrottleError> {
         let now = (*self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.purge(now);
+        purge_expired(&mut state.values, &mut state.expiries, now);
         Ok(state.values.get(key).map(|value| CacheValue::Float(*value)))
     }
 
@@ -192,7 +193,7 @@ impl FakeRedis {
     pub fn counter(&self, key: &str) -> Option<i64> {
         let now = (*self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.purge(now);
+        purge_expired(&mut state.counters, &mut state.expiries, now);
         state.counters.get(key).copied()
     }
 
@@ -245,21 +246,6 @@ impl FakeRedis {
         };
         drop(state);
         BlockTtls { user, source }
-    }
-}
-
-impl RedisState {
-    fn purge(&mut self, now: f64) {
-        let expired: Vec<String> = self
-            .expiries
-            .iter()
-            .filter(|(_key, expiry)| **expiry <= now)
-            .map(|(key, _expiry)| key.clone())
-            .collect();
-        for key in &expired {
-            self.counters.remove(key);
-            self.expiries.remove(key);
-        }
     }
 }
 
@@ -518,6 +504,18 @@ pub struct StepView {
     pub source_block: Option<i64>,
 }
 
+impl StepView {
+    fn of(kind: &str, outcome: &str) -> Self {
+        Self {
+            step: kind.to_owned(),
+            outcome: outcome.to_owned(),
+            error: None,
+            user_block: None,
+            source_block: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ErrorView {
     pub code: String,
@@ -631,28 +629,17 @@ async fn run_steps(throttle: &LoginThrottle, steps: &[Step]) -> Vec<StepView> {
     let mut pending = None;
     let mut views = Vec::with_capacity(steps.len());
     for step in steps {
-        views.push(run_step(throttle, step, &mut pending).await);
+        let view = match step.kind.as_str() {
+            "attempt" => attempt_step(throttle, step, &mut pending).await,
+            "failed" => settle_step(pending.take(), "failed").await,
+            "succeeded" => settle_step(pending.take(), "succeeded").await,
+            "record_failure" => record_step(throttle, step).await,
+            "clear_pair" => clear_step(throttle, step).await,
+            _other => StepView::of(&step.kind, "unknown"),
+        };
+        views.push(view);
     }
     views
-}
-
-async fn run_step<'throttle>(
-    throttle: &'throttle LoginThrottle,
-    step: &Step,
-    pending: &mut Option<LoginAttempt<'throttle>>,
-) -> StepView {
-    match step.kind.as_str() {
-        "attempt" => attempt_step(throttle, step, pending).await,
-        "failed" => settle_step(pending.take(), "failed").await,
-        "succeeded" => settle_step(pending.take(), "succeeded").await,
-        "record_failure" => record_step(throttle, step).await,
-        "clear_pair" => clear_step(throttle, step).await,
-        _other => StepView {
-            step: step.kind.clone(),
-            outcome: "unknown".to_owned(),
-            ..StepView::default()
-        },
-    }
 }
 
 async fn attempt_step<'throttle>(
@@ -662,18 +649,14 @@ async fn attempt_step<'throttle>(
 ) -> StepView {
     let username = step.username.clone().unwrap_or_default();
     *pending = None;
-    let mut view = StepView {
-        step: step.kind.clone(),
-        ..StepView::default()
-    };
     match throttle.attempt(&username).await {
         Ok(Attempt::Allowed(attempt)) => {
-            view.outcome = "allowed".to_owned();
             *pending = Some(attempt);
+            StepView::of(&step.kind, "allowed")
         }
         Ok(Attempt::Refused(refused)) => {
             let exception = refused.exception();
-            view.outcome = "refused".to_owned();
+            let mut view = StepView::of(&step.kind, "refused");
             view.error = Some(ErrorView {
                 code: exception.code,
                 r#type: exception.error_type,
@@ -681,61 +664,37 @@ async fn attempt_step<'throttle>(
                 message: exception.message,
                 headers: exception.headers,
             });
+            view
         }
-        Err(_error) => view.outcome = "error".to_owned(),
+        Err(_error) => StepView::of(&step.kind, "error"),
     }
-    view
 }
 
 async fn settle_step(attempt: Option<LoginAttempt<'_>>, kind: &str) -> StepView {
-    let mut view = StepView {
-        step: kind.to_owned(),
-        ..StepView::default()
-    };
     let Some(attempt) = attempt else {
-        view.outcome = "no_attempt".to_owned();
-        return view;
+        return StepView::of(kind, "no_attempt");
     };
     let settled = if kind == "succeeded" {
         attempt.succeeded().await.is_ok()
     } else {
         attempt.failed().await.is_ok()
     };
-    view.outcome = if settled {
-        "ok".to_owned()
-    } else {
-        "error".to_owned()
-    };
-    view
+    StepView::of(kind, if settled { "ok" } else { "error" })
 }
 
 async fn record_step(throttle: &LoginThrottle, step: &Step) -> StepView {
     let username = step.username.clone().unwrap_or_default();
-    let mut view = StepView {
-        step: step.kind.clone(),
-        ..StepView::default()
+    let Ok(ttls) = throttle.record_failure(&username).await else {
+        return StepView::of(&step.kind, "error");
     };
-    match throttle.record_failure(&username).await {
-        Ok(ttls) => {
-            view.outcome = "ok".to_owned();
-            view.user_block = Some(ttls.user);
-            view.source_block = Some(ttls.source);
-        }
-        Err(_error) => view.outcome = "error".to_owned(),
-    }
+    let mut view = StepView::of(&step.kind, "ok");
+    view.user_block = Some(ttls.user);
+    view.source_block = Some(ttls.source);
     view
 }
 
 async fn clear_step(throttle: &LoginThrottle, step: &Step) -> StepView {
     let username = step.username.clone().unwrap_or_default();
     let cleared = throttle.clear_pair(&username).await;
-    StepView {
-        step: step.kind.clone(),
-        outcome: if cleared.is_ok() {
-            "ok".to_owned()
-        } else {
-            "error".to_owned()
-        },
-        ..StepView::default()
-    }
+    StepView::of(&step.kind, if cleared.is_ok() { "ok" } else { "error" })
 }
