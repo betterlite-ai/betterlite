@@ -1,0 +1,26 @@
+task: B10008
+deviations:
+  - what: >-
+      A key or team callback that names agentops when litellm_settings never did answers the unavailable-adapter error
+      naming agentops; LiteLLM fetches the token then and builds the logger.
+    why: >-
+      The catalog resolver is synchronous and the fetch is not, and the fetch stays at startup instead of becoming a lazy
+      one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L56-L65
+  - what: >-
+      The legacy AgentOps logger's resource carries service.name, deployment.environment and telemetry.sdk.name from
+      AgentOpsConfig, plus project.id from the token response; LiteLLM sets those attributes on the logger and never puts
+      them on the resource.
+    why: >-
+      AgentOps.__init__ fills self.resource_attributes, but OpenTelemetry._get_litellm_resource builds the resource from
+      the generic OTEL_* config and never reads that attribute, so the project id is dropped. betterlite applies the map
+      through OTEL_RESOURCE_ATTRIBUTES, and the operator's own OTEL_* entries still win a name both set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L74-L84
+  - what: >-
+      With LITELLM_OTEL_V2 on and no logger runtime injected, agentops answers the unavailable-adapter error naming
+      agentops; LiteLLM builds the V2 logger.
+    why: >-
+      The V2 logger needs the production runtime, which the server state injects at startup; the arm never falls back to
+      the legacy logger while the switch is on, as B8746's other eleven arms do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4513-L4516
+kept_bugs: []
