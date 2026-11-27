@@ -51,4 +51,6 @@ async fn waiter_runs_after_the_holder_releases() {
         *record.lock().unwrap(),
         ["model start", "model end", "search"]
     );
+    // both holders released the one lock, so the original handle can take it again
+    drop(lock.try_lock().unwrap());
 }
