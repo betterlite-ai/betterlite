@@ -128,8 +128,7 @@ impl EvalRunHandlers for Fake {
     }
 }
 
-// The real OpenAI evals config behind a recorder: the params validate_environment saw, the transforms it ran,
-// and a marker body for cancel and delete that the transport must never send
+// The real OpenAI evals config behind a recorder: the params validate_environment saw, the transforms it ran, and a marker body for cancel and delete that the transport must never send
 pub(crate) struct RecordingConfig {
     inner: OpenAiEvalsConfig,
     params: Mutex<Option<Object>>,

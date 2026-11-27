@@ -46,7 +46,8 @@ impl Prepared<'_> {
 #[rustfmt::skip]
 pub(crate) fn prepare<'deps, Handler: EvalRunHandlers + ?Sized>(deps: &EvalRunDeps<'deps, Handler>, action: RunAction, request: &EvalRunRequest<'_>, logging: &mut LoggingState) -> Result<Prepared<'deps>, EvalRunFailure> {
     let caller = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
-    attempt(deps, action, request, request.kwargs.clone(), logging).map_err(|error| failure(error, caller, deps.redactor))
+    attempt(deps, action, request, request.kwargs.clone(), logging)
+        .map_err(|error| failure(error, caller, deps.redactor))
 }
 
 // The @client wrapper sets its flag in kwargs, and the sync body pops it before GenericLiteLLMParams reads the rest

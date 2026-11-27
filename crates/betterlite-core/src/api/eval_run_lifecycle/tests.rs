@@ -11,6 +11,7 @@ use betterlite_http_fixture::server::Serving;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use self::support::{
     CALL_ID, CANCELLED_FIXTURE, DELETED_FIXTURE, EVAL_ID, Fake, LogEnv, OPENAI_BASE,
@@ -217,31 +218,27 @@ fn eval_run_lifecycle_exports_default_the_logged_call_id() {
     );
 }
 
-// api_base reaches the transform as given, while an absent or null one takes DEFAULT_OPENAI_API_BASE
-#[test]
-fn eval_run_lifecycle_exports_use_the_given_api_base() {
+// api_base reaches the transform as given, while a null one takes DEFAULT_OPENAI_API_BASE and an empty string stays empty
+#[rstest]
+#[case::given(
+    Json::Text(String::from("https://gateway.example")),
+    "https://gateway.example"
+)]
+#[case::empty(Json::Text(String::new()), "")]
+#[case::null(Json::Null, OPENAI_BASE)]
+fn eval_run_lifecycle_exports_use_the_given_api_base(#[case] value: Json, #[case] base: &str) {
     let fake = Fake::default();
     let config = RecordingConfig::default();
     let redactor = test_redactor();
     let deps = run_deps(&fake, &config, &redactor);
-    let base = "https://gateway.example";
+    let kwargs = keywords(&[("api_base", value)]);
     let mut logging = state("get_run");
-    for value in [
-        Json::Text(base.to_owned()),
-        Json::Text(String::new()),
-        Json::Null,
-    ] {
-        let kwargs = keywords(&[("api_base", value)]);
-        get_run(&deps, &base_request(&kwargs), &mut logging).expect("the get succeeds");
-    }
+    get_run(&deps, &base_request(&kwargs), &mut logging).expect("the get succeeds");
     let seen = fake.calls();
-    let default_url = format!("{OPENAI_BASE}/v1/evals/{EVAL_ID}/runs/{RUN_ID}");
     assert_eq!(
         seen[0].url,
         format!("{base}/v1/evals/{EVAL_ID}/runs/{RUN_ID}")
     );
-    assert_eq!(seen[1].url, format!("/v1/evals/{EVAL_ID}/runs/{RUN_ID}"));
-    assert_eq!(seen[2].url, default_url);
 }
 
 // A known provider without an evals config raises LiteLLM's ValueError text for each action
