@@ -203,13 +203,17 @@ fn a_positive_timeout_loads() {
     );
 }
 
-#[rstest]
-#[case::zero(0)]
-#[case::negative(-1)]
-fn a_non_positive_timeout_names_its_path(#[case] seconds: i64) {
+#[test]
+fn a_non_positive_timeout_names_its_path() {
+    let zero = only(&object("timeout_seconds: 0")).unwrap_err();
     assert_eq!(
-        only(&object(&format!("timeout_seconds: {seconds}"))),
-        Err("invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction.timeout_seconds".to_owned())
+        zero,
+        "invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction.timeout_seconds"
+    );
+    let negative = only(&object("timeout_seconds: -1")).unwrap_err();
+    assert_eq!(
+        negative,
+        "invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction.timeout_seconds"
     );
 }
 
