@@ -41,7 +41,9 @@ pub(crate) fn record_proxy_failure(
     let principal: PrincipalFacts = serde_json::to_value(auth)
         .and_then(serde_json::from_value)
         .map_err(PrometheusHookError::Principal)?;
-    let entries = proxy_entries(hooks, fields, exception, &principal)?;
+    let status_code = extract_status_code(None, Some(exception), None);
+    let mut entries = proxy_principal_entries(&principal, exception, status_code);
+    proxy_request_entries(hooks, &mut entries, fields, exception, &principal)?;
     let values = UserApiKeyLabelValues::from_entries(&entries);
     let context = PrometheusLabelFactoryContext::new(
         &values,
@@ -70,18 +72,6 @@ pub(crate) fn record_proxy_failure(
         })?;
     }
     Ok(())
-}
-
-fn proxy_entries(
-    hooks: &PrometheusHooks,
-    fields: Option<&IndexMap<String, Json>>,
-    exception: &LabelException,
-    principal: &PrincipalFacts,
-) -> Result<Vec<(String, LabelDumpValue)>, PrometheusHookError> {
-    let status_code = extract_status_code(None, Some(exception), None);
-    let mut entries = proxy_principal_entries(principal, exception, status_code);
-    proxy_request_entries(hooks, &mut entries, fields, exception, principal)?;
-    Ok(entries)
 }
 
 fn proxy_principal_entries(
