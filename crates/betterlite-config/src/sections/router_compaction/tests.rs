@@ -127,6 +127,21 @@ fn a_true_value_is_refused_and_names_its_path() {
 }
 
 #[test]
+fn an_environment_reference_carries_the_flag() {
+    let source = with_value("os.environ/COMPACT");
+    let off = load_with(&source, &[("COMPACT", "false")]).expect("false turns compaction off");
+    assert_eq!(off.deployments, [Some(ContextCompaction::Off)]);
+    let unset = load_with(&source, &[("COMPACT", "")]).expect("an empty variable counts as unset");
+    assert_eq!(unset.deployments, [Some(ContextCompaction::On(defaults()))]);
+    let refused = load_with(&source, &[("COMPACT", "true")])
+        .expect_err("a true reading is not a valid context_compaction");
+    assert_eq!(
+        refused.to_string(),
+        "invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction"
+    );
+}
+
+#[test]
 fn every_key_of_a_full_object_resolves() {
     let source =
         object("model: gpt-4o-mini, trigger_ratio: 0.5, max_tokens: 2048, timeout_seconds: 30");
@@ -167,6 +182,15 @@ fn a_trigger_ratio_outside_the_open_range_names_its_path(#[case] ratio: f64) {
             "model_list.0.litellm_params.complexity_router_config.context_compaction.trigger_ratio"
         ),
         "{error}"
+    );
+}
+
+#[test]
+fn a_negative_zero_trigger_ratio_is_refused() {
+    let error = only(&object("trigger_ratio: -0.0")).unwrap_err();
+    assert_eq!(
+        error,
+        "invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction.trigger_ratio"
     );
 }
 

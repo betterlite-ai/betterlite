@@ -50,6 +50,7 @@ struct RawRouterConfig {
 enum RawContextCompaction {
     Flag(bool),
     Object(RawContextCompactionConfig),
+    Text(String),
     Null(()),
     #[default]
     Missing,
@@ -130,6 +131,19 @@ impl RawRouterConfig {
             RawContextCompaction::Flag(true) => {
                 Err(ConfigError::InvalidScalar { path, value: true })
             }
+            // LiteLLM resolves os.environ/ references over the config, and a false reading becomes Literal[False]
+            RawContextCompaction::Text(text) => {
+                let name = text
+                    .strip_prefix(ENV_MARKER)
+                    .unwrap_or(path.as_str())
+                    .to_owned();
+                let resolved = resolve_string(text, &path, lookup)?;
+                match betterlite_env::flag(&name, &resolved)? {
+                    Some(false) => Ok(ContextCompaction::Off),
+                    Some(true) => Err(ConfigError::InvalidScalar { path, value: true }),
+                    None => Ok(ContextCompaction::On(ContextCompactionConfig::default())),
+                }
+            }
             RawContextCompaction::Object(raw) => {
                 raw.resolve(&path, lookup).map(ContextCompaction::On)
             }
@@ -156,8 +170,8 @@ impl RawContextCompactionConfig {
         let trigger_path = format!("{path}.trigger_ratio");
         let trigger_ratio = resolve_number(self.trigger_ratio, &trigger_path, lookup, parse_float)?
             .unwrap_or(DEFAULT_TRIGGER_RATIO);
-        // pydantic declares trigger_ratio gt=0 lt=1, open at both ends
-        if !(0.0_f64..1.0_f64).contains(&trigger_ratio) {
+        // pydantic declares trigger_ratio gt=0 lt=1, open at both ends, and NaN fails both comparisons
+        if !(trigger_ratio > 0.0_f64 && trigger_ratio < 1.0_f64) {
             return Err(invalid_scalar(&trigger_path));
         }
         let tokens_path = format!("{path}.max_tokens");
