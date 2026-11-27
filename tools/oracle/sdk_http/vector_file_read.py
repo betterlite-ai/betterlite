@@ -88,6 +88,8 @@ class SeenDetails(TypedDict):
 
 
 class ReadOptions(TypedDict, total=False):
+    vector_store_id: str
+    file_id: str
     api_base: str | None
     api_key: str | None
     litellm_call_id: str | None
@@ -117,6 +119,8 @@ FACADE: VectorStoreFiles = cast(VectorStoreFiles, vector_store_files)  # https:/
 
 def optionals(run: Run, api_base: str, logging_obj: Logging) -> ReadOptions:
     return ReadOptions(
+        vector_store_id=run.vector_store_id,
+        file_id=run.file_id,
         api_base=api_base,
         api_key=run.options.api_key,
         litellm_call_id=run.options.litellm_call_id,
