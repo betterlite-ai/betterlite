@@ -1,14 +1,14 @@
 id: B10008
 milestone: M8 platform
 title: AgentOps catalog arm with its startup JWT fetch
-status: todo
+status: done
 depends_on: [B8746, B3863, B3868, B8910]
 file: tasks/B10008-agentops-catalog-arm.yaml
 covers:
   - "litellm/litellm_core_utils/litellm_logging.py"
 parent: B110
 split_from: B8746
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3271
