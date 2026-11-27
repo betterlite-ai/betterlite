@@ -1,0 +1,30 @@
+kind: sdk_http
+name: vector-store-read-retrieve-preserves-record
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_read:
+    runs:
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        options: {api_key: sk-caller, litellm_call_id: call-retrieve}
+        extra_query: {after: ignored}
+        extra_body: {name: ignored}
+      - operation: retrieve
+        mode: async
+        vector_store_id: vs_a
+        options: {api_key: sk-caller, litellm_call_id: call-aretrieve}
+        extra_query: {after: ignored}
+        extra_body: {name: ignored}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes, status: completed, file_counts: {total: 2, completed: 2}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes, status: completed, file_counts: {total: 2, completed: 2}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore: []
