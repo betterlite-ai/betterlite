@@ -17,12 +17,14 @@ use betterlite_db::autorouter_facts::session::bounded_session_id;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
 use betterlite_db::managed_resource_rows::wire::RowTimestamp;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
 use super::{BENCHMARKS_PATH, ReadState, SESSION_PATH, read};
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::route_match::admit;
 use crate::auto_router_read_api::error::ReadApiError;
 use crate::auto_router_read_api::postgres::reads_from_state;
 use crate::auto_router_read_api::service::SessionResponse;
@@ -467,4 +469,17 @@ async fn an_oversized_session_id_reaches_the_store_bounded() {
         store.calls(),
         [("litellm_proxy_master_key".to_owned(), bounded)]
     );
+}
+
+// the route-match gate 404s a path before the handler runs, so both reads must be admitted
+#[rstest]
+#[case(BENCHMARKS_PATH)]
+#[case(SESSION_PATH)]
+fn the_route_gate_admits_both_reads(#[case] path: &str) {
+    admit(path, "GET").unwrap();
+}
+
+#[test]
+fn the_route_gate_refuses_a_path_under_the_read_routes() {
+    admit("/auto_router/benchmarks/extra", "GET").unwrap_err();
 }
