@@ -105,12 +105,8 @@ class Recorder(Logging):
 
 def parsed_reply(reply: Reply, operation: str) -> dict[str, JsonValue]:
     model = BEDROCK.operation_model(operation)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
-    # botocore parses a real HTTP response, whose body is bytes, not the case's text
-    wire = {
-        "status_code": reply["status"],
-        "headers": reply["headers"],
-        "body": reply["body"].encode(),
-    }
+    body = reply["body"].encode()
+    wire = {"status_code": reply["status"], "headers": reply["headers"], "body": body}
     return PARSER.parse(wire, model.output_shape)  # type: ignore[misc, no-any-return]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
 
 
