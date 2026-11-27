@@ -110,6 +110,16 @@ fn invalid_integer_warns() {
     );
     assert_eq!(output.matches(super::WINDOW_KEY).count(), 1, "{output}");
     assert_eq!(output.matches(super::BLOCK_KEY).count(), 1, "{output}");
+
+    // int() rejects two underscores in a row, so the digits never join across the empty group
+    let (configured, output) =
+        logged(|| loaded("general_settings:\n  max_failed_login_attempts_per_source: \"1__2\"\n"));
+    assert_eq!(configured.source_limit, DEFAULT_SOURCE_LIMIT);
+    assert_eq!(
+        output.matches(super::SOURCE_LIMIT_KEY).count(),
+        1,
+        "{output}"
+    );
 }
 
 #[test]
