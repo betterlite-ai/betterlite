@@ -9,14 +9,14 @@ description: >-
 
   Layout. crates/betterlite-server/src/mcp/submission_review.rs holds SubmissionReview (a struct whose fields are the ports the routes need, built by B8625 with a struct literal), the ReviewError enum (thiserror, one variant per failure, a status mapping used by the routes), the RejectMcpServerRequest type and `routes()` which returns the axum router with the six routes.
   The files beside it, each with a tests.rs: submissions.rs (route 1), pinning.rs (routes 2 and 3 and the shared store step) and review.rs (routes 4 and 5).
-  No global state. The LiteLLM globals become fields: the database port, the registry, the registry mutator, the BYOM cache invalidator and the catalog fetcher.
+  No global state. The LiteLLM globals become fields: the database port, the registry, the registry mutator, the BYOM cache invalidator and the catalog fetcher. B10134's single-row redaction takes the registry and its live public list, B10162's ServerRegistry::public_mcp_servers(), read under one guard.
   Ports (traits defined in submission_review.rs, implemented by B8625 over the crates named in brackets):
   a DbReads and writes port with get_mcp_server(server_id), get_mcp_submissions(), approve_mcp_server(server_id, touched_by), reject_mcp_server(server_id, touched_by, review_notes) and set_mcp_server_pinned_tools(server_id, pinned_tools: Option<BTreeMap<String, PinnedMCPTool>>, touched_by) [B4711, the Rust names are B4711's];
   a RegistryView port with server_by_id(server_id) that passes no client ip [B4731];
   a RegistryReload port with update(record) and reload() [B6765, update_server and reload_servers_from_database];
   a SubmitterCache port with invalidate_submitted(user_id) [B6591, invalidate_byom_submitted_servers_cache];
   a CatalogFetcher port with fetch_pinnable(server, request, auth) -> Result<BTreeMap<String, PinnedMCPTool>, CatalogFetchError> [this task defines CatalogFetcher and CatalogFetchError; B8625 implements the port over B4727's fetch_pinnable_tool_catalog and maps its errors].
-  The database port is optional: a proxy started without a database makes every route answer the 500 below. The redact and sanitize functions come from B4717 (mcp::management_visibility), PinnedMCPTool and the approval status enum from B2305 and B858, the table row LiteLLM_MCPServerTable and MCPSubmissionsSummary from B858 and B4711, and UserApiKeyAuth and the role enum from B2314.
+  The database port is optional: a proxy started without a database makes every route answer the 500 below. The single-row redact function comes from B10134 (redact_mcp_credentials in mcp::admin_credential_view), the list redact and the sanitize functions from B4717 (mcp::management_visibility), PinnedMCPTool and the approval status enum from B2305 and B858, the table row LiteLLM_MCPServerTable and MCPSubmissionsSummary from B858 and B4711, and UserApiKeyAuth and the role enum from B2314.
 
 
   The database check. Every route gets its database from get_prisma_client_or_throw (B4711): with no database it raises 500 {"detail": {"error": "Database not connected. Connect a database to your proxy"}}. It runs after the role check and before any lookup.
@@ -144,7 +144,7 @@ deviations:
 
 out_of_scope:
   - "get_prisma_client_or_throw, get_mcp_server, approve_mcp_server, reject_mcp_server, get_mcp_submissions and set_mcp_server_pinned_tools: owned by B4711; this task calls them."
-  - "_redact_mcp_credentials, _redact_mcp_credentials_list, _sanitize_mcp_server_list_for_non_admin and _user_is_full_admin: owned by B4717."
+  - "_redact_mcp_credentials: owned by B10134 as redact_mcp_credentials. _redact_mcp_credentials_list, _sanitize_mcp_server_list_for_non_admin and _user_is_full_admin: owned by B4717."
   - "fetch_pinnable_tool_catalog and its scan belong to B4727; B8625 supplies them behind this task's CatalogFetcher port. get_mcp_server_by_id: owned by B4731."
   - "update_server and reload_servers_from_database: owned by B6765. invalidate_byom_submitted_servers_cache: owned by B6591."
   - "management_endpoint_wrapper: owned by B865. PinnedMCPTool and parse_pinned_tools: owned by B2305."

@@ -1,0 +1,105 @@
+id: B10126
+title: MCP admitted-user reload and delegated-human port
+description: >-
+  LiteLLM's MCPRequestHandler.reload_admitted_user reloads a live user row and returns it as a keyless admitted subject: a UserAPIKeyAuth with no key that carries the user's own MCP grants and a server-only marker. Five callers need it, and each used to wait for a large task to get it: B4673's bridge and gateway session arms, B4671's delegated managed agent (through _delegated_resource_subject), B10127's dashboard session context and B8645's HumanSources adapter for the agent checks. This task builds the reload, the ports it reads through, its error and the DelegatedHuman port the other tasks call it by, so none of them waits for another.
+
+
+  Layout. Module admitted_user in betterlite-auth: crates/betterlite-auth/src/admitted_user.rs with its tests in admitted_user/tests.rs. The file is an empty stub that lib.rs already declares. The code lives in betterlite-auth because UserAPIKeyAuth keeps mcp_admitted_user_subject, requires_fresh_policy, mcp_source_team_rpm_limits and mcp_session_resource_server_id pub(crate) there, UserAPIKeyAuth::construct strips all four from its input, and no public setter for them exists on main; code in betterlite-mcp or betterlite-server could not build the admitted auth. UserAPIKeyAuth keeps its one inherent impl in resolved_key, so everything here is a free function, a trait or a struct of its own. betterlite-mcp (B4671) and betterlite-server (B4673, B8645, B8621) already depend on betterlite-auth, and LiteLLMUserTable and LiteLLMObjectPermissionTable come from betterlite-db, which betterlite-auth already uses; no Cargo.toml changes.
+
+
+  1. AdmittedUserError is a thiserror enum whose Display is the detail LiteLLM sends, with status(&self) -> u16. NoDatabase is 500 "Server misconfigured: no database connection". InvalidCredential is 401 "Invalid or expired credential". DatabaseUnavailable { message: String } is 503 with the message as its detail. Auth(AuthError) is 500 and keeps B2314's AuthError as its source; it covers a user row whose fields fail UserAPIKeyAuth's validation (a user_role that is not a UserRole), which LiteLLM raises outside its try block and the proxy answers as an unhandled 500. B4673, B4671 and B8645 map this one error into their own; do not define a second reload error anywhere.
+
+
+  2. Ports, native async fn in traits returning impl Future + Send, the shape of HumanSources in crates/betterlite-auth/src/agent_access/reads.rs; generic parameters, no dyn, no global. ReadFault is Refused (the read raised ProxyException or HTTPException), DatabaseUnavailable { message: String } (the database is unreachable; the production reader decides this with B4679's outage classifier and gives the 503 text) or Other(String). UserReads has has_database(&self) -> bool (sync, LiteLLM's prisma_client is None), user_by_id(&self, user_id: &str, fresh: bool) -> Result<Option<LiteLLMUserTable>, ReadFault> (get_user_object with user_id_upsert false and check_db_only = fresh) and object_permission(&self, object_permission_id: &str, fresh: bool) -> Result<Option<LiteLLMObjectPermissionTable>, ReadFault> (get_object_permission with check_db_only = fresh). TeamLimits has team_rpm_limits(&self, auth: &UserAPIKeyAuth) -> Option<BTreeMap<String, BTreeMap<String, i64>>>, LiteLLM's _admitted_subject_team_rpm_limits; B8621 implements it with B4671's McpAccess::admitted_subject_team_rpm_limits, and the trait is what keeps this module from naming McpAccess. DelegatedHuman has reload_admitted_user(&self, user_id: &str, requires_fresh_policy: bool) -> Result<UserAPIKeyAuth, AdmittedUserError>; it is the port B4671's McpAccess holds as its human field and B10127's admitted_user_context takes. B8621 writes the production UserReads and TeamLimits; this task writes test fakes only.
+
+
+  3. AdmittedUserReload<U: UserReads, T: TeamLimits> holds users: U and team_limits: T, built with a struct literal. Its async method reload_admitted_user(&self, user_id: &str, requires_fresh_policy: bool) -> Result<UserAPIKeyAuth, AdmittedUserError> is MCPRequestHandler.reload_admitted_user. Steps in order. has_database false gives NoDatabase before any read. user = users.user_by_id(user_id, requires_fresh_policy). The object permission is the row's own object_permission when it is Some; when it is None and the row has an object_permission_id, it is users.object_permission(id, requires_fresh_policy); otherwise None. A fault from either read maps the same way: Refused and Other give InvalidCredential, DatabaseUnavailable { message } gives DatabaseUnavailable with that message. A missing row (Ok(None)) gives InvalidCredential. A row whose metadata has the key scim_active with the JSON value false gives InvalidCredential; any other value, a missing key or no metadata passes. Then build the auth with UserAPIKeyAuth::construct from a dict of user_id, user_role, org_id (the row's organization_id), object_permission, object_permission_id, user_tpm_limit (the row's tpm_limit) and user_rpm_limit (the row's rpm_limit), the way managed_admission's managed_token builds its token; a construct error is Auth. Then set, by field assignment inside the crate, mcp_admitted_user_subject to true and requires_fresh_policy to the argument, and only after both, mcp_source_team_rpm_limits to team_limits.team_rpm_limits(&auth). Return the auth.
+
+
+  4. impl DelegatedHuman for AdmittedUserReload<U, T> forwards to the method above with the same two arguments and returns its error unchanged.
+
+
+  5. with_session_resource_server_id(auth: UserAPIKeyAuth, resource_server_id: Option<String>) -> UserAPIKeyAuth sets mcp_session_resource_server_id and nothing else. LiteLLM's _admit_gateway_session assigns it on the reloaded user right after this reload (user_api_key_auth_mcp.py L1016-L1017); the field is pub(crate) here, so B4673's session arm calls this function. It is the only setter this task adds.
+
+
+  Tests in admitted_user/tests.rs use fakes of UserReads and TeamLimits that record every call with its fresh flag and the auth they were handed, LiteLLMUserTable rows built from JSON with synthetic ids that start with test-, and no database. Name the tests by what they cover so the checks below select them: error_ for the status and detail of each arm, reload_ for the reload steps and the built auth, delegated_ for the port forwarding and session_resource_ for the setter. No oracle cases: reload_admitted_user reads prisma_client and user_api_key_cache from proxy_server and calls _admitted_subject_team_rpm_limits, which needs the whole MCP access chain and global_mcp_server_manager, so a helper adapter cannot drive it. The HTTP cases come with the /mcp routes (B137).
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/admitted_user.rs
+    - crates/betterlite-auth/src/admitted_user/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1078-L1148
+    why: Owned. reload_admitted_user, the read order, the fault mapping, the scim_active check, the fields of the admitted auth and the order of the three server-only assignments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1242-L1258
+    why: _raise_503_if_db_unavailable (B4679), the outage test behind ReadFault::DatabaseUnavailable and its 503 detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1150-L1195
+    why: _admitted_subject_team_rpm_limits (B4671), what TeamLimits returns and why it never fails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1012-L1030
+    why: Caller. _admit_gateway_session reloads the user, sets mcp_session_resource_server_id and turns a 401 into the invalid_token challenge (B4673).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/managed_agent_access.py#L10-L14
+    why: Caller. _delegated_resource_subject reloads the human with requires_fresh_policy true through DelegatedHuman (B4671).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3378-L3397
+    why: The server-only fields of UserAPIKeyAuth this reload writes, all excluded from serialization.
+
+dod:
+  - text: >-
+      AdmittedUserError gives 500 "Server misconfigured: no database connection", 401 "Invalid or expired credential", 503 with the outage message as its detail,
+      and 500 for a user row that fails UserAPIKeyAuth's validation.
+    proof: [error-tests]
+  - text: >-
+      reload_admitted_user answers NoDatabase before any read, reads the user and a missing object permission with fresh equal to requires_fresh_policy, keeps the row's own object permission without a second read,
+      maps Refused and Other to 401 and DatabaseUnavailable to 503 for either read, and gives 401 for a missing row and for scim_active equal to JSON false only.
+    proof: [reload-tests]
+  - text: >-
+      The admitted auth carries user_id, user_role, org_id from organization_id, object_permission, object_permission_id and the user's tpm and rpm limits, the admitted marker true and requires_fresh_policy as asked,
+      and mcp_source_team_rpm_limits from TeamLimits, which receives the auth with the marker and the flag already set; it carries no key and no team.
+    proof: [reload-tests]
+  - text: >-
+      DelegatedHuman for AdmittedUserReload passes both arguments through and returns the reload's error unchanged, and with_session_resource_server_id changes only mcp_session_resource_server_id.
+    proof: [human-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: error-tests
+      why: the status or detail of a reload error differs from LiteLLM's HTTPException
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^admitted_user::tests::error_/)'
+    - id: reload-tests
+      why: the reload reads in the wrong order or with the wrong fresh flag, maps a fault to the wrong status, or builds the admitted auth with the wrong fields
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^admitted_user::tests::reload_/)'
+    - id: human-tests
+      why: the DelegatedHuman forwarding or the session resource setter is missing or touches other fields
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^admitted_user::tests::delegated_/) | test(/^admitted_user::tests::session_resource_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The reload reads users, object permissions and the team rate limits through the UserReads and TeamLimits ports instead of importing prisma_client, user_api_key_cache and MCPRequestHandler from proxy_server.
+    why: betterlite has no module-level state; B8621's production ports run the same get_user_object and get_object_permission reads, so the returned auth and statuses are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1093-L1121
+  - what: The reload returns AdmittedUserError values and each caller renders them; LiteLLM raises HTTPException.
+    why: the status and detail are LiteLLM's for every arm, so a client sees the same response.
+
+out_of_scope:
+  - "_admitted_subject_team_rpm_limits: B4671. B8621 implements TeamLimits with it and builds AdmittedUserReload with the production UserReads; B8621 also hands the same reload to McpAccess as its DelegatedHuman."
+  - "_reload_admitted_principal, _admit_gateway_session and process_mcp_request: B4673, which calls this reload and with_session_resource_server_id. _delegated_resource_subject and managed_agent_servers: B4671, through DelegatedHuman."
+  - "_raise_503_if_db_unavailable and the live policy after the reload: B4679. get_user_object: B736. get_object_permission: B735."
+  - "The rest of user_api_key_auth_mcp.py: B137's out_of_scope names the owner of every other function (B4654, B7490, B4679, B4673, B4671, B4670, B4672, B4668, B4669 and B10078)."
+  - "Callers of reload_admitted_user outside the MCP auth module (discoverable_endpoints.py L887 and L1288, agent_permission_handler.py L688, ui_session_utils.py L105) are planned with those files and call the names above."
+
+pitfalls:
+  - UserAPIKeyAuth::construct strips mcp_admitted_user_subject, requires_fresh_policy and mcp_source_team_rpm_limits from its input, so putting them in the dict silently drops them; set them on the built auth.
+  - TeamLimits must receive the auth after the marker and requires_fresh_policy are set, since B4671's source grants read both; calling it on the bare constructed auth gives the rate limits of a plain user.
+  - scim_active deactivates only as the JSON value false; a missing key, null, 0 or the text "false" passes, and metadata that is not an object passes too.
+  - The object permission read runs only when the row has no object_permission of its own and does name an object_permission_id, and it uses the same fresh flag as the user read; its faults map exactly like the user read's.
+  - A Refused or Other fault is a 401, never a 500 or a 503; only DatabaseUnavailable is a 503, so a caller can retry an outage but not a bad credential.
+  - The no-database check comes before any read and is a 500, not a 401, because LiteLLM treats a missing database as a misconfigured server.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

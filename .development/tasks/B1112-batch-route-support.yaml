@@ -17,6 +17,8 @@ description: >-
   resolution.
 
 
+  _create_provider_batch_for_managed_file calls the router batch create (Router.acreate_batch, B10143) through a port this module declares, because betterlite-core cannot depend on betterlite-sdk where B10143 puts RouterBatchCreate: `pub trait ProviderBatchCreate: Send + Sync { type Error: std::error::Error + Send + Sync + 'static; fn create_batch(&self, request: serde_json::Map<String, serde_json::Value>) -> impl Future<Output = Result<BatchObject, Self::Error>> + Send; }`, with request the map LiteLLM spreads into acreate_batch (model included, input_file_id resolved, disable_fallbacks true) and BatchObject from betterlite-openai batches. Setting input_file_id and unified_file_id on the answer stays here. Tests use a fake; B1050 implements the port over B10143's RouterBatchCreate.
+
   Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
   HTTP wire envelope): endpoints.py:167 type='invalid_request_error', param=None, code=404. Compare the actual source
   status, error type, param and code; ignore only error wording except in message-extraction tests.

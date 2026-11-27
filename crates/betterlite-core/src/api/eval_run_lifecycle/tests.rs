@@ -273,6 +273,16 @@ fn eval_run_lifecycle_exports_use_the_given_api_base(#[case] value: Json, #[case
     );
 }
 
+// Each refused run call answers a 400 with an empty model and the caller's provider
+fn assert_bad_request(class: &ErrorClass, provider: &str) {
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("a bad request, got {class:?}");
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some(provider));
+}
+
 // A known provider without an evals config raises LiteLLM's ValueError text for each action
 #[test]
 fn eval_run_lifecycle_unsupported_known_provider_names_the_action() {
@@ -303,8 +313,9 @@ fn eval_run_lifecycle_unsupported_known_provider_names_the_action() {
         delete_failure.error.to_string(),
         "DELETE run is not supported for azure"
     );
-    assert!(matches!(&get_failure.class, ErrorClass::ApiConnection(_)));
-    assert_eq!(get_failure.class.metadata().status_code, 500);
+    assert_bad_request(&get_failure.class, "azure");
+    assert_bad_request(&cancel_failure.class, "azure");
+    assert_bad_request(&delete_failure.class, "azure");
     assert!(fake.calls().is_empty());
 }
 
@@ -321,12 +332,27 @@ fn eval_run_lifecycle_unsupported_unknown_provider_raises_the_lookup_error() {
         ..base_request(&kwargs)
     };
     let mut logging = state("get_run");
-    let failure = get_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
+    let get_failure =
+        get_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
+    let cancel_failure =
+        cancel_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
+    let delete_failure =
+        delete_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
     assert_eq!(
-        failure.error.to_string(),
+        get_failure.error.to_string(),
         "'not-a-provider' is not a valid LlmProviders"
     );
-    assert!(matches!(&failure.class, ErrorClass::ApiConnection(_)));
+    assert_eq!(
+        cancel_failure.error.to_string(),
+        "'not-a-provider' is not a valid LlmProviders"
+    );
+    assert_eq!(
+        delete_failure.error.to_string(),
+        "'not-a-provider' is not a valid LlmProviders"
+    );
+    assert_bad_request(&get_failure.class, "not-a-provider");
+    assert_bad_request(&cancel_failure.class, "not-a-provider");
+    assert_bad_request(&delete_failure.class, "not-a-provider");
     assert!(fake.calls().is_empty());
 }
 

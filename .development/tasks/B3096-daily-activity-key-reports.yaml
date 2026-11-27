@@ -2,8 +2,9 @@ id: B3096
 title: Serve scoped key pages, model leaders and cache leakage reports
 description: >-
   Build the module `daily_activity_routes` in betterlite-server. It serves three daily activity reports for
-  every entity that has daily activity routes, and it holds the helpers that B3097 (aggregate and search) and
-  B3098 (export) reuse, which is why they depend on this task. Each report returns a list of API keys with
+  every entity that has daily activity routes. The scope step and the database lookups it shares with B3097
+  (aggregate and search) and B3098 (export) are B10138's module `daily_activity_common`; call them from there and
+  do not copy them. Each report returns a list of API keys with
   their spend counters and owner details. The scope of the caller (which users, teams, tags and so on they may
   see) is decided before any query runs, by B3094 and B3095.
 
@@ -31,22 +32,21 @@ description: >-
   USAGE_CACHE_LEAKAGE_KEYS_MAX). These are fixed constants, not environment settings. Values out of range answer
   422, never a clamped value.
 
-  Order inside every handler. First the dependencies run in this order: the entity query, the caller (B732's AuthContext), the
-  daily activity repository, the database handle. A missing database stops there with HTTP 500 and detail
+  Order inside every handler. First the dependencies run in this order: the entity query, the caller (B732's AuthContext), then
+  B10138's `daily_activity_dependencies` for the daily activity repository and the database handle. A missing database stops there with HTTP 500 and detail
   `{"error": <CommonProxyErrors.db_not_connected_error text>}` (litellm/proxy/_types.py L4391-L4395), before
-  any 422 for the handler's own parameters is reported. Then `resolved_scope` runs: it checks the date range, then
-  calls the entity's resolve step, and turns a failure into an HTTP error through B3090's `raise_public` (400 for a
-  bad range, 403 or 404 for a denied scope; detail is `{"error": <reason>}`). The date check on these routes is
-  B815's `aggregated_date_range_error` (missing dates, non-canonical dates, reversed range, more than 400 days),
-  wrapped as B3090's `InvalidDateRange`. `resolved_scope` takes the `user_aggregated` flag that LiteLLM has: when true it checks only the canonical date parser with no 400-day cap. Every handler here passes false. B3097 passes true for the user entity on its aggregate route, so build the flag.
+  any 422 for the handler's own parameters is reported. Then B10138's `resolved_scope` runs with `user_aggregated` false: it checks the date range with
+  B815's `aggregated_date_range_error` (missing dates, non-canonical dates, reversed range, more than 400 days), then
+  calls the entity's resolve step. Its `DailyActivityScopeError::Public` carries the HTTP error from B3090's `raise_public` (400 for a
+  bad range, 403 or 404 for a denied scope; detail is `{"error": <reason>}`), and `Resolver` carries any other resolver failure unchanged.
 
-  Helpers built here, with LiteLLM's names in snake case: `date_range_error`, `resolved_scope`, `key_metadata`
+  Helpers built here, with LiteLLM's names in snake case: `key_metadata`
   (a key's row from the metadata map, or `KeyMetadata` with every field None when the key has no row),
   `key_activity_row` (a `KeySpendRow` plus metadata becomes a `KeySpendActivityRow`; the nine
   `KeySpendMetrics` fields are copied one to one) and `key_activity_rows` (asks B729's repository for
   `key_metadata` of the set of all returned api keys, with the window from B3092's `spend_logs_window` over the
-  scope's start and end date, then maps every row in order). The repository is built with B3092's
-  `daily_activity_repository` factory from the database handle. `key_activity_rows` runs the metadata read even
+  scope's start and end date, then maps every row in order). The repository comes from B10138's
+  `daily_activity_dependencies`. `key_activity_rows` runs the metadata read even
   for an empty row list; B729's `key_metadata` returns early for an empty set, so no query happens.
 
   Handlers. Key page: resolve the scope, call the repository's `key_page(scope, offset, limit)`, answer
@@ -61,14 +61,14 @@ description: >-
   leakage keys failed: %s". An HTTP error from the scope step passes through unchanged.
 
   Response types, in this task's files. Fields keep LiteLLM's names and order (types/proxy/management_endpoints/
-  common_daily_activity.py L127-L172): `KeyActivityRow { api_key, metrics: SpendMetrics, metadata: KeyMetadata }`,
+  common_daily_activity.py L133-L172):
   `KeySpendMetrics { spend: f64 = 0.0, prompt_tokens, completion_tokens, total_tokens, api_requests,
   successful_requests, failed_requests, cache_read_input_tokens, cache_creation_input_tokens }` (all integers
   default 0), `KeySpendActivityRow { api_key, metrics: KeySpendMetrics, metadata: KeyMetadata }`,
-  `DailyActivityKeySearchResponse { api_keys: Vec<KeyActivityRow> }`, `DailyActivityKeyPageResponse`,
-  `ModelTopKeysResponse` and `CacheLeakageKeysResponse`. `SpendMetrics` and `KeyMetadata` come from B3090. A None
-  metadata field is serialized as `null`, never left out. B3097 imports `KeyActivityRow` and
-  `DailyActivityKeySearchResponse` from here.
+  `DailyActivityKeyPageResponse`,
+  `ModelTopKeysResponse` and `CacheLeakageKeysResponse`. `KeyMetadata` comes from B3090. A None
+  metadata field is serialized as `null`, never left out. `KeyActivityRow` and
+  `DailyActivityKeySearchResponse` (L127-L130, L151-L152) are B10138's, and only B3097 uses them.
 
   This task has unit tests only. Its routes answer over HTTP once B8482 mounts them, so B8482 owns their HTTP oracle cases (tools/oracle/cases/management/daily-activity-keys/) and proves the defaults, bounds, date errors, access errors and missing database over HTTP. Here native tests call the per-resolver routes on a test router with fake dependencies for the parameter bounds, the route set per prefix, the date check order, scope denials and the missing database, and cover row mapping and error paths.
 scope:
@@ -82,7 +82,7 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
-    why: The repository and database dependencies, _date_range_error and _resolved_scope, including the order date check, resolve, raise_public.
+    why: The repository and database dependencies, _date_range_error and _resolved_scope, built by B10138; this task calls them with user_aggregated false.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L119-L162
     why: _key_metadata, _key_activity_row and _key_activity_rows, the shared mapping from repository rows to response rows.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L313-L353
@@ -93,8 +93,8 @@ references:
     why: The cache leakage route and its path.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
     why: Which prefixes get which routes (cache leakage for the user entity only) and the six resolvers; the loop itself is not built here.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L127-L172
-    why: KeyActivityRow, KeySpendMetrics, KeySpendActivityRow and the four response models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L133-L172
+    why: KeySpendMetrics, KeySpendActivityRow and the three key report response models.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2166-L2175
     why: The default and maximum of each limit parameter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6695-L6705
@@ -148,12 +148,12 @@ deviations:
   - what: The six resolver callables become a match on B3094's Entity enum, as B3094 already records, so a route function takes the entity and calls B3095's dispatch instead of a stored function.
     why: rules.yaml requires an enum matched exhaustively in place of a registry of callables.
 out_of_scope:
-  - "B3097 owns the aggregated route and the search route, plus _sum_metrics, _fold_key_metrics and _search_rows (L97-L116, L187-L200, L240-L310, L356-L402). They use resolved_scope and the response types from this task."
+  - "B3097 owns the aggregated route and the search route, plus _sum_metrics, _fold_key_metrics and _search_rows (L97-L116, L187-L200, L240-L310, L356-L402). They use B10138's resolved_scope and key search records, nothing from this task."
   - "B3098 owns the export route and _export_filename, _content_disposition, _csv_cell, _csv_row and _stream_export_rows (L165-L184, L203-L237, L455-L513)."
   - "B8482 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes the per-resolver route functions."
   - "B3094 and B3095 own the resolvers, query shapes and EntityQuery; B729 owns the repository methods and B3092 owns daily_activity_repository and spend_logs_window; B3090 owns SpendMetrics, KeyMetadata, ScopeDenied, InvalidDateRange and raise_public; B815 owns aggregated_date_range_error."
   - "LiteLLM_DailyUserSpend (types file L175-L195) has no caller at the pin outside the types file, so it is not built. GroupedData (L198-L201) is used only by common_daily_activity.py L617, so B3091 or B3093 owns it, not this task."
-  - "get_daily_activity_prisma_client and get_daily_activity_repository (L63-L68) are built here only as the two lookups of the database handle and the repository for these handlers; B3097 and B3098 call the same two."
+  - "B10138 owns get_daily_activity_prisma_client and get_daily_activity_repository (one daily_activity_dependencies), _date_range_error and _resolved_scope (L63-L94), DailyActivityScopeError, and KeyActivityRow and DailyActivityKeySearchResponse (types file L127-L130, L151-L152). This task calls the functions; B3097 and B3098 call the same ones."
 pitfalls:
   - The missing-database 500 comes from a dependency, so it beats the 422 for a bad limit or timezone; a test with no database and limit=0 must still answer 500.
   - The model leaders response field `model` is the model_group query value; the entity query's own `model` filter is a different parameter and is not echoed.

@@ -198,8 +198,20 @@ b10088
 b10090
 b10095
 b10096
+b10114
 b10118
+b10122
+b10123
+b10124
+b10130
+b10137
+b10148
+b10149
+b10151
+b10161
 b1010
+b10134
+b10158
 b1014
 b10003
 b10010
@@ -1158,7 +1170,6 @@ b8586
 b8588
 b8589
 b8591
-b8594
 b8602
 b8603
 b8605
@@ -1361,7 +1372,6 @@ budget_primitives
 budget_reset
 budget_window_start
 builtin_prompts
-bulk_team_removal
 bulk_user_write
 bytez_record
 call_context
