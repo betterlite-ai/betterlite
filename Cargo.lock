@@ -1339,6 +1339,7 @@ dependencies = [
  "mutants",
  "num-traits",
  "percent-encoding",
+ "quick-xml",
  "rstest",
  "rust_decimal",
  "secrecy",

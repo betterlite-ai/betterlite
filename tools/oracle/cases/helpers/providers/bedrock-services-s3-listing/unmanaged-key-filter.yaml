@@ -1,0 +1,47 @@
+kind: helper
+name: bedrock-services-s3-listing-unmanaged-key-filter
+call:
+  bedrock_services_s3_listing:
+    operation: list_response
+    listings:
+      - status: 200
+        body: '<ListBucketResult><Contents><Key></Key><Size>1</Size></Contents><Contents><Size>1</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>other/object</Key><Size>2</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket], [allow_legacy_cloud_file_ids, false]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>other/object</Key><Size>2</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket], [allow_legacy_cloud_file_ids, true]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>other/object</Key><Size>2</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket], [allow_legacy_cloud_file_ids, "yes"]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>other/object</Key><Size>2</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket], [allow_legacy_cloud_file_ids, 1]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>pre/litellm-bedrock-files-a</Key><Size>3</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, bucket/pre]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>other%2Fobject</Key><Size>1</Size></Contents><Contents><Key>litellm-bedrock-files-a%2Fb</Key><Size>1</Size></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size>1</Size></Contents><Contents><Key>litellm-batch-outputs/y</Key><Size>1</Size></Contents></ListBucketResult>'
+        litellm_params: {_s3_list_files_purpose: batch}
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size>1</Size></Contents></ListBucketResult>'
+        litellm_params: {_s3_list_files_purpose: assistants}
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size>1</Size></Contents></ListBucketResult>'
+        litellm_params: {_s3_list_files_purpose: ""}
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Name>foreign</Name><Contents><Key>litellm-bedrock-files-a</Key></Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-x</Key><Size>1</Size></Contents></ListBucketResult>'
+        environment: {AWS_S3_BUCKET_NAME: env-bucket}
+env: {}
+compare: {ignore: []}
