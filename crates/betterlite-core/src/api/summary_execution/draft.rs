@@ -59,24 +59,22 @@ pub fn slice_only(phase: &PhaseA, applied: AppliedEdit) -> Draft {
     } else {
         phase.downstream.clone()
     };
-    Draft {
-        messages,
-        system: phase.system.clone(),
-        applied,
-        compaction_block: None,
-        iterations_usage: None,
-    }
+    forward(messages, phase.system.clone(), applied)
 }
 
 // a skipped or failed summary forwards the stripped tail as it is, empty included, with no continuation prompt
 pub fn tail(phase: &PhaseA, applied: AppliedEdit) -> Draft {
     let system = phase.system.clone();
-    let messages = phase.downstream.clone();
+    forward(phase.downstream.clone(), system, applied)
+}
+
+// both exits forward the same five fields; only how they pick the messages differs
+fn forward(messages: Vec<Json>, system: Option<SystemPrompt>, applied: AppliedEdit) -> Draft {
     Draft {
-        applied,
         messages,
         system,
-        iterations_usage: None,
+        applied,
         compaction_block: None,
+        iterations_usage: None,
     }
 }

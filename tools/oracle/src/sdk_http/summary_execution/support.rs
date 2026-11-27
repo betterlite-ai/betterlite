@@ -66,6 +66,20 @@ impl ScriptedChecks {
     }
 }
 
+// the user and project checks differ only in the row they are handed, so one macro writes both
+macro_rules! scripted_check {
+    ($method:ident, $row_type:ty $(,)?) => {
+        fn $method(
+            &self,
+            _router: Option<&dyn ModelAccessView>,
+            _model: &str,
+            _: &$row_type,
+        ) -> Result<(), PolicyFailure<io::Error>> {
+            self.answer()
+        }
+    };
+}
+
 impl SummaryModelChecks for ScriptedChecks {
     type Failure = io::Error;
 
@@ -77,27 +91,8 @@ impl SummaryModelChecks for ScriptedChecks {
         self.answer()
     }
 
-    fn user_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _model: &str,
-        _user: &LiteLLMUserTable,
-    ) -> Result<(), PolicyFailure<io::Error>> {
-        self.answer()
-    }
-
-    fn project_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _model: &str,
-        _project: &ProjectTable,
-    ) -> Result<(), PolicyFailure<io::Error>> {
-        self.recorder.record("access");
-        if self.verdict == Verdict::Deny {
-            return Err(PolicyFailure::Denied);
-        }
-        Ok(())
-    }
+    scripted_check!(user_call, LiteLLMUserTable);
+    scripted_check!(project_call, ProjectTable);
 }
 
 pub(super) struct NoRows;
