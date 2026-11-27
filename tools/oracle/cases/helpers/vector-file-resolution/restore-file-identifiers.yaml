@@ -1,0 +1,54 @@
+kind: helper
+name: vector-file-resolution-restore-file-identifiers
+call:
+  vector_file_resolution:
+    calls:
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: dict
+          fields: {id: file-a, file_id: file-a, object: vector_store.file}
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: dict
+          fields: {object: vector_store.file}
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: dict
+          fields: {id: file-a}
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: object
+          id: file-a
+          file_id: file-b
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: object
+          file_id: file-b
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: object
+          id: file-a
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: object
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: null
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response:
+          kind: dict
+          fields:
+            data: [{id: file-nested}]
+            vector_store_id: vs_1
+            object: list
+env: {}
+compare: {ignore: []}
