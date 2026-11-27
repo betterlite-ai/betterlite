@@ -34,7 +34,7 @@ impl ReservationError {
         }
     }
 
-    fn from_update(error: LensUpdateError<Self>) -> Self {
+    const fn from_update(error: LensUpdateError<Self>) -> Self {
         match error {
             LensUpdateError::Repository(source) => Self::Repository(source),
             LensUpdateError::Transform(inner) => inner,
@@ -42,10 +42,10 @@ impl ReservationError {
     }
 }
 
-pub struct ReserveRequest<'a> {
-    pub lens_id: &'a str,
-    pub job_id: &'a str,
-    pub worker_id: &'a str,
+pub struct ReserveRequest<'call> {
+    pub lens_id: &'call str,
+    pub job_id: &'call str,
+    pub worker_id: &'call str,
     pub month_now: DateTime<Utc>,
     pub lease_now: DateTime<Utc>,
     pub estimate: Decimal,
@@ -53,10 +53,10 @@ pub struct ReserveRequest<'a> {
 
 // inference.reserve: the analyst's own lease still holds the job and the month has room for the estimate
 pub fn reserve_transform(
-    lens: Lens,
+    lens: &Lens,
     request: &ReserveRequest<'_>,
 ) -> Result<Lens, ReservationError> {
-    let current = renew_budget(&lens, request.month_now);
+    let current = renew_budget(lens, request.month_now);
     let Some(active) = current_job(&current) else {
         return Err(ReservationError::JobUnavailable);
     };
@@ -80,20 +80,23 @@ pub fn reserve_transform(
         .cost
         .checked_add(request.estimate)
         .ok_or(ReservationError::Overflow)?;
-    let mut updated = replace_job(&current, charged);
+    let mut updated = replace_job(&current, &charged);
     updated.spent = spent;
     Ok(updated)
 }
 
 // reserve_budget: a lens that could not be written is a 409, and every other failure carries its own status
-pub async fn reserve<Db: Database>(
+pub async fn reserve<Db>(
     repository: &LensRepository<Db>,
     request: &ReserveRequest<'_>,
-) -> Result<(), ReservationError> {
+) -> Result<(), ReservationError>
+where
+    Db: Database,
+{
     let updated = repository
         .update(
             request.lens_id,
-            |lens| reserve_transform(lens, request),
+            |lens| reserve_transform(&lens, request),
             DEFAULT_ATTEMPTS,
             false,
         )

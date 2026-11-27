@@ -79,22 +79,23 @@ impl AnalyzeError {
 }
 
 // every dependency analyze reaches, injected by B8682 so the Lens routes own no adapter
-pub struct InferencePorts<'a> {
-    pub billing: &'a Billing,
-    pub keys: &'a dyn KeyResolver,
-    pub models: &'a dyn ModelCatalog,
-    pub prices: &'a dyn ModelInfoSource,
-    pub costs: &'a dyn CostCalculator,
-    pub clock: &'a dyn Clock,
-    pub lens_analysis: &'a LensAnalysis,
+pub struct InferencePorts<'deps> {
+    pub billing: &'deps Billing,
+    pub keys: &'deps dyn KeyResolver,
+    pub models: &'deps dyn ModelCatalog,
+    pub prices: &'deps dyn ModelInfoSource,
+    pub costs: &'deps dyn CostCalculator,
+    pub clock: &'deps dyn Clock,
+    pub lens_analysis: &'deps LensAnalysis,
 }
 
-pub struct AnalysisInput<'a> {
-    pub lens: &'a Lens,
-    pub job: &'a Job,
-    pub worker: &'a Worker,
-    pub body: &'a ModelRequest,
-    pub incoming: &'a Incoming,
+#[derive(Clone, Copy)]
+pub struct AnalysisInput<'call> {
+    pub lens: &'call Lens,
+    pub job: &'call Job,
+    pub worker: &'call Worker,
+    pub body: &'call ModelRequest,
+    pub incoming: &'call Incoming,
 }
 
 struct Approved {
@@ -104,14 +105,14 @@ struct Approved {
     estimate: Decimal,
 }
 
-struct BudgetReservation<'a, Db: Database> {
-    repository: &'a LensRepository<Db>,
-    lens_id: &'a str,
-    job_id: &'a str,
-    worker_id: &'a str,
+struct BudgetReservation<'call, Db: Database> {
+    repository: &'call LensRepository<Db>,
+    lens_id: &'call str,
+    job_id: &'call str,
+    worker_id: &'call str,
     estimate: Decimal,
     month_now: DateTime<Utc>,
-    clock: &'a dyn Clock,
+    clock: &'call dyn Clock,
 }
 
 #[async_trait]
@@ -183,61 +184,111 @@ fn answer_cost(
     estimate: Decimal,
     costs: &dyn CostCalculator,
 ) -> Result<Decimal, AnalyzeError> {
-    match answer.billed_cost {
-        Some(billed) => Ok(billed),
-        None => Ok(charge::completion_charge(
-            deployments,
-            &answer.response,
-            estimate,
-            costs,
-        )?),
-    }
+    let Some(billed) = answer.billed_cost else {
+        return charge::completion_charge(deployments, &answer.response, estimate, costs)
+            .map_err(AnalyzeError::from);
+    };
+    Ok(billed)
 }
 
-// inference.analyze: price the call, reserve the budget, run it under the lens scopes, then settle the real cost
-pub async fn analyze<Db: Database>(
-    repository: &LensRepository<Db>,
-    ports: &InferencePorts<'_>,
-    input: AnalysisInput<'_>,
-) -> Result<ModelResult, AnalyzeError> {
-    let approved = approve(ports, &input).await?;
-    let now = ports.clock.now();
-    let data = AnalysisBody::new(
-        &input.job.settings.model,
-        &input.body.prompt,
+const fn analysis_body<'call>(
+    input: &'call AnalysisInput<'_>,
+    model: &'call str,
+    prompt: &'call str,
+    team_id: Option<&'call str>,
+) -> AnalysisBody<'call> {
+    AnalysisBody::new(
+        model,
+        prompt,
         RequestIds {
             lens_id: &input.lens.id,
             run_id: &input.job.id,
             worker_id: &input.worker.id,
-            team_id: approved.team_id.as_deref(),
+            team_id,
         },
-    );
-    let reserve = BudgetReservation {
+    )
+}
+
+const fn budget_reservation<'call, Db>(
+    repository: &'call LensRepository<Db>,
+    input: &'call AnalysisInput<'_>,
+    estimate: Decimal,
+    month_now: DateTime<Utc>,
+    clock: &'call dyn Clock,
+) -> BudgetReservation<'call, Db>
+where
+    Db: Database,
+{
+    BudgetReservation {
         repository,
         lens_id: &input.lens.id,
         job_id: &input.job.id,
         worker_id: &input.worker.id,
-        estimate: approved.estimate,
-        month_now: now,
-        clock: ports.clock,
-    };
-    let answer = {
-        let _lens = ports.lens_analysis.lens_analysis();
-        let _privacy = MessagePrivacyScope::enter(
-            &input.incoming.privacy,
-            PrivacyContext {
-                message_logging_disabled: true,
-            },
-        );
-        completion::complete(
-            ports.billing,
-            &approved.key_id,
-            &data,
-            &reserve,
-            input.incoming,
-        )
-        .await?
-    };
+        estimate,
+        month_now,
+        clock,
+    }
+}
+
+const fn settle_request<'call>(
+    input: &'call AnalysisInput<'_>,
+    month_now: DateTime<Utc>,
+    estimate: Decimal,
+    cost: Decimal,
+) -> SettleRequest<'call> {
+    SettleRequest {
+        lens_id: &input.lens.id,
+        job_id: &input.job.id,
+        month_now,
+        estimate,
+        cost,
+    }
+}
+
+async fn run_scoped(
+    ports: &InferencePorts<'_>,
+    key_id: &str,
+    data: &AnalysisBody<'_>,
+    reserve: &dyn ReserveBudget,
+    incoming: &Incoming,
+) -> Result<CompletionAnswer, AnalyzeError> {
+    let _lens = ports.lens_analysis.lens_analysis();
+    let _privacy = MessagePrivacyScope::enter(
+        &incoming.privacy,
+        PrivacyContext {
+            message_logging_disabled: true,
+        },
+    );
+    completion::complete(ports.billing, key_id, data, reserve, incoming)
+        .await
+        .map_err(AnalyzeError::from)
+}
+
+// inference.analyze: price the call, reserve the budget, run it under the lens scopes, then settle the real cost
+pub async fn analyze<Db>(
+    repository: &LensRepository<Db>,
+    ports: &InferencePorts<'_>,
+    input: AnalysisInput<'_>,
+) -> Result<ModelResult, AnalyzeError>
+where
+    Db: Database,
+{
+    let approved = approve(ports, &input).await?;
+    let month_now = ports.clock.now();
+    let data = analysis_body(
+        &input,
+        &input.job.settings.model,
+        &input.body.prompt,
+        approved.team_id.as_deref(),
+    );
+    let reserve = budget_reservation(
+        repository,
+        &input,
+        approved.estimate,
+        month_now,
+        ports.clock,
+    );
+    let answer = run_scoped(ports, &approved.key_id, &data, &reserve, input.incoming).await?;
     let content = answer_content(&answer)?;
     let cost = answer_cost(
         &answer,
@@ -245,13 +296,7 @@ pub async fn analyze<Db: Database>(
         approved.estimate,
         ports.costs,
     )?;
-    let settle = SettleRequest {
-        lens_id: &input.lens.id,
-        job_id: &input.job.id,
-        month_now: now,
-        estimate: approved.estimate,
-        cost,
-    };
+    let settle = settle_request(&input, month_now, approved.estimate, cost);
     settlement::settle(repository, &settle).await?;
     Ok(ModelResult { content, cost })
 }

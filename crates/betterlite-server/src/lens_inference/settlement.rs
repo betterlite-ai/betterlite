@@ -18,7 +18,7 @@ pub enum SettlementError {
 }
 
 impl SettlementError {
-    fn from_update(error: LensUpdateError<Self>) -> Self {
+    const fn from_update(error: LensUpdateError<Self>) -> Self {
         match error {
             LensUpdateError::Repository(source) => Self::Repository(source),
             LensUpdateError::Transform(inner) => inner,
@@ -26,9 +26,9 @@ impl SettlementError {
     }
 }
 
-pub struct SettleRequest<'a> {
-    pub lens_id: &'a str,
-    pub job_id: &'a str,
+pub struct SettleRequest<'call> {
+    pub lens_id: &'call str,
+    pub job_id: &'call str,
     pub month_now: DateTime<Utc>,
     pub estimate: Decimal,
     pub cost: Decimal,
@@ -60,14 +60,17 @@ pub fn settle_transform(lens: Lens, request: &SettleRequest<'_>) -> Result<Lens,
         .ok_or(SettlementError::Overflow)?;
     let mut settled = charged;
     settled.cost = cost.max(Decimal::ZERO);
-    Ok(replace_job(&adjusted, settled))
+    Ok(replace_job(&adjusted, &settled))
 }
 
 // settle: a lens another writer has moved on from is left as it is, and a failed read or write is a 500
-pub async fn settle<Db: Database>(
+pub async fn settle<Db>(
     repository: &LensRepository<Db>,
     request: &SettleRequest<'_>,
-) -> Result<(), SettlementError> {
+) -> Result<(), SettlementError>
+where
+    Db: Database,
+{
     repository
         .update(
             request.lens_id,

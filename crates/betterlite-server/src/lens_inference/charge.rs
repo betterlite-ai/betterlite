@@ -6,8 +6,8 @@ use crate::lens_inference::quote::Deployment;
 mod tests;
 
 // the custom per-token rates completion_cost prices a response with when its deployment carries them
-pub struct CustomRates<'a> {
-    pub model: &'a str,
+pub struct CustomRates<'model> {
+    pub model: &'model str,
     pub input_cost_per_token: Decimal,
     pub output_cost_per_token: Decimal,
 }

@@ -18,9 +18,9 @@ const SYSTEM_ROLE: &str = "system";
 const USER_ROLE: &str = "user";
 
 #[derive(Debug, Serialize)]
-pub struct ChatMessage<'a> {
-    pub role: &'a str,
-    pub content: &'a str,
+pub struct ChatMessage<'text> {
+    pub role: &'text str,
+    pub content: &'text str,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,39 +29,39 @@ pub struct ResponseFormat {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Metadata<'a> {
+pub struct Metadata<'ids> {
     pub tags: [&'static str; 1],
-    pub lens_id: &'a str,
-    pub lens_run_id: &'a str,
-    pub lens_worker_id: &'a str,
-    pub user_api_key_team_id: Option<&'a str>,
+    pub lens_id: &'ids str,
+    pub lens_run_id: &'ids str,
+    pub lens_worker_id: &'ids str,
+    pub user_api_key_team_id: Option<&'ids str>,
 }
 
 // the body complete sends to the chat pipeline, in the order LiteLLM builds the dict
 #[derive(Debug, Serialize)]
-pub struct AnalysisBody<'a> {
-    pub model: &'a str,
-    pub messages: [ChatMessage<'a>; 2],
+pub struct AnalysisBody<'body> {
+    pub model: &'body str,
+    pub messages: [ChatMessage<'body>; 2],
     pub max_tokens: u32,
     pub stream: bool,
     pub timeout: u32,
     pub num_retries: u8,
     pub disable_fallbacks: bool,
     pub response_format: ResponseFormat,
-    pub metadata: Metadata<'a>,
+    pub metadata: Metadata<'body>,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct RequestIds<'a> {
-    pub lens_id: &'a str,
-    pub run_id: &'a str,
-    pub worker_id: &'a str,
-    pub team_id: Option<&'a str>,
+pub struct RequestIds<'ids> {
+    pub lens_id: &'ids str,
+    pub run_id: &'ids str,
+    pub worker_id: &'ids str,
+    pub team_id: Option<&'ids str>,
 }
 
-impl<'a> AnalysisBody<'a> {
+impl<'body> AnalysisBody<'body> {
     #[must_use]
-    pub fn new(model: &'a str, prompt: &'a str, ids: RequestIds<'a>) -> Self {
+    pub const fn new(model: &'body str, prompt: &'body str, ids: RequestIds<'body>) -> Self {
         Self {
             model,
             messages: [

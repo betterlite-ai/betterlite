@@ -10,7 +10,7 @@ pub fn current_job(lens: &Lens) -> Option<&Job> {
 
 // state.replace_job: the job with the same id takes the new value, and every other job stays
 #[must_use]
-pub fn replace_job(lens: &Lens, job: Job) -> Lens {
+pub fn replace_job(lens: &Lens, job: &Job) -> Lens {
     let mut replaced = lens.clone();
     replaced.jobs = lens
         .jobs

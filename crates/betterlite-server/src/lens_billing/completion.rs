@@ -93,6 +93,7 @@ pub struct Billing {
     pub client_ip: Arc<dyn ClientIp>,
 }
 
+#[derive(Debug)]
 pub struct CompletionAnswer {
     pub response: ChatResponse,
     pub billed_cost: Option<Decimal>,
@@ -101,12 +102,15 @@ pub struct CompletionAnswer {
 // x-litellm-response-cost: absent, empty and the string None all mean the pipeline billed nothing itself
 fn parse_cost(billed: Option<&str>) -> Result<Option<Decimal>, BillingError> {
     match billed {
-        None | Some("") | Some("None") => Ok(None),
-        Some(text) => Decimal::from_str(text)
-            .map(Some)
-            .map_err(|_| BillingError::BilledCost {
-                value: text.to_owned(),
-            }),
+        None | Some("" | "None") => Ok(None),
+        Some(text) => {
+            let Ok(cost) = Decimal::from_str(text) else {
+                return Err(BillingError::BilledCost {
+                    value: text.to_owned(),
+                });
+            };
+            Ok(Some(cost))
+        }
     }
 }
 
