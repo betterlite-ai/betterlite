@@ -35,69 +35,86 @@ where
     )
     .await?;
     let Some(decoded) = decode_unified_id(file_id) else {
-        // handle_model_based_routing with check_file_id_encoding=true, applying the credentials it resolved.
-        let hints = ModelHints {
-            body: match data.get("model") {
-                Some(Json::Text(text)) => Some(text.clone()),
-                Some(
-                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-                )
-                | None => None,
-            },
-            query: last_query_value(facts.query, "model"),
-            header: header_text(facts.headers, "x-litellm-model"),
-        };
-        let request = RoutingRequest {
-            file_id,
-            hints: &hints,
-            check_file_id_encoding: true,
-        };
-        let RoutingOutcome {
-            use_model_routing,
-            original_file_id,
-            credentials,
-            ..
-        } = handle_model_based_routing(deps.catalog, deps.grants, &request, caller.principal)
-            .await
-            .map_err(|failure| match failure {
-                AuthorizedCredentialsError::Unauthorized(source) => {
-                    VectorFileResolutionError::Authorization(source)
-                }
-                AuthorizedCredentialsError::Credentials(source) => {
-                    VectorFileResolutionError::Lookup(source)
-                }
-            })?;
-        if !use_model_routing {
-            return Ok(None);
-        }
-        let _snapshot = prepare_data_with_credentials(
-            data,
-            &credentials.unwrap_or_default(),
-            original_file_id.as_deref(),
-            false,
-        );
-        return Ok(Some(file_id.to_owned()));
+        return legacy_file_routing(data, file_id, facts, caller, deps).await;
     };
-    let provider_file_id = extract_provider_file_id(&decoded);
+    unified_id_routing(data, file_id, &decoded, deps)
+}
+
+// The non-unified id: handle_model_based_routing with check_file_id_encoding=true, applying the credentials it resolved.
+async fn legacy_file_routing<Catalog, Grants>(
+    data: &mut JsonObject,
+    file_id: &str,
+    facts: &RequestFacts<'_>,
+    caller: &Caller<'_>,
+    deps: &RoutingDeps<'_, Catalog, Grants>,
+) -> Result<Option<String>, VectorFileResolutionError<Catalog::Error, Grants::Error>>
+where
+    Catalog: CredentialCatalog + Sync,
+    Grants: ModelGrant<Catalog> + Sync,
+{
+    let hints = legacy_hints(data, facts);
+    let request = RoutingRequest {
+        file_id,
+        hints: &hints,
+        check_file_id_encoding: true,
+    };
+    let RoutingOutcome {
+        use_model_routing,
+        original_file_id,
+        credentials,
+        ..
+    } = handle_model_based_routing(deps.catalog, deps.grants, &request, caller.principal)
+        .await
+        .map_err(|failure| match failure {
+            AuthorizedCredentialsError::Unauthorized(source) => {
+                VectorFileResolutionError::Authorization(source)
+            }
+            AuthorizedCredentialsError::Credentials(source) => {
+                VectorFileResolutionError::Lookup(source)
+            }
+        })?;
+    if !use_model_routing {
+        return Ok(None);
+    }
+    let _snapshot = prepare_data_with_credentials(
+        data,
+        &credentials.unwrap_or_default(),
+        original_file_id.as_deref(),
+        false,
+    );
+    Ok(Some(file_id.to_owned()))
+}
+
+// The hints handle_model_based_routing reads for a legacy id: the body's string model, then the query, then the header.
+fn legacy_hints(data: &JsonObject, facts: &RequestFacts<'_>) -> ModelHints {
+    ModelHints {
+        body: match data.get("model") {
+            Some(Json::Text(text)) => Some(text.clone()),
+            Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            )
+            | None => None,
+        },
+        query: last_query_value(facts.query, "model"),
+        header: header_text(facts.headers, "x-litellm-model"),
+    }
+}
+
+// A decoded unified id: its first target model's credentials, else the provider id the id carries.
+fn unified_id_routing<Catalog, Grants>(
+    data: &mut JsonObject,
+    file_id: &str,
+    decoded: &str,
+    deps: &RoutingDeps<'_, Catalog, Grants>,
+) -> Result<Option<String>, VectorFileResolutionError<Catalog::Error, Grants::Error>>
+where
+    Catalog: CredentialCatalog,
+    Grants: ModelGrant<Catalog>,
+{
+    let provider_file_id = extract_provider_file_id(decoded);
     if let Some(parts) = parse_unified_id(file_id) {
         if let Some(model_name) = parts.target_model_names.first() {
-            data.insert("model".to_owned(), Json::Text(model_name.clone()));
-            let credentials = match deps.catalog {
-                Some(catalog) => catalog
-                    .credentials_with_provider(model_name, None)
-                    .map_err(|source| VectorFileResolutionError::Catalog {
-                        model_id: model_name.clone(),
-                        source,
-                    })?,
-                None => None,
-            };
-            if let Some(credentials) = credentials.filter(|credentials| !credentials.is_empty()) {
-                let _snapshot = prepare_data_with_credentials(
-                    data,
-                    &credentials,
-                    provider_file_id.as_deref(),
-                    false,
-                );
+            if apply_unified_model(data, model_name, provider_file_id.as_deref(), deps)? {
                 return Ok(Some(file_id.to_owned()));
             }
         }
@@ -106,6 +123,34 @@ where
         }
     }
     Ok(Some(file_id.to_owned()))
+}
+
+// The first target model becomes data.model, and its non-empty deployment credentials are applied with the provider id.
+fn apply_unified_model<Catalog, Grants>(
+    data: &mut JsonObject,
+    model_name: &str,
+    provider_file_id: Option<&str>,
+    deps: &RoutingDeps<'_, Catalog, Grants>,
+) -> Result<bool, VectorFileResolutionError<Catalog::Error, Grants::Error>>
+where
+    Catalog: CredentialCatalog,
+    Grants: ModelGrant<Catalog>,
+{
+    data.insert("model".to_owned(), Json::Text(model_name.to_owned()));
+    let credentials = match deps.catalog {
+        Some(catalog) => catalog
+            .credentials_with_provider(model_name, None)
+            .map_err(|source| VectorFileResolutionError::Catalog {
+                model_id: model_name.to_owned(),
+                source,
+            })?,
+        None => None,
+    };
+    let Some(credentials) = credentials.filter(|credentials| !credentials.is_empty()) else {
+        return Ok(false);
+    };
+    let _snapshot = prepare_data_with_credentials(data, &credentials, provider_file_id, false);
+    Ok(true)
 }
 
 // The source's re.search(r"llm_output_file_id,([^;]+)") and str.strip(): the first field with a character after the comma wins, and a whitespace-only one strips to "".
