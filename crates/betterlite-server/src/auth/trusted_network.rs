@@ -65,13 +65,13 @@ pub(crate) fn stage_input(
     )))
 }
 
-pub(crate) fn run_stage(
-    stage: &TrustedNetworkStageInput,
-) -> Result<AuthContext, Box<ProxyException>> {
+pub(crate) fn run_stage(stage: &TrustedNetworkStageInput) -> Result<AuthContext, StageFailure> {
     let bytes = serde_json::to_vec(&stage.document)
-        .map_err(|error| Box::new(decode_failure(&DecodeError::Write(error))))?;
-    let headers =
-        decode_network_headers(&bytes).map_err(|error| Box::new(decode_failure(&error)))?;
+        .map_err(|error| decode_failure(&DecodeError::Write(error)))
+        .map_err(|error| StageFailure::TrustedNetwork(Box::new(error)))?;
+    let headers = decode_network_headers(&bytes)
+        .map_err(|error| decode_failure(&error))
+        .map_err(|error| StageFailure::TrustedNetwork(Box::new(error)))?;
     let config = proxy_config_from_ranges(headers.trusted_proxy_ranges.as_ref());
     let request = NetworkRequest {
         peer: stage.peer.as_deref(),

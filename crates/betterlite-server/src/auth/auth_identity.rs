@@ -7,8 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
-use self::AuthBackend::MasterKey;
-use self::StageInput::Authenticated;
+use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
@@ -57,7 +56,7 @@ pub enum AuthBackend {
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthKeyLookup,
-    AuthBackend::MasterKey,
+    MasterKey,
     AuthBackend::TrustedNetwork,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
@@ -166,7 +165,7 @@ impl StageInput {
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
-            Self::MasterKey(_) => AuthBackend::MasterKey,
+            Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
@@ -199,11 +198,9 @@ pub(crate) fn dispatch(
     }
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
-        StageInput::Authenticated(context) => Ok((**context).clone()),
+        Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
-        StageInput::TrustedNetwork(stage) => {
-            trusted_network::run_stage(stage).map_err(StageFailure::TrustedNetwork)
-        }
+        StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
         }
