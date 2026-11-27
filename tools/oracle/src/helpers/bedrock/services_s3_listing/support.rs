@@ -108,13 +108,13 @@ pub(super) fn resolve_credentials(
     ))
 }
 
-pub(super) fn request_of<'a>(
-    call: &'a Call,
-    litellm: &'a mut Params,
-    optional: &'a Params,
-    access: &'a S3AccessParams,
+pub(super) fn request_of<'input>(
+    call: &'input Call,
+    litellm: &'input mut Params,
+    optional: &'input Params,
+    access: &'input S3AccessParams,
     now: SystemTime,
-) -> S3FilesRequest<'a> {
+) -> S3FilesRequest<'input> {
     S3FilesRequest {
         optional_params: optional,
         litellm_params: litellm,

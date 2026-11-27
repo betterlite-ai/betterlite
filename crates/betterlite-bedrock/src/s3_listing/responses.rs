@@ -20,24 +20,24 @@ use crate::s3_access::S3AccessParams;
 use crate::s3_access::managed::validate_configured_file_id;
 
 #[derive(Debug, Clone, Copy)]
-pub struct S3ResponseRequest<'a> {
-    pub method: &'a str,
-    pub url: &'a str,
+pub struct S3ResponseRequest<'input> {
+    pub method: &'input str,
+    pub url: &'input str,
 }
 
 #[derive(Clone, Copy)]
-pub struct S3RawResponse<'a> {
+pub struct S3RawResponse<'input> {
     pub status: u16,
-    pub body: &'a [u8],
-    pub headers: &'a [(String, String)],
-    pub request: S3ResponseRequest<'a>,
+    pub body: &'input [u8],
+    pub headers: &'input [(String, String)],
+    pub request: S3ResponseRequest<'input>,
 }
 
 #[derive(Clone, Copy)]
-pub struct S3ResponseContext<'a> {
-    pub litellm_params: &'a Params,
-    pub access: &'a S3AccessParams,
-    pub environment: &'a BTreeMap<String, String>,
+pub struct S3ResponseContext<'input> {
+    pub litellm_params: &'input Params,
+    pub access: &'input S3AccessParams,
+    pub environment: &'input BTreeMap<String, String>,
 }
 
 // httpx decodes the body by its declared charset; reusing B646's transform keeps that text

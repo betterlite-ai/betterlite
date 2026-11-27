@@ -190,8 +190,8 @@ fn check_attributes(
     start: &BytesStart<'_>,
 ) -> Result<(), S3ListingError> {
     for attribute in start.attributes() {
-        let resolved = attribute.map_err(XmlError::from)?;
-        let Some(prefix) = resolved.key.prefix() else {
+        let parsed = attribute.map_err(XmlError::from)?;
+        let Some(prefix) = parsed.key.prefix() else {
             continue;
         };
         if let ResolveResult::Unknown(unknown) = resolver.resolve_prefix(Some(prefix), false) {
@@ -240,7 +240,7 @@ pub fn decode_s3_listing(bytes: &[u8], limits: &DecodeLimits) -> Result<S3Listin
                     return Err(S3ListingError::Trailing);
                 }
             }
-            Event::PI(_target) | Event::Comment(_comment) => {}
+            Event::PI(_) | Event::Comment(_) => {}
             Event::Eof => break,
         }
     }

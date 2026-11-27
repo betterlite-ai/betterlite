@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Ready, ready};
+use std::future::{Future, Ready, ready};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -28,7 +28,10 @@ pub(super) fn fixed_now() -> SystemTime {
         .unwrap()
 }
 
-pub(super) fn block_on<F: std::future::Future>(future: F) -> F::Output {
+pub(super) fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap()
@@ -72,7 +75,7 @@ pub(super) fn region_inputs(environment: &BTreeMap<String, String>) -> RegionInp
     }
 }
 
-pub(super) fn access(trusted: &[(&str, TrustedValue)]) -> S3AccessParams {
+pub(super) fn access_params(trusted: &[(&str, TrustedValue)]) -> S3AccessParams {
     S3AccessParams {
         trusted: frozen_mapping(
             trusted
@@ -85,7 +88,7 @@ pub(super) fn access(trusted: &[(&str, TrustedValue)]) -> S3AccessParams {
 }
 
 pub(super) fn bucket_access(bucket: &str) -> S3AccessParams {
-    access(&[("s3_bucket_name", TrustedValue::Text(bucket.to_owned()))])
+    access_params(&[("s3_bucket_name", TrustedValue::Text(bucket.to_owned()))])
 }
 
 pub(super) fn list_access() -> S3AccessParams {
@@ -156,12 +159,12 @@ pub(super) fn authorization(
     )
 }
 
-pub(super) fn listing_request<'a>(
-    optional_params: &'a Params,
-    litellm_params: &'a mut Params,
-    access: &'a S3AccessParams,
-    environment: &'a BTreeMap<String, String>,
-) -> S3FilesRequest<'a> {
+pub(super) fn listing_request<'input>(
+    optional_params: &'input Params,
+    litellm_params: &'input mut Params,
+    access: &'input S3AccessParams,
+    environment: &'input BTreeMap<String, String>,
+) -> S3FilesRequest<'input> {
     S3FilesRequest {
         optional_params,
         litellm_params,
@@ -189,11 +192,11 @@ pub(super) fn contents_entry(key: &str, size: &str, last_modified: &str) -> Stri
     )
 }
 
-pub(super) fn raw_listing<'a>(
+pub(super) fn raw_listing<'input>(
     status: u16,
-    body: &'a [u8],
-    headers: &'a [(String, String)],
-) -> S3RawResponse<'a> {
+    body: &'input [u8],
+    headers: &'input [(String, String)],
+) -> S3RawResponse<'input> {
     S3RawResponse {
         status,
         body,

@@ -48,12 +48,12 @@ pub struct S3SignedRequest {
     pub query: Vec<(String, String)>,
 }
 
-pub struct S3FilesRequest<'a> {
-    pub optional_params: &'a Params,
-    pub litellm_params: &'a mut Params,
-    pub access: &'a S3AccessParams,
-    pub environment: &'a BTreeMap<String, String>,
-    pub region_inputs: RegionInputs<'a>,
+pub struct S3FilesRequest<'input> {
+    pub optional_params: &'input Params,
+    pub litellm_params: &'input mut Params,
+    pub access: &'input S3AccessParams,
+    pub environment: &'input BTreeMap<String, String>,
+    pub region_inputs: RegionInputs<'input>,
     pub now: SystemTime,
 }
 

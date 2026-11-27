@@ -83,7 +83,7 @@ impl S3ListingError {
             return Some(error.error.status_code);
         }
         if let Self::Managed(error) = self {
-            return Some(error.status_code());
+            return error.status_code();
         }
         None
     }

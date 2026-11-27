@@ -9,8 +9,8 @@ use super::super::requests::{list_files_next_request, list_files_request};
 use super::super::responses::{S3ResponseContext, list_files_response};
 use super::super::{LIST_FILES_LOCATION_PARAM, LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use super::support::{
-    access, authorization, block_on, bucket_access, contents_entry, empty_environment, env_map,
-    environment_credentials, header_value, list_access, listing_request, listing_xml,
+    access_params, authorization, block_on, bucket_access, contents_entry, empty_environment,
+    env_map, environment_credentials, header_value, list_access, listing_request, listing_xml,
     managed_files, params, raw_listing, region_params, stored_text,
 };
 use crate::request_policy::{Params, RequestValue};
@@ -187,7 +187,7 @@ pub(super) fn list_purpose_prefix() {
 pub(super) fn input_output_bucket_walk() {
     let optional = region_params();
     let environment = empty_environment();
-    let access = access(&[
+    let access = access_params(&[
         ("s3_bucket_name", TrustedValue::Text("in-bucket".to_owned())),
         (
             "s3_output_bucket_name",
@@ -245,7 +245,7 @@ pub(super) fn input_output_bucket_walk() {
         "in-bucket"
     );
 
-    let access = access(&[(
+    let access = access_params(&[(
         "s3_output_bucket_name",
         TrustedValue::Text("out-bucket".to_owned()),
     )]);
@@ -261,7 +261,7 @@ pub(super) fn input_output_bucket_walk() {
     let error = missing.unwrap_err();
     assert!(error.to_string().contains("S3 bucket_name is required"));
 
-    let different_prefix = access(&[
+    let different_prefix = access_params(&[
         ("s3_bucket_name", TrustedValue::Text("bucket/in".to_owned())),
         (
             "s3_output_bucket_name",
@@ -568,7 +568,12 @@ pub(super) fn namespace_xml_list() {
             assert_eq!(inner.error.status_code, 403);
             assert_eq!(inner.error.message, "denied");
             assert_eq!(inner.response_headers, headers);
-            assert!(inner.error.response.is_some());
+            assert_eq!(inner.error.response.status_code, 403);
+            assert_eq!(inner.error.response.request.method, "GET");
+            assert_eq!(
+                inner.error.response.request.url,
+                "https://s3.us-east-1.amazonaws.com/in-bucket/?list-type=2"
+            );
         }
         other => panic!("expected a Bedrock error, got {other:?}"),
     }
@@ -618,7 +623,7 @@ pub(super) fn unmanaged_key_filter() {
     assert_eq!(files[0].object, FileKind::File);
     assert_eq!(files[0].status, Some(FileStatus::Uploaded));
 
-    let legacy_access = access(&[
+    let legacy_access = access_params(&[
         ("s3_bucket_name", TrustedValue::Text("in-bucket".to_owned())),
         ("allow_legacy_cloud_file_ids", TrustedValue::Boolean(true)),
     ]);
