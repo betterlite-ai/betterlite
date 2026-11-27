@@ -44,6 +44,7 @@ pub(crate) enum StageFailure {
     KeyBudgets(Box<ProxyException>),
     ModelBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
+    TenantBudgets(Box<ProxyException>),
     OrganizationRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
