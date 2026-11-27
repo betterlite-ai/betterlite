@@ -1,0 +1,34 @@
+kind: helper
+name: identity-store-subject-precedence
+call:
+  identity_store:
+    aspect: principal
+    key: {token: t-user, key_name: k-user}
+    auth_method: api_key
+    subject_fallback: fallback-subject
+calls:
+  # a truthy user_id outranks the alias and the fallback
+  - identity_store:
+      aspect: principal
+      key: {token: t-user-alias, key_name: k-user-alias, key_alias: alias-first, user_id: u5}
+      auth_method: api_key
+      subject_fallback: fallback-subject
+  # the key alias outranks the fallback
+  - identity_store:
+      aspect: principal
+      key: {token: t-alias, key_name: k-alias, key_alias: alias-first}
+      auth_method: api_key
+      subject_fallback: fallback-subject
+  # an empty user_id falls through to the alias
+  - identity_store:
+      aspect: principal
+      key: {token: t-empty-user, key_name: k-empty-user, key_alias: alias-first, user_id: ""}
+      auth_method: api_key
+      subject_fallback: fallback-subject
+  # no candidate at all leaves the empty subject
+  - identity_store:
+      aspect: principal
+      key: {token: t-none, key_name: k-none}
+      auth_method: api_key
+env: {}
+compare: {ignore: []}
