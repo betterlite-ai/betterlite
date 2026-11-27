@@ -2,28 +2,24 @@ import asyncio
 import logging
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Final, NotRequired, TypedDict
 
 from fastapi import Request
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_cache import RedisCache
-from litellm.constants import (
-    LOGIN_THROTTLE_MAX_TRACKED_BLOCKS as MAX_BLOCKS,
-    LOGIN_THROTTLE_MAX_TRACKED_COUNTERS as MAX_COUNTERS,
-)
+from litellm.constants import LOGIN_THROTTLE_MAX_TRACKED_BLOCKS as MAX_BLOCKS
+from litellm.constants import LOGIN_THROTTLE_MAX_TRACKED_COUNTERS as MAX_COUNTERS
 from litellm.proxy._types import ProxyException
-from litellm.proxy.auth.login_throttle import (
-    DEFAULT_FAILED_LOGIN_BLOCK_SECONDS as DEFAULT_BLOCK,
-    DEFAULT_FAILED_LOGIN_WINDOW_SECONDS as DEFAULT_WINDOW,
-    LoginAttempt,
-    LoginThrottle,
-)
+from litellm.proxy.auth.login_throttle import DEFAULT_FAILED_LOGIN_BLOCK_SECONDS as DEFAULT_BLOCK
+from litellm.proxy.auth.login_throttle import DEFAULT_FAILED_LOGIN_WINDOW_SECONDS as DEFAULT_WINDOW
+from litellm.proxy.auth.login_throttle import LoginAttempt, LoginThrottle
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 from starlette.types import Scope
 from typing_extensions import override
 
+_JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 MALFORMED: Final = "malformed"
 EXPIRED: Final = -2
 NO_EXPIRY: Final = -1.0
@@ -63,58 +59,15 @@ class PhaseInput(TypedDict):
     steps: list[StepInput]
 
 
-class ConfigInput(TypedDict):
-    general_settings: dict[str, JsonValue]
-
-
-class RedisInput(TypedDict):
-    faults: NotRequired[dict[str, str]]
-
-
 class Input(TypedDict):
-    config: ConfigInput
+    config: dict[str, dict[str, JsonValue]]
     phases: list[PhaseInput]
-    redis: NotRequired[RedisInput]
+    redis: NotRequired[dict[str, dict[str, str]]]
 
 
-class ErrorOutput(TypedDict):
-    code: str
-    type: str
-    param: str | None
-    message: str
-    headers: dict[str, str]
-
-
-class StepOutput(TypedDict):
-    step: str
-    outcome: str
-    error: ErrorOutput | None
-    user_block: int | None
-    source_block: int | None
-
-
-class ThrottleOutput(TypedDict):
-    client_ip: str
-    source_limit: int | None
-    user_limit: int
-    window_seconds: int
-    block_seconds: int
-    enabled: bool
-
-
-class PhaseOutput(TypedDict):
-    throttle: ThrottleOutput
-    steps: list[StepOutput]
-    warnings: list[str]
-
-
-class Output(TypedDict):
-    phases: list[PhaseOutput]
-
-
+@dataclass
 class Clock:
-    def __init__(self, now: float) -> None:
-        self.now = now
+    now: float
 
     def __call__(self) -> float:
         return self.now
@@ -129,13 +82,8 @@ class CaptureHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         self.messages.append(record.getMessage())
 
-    def drain(self) -> list[str]:
-        messages = self.messages
-        self.messages = []
-        return messages
 
-
-class RedisState:
+class Script:
     def __init__(self, clock: Clock, faults: Mapping[str, str]) -> None:
         self.clock = clock
         self.faults = faults
@@ -170,11 +118,6 @@ class RedisState:
             return block
         return 0
 
-
-class Script:
-    def __init__(self, state: RedisState) -> None:
-        self.state = state
-
     async def __call__(self, keys: Sequence[str], args: Sequence[int]) -> list[int]:
         await asyncio.sleep(0)
         key_values = TTL_KEYS.validate_python(keys)
@@ -184,67 +127,113 @@ class Script:
         return self.record(key_values, arg_values)
 
     def block_ttls(self, keys: tuple[str, str, str, str]) -> list[int]:
-        fault = self.state.faults.get("block_ttls")
+        fault = self.faults.get("block_ttls")
         if fault == MALFORMED:
             return [1]
         if fault is not None:
             raise RedisConnectionError("injected fault")
-        return [self.state.block_ttl(keys[1]), self.state.block_ttl(keys[3])]
+        return [self.block_ttl(keys[1]), self.block_ttl(keys[3])]
 
     def record(self, keys: tuple[str, str, str, str], args: tuple[int, ...]) -> list[int]:
-        fault = self.state.faults.get("record_failure")
+        fault = self.faults.get("record_failure")
         if fault == MALFORMED:
             return [1]
         if fault is not None:
             raise RedisConnectionError("injected fault")
         user_limit, source_limit, window, block = args
-        user = self.state.bump((keys[0], keys[1]), (user_limit, window, block))
+        user = self.bump((keys[0], keys[1]), (user_limit, window, block))
         if source_limit > 0 and user == 0:
-            return [user, self.state.bump((keys[2], keys[3]), (source_limit, window, block))]
+            return [user, self.bump((keys[2], keys[3]), (source_limit, window, block))]
         return [user, 0]
 
 
 class FakeRedis(RedisCache):
-    def __init__(self, state: RedisState) -> None:
-        self.state = state
+    def __init__(self, clock: Clock, faults: Mapping[str, str]) -> None:
+        self.script = Script(clock, faults)
 
     @override
     def async_register_script(self, script: str) -> Script:
         if not script:
             raise ValueError("the throttle registers a non-empty script")
-        return Script(self.state)
+        return self.script
 
     @override
     async def async_delete_cache(self, key: str) -> bool:
         await asyncio.sleep(0)
-        if self.state.faults.get("delete") is not None:
+        if self.script.faults.get("delete") is not None:
             raise RedisConnectionError("injected fault")
-        self.state.counters.pop(key, None)
+        self.script.counters.pop(key, None)
         return True
 
 
 class Session:
-    def __init__(self, spec: RedisInput | None) -> None:
+    def __init__(self, spec: dict[str, dict[str, str]] | None) -> None:
         self.clock = Clock(0.0)
         self.counters = InMemoryCache(
-            max_size_in_memory=MAX_COUNTERS,
-            default_ttl=DEFAULT_WINDOW,
-            clock=self.clock,
+            max_size_in_memory=MAX_COUNTERS, default_ttl=DEFAULT_WINDOW, clock=self.clock
         )
         self.blocks = InMemoryCache(
-            max_size_in_memory=MAX_BLOCKS,
-            default_ttl=DEFAULT_BLOCK,
-            clock=self.clock,
+            max_size_in_memory=MAX_BLOCKS, default_ttl=DEFAULT_BLOCK, clock=self.clock
         )
-        self.cache: RedisCache | None = None
-        if spec is not None:
-            faults: dict[str, str] | None = spec.get("faults")
-            if faults is None:
-                faults = {}
-            self.cache = FakeRedis(RedisState(self.clock, faults))
+        faults = None if spec is None else spec.get("faults")
+        self.cache = None if faults is None else FakeRedis(self.clock, faults)
 
 
-def build_request(spec: RequestInput) -> Request:
+async def run_step(
+    throttle: LoginThrottle, step: StepInput, pending: LoginAttempt | None
+) -> tuple[LoginAttempt | None, JsonValue]:
+    kind = step["kind"]
+    name = step.get("username")
+    username = "" if name is None else name
+    view: dict[str, JsonValue] = {
+        "step": kind,
+        "outcome": "unknown",
+        "error": None,
+        "user_block": None,
+        "source_block": None,
+    }
+    try:
+        if kind == "attempt":
+            pending = None
+            pending = await throttle.attempt(username)
+            view["outcome"] = "allowed"
+        elif kind in ("failed", "succeeded"):
+            settled, pending = pending, None
+            if settled is None:
+                view["outcome"] = "no_attempt"
+            else:
+                if kind == "failed":
+                    await settled.failed()
+                else:
+                    await settled.succeeded()
+                view["outcome"] = "ok"
+        elif kind == "record_failure":
+            view["user_block"], view["source_block"] = await throttle.record_failure(username)
+            view["outcome"] = "ok"
+        elif kind == "clear_pair":
+            await throttle.clear_pair(username)
+            view["outcome"] = "ok"
+    except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
+        view["outcome"] = "refused"
+        view["error"] = _JSON.validate_python(
+            {
+                "code": error.code,
+                "type": error.type,
+                "param": error.param,
+                "message": error.message,
+                "headers": error.headers,
+            }
+        )
+    except ValidationError:
+        view["outcome"] = "error"
+    return pending, view
+
+
+async def run_phase(
+    phase: PhaseInput, settings: dict[str, JsonValue], handler: CaptureHandler, session: Session
+) -> JsonValue:
+    session.clock.now = phase["now"]
+    spec = phase["request"]
     headers: list[tuple[bytes, bytes]] = []
     host = spec.get("host")
     if host is not None:
@@ -255,140 +244,50 @@ def build_request(spec: RequestInput) -> Request:
     peer = spec.get("peer")
     client = (peer, 0) if peer is not None else None
     scope: Scope = {"type": "http", "path": "/login", "headers": headers, "client": client}
-    return Request(scope=scope)
-
-
-async def attempt_step(
-    throttle: LoginThrottle, username: str, view: StepOutput
-) -> tuple[LoginAttempt | None, StepOutput]:
-    try:
-        attempt = await throttle.attempt(username)
-    except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
-        view["outcome"] = "refused"
-        view["error"] = ErrorOutput(
-            code=error.code, type=error.type, param=error.param,
-            message=error.message, headers=error.headers,
-        )
-        return None, view
-    except ValidationError:
-        view["outcome"] = "error"
-        return None, view
-    view["outcome"] = "allowed"
-    return attempt, view
-
-
-async def settle_step(
-    pending: LoginAttempt | None, kind: str, view: StepOutput
-) -> tuple[LoginAttempt | None, StepOutput]:
-    if pending is None:
-        view["outcome"] = "no_attempt"
-        return None, view
-    try:
-        if kind == "failed":
-            await pending.failed()
-        else:
-            await pending.succeeded()
-    except ValidationError:
-        view["outcome"] = "error"
-        return None, view
-    view["outcome"] = "ok"
-    return None, view
-
-
-async def record_step(throttle: LoginThrottle, username: str, view: StepOutput) -> StepOutput:
-    try:
-        user_block, source_block = await throttle.record_failure(username)
-    except ValidationError:
-        view["outcome"] = "error"
-        return view
-    view["outcome"] = "ok"
-    view["user_block"] = user_block
-    view["source_block"] = source_block
-    return view
-
-
-async def clear_step(throttle: LoginThrottle, username: str, view: StepOutput) -> StepOutput:
-    try:
-        await throttle.clear_pair(username)
-    except ValidationError:
-        view["outcome"] = "error"
-        return view
-    view["outcome"] = "ok"
-    return view
-
-
-async def run_step(
-    throttle: LoginThrottle, step: StepInput, pending: LoginAttempt | None
-) -> tuple[LoginAttempt | None, StepOutput]:
-    kind = step["kind"]
-    username = step.get("username")
-    view: StepOutput = {
-        "step": kind,
-        "outcome": "unknown",
-        "error": None,
-        "user_block": None,
-        "source_block": None,
-    }
-    if kind == "attempt":
-        return await attempt_step(throttle, "" if username is None else username, view)
-    if kind in ("failed", "succeeded"):
-        return await settle_step(pending, kind, view)
-    if kind == "record_failure":
-        return pending, await record_step(throttle, "" if username is None else username, view)
-    if kind == "clear_pair":
-        return pending, await clear_step(throttle, "" if username is None else username, view)
-    return pending, view
-
-
-async def finish_phase(
-    session: Session, settings: dict[str, JsonValue], phase: PhaseInput, handler: CaptureHandler
-) -> PhaseOutput:
-    request = build_request(phase["request"])
-    throttle = replace(
-        LoginThrottle.from_request(request, settings, session.cache),
-        counters=session.counters,
-        blocks=session.blocks,
-    )
-    steps: list[StepOutput] = []
-    pending: LoginAttempt | None = None
-    for step in phase["steps"]:
-        pending, view = await run_step(throttle, step, pending)
-        steps.append(view)
-    throttle_view: ThrottleOutput = {
-        "client_ip": throttle.client_ip,
-        "source_limit": throttle.source_limit,
-        "user_limit": throttle.user_limit,
-        "window_seconds": throttle.window_seconds,
-        "block_seconds": throttle.block_seconds,
-        "enabled": throttle.enabled,
-    }
-    warnings = [
-        next((tag for needle, tag in WARNING_TOKENS if needle in message), f"other:{message}")
-        for message in handler.drain()
-    ]
-    return {"throttle": throttle_view, "steps": steps, "warnings": warnings}
-
-
-async def run_phase(
-    phase: PhaseInput, settings: dict[str, JsonValue], handler: CaptureHandler, session: Session
-) -> PhaseOutput:
-    session.clock.now = phase["now"]
     saved = time.time
     time.time = session.clock
     try:
-        return await finish_phase(session, settings, phase, handler)
+        throttle = replace(
+            LoginThrottle.from_request(Request(scope=scope), settings, session.cache),
+            counters=session.counters,
+            blocks=session.blocks,
+        )
+        steps: list[JsonValue] = []
+        pending: LoginAttempt | None = None
+        for step in phase["steps"]:
+            pending, view = await run_step(throttle, step, pending)
+            steps.append(view)
+        throttle_view: dict[str, JsonValue] = {
+            "client_ip": throttle.client_ip,
+            "source_limit": throttle.source_limit,
+            "user_limit": throttle.user_limit,
+            "window_seconds": throttle.window_seconds,
+            "block_seconds": throttle.block_seconds,
+            "enabled": throttle.enabled,
+        }
+        messages = handler.messages
+        handler.messages = []
+        warnings: list[JsonValue] = [
+            next((tag for needle, tag in WARNING_TOKENS if needle in message), f"other:{message}")
+            for message in messages
+        ]
+        return _JSON.validate_python(
+            {"throttle": throttle_view, "steps": steps, "warnings": warnings}
+        )
     finally:
         time.time = saved
 
 
-async def run_phases(input_value: Input, handler: CaptureHandler) -> Output:
+async def run_phases(input_value: Input, handler: CaptureHandler) -> JsonValue:
     session = Session(input_value.get("redis"))
     settings = input_value["config"]["general_settings"]
-    phases = [await run_phase(phase, settings, handler, session) for phase in input_value["phases"]]
-    return {"phases": phases}
+    phases: list[JsonValue] = [
+        await run_phase(phase, settings, handler, session) for phase in input_value["phases"]
+    ]
+    return _JSON.validate_python({"phases": phases})
 
 
-def run(input_value: Input) -> Output:
+def run(input_value: Input) -> JsonValue:
     handler = CaptureHandler()
     logger = logging.getLogger("LiteLLM")
     logger.addHandler(handler)
