@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::watsonx_auth::environment::WatsonxEnvironment;
 
@@ -40,38 +40,35 @@ fn from_lookup_fills_each_field_from_its_variable() {
 
     assert_eq!(built.watsonx_iam_url.as_deref(), Some("watsonx-iam-url"));
     assert_eq!(
-        built
-            .wx_api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        built.wx_api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("wx-api-key")
     );
     assert_eq!(
         built
             .watsonx_api_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("watsonx-api-key")
     );
     assert_eq!(
         built
             .watsonx_apikey
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("watsonx-apikey")
     );
     assert_eq!(
         built
             .watsonx_zenapikey
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("watsonx-zenapikey")
     );
     assert_eq!(
         built
             .watsonx_token
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(ExposeSecret::expose_secret),
         Some("watsonx-token")
     );
     assert_eq!(built.watsonx_api_base.as_deref(), Some("watsonx-api-base"));

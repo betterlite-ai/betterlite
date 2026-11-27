@@ -152,8 +152,7 @@ async fn upstream(
     };
     let (url, base) = config.get_complete_url(&request)?;
     let encoded = arn_encoded(url, resolved, &args.endpoint)?;
-    let headers =
-        validate_auth(config.tag, resolved.api_key.as_ref(), params, &base, client).await?;
+    let headers = validate_auth(config, resolved.api_key.as_ref(), params, &base, client).await?;
     Ok(Upstream {
         url: encoded,
         headers,
