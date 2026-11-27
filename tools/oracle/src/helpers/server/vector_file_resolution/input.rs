@@ -14,7 +14,7 @@ pub(super) type CallerScript = BTreeMap<String, JsonData>;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) calls: Vec<Call>,
 }
 

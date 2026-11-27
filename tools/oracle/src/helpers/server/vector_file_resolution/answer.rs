@@ -49,11 +49,12 @@ async fn unified_answer(routing: &Routing) -> Result<Value, Box<HelperError>> {
         principal: &stage.principal,
         auth: &auth,
     };
-    let checker = routing.managed_files.map(|allow| Checker { allow });
+    let checker = Checker {
+        allow: routing.managed_files.unwrap_or(false),
+    };
+    let hook: &dyn ManagedResourceAccessChecker = &checker;
     let deps = stage.deps(
-        checker
-            .as_ref()
-            .map(|hook| hook as &dyn ManagedResourceAccessChecker),
+        routing.managed_files.map(|_| hook),
         routing.require_managed_files,
     );
     let facts = stage.prepared.facts();
@@ -156,7 +157,7 @@ fn permissions_answer(permissions: &Permissions) -> Result<Value, Box<HelperErro
         &TABLES,
     ) {
         Ok(provider) => Ok(json!({
-            "provider": provider.map(|provider| provider.to_string()),
+            "provider": provider.map(|chosen| chosen.to_string()),
             "error": Value::Null,
         })),
         Err(found) => Ok(json!({

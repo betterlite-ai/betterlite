@@ -13,6 +13,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_auth::route_match::canonical::RequestRouteSource;
 use betterlite_core::api::file_routing_ids::ManagedResourceAccessChecker;
 use betterlite_core::api::request_body::JsonObject as RequestBody;
+use betterlite_core::api::response_synthetic_events::python_value::has_content;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -58,18 +59,6 @@ pub(super) struct KeyFacts {
     pub(super) team_models: Option<Json>,
     pub(super) metadata: Option<JsonObject>,
     pub(super) team_metadata: Option<JsonObject>,
-}
-
-// Python's `if value:` on decoded JSON, which the `or` chains and presence checks in the source helpers follow.
-fn has_content(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_none_or(|amount| amount != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
-    }
 }
 
 // A header as starlette decodes it (latin-1, first value), the reading B10059's provider getter uses.

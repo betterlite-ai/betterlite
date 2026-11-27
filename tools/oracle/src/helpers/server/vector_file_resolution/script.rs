@@ -97,7 +97,7 @@ pub(super) struct Catalog {
 }
 
 impl Catalog {
-    pub(super) fn new(entries: CatalogScript) -> Self {
+    pub(super) const fn new(entries: CatalogScript) -> Self {
         Self {
             entries,
             lookups: Mutex::new(Vec::new()),
@@ -160,7 +160,7 @@ pub(super) struct Grants {
 }
 
 impl Grants {
-    pub(super) fn new(denied: Vec<String>) -> Self {
+    pub(super) const fn new(denied: Vec<String>) -> Self {
         Self {
             denied,
             asked: Mutex::new(Vec::new()),
