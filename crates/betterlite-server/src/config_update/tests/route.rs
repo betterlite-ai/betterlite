@@ -381,5 +381,5 @@ async fn the_audit_row_names_the_calling_key() {
     assert_eq!(record.changed_by.as_deref(), Some("u9"));
     let stored_key = record.changed_by_api_key.expect("the stored key");
     assert!(!stored_key.expose_secret().is_empty());
-    assert_ne!(stored_key.expose_secret().as_str(), "sk-raw");
+    assert_ne!(stored_key.expose_secret(), "sk-raw");
 }

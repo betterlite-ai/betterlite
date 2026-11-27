@@ -21,7 +21,7 @@ fn callback_set(merged: &SettingsMap) -> BTreeSet<String> {
 
 #[rstest]
 #[case::absent_alerting(
-    r#"{}"#,
+    "{}",
     r#"{"alert_to_webhook_url": {"budget": "https://x"}}"#,
     r#"{"alerting": ["slack"], "alert_to_webhook_url": {"budget": "https://x"}}"#
 )]
@@ -41,7 +41,7 @@ fn callback_set(merged: &SettingsMap) -> BTreeSet<String> {
     r#"{"alerting": "email", "alert_to_webhook_url": {"budget": "https://x"}}"#
 )]
 #[case::the_sent_alerting_list_gets_slack(
-    r#"{}"#,
+    "{}",
     r#"{"alerting": ["email"], "alert_to_webhook_url": {"budget": "https://x"}}"#,
     r#"{"alerting": ["email", "slack"], "alert_to_webhook_url": {"budget": "https://x"}}"#
 )]
@@ -90,8 +90,7 @@ fn litellm_callback_without_a_stored_list_is_the_incoming_set() {
 
 #[test]
 fn litellm_keeps_a_success_callback_that_is_not_a_list() {
-    let merged =
-        merge::litellm_settings(&object(r#"{}"#), &object(r#"{"success_callback": "S3"}"#));
+    let merged = merge::litellm_settings(&object("{}"), &object(r#"{"success_callback": "S3"}"#));
     assert_eq!(
         merged.get("success_callback"),
         Some(&JsonValue::String("S3".to_owned()))

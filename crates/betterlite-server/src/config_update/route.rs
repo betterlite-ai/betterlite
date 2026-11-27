@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::settings::{JsonValue, Section};
 use secrecy::SecretString;
@@ -14,12 +14,10 @@ use super::body::{DecodedConfigUpdate, decode_config_update};
 use super::store::ConfigUpdateStore;
 use super::{ConfigUpdateError, ConfigUpdateState, SettingsMap, merge, router_settings};
 use crate::api::agents::collection_routes::guards::is_proxy_admin;
-use crate::audit_events::callbacks::AuditTaskSpawner as _;
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::auth::auth_identity::AuthContext;
 use crate::config_audit::{ConfigChange, config_audit_log};
-use crate::deployment_sync_port::DeploymentSyncPort as _;
 use crate::proxy_config_state::state::ProxyConfigState;
 use crate::tracing_routes::router::unauthenticated;
 
@@ -30,11 +28,11 @@ struct UpdatedBody {
 
 type MergeFn = fn(&SettingsMap, &SettingsMap) -> SettingsMap;
 
-struct UpdateContext<'a> {
-    config: &'a ProxyConfigState,
-    store: &'a dyn ConfigUpdateStore,
-    state: &'a ConfigUpdateState,
-    caller: &'a CallerIdentity,
+struct UpdateContext<'context> {
+    config: &'context ProxyConfigState,
+    store: &'context dyn ConfigUpdateStore,
+    state: &'context ConfigUpdateState,
+    caller: &'context CallerIdentity,
 }
 
 // the identity LiteLLM reads off user_api_key_dict, from the caller's key: user_id and the hashed api_key
@@ -182,10 +180,10 @@ async fn write_sections(
 async fn apply_section(
     context: &UpdateContext<'_>,
     section: Section,
-    sent: Option<&SettingsMap>,
+    values: Option<&SettingsMap>,
     merge: MergeFn,
 ) -> Result<(), ConfigUpdateError> {
-    let Some(sent) = sent else {
+    let Some(sent) = values else {
         return Ok(());
     };
     let existing = context.store.read_section(section).await?;
@@ -204,8 +202,8 @@ fn spawn_audit(
     let sink = Arc::clone(&context.state.audit);
     let spawner = Arc::clone(&context.state.spawner);
     let param = section.name().to_owned();
-    let before = JsonValue::Object(before.into_iter().collect());
-    let after = JsonValue::Object(after.into_iter().collect());
+    let before_value = JsonValue::Object(before.into_iter().collect());
+    let after_value = JsonValue::Object(after.into_iter().collect());
     let caller = context.caller.clone();
     spawner.spawn(Box::pin(async move {
         config_audit_log(
@@ -214,8 +212,8 @@ fn spawn_audit(
                 param: param.as_str(),
                 action: AuditAction::Updated,
                 table: AuditTable::Config,
-                before: Some(&before),
-                after: Some(&after),
+                before: Some(&before_value),
+                after: Some(&after_value),
                 caller: &caller,
             },
         )

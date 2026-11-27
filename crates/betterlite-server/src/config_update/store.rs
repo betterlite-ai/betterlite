@@ -41,21 +41,21 @@ impl ConfigUpdateStore for PostgresConfigUpdateStore {
             .session()
             .await
             .map_err(|source| ConfigStateError::Database { source })?;
-        let row = client
+        let found = client
             .query_opt(READ_CONFIG_SQL, &[&section.name()])
             .await
             .map_err(|source| ConfigStateError::Database {
                 source: backend(source),
             })?;
-        let Some(row) = row else {
+        let Some(row) = found else {
             return Ok(SettingsMap::new());
         };
-        let stored: Option<String> =
+        let encoded: Option<String> =
             row.try_get(0)
                 .map_err(|source| ConfigStateError::Database {
                     source: backend(source),
                 })?;
-        let Some(stored) = stored else {
+        let Some(stored) = encoded else {
             return Ok(SettingsMap::new());
         };
         decode_section_values(section, &stored)

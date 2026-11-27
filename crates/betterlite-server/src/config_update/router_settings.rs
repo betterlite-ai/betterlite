@@ -129,7 +129,7 @@ fn check_groups(value: Option<&JsonValue>) -> Result<(), ConfigUpdateError> {
             JsonValue::Object(fields) => parsed.push(
                 fields
                     .iter()
-                    .map(|(key, value)| (key.clone(), decision(value)))
+                    .map(|(key, field)| (key.clone(), decision(field)))
                     .collect(),
             ),
             JsonValue::Null
@@ -163,9 +163,9 @@ pub fn typed_settings(settings: &RouterSettingsBody) -> Result<SettingsMap, Conf
 
 // typed_router_settings, then every raw key the typed dump lacks whose value is not null
 #[must_use]
-pub fn updates(typed: SettingsMap, raw: Option<&SettingsMap>) -> SettingsMap {
+pub fn updates(typed: SettingsMap, extra: Option<&SettingsMap>) -> SettingsMap {
     let mut updates = typed;
-    let Some(raw) = raw else {
+    let Some(raw) = extra else {
         return updates;
     };
     for (key, value) in raw {
@@ -186,7 +186,7 @@ fn decision(value: &JsonValue) -> Json {
         JsonValue::Object(fields) => Json::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), decision(value)))
+                .map(|(key, field)| (key.clone(), decision(field)))
                 .collect(),
         ),
     }

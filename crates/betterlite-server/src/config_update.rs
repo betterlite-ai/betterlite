@@ -86,11 +86,10 @@ impl ConfigUpdateError {
 
 impl IntoResponse for ConfigUpdateError {
     fn into_response(self) -> Response {
-        match self {
-            // FastAPI rejects the body before the handler runs, so it never reaches ProxyException
-            Self::Body(error) => error.into_response(),
-            other => auth_error(other.status(), &other.detail()),
+        if let Self::Body(error) = self {
+            return error.into_response();
         }
+        auth_error(self.status(), &self.detail())
     }
 }
 

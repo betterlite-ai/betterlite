@@ -215,10 +215,10 @@ where
     D: Deserializer<'de>,
 {
     let sent = Option::<Aliases>::deserialize(deserializer)?;
-    match sent.as_ref().and_then(aliases_problem) {
-        Some(problem) => Err(D::Error::custom(problem)),
-        None => Ok(sent),
+    if let Some(problem) = sent.as_ref().and_then(aliases_problem) {
+        return Err(D::Error::custom(problem));
     }
+    Ok(sent)
 }
 
 fn aliases_problem(aliases: &Aliases) -> Option<&'static str> {

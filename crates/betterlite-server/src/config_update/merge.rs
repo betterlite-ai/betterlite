@@ -9,7 +9,7 @@ const SLACK: &str = "slack";
 
 // requested_general_settings: ConfigGeneralSettings.model_dump(exclude_none=True, exclude_unset=True)
 #[must_use]
-pub fn without_nulls(values: &SettingsMap) -> SettingsMap {
+pub(crate) fn without_nulls(values: &SettingsMap) -> SettingsMap {
     values
         .iter()
         .filter(|(_, value)| !value.is_null())
@@ -19,7 +19,7 @@ pub fn without_nulls(values: &SettingsMap) -> SettingsMap {
 
 // every sent key lands first, then the webhook side effect appends slack to the sent alerting list whatever order the request used
 #[must_use]
-pub fn general_settings(existing: &SettingsMap, sent: &SettingsMap) -> SettingsMap {
+pub(crate) fn general_settings(existing: &SettingsMap, sent: &SettingsMap) -> SettingsMap {
     let mut merged = existing.clone();
     for (key, value) in sent {
         merged.insert(key.clone(), value.clone());
@@ -36,16 +36,16 @@ fn enable_slack_alerting(merged: &mut SettingsMap) {
         merged.insert(ALERTING.to_owned(), JsonValue::Array(vec![slack]));
         return;
     }
-    if let Some(JsonValue::Array(items)) = merged.get_mut(ALERTING) {
-        if !items.iter().any(|item| item.as_str() == Some(SLACK)) {
-            items.push(slack);
-        }
+    if let Some(JsonValue::Array(items)) = merged.get_mut(ALERTING)
+        && !items.iter().any(|item| item.as_str() == Some(SLACK))
+    {
+        items.push(slack);
     }
 }
 
 // existing.update(_encrypt_env_variables_for_db(environment_variables)): only the sent keys are rewritten
 #[must_use]
-pub fn environment_variables(existing: &SettingsMap, sealed: &SettingsMap) -> SettingsMap {
+pub(crate) fn environment_variables(existing: &SettingsMap, sealed: &SettingsMap) -> SettingsMap {
     let mut merged = existing.clone();
     for (key, value) in sealed {
         merged.insert(key.clone(), value.clone());
@@ -55,7 +55,7 @@ pub fn environment_variables(existing: &SettingsMap, sealed: &SettingsMap) -> Se
 
 // updated_litellm_settings normalizes success_callback, then merged holds request wins and the callbacks are additive
 #[must_use]
-pub fn litellm_settings(existing: &SettingsMap, raw: &SettingsMap) -> SettingsMap {
+pub(crate) fn litellm_settings(existing: &SettingsMap, raw: &SettingsMap) -> SettingsMap {
     let mut updated = raw.clone();
     if let Some(JsonValue::Array(incoming)) = raw.get(SUCCESS_CALLBACK) {
         updated.insert(
@@ -90,7 +90,7 @@ pub fn litellm_settings(existing: &SettingsMap, raw: &SettingsMap) -> SettingsMa
 
 // normalize_callback_names: a string callback is lowercased, anything else is kept as sent
 #[must_use]
-pub fn normalize_callback_names(callbacks: &[JsonValue]) -> Vec<JsonValue> {
+pub(crate) fn normalize_callback_names(callbacks: &[JsonValue]) -> Vec<JsonValue> {
     callbacks
         .iter()
         .map(|callback| match callback {
@@ -116,7 +116,7 @@ fn dedupe(callbacks: Vec<JsonValue>) -> Vec<JsonValue> {
 }
 
 #[must_use]
-pub fn router_settings(existing: &SettingsMap, updates: &SettingsMap) -> SettingsMap {
+pub(crate) fn router_settings(existing: &SettingsMap, updates: &SettingsMap) -> SettingsMap {
     let mut merged = existing.clone();
     for (key, value) in updates {
         merged.insert(key.clone(), value.clone());

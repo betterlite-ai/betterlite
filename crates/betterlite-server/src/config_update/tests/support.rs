@@ -309,12 +309,14 @@ pub(crate) struct Harness {
 impl Harness {
     pub(crate) fn new(config: ProxyConfigState) -> Self {
         let store = Arc::new(RecordingStore::default());
-        let database: Arc<dyn ConfigUpdateStore> = Arc::clone(&store);
+        let store_handle = Arc::clone(&store);
+        let database: Arc<dyn ConfigUpdateStore> = store_handle;
         Self::with_store(store, config, Some(database), recording_repository(false))
     }
 
     pub(crate) fn holding(config: ProxyConfigState, store: Arc<RecordingStore>) -> Self {
-        let database: Arc<dyn ConfigUpdateStore> = Arc::clone(&store);
+        let store_handle = Arc::clone(&store);
+        let database: Arc<dyn ConfigUpdateStore> = store_handle;
         Self::with_store(store, config, Some(database), recording_repository(false))
     }
 
@@ -329,7 +331,8 @@ impl Harness {
 
     pub(crate) fn failing_audit(config: ProxyConfigState) -> Self {
         let store = Arc::new(RecordingStore::default());
-        let database: Arc<dyn ConfigUpdateStore> = Arc::clone(&store);
+        let store_handle = Arc::clone(&store);
+        let database: Arc<dyn ConfigUpdateStore> = store_handle;
         Self::with_store(store, config, Some(database), recording_repository(true))
     }
 
@@ -341,9 +344,11 @@ impl Harness {
     ) -> Self {
         let spawner = Arc::new(CollectingSpawner::default());
         let deployments = Arc::new(Deployments::default());
-        let deployments_handle: Arc<dyn DeploymentSyncPort> = Arc::clone(&deployments);
+        let deployments_arc = Arc::clone(&deployments);
+        let deployments_handle: Arc<dyn DeploymentSyncPort> = deployments_arc;
         let audit = audit_sink(&repository, &spawner);
-        let spawner_handle: Arc<dyn AuditTaskSpawner> = Arc::clone(&spawner);
+        let spawner_arc = Arc::clone(&spawner);
+        let spawner_handle: Arc<dyn AuditTaskSpawner> = spawner_arc;
         Self {
             state: ConfigUpdateState {
                 config: Arc::new(config),
@@ -372,8 +377,10 @@ fn audit_sink(
     repository: &Arc<RecordingRepository>,
     spawner: &Arc<CollectingSpawner>,
 ) -> Arc<AuditEventSink> {
-    let spawner_handle: Arc<dyn AuditTaskSpawner> = Arc::clone(spawner);
-    let repository_handle: Arc<dyn AuditLogRepository> = Arc::clone(repository);
+    let spawner_arc = Arc::clone(spawner);
+    let spawner_handle: Arc<dyn AuditTaskSpawner> = spawner_arc;
+    let repository_arc = Arc::clone(repository);
+    let repository_handle: Arc<dyn AuditLogRepository> = repository_arc;
     let clock = DateTime::parse_from_rfc3339("2026-01-02T03:04:05+00:00").expect("the clock");
     Arc::new(AuditEventSink {
         settings: Arc::new(EnabledSettings),
@@ -415,7 +422,7 @@ pub(crate) fn error_text(body: &JsonValue) -> &str {
         .expect("an error message")
 }
 
-pub(crate) fn error_field<'a>(body: &'a JsonValue, field: &str) -> &'a JsonValue {
+pub(crate) fn error_field<'body>(body: &'body JsonValue, field: &str) -> &'body JsonValue {
     body.get("error")
         .and_then(|error| error.get(field))
         .expect("an error field")

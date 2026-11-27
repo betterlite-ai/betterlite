@@ -93,7 +93,8 @@ async fn fixture_pool() -> (PostgresFixture, Pool) {
 async fn the_postgres_store_reads_writes_and_seals_sections() {
     let (fixture, pool) = fixture_pool().await;
     let invalidator = Arc::new(RecordingInvalidator::default());
-    let invalidator_handle: Arc<dyn ConfigParamInvalidator> = Arc::clone(&invalidator);
+    let invalidator_arc = Arc::clone(&invalidator);
+    let invalidator_handle: Arc<dyn ConfigParamInvalidator> = invalidator_arc;
     let store = PostgresConfigUpdateStore {
         store: Arc::new(PostgresStore {
             pool: Some(pool.clone()),
