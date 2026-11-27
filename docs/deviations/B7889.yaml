@@ -9,3 +9,7 @@ deviations:
   - what: BaseLLMException and MaskedHTTPStatusError are defined in betterlite.realtime_api.main rather than in the shared exception package.
     why: betterlite._completion.errors.EXCEPTION_TYPES has no entry for either class, and the realtime module is the only caller that raises them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41
+  - what: "`client` and `shared_session` raise UnsupportedCallArgument instead of being used for the request."
+    why: A Python HTTP client or session object cannot cross into Rust, and ignoring it would send the request somewhere the caller did not configure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L183
+kept_bugs: []
