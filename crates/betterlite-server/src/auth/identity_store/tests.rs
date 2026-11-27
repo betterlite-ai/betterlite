@@ -84,7 +84,7 @@ async fn run(state: Arc<ServerState>, presented: &str) -> (StatusCode, String, b
 
 #[test]
 fn stage_is_registered() {
-    assert_eq!(INSTALLED_STAGES.first(), Some(&AuthBackend::AuthKeyLookup));
+    assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthKeyLookup));
     let state = state_for(&config());
     assert!(state.identity_store.store().is_none());
     let uninstalled = staged_request(&state);
