@@ -128,6 +128,7 @@ fn signed_bearer_token(redactor: &Redactor) {
         redactor,
     );
     assert_eq!(from_env.headers()["Authorization"], "Bearer env-token");
+    assert!(!from_env.headers().contains_key("X-Amz-Date"));
 }
 
 fn signed_authorization_precedence(redactor: &Redactor) {
