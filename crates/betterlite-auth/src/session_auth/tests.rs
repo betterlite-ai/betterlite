@@ -25,8 +25,8 @@ use crate::resolved_key::auth::{AuthInput, ParentOtelSpan, UserAPIKeyAuth};
 use crate::ui_session_identity::{UI_SESSION_TOKEN_TEAM_ID, UiSessionTeams};
 use crate::user_roles::UserRole;
 
-fn auth_with(fields: &str) -> UserAPIKeyAuth {
-    let fields: BTreeMap<String, JsonData> = serde_json::from_str(fields).unwrap();
+fn auth_with(json: &str) -> UserAPIKeyAuth {
+    let fields: BTreeMap<String, JsonData> = serde_json::from_str(json).unwrap();
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
 }
 
