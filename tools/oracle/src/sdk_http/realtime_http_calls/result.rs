@@ -55,7 +55,13 @@ fn failure(error: &RealtimeHttpCallsError<RealtimeHttpError>) -> Result<Failure,
             headers: status.headers.clone(),
             synthesized: None,
         }),
-        RealtimeHttpError::Config(config) => Ok(plain("ValueError", config.to_string())),
+        RealtimeHttpError::Config(config) => Ok(Failure {
+            class: String::from("ValueError"),
+            status: None,
+            message: config.to_string(),
+            headers: BTreeMap::new(),
+            synthesized: None,
+        }),
         RealtimeHttpError::Timeout(_)
         | RealtimeHttpError::Transport(_)
         | RealtimeHttpError::Client(_)
@@ -69,23 +75,17 @@ fn failure(error: &RealtimeHttpCallsError<RealtimeHttpError>) -> Result<Failure,
     }
 }
 
-fn plain(class: &str, message: String) -> Failure {
-    Failure {
-        class: String::from(class),
-        status: None,
-        message,
-        headers: BTreeMap::new(),
-        synthesized: None,
-    }
-}
-
 // The pre-call details a caller's logger reads: the SDK's raw params and the handler's session defaults
 pub(super) fn logged(state: &LoggingState) -> Result<Option<Logged>, SdkHttpError> {
     let details = &state.model_call_details;
     let Some(Json::Object(args)) = details.get("additional_args") else {
         return Ok(None);
     };
-    let params = object(details, "litellm_params")?;
+    let Some(Json::Object(params)) = details.get("litellm_params") else {
+        return Err(SdkHttpError::Invalid(String::from(
+            "the pre-call recorded no litellm_params object",
+        )));
+    };
     Ok(Some(Logged {
         model: text(details, "model")?.to_owned(),
         custom_llm_provider: text(details, "custom_llm_provider")?.to_owned(),
@@ -96,19 +96,6 @@ pub(super) fn logged(state: &LoggingState) -> Result<Option<Logged>, SdkHttpErro
         litellm_api_base: text(params, "api_base")?.to_owned(),
         session: args.get("session").cloned(),
     }))
-}
-
-fn object<'fields>(
-    fields: &'fields IndexMap<String, Json>,
-    name: &str,
-) -> Result<&'fields IndexMap<String, Json>, SdkHttpError> {
-    match fields.get(name) {
-        Some(Json::Object(value)) => Ok(value),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Text(_))
-        | None => Err(SdkHttpError::Invalid(format!(
-            "the pre-call recorded no {name} object"
-        ))),
-    }
 }
 
 fn text<'fields>(
