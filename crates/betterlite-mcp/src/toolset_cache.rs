@@ -2,8 +2,7 @@ use std::error::Error;
 use std::fmt;
 use std::future::Future;
 
-use betterlite_config::sections::mcp_toolset_storage::table::ToolsetTable;
-use betterlite_config::sections::mcp_toolset_storage::{MCPToolset, ToolsetLookup};
+use betterlite_config::sections::mcp_toolset_storage::MCPToolset;
 use serde::de::value::MapAccessDeserializer;
 use serde::de::{Error as SerdeError, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -91,17 +90,4 @@ pub trait ToolsetCache: Send + Sync {
     fn remove_where(&self, matches: &dyn Fn(&str) -> bool) -> Result<(), Self::Error>;
 
     fn management_object_ttl(&self) -> f64;
-}
-
-pub trait ToolsetByName: Send + Sync {
-    fn by_name(&self, name: &str) -> impl Future<Output = ToolsetLookup> + Send;
-}
-
-impl<T> ToolsetByName for T
-where
-    T: ToolsetTable,
-{
-    fn by_name(&self, name: &str) -> impl Future<Output = ToolsetLookup> + Send {
-        self.get_mcp_toolset_by_name(name)
-    }
 }

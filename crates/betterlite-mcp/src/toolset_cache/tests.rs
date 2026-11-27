@@ -19,7 +19,7 @@ use tracing::subscriber::set_default;
 
 use super::invalidate::invalidate_toolset_cache;
 use super::lookup::toolset_by_name_cached;
-use super::{CachedToolset, ToolsetByName, ToolsetCache};
+use super::{CachedToolset, ToolsetCache};
 
 const CACHE_TTL_SECS: f64 = 17.5;
 const OTHER_TTL_SECS: f64 = 42.25;
@@ -191,42 +191,7 @@ impl FakeStore {
     }
 }
 
-impl ToolsetByName for FakeStore {
-    fn by_name(&self, name: &str) -> impl Future<Output = ToolsetLookup> + Send {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(name.to_owned());
-        ready(if self.fail {
-            Err(store_failure())
-        } else {
-            Ok(self.toolsets.get(name).cloned())
-        })
-    }
-}
-
-struct FakeToolsetTable {
-    row: Option<ToolsetRow>,
-    names: Mutex<Vec<String>>,
-}
-
-impl FakeToolsetTable {
-    fn new(row: Option<ToolsetRow>) -> Self {
-        Self {
-            row,
-            names: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn names(&self) -> Vec<String> {
-        self.names
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl ToolsetTable for FakeToolsetTable {
+impl ToolsetTable for FakeStore {
     fn create(
         &self,
         _row: ToolsetRow,
@@ -243,13 +208,9 @@ impl ToolsetTable for FakeToolsetTable {
 
     fn find_first_by_name(
         &self,
-        toolset_name: &str,
+        _toolset_name: &str,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
-        self.names
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(toolset_name.to_owned());
-        ready(Ok(self.row.clone()))
+        ready(Err(store_failure()))
     }
 
     fn find_many(
@@ -273,6 +234,21 @@ impl ToolsetTable for FakeToolsetTable {
         _toolset_id: &str,
     ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         ready(Err(store_failure()))
+    }
+
+    fn get_mcp_toolset_by_name(
+        &self,
+        toolset_name: &str,
+    ) -> impl Future<Output = ToolsetLookup> + Send {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(toolset_name.to_owned());
+        ready(if self.fail {
+            Err(store_failure())
+        } else {
+            Ok(self.toolsets.get(toolset_name).cloned())
+        })
     }
 }
 
@@ -421,33 +397,6 @@ async fn lookup_store_error_reaches_the_caller_and_writes_nothing() {
     assert_eq!(store.calls(), vec!["test-alpha".to_owned()]);
     assert!(cache.write_log().is_empty());
     assert!(cache.keys().is_empty());
-}
-
-#[tokio::test]
-async fn lookup_store_adapter_reads_the_table_by_name() {
-    let row = ToolsetRow {
-        toolset_id: "test-id-test-alpha".to_owned(),
-        toolset_name: "test-alpha".to_owned(),
-        description: Some("test description".to_owned()),
-        tools: Some(r#"[{"server_id": "test-server", "tool_name": "test-tool"}]"#.to_owned()),
-        created_at: None,
-        created_by: Some("test-owner".to_owned()),
-        updated_at: None,
-        updated_by: Some("test-editor".to_owned()),
-    };
-    let table = FakeToolsetTable::new(Some(row));
-
-    let found = table.by_name("test-alpha").await.unwrap().unwrap();
-
-    assert_eq!(found.toolset_id, "test-id-test-alpha");
-    assert_eq!(
-        found.tools,
-        vec![MCPToolsetTool {
-            server_id: "test-server".to_owned(),
-            tool_name: "test-tool".to_owned(),
-        }]
-    );
-    assert_eq!(table.names(), vec!["test-alpha".to_owned()]);
 }
 
 #[test]
