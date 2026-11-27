@@ -28,8 +28,8 @@ impl Serialize for CachedToolset {
         S: Serializer,
     {
         match self {
-            CachedToolset::Found(toolset) => toolset.serialize(serializer),
-            CachedToolset::NotFound => serializer.serialize_str(NOT_FOUND_SENTINEL),
+            Self::Found(toolset) => toolset.serialize(serializer),
+            Self::NotFound => serializer.serialize_str(NOT_FOUND_SENTINEL),
         }
     }
 }
@@ -41,37 +41,35 @@ impl<'de> Deserialize<'de> for CachedToolset {
     where
         D: Deserializer<'de>,
     {
-        struct CachedToolsetVisitor;
-
-        // ast-grep-ignore: no-custom-serde
-        impl<'de> Visitor<'de> for CachedToolsetVisitor {
-            type Value = CachedToolset;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a toolset object or the __not_found__ string")
-            }
-
-            fn visit_str<E>(self, text: &str) -> Result<CachedToolset, E>
-            where
-                E: SerdeError,
-            {
-                if text == NOT_FOUND_SENTINEL {
-                    return Ok(CachedToolset::NotFound);
-                }
-                Err(E::custom(format!(
-                    "the cache value {text:?} is not a toolset"
-                )))
-            }
-
-            fn visit_map<A>(self, map: A) -> Result<CachedToolset, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                MCPToolset::deserialize(MapAccessDeserializer::new(map)).map(CachedToolset::Found)
-            }
-        }
-
         deserializer.deserialize_any(CachedToolsetVisitor)
+    }
+}
+
+struct CachedToolsetVisitor;
+
+// ast-grep-ignore: no-custom-serde
+impl<'de> Visitor<'de> for CachedToolsetVisitor {
+    type Value = CachedToolset;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a toolset object or the __not_found__ string")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<CachedToolset, E>
+    where
+        E: SerdeError,
+    {
+        if v == NOT_FOUND_SENTINEL {
+            return Ok(CachedToolset::NotFound);
+        }
+        Err(E::custom(format!("the cache value {v:?} is not a toolset")))
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<CachedToolset, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        MCPToolset::deserialize(MapAccessDeserializer::new(map)).map(CachedToolset::Found)
     }
 }
 

@@ -70,8 +70,8 @@ struct FakeCache {
 }
 
 impl FakeCache {
-    fn new(entries: Vec<(&str, CachedToolset)>, ttl_secs: f64) -> Self {
-        let entries = entries
+    fn new(initial: Vec<(&str, CachedToolset)>, ttl_secs: f64) -> Self {
+        let entries = initial
             .into_iter()
             .map(|(key, value)| (key.to_owned(), value))
             .collect();
@@ -163,8 +163,8 @@ struct FakeStore {
 }
 
 impl FakeStore {
-    fn new(toolsets: Vec<MCPToolset>) -> Self {
-        let toolsets = toolsets
+    fn new(initial: Vec<MCPToolset>) -> Self {
+        let toolsets = initial
             .into_iter()
             .map(|toolset| (toolset.toolset_name.clone(), toolset))
             .collect();
@@ -393,7 +393,7 @@ async fn lookup_store_error_reaches_the_caller_and_writes_nothing() {
 
     let answer = toolset_by_name_cached(&cache, &store, "test-alpha").await;
 
-    assert!(answer.is_err());
+    answer.unwrap_err();
     assert_eq!(store.calls(), vec!["test-alpha".to_owned()]);
     assert!(cache.write_log().is_empty());
     assert!(cache.keys().is_empty());
@@ -574,6 +574,6 @@ fn wire_rejects_other_json_values(#[case] text: &str) {
     let value = serde_json::from_str(text).unwrap();
     let from_value = serde_json::from_value::<CachedToolset>(value);
 
-    assert!(from_text.is_err());
-    assert!(from_value.is_err());
+    from_text.unwrap_err();
+    from_value.unwrap_err();
 }
