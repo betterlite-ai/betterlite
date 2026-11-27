@@ -1,11 +1,15 @@
-use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+mod families;
+mod fixture;
+mod input;
+mod ops;
+mod tests;
 
 pub(crate) struct Op;
 
-impl Helper for Op {
-    type Input = serde_json::Value;
+impl betterlite_oracle_helper_api::helper::Helper for Op {
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("bedrock_services_batch_records")
+    fn run(input: &Self::Input) -> betterlite_oracle_helper_api::helper::HelperResult {
+        ops::run(input)
     }
 }
