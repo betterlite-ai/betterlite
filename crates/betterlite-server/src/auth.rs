@@ -108,7 +108,7 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
+        AuthBackend::AuthKeyLookup => Ok(identity_store::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
@@ -190,6 +190,7 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
+        StageInput::AuthIdentity(stage) => identity_store::prefetch(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetch(&stage)
             .await
             .map_err(StageFailure::TagBudgets)

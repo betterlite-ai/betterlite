@@ -20,6 +20,7 @@ use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
@@ -72,6 +73,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 #[derive(Clone, Debug)]
 pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
+    AuthIdentity(Box<IdentityStageInput>),
     Authenticated(Box<AuthContext>),
     MasterKey(Option<SecretString>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
@@ -165,7 +167,9 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
-            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
+            Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
+                AuthBackend::AuthKeyLookup
+            }
             Self::MasterKey(_) => AuthBackend::MasterKey,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
@@ -197,7 +201,9 @@ pub(crate) fn dispatch(
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
-        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
+        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
         StageInput::Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::AuthRequestPolicy(stage) => {
