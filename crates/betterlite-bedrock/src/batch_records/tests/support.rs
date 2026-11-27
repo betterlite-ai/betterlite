@@ -96,6 +96,12 @@ impl Call {
 #[error("the fixture holds no body")]
 struct MissingFixture;
 
+#[derive(Clone, Copy)]
+enum BodyFamily {
+    Anthropic,
+    Nova,
+}
+
 pub(super) struct Families {
     pub(super) nova_calls: Mutex<Vec<Call>>,
     pub(super) anthropic_params_calls: Mutex<Vec<(String, Params)>>,
@@ -162,51 +168,50 @@ impl Families {
             .expect("no panic held the lock")
             .clone()
     }
+
+    fn body_call(&self, family: BodyFamily, call: Call) -> Attempt<Json> {
+        match family {
+            BodyFamily::Anthropic => {
+                self.anthropic_body_calls
+                    .lock()
+                    .expect("no panic held the lock")
+                    .push(call);
+                self.anthropic_body
+                    .clone()
+                    .ok_or_else(|| Failure::from(MissingFixture))
+            }
+            BodyFamily::Nova => {
+                self.nova_calls
+                    .lock()
+                    .expect("no panic held the lock")
+                    .push(call);
+                Ok(self.nova_body.clone().unwrap_or(Json::Null))
+            }
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl BatchFamilies for Families {
-    async fn anthropic_params(
-        &self,
-        mapping_model: &str,
-        optional_params: &Params,
-    ) -> Attempt<Params> {
+    async fn anthropic_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
         self.anthropic_params_calls
             .lock()
             .expect("no panic held the lock")
-            .push((mapping_model.to_owned(), optional_params.clone()));
-        self.anthropic_params
-            .as_ref()
-            .map_or_else(|| Ok(Params::new()), |mapped| Ok(mapped.clone()))
+            .push((mapping_model.to_owned(), params.clone()));
+        Ok(self.anthropic_params.clone().unwrap_or_default())
     }
 
     async fn anthropic_body(
         &self,
         model: &str,
         messages: &[Json],
-        optional_params: &Params,
+        params: &Params,
     ) -> Attempt<Json> {
-        let call = Call::of(model, messages, optional_params);
-        self.anthropic_body_calls
-            .lock()
-            .expect("no panic held the lock")
-            .push(call);
-        self.anthropic_body
-            .clone()
-            .ok_or_else(|| Failure::from(MissingFixture))
+        self.body_call(BodyFamily::Anthropic, Call::of(model, messages, params))
     }
 
-    async fn nova_body(
-        &self,
-        model: &str,
-        messages: &[Json],
-        optional_params: &Params,
-    ) -> Attempt<Json> {
-        self.nova_calls
-            .lock()
-            .expect("no panic held the lock")
-            .push(Call::of(model, messages, optional_params));
-        Ok(self.nova_body.clone().unwrap_or(Json::Null))
+    async fn nova_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
+        self.body_call(BodyFamily::Nova, Call::of(model, messages, params))
     }
 
     async fn responses_to_chat(&self, body: &Json) -> Attempt<Json> {

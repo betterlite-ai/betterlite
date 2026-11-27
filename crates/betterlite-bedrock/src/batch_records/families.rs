@@ -16,7 +16,7 @@ pub trait BatchFamilies: Send + Sync {
     async fn anthropic_params(
         &self,
         mapping_model: &str,
-        optional_params: &Params,
+        params: &Params,
     ) -> Result<Params, Failure>;
 
     // AmazonAnthropicClaudeConfig.transform_request over the projected messages.
@@ -24,7 +24,7 @@ pub trait BatchFamilies: Send + Sync {
         &self,
         model: &str,
         messages: &[Json],
-        optional_params: &Params,
+        params: &Params,
     ) -> Result<Json, Failure>;
 
     // AmazonConverseConfig.map_openai_params then transform_request, in one pass.
@@ -32,7 +32,7 @@ pub trait BatchFamilies: Send + Sync {
         &self,
         model: &str,
         messages: &[Json],
-        optional_params: &Params,
+        params: &Params,
     ) -> Result<Json, Failure>;
 
     // responses_batch_body_to_chat_body, the Responses-to-Chat bridge the real-time path uses.
