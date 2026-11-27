@@ -21,7 +21,6 @@ use betterlite_logging::registry::error::RegistryError;
 use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
-use serde_json::json;
 
 use super::{TeamMembershipAudit, members_audit_value, schedule_team_membership_audit_log};
 use crate::audit::service::{AuditService, AuditServiceDeps};
@@ -250,21 +249,9 @@ fn members_audit_value_nests_the_roster_beside_the_alias() {
     let text = members_audit_value(Some("Test Team"), &before_roster()).unwrap();
     assert_eq!(
         parsed(&text),
-        json!({
-            "team_alias": "Test Team",
-            "members_with_roles": [
-                {
-                    "user_id": "test-user-1",
-                    "user_email": "test-1@example.com",
-                    "role": "admin",
-                },
-                {
-                    "user_id": "test-user-2",
-                    "user_email": "test-2@example.com",
-                    "role": "user",
-                },
-            ],
-        })
+        parsed(
+            r#"{"team_alias": "Test Team", "members_with_roles": [{"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "admin"}, {"user_id": "test-user-2", "user_email": "test-2@example.com", "role": "user"}]}"#
+        )
     );
 }
 
@@ -289,21 +276,9 @@ fn members_audit_value_keeps_a_null_alias_and_null_member_fields() {
     let text = members_audit_value(None, &members).unwrap();
     assert_eq!(
         parsed(&text),
-        json!({
-            "team_alias": null,
-            "members_with_roles": [
-                {
-                    "user_id": null,
-                    "user_email": "test-email-only@example.com",
-                    "role": "user",
-                },
-                {
-                    "user_id": "test-user-only",
-                    "user_email": null,
-                    "role": "admin",
-                },
-            ],
-        })
+        parsed(
+            r#"{"team_alias": null, "members_with_roles": [{"user_id": null, "user_email": "test-email-only@example.com", "role": "user"}, {"user_id": "test-user-only", "user_email": null, "role": "admin"}]}"#
+        )
     );
 }
 
@@ -400,21 +375,9 @@ async fn the_row_holds_the_before_roster() {
     let record = inserted.first().unwrap();
     assert_eq!(
         record.before_value,
-        Some(json!({
-            "team_alias": "Test Team",
-            "members_with_roles": [
-                {
-                    "user_id": "test-user-1",
-                    "user_email": "test-1@example.com",
-                    "role": "admin",
-                },
-                {
-                    "user_id": "test-user-2",
-                    "user_email": "test-2@example.com",
-                    "role": "user",
-                },
-            ],
-        }))
+        Some(parsed(
+            r#"{"team_alias": "Test Team", "members_with_roles": [{"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "admin"}, {"user_id": "test-user-2", "user_email": "test-2@example.com", "role": "user"}]}"#
+        ))
     );
 }
 
@@ -430,16 +393,9 @@ async fn the_row_holds_the_after_roster() {
     let record = inserted.first().unwrap();
     assert_eq!(
         record.updated_values,
-        Some(json!({
-            "team_alias": "Test Team",
-            "members_with_roles": [
-                {
-                    "user_id": "test-user-1",
-                    "user_email": "test-1@example.com",
-                    "role": "admin",
-                },
-            ],
-        }))
+        Some(parsed(
+            r#"{"team_alias": "Test Team", "members_with_roles": [{"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "admin"}]}"#
+        ))
     );
 }
 
@@ -448,7 +404,7 @@ async fn the_membership_row_ignores_the_changed_by_header() {
     let harness = harness(true);
     let caller = caller(
         Some("test-admin"),
-        Some(json!({"allow_litellm_changed_by_header": true})),
+        Some(parsed(r#"{"allow_litellm_changed_by_header": true}"#)),
     );
     let before = before_roster();
     let after = after_roster();
