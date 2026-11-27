@@ -59,7 +59,7 @@ class RealtimeEndpointError(Exception):
         super().__init__(message)
 
 
-class BaseLLMException(RealtimeEndpointError):
+class BaseLLMException(RealtimeEndpointError):  # noqa: N818  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41
     ...
 
 
