@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -127,7 +128,7 @@ struct Fields {
     steps: Vec<StepOutcome>,
 }
 
-fn invalid(error: impl std::fmt::Display) -> OperationError {
+fn invalid<T: Display + ?Sized>(error: &T) -> OperationError {
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
@@ -203,8 +204,9 @@ fn decode_sessions(
 ) -> Result<Vec<(String, AutoRouterSession)>, OperationError> {
     let mut sessions = Vec::with_capacity(seeds.len());
     for seed in seeds {
-        let bytes = serde_json::to_vec(&seed.row).map_err(invalid)?;
-        let row: AutoRouterSession = serde_json::from_slice(&bytes).map_err(invalid)?;
+        let bytes = serde_json::to_vec(&seed.row).map_err(|error| invalid(&error))?;
+        let row: AutoRouterSession =
+            serde_json::from_slice(&bytes).map_err(|error| invalid(&error))?;
         sessions.push((seed.last_turn_at.clone(), row));
     }
     Ok(sessions)
@@ -228,6 +230,14 @@ fn identity(role: Option<&str>) -> Identity {
     }
 }
 
+fn probe_store(step: &BenchmarksStep) -> Result<ProbeStore, OperationError> {
+    let row_bytes = serde_json::to_vec(&step.rows).map_err(|error| invalid(&error))?;
+    Ok(ProbeStore {
+        rows: decode_session_agg_rows(&row_bytes).map_err(|error| invalid(&error))?,
+        ..ProbeStore::default()
+    })
+}
+
 // FastAPI checks the role first, then the database, then the dates and the rollup read
 async fn benchmarks_step(
     payload: &Payload,
@@ -246,11 +256,7 @@ async fn benchmarks_step(
     if !step.database {
         return Ok(StepOutcome::Failed { status: 500 });
     }
-    let row_bytes = serde_json::to_vec(&step.rows).map_err(invalid)?;
-    let store = ProbeStore {
-        rows: decode_session_agg_rows(&row_bytes).map_err(invalid)?,
-        ..ProbeStore::default()
-    };
+    let store = probe_store(step)?;
     let query = BenchmarksQuery {
         start_date: step.start_date.clone(),
         end_date: step.end_date.clone(),
@@ -259,7 +265,7 @@ async fn benchmarks_step(
     };
     match benchmarks_for(&store, &query, &deployments(payload), today).await {
         Ok(response) => Ok(StepOutcome::Benchmarks {
-            response: serde_json::to_value(response).map_err(invalid)?,
+            response: serde_json::to_value(response).map_err(|error| invalid(&error))?,
             query: store
                 .take_query_bounds()
                 .ok_or_else(|| invalid("the benchmarks read never reached the store"))?,
@@ -281,7 +287,7 @@ async fn session_step(step: &SessionStep) -> Result<StepOutcome, OperationError>
     };
     match session_for(&store, Some(step.api_key.as_str()), &query).await {
         Ok(response) => Ok(StepOutcome::Session {
-            response: serde_json::to_value(response).map_err(invalid)?,
+            response: serde_json::to_value(response).map_err(|error| invalid(&error))?,
             lookup: store
                 .take_lookup()
                 .ok_or_else(|| invalid("the session read never reached the store"))?,
@@ -313,7 +319,7 @@ pub(crate) fn run(
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(invalid)?;
+        .map_err(|error| invalid(&error))?;
     let fields = runtime.block_on(scenario(&input.0))?;
     Ok(ProbeOutput::AutoRouterReadApi(Output(Box::new(fields))))
 }
