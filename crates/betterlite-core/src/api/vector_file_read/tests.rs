@@ -843,6 +843,16 @@ async fn a_negative_timeout_still_reads() {
     assert_eq!(handler_timeout(&call, negative_seconds), None);
 }
 
+// a non-finite wait is no wait either, so the handler runs with none
+#[test]
+fn a_non_finite_timeout_is_no_timeout() {
+    let kwargs = JsonObject::new();
+    let mut call = read_call(&kwargs, None, Some(f64::NAN), None);
+    assert_eq!(handler_timeout(&call, 6000.0_f64), None);
+    call.timeout = Some(f64::INFINITY);
+    assert_eq!(handler_timeout(&call, 6000.0_f64), None);
+}
+
 #[rstest]
 #[case::base(r#"{"api_base":5}"#)]
 #[case::key(r#"{"api_base":"http://mock.invalid/v1","api_key":5}"#)]
