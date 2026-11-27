@@ -188,11 +188,11 @@ fn install_module<'py>(
     source: &str,
 ) -> PyResult<Bound<'py, PyModule>> {
     let code = CString::new(source)
-        .map_err(|_| PyValueError::new_err("the fake module source holds a NUL byte"))?;
+        .map_err(|_nul| PyValueError::new_err("the fake module source holds a NUL byte"))?;
     let file_name = CString::new(format!("{name}.py"))
-        .map_err(|_| PyValueError::new_err("the fake module name holds a NUL byte"))?;
+        .map_err(|_nul| PyValueError::new_err("the fake module name holds a NUL byte"))?;
     let module_name = CString::new(name)
-        .map_err(|_| PyValueError::new_err("the fake module name holds a NUL byte"))?;
+        .map_err(|_nul| PyValueError::new_err("the fake module name holds a NUL byte"))?;
     PyModule::from_code(py, &code, &file_name, &module_name)
 }
 
@@ -335,8 +335,7 @@ struct SavedModules<'host> {
 impl<'host> SavedModules<'host> {
     fn capture(host: &'host PythonHost) -> Self {
         let saved = host.attach(|py| {
-            let mut saved: Vec<(&'static str, Option<Py<PyAny>>)> =
-                Vec::with_capacity(MANAGED.len());
+            let mut saved = Vec::with_capacity(MANAGED.len());
             let Ok(modules) = python_modules(py) else {
                 return saved;
             };
