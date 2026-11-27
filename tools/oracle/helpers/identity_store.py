@@ -32,14 +32,6 @@ class Call(BaseModel):
     hashed_token: str = ""
 
 
-class ErrorEnvelope(BaseModel):
-    kind: str | None
-    message: str
-    error_type: str = Field(alias="type")
-    param: str | None
-    code: str
-
-
 def _row(value: Row | None) -> Row:
     if value is None:
         raise ValueError("this call needs a key")
@@ -104,14 +96,10 @@ def _build_error(fields: Call) -> Exception:
 
 def _error(fields: Call) -> JsonValue:
     proxy = _as_proxy_exception(_build_error(fields))
-    envelope = ErrorEnvelope(
-        kind=fields.kind,
-        message=proxy.message,
-        error_type=proxy.type,
-        param=proxy.param,
-        code=proxy.code,
-    )
-    return JSON_OBJECT.validate_json(envelope.model_dump_json(by_alias=True))
+    return {
+        "kind": fields.kind, "message": proxy.message, "type": proxy.type,
+        "param": proxy.param, "code": proxy.code,
+    }
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
