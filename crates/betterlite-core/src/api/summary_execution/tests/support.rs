@@ -319,7 +319,7 @@ impl HistoryTokenCounter for ScriptedCounter {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecordedCall {
     pub(crate) model: String,
     pub(crate) messages: Vec<Json>,
@@ -375,11 +375,11 @@ impl SummaryCompletion for ScriptedCompletion {
         });
         match &self.answer {
             Answer::Text(text) => Ok(CompletionAnswer {
-                choices: vec![CompletionChoice {
+                choices: Some(vec![CompletionChoice {
                     message: Some(CompletionMessage {
                         content: Some(Json::Text(text.clone())),
                     }),
-                }],
+                }]),
                 usage: Some(CompletionUsage {
                     prompt_tokens: Some(Json::Number(Number::from(12_u64))),
                     completion_tokens: Some(Json::Number(Number::from(3_u64))),
@@ -528,7 +528,10 @@ impl Default for Sample {
 }
 
 impl Sample {
-    pub(crate) fn request(&self, model: &str) -> EditorRequest<'_> {
+    pub(crate) fn request<'request>(
+        &'request self,
+        model: &'request str,
+    ) -> EditorRequest<'request> {
         EditorRequest {
             model,
             messages: &self.messages,

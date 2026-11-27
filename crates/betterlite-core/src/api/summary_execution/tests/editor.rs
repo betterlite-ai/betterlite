@@ -415,12 +415,10 @@ async fn summary_request_arguments_match_litellm() {
     assert!(call.metadata.get("provider_metadata").is_none());
     let messages = &call.messages;
     assert_eq!(messages.len(), 3);
+    let first = messages[0].as_object().expect("a system message");
+    assert_eq!(first.get("role").and_then(Json::as_str), Some("system"));
     assert_eq!(
-        messages[0].get("role").and_then(Json::as_str),
-        Some("system")
-    );
-    assert_eq!(
-        messages[0].get("content").and_then(Json::as_str),
+        first.get("content").and_then(Json::as_str),
         Some(augmented("S").as_str())
     );
     assert_eq!(

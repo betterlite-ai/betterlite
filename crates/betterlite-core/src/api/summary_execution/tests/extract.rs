@@ -17,7 +17,7 @@ fn usage(raw: &str) -> Result<SummaryUsage, ExtractionError> {
 }
 
 #[rstest]
-#[case::no_fields(r#"{}"#)]
+#[case::no_fields("{}")]
 #[case::null_choices(r#"{"choices":null}"#)]
 #[case::empty_choices(r#"{"choices":[]}"#)]
 #[case::no_message(r#"{"choices":[{}]}"#)]
@@ -72,7 +72,7 @@ fn response_text_rejects_a_nonstring_text_part() {
 }
 
 #[rstest]
-#[case::no_usage(r#"{}"#)]
+#[case::no_usage("{}")]
 #[case::null_usage(r#"{"usage":null}"#)]
 #[case::empty_usage(r#"{"usage":{}}"#)]
 #[case::null_counts(r#"{"usage":{"prompt_tokens":null,"completion_tokens":null}}"#)]

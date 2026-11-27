@@ -14,7 +14,7 @@ use crate::api::summary_history::last_question::select_last_user_question;
 use crate::api::summary_history::metadata::propagate_metadata;
 use crate::api::summary_history::prompt::{build_summary_prompt, extract_summary_text};
 use crate::api::summary_history::summary_messages::build_summary_messages;
-use crate::api::summary_history::system::{SystemPrompt, augment_system_with_summary};
+use crate::api::summary_history::system::augment_system_with_summary;
 use crate::api::summary_history::translate::AdapterTranslator;
 use crate::api::summary_model_limits::rate::ProxyHooks;
 

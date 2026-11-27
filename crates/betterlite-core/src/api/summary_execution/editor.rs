@@ -51,7 +51,7 @@ impl<Checks, Repositories, Budgets, Hooks, Counter>
     EditorServices<'_, Checks, Repositories, Budgets, Hooks, Counter>
 {
     // compact.py prefers llm_router.acompletion and falls back to litellm.acompletion
-    async fn complete(
+    pub(super) async fn complete(
         &self,
         call: SummaryCall<'_>,
     ) -> Result<CompletionAnswer, SummaryCallFailure> {
@@ -87,7 +87,7 @@ where
         current,
         trigger
     );
-    if current <= trigger {
+    if u64::try_from(current).unwrap_or(u64::MAX) <= trigger {
         return encode(slice_only(&phase, applied));
     }
     let denial = policy_denial(
