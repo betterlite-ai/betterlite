@@ -159,7 +159,7 @@ pub(super) struct Catalog {
 
 impl Catalog {
     pub(super) fn with(pairs: &[(&str, &str)]) -> Self {
-        let mut catalog = Catalog::default();
+        let mut catalog = Self::default();
         for (model_id, text) in pairs {
             catalog
                 .credentials
@@ -236,10 +236,9 @@ impl ModelGrant<Catalog> for Grants {
 
     async fn authorize(&self, request: &GrantRequest<'_, Catalog>) -> Result<(), Denied> {
         locked(&self.asked).push(request.model.to_owned());
-        match &self.denial {
-            Some(denied) => Err(denied.clone()),
-            None => Ok(()),
-        }
+        self.denial
+            .as_ref()
+            .map_or(Ok(()), |denied| Err(denied.clone()))
     }
 }
 
@@ -273,8 +272,12 @@ impl ManagedResourceAccessChecker for Checker {
         self.allow
     }
 
-    async fn can_call_unified_object_id(&self, object_id: &str, principal: &Principal) -> bool {
-        self.can_call_unified_file_id(object_id, principal).await
+    async fn can_call_unified_object_id(
+        &self,
+        unified_object_id: &str,
+        principal: &Principal,
+    ) -> bool {
+        Self::can_call_unified_file_id(self, unified_object_id, principal).await
     }
 }
 

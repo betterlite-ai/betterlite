@@ -23,13 +23,13 @@ where
     Catalog: CredentialCatalog + Sync,
     Grants: ModelGrant<Catalog> + Sync,
 {
-    let Some(caller) = caller else {
+    let Some(present) = caller else {
         return Ok(());
     };
     let Some(catalog) = deps.catalog else {
         return Ok(());
     };
-    let key: KeyFacts = serde_json::to_value(caller.auth)
+    let key: KeyFacts = serde_json::to_value(present.auth)
         .and_then(serde_json::from_value)
         .map_err(VectorFileResolutionError::Caller)?;
     let Some(candidates) = candidate_names(key.team_models.as_ref()) else {
@@ -38,7 +38,7 @@ where
     let found = openai_team_credentials(
         catalog,
         deps.grants,
-        caller,
+        present,
         &candidates,
         key.team_id.as_deref(),
     )
@@ -48,7 +48,7 @@ where
         return Ok(());
     }
     if let [name] = candidates.as_slice() {
-        authorize_team_model(catalog, deps.grants, caller, name).await?;
+        authorize_team_model(catalog, deps.grants, present, name).await?;
         data.insert("model".to_owned(), Json::Text(name.clone()));
     }
     Ok(())
@@ -139,5 +139,5 @@ fn is_openai(credentials: &JsonObject) -> bool {
         },
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => None,
     };
-    provider.and_then(|provider| ProviderId::from_str(provider).ok()) == Some(ProviderId::Openai)
+    provider.and_then(|name| ProviderId::from_str(name).ok()) == Some(ProviderId::Openai)
 }

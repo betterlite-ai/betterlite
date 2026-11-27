@@ -82,22 +82,21 @@ fn source_chain<'chain>(
 
 // LlmProviders(provider): only a string that names a provider converts.
 fn provider_id(candidate: &ProviderCandidate<'_>) -> Option<ProviderId> {
-    let text = match candidate {
-        ProviderCandidate::Data(Json::Text(text)) => Some(text.as_str()),
+    match candidate {
+        ProviderCandidate::Data(Json::Text(text))
+        | ProviderCandidate::Body(JsonValue::String(text))
+        | ProviderCandidate::Text(text) => ProviderId::from_str(text.as_str()).ok(),
         ProviderCandidate::Data(
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-        ) => None,
-        ProviderCandidate::Body(JsonValue::String(text)) => Some(text.as_str()),
-        ProviderCandidate::Body(
+        )
+        | ProviderCandidate::Body(
             JsonValue::Null
             | JsonValue::Bool(_)
             | JsonValue::Number(_)
             | JsonValue::Array(_)
             | JsonValue::Object(_),
         ) => None,
-        ProviderCandidate::Text(text) => Some(text.as_str()),
-    };
-    text.and_then(|text| ProviderId::from_str(text).ok())
+    }
 }
 
 // metadata.get("allowed_vector_store_indexes") in Python truthiness: null and the empty list do not gate.

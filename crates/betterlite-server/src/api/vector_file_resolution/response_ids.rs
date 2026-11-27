@@ -16,10 +16,10 @@ pub enum FileResponse<'response> {
 
 // _replace_file_id_in_response: a null response stays null, a dict rewrites both keys, and an object rewrites id first.
 pub fn restore_file_identifiers(response: Option<FileResponse<'_>>, original_file_id: &str) {
-    let Some(response) = response else {
+    let Some(found) = response else {
         return;
     };
-    match response {
+    match found {
         FileResponse::Fields(fields) => {
             for name in ["id", "file_id"] {
                 if fields.contains_key(name) {
@@ -27,8 +27,9 @@ pub fn restore_file_identifiers(response: Option<FileResponse<'_>>, original_fil
                 }
             }
         }
-        FileResponse::Both { id, .. } => *id = original_file_id.to_owned(),
-        FileResponse::Identifier(id) => *id = original_file_id.to_owned(),
-        FileResponse::FileIdentifier(file_id) => *file_id = original_file_id.to_owned(),
+        FileResponse::Both { id, .. } | FileResponse::Identifier(id) => {
+            original_file_id.clone_into(id)
+        }
+        FileResponse::FileIdentifier(file_id) => original_file_id.clone_into(file_id),
     }
 }

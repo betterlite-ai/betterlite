@@ -73,8 +73,8 @@ where
             authorize_hint(Some(catalog), deps.grants, caller, hint).await?;
         }
         let team_id = match caller {
-            Some(caller) => {
-                let key: KeyFacts = serde_json::to_value(caller.auth)
+            Some(present) => {
+                let key: KeyFacts = serde_json::to_value(present.auth)
                     .and_then(serde_json::from_value)
                     .map_err(VectorFileResolutionError::Caller)?;
                 key.team_id
@@ -106,10 +106,10 @@ where
     Catalog: CredentialCatalog + Sync,
     Grants: ModelGrant<Catalog> + Sync,
 {
-    let Some(caller) = caller else {
+    let Some(present) = caller else {
         return Ok(());
     };
-    authorize_model_for_key(catalog, grants, model, caller.principal)
+    authorize_model_for_key(catalog, grants, model, present.principal)
         .await
         .map_err(VectorFileResolutionError::Authorization)
 }
