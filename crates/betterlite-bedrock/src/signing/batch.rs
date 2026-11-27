@@ -1,7 +1,8 @@
+use betterlite_sigv4::sign::{Signable, sign_request};
+
 use super::error::SigningError;
 use super::headers::{merge_computed, prepare, without_computed};
 use super::request::AwsSignedRequest;
-use super::sigv4::{Signable, sign_request};
 use super::target::{RegionInputs, auth_settings, resolve_region};
 use crate::aws_settings::pop_aws_auth_params;
 use crate::aws_settings::sources::Credentials;

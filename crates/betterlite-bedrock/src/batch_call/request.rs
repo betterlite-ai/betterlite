@@ -1,6 +1,7 @@
 use std::time::SystemTime;
 
 use betterlite_context::aws_partition::get_aws_partition;
+use betterlite_sigv4::sign::{Signable, sign_request};
 use percent_encoding::utf8_percent_encode;
 
 use crate::aws_endpoints::model_id::MODEL_ID_SAFE;
@@ -9,7 +10,6 @@ use crate::batch_status::handler::extract_job_id_from_arn;
 use crate::signing::error::SigningError;
 use crate::signing::headers::{merge_computed, prepare, without_computed};
 use crate::signing::request::AwsSignedRequest;
-use crate::signing::sigv4::{Signable, sign_request};
 
 use super::transport::BEDROCK_SERVICE;
 

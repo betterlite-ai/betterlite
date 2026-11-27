@@ -1,3 +1,5 @@
+use betterlite_sigv4::sign::{Signable, sign_request};
+
 use super::body::Body;
 use super::error::SigningError;
 use super::headers::{
@@ -5,7 +7,6 @@ use super::headers::{
     without_computed,
 };
 use super::request::AwsSignedRequest;
-use super::sigv4::{Signable, sign_request};
 use crate::aws_settings::bedrock_bearer_token;
 use crate::aws_settings::sources::Credentials;
 use secrecy::{ExposeSecret as _, SecretString};

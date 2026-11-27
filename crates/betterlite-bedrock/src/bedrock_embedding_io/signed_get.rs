@@ -1,10 +1,11 @@
 use std::time::SystemTime;
 
+use betterlite_sigv4::sign::{Signable, sign_request};
+
 use crate::aws_settings::sources::Credentials;
 use crate::signing::error::SigningError;
 use crate::signing::headers::{merge_computed, prepare, without_computed};
 use crate::signing::request::AwsSignedRequest;
-use crate::signing::sigv4::{Signable, sign_request};
 
 pub const BEDROCK_SERVICE: &str = "bedrock";
 
