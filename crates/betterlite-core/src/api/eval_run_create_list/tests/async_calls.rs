@@ -109,7 +109,7 @@ fn acreate_run_maps_an_awaited_handler_error() {
     let failure = error(answer);
     assert!(matches!(&failure.class, ErrorClass::RateLimit(_)));
     assert_eq!(
-        Json::Object(failure.local_vars.clone()),
+        Json::Object(failure.local_vars.as_ref().clone()),
         json(
             r#"{"eval_id":"eval-1","data_source":{"type":"jsonl"},"name":null,"metadata":null,"extra_headers":null,"extra_query":null,"extra_body":null,"timeout":null,"custom_llm_provider":null,"kwargs":{"acreate_run":true}}"#
         )
@@ -130,7 +130,7 @@ fn alist_runs_maps_an_awaited_handler_error() {
     let failure = error(answer);
     assert!(matches!(&failure.class, ErrorClass::RateLimit(_)));
     assert_eq!(
-        Json::Object(failure.local_vars.clone()),
+        Json::Object(failure.local_vars.as_ref().clone()),
         json(
             r#"{"eval_id":"eval-1","limit":null,"after":null,"before":null,"order":null,"extra_headers":null,"extra_query":null,"timeout":null,"custom_llm_provider":null,"kwargs":{"alist_runs":true}}"#
         )

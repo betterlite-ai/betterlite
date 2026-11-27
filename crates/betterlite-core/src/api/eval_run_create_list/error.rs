@@ -54,14 +54,14 @@ pub enum EvalRunCallError {
     Transport(#[from] EvalHttpError),
 }
 
-// what LiteLLM's exception_type(...) answers for one call, with the local_vars it was given
+// what LiteLLM's exception_type(...) answers for one call, with the local_vars it was given, boxed to keep the error under result_large_err's 128-byte limit
 #[derive(Debug, Error)]
 #[error("{error}")]
 pub struct EvalRunFailure {
     #[source]
     pub error: EvalRunCallError,
     pub class: ErrorClass,
-    pub local_vars: IndexMap<String, Json>,
+    pub local_vars: Box<IndexMap<String, Json>>,
 }
 
 impl EvalRunFailure {
@@ -77,7 +77,7 @@ impl EvalRunFailure {
         Self {
             error,
             class,
-            local_vars,
+            local_vars: Box::new(local_vars),
         }
     }
 }

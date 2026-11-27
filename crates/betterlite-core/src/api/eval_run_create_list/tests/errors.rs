@@ -241,7 +241,7 @@ fn create_local_vars_hold_every_argument() {
 
     let failure = error(answer);
     assert_eq!(
-        Json::Object(failure.local_vars.clone()),
+        Json::Object(failure.local_vars.as_ref().clone()),
         json(
             r#"{"eval_id":"eval-1","data_source":{"type":"jsonl"},"name":"nightly","metadata":{"team":"evals"},"extra_headers":{"X-Extra":"1"},"extra_query":{"q":"x"},"extra_body":{"name":"nightly"},"timeout":30.0,"custom_llm_provider":"openai","kwargs":{"api_key":"sk-test"}}"#
         )
@@ -274,7 +274,7 @@ fn list_local_vars_hold_every_argument() {
 
     let failure = error(answer);
     assert_eq!(
-        Json::Object(failure.local_vars.clone()),
+        Json::Object(failure.local_vars.as_ref().clone()),
         json(
             r#"{"eval_id":"eval-1","limit":10,"after":"run-0","before":"run-9","order":"desc","extra_headers":{"X-Extra":"1"},"extra_query":{"q":"x"},"timeout":1.5,"custom_llm_provider":"openai","kwargs":{"api_key":"sk-test"}}"#
         )
