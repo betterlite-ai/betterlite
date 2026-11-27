@@ -1,0 +1,10 @@
+kind: helper
+name: user-activity-scope-self-seed
+call:
+  b10158:
+    calls:
+      - {user_id: null, caller: {user_id: test-user-1, user_role: internal_user}}
+      - {user_id: "", caller: {user_id: "", user_role: org_admin}}
+      - {user_id: test-user-1, caller: {user_id: test-user-1, user_role: customer}}
+env: {}
+compare: {ignore: []}
