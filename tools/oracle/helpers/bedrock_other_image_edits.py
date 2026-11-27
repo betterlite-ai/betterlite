@@ -252,7 +252,7 @@ def result_answer(probe: Probe) -> JsonValue:
     logging = Recorder()
     try:
         _, response = perform(probe, logging)
-    except (BedrockError, Timeout) as error:
+    except (BedrockError, Timeout) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356
         return {
             "ok": False,
             "status": error.status_code,
@@ -272,7 +272,7 @@ def error_answer(probe: Probe) -> JsonValue:
     logging = Recorder()
     try:
         perform(probe, logging)
-    except (BedrockError, Timeout) as error:
+    except (BedrockError, Timeout) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356
         status: int | None = error.status_code
     except (httpx.HTTPError, TypeError, ValueError):
         status = None
