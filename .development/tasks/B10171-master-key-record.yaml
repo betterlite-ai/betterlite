@@ -1,0 +1,267 @@
+id: B10171
+title: The master key's rights come from LiteLLM's master key record, not from the subject
+description: >-
+  About 28 route modules in betterlite-server decide that the caller is the master key by comparing principal.subject with "master_key", each with its own MASTER_KEY_SUBJECT constant (organization_create/caller.rs makes its copy pub, and auto_router_read_api and spend/reports import it). The key stage sets the subject from the key's user_id, then key_alias, then the hashed token (B870's principal_from_key, which B10165 puts on the fallback path), so a virtual key whose user_id or key_alias is "master_key" gets every master right at those sites: proxy-admin writes, the admin view, the master's api_key alias in spend reports and the auto-router session list, and default_user_id as its identity. No booted request authenticates with a virtual key yet (state/auth_key_lookup.rs leaves the authenticator None), so nobody reaches it today, but a composition root that installs one would open it.
+
+
+  LiteLLM never asks "is this the master key" at these sites. user_api_key_auth compares the master key once (user_api_key_auth.py L2074-L2085) and answers with a UserAPIKeyAuth whose api_key is LITELLM_PROXY_MASTER_KEY_ALIAS "litellm_proxy_master_key", user_role PROXY_ADMIN, user_id litellm_proxy_admin_name and via_virtual_key True (L2085-L2116). Then it projects that record into the request principal the way it projects any key (L3518-L3527 and _resolve_request_principal L3224-L3245). Every site below reads user_role, the admin view, user_id or api_key off that record, so the master key passes as a proxy admin, and a virtual key passes only with a proxy admin role of its own. Once the Rust master principal carries the same record, every site can read it the same way and the Rust behavior matches LiteLLM's, so there is no deviations row.
+
+
+  The one master check is the comparison in master_key_context (crates/betterlite-server/src/auth/auth_key_lookup.rs, where B10165 moves it), and only master_key_context builds the master's record. It hashes the presented key with betterlite_models::key_digest::hashing::hash_token and calls B10115's betterlite_auth::master_key_admin::master_key_admin_auth(&digest, Some(master_key), DEFAULT_USER_ID), with betterlite_db::model_secrets::DEFAULT_USER_ID. That function compares the digests in constant time and builds exactly LiteLLM's record; LiteLLM's bridge_token_flow.py L212-L234 builds the same one for MCP. No presented key, an empty one or a wrong one gives Ok(None), as today. The principal is that record through B870's principal_from_key with the projection _resolve_request_principal gives it: auth_method ApiKey, issuer None, subject_fallback Some(MASTER_KEY_ALIAS), scopes empty, credential_ref Some(CredentialRef { key_id: None, token_id: Some(MASTER_KEY_ALIAS.to_owned()) }) and network None. So it carries user default_user_id, roles [Role::PlatformAdmin], principal_type Human and the record as source_key. MASTER_KEY_ALIAS in crates/betterlite-auth/src/master_key_admin.rs becomes pub for this, and betterlite-core's request_metadata_safety/identity.rs uses it instead of its own LITELLM_PROXY_MASTER_KEY_ALIAS copy.
+
+
+  One field stays apart from LiteLLM's projection: the subject is set back to "master_key" with struct update syntax, `Principal { subject: "master_key".to_owned(), ..principal_from_key(..) }`. About twenty auth stage tests on main and five running tasks (B742, B750, B753, B880, B881) assert that subject to show the master key went through a stage, and after this task no code grants anything on it. The subject is not on any response.
+
+
+  master_key_admin_auth returns a Result, because UserAPIKeyAuth::construct does, so master_key_context returns Result<Option<AuthContext>, StageFailure>. An Err becomes StageFailure::KeyLookup carrying as_proxy_exception(&AuthFailure::Other { message: error.to_string(), param: None }).exception(), the 401 "Authentication Error, <error>" that LiteLLM's handler gives an exception raised in this branch (user_api_key_auth.py L2199-L2208, auth_exception_handler.py L77-L82). master_key_stage in auth_identity.rs then returns Result<AuthContext, StageFailure> and its call site drops the map_err. The key lookup prefetch and B870's identity-store prefetch in crates/betterlite-server/src/auth/identity_store.rs apply ? to it.
+
+
+  The role sites drop their subject clause, and what is left is LiteLLM's PROXY_ADMIN check, `principal.roles.contains(&Role::PlatformAdmin)` or the module's role list, written where it is used. They are api/agents/collection_routes/guards.rs is_proxy_admin (agents_endpoints.py L34-L38), which invitation_routes/invitations.rs role_text, invitations/create.rs and invitations/delete.rs also call; api/claude_plugin_write/access.rs require_admin (claude_code_marketplace.py L270, through resource_ownership.py is_proxy_admin); cache_settings_test/route.rs and cache_settings_update/route.rs is_proxy_admin (route_checks.py L260-L365, the admin-only route check that refuses a non-admin key for /cache/settings); guardrails/admin_mutations.rs (guardrail_endpoints.py L393, L503, L596, L1016, L1096 and L1186); guardrails/custom_code_test/route.rs (guardrail_endpoints.py L2120); routes/prompts/write/state.rs (prompt_endpoints.py L631-L632, L728-L729, L839-L840 and L925-L926); roi_settings/auth.rs (roi_calculator_endpoints.py L87-L104); management/gateway_request_activity/auth.rs (gateway_request_endpoints.py L109-L116); tracing_routes/access.rs TraceAuth::from_principal (tracing_endpoints.py L58-L70 and L164); and spend/totals/access.rs classify (spend_management_endpoints.py L3878-L3882, which scopes internal users only). api/claude_plugin_read/access.rs admin_principal pushes PlatformAdmin for the master and goes; caller passes the principal unchanged (skill_visibility, claude_code_skill_access.py L62-L65).
+
+
+  The admin-view sites hold eight copies of LiteLLM's user_api_key_has_admin_view over a principal (_types.py L3554): the key record's admin view, or the PlatformAdmin or PlatformViewer role. They become one `pub fn caller_has_admin_view(principal: &Principal) -> bool` in crates/betterlite-server/src/management_guards/caller.rs, beside caller_user_id_for_non_admin. guardrails/admin_reads/caller.rs (guardrail_endpoints.py L231), guardrails/submissions/teams.rs (L904 and L983), invitation_routes/invitations/info.rs (proxy_server.py L17805), reload_routes/caller.rs (L19507 and L19559), root_routes.rs (L19882), routes/prompts/read/access.rs (prompt_endpoints.py L292 and L364), search_tool_routes/list.rs sees_every_tool (search_tool_management.py L110-L113) and usage_ai_chat_route/caller.rs (usage_endpoints/endpoints.py L56) call it and delete their own.
+
+
+  The key-record sites delete their master branch, because the master's record now answers what the branch hard-coded. auto_router_read_api/access.rs caller_api_key reads api_key (auto_router_endpoints.py L935). spend/reports/caller.rs ReportCaller reads the logged api_key, team and org (spend_management_endpoints.py L1846-L1870 and L1931-L1935). invitation_routes/queue/request.rs key_view reads api_key and user_id (proxy_server.py L16800-L16816). organization_create/caller.rs OrgCaller reads user_id, user_role, models and the admin view (organization_endpoints.py L275, L449, L502-L503 and L534-L535). plugin_routes/routes.rs caller_identity reads user_id and user_role (plugin_routes.py L240-L241, L267 and L299-L304). The creator and updater ids come from principal.user in api/claude_plugin_write/access.rs creator_id (claude_code_marketplace.py L360), invitation_routes/invitations/update.rs (proxy_server.py L17854-L17868) and routes/prompts/write/state.rs (prompt_endpoints.py L663, L778 and L984-L985). Their default_user_id copies (MASTER_KEY_USER_ID, DEFAULT_ADMIN_USER_ID) and MASTER_KEY_ALIAS copies go with the branches. organization_create/creation.rs keeps LiteLLM's `user_id or litellm_proxy_admin_name` fallback (organization_endpoints.py L502) with DEFAULT_USER_ID.
+
+
+  Modules that reach the master key through these helpers follow without a code change: TraceAuth serves endpoints/passthrough_config_reads, roi_connections, workflow_runs and workflow_events; caller_identity serves health_access_and_connections, spend/tag_reports, agent_endpoints, routes/auto_router_read_api and guardrails/admin_reads team_ids; OrgCaller serves spend reports, lens_access and others. The record also reaches every other source_key reader, as it does in LiteLLM: virtual_key_routes reads allowed_routes unset and lets the request through, auth_model_grants returns before any check (no agent_caller, no agent_id), and compliance_checks, health_services key alerts, lens_access, file_credentials and vector_management_read see a proxy admin key.
+
+
+  Tests. crates/betterlite-server/src/auth/auth_key_lookup/tests.rs gains `pub(crate) fn master_caller() -> AuthContext`, the context master_key_context returns for a fixed test key, beside B10165's caller_through_key_stage. Every route-test fixture that builds a master by subject switches to master_caller(): caller("master_key", ..), principal("master_key", ..), context("master_key", ..), a JSON principal with "subject":"master_key", a principal whose subject is set to "master_key", and routes/prompts/read/tests/support.rs, which imports MASTER_KEY_SUBJECT. Every test that showed the subject alone makes an admin (the_master_key_subject_is_an_admin_without_a_role, master_key_subject_is_an_admin, access_master_key_is_a_proxy_admin, the master_key rstest cases in roi_settings, root_routes and workflow_runs, and the rest the module suites turn up) becomes a test that a key whose user_id is "master_key" is not one, with a master_caller() case beside it. B10165's tests that call master_key_context directly take its Result.
+
+
+  The new tests build the spoofing key with caller_through_key_stage(r#"{"user_id":"master_key"}"#) and the aliased one with caller_through_key_stage(r#"{"key_alias":"master_key"}"#), never a hand-written Principal. In auth::auth_key_lookup::tests, master_key_context_carries_the_master_key_record: for the configured key the context has subject "master_key", user id "default_user_id", roles exactly [Role::PlatformAdmin], credential_ref token_id "litellm_proxy_master_key" and key_id None, and a source_key whose serde form has api_key "litellm_proxy_master_key", user_id "default_user_id" and user_role "proxy_admin"; another key and an empty key give Ok(None). The role sites: tracing_routes::tests::access::a_key_whose_user_or_alias_is_master_key_is_not_an_admin (TraceAuth role Other for both spoofing keys, Admin for master_caller()) and spend::totals::tests::routes::logs_scope_a_key_whose_user_is_master_key_to_that_user (that key with user_role "internal_user" on /global/spend/logs: the store call is user_daily_spend for master_key, not the global one). The admin-view sites: root_routes::tests::a_key_whose_user_is_master_key_gets_the_admin_view_error (GET /adaptive_router/state answers the admin-view 403) and usage_ai_chat_route::tests::caller_treats_a_key_whose_user_is_master_key_as_a_non_admin (200, the source sees user id Some("master_key") and the model gets the one non-admin tool). The key-record sites: auto_router_read_api::tests::caller_api_key_ignores_a_key_whose_user_is_master_key (caller_api_key is not Some("litellm_proxy_master_key") for the spoofing key and is for master_caller()) and organization_create::tests::access::org_caller_of_a_key_whose_user_is_master_key_is_not_an_admin (OrgCaller user_id Some("master_key"), user_role None, admin_view false; master_caller() gives default_user_id, ProxyAdmin and true).
+
+
+  There are no HTTP oracle cases. The booted proxy installs no KeyAuthenticator, so no booted request authenticates with a virtual key, and the master key's booted answers on composed routes don't change.
+scope:
+  paths:
+    - crates/betterlite-auth/src/master_key_admin.rs
+    - crates/betterlite-core/src/api/request_metadata_safety/identity.rs
+    - crates/betterlite-server/src/auth/auth_key_lookup.rs
+    - crates/betterlite-server/src/auth/auth_key_lookup/tests.rs
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/identity_store.rs
+    - crates/betterlite-server/src/management_guards/caller.rs
+    - crates/betterlite-server/src/api/agents/collection_routes/guards.rs
+    - crates/betterlite-server/src/api/claude_plugin_read/access.rs
+    - crates/betterlite-server/src/api/claude_plugin_write/access.rs
+    - crates/betterlite-server/src/auto_router_read_api/access.rs
+    - crates/betterlite-server/src/cache_settings_test/route.rs
+    - crates/betterlite-server/src/cache_settings_update/route.rs
+    - crates/betterlite-server/src/guardrails/admin_mutations.rs
+    - crates/betterlite-server/src/guardrails/admin_reads/caller.rs
+    - crates/betterlite-server/src/guardrails/custom_code_test/route.rs
+    - crates/betterlite-server/src/guardrails/submissions/teams.rs
+    - crates/betterlite-server/src/invitation_routes/invitations.rs
+    - crates/betterlite-server/src/invitation_routes/invitations/create.rs
+    - crates/betterlite-server/src/invitation_routes/invitations/delete.rs
+    - crates/betterlite-server/src/invitation_routes/invitations/info.rs
+    - crates/betterlite-server/src/invitation_routes/invitations/update.rs
+    - crates/betterlite-server/src/invitation_routes/queue/request.rs
+    - crates/betterlite-server/src/management/gateway_request_activity/auth.rs
+    - crates/betterlite-server/src/organization_create/caller.rs
+    - crates/betterlite-server/src/organization_create/creation.rs
+    - crates/betterlite-server/src/plugin_routes/routes.rs
+    - crates/betterlite-server/src/reload_routes/caller.rs
+    - crates/betterlite-server/src/roi_settings/auth.rs
+    - crates/betterlite-server/src/root_routes.rs
+    - crates/betterlite-server/src/routes/prompts/read.rs
+    - crates/betterlite-server/src/routes/prompts/read/access.rs
+    - crates/betterlite-server/src/routes/prompts/write/state.rs
+    - crates/betterlite-server/src/search_tool_routes/list.rs
+    - crates/betterlite-server/src/spend/reports/caller.rs
+    - crates/betterlite-server/src/spend/totals/access.rs
+    - crates/betterlite-server/src/tracing_routes/access.rs
+    - crates/betterlite-server/src/usage_ai_chat_route/caller.rs
+    - crates/betterlite-server/src/management_admins/tests.rs
+    - crates/betterlite-server/src/credentials/tests/create.rs
+    - crates/betterlite-server/src/agent_endpoints/**/tests.rs
+    - crates/betterlite-server/src/agent_endpoints/**/tests/**
+    - crates/betterlite-server/src/api/agents/collection_routes/tests.rs
+    - crates/betterlite-server/src/api/agents/collection_routes/tests/**
+    - crates/betterlite-server/src/api/claude_plugin_read/tests.rs
+    - crates/betterlite-server/src/api/claude_plugin_write/tests.rs
+    - crates/betterlite-server/src/auto_router_read_api/tests.rs
+    - crates/betterlite-server/src/auto_router_read_api/tests/**
+    - crates/betterlite-server/src/cache_settings_read/**/tests.rs
+    - crates/betterlite-server/src/cache_settings_read/**/tests/**
+    - crates/betterlite-server/src/cache_settings_test/tests.rs
+    - crates/betterlite-server/src/cache_settings_test/tests/**
+    - crates/betterlite-server/src/cache_settings_update/tests.rs
+    - crates/betterlite-server/src/cache_settings_update/tests/**
+    - crates/betterlite-server/src/endpoints/passthrough_config_reads/tests.rs
+    - crates/betterlite-server/src/endpoints/passthrough_config_reads/tests/**
+    - crates/betterlite-server/src/guardrails/admin_mutations/tests.rs
+    - crates/betterlite-server/src/guardrails/admin_mutations/tests/**
+    - crates/betterlite-server/src/guardrails/admin_reads/tests.rs
+    - crates/betterlite-server/src/guardrails/admin_reads/tests/**
+    - crates/betterlite-server/src/guardrails/custom_code_test/tests.rs
+    - crates/betterlite-server/src/guardrails/submissions/tests.rs
+    - crates/betterlite-server/src/guardrails/submissions/tests/**
+    - crates/betterlite-server/src/health_access_and_connections/tests.rs
+    - crates/betterlite-server/src/health_access_and_connections/tests/**
+    - crates/betterlite-server/src/health_services/tests.rs
+    - crates/betterlite-server/src/health_services/tests/**
+    - crates/betterlite-server/src/invitation_routes/**/tests.rs
+    - crates/betterlite-server/src/invitation_routes/**/tests/**
+    - crates/betterlite-server/src/management/gateway_request_activity/tests.rs
+    - crates/betterlite-server/src/organization_create/tests.rs
+    - crates/betterlite-server/src/organization_create/tests/**
+    - crates/betterlite-server/src/plugin_routes/tests.rs
+    - crates/betterlite-server/src/plugin_routes/tests/**
+    - crates/betterlite-server/src/reload_routes/tests.rs
+    - crates/betterlite-server/src/reload_routes/tests/**
+    - crates/betterlite-server/src/roi_connections/tests.rs
+    - crates/betterlite-server/src/roi_connections/tests/**
+    - crates/betterlite-server/src/roi_settings/tests.rs
+    - crates/betterlite-server/src/roi_settings/tests/**
+    - crates/betterlite-server/src/root_routes/tests.rs
+    - crates/betterlite-server/src/routes/auto_router_read_api/tests.rs
+    - crates/betterlite-server/src/routes/prompts/**/tests.rs
+    - crates/betterlite-server/src/routes/prompts/**/tests/**
+    - crates/betterlite-server/src/search_tool_routes/tests.rs
+    - crates/betterlite-server/src/search_tool_routes/tests/**
+    - crates/betterlite-server/src/spend/**/tests.rs
+    - crates/betterlite-server/src/spend/**/tests/**
+    - crates/betterlite-server/src/tracing_routes/tests.rs
+    - crates/betterlite-server/src/tracing_routes/tests/**
+    - crates/betterlite-server/src/usage_ai_chat_route/tests.rs
+    - crates/betterlite-server/src/usage_ai_chat_route/tests/**
+    - crates/betterlite-server/src/workflow_events/tests.rs
+    - crates/betterlite-server/src/workflow_events/tests/**
+    - crates/betterlite-server/src/workflow_runs/tests.rs
+    - crates/betterlite-server/src/workflow_runs/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2074-L2116
+    why: The one master key comparison and the record it answers with, api_key alias, PROXY_ADMIN, litellm_proxy_admin_name and via_virtual_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3518-L3527
+    why: The builder's result, the master key's record included, is projected into request.state.principal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3224-L3245
+    why: _resolve_request_principal, the projection with the token as subject fallback and credential_ref token_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L82
+    why: _as_proxy_exception, the 401 "Authentication Error, " answer for an exception in the auth builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3554
+    why: user_api_key_has_admin_view, the admin-view predicate the admin-view sites copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L34-L38
+    why: The agent routes' proxy admin check reads user_role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L270-L360
+    why: Plugin registration checks is_proxy_admin and records created_by from user_api_key_dict.user_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py#L62-L65
+    why: Plugin reads decide visibility with is_proxy_admin on the key record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L260-L365
+    why: The admin-only route check behind the cache settings routes reads user_role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L231
+    why: Guardrail reads use the admin view; the writes check PROXY_ADMIN at L393, L503, L596, L1016, L1096, L1186 and L2120, and submissions at L726, L904 and L983.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L631-L663
+    why: Prompt writes check PROXY_ADMIN (also L728, L839, L925) and record created_by from user_id (also L778, L984); reads use the admin view at L292 and L364.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L87-L104
+    why: ROI settings read and write admin checks on user_role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/gateway_request_endpoints.py#L109-L116
+    why: Gateway request activity admits PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L58-L70
+    why: Trace access matches on user_role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3878-L3882
+    why: Global spend scopes internal users only; everyone else, the master key included, sees the global answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1846-L1935
+    why: Spend reports clamp non-admins to get_logged_api_key(user_api_key_dict), the alias for the master key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17805
+    why: Invitation info checks the admin view; update reads user_id at L17854-L17868 and the queue reads it at L16800-L16816.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19882
+    why: The adaptive router state checks the admin view; the reload routes check PROXY_ADMIN at L19351 and the admin view at L19507 and L19559.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L110-L113
+    why: Search tool listing shows every tool to PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L56
+    why: /usage/ai/chat checks the admin view.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L935
+    why: The auto-router session reads filter by user_api_key_dict.api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L449-L535
+    why: Organization create checks user_role and records user_id or litellm_proxy_admin_name; the admin view is read at L275.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L240-L304
+    why: Plugin routes read user_id and user_role off user_api_key_dict and admit proxy_admin at L267.
+dod:
+  - text: >-
+      master_key_context builds LiteLLM's master key record with master_key_admin_auth and projects it with
+      principal_from_key: user default_user_id, roles PlatformAdmin, credential_ref token_id the alias, the record as
+      source_key and subject "master_key". Another key or an empty one gives no context.
+    proof: [master-record]
+  - text: >-
+      At the role sites a virtual key whose user_id or key_alias is "master_key" is not a proxy admin, and the master
+      key still is.
+    proof: [spoof-role-sites]
+  - text: At the admin-view sites a virtual key whose user_id is "master_key" has no admin view.
+    proof: [spoof-admin-view]
+  - text: >-
+      At the key-record sites a virtual key whose user_id is "master_key" reads as itself, not as the master key's
+      alias, admin user or role.
+    proof: [spoof-key-record]
+  - text: >-
+      No MASTER_KEY_SUBJECT, subject comparison with "master_key", default_user_id copy or second master key alias
+      constant is left in the crates.
+    proof: [no-master-subject]
+  - text: The auth stages and every route suite that serves the master key still pass with master_caller().
+    proof: [module-tests]
+checks:
+  optional: []
+  commands:
+    - id: master-record
+      why: The master principal still lacks LiteLLM's key record, or another key authenticates as the master key.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^auth::auth_key_lookup::tests::master_key_context_carries_the_master_key_record$/)'
+    - id: spoof-role-sites
+      why: A key named master_key by its user id or alias still passes a proxy admin check.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^(tracing_routes::tests::access::a_key_whose_user_or_alias_is_master_key_is_not_an_admin|spend::totals::tests::routes::logs_scope_a_key_whose_user_is_master_key_to_that_user)$/)'
+    - id: spoof-admin-view
+      why: A key whose user id is master_key still gets the admin view.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^(root_routes::tests::a_key_whose_user_is_master_key_gets_the_admin_view_error|usage_ai_chat_route::tests::caller_treats_a_key_whose_user_is_master_key_as_a_non_admin)$/)'
+    - id: spoof-key-record
+      why: A key whose user id is master_key still reads as the master key's alias, admin user or role.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^(auto_router_read_api::tests::caller_api_key_ignores_a_key_whose_user_is_master_key|organization_create::tests::access::org_caller_of_a_key_whose_user_is_master_key_is_not_an_admin)$/)'
+    - id: no-master-subject
+      why: A master key subject constant, subject comparison, default_user_id copy or second alias constant is still in the code.
+      run: >-
+        test -z "$(git grep -l -E 'MASTER_KEY_SUBJECT|MASTER_KEY_USER_ID|DEFAULT_ADMIN_USER_ID|LITELLM_PROXY_MASTER_KEY_ALIAS' -- crates)"
+        && test -z "$(git grep -l -F 'subject == "master_key"' -- crates)"
+        && test -z "$(git grep -l -F '"litellm_proxy_master_key"' -- 'crates/betterlite-server/src/*.rs' 'crates/betterlite-core/src/*.rs' ':!**/tests.rs' ':!**/tests/**')"
+        && test "$(git grep -l -E 'const MASTER_KEY_ALIAS' -- crates)" = crates/betterlite-auth/src/master_key_admin.rs
+    - id: module-tests
+      why: The master key record or a removed branch broke an auth stage or a route suite that serves the master key.
+      run: >-
+        cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^master_key_admin::/)'
+        && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_metadata_safety::/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^(auth::|management_guards::|management_admins::|credentials::|agent_endpoints::|api::|auto_router_read_api::|cache_settings_read::|cache_settings_test::|cache_settings_update::|endpoints::passthrough_config_reads::|guardrails::|health_access_and_connections::|health_services::|invitation_routes::|management::|organization_create::|plugin_routes::|reload_routes::|roi_connections::|roi_settings::|root_routes::|routes::|search_tool_routes::|spend::|tracing_routes::|usage_ai_chat_route::|workflow_events::|workflow_runs::|compliance_checks::|lens_access::)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "LiteLLM's end-user parameters spread into the master record (user_api_key_auth.py L2096) and the master-only route list (L2119-L2120): the end-user stages and B2326, which ports the whole master branch for B052."
+  - "A configured admin name in place of DEFAULT_USER_ID: master_key_context passes DEFAULT_USER_ID, as B10165 does; B8621 reads the setting for the MCP paths."
+  - "betterlite-core's managed_resource_access has_admin_view and managed_resource_store is_proxy_admin, which read roles only and never compared the subject; the master key passes them since B10165."
+  - "The auth stage tests that assert subject \"master_key\"; the subject stays."
+  - "The alias inside LiteLLM's own lists, betterlite-guardrails straiker/v3.rs PLACEHOLDER_IDENTITIES and betterlite-logging spend_metadata/redaction.rs NON_SECRET_KEY_ALIASES: they port LiteLLM's lists, check no caller, and their crates don't depend on betterlite-auth."
+  - "The `user_id or litellm_proxy_admin_name` fallbacks with their own constant, cache_settings_update/audit.rs DEFAULT_USER_ID and invitation_routes/store.rs PROXY_ADMIN_NAME: they never check the master key."
+  - "HTTP oracle cases, for the reason in the description."
+pitfalls:
+  - "Don't add a master marker of any kind (an AuthMethod variant, a credential_ref sentinel, a flag on Principal): LiteLLM's marker is the record, and a second marker is one more thing a key could forge."
+  - "Set the subject back to \"master_key\" only through struct update after principal_from_key, and compare it nowhere."
+  - "Hash with hash_token, not safe_hash_api_key: master_key_admin_auth compares against hash_token of the master key, the plain SHA-256 of any text, and a master key need not start with sk-."
+  - "An Err from master_key_admin_auth is a StageFailure, never Ok(None) and never a pass."
+  - "Once the subject clause goes, the is_proxy_admin bodies in guards.rs, cache_settings_test, cache_settings_update and custom_code_test are one line, so the no-one-line-functions rule puts the role check at each caller (guards.rs, invitations.rs role_text, invitations/create.rs, invitations/delete.rs and the three routes). Move the rstest for guards' is_proxy_admin to a caller's behavior."
+  - "caller_has_admin_view spreads over several lines after rustfmt, so it stays a function; its eight old copies all go."
+  - "A hand-built \"master\" fixture stops being an admin. Switch it to master_caller(); don't add roles or a source key by hand to keep it passing."
+  - "spend/reports: the master branch gave api_key \"litellm_proxy_master_key\", team None and org None; check that logged_api_key over the record (api_key the alias, is_session_token false, key_alias None) gives the same."
+  - "invitation_routes/queue/request.rs's master KeyView carried token None; the record's token is the alias, as in LiteLLM, so compare the queued call's key fields with LiteLLM's L16800-L16816 rather than with the old branch."
+  - "B10165 added master_key_context calls in management_admins/tests.rs and credentials/tests/create.rs; they take the Result now."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
