@@ -209,9 +209,7 @@ pub(crate) fn dispatch(
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
-        StageInput::AuthRequestModels(stage) => resolve(stage)
-            .map(|_| stage.context.clone())
-            .map_err(|error| request_model_failure(&error)),
+        StageInput::AuthRequestModels(stage) => request_model_context(stage),
         StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
@@ -224,8 +222,15 @@ pub(crate) fn dispatch(
     }
 }
 
+fn request_model_context(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
+    match resolve(stage) {
+        Ok(_) => Ok(stage.context.clone()),
+        Err(error) => Err(request_model_failure(&error)),
+    }
+}
+
 fn ensure_backend_matches(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
-    let exempt = backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
+    let exempt = backend == MasterKey && matches!(input, Authenticated(_));
     if backend == input.backend() || exempt {
         return Ok(());
     }
