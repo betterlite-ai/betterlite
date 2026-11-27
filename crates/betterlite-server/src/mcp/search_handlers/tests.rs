@@ -191,9 +191,8 @@ impl SearchPorts for Fake {
 
     async fn search_agents(
         &self,
-        query: &str,
+        request: AgentSearchRequest<'_>,
         agents: &[AccessibleAgent],
-        top_k: i64,
         embedding_model: Option<&str>,
         _caller: &CallerScope,
     ) -> Result<AgentSearchOutcome, SearchPortError> {
@@ -204,7 +203,7 @@ impl SearchPorts for Fake {
         let mut seen = self.seen.lock().unwrap();
         seen.agents = names;
         seen.agent_searches
-            .push(search_call(query, top_k, embedding_model));
+            .push(search_call(request.query, request.top_k, embedding_model));
         Ok(self.agent_outcome.clone())
     }
 
@@ -217,9 +216,8 @@ impl SearchPorts for Fake {
 
     async fn search_skills(
         &self,
-        query: &str,
+        request: SkillSearchRequest<'_>,
         skills: &[AccessibleSkill],
-        top_k: i64,
         embedding_model: Option<&str>,
         _caller: &CallerScope,
     ) -> Result<SkillSearchOutcome, SearchPortError> {
@@ -228,7 +226,7 @@ impl SearchPorts for Fake {
                 detail: detail.clone(),
             });
         }
-        self.record_skill_search(query, skills, top_k, embedding_model);
+        self.record_skill_search(request.query, skills, request.top_k, embedding_model);
         Ok(self.skill_outcome.clone())
     }
 }
@@ -318,11 +316,11 @@ fn caller() -> CallerScope {
     caller_scope
 }
 
-fn context<'a>(
-    fake: &'a Fake,
-    caller: &'a CallerScope,
-    scope: &'a McpRequestScope,
-) -> HandlerContext<'a> {
+fn context<'handler>(
+    fake: &'handler Fake,
+    caller: &'handler CallerScope,
+    scope: &'handler McpRequestScope,
+) -> HandlerContext<'handler> {
     HandlerContext {
         caller,
         scope,
@@ -631,7 +629,7 @@ async fn mcp_tool_search_ranks_semantically_when_configured() {
 
 #[tokio::test]
 async fn proxy_tool_search_returns_opaque_ids() {
-    let tools: Vec<MCPTool> = (0..6)
+    let tools: Vec<MCPTool> = (0..6_usize)
         .map(|index| tool(&format!("tool-{index}"), "matches", "{}", "srv"))
         .collect();
     let mut fake = Fake::default();

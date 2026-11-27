@@ -14,8 +14,8 @@ use crate::mcp::hook_payloads::GuardrailContext;
 use crate::mcp::tool_search::settings::{MCPToolSearchSettings, MCPToolSearchSettingsError};
 
 use super::types::{
-    AccessibleAgent, AccessibleSkill, AgentSearchOutcome, CallerScope, McpRequestScope,
-    SkillSearchOutcome,
+    AccessibleAgent, AccessibleSkill, AgentSearchOutcome, AgentSearchRequest, CallerScope,
+    McpRequestScope, SkillSearchOutcome, SkillSearchRequest,
 };
 
 #[derive(Debug, Error)]
@@ -29,15 +29,15 @@ pub struct McpDenial {
     pub detail: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ToolExecution<'a> {
-    pub scope: &'a McpRequestScope,
-    pub caller: &'a CallerScope,
-    pub tool_name: &'a str,
-    pub arguments: &'a BTreeMap<String, JsonValue>,
-    pub allowed_servers: &'a [String],
-    pub requested_server_id: Option<&'a str>,
-    pub guardrail_context: Option<&'a GuardrailContext>,
+#[derive(Clone, Debug)]
+pub struct ToolExecution<'call> {
+    pub scope: &'call McpRequestScope,
+    pub caller: &'call CallerScope,
+    pub tool_name: &'call str,
+    pub arguments: &'call BTreeMap<String, JsonValue>,
+    pub allowed_servers: &'call [String],
+    pub requested_server_id: Option<&'call str>,
+    pub guardrail_context: Option<&'call GuardrailContext>,
 }
 
 // the agent, skill and RBAC layers a handler calls; every method is another task's implementation
@@ -56,9 +56,8 @@ pub trait SearchPorts: Send + Sync {
 
     async fn search_agents(
         &self,
-        query: &str,
+        request: AgentSearchRequest<'_>,
         agents: &[AccessibleAgent],
-        top_k: i64,
         embedding_model: Option<&str>,
         caller: &CallerScope,
     ) -> Result<AgentSearchOutcome, SearchPortError>;
@@ -70,9 +69,8 @@ pub trait SearchPorts: Send + Sync {
 
     async fn search_skills(
         &self,
-        query: &str,
+        request: SkillSearchRequest<'_>,
         skills: &[AccessibleSkill],
-        top_k: i64,
         embedding_model: Option<&str>,
         caller: &CallerScope,
     ) -> Result<SkillSearchOutcome, SearchPortError>;

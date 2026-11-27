@@ -40,7 +40,8 @@ impl SearchHandlerError {
             Self::Feature(error) => error.to_string(),
             Self::Http { detail, .. } => detail.clone(),
             Self::Port(error) => error.detail.clone(),
-            Self::Identity(error) | Self::Serialize(error) => error.to_string(),
+            Self::Identity(error) => error.to_string(),
+            Self::Serialize(error) => error.to_string(),
         }
     }
 }

@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
-use std::ops::DerefMut as _;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::client::tools::result::CallToolResult;
 use serde::Serialize;
 
 use super::error::SearchHandlerError;
-use super::types::{HandlerContext, SearchOutcome, json_string};
-use super::{_text_tool_result, EMBEDDING_WITHOUT_ROUTER};
+use super::types::{AgentSearchRequest, HandlerContext, SearchOutcome, json_string};
+use super::{EMBEDDING_WITHOUT_ROUTER, text_tool_result};
 use crate::mcp::catalog_guard::types::MCPTool;
 use crate::mcp::tool_search::identity::{MCPProxyToolIdentityError, proxy_search_result};
 use crate::mcp::tool_search::settings::MCPToolSearchSettings;
@@ -22,23 +21,21 @@ pub(super) async fn ranked_hits(
     settings: &MCPToolSearchSettings,
     context: &HandlerContext<'_>,
 ) -> Result<Vec<MCPToolSearchHit>, SearchError> {
-    let router = settings
+    let Some((embedding_model, router)) = settings
         .embedding_model
         .as_deref()
-        .zip(context.settings.llm_router());
+        .zip(context.settings.llm_router())
+    else {
+        return rank_mcp_tools(query, tools, top_k, settings, None).await;
+    };
+    let embedder = router.embedder(embedding_model);
     let mut guard = context.settings.mcp_search_index().lock().await;
-    match router {
-        Some((embedding_model, router)) => {
-            let embedder = router.embedder(embedding_model);
-            let mut ranker = SemanticToolRanker {
-                embed: embedder.as_ref(),
-                embedding_model,
-                index: guard.deref_mut(),
-            };
-            rank_mcp_tools(query, tools, top_k, settings, Some(&mut ranker)).await
-        }
-        None => rank_mcp_tools(query, tools, top_k, settings, None).await,
-    }
+    let mut ranker = SemanticToolRanker {
+        embed: embedder.as_ref(),
+        embedding_model,
+        index: &mut *guard,
+    };
+    rank_mcp_tools(query, tools, top_k, settings, Some(&mut ranker)).await
 }
 
 pub(super) fn tool_search_result(hit: MCPToolSearchHit) -> ToolSearchResult {
@@ -59,9 +56,8 @@ pub(super) async fn agent_search_text(
     let outcome = context
         .ports
         .search_agents(
-            query,
+            AgentSearchRequest { query, top_k },
             &agents,
-            top_k,
             context.settings.agent_embedding_model(),
             context.caller,
         )
@@ -69,13 +65,14 @@ pub(super) async fn agent_search_text(
     search_text(outcome)
 }
 
-fn search_text<T: Serialize>(
-    outcome: SearchOutcome<T>,
-) -> Result<CallToolResult, SearchHandlerError> {
+fn search_text<T>(outcome: SearchOutcome<T>) -> Result<CallToolResult, SearchHandlerError>
+where
+    T: Serialize,
+{
     match outcome {
-        SearchOutcome::Hits(hits) => Ok(_text_tool_result(serde_json::to_string(&hits)?, false)),
+        SearchOutcome::Hits(hits) => Ok(text_tool_result(serde_json::to_string(&hits)?, false)),
         SearchOutcome::NotConfigured { reason } | SearchOutcome::EmbeddingFailed { reason } => {
-            Ok(_text_tool_result(reason, true))
+            Ok(text_tool_result(reason, true))
         }
     }
 }
@@ -87,10 +84,10 @@ pub(super) async fn proxy_search(
 ) -> Result<CallToolResult, SearchHandlerError> {
     let settings = match context.settings.mcp_tool_search_settings() {
         Ok(settings) => settings,
-        Err(error) => return Ok(_text_tool_result(error.to_string(), true)),
+        Err(error) => return Ok(text_tool_result(error.to_string(), true)),
     };
     if settings.embedding_model.is_some() && context.settings.llm_router().is_none() {
-        return Ok(_text_tool_result(EMBEDDING_WITHOUT_ROUTER.to_owned(), true));
+        return Ok(text_tool_result(EMBEDDING_WITHOUT_ROUTER.to_owned(), true));
     }
     let query = arguments
         .get("query")
@@ -100,8 +97,8 @@ pub(super) async fn proxy_search(
         Ok(hits) => {
             let results: Result<Vec<_>, MCPProxyToolIdentityError> =
                 hits.iter().map(proxy_search_result).collect();
-            Ok(_text_tool_result(serde_json::to_string(&results?)?, false))
+            Ok(text_tool_result(serde_json::to_string(&results?)?, false))
         }
-        Err(error) => Ok(_text_tool_result(error.to_string(), true)),
+        Err(error) => Ok(text_tool_result(error.to_string(), true)),
     }
 }

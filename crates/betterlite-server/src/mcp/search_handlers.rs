@@ -52,23 +52,26 @@ pub async fn handle_skill_search(
     request: SkillSearchRequest<'_>,
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
+    let top_k = request
+        .top_k
+        .clamp(1, i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX));
     let skills = context.ports.accessible_skills(context.caller).await?;
     match context
         .ports
         .search_skills(
-            request.query,
+            SkillSearchRequest {
+                query: request.query,
+                top_k,
+            },
             &skills,
-            request
-                .top_k
-                .clamp(1, i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX)),
             context.settings.skill_embedding_model(),
             context.caller,
         )
         .await?
     {
-        SearchOutcome::Hits(hits) => Ok(_text_tool_result(serde_json::to_string(&hits)?, false)),
+        SearchOutcome::Hits(hits) => Ok(text_tool_result(serde_json::to_string(&hits)?, false)),
         SearchOutcome::NotConfigured { reason } | SearchOutcome::EmbeddingFailed { reason } => {
-            Ok(_text_tool_result(reason, true))
+            Ok(text_tool_result(reason, true))
         }
     }
 }
@@ -80,14 +83,14 @@ pub async fn handle_mcp_tool_search(
     let settings = match context.settings.mcp_tool_search_settings() {
         Ok(settings) => settings,
         Err(error) => {
-            return Ok(_text_tool_result(
+            return Ok(text_tool_result(
                 format!("litellm_settings.{MCP_TOOL_SEARCH_SETTINGS_KEY} is invalid: {error}"),
                 true,
             ));
         }
     };
     if settings.embedding_model.is_some() && context.settings.llm_router().is_none() {
-        return Ok(_text_tool_result(EMBEDDING_WITHOUT_ROUTER.to_owned(), true));
+        return Ok(text_tool_result(EMBEDDING_WITHOUT_ROUTER.to_owned(), true));
     }
     let tools = context
         .operations
@@ -97,9 +100,9 @@ pub async fn handle_mcp_tool_search(
     match ranking {
         Ok(hits) => {
             let results: Vec<ToolSearchResult> = hits.into_iter().map(tool_search_result).collect();
-            Ok(_text_tool_result(serde_json::to_string(&results)?, false))
+            Ok(text_tool_result(serde_json::to_string(&results)?, false))
         }
-        Err(error) => Ok(_text_tool_result(error.to_string(), true)),
+        Err(error) => Ok(text_tool_result(error.to_string(), true)),
     }
 }
 
@@ -121,24 +124,37 @@ pub async fn handle_mcp_proxy_tool(
         .and_then(json_string)
         .and_then(|tool_id| tools_by_id.get(tool_id).copied());
     let Some(tool) = tool else {
-        return Ok(_text_tool_result(UNKNOWN_TOOL_ID.to_owned(), true));
+        return Ok(text_tool_result(UNKNOWN_TOOL_ID.to_owned(), true));
     };
-    if request.name == MCP_PROXY_SCHEMA_TOOL_NAME {
-        return Ok(_text_tool_result(
-            serde_json::to_string(&proxy_schema_result(tool)?)?,
-            false,
-        ));
+    let name = request.name;
+    if name == MCP_PROXY_SCHEMA_TOOL_NAME {
+        return proxy_schema_text(tool);
     }
-    if request.name != MCP_PROXY_CALL_TOOL_NAME {
+    if name != MCP_PROXY_CALL_TOOL_NAME {
         return Err(SearchHandlerError::Http {
             status: StatusCode::BAD_REQUEST,
-            detail: format!("Unknown MCP proxy tool: {}", request.name),
+            detail: format!("Unknown MCP proxy tool: {name}"),
         });
     }
-    let tool_arguments = match request.arguments.get("arguments") {
+    proxy_call_text(tool, request.arguments, context).await
+}
+
+fn proxy_schema_text(tool: &MCPTool) -> Result<CallToolResult, SearchHandlerError> {
+    Ok(text_tool_result(
+        serde_json::to_string(&proxy_schema_result(tool)?)?,
+        false,
+    ))
+}
+
+async fn proxy_call_text(
+    tool: &MCPTool,
+    arguments: &BTreeMap<String, JsonValue>,
+    context: &HandlerContext<'_>,
+) -> Result<CallToolResult, SearchHandlerError> {
+    let tool_arguments = match arguments.get("arguments") {
         Some(JsonValue::Object(values)) => values.clone(),
         Some(_) => {
-            return Ok(_text_tool_result(
+            return Ok(text_tool_result(
                 "arguments must be an object".to_owned(),
                 true,
             ));
@@ -148,7 +164,7 @@ pub async fn handle_mcp_proxy_tool(
     let schema = serde_json::to_value(&tool.input_schema)?;
     let instance = serde_json::to_string(&tool_arguments)?;
     if let Err(error) = validate_schema(&schema, &instance, &SchemaLimits::default()) {
-        return Ok(_text_tool_result(
+        return Ok(text_tool_result(
             format!("Invalid arguments: {error}"),
             true,
         ));
@@ -176,6 +192,25 @@ pub async fn handle_mcp_tool_call(
         requested_server_id,
         guardrail_context,
     } = request;
+    let allowed_servers = allowed_servers_for_call(context).await?;
+    let call = ToolExecution {
+        scope: context.scope,
+        caller: context.caller,
+        tool_name,
+        arguments,
+        allowed_servers: &allowed_servers,
+        requested_server_id,
+        guardrail_context,
+    };
+    Ok(complete_call_tool_result(
+        context.operations.execute_mcp_tool(call).await?,
+        WireCompat::Legacy,
+    ))
+}
+
+async fn allowed_servers_for_call(
+    context: &HandlerContext<'_>,
+) -> Result<Vec<String>, SearchHandlerError> {
     let allowed_servers = context
         .operations
         ._get_allowed_mcp_servers(context.caller, context.scope)
@@ -203,19 +238,7 @@ pub async fn handle_mcp_tool_call(
             detail: "User not allowed to call this tool.".to_owned(),
         });
     }
-    let call = ToolExecution {
-        scope: context.scope,
-        caller: context.caller,
-        tool_name,
-        arguments,
-        allowed_servers: &allowed_servers,
-        requested_server_id,
-        guardrail_context,
-    };
-    Ok(complete_call_tool_result(
-        context.operations.execute_mcp_tool(call).await?,
-        WireCompat::Legacy,
-    ))
+    Ok(allowed_servers)
 }
 
 fn proxy_tools_by_id(tools: &[MCPTool]) -> Result<BTreeMap<String, &MCPTool>, SearchHandlerError> {
@@ -226,7 +249,8 @@ fn proxy_tools_by_id(tools: &[MCPTool]) -> Result<BTreeMap<String, &MCPTool>, Se
     Ok(tools_by_id)
 }
 
-pub(super) fn _text_tool_result(text: String, is_error: bool) -> CallToolResult {
+// LiteLLM's _text_tool_result(text, is_error): one text block with the payload or the error text
+pub(super) fn text_tool_result(text: String, is_error: bool) -> CallToolResult {
     CallToolResult {
         content: vec![ContentBlock::Text(TextContent {
             text,

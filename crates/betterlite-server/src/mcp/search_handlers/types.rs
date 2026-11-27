@@ -64,39 +64,44 @@ pub struct ProxyToolIdentity {
     pub tool_name: String,
 }
 
-pub struct AgentSearchRequest<'a> {
-    pub query: &'a str,
+#[derive(Clone, Copy, Debug)]
+pub struct AgentSearchRequest<'request> {
+    pub query: &'request str,
     pub top_k: i64,
 }
 
-pub struct SkillSearchRequest<'a> {
-    pub query: &'a str,
+#[derive(Clone, Copy, Debug)]
+pub struct SkillSearchRequest<'request> {
+    pub query: &'request str,
     pub top_k: i64,
 }
 
-pub struct McpToolSearchRequest<'a> {
-    pub query: &'a str,
+#[derive(Clone, Copy, Debug)]
+pub struct McpToolSearchRequest<'request> {
+    pub query: &'request str,
     pub top_k: i64,
 }
 
-pub struct ProxyToolRequest<'a> {
-    pub name: &'a str,
-    pub arguments: &'a BTreeMap<String, JsonValue>,
+#[derive(Clone, Copy, Debug)]
+pub struct ProxyToolRequest<'request> {
+    pub name: &'request str,
+    pub arguments: &'request BTreeMap<String, JsonValue>,
 }
 
-pub struct ToolCallRequest<'a> {
-    pub tool_name: &'a str,
-    pub arguments: &'a BTreeMap<String, JsonValue>,
-    pub requested_server_id: Option<&'a str>,
-    pub guardrail_context: Option<&'a GuardrailContext>,
+#[derive(Clone, Copy, Debug)]
+pub struct ToolCallRequest<'call> {
+    pub tool_name: &'call str,
+    pub arguments: &'call BTreeMap<String, JsonValue>,
+    pub requested_server_id: Option<&'call str>,
+    pub guardrail_context: Option<&'call GuardrailContext>,
 }
 
-pub struct HandlerContext<'a> {
-    pub caller: &'a CallerScope,
-    pub scope: &'a McpRequestScope,
-    pub ports: &'a dyn SearchPorts,
-    pub operations: &'a dyn McpOperations,
-    pub settings: &'a dyn SearchSettings,
+pub struct HandlerContext<'handler> {
+    pub caller: &'handler CallerScope,
+    pub scope: &'handler McpRequestScope,
+    pub ports: &'handler dyn SearchPorts,
+    pub operations: &'handler dyn McpOperations,
+    pub settings: &'handler dyn SearchSettings,
 }
 
 #[must_use]
