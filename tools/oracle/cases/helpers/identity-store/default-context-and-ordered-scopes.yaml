@@ -1,0 +1,10 @@
+kind: helper
+name: identity-store-default-context-and-ordered-scopes
+call:
+  identity_store:
+    aspect: principal
+    key: {token: t-defaults, key_name: k-defaults}
+    auth_method: api_key
+    scopes: [scope-b, scope-a, scope-b]
+env: {}
+compare: {ignore: []}

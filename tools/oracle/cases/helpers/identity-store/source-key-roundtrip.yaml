@@ -1,0 +1,15 @@
+kind: helper
+name: identity-store-source-key-roundtrip
+call:
+  identity_store:
+    aspect: carrier
+    key:
+      token: sk-hashed-round
+      key_name: sk-round
+      user_id: u2
+      team_id: t1
+      team_alias: team-one
+      object_permission: {object_permission_id: op-1, models: [gpt-4]}
+    keep_source_key: true
+env: {}
+compare: {ignore: []}

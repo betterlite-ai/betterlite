@@ -1,0 +1,26 @@
+kind: helper
+name: identity-store-mapped-and-unmapped-roles
+call:
+  identity_store:
+    aspect: principal
+    key: {token: t-role-admin, key_name: k-role-admin, user_role: proxy_admin}
+    auth_method: api_key
+calls:
+  - identity_store:
+      aspect: principal
+      key: {token: t-role-viewer, key_name: k-role-viewer, user_role: proxy_admin_viewer}
+      auth_method: api_key
+  - identity_store:
+      aspect: principal
+      key: {token: t-role-org, key_name: k-role-org, user_role: org_admin}
+      auth_method: api_key
+  - identity_store:
+      aspect: principal
+      key: {token: t-role-internal, key_name: k-role-internal, user_role: internal_user}
+      auth_method: api_key
+  - identity_store:
+      aspect: principal
+      key: {token: t-role-absent, key_name: k-role-absent}
+      auth_method: api_key
+env: {}
+compare: {ignore: []}

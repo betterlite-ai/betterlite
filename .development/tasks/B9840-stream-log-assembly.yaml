@@ -59,7 +59,7 @@ description: >-
   check, since every JSON object reads as a chunk whose fields are all optional. Every other result goes to
   ChatStreamAssembler unchanged, so a Chat result or a text completion still comes back as is and anything else gives
   None. The mode does not change any branch, and the type keeps no state, so one value serves sync and async handlers.
-  This task builds the type and its tests, then replaces B8610's Arc::new(ChatStreamAssembler) in application()
+  This task builds the type and its tests, then replaces B8610's Arc::new(ChatStreamAssembler) in run
   (crates/betterlite-server/src/server.rs) with the LoggedStreamAssembler literal, so every production success handler gets it.
 
 
