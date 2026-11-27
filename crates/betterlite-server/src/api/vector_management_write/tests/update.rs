@@ -359,7 +359,7 @@ enum Outcome {
 }
 
 impl Outcome {
-    fn status(&self) -> StatusCode {
+    const fn status(&self) -> StatusCode {
         match self {
             Self::ConfigOwned => StatusCode::BAD_REQUEST,
             Self::Missing | Self::Vanished => StatusCode::NOT_FOUND,
@@ -367,7 +367,7 @@ impl Outcome {
         }
     }
 
-    fn detail(&self) -> Detail {
+    const fn detail(&self) -> Detail {
         match self {
             Self::ConfigOwned => Detail::ConfigOwned,
             Self::Missing | Self::Vanished => Detail::NotFound,
@@ -375,7 +375,7 @@ impl Outcome {
         }
     }
 
-    fn events(&self) -> &'static [&'static str] {
+    const fn events(&self) -> &'static [&'static str] {
         match self {
             Self::ConfigOwned => &[],
             Self::Missing | Self::Denied => &["db:find"],
@@ -383,7 +383,7 @@ impl Outcome {
         }
     }
 
-    fn team(&self) -> Option<&'static str> {
+    const fn team(&self) -> Option<&'static str> {
         match self {
             Self::Denied => Some("t1"),
             Self::ConfigOwned | Self::Missing | Self::Vanished => None,
