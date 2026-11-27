@@ -13,7 +13,7 @@ use crate::compaction_history::contracts::Surface;
 use crate::router_predicates::JsonMap;
 
 fn armed() -> SharedCompactionState<()> {
-    handle(ContextCompactionConfig::default())
+    handle(Some(ContextCompactionConfig::default()))
 }
 
 fn unarmed() -> SharedCompactionState<()> {
