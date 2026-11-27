@@ -255,8 +255,8 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
     (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1203 owns _resolve_org_filter_for_user_search
-    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860), _user_search_where
-    (L2205-L2215).'
+    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10149 owns _user_search_where (L2205-L2215).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:

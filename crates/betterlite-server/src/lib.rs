@@ -442,6 +442,7 @@ pub mod user_info;
 pub mod user_invitation;
 pub mod user_list;
 pub mod user_management;
+pub mod user_search_predicate;
 pub mod user_search_scope;
 pub mod user_update;
 pub mod utility_routes;

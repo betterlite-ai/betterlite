@@ -1,0 +1,94 @@
+id: B10149
+title: User search predicate for the user list and UI user search
+description: >-
+  GET /user/list (B796) and GET /user/filter/ui (B1203) both take a free-text search parameter and narrow the users to those whose user_id or user_email contains it, ignoring case. LiteLLM builds that filter once, in _user_search_where, and both route functions merge it into their Prisma where mapping. B1203 owned it together with the whole org-scoped UI search, so B796 waited for that route. This task builds only the predicate and its SQL. Code goes in betterlite-server, module user_search_predicate (crates/betterlite-server/src/user_search_predicate.rs), with its tests in user_search_predicate/tests.rs. The file is an empty stub that lib.rs already declares.
+
+
+  Types come from done tasks and no new record is built: UserSearchWhere and UserSearchTerm from B2334 in user_contracts::search (the native form of LiteLLM's UserSearchWhere TypedDict), InsensitiveContains and MatchMode from B770 in key_fields::values, and SqlValue from B897 in key_query_plan::sql, the bind list team_list_query already reuses. Build these two public functions.
+
+
+  1. `user_search_where(search: Option<&str>) -> Option<UserSearchWhere>` is _user_search_where. None and the empty string give None, LiteLLM's falsey check returning the empty _NO_SEARCH_WHERE mapping. Any other string, whitespace and %, _ and \ included, is kept exactly as given, and `or` holds two terms in this order: one with only user_id set to InsensitiveContains { contains: search, mode: MatchMode::Insensitive }, then one with only user_email set the same way. Serialized, it reads {"OR": [{"user_id": {"contains": "<search>", "mode": "insensitive"}}, {"user_email": {...}}]}, which is LiteLLM's mapping with the tuple as a list.
+
+
+  2. `user_search_sql(predicate: &UserSearchWhere, params: &mut Vec<SqlValue>) -> String` renders a UserSearchWhere the way Prisma reads it on Postgres, as one fragment the caller ANDs with its own filters. A set column becomes `"user_id" ILIKE $n` or `"user_email" ILIKE $n`: push `SqlValue::Text(format!("%{contains}%"))` onto params and use its 1-based position after the push, so the fragment numbers after whatever the caller bound before it. A term joins its set columns with AND, and a term with neither renders TRUE. The terms are joined with OR inside one pair of parentheses, and an empty `or` renders FALSE, since Prisma matches nothing for an empty OR list. The pattern is not escaped: Prisma's contains reaches Postgres as it is, so % and _ stay wildcards and \ stays LIKE's escape character, as team_list_query/sql.rs on main already renders the team filters. Column names are unqualified, so the caller reads "LiteLLM_UserTable" as the only table in its FROM and puts organization membership filters in a subquery.
+
+
+  How the routes use it: B796's get_users and B1203's ui_view_users call user_search_where(search) and, when it gives Some, add user_search_sql's fragment to the clauses they AND together, after their own filters. LiteLLM merges the "OR" key into a mapping whose other keys are plain column filters, so the search is ANDed with them. Neither route writes a second OR or ILIKE for the search.
+
+
+  Tests in user_search_predicate::tests. Names starting with predicate_ cover 1: None, the empty string, a single space giving the full OR with the space kept, "  Bob " kept untrimmed, "a%b_c\" kept as given, the user_id term before the user_email term, and the serde JSON of a predicate equal to LiteLLM's mapping. Names starting with sql_ cover 2 without a database: placeholders numbered $3 and $4 after two params the test bound first, the two patterns pushed as %text%, a term with both columns joined by AND, an empty term rendering TRUE and an empty `or` rendering FALSE. Names starting with postgres_ run the fragment on real Postgres the way crates/betterlite-server/src/team_list_query/tests/support.rs does: POSTGRES_TEST_URL when set, otherwise the betterlite-postgres-fixture container, the schema from B716's PACKAGED_CATALOGS and B700's PostgresStore. Seed "LiteLLM_UserTable" rows with synthetic ids and emails (alice-1, alice@example.com), bind one filter of the test's own before the fragment, and assert the matched ids: ALICE matches the id and the email, a row with a NULL email is found through its id only, a match on both columns returns the row once, % matches any run and _ exactly one character, \% matches only a stored percent sign, and " alice" with a leading space misses a row that has no space before alice.
+
+
+  Oracle. Helper operation b10149 takes {"search": string or null} and answers the predicate as JSON, or {} when there is none. The Python side imports _user_search_where from litellm.proxy.management_endpoints.internal_user_endpoints and answers dict(result) with the OR tuple turned into a list of plain dicts. The Rust side answers serde_json::to_value of the Some value, or an empty object for None. Add helper_case corpus seeds named user-search-predicate-*.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_search_predicate.rs
+    - crates/betterlite-server/src/user_search_predicate/**
+    - tools/oracle/cases/helpers/user-search-predicate/**
+    - "tools/oracle/fuzz/corpus/helper_case/user-search-predicate-*"
+    - tools/oracle/helpers/b10149.py
+    - tools/oracle/helpers/b10149/**
+    - tools/oracle/src/helpers/server/b10149.rs
+    - tools/oracle/src/helpers/server/b10149/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2202-L2215
+    why: Owned. _NO_SEARCH_WHERE and _user_search_where, the falsey check and the two-term OR.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L20-L28
+    why: InsensitiveContains and UserSearchWhere, ported by B770 and B2334; this task builds values of them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2340-L2345
+    why: Call site in get_users (B796). The predicate is merged into the where mapping next to the column filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2834-L2846
+    why: Call site in ui_view_users (B1203). The same merge before the single find_many.
+dod:
+  - text: user_search_where gives None for a null or empty search and otherwise the user_id then user_email insensitive contains OR, with the search kept untrimmed and unescaped, matching LiteLLM's mapping.
+    proof: [predicate-tests, oracle, helper-python]
+  - text: user_search_sql numbers its placeholders after the params the caller bound, binds %text% patterns, ORs the terms inside parentheses, ANDs the columns of one term, and renders TRUE for an empty term and FALSE for an empty OR.
+    proof: [sql-tests]
+  - text: On real Postgres the fragment matches user_id or user_email ignoring case, keeps whitespace, treats % and _ as wildcards and \ as the escape character, and finds a row with a NULL email through its user_id.
+    proof: [postgres-tests]
+  - text: New user-search-predicate seeds for b10149 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: predicate-tests
+      why: The predicate is missing, trims or escapes the search, treats a space as empty, or orders its terms differently from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_search_predicate::tests::predicate_/)'
+    - id: sql-tests
+      why: The rendered fragment restarts its placeholders, escapes the pattern or mishandles an empty term or an empty OR.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_search_predicate::tests::sql_/)'
+    - id: postgres-tests
+      why: The fragment matches different users than Prisma's insensitive contains on real Postgres.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_search_predicate::tests::postgres_/)'
+    - id: helper-python
+      why: The b10149 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10149.py tools/oracle/helpers/b10149)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10149 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user-search-predicate-*")" &&
+        grep -lE 'b10149"?:' tools/oracle/fuzz/corpus/helper_case/user-search-predicate-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/user-search-predicate/null-search.yaml
+  - tools/oracle/cases/helpers/user-search-predicate/empty-search.yaml
+  - tools/oracle/cases/helpers/user-search-predicate/whitespace-kept.yaml
+  - tools/oracle/cases/helpers/user-search-predicate/wildcards-kept.yaml
+deviations: []
+out_of_scope:
+  - "get_users (/user/list) with its other filters, sorting, counts and key counts: B796. ui_view_users (/user/filter/ui), _resolve_org_filter_for_user_search and _resolve_team_org_filter: B1203. Both call this module and write no search OR of their own."
+  - "UserSearchWhere, UserSearchTerm and the user query decoders: B2334. InsensitiveContains and MatchMode: B770. SqlValue and the key list SQL: B897."
+  - "The other functions of internal_user_endpoints.py: B056, B790, B791, B792, B795, B796, B797, B798, B1203 and B1226, as their out_of_scope lists name them."
+pitfalls:
+  - "Only None and the empty string give no predicate: a search of one space is truthy in LiteLLM and filters on that space, so never trim before the check."
+  - "Escaping the pattern the way list_api's escape_like does changes results: Prisma sends contains unescaped, so a search of a_b also matches aXb (team_list_query's alias_wildcards_are_patterns test shows the same for teams)."
+  - "The placeholders count from params.len() after each push, not from 1: both routes bind their own filters before the search, and a fragment that starts again at $1 binds the wrong value."
+  - "Column names are unqualified, and LiteLLM_OrganizationMembership has its own user_id, so a caller that joins it in the FROM makes the reference ambiguous; membership filters belong in an EXISTS subquery."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
