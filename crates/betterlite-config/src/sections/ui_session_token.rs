@@ -7,7 +7,11 @@ const DURATION_ENV: &str = "LITELLM_UI_SESSION_DURATION";
 const DEFAULT_DURATION: &str = "24h";
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    // A skipped marker keeps this environment-only section a YAML mapping.
+    #[serde(skip)]
+    _environment: (),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
