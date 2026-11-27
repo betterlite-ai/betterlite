@@ -80,25 +80,31 @@ class RunOutcome(Strict):
 
 
 class VectorFiles(Protocol):
-    def create(self, **options: object) -> Answer: ...
+    def create(self, **options: JsonValue | Logging) -> Answer: ...
 
-    async def acreate(self, **options: object) -> JsonValue: ...
+    async def acreate(self, **options: JsonValue | Logging) -> JsonValue: ...
 
-    def list(self, **options: object) -> Answer: ...
+    def list(self, **options: JsonValue | Logging) -> Answer: ...
 
-    async def alist(self, **options: object) -> JsonValue: ...
+    async def alist(self, **options: JsonValue | Logging) -> JsonValue: ...
 
 
 FILES: VectorFiles = cast(VectorFiles, vector_file_main)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py
 
 
-def optionals(run: Run, api_base: str, logging_obj: Logging) -> dict[str, object]:
+def optionals(
+    run: Run, api_base: str, logging_obj: Logging
+) -> dict[str, JsonValue | Logging]:
     return {
         "api_base": api_base,
         "api_key": run.options.api_key,
         "litellm_call_id": run.options.litellm_call_id,
         "litellm_logging_obj": logging_obj,
-        "extra_headers": run.extra_headers,
+        "extra_headers": (
+            None
+            if run.extra_headers is None
+            else dict[str, JsonValue](run.extra_headers)
+        ),
         "extra_query": run.extra_query,
         "timeout": run.timeout_seconds,
         "custom_llm_provider": run.custom_llm_provider,
@@ -106,20 +112,28 @@ def optionals(run: Run, api_base: str, logging_obj: Logging) -> dict[str, object
     }
 
 
-def create_options(run: Run, api_base: str, logging_obj: Logging) -> dict[str, object]:
+def create_options(
+    run: Run, api_base: str, logging_obj: Logging
+) -> dict[str, JsonValue | Logging]:
     args = run.create
     if args is None:
         raise ValueError("a create run carries no create arguments")
     options = optionals(run, api_base, logging_obj)
     options["vector_store_id"] = run.vector_store_id
     options["file_id"] = args.file_id
-    options["attributes"] = args.attributes
+    options["attributes"] = (
+        None
+        if args.attributes is None
+        else dict[str, JsonValue](args.attributes)
+    )
     options["chunking_strategy"] = args.chunking_strategy
     options["extra_body"] = run.extra_body
     return options
 
 
-def list_options(run: Run, api_base: str, logging_obj: Logging) -> dict[str, object]:
+def list_options(
+    run: Run, api_base: str, logging_obj: Logging
+) -> dict[str, JsonValue | Logging]:
     args = run.list
     if args is None:
         raise ValueError("a list run carries no list arguments")
