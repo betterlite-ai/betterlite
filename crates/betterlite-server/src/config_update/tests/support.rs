@@ -160,13 +160,7 @@ impl ConfigUpdateStore for RecordingStore {
             .lock()
             .expect("reads")
             .push(section.name().to_owned());
-        Ok(self
-            .sections
-            .lock()
-            .expect("sections")
-            .get(section.name())
-            .cloned()
-            .unwrap_or_default())
+        Ok(self.stored(section).unwrap_or_default())
     }
 
     async fn upsert_section(

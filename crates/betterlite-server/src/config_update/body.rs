@@ -214,21 +214,16 @@ pub(crate) fn aliases<'de, D>(deserializer: D) -> Result<Option<Aliases>, D::Err
 where
     D: Deserializer<'de>,
 {
-    let aliases = Option::<Aliases>::deserialize(deserializer)?;
-    if let Some(problem) = aliases.as_ref().and_then(aliases_problem) {
-        return Err(D::Error::custom(problem));
+    let sent = Option::<Aliases>::deserialize(deserializer)?;
+    match sent.as_ref().and_then(aliases_problem) {
+        Some(problem) => Err(D::Error::custom(problem)),
+        None => Ok(sent),
     }
-    Ok(aliases)
 }
 
 fn aliases_problem(aliases: &Aliases) -> Option<&'static str> {
-    for value in aliases.values() {
-        match value {
-            JsonValue::String(_) | JsonValue::Object(_) => {}
-            JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
-                return Some("model_group_alias values must be a string or an object");
-            }
-        }
-    }
-    None
+    let invalid = aliases
+        .values()
+        .any(|value| !matches!(value, JsonValue::String(_) | JsonValue::Object(_)));
+    invalid.then_some("model_group_alias values must be a string or an object")
 }

@@ -96,10 +96,7 @@ async fn apply(
         body.litellm_settings.as_ref(),
         router.as_ref(),
     )?;
-    write_general(&context, general.as_ref()).await?;
-    write_environment(&context, body.environment_variables.as_ref()).await?;
-    write_litellm(&context, body.litellm_settings.as_ref()).await?;
-    write_router(&context, router.as_ref()).await?;
+    write_sections(&context, &body, general.as_ref(), router.as_ref()).await?;
     state.deployments.add_deployment().await;
     Ok(())
 }
@@ -141,67 +138,41 @@ fn guard(
     Ok(())
 }
 
-async fn write_general(
+// _read_section, merge, _upsert_section and the spawned audit, in LiteLLM's section order
+async fn write_sections(
     context: &UpdateContext<'_>,
-    sent: Option<&SettingsMap>,
+    body: &DecodedConfigUpdate,
+    general: Option<&SettingsMap>,
+    router: Option<&SettingsMap>,
 ) -> Result<(), ConfigUpdateError> {
-    let Some(sent) = sent else {
-        return Ok(());
-    };
     apply_section(
         context,
         Section::GeneralSettings,
-        sent,
+        general,
         merge::general_settings,
     )
-    .await
-}
-
-// _encrypt_env_variables_for_db runs inside the section, after the sections before it were already written
-async fn write_environment(
-    context: &UpdateContext<'_>,
-    sent: Option<&SettingsMap>,
-) -> Result<(), ConfigUpdateError> {
-    let Some(sent) = sent else {
-        return Ok(());
-    };
-    let sealed = context.store.seal_environment(sent)?;
-    apply_section(
-        context,
-        Section::EnvironmentVariables,
-        &sealed,
-        merge::environment_variables,
-    )
-    .await
-}
-
-async fn write_litellm(
-    context: &UpdateContext<'_>,
-    sent: Option<&SettingsMap>,
-) -> Result<(), ConfigUpdateError> {
-    let Some(sent) = sent else {
-        return Ok(());
-    };
+    .await?;
+    if let Some(sent) = body.environment_variables.as_ref() {
+        let sealed = context.store.seal_environment(sent)?;
+        apply_section(
+            context,
+            Section::EnvironmentVariables,
+            Some(&sealed),
+            merge::environment_variables,
+        )
+        .await?;
+    }
     apply_section(
         context,
         Section::LitellmSettings,
-        sent,
+        body.litellm_settings.as_ref(),
         merge::litellm_settings,
     )
-    .await
-}
-
-async fn write_router(
-    context: &UpdateContext<'_>,
-    sent: Option<&SettingsMap>,
-) -> Result<(), ConfigUpdateError> {
-    let Some(sent) = sent else {
-        return Ok(());
-    };
+    .await?;
     apply_section(
         context,
         Section::RouterSettings,
-        sent,
+        router,
         merge::router_settings,
     )
     .await
@@ -211,9 +182,12 @@ async fn write_router(
 async fn apply_section(
     context: &UpdateContext<'_>,
     section: Section,
-    sent: &SettingsMap,
+    sent: Option<&SettingsMap>,
     merge: MergeFn,
 ) -> Result<(), ConfigUpdateError> {
+    let Some(sent) = sent else {
+        return Ok(());
+    };
     let existing = context.store.read_section(section).await?;
     let merged = merge(&existing, sent);
     context.store.upsert_section(section, &merged).await?;
