@@ -34,6 +34,13 @@ struct LoadedBatch {
     target_models: Option<Vec<String>>,
 }
 
+// What one pass over the file carries from row to row
+struct Pass {
+    min: Option<i64>,
+    totals: Totals,
+    models: IndexSet<String>,
+}
+
 // _PROXY_BatchRateLimiter.count_input_file_usage over an already fetched file
 pub struct BatchInputAccounting<'slice, Calls, Files, Access> {
     calls: &'slice Calls,
@@ -90,21 +97,23 @@ where
         let min = min_configured_otpm_limit(input, caller.as_ref());
         let loaded = self.load_content(input, caller.as_ref()).await?;
         let lines = decode_batch_input_accounting(&loaded.bytes, &self.limits)?;
-        let mut totals = Totals::default();
-        let mut models = IndexSet::new();
+        let mut pass = Pass {
+            min,
+            totals: Totals::default(),
+            models: IndexSet::new(),
+        };
         for line in &lines {
-            self.account_line(line, min, &mut totals, &mut models)
-                .await?;
+            self.account_line(line, &mut pass).await?;
         }
-        if let Some(caller) = &caller {
-            self.enforce_models(caller, &models, loaded.target_models.as_deref())
+        if let Some(principal) = &caller {
+            self.enforce_models(principal, &pass.models, loaded.target_models.as_deref())
                 .await?;
         }
         Ok(BatchInputAccountingResult {
-            total_tokens: totals.total_tokens,
-            request_count: totals.request_count,
-            output_tokens: totals.output_tokens,
-            per_model_usage: totals.per_model,
+            total_tokens: pass.totals.total_tokens,
+            request_count: pass.totals.request_count,
+            output_tokens: pass.totals.output_tokens,
+            per_model_usage: pass.totals.per_model,
         })
     }
 
@@ -115,56 +124,65 @@ where
         caller: Option<&UserAPIKeyAuth>,
     ) -> Result<LoadedBatch, SliceError<Calls, Files, Access>> {
         let managed = is_base64_encoded_unified_id(&input.file_id, MANAGED_FILE_ID_PREFIX);
-        let (fetched, target_models) = match (managed, caller) {
-            (Some(decoded), Some(caller)) => {
-                let names = target_model_names(&decoded);
-                let request = BatchFileRequest::Managed {
-                    file_id: &input.file_id,
-                    caller,
-                };
-                let fetched = self
-                    .files
-                    .fetch(request)
-                    .await
-                    .map_err(BatchInputAccountingError::Files)?;
-                (fetched, Some(names))
-            }
-            _ => {
-                let data = input.data.clone().unwrap_or_default();
-                let params = self
-                    .calls
-                    .resolve_fetch_params(&input.file_id, input.custom_llm_provider.slug(), &data)
-                    .map_err(BatchInputAccountingError::Calls)?;
-                let request = BatchFileRequest::Provider {
-                    file_id: &params.file_id,
-                    params: &params.params,
-                    caller,
-                };
-                let fetched = self
-                    .files
-                    .fetch(request)
-                    .await
-                    .map_err(BatchInputAccountingError::Files)?;
-                (fetched, None)
-            }
-        };
-        let bytes = match fetched {
-            BatchFileFetch::Content(bytes) => bytes,
-            BatchFileFetch::NotBytes { kind } => {
-                return Err(BatchInputAccountingError::ContentNotBytes {
-                    file_id: input.file_id.clone(),
-                    kind,
-                });
-            }
-            BatchFileFetch::ManagedUnavailable(reason) => {
-                return Err(BatchInputAccountingError::Managed(reason));
-            }
-            BatchFileFetch::Http(http) => return Err(BatchInputAccountingError::Http(http)),
+        let (fetched, target_models) = if let (Some(decoded), Some(principal)) = (managed, caller) {
+            let names = target_model_names(&decoded);
+            let request = BatchFileRequest::Managed {
+                file_id: &input.file_id,
+                caller: principal,
+            };
+            let fetched = self
+                .files
+                .fetch(request)
+                .await
+                .map_err(BatchInputAccountingError::Files)?;
+            (fetched, Some(names))
+        } else {
+            (self.fetch_provider(input, caller).await?, None)
         };
         Ok(LoadedBatch {
-            bytes,
+            bytes: Self::fetched_bytes(fetched, &input.file_id)?,
             target_models: target_models.filter(|names| !names.is_empty()),
         })
+    }
+
+    // Any other file id resolves its provider file id and fetch kwargs through the descriptor service
+    async fn fetch_provider(
+        &self,
+        input: &BatchInputAccountingInput,
+        caller: Option<&UserAPIKeyAuth>,
+    ) -> Result<BatchFileFetch, SliceError<Calls, Files, Access>> {
+        let data = input.data.clone().unwrap_or_default();
+        let params = self
+            .calls
+            .resolve_fetch_params(&input.file_id, input.custom_llm_provider.slug(), &data)
+            .map_err(BatchInputAccountingError::Calls)?;
+        let request = BatchFileRequest::Provider {
+            file_id: &params.file_id,
+            params: &params.params,
+            caller,
+        };
+        self.files
+            .fetch(request)
+            .await
+            .map_err(BatchInputAccountingError::Files)
+    }
+
+    // The fetched bytes, or the failure LiteLLM raises for the other fetch outcomes
+    fn fetched_bytes(
+        fetched: BatchFileFetch,
+        file_id: &str,
+    ) -> Result<Vec<u8>, SliceError<Calls, Files, Access>> {
+        match fetched {
+            BatchFileFetch::Content(bytes) => Ok(bytes),
+            BatchFileFetch::NotBytes { kind } => Err(BatchInputAccountingError::ContentNotBytes {
+                file_id: file_id.to_owned(),
+                kind,
+            }),
+            BatchFileFetch::ManagedUnavailable(reason) => {
+                Err(BatchInputAccountingError::Managed(reason))
+            }
+            BatchFileFetch::Http(http) => Err(BatchInputAccountingError::Http(http)),
+        }
     }
 
     // Every model named in the file is checked once the pass finished, so a bad row cannot hide one
@@ -186,18 +204,16 @@ where
     async fn account_line(
         &self,
         line: &DecodedBatchInputLine<'_>,
-        min: Option<i64>,
-        totals: &mut Totals,
-        models: &mut IndexSet<String>,
+        pass: &mut Pass,
     ) -> Result<(), SliceError<Calls, Files, Access>> {
-        totals.request_count = totals.request_count.saturating_add(1);
+        pass.totals.request_count = pass.totals.request_count.saturating_add(1);
         match line {
             DecodedBatchInputLine::Entry { entry, raw } => {
-                self.account_entry(entry, raw, min, totals, models).await
+                self.account_entry(entry, raw, pass).await
             }
             DecodedBatchInputLine::Fallback { raw } => {
-                let output = self.calls.output_floor(min);
-                totals.add(
+                let output = self.calls.output_floor(pass.min);
+                pass.totals.add(
                     None,
                     i64::try_from(estimate_batch_entry_tokens(raw)).unwrap_or(i64::MAX),
                     output,
@@ -211,17 +227,15 @@ where
         &self,
         entry: &RequestData,
         raw: &[u8],
-        min: Option<i64>,
-        totals: &mut Totals,
-        models: &mut IndexSet<String>,
+        pass: &mut Pass,
     ) -> Result<(), SliceError<Calls, Files, Access>> {
         let model = entry_model(entry);
-        if let Some(model) = model {
-            models.insert(model.to_owned());
+        if let Some(name) = model {
+            pass.models.insert(name.to_owned());
         }
         let output = self
             .calls
-            .estimate_output_tokens(entry, min)
+            .estimate_output_tokens(entry, pass.min)
             .map_err(BatchInputAccountingError::Calls)?;
         let total = match countable_entry(entry) {
             RowInput::Zero => 0,
@@ -230,7 +244,7 @@ where
             }
             RowInput::Measured(measured) => self.count_measured(&measured, raw).await?,
         };
-        totals.add(model, total, output);
+        pass.totals.add(model, total, output);
         Ok(())
     }
 

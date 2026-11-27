@@ -87,9 +87,16 @@ where
                 data: data.clone(),
             },
         )?;
-        let BatchLimitAnswer::ResolveFetchParams { file_id, params } = answer else {
+        let BatchLimitAnswer::ResolveFetchParams {
+            file_id: resolved_id,
+            params,
+        } = answer
+        else {
             return Err(BatchAccountingCallError::UnexpectedAnswer);
         };
-        Ok(BatchFetchParams { file_id, params })
+        Ok(BatchFetchParams {
+            file_id: resolved_id,
+            params,
+        })
     }
 }

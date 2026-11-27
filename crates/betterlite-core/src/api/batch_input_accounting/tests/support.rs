@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::fmt::Debug;
+use std::fmt::{Debug, Write as _};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -47,8 +47,8 @@ where
 
 pub(super) fn input_wire(file_id: &str, caller: Option<&str>, descriptors: &str) -> String {
     let mut wire = format!(r#"{{"file_id": "{file_id}", "descriptors": {descriptors}"#);
-    if let Some(caller) = caller {
-        wire.push_str(&format!(r#", "caller": {caller}"#));
+    if let Some(principal) = caller {
+        write!(wire, r#", "caller": {principal}"#).expect("writing to a string cannot fail");
     }
     wire.push('}');
     wire
@@ -128,7 +128,8 @@ impl BatchAccountingCalls for ScriptedCalls {
         min_configured_otpm_limit: Option<i64>,
     ) -> Result<i64, CallsFailure> {
         locked(&self.seen_min).push(min_configured_otpm_limit);
-        match locked(&self.estimates).pop_front() {
+        let answer = locked(&self.estimates).pop_front();
+        match answer {
             Some(Some(tokens)) => Ok(tokens),
             Some(None) => Err(CallsFailure),
             None => Ok(0),
@@ -262,7 +263,7 @@ impl AccessMethod {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Team(pub(super) &'static str);
+pub(super) struct Team;
 
 type Checked = Result<BatchAccessCheck, AccessPortError>;
 type Granted = Result<BatchKeyGrant, AccessPortError>;
@@ -327,10 +328,11 @@ impl ScriptedAccess {
 
     fn grant_verdict(&self, model: &str) -> Granted {
         self.begin(AccessMethod::Grant, model)?;
-        match self.grants.get(model) {
-            Some(grant) => Ok(grant.clone()),
-            None => Ok(BatchKeyGrant::Denied),
-        }
+        Ok(self
+            .grants
+            .get(model)
+            .cloned()
+            .unwrap_or(BatchKeyGrant::Denied))
     }
 }
 
@@ -500,7 +502,7 @@ impl Harness {
 
     pub(super) fn run(&self, wire: &str) -> Result<BatchInputAccountingResult, FakeError> {
         let input: BatchInputAccountingInput =
-            serde_json::from_str(wire).expect("the accounting input decodes");
+            serde_json::from_str(wire).map_err(BatchInputAccountingError::Fields)?;
         let service = BatchInputAccounting::new(
             &self.calls,
             &self.files,

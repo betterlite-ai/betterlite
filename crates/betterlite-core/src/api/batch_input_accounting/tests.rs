@@ -123,13 +123,13 @@ fn team_harness(content: &str) -> Harness {
     harness.access.database = true;
     harness
         .access
-        .script_team(vec![BatchTeamLookup::Loaded(Team("team-1"))]);
+        .script_team(vec![BatchTeamLookup::Loaded(Team)]);
     harness
 }
 
 fn raw_of<'raw>(line: &DecodedBatchInputLine<'raw>) -> &'raw [u8] {
-    match line {
-        DecodedBatchInputLine::Entry { raw, .. } | DecodedBatchInputLine::Fallback { raw } => *raw,
+    match *line {
+        DecodedBatchInputLine::Entry { raw, .. } | DecodedBatchInputLine::Fallback { raw } => raw,
     }
 }
 
@@ -251,7 +251,7 @@ fn mixed_model_row_access(#[case] case: MixedCase) {
     harness.access.database = case.database;
     harness
         .access
-        .script_team(vec![BatchTeamLookup::Loaded(Team("team-1"))]);
+        .script_team(vec![BatchTeamLookup::Loaded(Team)]);
     if let Some(model) = case.deny_model {
         harness
             .access

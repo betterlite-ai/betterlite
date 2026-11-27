@@ -49,7 +49,7 @@ where
     };
     for model in models {
         match &team {
-            Some(team) => check_team_model(access, caller, team, model).await?,
+            Some(loaded) => check_team_model(access, caller, loaded, model).await?,
             None => check_key_model(access, caller, model).await?,
         }
     }

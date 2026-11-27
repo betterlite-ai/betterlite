@@ -68,18 +68,22 @@ impl CredentialSource for NoCredentials {
     }
 }
 
-#[test]
-fn estimates_and_fetch_params_run_through_the_descriptor_service() {
-    let descriptors = BatchLimitDescriptors {
+fn limit_descriptors(
+    candidates: i64,
+    floor: i64,
+) -> BatchLimitDescriptors<ScriptedLimiter, NoCredentials> {
+    BatchLimitDescriptors {
         settings: Settings::default(),
-        limiter: ScriptedLimiter {
-            candidates: 2,
-            floor: 0,
-        },
+        limiter: ScriptedLimiter { candidates, floor },
         credentials: None::<NoCredentials>,
         limits: ApiLimits::default(),
         warned_unsupported_model_skip: AtomicBool::new(false),
-    };
+    }
+}
+
+#[test]
+fn estimates_and_fetch_params_run_through_the_descriptor_service() {
+    let descriptors = limit_descriptors(2, 0);
     let harness = Harness::new(&format!("{CAP_ROW}\n{MALFORMED_ROW}"));
     harness.counter.script(&[3]);
     let service = BatchInputAccounting::new(

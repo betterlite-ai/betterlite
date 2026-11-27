@@ -17,7 +17,9 @@ pub(super) fn counts_as_value(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|value| value.abs() > 0.0),
+        Json::Number(number) => number
+            .as_f64()
+            .is_some_and(|magnitude| magnitude.abs() > 0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
