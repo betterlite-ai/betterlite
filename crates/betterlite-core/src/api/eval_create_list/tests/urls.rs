@@ -8,6 +8,7 @@ async fn create_eval_uses_the_kwargs_api_base() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
     calls.kwargs = map(&[("api_base", json("\"http://upstream.test\""))]);
+    calls.extra_query = map(&[("seed", json("1"))]);
     let call = create_call(&calls, None, None);
     let mut state = harness.logging_state("acreate_eval");
     let env = harness.env.pre_post();
