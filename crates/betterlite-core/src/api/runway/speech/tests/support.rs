@@ -13,7 +13,7 @@ use betterlite_openai::openai_base_config::Object;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde_json::json;
 use url::Url;
 
