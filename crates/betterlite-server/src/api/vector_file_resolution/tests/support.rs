@@ -95,14 +95,15 @@ pub(super) fn principal() -> Principal {
 }
 
 pub(super) fn header_map(pairs: &[(&str, &str)]) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        headers.append(
-            HeaderName::from_bytes(name.as_bytes()).unwrap(),
-            HeaderValue::from_bytes(value.as_bytes()).unwrap(),
-        );
-    }
-    headers
+    pairs
+        .iter()
+        .map(|(name, value)| {
+            (
+                HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                HeaderValue::from_bytes(value.as_bytes()).unwrap(),
+            )
+        })
+        .collect()
 }
 
 fn locked<Slot>(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
@@ -272,13 +273,8 @@ impl ManagedResourceAccessChecker for Checker {
         self.allow
     }
 
-    async fn can_call_unified_object_id(
-        &self,
-        unified_object_id: &str,
-        _principal: &Principal,
-    ) -> bool {
-        locked(&self.calls).push(unified_object_id.to_owned());
-        self.allow
+    async fn can_call_unified_object_id(&self, object_id: &str, principal: &Principal) -> bool {
+        self.can_call_unified_file_id(object_id, principal).await
     }
 }
 
@@ -322,34 +318,12 @@ pub(super) fn store_deps<'deps>(
     }
 }
 
-pub(super) fn managed_failure<Answer>(
+// The route's error, or a panic naming what answered instead; a route that should fail never returns Ok.
+pub(super) fn failure<Answer>(
     result: Result<Answer, VectorFileResolutionError<Infallible, Denied>>,
-) -> (u16, String) {
+) -> VectorFileResolutionError<Infallible, Denied> {
     match result {
-        Err(VectorFileResolutionError::ManagedId(source)) => (source.status(), source.to_string()),
-        Err(rest) => panic!("the managed-id gate should have answered, got {rest:?}"),
-        Ok(_) => panic!("the managed-id gate should have failed"),
-    }
-}
-
-pub(super) fn authorization_failure<Answer>(
-    result: Result<Answer, VectorFileResolutionError<Infallible, Denied>>,
-) -> Denied {
-    match result {
-        Err(VectorFileResolutionError::Authorization(denied)) => denied,
-        Err(rest) => panic!("the grant should have answered, got {rest:?}"),
-        Ok(_) => panic!("the grant should have failed"),
-    }
-}
-
-pub(super) fn lookup_failure<Answer>(
-    result: Result<Answer, VectorFileResolutionError<Infallible, Denied>>,
-) -> (Option<u16>, Option<String>) {
-    match result {
-        Err(VectorFileResolutionError::Lookup(lookup)) => {
-            (lookup.status(), lookup.detail_error().map(str::to_owned))
-        }
-        Err(rest) => panic!("the credential lookup should have answered, got {rest:?}"),
-        Ok(_) => panic!("the credential lookup should have failed"),
+        Err(found) => found,
+        Ok(_) => panic!("the route should have failed"),
     }
 }

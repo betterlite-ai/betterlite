@@ -8,7 +8,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_registration::JsonObject;
 
 use super::error::VectorFileResolutionError;
-use super::{Caller, RoutingDeps, truthy};
+use super::{Caller, KeyFacts, RoutingDeps, has_content};
 
 // The team model list entries that name every model rather than one deployment.
 const SENTINELS: [&str; 3] = ["all-team-models", "all-proxy-models", "no-default-models"];
@@ -29,8 +29,8 @@ where
     let Some(catalog) = deps.catalog else {
         return Ok(());
     };
-    let key = caller
-        .key_facts()
+    let key: KeyFacts = serde_json::to_value(caller.auth)
+        .and_then(serde_json::from_value)
         .map_err(VectorFileResolutionError::Caller)?;
     let Some(candidates) = candidate_names(key.team_models.as_ref()) else {
         return Ok(());
@@ -107,7 +107,7 @@ where
 
 // team_models with the sentinels and every non-string entry dropped; None stops the fallback for a truthy non-list.
 pub(super) fn candidate_names(team_models: Option<&Json>) -> Option<Vec<String>> {
-    let Some(value) = team_models.filter(|value| truthy(value)) else {
+    let Some(value) = team_models.filter(|value| has_content(value)) else {
         return Some(Vec::new());
     };
     let Json::List(entries) = value else {

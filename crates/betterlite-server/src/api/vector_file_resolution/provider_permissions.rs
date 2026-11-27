@@ -12,7 +12,7 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::api::provider_hints::{provider_from_body, provider_from_headers, provider_from_query};
 
-use super::{Caller, RequestFacts, truthy};
+use super::{Caller, KeyFacts, RequestFacts, has_content};
 
 // _resolve_provider then _maybe_check_permissions: the provider a request names, and B1061's check when either index allowlist is set.
 pub fn provider_and_index_permissions(
@@ -25,8 +25,8 @@ pub fn provider_and_index_permissions(
     let Some(provider) = resolve_provider(data, facts) else {
         return Ok(None);
     };
-    let key = caller
-        .key_facts()
+    let key: KeyFacts = serde_json::to_value(caller.auth)
+        .and_then(serde_json::from_value)
         .map_err(VectorEndpointAccessError::Grants)?;
     let gated = key.metadata.as_ref().is_some_and(index_allowlist)
         || key.team_metadata.as_ref().is_some_and(index_allowlist);
@@ -70,7 +70,7 @@ fn source_chain<'chain>(
     facts: &'chain RequestFacts<'_>,
 ) -> Option<ProviderCandidate<'chain>> {
     if let Some(value) = data.get("custom_llm_provider")
-        && truthy(value)
+        && has_content(value)
     {
         return Some(ProviderCandidate::Data(value));
     }
@@ -104,7 +104,7 @@ fn provider_id(candidate: &ProviderCandidate<'_>) -> Option<ProviderId> {
 fn index_allowlist(metadata: &JsonObject) -> bool {
     metadata
         .get("allowed_vector_store_indexes")
-        .is_some_and(truthy)
+        .is_some_and(has_content)
 }
 
 // RequestRouteSource has no Clone, so B1061 gets the same scope pieces and path rebuilt.

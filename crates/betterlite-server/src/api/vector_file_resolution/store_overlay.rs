@@ -4,10 +4,10 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
 use super::error::VectorFileResolutionError;
-use super::{StoreDeps, truthy};
+use super::{StoreDeps, has_content};
 
 // _update_request_data_with_litellm_managed_vector_store_registry: a decoded store id routes and returns, otherwise the store record overlays its fields.
-pub fn unified_store_and_registry_overlay(
+pub fn apply_store_overlay(
     data: &mut JsonObject,
     vector_store_id: &str,
     deps: &StoreDeps<'_>,
@@ -82,7 +82,7 @@ fn apply_store_fields(
     let Some(params) = fields.get("litellm_params") else {
         return Ok(());
     };
-    if !truthy(params) {
+    if !has_content(params) {
         return Ok(());
     }
     let Json::Object(entries) = params else {

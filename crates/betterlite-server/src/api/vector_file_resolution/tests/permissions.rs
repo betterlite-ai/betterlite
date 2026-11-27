@@ -3,6 +3,7 @@ use betterlite_core::api::request_body::JsonObject as RequestBody;
 use betterlite_core::api::vector_endpoint_access::error::VectorEndpointAccessError;
 use betterlite_models::identity::provider_id::ProviderId;
 use http::HeaderMap;
+use rstest::rstest;
 
 use crate::api::vector_file_resolution::Caller;
 use crate::api::vector_file_resolution::provider_permissions::provider_and_index_permissions;
@@ -40,8 +41,14 @@ fn permissions_provider_sources() {
     );
 }
 
+#[rstest]
+#[case::empty_text(r#"{"custom_llm_provider":""}"#)]
+#[case::zero(r#"{"custom_llm_provider":0}"#)]
+#[case::false_value(r#"{"custom_llm_provider":false}"#)]
+#[case::empty_list(r#"{"custom_llm_provider":[]}"#)]
+#[case::empty_object(r#"{"custom_llm_provider":{}}"#)]
 #[test]
-fn permissions_falsy_data_falls_through() {
+fn permissions_falsy_data_falls_through(#[case] text: &'static str) {
     let auth = gated_auth(None, None);
     let principal = principal();
     let caller = Caller {
@@ -52,20 +59,12 @@ fn permissions_falsy_data_falls_through() {
     probe.headers = header_map(&[("custom-llm-provider", "azure")]);
     probe.query = Some("custom_llm_provider=bedrock");
     let facts = probe.facts(FILE_PATH);
-    for text in [
-        r#"{"custom_llm_provider":""}"#,
-        r#"{"custom_llm_provider":0}"#,
-        r#"{"custom_llm_provider":false}"#,
-        r#"{"custom_llm_provider":[]}"#,
-        r#"{"custom_llm_provider":{}}"#,
-    ] {
-        let candidate = object(text);
-        assert_eq!(
-            provider_and_index_permissions(&candidate, "vs_1", &facts, &caller, &TABLES).unwrap(),
-            Some(ProviderId::Azure),
-            "{text}"
-        );
-    }
+    let candidate = object(text);
+    assert_eq!(
+        provider_and_index_permissions(&candidate, "vs_1", &facts, &caller, &TABLES).unwrap(),
+        Some(ProviderId::Azure),
+        "{text}"
+    );
 }
 
 #[test]

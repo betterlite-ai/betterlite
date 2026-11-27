@@ -7,7 +7,9 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::error::VectorFileResolutionError;
-use super::{Caller, RequestFacts, RoutingDeps, header_text, last_query_value, truthy};
+use super::{
+    Caller, KeyFacts, RequestFacts, RoutingDeps, has_content, header_text, last_query_value,
+};
 
 // What _update_request_data_with_model_routing_hint's first half left the route: hint routing settled it, or the team fallback runs next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,10 +74,10 @@ where
         }
         let team_id = match caller {
             Some(caller) => {
-                caller
-                    .key_facts()
-                    .map_err(VectorFileResolutionError::Caller)?
-                    .team_id
+                let key: KeyFacts = serde_json::to_value(caller.auth)
+                    .and_then(serde_json::from_value)
+                    .map_err(VectorFileResolutionError::Caller)?;
+                key.team_id
             }
             None => None,
         };
@@ -123,7 +125,7 @@ fn user_controlled_hint(facts: &RequestFacts<'_>) -> Option<String> {
 // data.get("model") or the caller's hint; a truthy body model that is not text is not a hint at all.
 fn model_hint(data: &JsonObject, user_controlled: Option<&str>) -> Option<String> {
     match data.get("model") {
-        Some(value) if truthy(value) => match value {
+        Some(value) if has_content(value) => match value {
             Json::Text(text) => Some(text.clone()),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         },

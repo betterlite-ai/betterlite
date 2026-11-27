@@ -53,21 +53,15 @@ pub struct StoreDeps<'a> {
 // The key fields these helpers read, taken from the auth's serde form as B1020 and B1061 read their grants.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct KeyFacts {
-    team_id: Option<String>,
-    team_models: Option<Json>,
-    metadata: Option<JsonObject>,
-    team_metadata: Option<JsonObject>,
+pub(super) struct KeyFacts {
+    pub(super) team_id: Option<String>,
+    pub(super) team_models: Option<Json>,
+    pub(super) metadata: Option<JsonObject>,
+    pub(super) team_metadata: Option<JsonObject>,
 }
 
-impl Caller<'_> {
-    fn key_facts(&self) -> Result<KeyFacts, serde_json::Error> {
-        serde_json::to_value(self.auth).and_then(serde_json::from_value)
-    }
-}
-
-// Python's `if value:` on decoded JSON, which the `or` chains and truthy checks in the source helpers follow.
-fn truthy(value: &Json) -> bool {
+// Python's `if value:` on decoded JSON, which the `or` chains and presence checks in the source helpers follow.
+fn has_content(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

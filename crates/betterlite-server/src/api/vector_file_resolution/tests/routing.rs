@@ -1,11 +1,12 @@
 use betterlite_core::api::managed_resource_ids::decode_unified_id;
 
 use crate::api::vector_file_resolution::Caller;
+use crate::api::vector_file_resolution::error::VectorFileResolutionError;
 use crate::api::vector_file_resolution::file_routing::unified_file_routing;
 
 use super::support::{
-    Catalog, Checker, FILE_PATH, Grants, LookupCall, Probe, auth, authorization_failure, encoded,
-    header_map, lookup_failure, managed_failure, object, principal, routing_deps,
+    Catalog, Checker, FILE_PATH, Grants, LookupCall, Probe, auth, encoded, failure, header_map,
+    object, principal, routing_deps,
 };
 
 const UNIFIED_FILE: &str = "litellm_proxy:file;unified_id,u1;target_model_names,m1,m2;llm_output_file_id, file_a ;llm_output_file_model_id,openai/gpt-4o";
@@ -31,7 +32,10 @@ async fn unified_file_routing_gate_raw_id_400() {
     let deps = routing_deps(None, &grants, None, true);
     let mut data = object(r#"{"file_id":"raw_a"}"#);
     let outcome = unified_file_routing(&mut data, "raw_a", &facts, &caller, &deps).await;
-    let (status, detail) = managed_failure(outcome);
+    let VectorFileResolutionError::ManagedId(source) = failure(outcome) else {
+        panic!("the managed-id gate should have answered");
+    };
+    let (status, detail) = (source.status(), source.to_string());
     assert_eq!(status, 400);
     assert_eq!(
         detail,
@@ -55,7 +59,10 @@ async fn unified_file_routing_gate_managed_id_without_checker_500() {
     let file_id = encoded(UNIFIED_FILE);
     let mut data = object("{}");
     let outcome = unified_file_routing(&mut data, &file_id, &facts, &caller, &deps).await;
-    let (status, detail) = managed_failure(outcome);
+    let VectorFileResolutionError::ManagedId(source) = failure(outcome) else {
+        panic!("the managed-id gate should have answered");
+    };
+    let (status, detail) = (source.status(), source.to_string());
     assert_eq!(status, 500);
     assert_eq!(
         detail,
@@ -79,7 +86,10 @@ async fn unified_file_routing_gate_denied_403() {
     let file_id = encoded(UNIFIED_FILE);
     let mut data = object("{}");
     let outcome = unified_file_routing(&mut data, &file_id, &facts, &caller, &deps).await;
-    let (status, detail) = managed_failure(outcome);
+    let VectorFileResolutionError::ManagedId(source) = failure(outcome) else {
+        panic!("the managed-id gate should have answered");
+    };
+    let (status, detail) = (source.status(), source.to_string());
     assert_eq!(status, 403);
     assert_eq!(
         detail,
@@ -425,10 +435,10 @@ async fn unified_file_routing_legacy_authorization_denied() {
     let deps = routing_deps(Some(&catalog), &grants, None, false);
     let mut data = object(r#"{"model":"m_body"}"#);
     let outcome = unified_file_routing(&mut data, "file_raw", &facts, &caller, &deps).await;
-    assert_eq!(
-        authorization_failure(outcome).to_string(),
-        "the scripted grant denied `m_body`"
-    );
+    let VectorFileResolutionError::Authorization(denied) = failure(outcome) else {
+        panic!("the grant should have answered");
+    };
+    assert_eq!(denied.to_string(), "the scripted grant denied `m_body`");
     assert!(catalog.lookups().is_empty());
 }
 
@@ -447,7 +457,10 @@ async fn unified_file_routing_legacy_lookup_missing_model_errors() {
     let deps = routing_deps(Some(&catalog), &grants, None, false);
     let mut data = object(r#"{"model":"m_missing"}"#);
     let outcome = unified_file_routing(&mut data, "file_raw", &facts, &caller, &deps).await;
-    let (status, detail) = lookup_failure(outcome);
+    let VectorFileResolutionError::Lookup(lookup) = failure(outcome) else {
+        panic!("the credential lookup should have answered");
+    };
+    let (status, detail) = (lookup.status(), lookup.detail_error().map(str::to_owned));
     assert_eq!(status, Some(400));
     assert!(
         detail

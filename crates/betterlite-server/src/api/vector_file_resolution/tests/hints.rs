@@ -1,17 +1,25 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::api::vector_file_resolution::Caller;
+use crate::api::vector_file_resolution::error::VectorFileResolutionError;
 use crate::api::vector_file_resolution::model_hint::{ModelHintStep, model_hint_precedence};
 use crate::api::vector_file_resolution::team_fallback::{candidate_names, team_model_fallback};
 
 use super::support::{
-    Catalog, FILE_PATH, Grants, LookupCall, Probe, auth, authorization_failure, header_map,
-    lookup_failure, object, principal, routing_deps, team_auth, texts,
+    Catalog, FILE_PATH, Grants, LookupCall, Probe, auth, failure, header_map, object, principal,
+    routing_deps, team_auth, texts,
 };
 
+#[rstest]
+#[case::empty_api_key(r#"{"model":"m","api_key":""}"#)]
+#[case::empty_api_base(r#"{"model":"m","api_base":""}"#)]
+#[case::number_api_key(r#"{"model":"m","api_key":0}"#)]
+#[case::false_api_base(r#"{"model":"m","api_base":false}"#)]
+#[case::empty_list_api_key(r#"{"model":"m","api_key":[]}"#)]
 #[tokio::test]
-async fn model_hint_bypass_on_api_key_or_api_base() {
+async fn model_hint_bypass_on_api_key_or_api_base(#[case] text: &'static str) {
     let principal = principal();
     let auth = auth(&[]);
     let caller = Caller {
@@ -23,19 +31,11 @@ async fn model_hint_bypass_on_api_key_or_api_base() {
     let probe = Probe::get();
     let facts = probe.facts(FILE_PATH);
     let deps = routing_deps(Some(&catalog), &grants, None, false);
-    for text in [
-        r#"{"model":"m","api_key":""}"#,
-        r#"{"model":"m","api_base":""}"#,
-        r#"{"model":"m","api_key":0}"#,
-        r#"{"model":"m","api_base":false}"#,
-        r#"{"model":"m","api_key":[]}"#,
-    ] {
-        let mut bypass_data = object(text);
-        let step = model_hint_precedence(&mut bypass_data, &facts, Some(&caller), &deps)
-            .await
-            .unwrap();
-        assert_eq!(step, ModelHintStep::Bypassed, "{text}");
-    }
+    let mut bypass_data = object(text);
+    let step = model_hint_precedence(&mut bypass_data, &facts, Some(&caller), &deps)
+        .await
+        .unwrap();
+    assert_eq!(step, ModelHintStep::Bypassed, "{text}");
     assert!(catalog.lookups().is_empty());
     assert!(grants.asked().is_empty());
     let mut applied_data = object(r#"{"model":"m","api_base":null,"api_key":null}"#);
@@ -239,7 +239,10 @@ async fn model_hint_exact_without_router_errors() {
     let deps = routing_deps(None, &grants, None, false);
     let mut data = object(r#"{"model":"m"}"#);
     let outcome = model_hint_precedence(&mut data, &facts, Some(&caller), &deps).await;
-    let (status, detail) = lookup_failure(outcome);
+    let VectorFileResolutionError::Lookup(lookup) = failure(outcome) else {
+        panic!("the credential lookup should have answered");
+    };
+    let (status, detail) = (lookup.status(), lookup.detail_error().map(str::to_owned));
     assert_eq!(status, Some(500));
     assert_eq!(
         detail.as_deref(),
@@ -262,7 +265,10 @@ async fn model_hint_exact_missing_model_errors() {
     let deps = routing_deps(Some(&catalog), &grants, None, false);
     let mut data = object(r#"{"model":"m_missing"}"#);
     let outcome = model_hint_precedence(&mut data, &facts, Some(&caller), &deps).await;
-    let (status, detail) = lookup_failure(outcome);
+    let VectorFileResolutionError::Lookup(lookup) = failure(outcome) else {
+        panic!("the credential lookup should have answered");
+    };
+    let (status, detail) = (lookup.status(), lookup.detail_error().map(str::to_owned));
     assert_eq!(status, Some(400));
     assert!(
         detail
@@ -588,10 +594,10 @@ async fn team_fallback_authorization_denied() {
     let deps = routing_deps(Some(&catalog), &grants, None, false);
     let mut data = object(r#"{"model":"request"}"#);
     let outcome = team_model_fallback(&mut data, Some(&caller), &deps).await;
-    assert_eq!(
-        authorization_failure(outcome).to_string(),
-        "the scripted grant denied `m`"
-    );
+    let VectorFileResolutionError::Authorization(denied) = failure(outcome) else {
+        panic!("the grant should have answered");
+    };
+    assert_eq!(denied.to_string(), "the scripted grant denied `m`");
     assert_eq!(data, object(r#"{"model":"request"}"#));
 }
 
