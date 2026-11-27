@@ -65,8 +65,14 @@ impl From<SessionError> for PyErr {
 #[derive(Debug)]
 pub(crate) enum EvalOperationFailure {
     Mapped { class: ErrorClass, provider: String },
-    Session(#[from] SessionError),
+    Session(SessionError),
     Encode { source: serde_json::Error },
+}
+
+impl From<SessionError> for EvalOperationFailure {
+    fn from(error: SessionError) -> Self {
+        Self::Session(error)
+    }
 }
 
 impl From<ConvertError> for EvalOperationFailure {
@@ -164,10 +170,14 @@ impl EvalOperationFailure {
         }
     }
 
-    pub(crate) fn reply<T: Serialize, E: Classified>(
+    pub(crate) fn reply<T, E>(
         reply: Result<T, E>,
         params: &EvalsCallParams<'_>,
-    ) -> Result<String, Self> {
+    ) -> Result<String, Self>
+    where
+        T: Serialize,
+        E: Classified,
+    {
         match reply {
             Ok(value) => serde_json::to_string(&value).map_err(|source| Self::Encode { source }),
             Err(failure) => Err(Self::mapped(failure.into_class(), params)),

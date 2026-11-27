@@ -52,7 +52,7 @@ impl RequestCall {
 impl EvalCore {
     pub(super) async fn execute(&self, call: EvalCall) -> Result<String, EvalOperationFailure> {
         match call {
-            EvalCall::Request(call) => self.request(&call).await,
+            EvalCall::Request(request) => self.request(&request).await,
             EvalCall::Delete(payload) => self.lifecycle(&payload, Action::Delete).await,
             EvalCall::Cancel(payload) => self.lifecycle(&payload, Action::Cancel).await,
         }

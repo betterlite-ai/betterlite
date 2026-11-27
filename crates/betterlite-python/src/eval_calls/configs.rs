@@ -17,7 +17,9 @@ pub(super) struct EvalConfigs {
 
 impl EvalConfigs {
     pub(super) fn new(settings: ModuleSettings, environment: &BTreeMap<String, String>) -> Self {
-        let env_api_key = environment.get("OPENAI_API_KEY").map(SecretString::from);
+        let env_api_key = environment
+            .get("OPENAI_API_KEY")
+            .map(|value| SecretString::from(value.clone()));
         let openai = OpenAiEvalsConfig {
             api_key: settings.api_key,
             openai_key: settings.openai_key,

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::ffi::CStr;
 use std::net::TcpListener;
 use std::time::Duration;
 

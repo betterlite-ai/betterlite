@@ -271,17 +271,19 @@ fn request_timeout_reads_seconds() {
 
 #[test]
 fn request_a_wrong_typed_field_names_it() {
-    let error = ListPayload::parse(r#"{"limit": "many"}"#).unwrap_err();
+    let error = ListPayload::parse(r#"{"limit": "many"}"#).err().unwrap();
     assert!(matches!(
         error,
         ConvertError::FieldType { name: "limit", .. }
     ));
-    let order = ListPayload::parse(r#"{"order": "sideways"}"#).unwrap_err();
+    let order = ListPayload::parse(r#"{"order": "sideways"}"#)
+        .err()
+        .unwrap();
     assert!(matches!(
         order,
         ConvertError::FieldType { name: "order", .. }
     ));
-    let eval_id = IdPayload::parse(r#"{"eval_id": 7}"#).unwrap_err();
+    let eval_id = IdPayload::parse(r#"{"eval_id": 7}"#).err().unwrap();
     assert!(matches!(
         eval_id,
         ConvertError::FieldType {
@@ -366,9 +368,9 @@ fn error_payload_omits_an_empty_model_and_body() {
         body_code: None,
     };
     let unclassified = ErrorClass::Unclassified(Box::new(bare));
-    let text = serde_json::to_string(&payload(&unclassified, "openai")).unwrap();
-    let fields: IndexMap<String, Json> = serde_json::from_str(&text).unwrap();
-    assert!(!fields.contains_key("body"));
+    let body_text = serde_json::to_string(&payload(&unclassified, "openai")).unwrap();
+    let body_fields: IndexMap<String, Json> = serde_json::from_str(&body_text).unwrap();
+    assert!(!body_fields.contains_key("body"));
 }
 
 #[test]
@@ -391,7 +393,7 @@ fn error_payload_keeps_the_provider_it_was_given() {
 #[test]
 fn error_a_wrong_typed_field_is_a_bad_request() {
     Python::initialize();
-    let error = ListPayload::parse(r#"{"limit": "many"}"#).unwrap_err();
+    let error = ListPayload::parse(r#"{"limit": "many"}"#).err().unwrap();
     let raised = PyErr::from(EvalOperationFailure::from(error));
     Python::attach(|py| {
         let message = raised.value(py).to_string();

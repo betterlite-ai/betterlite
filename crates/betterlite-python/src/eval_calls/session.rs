@@ -157,9 +157,9 @@ fn run_blocking(py: Python<'_>, core: &Arc<EvalCore>, call: EvalCall) -> PyResul
 }
 
 fn run_spawned<'py>(py: Python<'py>, core: &Arc<EvalCore>, call: EvalCall) -> Answer<'py> {
-    let core = Arc::clone(core);
+    let shared = Arc::clone(core);
     future_into_py(py, async move {
-        let outcome = core.execute(call).await;
+        let outcome = shared.execute(call).await;
         Python::attach(|_attached| outcome.map_err(PyErr::from))
     })
 }
