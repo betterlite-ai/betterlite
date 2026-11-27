@@ -59,7 +59,6 @@ use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelRe
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
-use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
@@ -148,7 +147,6 @@ fn stage_input(
     }
 }
 
-// the resource grant stage reads the request's rule and database switch, so its input is built here
 fn resource_grant_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
