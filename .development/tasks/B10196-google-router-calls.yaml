@@ -1,0 +1,101 @@
+id: B10196
+title: The router runs the Google generate content calls, and the call steps route through the production router for any route type
+description: >-
+  LiteLLM's route_request sends agenerate_content and agenerate_content_stream to `llm_router.agenerate_content(**data)` when a router exists (route_llm_request.py L545-L716), and the Router runs them through `_dispatch_generic_call_type` and `_ageneric_api_call_with_fallbacks` with litellm.agenerate_content as the callable (router.py L1915, L2068-L2072, L6884-L6918). B6021 builds that engine in betterlite-sdk and takes its executors from the constructor, B8631 builds the production RouterGeneric with its executor list in betterlite-server, and B8354's table already routes both names to B6021's dispatch. Nothing registers an executor for them, so the router answers UnknownCallType. B6021 cannot take this: its scope is betterlite-sdk's router_generic, and betterlite-sdk does not depend on betterlite-vertex, where B10183 puts the GenAI session. The call steps also need a router-backed MessagesRouting, and the only one planned was B8804's for /v1/messages, so the Google routes (B10178) would need a copy. This task builds the GenAI SDK call once, registers its two executors in B8631's list, and builds one route-neutral router routing that B8804 uses for /v1/messages and B10178 for the Google routes.
+
+
+  SDK call. Module `app::inference::google_sdk_call` (crates/betterlite-server/src/app/inference/google_sdk_call.rs and google_sdk_call/: adapter.rs, executors.rs, tests.rs). Main already declares `pub mod google_sdk_call;` in app/inference.rs over an empty file. `GoogleSdkCall::new(state: &Arc<ServerState>, environment: &BTreeMap<String, String>) -> Self` builds one B10183 `GenaiSession` from `config.sections.studio_identity`, `vertex_credential_sources` and `vertex_schema_shaping` (already resolved at load), a RequestTimeout with the seconds and explicitly_set of `config.sections.routing_timeouts.global` (LiteLLM's litellm.request_timeout), `state.shared.bundled_catalog`, `NativeClients::new(state.shared.client.clone(), betterlite_config::tls::user_agent(environment))`, SystemClock, a redactor with MINIMUM_CUSTOM_KEY_LENGTH, `Arc::new(state.shared.aws_credentials.clone())` (B10175's chain; a clone shares its cache) as the AWS source, and `environment` as the resolution environment. `pub fn session(&self) -> &GenaiSession` hands that session to B10197's countTokens translator. `pub async fn call(&self, data: JsonMap, logging: &mut LoggingState, entry: Entry) -> Result<MessagesOutcome, MessagesCallError>` splits the data into B10183's GenaiCall the way `litellm.agenerate_content(**data)` binds keyword arguments: model, contents, config, tools, extra_headers, extra_query, extra_body, timeout and custom_llm_provider are taken out by name, and every other key (litellm_metadata, metadata, proxy_server_request, litellm_call_id, stream, vertex_project and the rest) goes into kwargs. It runs `session.run(&call.request(timeout), &adapter, &mut log, entry)` with a LogContext over the given LoggingState and B10183's logging_env with betterlite-logging's TracingSink. The answer becomes a MessagesOutcome: Mock, Adapter Response and Native or AsyncNative Response become `Message { body, hidden }` with the JSON object as body; AsyncNative Stream becomes `Stream { source: SharedSource { items, snapshot: None, buffered: None }, hidden }` where each event is `StreamItem::Bytes` and an event error is a StreamFailure with kind Other and its message; Adapter Stream does the same over its byte items. The hidden params carry model_id from the data's litellm_metadata.model_info.id when it is set, since LiteLLM's proxy reads the id the router wrote into the shared metadata dict and a JSON map does not share it back. A GenerateContentFailure becomes `MessagesCallError::Call(CallFailure)` with the class's status (default 500), message and error type from B3489's ErrorClass.
+
+
+  Chat adapter (adapter.rs). LiteLLM converts a model with no GenAI config (an `openai/` deployment, say) to a chat completion and calls `litellm.acompletion` (google_genai/adapters/handler.py L57-L104). `ChatAdapter` implements B3489's CompletionExecutor (crates/betterlite-core/src/api/genai/chat_call.rs L59) over `state.executor` and the ChatDeployment whose model_id is the data's litellm_metadata.model_info.id, which B303's request update writes on the router path. acompletion sends `call.request` with `ChatExecutor::send(deployment, &request)` (crates/betterlite-openai/src/chat/execution.rs L93) and answers the outcome's ChatResponse, or with `ChatExecutor::stream` when the request streams, parsing its SSE with SseParser and Chunk::parse as the chat relay does (routes/chat/streaming/relay.rs L50-L68) and ending the Chunk stream at [DONE], at the end of the body, or at the first read or parse error, which it logs at warn. completion, the blocking form, is never called by the async entries and answers the adapter error. With no deployment both answer `AdapterError::NoDeployment`, which B3489 wraps in LiteLLM's "Error calling litellm.acompletion for generate_content: ..." text.
+
+
+  Router executors (executors.rs). `genai_executors(call: Arc<GoogleSdkCall>) -> Vec<(String, Arc<dyn GenericCallExecutor>)>` answers two B10154 executors, "agenerate_content" with Entry::Await and "agenerate_content_stream" with Entry::AwaitStream. Each takes the GenericRequest's argument map as the data (B6021's generic attempt already merged the deployment's litellm_params under the request, with `model` set to the deployment's model, router.py L5359-L5377, so vertex_project, vertex_location, vertex_credentials and api_base arrive without a merge here), makes a fresh per-call logging state the way B8691's executor does (B247's constructor as function_setup builds one when the kwargs carry no logging object: the call type from the request's name, the call id from litellm_call_id, metadata from litellm_metadata), and runs `call`. A Message answers `GenericOutcome::Json` with the body and its hidden params under `_hidden_params`, the JSON dump a response object carries; a Stream answers `GenericOutcome::Stream` with a B10154 GenericStream over the source's items and hidden params; a failure answers `GenericError::Failed` with FailureCause::Class, as B8631 maps a LiteLLM exception. In crates/betterlite-server/src/app/inference/router_calls.rs put `genai_executors(Arc::new(GoogleSdkCall::new(state, &environment)))` in RouterGeneric's executor list in front of B8691's passthrough executors, with the same environment map those take; B7430's and B6460's lists keep their place in front.
+
+
+  Router routing. Module `app::inference::router_routing` (crates/betterlite-server/src/app/inference/router_routing.rs and router_routing/tests.rs). Main already declares `pub mod router_routing;` in app/inference.rs over an empty file. `router_routing(route_type: &'static str, router: Arc<RouterHandle>, generic: Arc<RouterGeneric>) -> Arc<dyn MessagesRouting>` is route_request's router branch (route_llm_request.py L545-L716) for any route type, the counterpart of B9800's standalone_routing. It holds `state.shared.router` and reads the current router on every call, the way B8631's adapters do. The router facts answer from that router's services: all_blocked is _raise_if_model_fully_blocked's check, then map_team_model, is_recognized_model, model_names_has, team_public_model_names_has, pass_through_all_models (router_general_settings), has_default_or_pattern (a default deployment or any pattern route), is_deployment_name, and DeploymentLookup over B844's model list as B8611's RouterView answers it. `anthropic_messages(data, specific_deployment)`, which is `getattr(llm_router, route_type)(**data)` for the route type it was built with, calls RouterGeneric's `dispatch_generic_call_type` with that name and the data as the GenericRequest, with `specific_deployment` set when asked. GenericOutcome::Json becomes `Message` with `_hidden_params` taken out of the body as the hidden params, and GenericOutcome::Stream becomes `Stream` over a SharedSource of its items; GenericError::Failed becomes `MessagesCallError::Call(CallFailure)` with the failure's status, message, type and headers, and UnknownCallType a CallFailure with status 500 and its text. `a2a_agent` answers a model name that starts with "a2a/" with an error that names A2A agent routing as not built, the way catalog/arize.rs answers CatalogError::Unavailable, and never sends it on to the router; B4788 replaces that answer. B9800's `CallFailure` (crates/betterlite-server/src/messages_call.rs L209-L216) gains `cooldown: Option<f64>`, set from a RouterRateLimitError's cooldown_time when B10154's failure names that class and None everywhere else, so _handle_llm_api_exception's retry-after (B10178) sees it; every CallFailure literal sets it.
+
+
+  Tests. google_sdk_call::tests build a ServerState without a database from a config whose model_list has a `gemini/gemini-2.0-flash` deployment with api_base on a betterlite_http_fixture mock upstream and an `openai/oracle-model` deployment on another mock. They check: `call` with a gemini data map reaches the mock at the Gemini path and answers its JSON as a Message; the stream entry answers the mock's frames byte for byte; a data map whose litellm_metadata.model_info.id names the openai deployment answers from a chat completion in Google's shape, and a streamed one ends when the chat stream ends; with no model id the adapter answers the 500 with "Error calling litellm.acompletion for generate_content"; a provider 401 is a CallFailure with status 401; `genai_executors` answers the two names in that order, and the agenerate_content executor answers GenericOutcome::Json with `_hidden_params.model_id` from the arguments' litellm_metadata. router_routing::tests build a real Router from a two-deployment config.yaml against a local mock upstream and B8631's RouterCalls, as B8631's tests do, and check each router fact against that config, a call built with "agenerate_content" reaching the upstream through RouterGeneric and answering a Message with the deployment's model_id, the same call falling back to the second deployment on a 500, and an "a2a/" model answering the not-built error with no upstream request.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/google_sdk_call.rs
+    - crates/betterlite-server/src/app/inference/google_sdk_call/**
+    - crates/betterlite-server/src/app/inference/router_routing.rs
+    - crates/betterlite-server/src/app/inference/router_routing/**
+    - crates/betterlite-server/src/app/inference/router_calls.rs
+    - crates/betterlite-server/src/messages_call.rs
+    - crates/betterlite-server/src/messages_call/standalone.rs
+    - crates/betterlite-server/src/messages_call/tests.rs
+    - crates/betterlite-server/src/messages_call/tests/**
+    - docs/deviations/B10196.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L545-L716
+    why: route_request's router branch, the facts the router routing answers and the getattr(llm_router, route_type) call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2059-L2077
+    why: The Router registers agenerate_content and agenerate_content_stream through factory_function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5414
+    why: _ageneric_api_call_with_fallbacks_helper, with the litellm_params merge at L5359-L5377 that brings the Vertex options to the call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L235-L486
+    why: agenerate_content and agenerate_content_stream, whose keyword arguments the data split follows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L18-L104
+    why: The chat adapter's acompletion call and its error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L470-L520
+    why: The per-config credential cache the deviation below names.
+dod:
+  - text: GoogleSdkCall runs one generate content call from a data map, natively or through the chat adapter, streamed or not, and answers a MessagesOutcome with the router's model_id in the hidden params.
+    proof: [sdk-call-tests]
+  - text: RouterGeneric holds executors for agenerate_content and agenerate_content_stream, and a router call reaches the deployment with its litellm_params.
+    proof: [sdk-call-tests, router-list, routing-tests]
+  - text: router_routing answers route_request's router facts from the current router and sends the call for the route type it was built with through RouterGeneric, falling back on a 500.
+    proof: [routing-tests]
+  - text: A router rate limit's cooldown rides in CallFailure, and /v1/messages chooses and answers as before.
+    proof: [messages-tests]
+  - text: docs/deviations/B10196.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sdk-call-tests
+      why: the data split loses a field, the adapter is not used, the answer shape is wrong or an executor answers the wrong outcome
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::google_sdk_call::/)'
+    - id: routing-tests
+      why: a router fact answers wrong, the call goes to the wrong call type or skips the fallback, or an a2a model reaches the router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::router_routing::/)'
+    - id: router-list
+      why: the executors are not in RouterGeneric's list or broke B8631's router calls
+      run: grep -q 'genai_executors' crates/betterlite-server/src/app/inference/router_calls.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::router_calls::/)'
+    - id: messages-tests
+      why: the new CallFailure field changed what the messages steps choose or answer
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^messages_call::/)'
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10196.yaml && grep -q 'logging' docs/deviations/B10196.yaml
+oracle_cases: []
+deviations:
+  - what: On the router path the GenAI SDK call writes its pre-call records into a fresh logging state, not the proxy's logging object for the request.
+    why: B10154's GenericRequest is a JSON map with no slot for the logging object LiteLLM passes in kwargs; B8691's pass-through executor makes a fresh state the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5414
+  - what: >-
+      The chat adapter reaches a model_list deployment through the OpenAI-compatible chat executor only, so a chat-only deployment the executor cannot send (an Anthropic or Azure one, say) fails with the executor's error, and a call with no deployment (the direct branch) answers a 500. A chat stream that breaks midway ends the Google stream instead of raising.
+    why: The server has no general litellm.acompletion; B3489's CompletionExecutor answers a stream of plain chunks with no error item.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/handler.py#L57-L104
+  - what: Vertex credentials are loaded again on every generation call, where LiteLLM's GenAI config caches them per credentials and project.
+    why: B10183's session keeps B7844's lookup; the server's credential cache lives inside the Vertex embedding executor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L470-L520
+out_of_scope:
+  - "The Google routes' pipeline, its direct-branch dispatch and the exception handling: B10178."
+  - "/v1/messages' switch from standalone routing to this router routing, its hooks adapter and B312's header refresh: B8804."
+  - "A2A agent routing behind a2a_agent: B4788."
+  - "B6021's engine, B10154's contract and B8631's other executors and adapters: their tasks."
+pitfalls:
+  - "Build router_routing per request from state.shared.router, never from a startup router snapshot, so a config reload reaches the next call."
+  - "`stream` stays in the SDK call's kwargs, as **data passes it to agenerate_content_stream; GenaiCall has no stream field."
+  - "The genai stream frames are already SSE text from the provider; wrap them as StreamItem::Bytes so B6370's guardrail wrapper sees raw bytes, as LiteLLM's iterator hook does (google_endpoints/endpoints.py L109-L112)."
+  - "B9800's MessagesRouting method is still named anthropic_messages; here it serves the route type the routing was built with, so name that in a one-line comment."
+  - "B10183 changes messages_call.rs and standalone.rs first; read them on main when this task starts."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -19,9 +19,14 @@ description: >-
   `app::spend::budget::interaction_release(&state.shared)` as its release argument, and
   `api::agents::collection_routes::routes(..)`. B3507's and B3508's route states keep B8801's
   `Arc<dyn PreCall<UserAPIKeyAuth>>`: build `app::inference::pre_call_step(state)` (B8802) once in google::mount and
-  hand the same Arc to both. B3506's routes take UserAPIKeyAuth as their key and B10178's generation value: build
-  `app::inference::google_generation::GoogleGeneration::new(state, Arc::clone(&pre_call), &process_environment())` once in
-  google::mount with that same Arc and pass it as `GenaiRoutesState.generation`. Pass each routes function whatever else
+  hand the same Arc to both. B3506's routes take UserAPIKeyAuth as their key, B10178's generation value and B10197's countTokens values. Build
+  `sdk_call = Arc::new(app::inference::google_sdk_call::GoogleSdkCall::new(state, &process_environment()))` (B10196) and
+  `app::inference::google_generation::GoogleGeneration::new(state, Arc::clone(&pre_call), Arc::clone(&sdk_call), &calls)`, where calls is
+  B8631's `app::inference::router_calls(state)`, once in
+  google::mount with that same pre-call Arc and pass it as `GenaiRoutesState.generation`; pass B10197's
+  `ContentTranslator::new(Arc::clone(&sdk_call))` as `translator` and `ProxyTokenCounter::new(state)` as `token_counter`, so the
+  four countTokens cases run on the production adapter and B8598's counter. A RouterPortError from router_calls is a startup
+  failure: surface it the way the merged mounts that call router_calls do. Pass each routes function whatever else
   its task gives it, and register no path here.
 
 

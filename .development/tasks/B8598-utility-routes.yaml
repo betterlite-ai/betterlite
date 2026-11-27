@@ -17,7 +17,10 @@ description: >-
   disable_token_counter true the answer is 503 type token_counting_disabled. Local counting uses B195's tokenizer
   selection with model_info.custom_tokenizer and B196's token_counter, with the system string or list prepended as a
   system message and tools counted only with messages; the answer is total_tokens, request_model, model_used and
-  tokenizer_type.
+  tokenizer_type. The handler body is `pub async fn token_counter(state: &ServerState, request: &TokenCountRequest,
+  call_endpoint: bool) -> Result<TokenCountResponse, UtilityRouteError>`, LiteLLM's proxy_server.token_counter, with its
+  request and response types pub, and the mapping of a UtilityRouteError to its HTTP answer is a pub function too:
+  B10197's Google countTokens adapter calls both with call_endpoint true and writes no counter of its own.
 
 
   GET /utils/supported_openai_params?model= resolves the router's model group to its first litellm model, splits a
