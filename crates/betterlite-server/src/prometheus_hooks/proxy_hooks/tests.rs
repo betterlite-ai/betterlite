@@ -128,9 +128,9 @@ async fn the_success_hook_emits_nothing() {
 async fn errors_inside_the_proxy_hook_are_swallowed() {
     let fixture = fixture();
     let auth = auth("sk-secret");
-    let mut data = request_data("gpt-4o");
     // a tags field that is not a list fails the request-tag reader before either counter is written
-    data.insert("metadata".to_owned(), json!({"tags": "not-a-list"}));
+    let data: JsonMap =
+        serde_json::from_str(r#"{"model": "gpt-4o", "metadata": {"tags": "not-a-list"}}"#).unwrap();
     fixture
         .hooks
         .async_post_call_failure_hook(&data, &exception(Some("500")), &auth)
