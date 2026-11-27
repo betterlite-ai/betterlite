@@ -173,13 +173,8 @@ impl Run {
 }
 
 pub(crate) async fn run(operation: BedrockImageOperation<'_, '_, '_>, reply: Reply) -> Run {
-    run_with(
-        OperationRequest::BedrockImage(BedrockImageRequest),
-        operation,
-        reply,
-        None,
-    )
-    .await
+    let request = OperationRequest::BedrockImage(BedrockImageRequest);
+    run_with(request, operation, reply, None).await
 }
 
 pub(crate) async fn run_request(
