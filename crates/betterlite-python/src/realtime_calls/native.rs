@@ -21,7 +21,8 @@ pub(crate) struct NativeRealtimeSession {
 impl NativeRealtimeSession {
     #[new]
     fn new(settings: &str) -> PyResult<Self> {
-        let session = RealtimeSession::build(settings).map_err(|error| error.failure().python())?;
+        let session = RealtimeSession::build(settings)
+            .map_err(|error| CallFailure::class("ValueError", error.to_string()).exception())?;
         Ok(Self {
             session: Arc::new(session),
         })
@@ -31,13 +32,15 @@ impl NativeRealtimeSession {
     fn aclient_secret(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> Pending {
         let arguments = match convert::parse(payload) {
             Ok(arguments) => convert::client_secret(arguments),
-            Err(error) => return Err(error.failure().python()),
+            Err(error) => {
+                return Err(CallFailure::class("ValueError", error.to_string()).exception());
+            }
         };
         let session = Arc::clone(&self.session);
         let future = async move {
             match http::client_secret(&session, &arguments).await {
                 Ok(response) => body_text(response),
-                Err(error) => Err(convert::http_failure(&error).python()),
+                Err(error) => Err(convert::http_failure(&error).exception()),
             }
         };
         future_into_py(py, future).map(Bound::unbind)
@@ -47,13 +50,15 @@ impl NativeRealtimeSession {
     fn atranscription_session(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> Pending {
         let arguments = match convert::parse(payload) {
             Ok(arguments) => convert::transcription(arguments),
-            Err(error) => return Err(error.failure().python()),
+            Err(error) => {
+                return Err(CallFailure::class("ValueError", error.to_string()).exception());
+            }
         };
         let session = Arc::clone(&self.session);
         let future = async move {
             match http::transcription(&session, &arguments).await {
                 Ok(response) => body_text(response),
-                Err(error) => Err(convert::http_failure(&error).python()),
+                Err(error) => Err(convert::http_failure(&error).exception()),
             }
         };
         future_into_py(py, future).map(Bound::unbind)
@@ -61,27 +66,24 @@ impl NativeRealtimeSession {
 
     // arealtime_calls: the SDP answer as text, with the offer arriving as the last blob
     fn acalls(&self, py: Python<'_>, payload: &str, blobs: Blobs) -> Pending {
-        let arguments = calls_prepared(payload, &blobs);
+        let prepared = convert::parse(payload)
+            .map_err(|error| CallFailure::class("ValueError", error.to_string()))
+            .and_then(|arguments| {
+                convert::calls(arguments, &blobs)
+                    .map_err(|error| CallFailure::class("ValueError", error.to_string()))
+            });
         let session = Arc::clone(&self.session);
         let future = async move {
-            match arguments {
+            match prepared {
                 Ok(arguments) => match http::calls(&session, &arguments).await {
                     Ok(response) => body_text(response),
-                    Err(error) => Err(convert::http_failure(&error).python()),
+                    Err(error) => Err(convert::http_failure(&error).exception()),
                 },
-                Err(error) => Err(error.python()),
+                Err(error) => Err(error.exception()),
             }
         };
         future_into_py(py, future).map(Bound::unbind)
     }
-}
-
-fn calls_prepared(
-    payload: &str,
-    blobs: &[Vec<u8>],
-) -> Result<convert::CallsArguments, CallFailure> {
-    let arguments = convert::parse(payload).map_err(|error| error.failure())?;
-    convert::calls(arguments, blobs).map_err(|error| error.failure())
 }
 
 fn body_text(response: UpstreamResponse) -> PyResult<String> {
@@ -90,6 +92,6 @@ fn body_text(response: UpstreamResponse) -> PyResult<String> {
             "ValueError",
             String::from("the realtime response body is not UTF-8"),
         )
-        .python()
+        .exception()
     })
 }

@@ -1,15 +1,16 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::realtime_contracts::error::HeaderMap;
-use betterlite_core::api::realtime_http_calls::error::{RealtimeHttpCallsError, RecordError};
+use betterlite_core::api::realtime_http_calls::error::RealtimeHttpCallsError;
 use betterlite_models::decisions::Json;
-use betterlite_models::resolution::ResolutionError;
 use betterlite_provider::api::realtime_http_transport::error::RealtimeHttpError;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use thiserror::Error;
 
-#[cfg(test)]
+use super::error::CallFailure;
+
 mod tests;
 
 #[derive(Debug, Error)]
@@ -18,12 +19,6 @@ pub(crate) enum ConvertError {
     Json(#[from] serde_json::Error),
     #[error("the realtime call is missing its {0} argument")]
     Missing(&'static str),
-}
-
-impl ConvertError {
-    pub(crate) fn failure(&self) -> super::error::CallFailure {
-        super::error::CallFailure::class("ValueError", self.to_string())
-    }
 }
 
 // main.py's payload: one "arguments" object, and unknown keys stay in extra the way LiteLLM's kwargs allow them
@@ -43,7 +38,7 @@ pub(crate) struct Arguments {
     pub(crate) openai_ephemeral_key: Option<String>,
     pub(crate) timeout: Option<f64>,
     pub(crate) api_base: Option<String>,
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) api_version: Option<String>,
     pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     #[serde(flatten)]
@@ -73,7 +68,7 @@ pub(crate) struct Common {
     pub(crate) model: Option<String>,
     pub(crate) timeout: Option<f64>,
     pub(crate) api_base: Option<String>,
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) api_version: Option<String>,
     pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     pub(crate) kwargs: IndexMap<String, Json>,
@@ -130,34 +125,25 @@ pub(crate) fn calls(
 }
 
 // The provider's own exception keeps its class and fields; only the handler without a config lets the masked status escape
-pub(crate) fn http_failure(
-    error: &RealtimeHttpCallsError<RealtimeHttpError>,
-) -> super::error::CallFailure {
+pub(crate) fn http_failure(error: &RealtimeHttpCallsError<RealtimeHttpError>) -> CallFailure {
     match error {
         RealtimeHttpCallsError::Dispatch(inner) => dispatch_failure(inner),
-        RealtimeHttpCallsError::Resolution(source) => resolution_failure(source),
+        RealtimeHttpCallsError::Resolution(source) => {
+            CallFailure::class("BadRequestError", source.to_string())
+        }
         RealtimeHttpCallsError::Record(source) => {
-            super::error::CallFailure::class("ValueError", record_message(source))
+            CallFailure::class("ValueError", source.to_string())
         }
         RealtimeHttpCallsError::Logging(source) => {
-            super::error::CallFailure::class("ValueError", source.to_string())
+            CallFailure::class("ValueError", source.to_string())
         }
         RealtimeHttpCallsError::Timeout { .. } => {
-            super::error::CallFailure::class("ValueError", error.to_string())
+            CallFailure::class("ValueError", error.to_string())
         }
     }
 }
 
-fn record_message(error: &RecordError) -> String {
-    error.to_string()
-}
-
-fn resolution_failure(error: &ResolutionError) -> super::error::CallFailure {
-    super::error::CallFailure::class("BadRequestError", error.to_string())
-}
-
-fn dispatch_failure(error: &RealtimeHttpError) -> super::error::CallFailure {
-    use super::error::CallFailure;
+fn dispatch_failure(error: &RealtimeHttpError) -> CallFailure {
     match error {
         RealtimeHttpError::Provider(source) => CallFailure {
             kind: String::from("BaseLLMException"),

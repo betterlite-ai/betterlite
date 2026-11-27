@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 
 use betterlite_core::api::realtime_http_calls::error::{RealtimeHttpCallsError, RecordError};

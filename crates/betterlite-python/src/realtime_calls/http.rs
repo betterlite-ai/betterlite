@@ -24,6 +24,7 @@ use betterlite_provider::api::realtime_http_transport::error::RealtimeHttpError;
 use betterlite_provider::api::realtime_http_transport::session::{
     SessionCall, SessionEndpoint as HttpEndpoint, session_post,
 };
+use secrecy::SecretString;
 
 use super::convert::{CallsArguments, ClientSecretArguments, Common, TranscriptionArguments};
 use super::session::RealtimeSession;
@@ -34,10 +35,6 @@ pub(crate) struct Dispatcher<'session> {
 }
 
 impl<'session> Dispatcher<'session> {
-    pub(crate) const fn new(session: &'session RealtimeSession) -> Self {
-        Self { session }
-    }
-
     fn deps<'deps>(
         &'deps self,
         config: Option<&'deps RealtimeHttpConfig>,
@@ -117,7 +114,7 @@ impl RealtimeHttpDispatch for Dispatcher<'_> {
 
 fn call_common<'call>(
     arguments: &'call Common,
-    api_key: Option<&'call secrecy::SecretString>,
+    api_key: Option<&'call SecretString>,
 ) -> CallCommon<'call> {
     CallCommon {
         model: arguments.model.as_deref(),
@@ -138,13 +135,8 @@ pub(crate) async fn client_secret(
     let mut logging = session
         .logging("arealtime_client_secret")
         .map_err(RealtimeHttpCallsError::Logging)?;
-    let dispatcher = Dispatcher::new(session);
-    let api_key = arguments
-        .common
-        .api_key
-        .as_ref()
-        .map(secrecy::SecretString::from);
-    let common = call_common(&arguments.common, api_key.as_ref());
+    let dispatcher = Dispatcher { session };
+    let common = call_common(&arguments.common, arguments.common.api_key.as_ref());
     let calls = RealtimeHttpCalls {
         dispatch: &dispatcher,
         settings: &session.http_settings,
@@ -169,13 +161,8 @@ pub(crate) async fn transcription(
     let mut logging = session
         .logging("arealtime_transcription_session")
         .map_err(RealtimeHttpCallsError::Logging)?;
-    let dispatcher = Dispatcher::new(session);
-    let api_key = arguments
-        .common
-        .api_key
-        .as_ref()
-        .map(secrecy::SecretString::from);
-    let common = call_common(&arguments.common, api_key.as_ref());
+    let dispatcher = Dispatcher { session };
+    let common = call_common(&arguments.common, arguments.common.api_key.as_ref());
     let calls = RealtimeHttpCalls {
         dispatch: &dispatcher,
         settings: &session.http_settings,
@@ -199,13 +186,8 @@ pub(crate) async fn calls(
     let mut logging = session
         .logging("arealtime_calls")
         .map_err(RealtimeHttpCallsError::Logging)?;
-    let dispatcher = Dispatcher::new(session);
-    let api_key = arguments
-        .common
-        .api_key
-        .as_ref()
-        .map(secrecy::SecretString::from);
-    let common = call_common(&arguments.common, api_key.as_ref());
+    let dispatcher = Dispatcher { session };
+    let common = call_common(&arguments.common, arguments.common.api_key.as_ref());
     let calls = RealtimeHttpCalls {
         dispatch: &dispatcher,
         settings: &session.http_settings,
@@ -215,8 +197,8 @@ pub(crate) async fn calls(
         .arealtime_calls(
             RealtimeCallsCall {
                 common,
-                openai_ephemeral_key: &arguments.ephemeral_key,
-                sdp_body: &arguments.sdp,
+                openai_ephemeral_key: arguments.ephemeral_key.as_str(),
+                sdp_body: arguments.sdp.as_slice(),
                 session: arguments.session.as_ref(),
             },
             &mut logging,

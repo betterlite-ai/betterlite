@@ -30,7 +30,7 @@ impl CallFailure {
         }
     }
 
-    pub(crate) fn python(&self) -> PyErr {
+    pub(crate) fn exception(&self) -> PyErr {
         match serde_json::to_string(self) {
             Ok(payload) => NativeRealtimeError::new_err(payload),
             Err(_error) => NativeRealtimeError::new_err(self.message.clone()),
@@ -50,10 +50,4 @@ pub(crate) enum SessionError {
     Logging(#[from] betterlite_logging::logging_state::LoggingStateError),
     #[error("the redactor could not be built: {0}")]
     Redact(#[source] betterlite_redact::error::RedactionError),
-}
-
-impl SessionError {
-    pub(crate) fn failure(&self) -> CallFailure {
-        CallFailure::class("ValueError", self.to_string())
-    }
 }
