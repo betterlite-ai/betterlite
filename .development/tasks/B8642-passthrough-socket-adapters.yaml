@@ -2,7 +2,7 @@ id: B8642
 title: Pass-through WebSocket socket adapters
 description: >-
   B3612 declares the socket seams of the pass-through WebSocket relay (`ClientSocket`, `UpstreamConnector`, `UpstreamSocket`) and B3628 adds `RouteSocket` on top of ClientSocket. Both tasks test with fakes and leave the real sockets out. This task builds the production adapters in crates/betterlite-server/src/app/pass_through/sockets.rs and sockets/ (client.rs, upstream.rs, tests.rs). B8640 hands them to the WebSocket routes of B3628 and B3629.
-  The architect adds axum's `ws` feature to the server manifest before this task runs; do not edit a Cargo.toml. The upstream side opens its socket through B10211's client, so the server takes no tokio-tungstenite dependency.
+  Add axum's `ws` feature to crates/betterlite-server/Cargo.toml (`features = ["query", "ws"]`). The upstream side opens its socket through B10211's client, so the server takes no tokio-tungstenite dependency.
 
   Client side. LiteLLM uses Starlette's WebSocket. Its handler runs route code first and calls accept later, and a close before accept turns into a plain HTTP 403 answer to the upgrade request. axum is the other way round: the 101 answer is the handler's return value, and the socket exists only inside the `on_upgrade` callback. `AxumClientSocket` bridges the two.
   `serve_client_socket(upgrade, parts, route)` is the one entry point B8640 calls from a GET handler. `upgrade` is axum's WebSocketUpgrade, `parts` the request parts (path, query, headers) and `route` a `'static + Send` closure that takes `Arc<AxumClientSocket>` and returns the route future. Steps:
