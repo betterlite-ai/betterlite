@@ -1,0 +1,69 @@
+kind: helper
+name: auth-tenant-budgets-auth-organization-equality-budget
+call:
+  auth_tenant_budgets:
+    calls:
+      # spend at the organization ceiling denies, carrying the snapshot and queueing the ORGANIZATION alert
+      - function: organization
+        database: true
+        token: {token: sk-org, user_id: user-1, team_id: team-1, org_id: org-1}
+        organization:
+          organization_id: org-1
+          organization_alias: Acme
+          budget_id: budget-org
+          spend: 3.5
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 10.0}
+        spends: [10.0]
+      # a cent under passes, and a counter under the recorded row spend still passes
+      - function: organization
+        database: true
+        token: {token: sk-org, org_id: org-1}
+        organization:
+          organization_id: org-1
+          organization_alias: Acme
+          budget_id: budget-org
+          spend: 3.5
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 10.0}
+        spends: [9.99]
+      - function: organization
+        database: true
+        token: {token: sk-org, org_id: org-1}
+        organization:
+          organization_id: org-1
+          budget_id: budget-org
+          spend: 30.0
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 20.0}
+        spends: [0.0]
+      # a zero ceiling denies a zero spend at equality
+      - function: organization
+        database: true
+        token: {token: sk-zero, org_id: org-zero}
+        organization:
+          organization_id: org-zero
+          budget_id: budget-zero
+          spend: 0.0
+          created_by: seed
+          updated_by: seed
+          litellm_budget_table: {max_budget: 0.0}
+        spends: [0.0]
+      # a row with no ceiling only carries the snapshot
+      - function: organization
+        database: true
+        token: {token: sk-org, org_id: org-1}
+        organization:
+          organization_id: org-1
+          organization_alias: Acme
+          budget_id: budget-org
+          spend: 2.0
+          created_by: seed
+          updated_by: seed
+        spends: []
+env: {}
+compare:
+  ignore: []

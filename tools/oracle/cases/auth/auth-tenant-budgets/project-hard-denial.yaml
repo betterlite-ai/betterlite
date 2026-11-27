@@ -1,0 +1,34 @@
+kind: helper
+name: auth-tenant-budgets-auth-project-hard-denial
+call:
+  auth_tenant_budgets:
+    calls:
+      # the denial names the project, carries the counter spend and queues the PROJECT alert first
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 20.0
+          litellm_budget_table: {max_budget: 10.0}
+        token: {token: sk-project, user_id: user-1, team_id: team-1, team_alias: Alpha, org_id: org-1}
+        spends: [20.0]
+      # a zero ceiling denies a zero spend
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-zero
+          spend: 0.0
+          litellm_budget_table: {max_budget: 0.0}
+        token: {token: sk-zero, user_id: user-1}
+        spends: [0.0]
+      # without a token the same denial raises with no alert queued
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-open
+          spend: 0.0
+          litellm_budget_table: {max_budget: 5.0}
+        spends: [5.01]
+env: {}
+compare:
+  ignore: []

@@ -65,6 +65,7 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
@@ -99,7 +100,6 @@ pub(crate) async fn authenticate(
         Err(response) => *response,
     }
 }
-
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -131,6 +131,7 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
+        AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
         }
@@ -144,6 +145,20 @@ fn stage_input(
             model_grant_intersection::stage_input(request, authenticated)?,
         ))),
     }
+}
+
+fn resource_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, AuthenticationFailure> {
+    let stage = ResourceGrantStageInput {
+        context: authenticated
+            .cloned()
+            .ok_or(AuthenticationFailure::Missing)?,
+        rule: auth_resource_grants::rule_for_request(request),
+        database: auth_resource_grants::database_for_request(request),
+    };
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 fn model_pattern_input(
@@ -184,24 +199,15 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
-
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetch(&stage)
-            .await
-            .map_err(StageFailure::TagBudgets)
-            .map(|()| StageInput::AuthTagBudgets(stage)),
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetch(&stage)
-            .await
-            .map_err(StageFailure::KeyBudgets)
-            .map(|()| StageInput::AuthKeyBudgets(stage)),
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
+        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetch(&stage)
-            .await
-            .map_err(StageFailure::OrgLookup)
-            .map(|()| StageInput::AuthOrgLookup(stage)),
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
         StageInput::AuthEndUserIdentity(stage) => end_user_identity::prefetched(stage).await,
         StageInput::AuthEndUsers(mut stage) => {
             end_user_identity::prefetch_budget(&mut stage).await?;

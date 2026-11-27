@@ -1,0 +1,39 @@
+kind: helper
+name: runway-speech-ignored-speed
+call:
+  runway_speech:
+    operation: mapping
+    params:
+      model: eleven_multilingual_v2
+      environment: {}
+      calls:
+        - voice: alloy
+          optional_params:
+            speed: 2
+            response_format: mp3
+          drop_params: true
+calls:
+  - runway_speech:
+      operation: mapping
+      params:
+        model: eleven_multilingual_v2
+        environment: {}
+        calls:
+          - voice: alloy
+            optional_params:
+              speed: 2
+              response_format: mp3
+            drop_params: false
+  - runway_speech:
+      operation: mapping
+      params:
+        model: eleven_multilingual_v2
+        environment: {}
+        calls:
+          - voice: fable
+            optional_params:
+              speed: -1
+              seed: 7
+            drop_params: true
+env: {}
+compare: {ignore: []}
