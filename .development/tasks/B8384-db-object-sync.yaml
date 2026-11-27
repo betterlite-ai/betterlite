@@ -43,7 +43,7 @@ description: >-
   (_merge_config_and_db_search_tools), log "Loading {n} search tool(s) into router ({c} from config, {d} from
   database)", and when the router exists set its search tools with B3273 and log "Successfully loaded {n} search
   tool(s) into router"; without a router log at debug and stop. `reload_search_tools_from_db` gates on search_tools,
-  does nothing without a database, and runs load_search_tools under B836's MODEL_RECONCILE_LOCK; it implements B10013's
+  does nothing without a database, and runs load_search_tools under B10132's ModelReconcileLock (LiteLLM's MODEL_RECONCILE_LOCK), the one handle DbObjectSync is built with; it implements B10013's
   RouterSearchRefresh trait.
 
   Tests use in-memory repositories and recording fakes for each registry. Helper cases (operation b8384 with an

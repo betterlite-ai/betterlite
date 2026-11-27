@@ -1,0 +1,13 @@
+id: B10144
+milestone: M9 agents and mcp
+title: MCP REST access error contract
+status: done
+depends_on: []
+file: tasks/B10144-mcp-rest-access-error.yaml
+covers: []
+parent: B139
+split_from: B4726
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3329

@@ -29,7 +29,7 @@ description: >-
   h. B4712's create_mcp_server_if_identifier_free(payload, touched_by). Any error from it gives 500 {"error": "Error creating mcp server: <error text>"} and an error-level log "Error creating mcp server: <error text>". A McpIdentifierConflict result gives 400 with the object detail {"error": B4716's identifier_conflict_message(conflict)}.
   i. B4716's warn_if_id_jag_server_outruns_sso for the created row (the caller computes the gap with B1617's id_jag_assertion_capture_gap, as B4716 describes).
   j. Registry refresh, best effort: RegistryMutator::add(created) and then RegistryMutator::reload(), both inside one guard. A failure of either is logged at error level with the text "MCP server <server_id> created but in-memory registry refresh failed: <error>" and the request still succeeds, because the row is committed and a 500 would make the caller retry and create a duplicate.
-  k. Return B4717's redact function applied to the created row.
+  k. Return B10134's redact_mcp_credentials applied to the created row, under a read guard of the registry and with the public list from PublicServerSetting::get(). Its CredentialViewError is a 500.
 
   Route 2. POST /v1/mcp/server/import creates many servers from Anthropic connector JSON. Body ConnectorImportRequest (B4716; mcp_servers as a mapping or a list). Status 200. Response MCPConnectorImportResponse (B4716): imported, skipped, errors, in that field order, each a list.
   Steps.
@@ -42,7 +42,7 @@ description: >-
   g. Build the response from the outcomes in input order: imported = the Imported ones; skipped = the Skipped ones (from step d and from e.3); errors = the Failed conversions (turned into MCPConnectorImportFailure with the same name and error text) and the Failure outcomes of e.1 and e.2, interleaved in input order.
   The route does not call stamp_omitted_oauth2_flow and does not look at reserved ids, since converted entries carry no server_id.
 
-  Route 3. PUT /v1/mcp/server updates one server. Body UpdateMCPServerRequest (B4716). Status 202. Response model LiteLLM_MCPServerTable, with the body B4717's redact function returns.
+  Route 3. PUT /v1/mcp/server updates one server. Body UpdateMCPServerRequest (B4716). Status 202. Response model LiteLLM_MCPServerTable, with the body B10134's redact_mcp_credentials returns.
   LiteLLM treats an omitted field as "keep the stored value" and a field sent as null as "clear it". The set of keys the caller sent is payload.fields_set(). B4716's UpdateMCPServerRequest does not record it, so this module reads the raw JSON body first, keeps its top-level key names as a BTreeSet<String> (fields_set), and then calls UpdateMCPServerRequest::from_value on the same value. B4712's update_mcp_server takes that set.
   Steps, in this order.
   a. Database check (500, route 3 text).
@@ -55,7 +55,7 @@ description: >-
   h. B4716's warn_if_id_jag_server_outruns_sso for the updated row.
   i. RegistryMutator::update(updated), then RegistryMutator::reload(). Neither is guarded here: an error from either is an unhandled server error (500), because LiteLLM has no try around them in this route.
   j. Stale token purge. When a snapshot exists and B4715's mcp_oauth_token_identity(snapshot) differs from mcp_oauth_token_identity(updated), call B4715's purge_user_oauth_credentials_for_server(server_id). A purge error is logged at warning level "MCP server <server_id>: failed to purge stale per-user OAuth tokens after config change: <error>" and ignored; a purge count above zero is logged at info level "MCP server <server_id>: purged <n> stale per-user OAuth token(s) after a mint-relevant config change". No snapshot (read failed or absent) means no purge.
-  k. Return B4717's redact function applied to the updated row.
+  k. Return B10134's redact_mcp_credentials applied to the updated row, as in route 1.
 
   Route 4. DELETE /v1/mcp/server/{server_id} deletes one server. Status 202 with an empty body (LiteLLM returns a bare Response, so no JSON and no content type).
   Steps. a. Database check (500, route 3 text). b. Role gate: not admin gives 403 {"error": "Call not allowed to delete MCP server. User is not a proxy admin. route=DELETE /v1/mcp/server"}. c. B4712's delete_mcp_server(server_id); None gives 404 {"error": "MCP Server not found, passed server_id=<server_id>"}. d. RegistryMutator::remove(deleted_row), then RegistryMutator::reload(); neither is guarded, so an error is a 500 after the row is already gone. e. Return the empty 202.
@@ -64,7 +64,7 @@ description: >-
   Route 5. POST /v1/mcp/make_public sets which servers the AI Hub shows. Body MakeMCPServersPublicRequest { mcp_server_ids: Vec<String> } (declared in this module; a missing field or a non-list is a 422). Status 202.
   The whole handler body is one guard. An HTTPException passes through; any other error becomes 500 with the string detail <error text> and an error log "Error making agent public: <error>" (LiteLLM's own wording, keep it).
   Steps. a. Read the stored config through the ConfigStore port (below), before any role check. b. Role gate: not admin gives 403 with the object detail {"error": "Only proxy admins can update public mcp servers. Your role=<role>"}, where <role> is the role's string value as LiteLLM prints it (a key without a role prints None; read how B4720 prints it for the same kind of text). c. For each id in order, B4731's server_by_id(id) with no client ip (config servers and database servers both count); the first unknown id gives 404 with the string detail "MCP Server with ID <id> not found". d. Set config["litellm_settings"]["public_mcp_servers"] = ids (create litellm_settings when it is missing or null). e. ConfigStore::save_config(config). f. PublicServerSetting::set(ids), which updates the live public list in memory. g. Log at debug level "Updated public mcp servers to: <ids> by user: <user_id>". h. Return {"message": "Successfully updated public mcp servers", "public_mcp_servers": <ids>, "updated_by": <caller user_id or null>}, keys in that order.
-  Two ports are declared here for route 5. ConfigStore: get_config() -> serde_json::Value and save_config(Value), the same stored configuration LiteLLM's ProxyConfig reads and writes (B8627 implements it over B8380's ProxyConfigState in shared.proxy_config). PublicServerSetting: set(Vec<String>), which B8627 implements over the live RegistrySettings.public_mcp_servers of B4731.
+  Two ports are declared here for route 5. ConfigStore: get_config() -> serde_json::Value and save_config(Value), the same stored configuration LiteLLM's ProxyConfig reads and writes (B8627 implements it over B8380's ProxyConfigState in shared.proxy_config). PublicServerSetting: set(Vec<String>) and get() -> Vec<String>, which B8627 implements over the live RegistrySettings.public_mcp_servers of B4731. get also feeds the public list of the redaction in routes 1 and 3, since RegistrySettings is not readable from this crate.
 
   Tests use synthetic servers (ids like test-srv-1, names like test-weather, urls like https://mcp.example.test/sse), fakes for every port, a recording fake for the registry mutator and the token purge, and a fake database whose methods can fail on demand. They cover every branch above, including the order of the checks in routes 1, 3 and 5 and the order of the calls to the registry mutator.
 
@@ -173,7 +173,7 @@ out_of_scope:
   - "get_prisma_client_or_throw, the server table handle, get_mcp_server, get_all_mcp_servers and McpIdentifierConflict: owned by B4711."
   - "create_mcp_server_if_identifier_free, update_mcp_server and delete_mcp_server, including the credential and token cleanup on delete: owned by B4712."
   - "mcp_oauth_token_identity and purge_user_oauth_credentials_for_server: owned by B4715."
-  - "_redact_mcp_credentials, _user_is_full_admin and the sanitizers: owned by B4717."
+  - "_redact_mcp_credentials and _preserved_admin_config_credentials: owned by B10134 as redact_mcp_credentials. _user_is_full_admin and the sanitizers: owned by B4717; these routes call none of them."
   - "resolve_mcp_server and get_mcp_server_by_id (resolve_server, server_by_id): owned by B4731. add_server, update_server, remove_server and reload_servers_from_database: owned by B6765."
   - "management_endpoint_wrapper: owned by B865. The audit log placeholders in routes 3 and 4 (is_audit_logging_enabled followed by pass) do nothing at the pin and are not built."
   - "ProxyConfig.get_config and save_config: no task owns them yet; route 5 calls them through the ConfigStore port."

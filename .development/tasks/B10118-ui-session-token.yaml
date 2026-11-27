@@ -1,0 +1,119 @@
+id: B10118
+title: Shared UI session token encoder
+description: >-
+  The dashboard's `token` cookie is one HS256 JWT, and both UI login paths mint it: B788's password login and B1624's SSO browser session. LiteLLM signs it in one place, encode_ui_session_jwt in login_utils.py, so the cookie's lifetime can't drift between the paths. This task builds that encoder, its exp stamp, the one setting it reads, and get_disabled_non_admin_personal_key_creation, the flag both paths put into the token. B788 and B1624 call these and build none of them. Nothing here checks a password, mints a virtual key, writes a session row or talks to an SSO provider.
+
+
+  Layout. Module ui_session_token in betterlite-server, crates/betterlite-server/src/ui_session_token.rs, with submodules as you need and a tests.rs beside each. The file is an empty stub lib.rs already declares; it sits outside password_login and sso_browser_session on purpose, so the three tasks never share files. The setting lives in config section ui_session_token, crates/betterlite-config/src/sections/ui_session_token.rs with its tests in sections/ui_session_token/tests.rs; the stub, its `pub mod` line and its sections! entry are on main. betterlite-server already depends on jsonwebtoken, chrono, jiff, betterlite-core, betterlite-auth and betterlite-config, so no Cargo.toml changes.
+
+
+  The setting. litellm/constants.py reads LITELLM_UI_SESSION_DURATION once at import with `os.getenv("LITELLM_UI_SESSION_DURATION", "24h")`. The section's Settings has one field, `duration: String`: "24h" when the variable is unset, the variable's text otherwise. A variable set to the empty string stays "", because os.getenv returns it; don't drop empty values the way public_discovery's environment_or does. Keep the text raw and don't parse it at load: LiteLLM parses it only when a token is minted, so a bad value fails that login and not startup. There is no config file key. Other crates read it as config.sections.ui_session_token. B788 and B1624 also pass this same duration to B893's key generation for the dashboard key, so neither of them reads the variable again.
+
+
+  The exp stamp. `ui_session_exp_timestamp(settings: &Settings, now: DateTime<Utc>, database: &TimeZoneDatabase) -> Result<i64, UiSessionTokenError>` is LiteLLM's _ui_session_exp_timestamp. Call B199's `betterlite_core::duration::seconds::duration_in_seconds(&settings.duration, now, None, database)`, take `.seconds` and drop the warnings, as `key_policy_fields::shifted_by` does, then add them to now and take whole Unix seconds. Python computes `int((now + timedelta(seconds=ttl)).timestamp())`, so the sub-second part is cut, never rounded. A parse failure is `UiSessionTokenError::Duration` holding B199's DurationError, and an overflow is its own variant. Don't write a second duration parser: the word aliases ("daily", "weekly") and the "mo" unit come from B199.
+
+
+  The encoder. `encode_ui_session_jwt(token: &ReturnedUiTokenObject, master_key: &SecretString, settings: &Settings, now: DateTime<Utc>, database: &TimeZoneDatabase) -> Result<String, UiSessionTokenError>`. ReturnedUiTokenObject is B1608's type in `betterlite_auth::sso_types::identity`; reuse it and define no second token struct. The claims are every field of that object, in its serde order and names (the key in clear through its ExposedSecret serializer, disabled_non_admin_personal_key_creation under that name), followed by exp. A claims struct with `#[serde(flatten)]` over a reference to the object plus `exp: i64` gives exactly that. Compute exp first, then refuse an empty master key with `UiSessionTokenError::EmptyMasterKey`, then sign with `Header::new(Algorithm::HS256)` and `EncodingKey::from_secret` over the key's bytes. LiteLLM builds the claims dict, and with it the exp, before PyJWT prepares the key, and PyJWT 2.15.1 refuses an empty HMAC key with InvalidKeyError "HMAC key must not be empty.", while jsonwebtoken signs with one, so the check must be explicit. It is reachable: B1624 passes LiteLLM's `master_key or ""` when no master key is set. No error text and no log line holds the master key or the token's key.
+
+
+  The personal-key flag. `disabled_non_admin_personal_key_creation(key_generation: &KeyGeneration) -> bool` reads B771's `betterlite_config::sections::key_access::KeyGeneration`, which callers take from config.sections.key_access.key_generation; don't parse key_generation_settings a second time. LiteLLM returns false when litellm.key_generation_settings is None, then takes `personal_key_generation or {}` and `allowed_user_roles or []` and returns whether the literal "proxy_admin" is in that list. On the typed value: false when `configured` is false, false when `personal` is None or its allowed_user_roles is None or empty, otherwise true exactly when one entry equals "proxy_admin", case-sensitive and in any position, also next to other roles. B788's create_ui_token_object and B1624's SSO session call it, and so does B8387's onboarding token.
+
+
+  Tests. ui_session_token::tests in betterlite-server, with a fixed now and a test key, decode each token with jsonwebtoken (HS256 only, exp validation off) and check: every field and exp for an sso and a username_password object, a null user_email and a non-ASCII email; header alg HS256; exp for now = 2026-01-01T12:00:00.999999Z with "30s" (12:00:30, not 12:00:31), "24h", "daily" and "2w"; "", "24" (no unit) and "abc" failing as Duration at encode time; an empty key failing as EmptyMasterKey; an empty key with a bad duration failing as Duration; and the Display and Debug text of each error carrying neither key. The flag table: unconfigured, configured without personal_key_generation, personal without allowed_user_roles, an empty list, ["proxy_admin"], ["internal_user", "proxy_admin"] and ["PROXY_ADMIN"]. sections::ui_session_token::tests loads config through B002's Loader::load with an injected environment: unset gives "24h", "7d" stays "7d", "" stays "", and "nonsense" loads and fails only when the encoder uses it.
+
+
+  Oracle. Helper cases on the b10118 operation in the server group. The input is a tagged union with two variants. `encode` carries the token object, the master key, the duration text and now as RFC 3339 with microseconds; Python patches `litellm.proxy.auth.login_utils.datetime` with a datetime subclass whose now() returns that instant (b4803.py does the same) and `login_utils.LITELLM_UI_SESSION_DURATION` with the duration, calls encode_ui_session_jwt, and answers `jwt.get_unverified_header(token)` and `jwt.decode(token, key, algorithms=["HS256"], options={"verify_exp": False})`, or the error class name (ValueError, InvalidKeyError). `personal_key_flag` carries key_generation_settings as written or absent; Python sets litellm.key_generation_settings and calls get_disabled_non_admin_personal_key_creation(). The Rust side runs the production functions and decodes its own token the same way, mapping Duration to ValueError and EmptyMasterKey to InvalidKeyError. Add helper_case seeds named ui-session-token-* for B171's existing decoder. No route reaches this code yet: B899's login routes and B063's SSO routes add the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/ui_session_token.rs
+    - crates/betterlite-server/src/ui_session_token/**
+    - crates/betterlite-config/src/sections/ui_session_token.rs
+    - crates/betterlite-config/src/sections/ui_session_token/**
+    - tools/oracle/cases/helpers/ui-session-token/**
+    - tools/oracle/fuzz/corpus/helper_case/ui-session-token-*
+    - tools/oracle/helpers/b10118.py
+    - tools/oracle/helpers/b10118/**
+    - tools/oracle/src/helpers/server/b10118.rs
+    - tools/oracle/src/helpers/server/b10118/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_utils.py#L478-L485
+    why: Owned. _ui_session_exp_timestamp, now plus the parsed duration cut to whole seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_utils.py#L488-L498
+    why: Owned. encode_ui_session_jwt, the token object's claims with exp added, signed HS256 with the master key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1744-L1750
+    why: Owned. get_disabled_non_admin_personal_key_creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1761-L1761
+    why: LITELLM_UI_SESSION_DURATION, read at import with the 24h default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/ui_sso.py#L6-L20
+    why: ReturnedUITokenObject and its field order; B1608 built it as ReturnedUiTokenObject.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L456-L456
+    why: litellm.key_generation_settings defaults to None; B771's key_access section loads it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L51-L106
+    why: duration_in_seconds and its two ValueErrors; B199 ported it, this task calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3680-L3715
+    why: Call site in B1624's SSO session, with the flag, the token object and the `master_key or ""` argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16950-L16954
+    why: Call site in the /login route, through B788's authenticator and B899's route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_utils.py#L501-L530
+    why: create_ui_token_object, B788's, calls the flag at L517.
+dod:
+  - text: encode_ui_session_jwt signs HS256 with the master key, and its claims are every ReturnedUiTokenObject field with the key in clear plus exp, equal to LiteLLM's decoded header and claims.
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
+  - text: exp is now's whole Unix seconds plus B199's seconds for the duration, with the fraction cut, and an empty or invalid duration fails at encode time, before the key check.
+    proof: [behavior-tests, oracle]
+  - text: An empty master key fails as EmptyMasterKey where LiteLLM raises InvalidKeyError, and no error text carries the master key or the token key.
+    proof: [behavior-tests, oracle]
+  - text: The personal-key flag is false without key_generation_settings, personal_key_generation or allowed_user_roles, and true exactly when the literal proxy_admin is in the list, next to other roles too.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: LITELLM_UI_SESSION_DURATION loads through B002's loader as raw text, 24h when unset and empty when set empty.
+    proof: [config-tests]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The encoder, its exp stamp, its errors or the personal-key flag are missing or differ from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_session_token::/)'
+    - id: config-tests
+      why: The loader does not read LITELLM_UI_SESSION_DURATION with its 24h default and keeps no empty value.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::ui_session_token::/)'
+    - id: helper-python
+      why: The b10118 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10118.py tools/oracle/helpers/b10118)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10118 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ui-session-token-*")" &&
+        grep -lE 'b10118"?:' tools/oracle/fuzz/corpus/helper_case/ui-session-token-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ui-session-token/cookie-claims-and-header.yaml
+  - tools/oracle/cases/helpers/ui-session-token/exp-cuts-sub-second.yaml
+  - tools/oracle/cases/helpers/ui-session-token/bad-duration-fails-at-use.yaml
+  - tools/oracle/cases/helpers/ui-session-token/empty-master-key.yaml
+  - tools/oracle/cases/helpers/ui-session-token/personal-key-flag.yaml
+deviations:
+  - what: A master key that PyJWT 2.15.1 refuses for its shape (PEM or SSH key text, DER key or certificate bytes, JSON holding a kty member) still signs the cookie; only the empty key is refused.
+    why: PyJWT guards against algorithm confusion when a token header picks the algorithm. This encoder always signs HS256 with the operator's master key, and porting PyJWT's key sniffing for keys no LiteLLM setup uses adds code with no reader.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_utils.py#L488-L498
+out_of_scope:
+  - "authenticate_user, _sign_in, LoginResult, create_ui_token_object and the other login_utils.py functions: B788, which calls the encoder and the flag from here and passes this section's duration to key generation. is_env_credential_login_enabled: B10067."
+  - "The SSO callback's token object, redirect and cookie: B1624, which calls the same two functions. The other ui_sso.py functions stay with B063 and the parts its inventory names."
+  - "The onboarding invitation token: B8387. It puts the flag into its token object but signs it with its own jwt.encode and no exp."
+  - "ReturnedUITokenObject: B1608. Duration parsing and month math: B199. Parsing key_generation_settings: B771's key_access section."
+  - "The experimental UI login token, an encrypted blob with a fixed ten-minute expiry that is not a JWT: B1223."
+pitfalls:
+  - The `_ui_session_exp_timestamp()` call sits inside the claims dict that is built before `jwt.encode`, so a bad duration with an empty master key fails as ValueError, not InvalidKeyError.
+  - '`int(...timestamp())` cuts the fraction, so now = 12:00:00.999999 with "30s" gives an exp of 12:00:30; take chrono''s flooring timestamp() and never round the fraction.'
+  - jsonwebtoken writes the header as {"typ":"JWT","alg":"HS256"} where PyJWT sorts it to {"alg":"HS256","typ":"JWT"}, and json.dumps escapes non-ASCII where serde_json does not, so the helper answers carry decoded header and claims, never the token text.
+  - login_utils imports LITELLM_UI_SESSION_DURATION and datetime by name, so the Python helper patches them on login_utils; patching litellm.constants or the datetime module changes nothing.
+  - The "mo" unit reads Python's local clock through time.time() inside duration_parser, which the patched login_utils.datetime does not reach, so the oracle cases use s, m, h, d, w and the word aliases only.
+  - The helper stub tools/oracle/src/helpers/server/b10118.rs and its registry lines are on main; replace the stub Op with a typed impl Helper and leave the server group's lib.rs and operations.txt alone.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

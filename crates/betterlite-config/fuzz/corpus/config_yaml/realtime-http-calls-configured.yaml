@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: https://global.example/v1
+  api_key: sk-global-realtime
+  openai_key: sk-openai-global

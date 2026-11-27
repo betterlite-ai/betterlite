@@ -1,0 +1,37 @@
+kind: sdk_http
+name: vector-file-create-list-list-attachment-query
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_create_list:
+    runs:
+      - operation: list
+        mode: sync
+        vector_store_id: vs_a
+        list: {after: file_a, before: file_z, filter: failed, limit: 0, order: asc}
+        options: {api_key: sk-caller, litellm_call_id: call-a}
+        extra_query: {limit: 2, trace: x}
+      - operation: list
+        mode: async
+        vector_store_id: vs_a
+        list: {}
+        options: {api_key: sk-caller, litellm_call_id: call-b}
+      - operation: list
+        mode: sync
+        vector_store_id: vs_a
+        list: {after: ""}
+        options: {api_key: sk-caller, litellm_call_id: call-c}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

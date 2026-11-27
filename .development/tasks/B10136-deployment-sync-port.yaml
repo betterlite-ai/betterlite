@@ -1,0 +1,58 @@
+id: B10136
+title: Deployment sync port for the config write routes
+description: >-
+  After a config write, LiteLLM's update_config (proxy_server.py L18151) and delete_callback (L19059) run
+  `await proxy_config.add_deployment(prisma_client=..., proxy_logging_obj=...)` so the router picks up model rows saved
+  in the database. The routes are B8594's config_update and B8596's callback_config, both in betterlite-server. The
+  real add_deployment is B8381's DeploymentSync in the binary crate crates/betterlite, which betterlite-server may not
+  depend on. So the routes hold a trait object, B8613 implements the trait over DeploymentSync, and B8610 keeps the value
+  in Shared. This task builds only that trait, so the two routes no longer wait for B8611's proxy router.
+
+
+  Module deployment_sync_port in betterlite-server: crates/betterlite-server/src/deployment_sync_port.rs, tests in
+  deployment_sync_port/tests.rs. The file is an empty stub that lib.rs already declares. It holds one public trait,
+  `DeploymentSyncPort: Send + Sync`, with one method, `fn add_deployment(&self) -> Pin<Box<dyn Future<Output = ()> + Send
+  + '_>>`. The boxed future keeps the trait dyn-compatible, so callers hold it as `Arc<dyn DeploymentSyncPort>`. The
+  future yields nothing: at the pin add_deployment returns a ReconcileOutcome, and both route callers drop it, so the
+  port leaves it out. The method takes no arguments because the implementation already owns its database handle and
+  logging; the Python call passes prisma_client and proxy_logging_obj only because they are module globals there.
+
+
+  Tests in deployment_sync_port::tests build a recording fake (an AtomicUsize counter behind an Arc), hold it as an
+  `Arc<dyn DeploymentSyncPort>`, await add_deployment once and assert the counter is 1, and await it twice through a
+  second clone of the same Arc and assert 2, so a shared handle reaches one implementation.
+scope:
+  paths:
+    - crates/betterlite-server/src/deployment_sync_port.rs
+    - crates/betterlite-server/src/deployment_sync_port/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18151-L18153
+    why: The add_deployment call at the end of update_config that B8594 makes through this port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19059-L19060
+    why: The same call at the end of delete_callback, B8596's caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8101-L8131
+    why: ProxyConfig.add_deployment, what the trait stands for; B8381 builds it and B8613 implements the trait over it.
+dod:
+  - text: DeploymentSyncPort is a Send and Sync trait held as Arc<dyn DeploymentSyncPort>, and its one add_deployment method returns a boxed future that reaches the implementation on every await.
+    proof: [port-tests]
+checks:
+  optional: []
+  commands:
+    - id: port-tests
+      why: The port is missing, is not dyn-compatible, or a call through a shared Arc does not reach the implementation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^deployment_sync_port::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "ProxyConfig.add_deployment, _add_deployment_locked and the reconcile lock: B8381's DeploymentSync."
+  - "Implementing the port over DeploymentSync: B8613. Keeping the value in Shared: B8610. Passing it to the routes: B8675."
+  - "The calls after a config write: B8594 (update_config) and B8596 (delete_callback)."
+  - "ProxyRouter, RouterHandle and RouterViews: B8611."
+pitfalls:
+  - "Don't add a no-op or default implementation here; LiteLLM always runs add_deployment after these writes, so a route built without a real port would silently skip the router reconcile."
+  - "Keep add_deployment without a Result: at the pin it logs and swallows its own errors (the except at proxy_server.py L8178, and sync_ui_settings_to_general_settings never raises), so the routes always reach their success answer after it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

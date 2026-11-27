@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-sk-key-revoked
+call:
+  b4655:
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImxvZ2luX21ldGhvZCI6InNzbyIsInVzZXJfaWQiOiJ1c2VyLTEiLCJrZXkiOiJzay1yZXZva2VkLWtleSJ9.IpYPpaA-8w8a8ymyNF4rD_LEoqRyhHgltsuaSDHoWFM"
+    master_key: sk-oracle-master
+    key_resolves: false
+    now: 1700000000
+env: {}
+compare:
+  ignore: []

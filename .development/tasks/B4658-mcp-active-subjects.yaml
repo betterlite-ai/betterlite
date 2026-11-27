@@ -1,25 +1,25 @@
 id: B4658
 title: MCP active subjects and proxy API credential minting
 description: >-
-  The MCP OAuth endpoints have to ask two questions before they trust a caller: does this request carry a gateway credential at all, and is the key or user behind it still live. A consented native sign-in then has to turn into the same credential `lite login` stores. In LiteLLM that code is the first part of bridge_token_flow.py (L35-L405) and all of proxy_api_credentials.py. B4666 owns the rest of bridge_token_flow.py and calls this code, and so do B4675, B4676, B4659 and B4679, so every name below is public and spelled as written here.
+  The MCP OAuth endpoints have to ask two questions before they trust a caller: does this request carry a gateway credential at all, and is the key or user behind it still live. A consented native sign-in then has to turn into the same credential `lite login` stores. In LiteLLM that code is the first part of bridge_token_flow.py (L35-L405) and all of proxy_api_credentials.py. B4666 owns the rest of bridge_token_flow.py and calls this code, and so do B4675, B4676 and B4659, so every name below is public and spelled as written here. master_key_admin_auth in the same range is B10115's, since B4679 calls it too; this task calls it.
 
 
-  The code goes in two modules. UserAPIKeyAuth keeps its fields pub(crate), so whatever reads them or sets via_virtual_key lives in betterlite-auth, in the new module subject_state. Everything that reads a store goes in betterlite-server, in the new module mcp::active_subjects, because it needs B1614's team details from that crate and B4674's port types and B4651's envelope helpers from betterlite-mcp. Add betterlite-models and subtle (subtle.workspace = true) to crates/betterlite-auth/Cargo.toml and betterlite-mcp to crates/betterlite-server/Cargo.toml. None of those crates depend back on the crate that adds them.
+  The code goes in two modules. UserAPIKeyAuth keeps its fields pub(crate), so whatever reads them lives in betterlite-auth, in the new module subject_state. Everything that reads a store goes in betterlite-server, in the new module mcp::active_subjects, because it needs B10114's team details from that crate and B4674's port types and B4651's envelope helpers from betterlite-mcp. betterlite-auth already depends on betterlite-models and betterlite-server on betterlite-mcp, so this task edits no Cargo.toml.
 
 
-  Dependency code sits in these modules: betterlite_auth::auth_key_lookup (B738), betterlite_auth::auth_user_lookup (B736), betterlite_auth::identity_store (B870), betterlite_auth::jwt_claims (B760), betterlite_auth::session_token_codec (B1223), betterlite_db::database_availability (B1217), betterlite_db::database_faults (B872), betterlite_mcp::gateway_dcr (B4674), betterlite_mcp::envelope (B4651) and betterlite_server::cli_poll_grants (B1614). LiteLLMUserTable is in crates/betterlite-db/src/identity_rows/user.rs.
+  Dependency code sits in these modules: betterlite_auth::auth_key_lookup (B738), betterlite_auth::auth_user_lookup (B736), betterlite_auth::identity_store (B870), betterlite_auth::jwt_claims (B760), betterlite_auth::session_token_codec (B1223), betterlite_db::database_availability (B1217), betterlite_db::database_faults (B872), betterlite_mcp::gateway_dcr (B4674), betterlite_mcp::envelope (B4651), betterlite_auth::master_key_admin (B10115) and betterlite_server::cli_team_grants (B10114). LiteLLMUserTable is in crates/betterlite-db/src/identity_rows/user.rs.
 
 
   subject_state, pure checks with no store. key_is_active(key: &UserAPIKeyAuth, now: DateTime<Utc>) -> bool reads view.token.blocked and view.token.expires. A blocked key is inactive. No expiry is active. Expiry::DateTime compares as it stands. Expiry::Text goes through betterlite_models::savings_evidence::billed_at::decode_billed_at, the existing port of datetime.fromisoformat that reads a naive value as UTC, and a text it can't parse makes the key inactive, never an error. The key is inactive only when the expiry is strictly before now. A user_id is not required, since team and service-account keys have none. active_key_user_id(key, now) -> Option<&str> gives the key's user_id only when key_is_active is true. user_scim_deactivated(user: &LiteLLMUserTable) -> bool is true only when metadata holds scim_active with the value JsonData::Bool(false).
 
 
-  master_key_admin_auth(key_hash: &str, master_key: Option<&SecretString>, admin_name: &str) -> Result<Option<UserAPIKeyAuth>, SubjectStateError> gives Ok(None) when the master key is missing or empty, or when key_hash differs from the lowercase SHA-256 hex of the master key, compared with subtle's ConstantTimeEq. On a match it builds a key with api_key "litellm_proxy_master_key" (LITELLM_PROXY_MASTER_KEY_ALIAS), user_role proxy_admin (UserRole::ProxyAdmin.to_string()) and user_id admin_name through UserAPIKeyAuth::construct(AuthInput::Dict(..)), then sets extra.provenance.via_virtual_key to true. SubjectStateError wraps AuthError.
+  master_key_admin_auth(key_hash, master_key, admin_name) -> Result<Option<UserAPIKeyAuth>, MasterKeyAdminError> is B10115's, in betterlite_auth::master_key_admin: the proxy admin key for a hash of the master key, Ok(None) for anything else. This task calls it and does not build it.
 
 
   mcp::active_subjects, in crates/betterlite-server/src/mcp/active_subjects.rs with the submodules presented_key, classify, key_reload, user_reload, revalidate, proxy_credentials and live_store, each with a tests.rs beside it. The root file holds the types. UserRowSource is Cache or Database. ResolvedKey { key_hash: String, key: UserAPIKeyAuth }. There is no second failure enum: LiteLLM's _KeyResolutionFailure has the same four values as B4674's ReloadUserFailure, so that type is used everywhere. SubjectReadError is Refused (ProxyException or HTTPException in LiteLLM), Unavailable, Faulted and Other. IdentityLookup is Found, NotFound and Faulted.
 
 
-  SubjectStore is the injected port, native async fn in a trait taken as a generic parameter like B4674's ports, not dyn. Its methods are now() -> DateTime<Utc>, has_database() -> bool, key_by_hash(key_hash) -> Result<UserAPIKeyAuth, SubjectReadError>, user_by_id(user_id, source: UserRowSource) -> Result<Option<LiteLLMUserTable>, SubjectReadError>, identity_by_hash(key_hash) -> IdentityLookup and team_details(teams: &[String]) -> Option<Vec<CliSsoTeamDetail>>. None from team_details means the lookup failed.
+  SubjectStore is the injected port, native async fn in a trait taken as a generic parameter like B4674's ports, not dyn. Its methods are now() -> DateTime<Utc>, has_database() -> bool, key_by_hash(key_hash) -> Result<UserAPIKeyAuth, SubjectReadError>, user_by_id(user_id, source: UserRowSource) -> Result<Option<LiteLLMUserTable>, SubjectReadError>, identity_by_hash(key_hash) -> IdentityLookup and team_details(teams: &[String]) -> Option<Vec<CliSsoTeamDetail>>, with B10114's CliSsoTeamDetail. None from team_details means the lookup failed.
 
 
   ActiveSubjects<S: SubjectStore> has public fields store and settings, plus the secret, clock and random source that B1223's token functions take, and callers write the struct literal. ActiveSubjectSettings holds what LiteLLM reads from proxy_server globals, and the MCP identity wiring part B8621 fills it. master_key: Option<SecretString> is the master key. admin_name: String is litellm_proxy_admin_name, default LITELLM_PROXY_ADMIN_NAME "default_user_id". custom_auth: bool is true when user_custom_auth is set. oidc_userinfo_enabled: bool is litellm_jwtauth.oidc_userinfo_enabled, default false. global_issuer: Option<String> is the env var JWT_ISSUER, default unset. issuers: Vec<String> holds the issuer of each litellm_jwtauth.issuers entry, default empty. cli_token_hours: i64 is B1223's CLI_JWT_EXPIRATION_HOURS, default 24. This task reads no config key or env var itself.
@@ -34,7 +34,7 @@ description: >-
   The opaque check gives true for a token with EnvelopePrefix::is_envelope, is_refresh_envelope or the prefix betterlite_db::encryption_scan::V2_GCM_PREFIX, and true when B1223's get_key_object_from_ui_hash_key decodes it. Otherwise it calls store.identity_by_hash with the SHA-256 hex of the token: Found and Faulted give true, NotFound gives false. An error from the B1223 call counts as Faulted, since a lookup fault must not permit the cookie fallback.
 
 
-  key_reload. resolve_active_key(&self, headers) -> Result<ResolvedKey, ReloadUserFailure> gives no_active_key when no token is presented and otherwise calls reload_active_key with the SHA-256 hex of the token. reload_active_key(&self, key_hash) -> Result<ResolvedKey, ReloadUserFailure> first tries master_key_admin_auth and returns that key with no database and no active check. An Err from it is unresolvable. Then has_database false gives unresolvable. Then key_by_hash: Refused gives no_active_key, Unavailable gives unavailable, Faulted gives faulted, Other logs at debug "_reload_active_key_by_hash: unexpected key-resolution error (%s)" and gives unresolvable. A key that fails key_is_active at store.now() gives no_active_key.
+  key_reload. resolve_active_key(&self, headers) -> Result<ResolvedKey, ReloadUserFailure> gives no_active_key when no token is presented and otherwise calls reload_active_key with the SHA-256 hex of the token. reload_active_key(&self, key_hash) -> Result<ResolvedKey, ReloadUserFailure> first tries B10115's master_key_admin_auth with settings.master_key and settings.admin_name and returns that key with no database and no active check. An Err from it is unresolvable. Then has_database false gives unresolvable. Then key_by_hash: Refused gives no_active_key, Unavailable gives unavailable, Faulted gives faulted, Other logs at debug "_reload_active_key_by_hash: unexpected key-resolution error (%s)" and gives unresolvable. A key that fails key_is_active at store.now() gives no_active_key.
 
 
   user_reload. load_active_user(&self, user_id, source) -> Result<LiteLLMUserTable, ReloadUserFailure>: has_database false gives unresolvable. Then user_by_id: Refused gives no_active_key, Unavailable and Faulted give the same names, Other logs at debug "_reload_active_user_by_id: user-resolution error (%s)" and gives no_active_key, Ok(None) gives no_active_key. A row with user_scim_deactivated gives no_active_key. ActiveSubjects implements B4674's ReloadUser by calling load_active_user with Cache and keeping only the failure. key_owner_deactivated(&self, key) -> bool is the opposite policy and fails open. It takes the owner from active_key_user_id(key, store.now()). No owner, no database, any read error (debug "refresh: key-owner SCIM lookup failed, not revoking (%s)") and a missing row all give false. It reads with Cache and answers user_scim_deactivated for a row it finds.
@@ -46,10 +46,10 @@ description: >-
   proxy_credentials. ActiveSubjects implements B4674's LookupConsentTeams and MintProxyCredential. The consent lookup calls load_active_user with Cache and returns its failure, then team_details(user.teams), where None gives unavailable. It returns one ConsentTeam { team_id, team_alias } for each detail whose team_id is present, in the order the details came.
 
 
-  The mint takes (user_id, team_id) and checks in this order. load_active_user with Database, returning its failure. A given team_id not in user.teams gives not_a_member, before any team read. details is team_details(user.teams) when user.teams is non-empty, otherwise empty, and None gives unavailable. team_id absent with any detail holding a team_id gives team_required. B1614's selected_cli_sso_team_detail(details, team_id) giving nothing is not_a_member. Then call B1223's get_cli_jwt_auth_token with a user row holding only user_id, the role from betterlite_auth::auth_identity::roles::effective_user_role(user.user_role) and user.models, with no teams, and pass team_id from the grant plus team_alias, team_models and team_model_aliases from the selected detail. Return MintedProxyCredential { key, expires_in: cli_token_hours * 3600, user_id: user.user_id, team_id }. A failed token build gives unresolvable.
+  The mint takes (user_id, team_id) and checks in this order. load_active_user with Database, returning its failure. A given team_id not in user.teams gives not_a_member, before any team read. details is team_details(user.teams) when user.teams is non-empty, otherwise empty, and None gives unavailable. team_id absent with any detail holding a team_id gives team_required. B10114's selected_cli_sso_team_detail(&details, team_id) giving nothing is not_a_member. Then call B1223's get_cli_jwt_auth_token with a user row holding only user_id, the role from betterlite_auth::auth_identity::roles::effective_user_role(user.user_role) and user.models, with no teams, and pass team_id from the grant plus team_alias, team_models and team_model_aliases from the selected detail. Return MintedProxyCredential { key, expires_in: cli_token_hours * 3600, user_id: user.user_id, team_id }. A failed token build gives unresolvable.
 
 
-  live_store. LiveSubjectStore is the production SubjectStore. Its constructor arguments are the B738 key lookup, B736 UserLookup, B870 IdentityStore, the database handle for B1614's fetch_cli_sso_team_details, and the wall clock, as a struct literal with no database meaning has_database false. key_by_hash calls get_key_object. A ProxyException, including the 401 token_not_found_in_db for a missing row, is Refused. Any other error is an outage only when B1217's is_database_service_unavailable_error accepts the error itself, otherwise Other. user_by_id calls get_user_object with user_id_upsert false and check_db_only true only for Database. ProxyException is Refused. Any other error, B732's UserNotFoundError included, is an outage when B1217's find_database_service_unavailable_error_in_chain finds one, otherwise Other. An outage is Faulted when B872's is_permanent_database_fault holds for the fault (the one the chain search finds, or the error itself when it finds none) and otherwise Unavailable. identity_by_hash calls IdentityStore::resolve with the hash: success is Found, KeyNotFoundError is NotFound, anything else logs at debug "OAuth bearer ownership could not be checked (%s)" and is Faulted, B732's NoDatabaseConnectionError included. team_details returns None with no database. Keep the error mapping in plain functions over those error values, so its tests run without Postgres.
+  live_store. LiveSubjectStore is the production SubjectStore. Its constructor arguments are the B738 key lookup, B736 UserLookup, B870 IdentityStore, the database handle for B10114's fetch_cli_sso_team_details, and the wall clock, as a struct literal with no database meaning has_database false. key_by_hash calls get_key_object. A ProxyException, including the 401 token_not_found_in_db for a missing row, is Refused. Any other error is an outage only when B1217's is_database_service_unavailable_error accepts the error itself, otherwise Other. user_by_id calls get_user_object with user_id_upsert false and check_db_only true only for Database. ProxyException is Refused. Any other error, B732's UserNotFoundError included, is an outage when B1217's find_database_service_unavailable_error_in_chain finds one, otherwise Other. An outage is Faulted when B872's is_permanent_database_fault holds for the fault (the one the chain search finds, or the error itself when it finds none) and otherwise Unavailable. identity_by_hash calls IdentityStore::resolve with the hash: success is Found, KeyNotFoundError is NotFound, anything else logs at debug "OAuth bearer ownership could not be checked (%s)" and is Faulted, B732's NoDatabaseConnectionError included. team_details returns None with no database. Keep the error mapping in plain functions over those error values, so its tests run without Postgres.
 
 
   Tests use a fake SubjectStore that records calls, a fixed now and synthetic rows, and test names start with the prefixes the check filters name. No route reaches this code yet, so the helper operation b4658 covers the pure functions and the umbrella adds HTTP cases. The Python side calls bridge_token_flow's _litellm_key_from_request with a Starlette Request built from the case's raw headers, and _key_is_active, _active_key_user_id and _active_user_record on UserAPIKeyAuth and LiteLLM_UserTable built from the case. The Rust side calls litellm_key_from_request, key_is_active, active_key_user_id and user_scim_deactivated. Expiry cases use dates far in the past or future, because LiteLLM reads the real clock. Each operation returns its value, and an inactive user compares as the string no_active_key. Add an mcp-active-subjects-* seed to the helper_case corpus for each operation.
@@ -57,10 +57,8 @@ scope:
   paths:
     - crates/betterlite-auth/src/subject_state.rs
     - crates/betterlite-auth/src/subject_state/**
-    - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/mcp/active_subjects.rs
     - crates/betterlite-server/src/mcp/active_subjects/**
-    - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/helpers/mcp-active-subjects/**
     - "tools/oracle/fuzz/corpus/helper_case/mcp-active-subjects-*"
     - tools/oracle/helpers/b4658.py
@@ -78,7 +76,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L159-L188
     why: _ResolvedKey, what each _KeyResolutionFailure value means, and _database_failure.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L191-L283
-    why: _resolve_active_litellm_key, master_key_admin_auth and _reload_active_key_by_hash.
+    why: _resolve_active_litellm_key and _reload_active_key_by_hash, with the call to master_key_admin_auth (L212-L234, B10115 builds it) before the database check.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L286-L353
     why: _reload_active_user_by_id, load_active_user_by_id and _active_user_record, the fail-closed user path.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L356-L405
@@ -95,14 +93,12 @@ references:
     why: The caller of the gateway credential classification, and why a denied credential must not reach the cookie.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L182-L192
     why: B4659's caller of load_active_user_by_id, with the default cache source.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1214-L1222
-    why: B4679's caller of master_key_admin_auth, so the function must stay usable without the rest of this module.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1298-L1302
     why: effective_user_role, the role the minted credential carries.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3655-L3740
     why: get_cli_jwt_auth_token and get_key_object_from_ui_hash_key, the two calls into B1223.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2259-L2296
-    why: fetch_cli_sso_team_details and selected_cli_sso_team_detail, the two calls into B1614.
+    why: fetch_cli_sso_team_details and selected_cli_sso_team_detail, the two calls into B10114.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L393-L403
     why: find_database_service_unavailable_error_in_chain, the chain walk the user path relies on (B1217 owns it).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L275-L302
@@ -118,8 +114,6 @@ dod:
     proof: [key-state-tests, helper-oracle, helper-tests, helper-python]
   - text: user_scim_deactivated is true only for scim_active equal to JSON false, and false for missing metadata, a missing entry, null, 0 and the string "false".
     proof: [user-state-tests, helper-oracle, helper-tests, helper-python]
-  - text: master_key_admin_auth matches only the SHA-256 hex of a non-empty master key and gives a proxy admin key with api_key litellm_proxy_master_key, the given user_id and via_virtual_key true.
-    proof: [master-key-tests]
   - text: litellm_key_from_request prefers x-litellm-api-key, strips a bearer prefix in any case, falls through empty values, decodes bytes as Latin-1 and gives None when nothing is usable.
     proof: [presented-key-tests, helper-oracle, helper-tests, helper-python]
   - text: uses_gateway_credential answers true for a present x-litellm-api-key header, an sk- token, the master key, custom auth and OIDC userinfo, answers from the authorization header's presence when no token exists, and keeps LiteLLM's step order.
@@ -159,9 +153,6 @@ checks:
     - id: user-state-tests
       why: the SCIM check accepts something other than a literal JSON false
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^subject_state::tests::user_/)'
-    - id: master-key-tests
-      why: the master key admin is missing, matches the wrong digest or lacks via_virtual_key
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^subject_state::tests::master_/)'
     - id: presented-key-tests
       why: the presented key is read from the wrong header or stripped differently from LiteLLM
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::active_subjects::presented_key::/)'
@@ -247,10 +238,10 @@ out_of_scope:
   - "bridge_token_flow.py: B4666 owns _extract_user_id_from_request (L408), authorize_oauth_credential_request (L418), _resolve_request_auth (L429), can_store_oauth_credential (L441) and _resolve_jwt_auth (L469)."
   - "bridge_token_flow.py: B4666 owns _UpstreamGrantRejection (L542), _classify_upstream_lifetime (L551), _bridge_grant_from_token_response (L573), _BridgeMintError (L621), _BridgeMintReady (L637), _bridge_mint_error_response (L649), _key_resolution_failure_to_mint_error (L734) and _upstream_rejection_to_mint_error (L751)."
   - "bridge_token_flow.py: B4666 owns _prepare_bridge_mint (L762), _BridgeRefreshReady (L824), _refresh_key_failure_to_mint_error (L838), _prepare_bridge_refresh (L857), _finish_bridge_mint (L894), _upstream_refresh_credential (L936) and _mint_refresh_envelope_value (L965)."
-  - B4679 owns _reload_admitted_key and the rest of user_api_key_auth_mcp.py, and calls master_key_admin_auth.
+  - "bridge_token_flow.py: B10115 owns master_key_admin_auth (L212) and its error type in betterlite_auth::master_key_admin; this task calls it. B4679 owns _reload_admitted_key and the rest of user_api_key_auth_mcp.py, and calls B10115's function too."
   - B4659 owns oauth_identity_binding.py and calls load_active_user.
   - B4675 and B4676 own the routes and the authorize and token flows that take ActiveSubjects as their ports. B8621 builds ActiveSubjects and LiveSubjectStore.
-  - B1614 owns fetch_cli_sso_team_details and selected_cli_sso_team_detail. B1223 owns the token encoding and the CLI_JWT_EXPIRATION_HOURS setting. B1217 owns outage classification. B738, B736 and B870 own the reads, their caches and their reconnects.
+  - B10114 owns CliSsoTeamDetail, fetch_cli_sso_team_details and selected_cli_sso_team_detail. B1223 owns the token encoding and the CLI_JWT_EXPIRATION_HOURS setting. B1217 owns outage classification. B738, B736 and B870 own the reads, their caches and their reconnects.
 pitfalls:
   - Plain SHA-256 hex is not safe_hash_api_key, since that function leaves a token without sk- unchanged and prefixes a JWT with hashed-jwt-, so the two disagree on every UI or JWT bearer.
   - A header value of "Bearer " trims to the word Bearer before the prefix check, so the token is the literal text Bearer, not an empty value.
@@ -260,9 +251,8 @@ pitfalls:
   - Other means unresolvable on the key path and no_active_key on the user path, so one shared mapping for both is a bug.
   - A missing user row is no_active_key in load_active_user and false in key_owner_deactivated, because a key may outlive its owner record while a user subject can't.
   - The master key check runs before has_database and skips key_is_active, so the admin keeps working with no database.
-  - A master key of "" counts as unset, in master_key_admin_auth and in the master key comparison of uses_gateway_credential.
+  - A master key of "" counts as unset in the master key comparison of uses_gateway_credential, the same way B10115's master_key_admin_auth treats it.
   - The raw master key comparison in uses_gateway_credential compares encoded bytes, so betterlite_secrets::master_key::matches_raw is the wrong call here since it answers false for non-ASCII text.
-  - UserAPIKeyAuth::construct strips via_virtual_key from the dict as a server-only field, so it has to be set on extra.provenance after construct.
   - scim_active is checked with Python's "is False", so 0, null and "false" all leave the user active.
   - The mint reads the user with Database and every other caller with Cache, so a user a writer deactivated can't mint from a stale cached row.
   - The token takes team_id from the grant, not from the selected detail, and the user row passed to it must have no teams or B1223's first-team fallback attributes the credential to a team nobody chose.

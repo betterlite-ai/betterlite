@@ -156,7 +156,7 @@ out_of_scope:
   - "B3103 owns all ai_usage_chat.py functions: get_tools_for_role, _build_system_prompt, _parse_csv_ids, _query_activity, the three _fetch_* functions, _accumulate_breakdown, _ranked_lines, both _summarise_* functions, _sse, _resolve_fetch_kwargs, _execute_tool_call, _process_tool_call, _stream_final_response and stream_usage_ai_chat, plus constants, event types and TOOL_HANDLERS."
   - "TOP_N_KEYS has no caller at the pin; _UsageDump overloads are typing-only, as B3103 already records."
   - "B8271 owns ChatMessage, UsageAIChatRequest, usage_ai_chat and usage_endpoints/__init__.py's router re-export; B10025 owns UsageChatFactory's production implementation and the sole route mount."
-  - "B3096, B3097 and B3098 own every daily_activity_routes.py helper and handler; B8482 owns register_daily_activity_routes and the six-resolver loop, its mount and deferred key/search/aggregate HTTP cases."
+  - "B3096, B3097, B3098 and B10138 own every daily_activity_routes.py helper and handler; B8482 owns register_daily_activity_routes and the six-resolver loop, its mount and deferred key/search/aggregate HTTP cases."
   - "B3098 and B3099 already own export and cache-activity HTTP cases; B8661 owns the analytics and gateway-activity mounts and their deferred HTTP cases."
   - "B9270 owns daily usage fixture schema/seeding; B860 owns fixture lifecycle and B9942 owns Prisma generation."
   - "B005/B8271 own idle-ping timing and stream wrapping; B10023 owns loading litellm_settings.sse_keepalive_ping_interval_seconds and B10025 passes it to the route."
