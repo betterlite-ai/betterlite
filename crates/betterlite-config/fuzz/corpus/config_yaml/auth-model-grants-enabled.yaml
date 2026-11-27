@@ -1,0 +1,8 @@
+general_settings:
+  enforce_fallback_model_access: true
+
+model_list:
+  - model_name: grant-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-grant
