@@ -217,17 +217,6 @@ def request_value(request: httpx.Request) -> JsonValue:
     return JSON.validate_python(answer)
 
 
-def response_value(finished: HttpxBinaryResponseContent) -> JsonValue:
-    reply = finished.response
-    content_type: str | None = None
-    if "content-type" in reply.headers:
-        content_type = reply.headers["content-type"]
-    return JSON.validate_python({
-        "status": reply.status_code, "content_type": content_type,
-        "body_b64": base64.b64encode(reply.content).decode("ascii"),
-    })
-
-
 def mapping_value(input_value: MappingInput) -> JsonValue:
     params = input_value["params"]
     results: list[JsonValue] = []
@@ -282,10 +271,16 @@ def transform_value(input_value: ResponseInput) -> JsonValue:
     finished = CONFIG.transform_text_to_speech_response(
         params["model"], raw_response, logging_object(params["model"])
     )
-    gets: list[JsonValue] = [request_value(item) for item in scripted.requests]
-    answer: Object = {
-        "response": response_value(finished), "gets": gets, "sleeps": clock.sleeps,
+    reply = finished.response
+    content_type: str | None = None
+    if "content-type" in reply.headers:
+        content_type = reply.headers["content-type"]
+    audio: Object = {
+        "status": reply.status_code, "content_type": content_type,
+        "body_b64": base64.b64encode(reply.content).decode("ascii"),
     }
+    gets: list[JsonValue] = [request_value(item) for item in scripted.requests]
+    answer: Object = {"response": audio, "gets": gets, "sleeps": clock.sleeps}
     return JSON.validate_python(answer)
 
 
