@@ -96,10 +96,9 @@ async fn run_once(
         Operation::List => dispatch_list(&reads, run, transport.request(run)).await,
     };
     let failure = answer.as_ref().err().map(project);
-    let context = {
-        let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
-        context_of(&state)
-    };
+    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
+    let context = context_of(&state);
+    drop(state);
     Ok(RunOutcome {
         operation: run.operation,
         mode: run.mode,
