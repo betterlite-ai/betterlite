@@ -55,7 +55,7 @@ description: >-
   UserManagementEventHooks.send_legacy_v1_user_invitation_email (L164-L186; 19 source lines).
   UserManagementEventHooks.create_internal_user_audit_log (L189-L232) is audit_logs.py
   create_object_audit_log (L162-L204) with table_name fixed to USER_TABLE_NAME, so build no wrapper:
-  this task, B792 and B793 each call B065's AuditService::create_object_audit_log with AuditTable::User.
+  this task, B792, B793, B794 and B795 each call B065's AuditService::create_object_audit_log with AuditTable::User.
 
 
   Resolve general_settings.alerting through B002 and pass its typed list to the email fallback.
