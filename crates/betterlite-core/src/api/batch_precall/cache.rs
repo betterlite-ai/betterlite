@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
-
+use betterlite_cache::dual_cache::cache_from_json;
 use betterlite_cache::envelope::decode::decode_cached;
-use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_cache::handler::value::to_json;
 use betterlite_models::decisions::Json;
 use betterlite_redact::structured::REDACTED;
 
@@ -169,36 +168,7 @@ fn decode(
         known_bytes: bytes.len(),
     });
     limits.check(boundary).ok()?;
-    let value = cache_value(cached)?;
+    let value = cache_from_json(cached).ok()?;
     let decoded = decode_cached(Some(&value), max_age, (clock)()).ok()??;
-    // serde's Value keeps numbers as numbers, so a decoded CacheValue crosses back through it
-    serde_json::from_value(serde_json::to_value(&decoded).ok()?).ok()
-}
-
-// arbitrary_precision floats would land in CacheValue::Object, so this direction maps by hand
-fn cache_value(value: &Json) -> Option<CacheValue> {
-    match value {
-        Json::Null => Some(CacheValue::Null),
-        Json::Bool(flag) => Some(CacheValue::Boolean(*flag)),
-        Json::Number(number) => match (number.as_i64(), number.as_f64()) {
-            (Some(whole), _) => Some(CacheValue::Integer(whole)),
-            (None, Some(float)) => Some(CacheValue::Float(float)),
-            (None, None) => None,
-        },
-        Json::Text(text) => Some(CacheValue::Text(text.clone())),
-        Json::List(items) => {
-            let mut converted = Vec::with_capacity(items.len());
-            for item in items {
-                converted.push(cache_value(item)?);
-            }
-            Some(CacheValue::Array(converted))
-        }
-        Json::Object(fields) => {
-            let mut converted = BTreeMap::new();
-            for (key, item) in fields {
-                converted.insert(key.clone(), cache_value(item)?);
-            }
-            Some(CacheValue::Object(converted))
-        }
-    }
+    to_json(&decoded)
 }

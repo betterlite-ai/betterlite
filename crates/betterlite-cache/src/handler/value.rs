@@ -9,7 +9,7 @@ pub(crate) fn to_cache_value(json: &Json) -> Option<CacheValue> {
     }
 }
 
-pub(crate) fn to_json(value: &CacheValue) -> Option<Json> {
+pub fn to_json(value: &CacheValue) -> Option<Json> {
     match serde_json::to_value(value) {
         Ok(wire) => serde_json::from_value(wire).ok(),
         Err(_failure) => None,

@@ -78,4 +78,13 @@ deviations:
       secrets-stay-secret: a key in a log line is a leaked key, and LiteLLM writes both lines with the raw key from
       the principal at ERROR/DEBUG level and to stdout. Every other part of both lines is unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L68-L74
+  - what: >-
+      The retrieve decode maps the cached payload through betterlite-cache's CacheValue, which keeps whole numbers
+      as i64. A cached integer above i64::MAX and at most u64::MAX is therefore answered as a miss, and one outside
+      u64 or below i64::MIN is rounded to f64; LiteLLM's json.loads keeps every Python integer exactly.
+    why: >-
+      The envelope decode runs on the shared cache value model every tier uses, and this task adds no second copy of
+      it. A miss is the honest answer where that model cannot hold the number, and it is what the review asked for
+      over a rounded float; a batch response a working setup caches carries no such integer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L566
 kept_bugs: []
