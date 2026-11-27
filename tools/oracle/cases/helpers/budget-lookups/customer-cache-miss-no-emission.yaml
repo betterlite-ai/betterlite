@@ -1,0 +1,23 @@
+kind: helper
+name: budget-lookups-customer-cache-miss-no-emission
+call:
+  b3883:
+    function: customer
+    end_user_id: end-2
+    response_cost: 0.25
+    enable_prometheus_only: true
+    disable_end_user_cost_tracking: null
+    lookup:
+      kind: missing
+    now: '2026-01-01T00:00:00Z'
+    noop: false
+    labels_by_metric:
+      litellm_remaining_customer_budget_metric:
+      - end_user
+      litellm_customer_max_budget_metric:
+      - end_user
+      litellm_customer_budget_remaining_hours_metric:
+      - end_user
+env: {}
+compare:
+  ignore: []

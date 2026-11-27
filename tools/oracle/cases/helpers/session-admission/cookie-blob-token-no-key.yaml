@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-blob-token-no-key
+call:
+  b4655:
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImxvZ2luX21ldGhvZCI6InNzbyIsInVzZXJfaWQiOiJ1c2VyLTEiLCJrZXkiOiJ1aV9zZXNzaW9uX2Jsb2IifQ.qth_7y6_-Cv0dtBBqaC4DTP0tygLpwKW8cHRw2J0IfM"
+    master_key: sk-oracle-master
+    key_resolves: false
+    now: 1700000000
+env: {}
+compare:
+  ignore: []

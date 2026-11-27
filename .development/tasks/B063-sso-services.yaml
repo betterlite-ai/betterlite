@@ -96,7 +96,7 @@ out_of_scope:
   - 'ui_sso.py B1621: _ServicePrincipalAssignment.get, _ServicePrincipalPage.get, SSOAuthenticationHandler.create_litellm_team_from_sso_group, _cast_and_deepcopy_litellm_default_team_params; MicrosoftSSOHandler.get_graph_api_base_url, get_graph_api_user_groups_endpoint, get_user_groups_from_graph_api, fetch_and_parse_groups, _get_group_ids_from_graph_api_response, _cast_graph_api_response_dict, get_group_ids_from_service_principal, create_litellm_teams_from_service_principal_team_ids.'
   - 'ui_sso.py B1622: MicrosoftSSOHandler.get_microsoft_callback_response, openid_from_response, get_user_role_from_app_roles, get_app_roles_from_id_token.'
   - 'ui_sso.py B1623: _handle_generic_sso_error, get_generic_sso_response including response_convertor.'
-  - 'ui_sso.py B1624: _CustomSsoCall.__call__, get_disabled_non_admin_personal_key_creation, SSOAuthenticationHandler.verify_user_in_restricted_sso_group, _get_user_email_and_id_from_result, get_redirect_response_from_openid.'
+  - 'ui_sso.py B1624: _CustomSsoCall.__call__, SSOAuthenticationHandler.verify_user_in_restricted_sso_group, _get_user_email_and_id_from_result, get_redirect_response_from_openid; B10118: get_disabled_non_admin_personal_key_creation.'
   - 'ui_sso.py B1625: saml_login, saml_metadata; B1626: saml_callback.'
   - 'ui_sso.py B1627: get_ui_settings, sso_readiness, _raise_if_sso_debug_disabled, debug_sso_login, debug_sso_callback.'
   - 'ui_sso.py B1628: google_login, SSOAuthenticationHandler.get_sso_login_redirect, get_generic_sso_redirect_response, should_use_sso_handler; B1629: GoogleSSOHandler.get_google_callback_response.'
