@@ -1,5 +1,5 @@
 use std::convert::Infallible;
-use std::future::{Future, Ready, ready};
+use std::future::{Future, ready};
 use std::mem;
 use std::sync::PoisonError;
 
@@ -202,8 +202,14 @@ impl BatchPrecallMemory for Scripted {
         cache_error(&self.memory_faults, Function::Get).map_or_else(|| Ok(value), Err)
     }
 
-    fn set(&self, key: &str, value: Json, _ttl_seconds: f64) -> Ready<Result<(), BatchCacheError>> {
-        if let Some(error) = cache_error(&self.memory_faults, Function::Set) {
+    fn set(
+        &self,
+        key: &str,
+        value: Json,
+        _ttl_seconds: f64,
+    ) -> impl Future<Output = Result<(), BatchCacheError>> + Send {
+        let fault = cache_error(&self.memory_faults, Function::Set);
+        if let Some(error) = fault {
             return ready(Err(error));
         }
         self.state
