@@ -115,8 +115,15 @@ impl AutoRouterReadStore for PgAutoRouterReads {
         user_id: Option<&str>,
     ) -> Result<Vec<SessionAggRow>, ReadApiError> {
         let client = self.store.session().await?;
-        let start = window_bound(&window.query_start)?;
-        let end = window_bound(&window.query_end)?;
+        // the SQL casts its window bounds to timestamp, so they bind as timestamps, not text
+        let start = window
+            .query_start
+            .parse::<NaiveDateTime>()
+            .map_err(ReadApiError::from)?;
+        let end = window
+            .query_end
+            .parse::<NaiveDateTime>()
+            .map_err(ReadApiError::from)?;
         let params: [&(dyn ToSql + Sync); 4] = [&start, &end, &api_key, &user_id];
         let row = client
             .query_one(BENCHMARKS_SQL, &params)
@@ -144,15 +151,6 @@ impl AutoRouterReadStore for PgAutoRouterReads {
             .await
             .map_err(ReadApiError::from)
     }
-}
-
-// the SQL casts its window bounds to timestamp, so they are bound as timestamps rather than text
-fn window_bound(value: &str) -> Result<NaiveDateTime, ReadApiError> {
-    value
-        .parse::<NaiveDateTime>()
-        .map_err(|source| ReadApiError::Store {
-            message: source.to_string(),
-        })
 }
 
 // the route reads through the proxy's writer pool, the one the cache activity routes already open

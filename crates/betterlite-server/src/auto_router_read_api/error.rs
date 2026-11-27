@@ -1,5 +1,7 @@
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_logging::analytics::python::FormatError;
+use chrono::ParseError;
 use thiserror::Error;
 
 use crate::benchmark_aggregates::decode::DecodeError;
@@ -31,8 +33,17 @@ pub enum ReadApiError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the auto-router rollup read failed: {message}")]
-    Store { message: String },
+    // each read failure keeps its typed cause, so a caller can name it and walk the source chain
+    #[error("the auto-router rollup read failed: {0}")]
+    Db(#[from] DbError),
+    #[error("the auto-router session read failed: {0}")]
+    Table(#[from] TableError),
+    #[error("the auto-router rollup rows could not be decoded: {0}")]
+    Decode(#[from] DecodeError),
+    #[error("the auto-router window bound could not be parsed: {0}")]
+    WindowBound(#[from] ParseError),
+    #[error("the session id could not be rendered: {0}")]
+    SessionRepr(#[from] FormatError),
     #[error("No auto-routed turns recorded for session {session} under this key")]
     SessionNotFound { session: String },
 }
@@ -48,31 +59,11 @@ impl ReadApiError {
             Self::DatabaseUnavailable
             | Self::Identity { .. }
             | Self::CallerKey { .. }
-            | Self::Store { .. } => 500,
-        }
-    }
-}
-
-impl From<DbError> for ReadApiError {
-    fn from(source: DbError) -> Self {
-        Self::Store {
-            message: source.to_string(),
-        }
-    }
-}
-
-impl From<TableError> for ReadApiError {
-    fn from(source: TableError) -> Self {
-        Self::Store {
-            message: source.to_string(),
-        }
-    }
-}
-
-impl From<DecodeError> for ReadApiError {
-    fn from(source: DecodeError) -> Self {
-        Self::Store {
-            message: source.to_string(),
+            | Self::Db(_)
+            | Self::Table(_)
+            | Self::Decode(_)
+            | Self::WindowBound(_)
+            | Self::SessionRepr(_) => 500,
         }
     }
 }

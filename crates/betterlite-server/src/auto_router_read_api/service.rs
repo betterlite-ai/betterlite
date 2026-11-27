@@ -94,9 +94,7 @@ pub async fn session_for(
 fn session_not_found(session_id: &str) -> ReadApiError {
     match python::repr(&session_id) {
         Ok(session) => ReadApiError::SessionNotFound { session },
-        Err(source) => ReadApiError::Store {
-            message: source.to_string(),
-        },
+        Err(source) => ReadApiError::SessionRepr(source),
     }
 }
 
