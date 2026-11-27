@@ -14,16 +14,6 @@ from betterlite.vector_stores.main import (
 )
 
 __all__ = [
-    "acreate",
-    "adelete",
-    "alist",
-    "aretrieve",
-    "asearch",
-    "aupdate",
-    "create",
-    "delete",
-    "list",
-    "retrieve",
-    "search",
-    "update",
+    "acreate", "adelete", "alist", "aretrieve", "asearch", "aupdate",
+    "create", "delete", "list", "retrieve", "search", "update",
 ]

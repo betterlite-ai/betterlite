@@ -4,7 +4,7 @@ import inspect
 import json
 import logging
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import ModuleType
@@ -38,10 +38,12 @@ from betterlite.vector_stores._manage import (
     aretrieve,
     aupdate,
     delete,
-    list as list_call,
     retrieve,
     settled,
     update,
+)
+from betterlite.vector_stores._manage import (
+    list as list_call,
 )
 
 HOST = "127.0.0.1"
@@ -115,7 +117,7 @@ LITELLM_ASYNC: VectorStoresAsync = importlib.import_module("litellm.vector_store
 LITELLM_ERRORS: ExceptionClass = importlib.import_module("litellm")
 LITELLM_MODULE: Final[ModuleType] = importlib.import_module("litellm")
 
-IMPLEMENTATIONS: Final[tuple[object, ...]] = (
+IMPLEMENTATIONS = (
     acreate,
     adelete,
     alist,
@@ -204,8 +206,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def answer(self, method: str) -> None:
         # the Rust transport sends an empty body with Content-Length: 0, where httpx sends none
-        declared = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(declared) if declared else b"{}"
+        declared = self.headers.get("Content-Length")
+        length = 0 if declared is None else int(declared)
+        raw = b"{}" if length == 0 else self.rfile.read(length)
         body = BODY.validate_json(raw)
         self.owner.record(method, self.path, dict(self.headers.items()), body)
         if self.headers.get("Authorization") != f"Bearer {GOOD_KEY}":
@@ -231,35 +234,17 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     return rows
 
 
-def query_pairs(call_record: RecordedCall) -> list[tuple[str, str]]:
-    return parse_qsl(urlsplit(call_record["path"]).query)
-
-
 def set_module_globals(
     monkeypatch: pytest.MonkeyPatch, module: ModuleType, url: str, key: str
 ) -> None:
-    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "api_base", url)
-    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "api_key", key)
-    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "openai_key", key)
 
 
 async def settled_values(*pending: Managed | Awaitable[Managed]) -> tuple[Managed, ...]:
-    values: list[Managed] = []
-    for item in pending:
-        values.append(await settled(item))
+    values = [await settled(item) for item in pending]
     return tuple(values)
-
-
-# a provider betterlite cannot serve: both sides raise the same class, and no request leaves
-def refused(call: Callable[..., object], reference: VectorCall, **kwargs: JsonValue) -> None:
-    with pytest.raises(APIConnectionError) as ours_caught:
-        call(**kwargs)
-    with pytest.raises(LITELLM_ERRORS.APIConnectionError):
-        reference(**kwargs)
-    assert type(ours_caught.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
 
 
 def test_signature_matches_litellm() -> None:
@@ -351,7 +336,8 @@ def test_calls_list() -> None:
     assert urlsplit(ours_call["path"]).path == urlsplit(reference_call["path"]).path
     assert urlsplit(ours_call["path"]).path == STORE_PATH
     # the four cursors travel in this order, and only the ones the caller set
-    assert query_pairs(ours_call) == query_pairs(reference_call) == expected
+    ours_query = parse_qsl(urlsplit(ours_call["path"]).query)
+    assert ours_query == parse_qsl(urlsplit(reference_call["path"]).query) == expected
     assert ours_call["body"] == reference_call["body"] == {}
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
@@ -368,7 +354,8 @@ def test_calls_list_defaults() -> None:
         ("order", DEFAULT_ORDER),
     ]
     assert ours_call["path"] == reference_call["path"]
-    assert query_pairs(ours_call) == query_pairs(reference_call) == expected
+    ours_query = parse_qsl(urlsplit(ours_call["path"]).query)
+    assert ours_query == parse_qsl(urlsplit(reference_call["path"]).query) == expected
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
@@ -403,7 +390,7 @@ def test_calls_update() -> None:
     assert JSON.validate_python(ours) == JSON.validate_python(reference)
 
 
-def test_calls_update_keeps_empty_metadata() -> None:
+def test_update_sends_empty_meta() -> None:
     with closing(ManageServer()) as server:
         ours = update(vector_store_id=STORE_ID, metadata={}, api_base=server.url, api_key=GOOD_KEY)
         ours_call = server.calls[-1]
@@ -519,7 +506,7 @@ def test_calls_use_module_globals(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_calls_drop_logging(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING, logger="LiteLLM"), closing(ManageServer()) as server:
-        ours_values: list[object] = []
+        ours_values: list[Managed | Awaitable[Managed]] = []
         ours_calls: list[RecordedCall] = []
         for call in (retrieve, delete):
             ours_values.append(
@@ -547,41 +534,67 @@ def test_calls_drop_logging(caplog: pytest.LogCaptureFixture) -> None:
         assert header_of(ours_call, "Authorization") == header_of(reference_call, "Authorization")
 
 
+# a provider betterlite cannot serve: both sides raise the same class, and no request leaves
 def test_calls_refuse_provider() -> None:
     with closing(ManageServer()) as server:
-        refused(
-            retrieve,
-            LITELLM.retrieve,
-            vector_store_id=STORE_ID,
-            custom_llm_provider=CUSTOM_PROVIDER,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        refused(
-            list_call,
-            LITELLM.list,
-            custom_llm_provider=CUSTOM_PROVIDER,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        refused(
-            update,
-            LITELLM.update,
-            vector_store_id=STORE_ID,
-            name=UPDATED_NAME,
-            custom_llm_provider=CUSTOM_PROVIDER,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        refused(
-            delete,
-            LITELLM.delete,
-            vector_store_id=STORE_ID,
-            custom_llm_provider=CUSTOM_PROVIDER,
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
+        with pytest.raises(APIConnectionError) as ours_caught:
+            retrieve(
+                vector_store_id=STORE_ID,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.retrieve(
+                vector_store_id=STORE_ID,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(APIConnectionError):
+            list_call(
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.list(
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(APIConnectionError):
+            update(
+                vector_store_id=STORE_ID,
+                name=UPDATED_NAME,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.update(
+                vector_store_id=STORE_ID,
+                name=UPDATED_NAME,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(APIConnectionError):
+            delete(
+                vector_store_id=STORE_ID,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.delete(
+                vector_store_id=STORE_ID,
+                custom_llm_provider=CUSTOM_PROVIDER,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
         assert server.calls == []
+    assert type(ours_caught.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
 
 
 def test_error_keeps_class() -> None:
