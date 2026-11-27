@@ -3,7 +3,7 @@ name: jwt-oauth-routing-selector-claim-cross-product
 env: {}
 compare: {ignore: []}
 call:
-  b10161: {operation: selector, selector: [x, y], claim: [a, y], split_space_delimited: false}
+  b10161: {operation: selector, selector: [x, "y"], claim: [a, "y"], split_space_delimited: false}
 calls:
   - b10161: {operation: selector, selector: [x, z], claim: [a, b], split_space_delimited: false}
   - b10161: {operation: selector, selector: b, claim: [a, b], split_space_delimited: false}
