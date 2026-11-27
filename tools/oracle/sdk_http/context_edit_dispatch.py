@@ -57,7 +57,7 @@ class Call(BaseModel):
     scenarios: list[Scenario]
 
 
-# the dispatcher's own keyword arguments; the two request-wide values stay absent for a case without a proxy
+# the dispatcher's keyword arguments; a case without a proxy leaves the two request-wide values out
 class Dispatch(Protocol):
     async def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L72-L82
         self,

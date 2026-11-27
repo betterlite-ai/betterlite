@@ -65,7 +65,7 @@ class Call(BaseModel):
 CALL: Final[TypeAdapter[Call]] = TypeAdapter(Call)
 
 
-# the two request-wide values the case only marks present; the dispatcher hands them to the editor untouched
+# the two request-wide values a case marks present; the dispatcher passes them through
 class Router(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -92,7 +92,9 @@ class Dispatch(Protocol):
 DISPATCH = cast(Dispatch, apply_context_management)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L72
 
 
-def take(scripts: list[Script]) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
+def take(
+    scripts: list[Script],
+) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
     if not scripts:
         raise RuntimeError("the case ran out of scripts")
     script = scripts.pop(0)
@@ -106,7 +108,24 @@ def take(scripts: list[Script]) -> PolyfillResult | tuple[list[dict[str, JsonVal
             compaction_block=script.compaction_block,
             iterations_usage=script.iterations_usage,
         )
-    raise errors.AnthropicContextManagementError(status_code=script.status_code, message=script.message)
+    raise errors.AnthropicContextManagementError(
+        status_code=script.status_code,
+        message=script.message,
+    )
+
+
+# the compact editor's three request-wide arguments, marked present so the case can compare them
+def marked_request_wide(
+    arguments: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    metadata = arguments.pop("litellm_metadata")
+    router = arguments.pop("llm_router")
+    principal = arguments.pop("user_api_key_auth")
+    return {
+        "litellm_metadata": metadata,
+        "llm_router": None if router is None else "router",
+        "user_api_key_auth": None if principal is None else "present",
+    }
 
 
 class ScriptedEditor:
@@ -115,57 +134,29 @@ class ScriptedEditor:
         self.compact = compact
         self.calls: list[dict[str, JsonValue]] = []
 
-    def clear_tool_uses(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py#L153-L160
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, JsonValue]],
-        tools: list[JsonValue] | None,
-        system: str | list[dict[str, JsonValue]] | None,
-        edit_spec: dict[str, JsonValue],
+    # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py#L153-L160
+    def clear_tool_uses(
+        self, **arguments: JsonValue
     ) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
-        self.calls.append(
-            JSON_OBJECT.validate_python(
-                {
-                    "editor": CLEAR_TOOL_USES_EDIT_TYPE,
-                    "model": model,
-                    "messages": messages,
-                    "tools": tools,
-                    "system": system,
-                    "edit_spec": edit_spec,
-                }
-            )
-        )
-        return take(self.clear)
+        return self.record(CLEAR_TOOL_USES_EDIT_TYPE, arguments, {}, self.clear)
 
-    async def compact_uses(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L112-L132
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, JsonValue]],
-        tools: list[JsonValue] | None,
-        system: str | list[dict[str, JsonValue]] | None,
-        edit_spec: dict[str, JsonValue],
-        litellm_metadata: dict[str, JsonValue] | None,
-        llm_router: Router | None,
-        user_api_key_auth: Principal | None,
+    # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L112-L132
+    async def compact_uses(
+        self, **arguments: JsonValue
     ) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
-        self.calls.append(
-            JSON_OBJECT.validate_python(
-                {
-                    "editor": COMPACT_EDIT_TYPE,
-                    "model": model,
-                    "messages": messages,
-                    "tools": tools,
-                    "system": system,
-                    "edit_spec": edit_spec,
-                    "litellm_metadata": litellm_metadata,
-                    "llm_router": None if llm_router is None else "router",
-                    "user_api_key_auth": None if user_api_key_auth is None else "present",
-                }
-            )
-        )
-        return take(self.compact)
+        request_wide = marked_request_wide(arguments)
+        return self.record(COMPACT_EDIT_TYPE, arguments, request_wide, self.compact)
+
+    def record(
+        self,
+        editor: str,
+        arguments: dict[str, JsonValue],
+        request_wide: dict[str, JsonValue],
+        scripts: list[Script],
+    ) -> PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]:
+        entry = {**arguments, "editor": editor, **request_wide}
+        self.calls.append(JSON_OBJECT.validate_python(entry))
+        return take(scripts)
 
 
 class LogCapture(logging.Handler):
@@ -177,10 +168,13 @@ class LogCapture(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
         if message.startswith(DIAGNOSTIC_PREFIX):
-            self.lines.append(JSON_OBJECT.validate_python({"level": record.levelname.lower(), "message": message}))
+            entry = {"level": record.levelname.lower(), "message": message}
+            self.lines.append(JSON_OBJECT.validate_python(entry))
 
 
-async def call_dispatch(scenario: Scenario, router: Router | None, principal: Principal | None) -> PolyfillResult:
+async def call_dispatch(
+    scenario: Scenario, router: Router | None, principal: Principal | None
+) -> PolyfillResult:
     return await DISPATCH(
         model=scenario.model,
         messages=scenario.messages,
@@ -231,4 +225,5 @@ def run_scenario(scenario: Scenario) -> dict[str, JsonValue]:
 
 def run(input_value: Input) -> JsonValue:
     call = CALL.validate_python(input_value)
-    return JSON_OBJECT.validate_python({"runs": [run_scenario(scenario) for scenario in call.scenarios]})
+    runs = [run_scenario(scenario) for scenario in call.scenarios]
+    return JSON_OBJECT.validate_python({"runs": runs})
