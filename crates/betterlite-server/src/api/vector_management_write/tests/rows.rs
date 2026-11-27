@@ -20,10 +20,10 @@ fn insert_sql_names_every_column_and_the_database_clock() {
         JsonData::String("openai".to_owned()),
     );
     let expected = concat!(
-        "INSERT INTO \"litellm_managedvectorstorestable\" AS t ",
+        "INSERT INTO \"LiteLLM_ManagedVectorStoresTable\" AS t ",
         "(\"custom_llm_provider\", \"vector_store_id\", \"updated_at\") ",
         "SELECT r.\"custom_llm_provider\", r.\"vector_store_id\", now() ",
-        "FROM jsonb_populate_record(NULL::\"litellm_managedvectorstorestable\", $1::text::jsonb) ",
+        "FROM jsonb_populate_record(NULL::\"LiteLLM_ManagedVectorStoresTable\", $1::text::jsonb) ",
         "AS r RETURNING row_to_json(t)::text"
     );
     assert_eq!(expected, insert_sql(&document).as_str());
