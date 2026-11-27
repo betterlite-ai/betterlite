@@ -434,6 +434,62 @@ fn empty_parent_values_are_left_out_of_a_merge() {
     );
 }
 
+// one truthy parent field alone must pass the inheritance guard on its own, so a broken pair in its chain shows up here
+#[rstest]
+#[case::authentication_token(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "authentication_token": "parent-auth-token"}"#,
+    r#"{"auth_value": "parent-auth-token"}"#
+)]
+#[case::client_id(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "client_id": "parent-client-id"}"#,
+    r#"{"client_id": "parent-client-id"}"#
+)]
+#[case::client_secret(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "client_secret": "parent-client-secret"}"#,
+    r#"{"client_secret": "parent-client-secret"}"#
+)]
+#[case::scopes(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "scopes": ["read", "write"]}"#,
+    r#"{"scopes": ["read", "write"]}"#
+)]
+#[case::aws_access_key_id(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "aws_access_key_id": "parent-access-key"}"#,
+    r#"{"aws_access_key_id": "parent-access-key"}"#
+)]
+#[case::aws_secret_access_key(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "aws_secret_access_key": "parent-secret-key"}"#,
+    r#"{"aws_secret_access_key": "parent-secret-key"}"#
+)]
+#[case::aws_session_token(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "aws_session_token": "parent-session-token"}"#,
+    r#"{"aws_session_token": "parent-session-token"}"#
+)]
+#[case::aws_region_name(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "aws_region_name": "us-east-1"}"#,
+    r#"{"aws_region_name": "us-east-1"}"#
+)]
+#[case::aws_service_name(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "aws_service_name": "bedrock-agentcore"}"#,
+    r#"{"aws_service_name": "bedrock-agentcore"}"#
+)]
+#[case::upstream_resource(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "upstream_resource": "https://resource.example.test"}"#,
+    r#"{"upstream_resource": "https://resource.example.test"}"#
+)]
+#[case::upstream_token_header(
+    r#"{"server_id": "srv-1", "name": "Single", "transport": "http", "upstream_token_header": "X-Upstream-Token"}"#,
+    r#"{"upstream_token_header": "X-Upstream-Token"}"#
+)]
+fn inherits_one_truthy_parent_field(#[case] parent: &str, #[case] expected: &str) {
+    let parent_registry = registry(&[], false, vec![server(parent)]);
+    let request = payload(r#"{"server_id": "srv-1"}"#);
+    let inherited = inherit_credentials_from_existing_server(&request, &parent_registry);
+    let merged = inherited
+        .credentials
+        .expect("the one parent field is inherited");
+    assert_eq!(fields_of(&merged), json_fields(expected));
+}
+
 #[test]
 fn falsy_payload_fields_win_over_inherited() {
     let parent = registry(&[], false, vec![server(PARENT_SERVER)]);
