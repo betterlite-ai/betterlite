@@ -1,0 +1,14 @@
+id: B10141
+milestone: M4 keys, spend and management
+title: Locked team member addition
+status: todo
+depends_on: [B1206, B700, B720, B724, B726, B732, B801, B819, B859, B8412, B171, B856]
+file: tasks/B10141-team-member-add-service.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: B807
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

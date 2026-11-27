@@ -1,0 +1,51 @@
+kind: helper
+name: bedrock-services-s3-listing-pagination-continuation
+call:
+  bedrock_services_s3_listing:
+    operation: next_request
+    next:
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>tok</NextContinuationToken><IsTruncated>false</IsTruncated></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: batch, _s3_list_files_location: batch}
+        trusted: [[s3_bucket_name, bucket]]
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>a/b c</NextContinuationToken></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: batch, _s3_list_files_location: batch}
+        trusted: [[s3_bucket_name, bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><NextContinuationToken>tok</NextContinuationToken></Contents></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: null}
+        trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>tok</NextContinuationToken></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: null, _s3_list_files_location: batch_output}
+        trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+      - status: 400
+        body: '<ListBucketResult><NextContinuationToken>tok</NextContinuationToken></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>tok'
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+      - status: 200
+        body: '<ListBucketResult/>'
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket], [s3_output_bucket_name, bucket]]
+      - status: 200
+        body: '<ListBucketResult/>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: null, _s3_list_files_location: batch_output}
+        trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>  tok  </NextContinuationToken></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: batch}
+        trusted: [[s3_bucket_name, bucket]]
+      - status: 200
+        body: '<ListBucketResult/>'
+        litellm_params: {aws_region_name: us-east-1}
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>tok</NextContinuationToken></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: "", _s3_list_files_location: ""}
+        trusted: [[s3_bucket_name, bucket]]
+env: {}
+compare: {ignore: []}

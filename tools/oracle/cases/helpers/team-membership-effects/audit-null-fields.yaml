@@ -1,0 +1,22 @@
+kind: helper
+name: team-membership-audit-null-fields
+call:
+  b10140:
+    team_alias: null
+    members:
+      - {"user_id": null, "user_email": "test-email-only@example.com", "role": "user"}
+calls:
+  - b10140:
+      team_alias: null
+      members:
+        - {"user_id": "test-user-only", "user_email": null, "role": "admin"}
+  - b10140:
+      team_alias: ""
+      members: []
+  - b10140:
+      team_alias: null
+      members:
+        - {"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "user"}
+        - {"user_id": "test-user-2", "user_email": "test-2@example.com", "role": "admin"}
+env: {}
+compare: {ignore: []}

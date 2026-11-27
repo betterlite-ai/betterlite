@@ -1,0 +1,48 @@
+task: B645
+deviations:
+  - what: S3 listing XML that declares a document type or uses an undeclared entity is rejected through the XML parse-error path, so the transform fails with no HTTP status; LiteLLM's ElementTree parses internal DTD declarations and expands internal entities.
+    why: Bounded parsing must not expand declarations an upstream endpoint supplies; the record captures every rejection the parser makes, and the rejection is not claimed as Python equivalence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1363-L1391
+  - what: A listing body larger than the transport bound (16 MiB through B173) is rejected before parsing, where LiteLLM parses a body of any size.
+    why: The listing response arrives over the shared bounded transport; an endpoint cannot make betterlite allocate an unbounded body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1363-L1391
+  - what: Listing XML nested deeper than 64 elements is rejected, where LiteLLM has no depth limit.
+    why: The decoder walks a bounded stack, and S3's listing shape stays far below the limit, so the cap only stops hostile nesting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1319-L1335
+  - what: Only UTF-8 listing XML is decoded; a body whose XML declaration names another encoding, such as UTF-16, fails to parse, where ElementTree honors the declared encoding.
+    why: S3 writes UTF-8 listings, and honoring arbitrary declared encodings widens the decoder's input surface for no working call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1363-L1391
+  - what: A LastModified timestamp without an offset is read as UTC, where LiteLLM's datetime.fromisoformat gives a naive datetime that timestamp() resolves in the host's local timezone.
+    why: betterlite has no process timezone to resolve against, and S3 always sends a Z suffix; pinning UTC keeps one machine-independent answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L335-L339
+  - what: LastModified is read as the extended calendar form only, `YYYY-MM-DDTHH:MM:SS` with a `T`, `t` or space before the time, an optional dot or comma fraction and a `Z` or `±HH:MM` offset; basic format, a date without a time, an hour-only time, `±HHMM` and `±HH` offsets, week and ordinal dates and a lowercase `z` fail as invalid timestamps, where Python's fromisoformat reads a wider grammar.
+    why: S3 writes the extended form in LastModified, and the narrow parser avoids a date grammar no listing produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L335-L339
+  - what: A Size beyond the signed 64-bit range fails as an invalid size, where Python's int keeps an arbitrarily large value in the file object.
+    why: The file object stores bytes as i64, and no S3 object reaches that size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L342-L372
+  - what: A Size written with non-ASCII decimal digits fails as an invalid size, where Python's int accepts every Unicode decimal digit.
+    why: S3 sends ASCII digits, and reading every Unicode decimal digit needs digit tables for a value no AWS endpoint writes that way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L342-L372
+kept_bugs:
+  - what: An explicit empty-string purpose uses the broad listing query, then filters out every listed file and skips the output-bucket walk.
+    why: LiteLLM treats the empty string as falsy for the prefix but as a string for the walk and the final filter, and a caller that passes an empty purpose gets an empty page rather than an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L308-L321
+  - what: A truthy XML Name that differs from the configured bucket drops every listing entry instead of reporting the mismatch, because authorization checks file ids against the configured bucket while the listed bucket names the file id.
+    why: LiteLLM builds the file id from the listed Name and validates it against the configured bucket, and a setup whose endpoint reports another bucket already sees an empty listing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1363-L1391
+  - what: Listing entries with a missing, empty or unauthorized Key are omitted silently, with no warning or debug diagnostic, so a listing of entirely foreign objects returns an empty file list.
+    why: LiteLLM catches the authorization ValueError and returns None for the entry, and a deployment that lists a shared bucket relies on foreign objects being skipped rather than failing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L342-L372
+  - what: A listing entry without a Size reports 0 bytes, and one without a LastModified reports created_at 0 (the Unix epoch) instead of an error.
+    why: LiteLLM's int(findtext(...) or 0) and its early return for an empty LastModified turn absent metadata into zero, and listings of objects written by other tools lack both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L335-L372
+  - what: A LastModified just before the Unix epoch with a fractional second truncates toward zero, so 1969-12-31T23:59:59.500Z reports created_at 0 rather than -1.
+    why: Python's int() truncates the negative float toward zero, and a listing entry that old has no other sensible epoch value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L335-L339
+  - what: Every status below 400 is parsed as XML when asking for the next listing page, including a 204 with an empty body, so a redirect or no-content answer surfaces as a parse failure instead of a status error.
+    why: LiteLLM only short-circuits status 400 and above, and S3 answers ListObjectsV2 with either 200 or an error status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1319-L1335
+  - what: Only HTTP 204 is a successful delete; any other status is an error, and a 200 response carrying a body becomes a 502 with that body as the message.
+    why: LiteLLM treats every non-204 answer as a failure and maps statuses below 400 to 502, and S3 DeleteObject answers 204 on success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1294-L1307

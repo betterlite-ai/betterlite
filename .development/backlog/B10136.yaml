@@ -1,13 +1,13 @@
 id: B10136
 milestone: M8 platform
 title: Deployment sync port for the config write routes
-status: todo
+status: done
 depends_on: [B003]
 file: tasks/B10136-deployment-sync-port.yaml
 covers: []
 parent: B8611
 split_from: B8611
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3331
