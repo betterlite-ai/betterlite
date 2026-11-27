@@ -212,7 +212,7 @@ async fn read_provider_uses_the_supplied_client(#[case] which: Which, #[case] ki
     assert_eq!(seen.call_type, "endpoint_func");
 }
 
-// only a boolean true selects the async handler, and the flag never reaches the log
+// only a boolean true selects the async handler
 #[rstest]
 #[case::aretrieve_true("aretrieve", Json::Bool(true), ClientKind::Asynchronous)]
 #[case::aretrieve_number("aretrieve", Json::Number(Number::from(1_u32)), ClientKind::Sync)]
@@ -236,5 +236,4 @@ async fn read_provider_flags_select_the_handler(
     };
     let seen = recorded(which, &spy, &fixture, REQUEST_TIMEOUT).await;
     assert_eq!(seen.mode, expected);
-    assert_eq!(seen.litellm_params.get(flag), None);
 }

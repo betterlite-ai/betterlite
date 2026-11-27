@@ -258,6 +258,27 @@ async fn native_read_timeout(
     assert_eq!(requests[0].timeout, None);
 }
 
+// a timeout no GET reads cannot fail the read: a negative or infinite value still answers and stays out of the request
+#[rstest]
+#[case::negative_caller(Some(-1.0_f64), REQUEST_TIMEOUT)]
+#[case::negative_configured(None, -1.0_f64)]
+#[case::infinite_caller(Some(f64::INFINITY), REQUEST_TIMEOUT)]
+#[tokio::test]
+async fn native_unusable_timeout_answers(#[case] requested: Option<f64>, #[case] configured: f64) {
+    let native = Native::new(Wire::replying(&record()));
+    let mut fixture = Fixture::new();
+    fixture.arguments.timeout = requested;
+    let value = call_with(Which::Retrieve, &native, &fixture, None, configured)
+        .await
+        .expect("a timeout the GET ignores still answers");
+    assert_eq!(value, record());
+    assert_eq!(native.captured(), vec![Duration::ZERO]);
+    let requests = native.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, Method::GET);
+    assert_eq!(requests[0].timeout, None);
+}
+
 #[tokio::test]
 async fn native_retrieve_request() {
     let native = Native::new(Wire::replying(&record()));

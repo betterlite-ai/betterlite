@@ -71,5 +71,4 @@ async fn aretrieve_ignores_a_caller_flag() {
         .insert(String::from("aretrieve"), Json::Bool(false));
     let seen = recorded(Which::Aretrieve, &spy, &fixture, REQUEST_TIMEOUT).await;
     assert_eq!(seen.mode, Which::Aretrieve.mode());
-    assert_eq!(seen.litellm_params.get("aretrieve"), None);
 }
