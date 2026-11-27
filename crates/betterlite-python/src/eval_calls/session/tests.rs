@@ -8,14 +8,17 @@ use std::thread::JoinHandle;
 use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
 use betterlite_core::api::eval_create_list::config::EvalsConfigLookup;
 use betterlite_core::api::eval_lifecycle::EvalLifecycleConfigLookup;
+use betterlite_models::decisions::Json;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
 use betterlite_openai::openai_base_config::Headers;
+use indexmap::IndexMap;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyModule};
 use secrecy::SecretString;
 
+use super::EvalCore;
 use super::NativeEvalSession;
 use crate::eval_calls::configs::EvalConfigs;
 use crate::eval_calls::convert::ModuleSettings;
@@ -460,4 +463,18 @@ fn configs_serve_only_openai_to_the_lifecycle_service() {
         headers.get("Authorization").map(String::as_str),
         Some("Bearer env-key")
     );
+}
+
+// LiteLLM keeps the caller's litellm_call_id on the logging object it builds for the call
+#[test]
+fn session_logging_keeps_the_callers_call_id() {
+    let core = EvalCore::build(ENVIRONMENT).expect("the core builds");
+    let kwargs = IndexMap::from([(
+        "litellm_call_id".to_owned(),
+        Json::Text("call-1".to_owned()),
+    )]);
+    let state = super::logging::call_logging(&core, "create_eval", &kwargs)
+        .expect("the logging state builds");
+    assert_eq!(state.litellm_call_id, "call-1");
+    assert_eq!(state.call_type, "create_eval");
 }
