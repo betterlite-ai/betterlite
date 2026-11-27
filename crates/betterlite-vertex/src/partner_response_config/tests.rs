@@ -37,7 +37,7 @@ const NOW: i64 = 1_760_000_000;
 const CLAUDE_BODY: &str = r#"{"model":"claude-3-sonnet-20240229","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}"#;
 const CLAUDE_THINKING_BODY: &str = r#"{"model":"claude-3-sonnet-20240229","content":[{"type":"thinking","thinking":"think"},{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":10}}"#;
 const AI21_CHOICES: &str = r#""choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]"#;
-const AI21_USAGE: &str = r#""usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}"#;
+const AI21_USAGE: &str = r#","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}"#;
 const LLAMA_CHOICES: &str = r#""choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]"#;
 
 struct FixedCounter;
@@ -320,7 +320,7 @@ fn transform_ai21_keeps_the_reply_id_and_model() {
     let body = ai21_body(
         r#""id":"reply-1","#,
         r#""created":7,"#,
-        r#""model":"jamba-1.5","#,
+        r#""model":"jamba-1.5-mini","#,
         AI21_USAGE,
     );
     let outcome = transform(&Sample {
@@ -333,7 +333,7 @@ fn transform_ai21_keeps_the_reply_id_and_model() {
     });
     let view = answer_view(&outcome);
     assert_eq!(view.id, "reply-1");
-    assert_eq!(view.model.as_deref(), Some("jamba-1.5"));
+    assert_eq!(view.model.as_deref(), Some("jamba-1.5-mini"));
     assert_eq!(view.created, Some(7));
     assert_eq!(view.choices[0].message.content.as_deref(), Some("hi"));
     assert_eq!(view.choices[0].finish_reason.as_deref(), Some("stop"));
@@ -526,8 +526,8 @@ fn transform_llama_not_json_is_a_vertex_error() {
         headers: &[("x-request-id", "req-b10159")],
         now: NOW,
     });
-    let error = outcome.answer.expect_err("the body is not JSON");
-    let PartnerResponseError::Llama(error) = error else {
+    let failure = outcome.answer.expect_err("the body is not JSON");
+    let PartnerResponseError::Llama(error) = failure else {
         panic!("a non-JSON Llama reply is a VertexAIError");
     };
     assert_eq!(error.status_code, 503);

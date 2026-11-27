@@ -6,7 +6,7 @@ call:
     model: jamba-1.5
     status: 200
     raw_text: |
-      {"id":"reply-1","created":7,"model":"jamba-1.5","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}
+      {"id":"reply-1","created":7,"model":"jamba-1.5-mini","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}
     headers: {x-request-id: req-b10159}
     messages: [{role: user, content: hi}]
     optional_params: {}

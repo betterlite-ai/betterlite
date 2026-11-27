@@ -84,11 +84,8 @@ fn project(
     {
         starting_id.clone_into(&mut response.id);
     }
-    if source
-        .get("created")
-        .filter(|value| !value.is_null())
-        .is_none()
-    {
+    let has_created = source.get("created").is_some_and(|value| !value.is_null());
+    if !has_created {
         response.created = u64::try_from(now).unwrap_or_default();
     }
     Ok(response)

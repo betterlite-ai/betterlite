@@ -111,7 +111,8 @@ fn llama_answer(
 fn usage_from(usage: &Object) -> Result<ChatUsage, PartnerOpenAiError> {
     let mut counts = usage.clone();
     for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
-        if counts.get(name).filter(|value| !value.is_null()).is_none() {
+        let counted = counts.get(name).is_some_and(|value| !value.is_null());
+        if !counted {
             counts.insert(name.to_owned(), serde_json::json!(0_i32));
         }
     }
