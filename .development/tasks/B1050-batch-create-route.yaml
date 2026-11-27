@@ -13,6 +13,13 @@ description: >-
   paths.
 
 
+  The router branch (endpoints.py L391-L398) is Router.acreate_batch, built by B10143. Build it once in routes(state) with
+  B10143's app::inference::router_calls::batch_create::batch_create(state, executor), where the executor is a B6021
+  GenericCallExecutor for the call type acreate_batch over the same B1036 provider create the direct branch calls.
+  BatchProviderCreateInput is deny_unknown_fields, so the executor reads its fields out of the merged map by name and
+  never deserializes the whole map, which also holds litellm_metadata, model_info, caching and the deployment's other params.
+
+
   The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
   early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
   storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
@@ -82,7 +89,7 @@ description: >-
 
   Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1020 (File credentials), B1036 (Batch
   provider create), B1041 (Batch managed records), B1047 (Batch precall), B1049 (Executed batch runner), B1087 (Api
-  boundaries), B1112 (Batch route support), B1100 (Shared request body decoding), B8353 (Router file, vector store create and batch calls), B732
+  boundaries), B1112 (Batch route support), B1100 (Shared request body decoding), B10143 (Router batch create with fallbacks), B732
   (Typed authentication principals and grant resolution), B855 (Authenticated request admission and budget handoff),
   B756 (Authentication header selection and mode dispatch), B1021 (File upload options), B1019 (File routing ids),
   B1048 (Executed batch input), B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP oracle
