@@ -8,7 +8,8 @@ use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_models::decisions::Json;
 
 use crate::api::messages_compaction::dispatch::{DispatchRequest, apply_context_management};
-use crate::api::messages_compaction::editor::RegisteredEditors;
+use crate::api::messages_compaction::editor::{EditorFailure, RegisteredEditors};
+use crate::api::messages_compaction::error::DispatchError;
 use crate::api::messages_context_clear::constants::{
     CLEAR_TOOL_USES_EDIT_TYPE, CLEARED_TOOL_RESULT_CONTENT, COMPACT_EDIT_TYPE,
 };
@@ -192,6 +193,50 @@ async fn registered_summary_editor_http_carries_the_system_prompt() {
         run.request.body
     );
     assert_compaction_result(&run.result);
+}
+
+#[tokio::test]
+async fn registered_summary_editor_http_carries_block_system_prompts() {
+    let spec = parse(
+        r#"{"edits":[{"type":"compact_20260112","trigger":{"type":"input_tokens","value":50000}}]}"#,
+    );
+    let system = Some(parse(r#"[{"type":"text","text":"BLOCK SYSTEM"}]"#));
+    let run = run_registered(COMPACT_HISTORY, system, &spec, 0).await;
+    assert_one_summary_request(&run.request);
+    assert!(
+        run.request.body.contains("BLOCK SYSTEM"),
+        "the system blocks reach the summary call as text: {}",
+        run.request.body
+    );
+    assert_compaction_result(&run.result);
+}
+
+#[tokio::test]
+async fn registered_summary_editor_refuses_a_non_text_system() {
+    let spec = parse(
+        r#"{"edits":[{"type":"compact_20260112","trigger":{"type":"input_tokens","value":50000}}]}"#,
+    );
+    let executor = executor();
+    let summary_deployment = deployment("http://127.0.0.1:1/v1");
+    let completion = ExecutorCompletion {
+        executor: &executor,
+        deployment: &summary_deployment,
+    };
+    let settings = summary_settings();
+    let counter = FixedHistoryCounter {
+        conversation: 50_001,
+        text: 0,
+    };
+    let editors = registered(&settings, &counter, &completion, 0);
+    let dispatch = dispatch(decided(COMPACT_HISTORY), Some(parse("7")), &spec);
+    let error = apply_context_management(dispatch, &editors)
+        .await
+        .expect_err("a number is not a system prompt");
+
+    assert!(matches!(
+        error,
+        DispatchError::Editor(EditorFailure::System(_))
+    ));
 }
 
 #[tokio::test]
