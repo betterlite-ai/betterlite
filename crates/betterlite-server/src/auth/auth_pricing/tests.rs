@@ -338,7 +338,7 @@ async fn json_metadata_text_is_left_alone() {
 
 // a form metadata string Python's json.loads cannot read leaves the other fields, the user among them, intact
 #[tokio::test]
-async fn unparseable_form_metadata_keeps_the_user() {
+async fn unparsable_form_metadata_keeps_the_user() {
     let user_config = config_with("  enforce_user_param: true\n", "0");
     let (status, body, reached) = run_rule_with(
         &user_config,
