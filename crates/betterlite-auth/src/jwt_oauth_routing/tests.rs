@@ -236,12 +236,8 @@ fn wildcard_case_whitespace_and_brackets(
     #[case] expected: bool,
 ) {
     let values = document(claims);
-    let found = routing_selector_matches_claim(
-        one(selector).as_ref(),
-        &values,
-        "iss",
-        split_space_delimited,
-    );
+    let found =
+        routing_selector_matches_claim(Some(&one(selector)), &values, "iss", split_space_delimited);
     assert_eq!(found, expected);
 }
 
