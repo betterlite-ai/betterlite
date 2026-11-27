@@ -113,9 +113,9 @@ async fn cancel_eval_uses_the_api_base_from_the_keywords() {
 #[tokio::test]
 async fn cancel_eval_logs_the_eval_id_before_the_send() {
     let serving = json_server("200 OK", CANCELLED, Duration::ZERO);
-    let base = url(&serving);
+    let target = format!("{}/v1/evals/eval_1/cancel", url(&serving));
     let mut rig = Rig::new(RealConfigs, TransportLimits::DEFAULT, REQUEST_TIMEOUT);
-    let mut params = openai_kwargs(&base);
+    let mut params = openai_kwargs(&url(&serving));
     params.insert("litellm_call_id".to_owned(), text("call-9"));
     let request = call("eval_1", &params);
     let _answer = run(&mut rig, Operation::Cancel, &request)
@@ -135,7 +135,7 @@ async fn cancel_eval_logs_the_eval_id_before_the_send() {
         rig.fixture.state.litellm_params.get("litellm_call_id"),
         Some(&text("call-9"))
     );
-    assert_eq!(rig.fixture.logged("api_base"), Some(&text(&base)));
+    assert_eq!(rig.fixture.logged("api_base"), Some(&text(&target)));
     let snapshot = rig.fixture.snapshot().expect("the logger saw the call");
     let Json::Object(fields) = snapshot else {
         panic!("the callback snapshot is an object");
@@ -207,12 +207,17 @@ async fn acancel_eval_answers_like_cancel_eval() {
     let seen = serving.finish().expect("the fixture finishes");
     assert_line(&seen, "POST", "/v1/evals/eval_1/cancel");
     assert_eq!(response.id, "eval_1");
+    assert_eq!(
+        params.get("acancel_eval"),
+        None,
+        "the flag goes on a copy, so the caller's keywords keep their keys"
+    );
 }
 
-// acancel_eval hands the caller's eval id, headers, api base and keywords to the same body
+// acancel_eval hands the caller's eval id, headers, api base and timeout to the same body
 #[tokio::test]
 async fn acancel_eval_forwards_the_caller_arguments() {
-    let serving = json_server("200 OK", CANCELLED, Duration::ZERO);
+    let serving = json_server("200 OK", CANCELLED, Duration::from_millis(300));
     let base = url(&serving);
     let mut rig = Rig::new(
         RecordingLookup::new(base),
@@ -226,12 +231,18 @@ async fn acancel_eval_forwards_the_caller_arguments() {
     let extra = headers(&[("x-extra", "one")]);
     let request = EvalLifecycleCall {
         extra_headers: Some(&extra),
+        timeout: Some(Duration::from_millis(50)),
         ..call("eval_7", &params)
     };
-    let _answer = run(&mut rig, Operation::AsyncCancel, &request)
+    let failure = run(&mut rig, Operation::AsyncCancel, &request)
         .await
-        .expect("the fixture answers");
-    serving.finish().expect("the fixture finishes");
+        .expect_err("the 50 ms timeout ends the call");
+    let error = provider(&failure);
+    assert_eq!(error.status_code, 408);
+    assert!(matches!(&failure.class, ErrorClass::Timeout(_)));
+    serving
+        .finish()
+        .expect("the fixture read the request before its pause");
     let asked = rig.configs.recorder().only_call();
     assert_eq!(asked.eval_id, "eval_7");
     assert_eq!(asked.api_base, "https://records.example");
@@ -240,6 +251,36 @@ async fn acancel_eval_forwards_the_caller_arguments() {
         Some("one")
     );
     assert!(asked.cancel, "the cancel transform built the request");
+}
+
+// acancel_eval hands the caller's provider to the lookup, so the unsupported answer names mistral and nothing is sent
+#[tokio::test]
+async fn acancel_eval_names_the_caller_provider_for_an_unsupported_provider() {
+    let serving = json_server("200 OK", CANCELLED, Duration::ZERO);
+    let base = url(&serving);
+    let mut rig = Rig::new(
+        RecordingLookup::new(base),
+        TransportLimits::DEFAULT,
+        REQUEST_TIMEOUT,
+    );
+    let params = openai_kwargs("https://records.example");
+    let request = EvalLifecycleCall {
+        custom_llm_provider: Some("mistral"),
+        ..call("eval_1", &params)
+    };
+    let failure = run(&mut rig, Operation::AsyncCancel, &request)
+        .await
+        .expect_err("mistral has no evals API");
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.message, "CANCEL eval is not supported for mistral");
+    assert_eq!(
+        rig.configs.recorder().providers(),
+        vec!["mistral".to_owned()]
+    );
+    assert_no_request(serving);
 }
 
 // kwargs.pop("acancel_eval", False) runs before GenericLiteLLMParams, so the flag never reaches the provider config

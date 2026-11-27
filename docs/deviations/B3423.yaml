@@ -3,8 +3,8 @@ deviations:
   - what: "delete_eval and cancel_eval are async functions, and adelete_eval and acancel_eval await them directly instead of running a sync function through partial, contextvars.copy_context and loop.run_in_executor."
     why: "betterlite's evals transport is async only (B9370), and Rust has neither contextvars nor a GIL, so there is no sync body to hand to an executor; each wrapper sets the same async keyword and awaits the same prepare, transform, send and response."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L808-L831
-  - what: "adelete_eval and acancel_eval copy the call keywords before they set the async keyword to true, instead of writing into the caller's kwargs dict."
-    why: "docs/compatibility.md leaves caller data unchanged; LiteLLM's kwargs[\"adelete_eval\"] = True and kwargs[\"acancel_eval\"] = True write into the dict the caller passed, which betterlite does not copy back."
+  - what: "adelete_eval and acancel_eval clone the call keywords before they set the async keyword to true, instead of writing into the keywords map LiteLLM's own **kwargs binding builds."
+    why: "LiteLLM's kwargs[\"adelete_eval\"] = True writes into the dict the call itself bound, so a map the caller holds is unchanged there too; Rust hands the keywords over as a shared reference, so betterlite copies them and leaves the caller's map as it was."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L811
   - what: "litellm_logging_obj, client and shared_session arrive as typed fields (EvalLifecycles::log, EvalLifecycleDeps::client) instead of kwargs entries, and the logging object cannot be absent; litellm_call_id stays in the call keywords as LiteLLM reads it."
     why: "LiteLLM reads them out of **kwargs, so a call without litellm_logging_obj fails as an AttributeError that exception_type maps; betterlite takes B249's logging state as a required argument and the pooled client and request timeout as dependencies."

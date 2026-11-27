@@ -54,23 +54,6 @@ pub struct EvalLifecycleCall<'call> {
     pub kwargs: &'call IndexMap<String, Json>,
 }
 
-impl EvalLifecycleCall<'_> {
-    // the same call over a copy of its keywords that carries the flag an async wrapper leaves for prepare to pop
-    const fn flagged<'flagged>(
-        &'flagged self,
-        kwargs: &'flagged IndexMap<String, Json>,
-    ) -> EvalLifecycleCall<'flagged> {
-        EvalLifecycleCall {
-            eval_id: self.eval_id,
-            extra_headers: self.extra_headers,
-            extra_query: self.extra_query,
-            timeout: self.timeout,
-            custom_llm_provider: self.custom_llm_provider,
-            kwargs,
-        }
-    }
-}
-
 pub type EvalDeleteResult = Result<DeleteEvalResponse, EvalLifecycleFailure>;
 pub type EvalCancelResult = Result<CancelEvalResponse, EvalLifecycleFailure>;
 
@@ -84,7 +67,8 @@ impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Con
     // LiteLLM's delete_eval: prepare, connect, send, then map the handler's failure
     pub async fn delete_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalDeleteResult {
         let prepared = prepare(self.deps, call, EvalAction::Delete, self.log.state)?;
-        let connection = connect(self.deps, &prepared);
+        #[rustfmt::skip]
+        let connection = EvalConnection { config: &prepared.config, client: self.deps.client, url: &prepared.url, headers: &prepared.headers };
         let reply = delete_eval_handler(&connection, self.log, Some(prepared.timeout)).await;
         mapped(reply, &prepared, self.deps)
     }
@@ -93,13 +77,16 @@ impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Con
     pub async fn adelete_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalDeleteResult {
         let mut kwargs = call.kwargs.clone();
         kwargs.insert(String::from(DELETE_ASYNC_FLAG), Json::Bool(true));
-        self.delete_eval(&call.flagged(&kwargs)).await
+        // every field is named, so a copy that drops one of them cannot compile
+        #[rustfmt::skip]
+        self.delete_eval(&EvalLifecycleCall { eval_id: call.eval_id, extra_headers: call.extra_headers, extra_query: call.extra_query, timeout: call.timeout, custom_llm_provider: call.custom_llm_provider, kwargs: &kwargs }).await
     }
 
     // LiteLLM's cancel_eval: the same steps with the cancel transform and handler
     pub async fn cancel_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalCancelResult {
         let prepared = prepare(self.deps, call, EvalAction::Cancel, self.log.state)?;
-        let connection = connect(self.deps, &prepared);
+        #[rustfmt::skip]
+        let connection = EvalConnection { config: &prepared.config, client: self.deps.client, url: &prepared.url, headers: &prepared.headers };
         let reply = cancel_eval_handler(&connection, self.log, Some(prepared.timeout)).await;
         mapped(reply, &prepared, self.deps)
     }
@@ -108,23 +95,9 @@ impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Con
     pub async fn acancel_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalCancelResult {
         let mut kwargs = call.kwargs.clone();
         kwargs.insert(String::from(CANCEL_ASYNC_FLAG), Json::Bool(true));
-        self.cancel_eval(&call.flagged(&kwargs)).await
-    }
-}
-
-// the connection a handler call holds: this call's config, URL and headers, and the shared client
-fn connect<'call, Configs>(
-    deps: &'call EvalLifecycleDeps<'_, Configs>,
-    prepared: &'call Prepared<Configs::Config>,
-) -> EvalConnection<'call>
-where
-    Configs: EvalLifecycleConfigLookup + ?Sized,
-{
-    EvalConnection {
-        config: &prepared.config,
-        client: deps.client,
-        url: &prepared.url,
-        headers: &prepared.headers,
+        // every field is named, so a copy that drops one of them cannot compile
+        #[rustfmt::skip]
+        self.cancel_eval(&EvalLifecycleCall { eval_id: call.eval_id, extra_headers: call.extra_headers, extra_query: call.extra_query, timeout: call.timeout, custom_llm_provider: call.custom_llm_provider, kwargs: &kwargs }).await
     }
 }
 

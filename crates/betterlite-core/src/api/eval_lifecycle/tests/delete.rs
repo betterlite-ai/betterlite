@@ -9,7 +9,7 @@ use super::support::{
     assert_forwarded_headers, assert_line, assert_no_request, call, deleted, head_value, headers,
     json_server, kwargs, object, openai_kwargs, provider, run, text, url,
 };
-use crate::api::eval_lifecycle::{DEFAULT_OPENAI_API_BASE, DELETE_ASYNC_FLAG, EvalLifecycleCall};
+use crate::api::eval_lifecycle::{DEFAULT_OPENAI_API_BASE, EvalLifecycleCall};
 
 #[tokio::test]
 async fn delete_eval_returns_the_provider_delete_response() {
@@ -125,9 +125,9 @@ async fn delete_eval_treats_an_empty_api_base_as_unset() {
 #[tokio::test]
 async fn delete_eval_logs_the_eval_id_before_the_send() {
     let serving = json_server("200 OK", DELETED, Duration::ZERO);
-    let base = url(&serving);
+    let target = format!("{}/v1/evals/eval_1", url(&serving));
     let mut rig = Rig::new(RealConfigs, TransportLimits::DEFAULT, REQUEST_TIMEOUT);
-    let mut params = openai_kwargs(&base);
+    let mut params = openai_kwargs(&url(&serving));
     params.insert("litellm_call_id".to_owned(), text("call-9"));
     let request = call("eval_1", &params);
     let _answer = run(&mut rig, Operation::Delete, &request)
@@ -147,7 +147,7 @@ async fn delete_eval_logs_the_eval_id_before_the_send() {
         rig.fixture.state.litellm_params.get("litellm_call_id"),
         Some(&text("call-9"))
     );
-    assert_eq!(rig.fixture.logged("api_base"), Some(&text(&base)));
+    assert_eq!(rig.fixture.logged("api_base"), Some(&text(&target)));
     let snapshot = rig.fixture.snapshot().expect("the logger saw the call");
     let Json::Object(fields) = snapshot else {
         panic!("the callback snapshot is an object");
@@ -246,12 +246,17 @@ async fn adelete_eval_answers_like_delete_eval() {
     let seen = serving.finish().expect("the fixture finishes");
     assert_line(&seen, "DELETE", "/v1/evals/eval_1");
     assert_eq!(response.eval_id, "eval_1");
+    assert_eq!(
+        params.get("adelete_eval"),
+        None,
+        "the flag goes on a copy, so the caller's keywords keep their keys"
+    );
 }
 
-// adelete_eval hands the caller's eval id, headers, api base and keywords to the same body
+// adelete_eval hands the caller's eval id, headers, api base and timeout to the same body
 #[tokio::test]
 async fn adelete_eval_forwards_the_caller_arguments() {
-    let serving = json_server("200 OK", DELETED, Duration::ZERO);
+    let serving = json_server("200 OK", DELETED, Duration::from_millis(300));
     let base = url(&serving);
     let mut rig = Rig::new(
         RecordingLookup::new(base),
@@ -265,12 +270,19 @@ async fn adelete_eval_forwards_the_caller_arguments() {
     let extra = headers(&[("x-extra", "one")]);
     let request = EvalLifecycleCall {
         extra_headers: Some(&extra),
+        timeout: Some(Duration::from_millis(50)),
         ..call("eval_7", &params)
     };
-    let _answer = run(&mut rig, Operation::AsyncDelete, &request)
+    let failure = run(&mut rig, Operation::AsyncDelete, &request)
         .await
-        .expect("the fixture answers");
-    serving.finish().expect("the fixture finishes");
+        .expect_err("the 50 ms timeout ends the call");
+    let error = provider(&failure);
+    assert_eq!(error.status_code, 500);
+    assert!(error.status_code_is_synthesized);
+    assert!(matches!(&failure.class, ErrorClass::InternalServer(_)));
+    serving
+        .finish()
+        .expect("the fixture read the request before its pause");
     let asked = rig.configs.recorder().only_call();
     assert_eq!(asked.eval_id, "eval_7");
     assert_eq!(asked.api_base, "https://records.example");
@@ -278,6 +290,36 @@ async fn adelete_eval_forwards_the_caller_arguments() {
         asked.headers.get("x-extra").map(String::as_str),
         Some("one")
     );
+}
+
+// adelete_eval hands the caller's provider to the lookup, so the unsupported answer names mistral and nothing is sent
+#[tokio::test]
+async fn adelete_eval_names_the_caller_provider_for_an_unsupported_provider() {
+    let serving = json_server("200 OK", DELETED, Duration::ZERO);
+    let base = url(&serving);
+    let mut rig = Rig::new(
+        RecordingLookup::new(base),
+        TransportLimits::DEFAULT,
+        REQUEST_TIMEOUT,
+    );
+    let params = openai_kwargs("https://records.example");
+    let request = EvalLifecycleCall {
+        custom_llm_provider: Some("mistral"),
+        ..call("eval_1", &params)
+    };
+    let failure = run(&mut rig, Operation::AsyncDelete, &request)
+        .await
+        .expect_err("mistral has no evals API");
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.message, "DELETE eval is not supported for mistral");
+    assert_eq!(
+        rig.configs.recorder().providers(),
+        vec!["mistral".to_owned()]
+    );
+    assert_no_request(serving);
 }
 
 // kwargs.pop("adelete_eval", False) runs before GenericLiteLLMParams, so the flag never reaches the provider config
@@ -309,24 +351,6 @@ async fn delete_eval_pops_the_async_flag_from_the_parameters() {
     assert_eq!(
         asked.params.get("api_key").and_then(|value| value.as_str()),
         Some("sk-test")
-    );
-}
-
-// adelete_eval hands delete_eval a copy of the keywords that carries its flag; the caller's map never changes
-#[test]
-fn adelete_eval_flags_the_call_keywords() {
-    let params = kwargs(&[("api_key", text("sk-test"))]);
-    let request = call("eval_1", &params);
-    let mut flagged_kwargs = params.clone();
-    flagged_kwargs.insert(String::from(DELETE_ASYNC_FLAG), Json::Bool(true));
-    let flagged = request.flagged(&flagged_kwargs);
-    assert_eq!(flagged.kwargs.get("adelete_eval"), Some(&Json::Bool(true)));
-    assert_eq!(flagged.eval_id, "eval_1");
-    assert_eq!(flagged.kwargs.get("api_key"), Some(&text("sk-test")));
-    assert_eq!(
-        params.get("adelete_eval"),
-        None,
-        "the caller's keywords are not changed"
     );
 }
 
