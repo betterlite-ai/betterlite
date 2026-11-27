@@ -1,0 +1,12 @@
+task: B10115
+deviations:
+  - what: >-
+      master_key_admin_auth compares key_hash with the master key's digest over UTF-8 bytes, so a non-ASCII
+      key_hash is a plain mismatch and returns None. LiteLLM's secrets.compare_digest raises TypeError for a str
+      operand holding non-ASCII characters, which reaches the caller as an unhandled server error.
+    why: >-
+      key_hash is a SHA-256 hex digest at both call sites, so no working setup sends non-ASCII; a 500 on input the
+      gateway can simply refuse tells the client the server broke, and the byte comparison keeps the
+      constant-time property.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L226
+kept_bugs: []

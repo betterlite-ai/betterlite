@@ -1,0 +1,55 @@
+kind: probe
+name: auto-router-read-api-canonical-user-filter
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      auto_router_read_api:
+        now_unix_millis: 1710504000000
+        deployments:
+          - {model_name: quality-auto, model: auto_router/quality_router}
+        steps:
+          - kind: benchmarks
+            role: proxy_admin
+            database: true
+            start_date: "2024-01-01"
+            end_date: "2024-01-02"
+            api_key: 558afd921eebd1b98493d668ae872c4a66b8df5f218a337403a953ce0c2b8a83
+            user_id: ui-user
+            rows:
+              - router_name: quality-auto
+                router_type: quality
+                tier_turns: {MEDIUM: 3}
+                sessions: 1
+                turns: 3
+                unordered_turns: 0
+                covered_turns: 3
+                cache_hits: 0
+                same_model_turns: 0
+                same_model_hits: 0
+                first_visit_turns: 0
+                first_visit_hits: 0
+                return_turns: 0
+                return_hits: 0
+                return_expired_misses: 0
+                return_within_ttl_misses: 0
+                ttl_5m_turns: 0
+                ttl_1h_turns: 0
+                total_tokens: 512
+                spend: 1.5
+                saved_spend: 1.5
+                savings_estimated_turns: 3
+                savings_estimated_actual_spend: 1.5
+                savings_estimated_classifier_cost: 0.25
+                savings_estimated_saved_spend: 1.5
+                classifier_cost: 0.25
+                classifier_cost_recorded_turns: 3
+                session_seconds: 3600.0
+          - kind: benchmarks
+            role: proxy_admin
+            database: true
+            start_date: "2024-01-01"
+            end_date: "2024-01-02"
+            user_id: ui-user
+compare:
+  ignore: []
