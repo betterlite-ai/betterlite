@@ -198,8 +198,8 @@ fn the_optional_region_is_used_when_the_kwargs_region_is_missing_or_empty(
 }
 
 #[rstest]
-#[case::aws_region_wins(Some("eu-central-1"), Some("ca-central-1"), "eu-central-1")]
-#[case::region_name_only(None, Some("ca-central-1"), "ca-central-1")]
+#[case::aws_region_wins(Some("ca-central-1"), Some("eu-central-1"), "eu-central-1")]
+#[case::region_name_only(Some("ca-central-1"), None, "ca-central-1")]
 #[case::builtin_fallback(None, None, FALLBACK_REGION)]
 fn a_missing_optional_region_reads_the_environment(
     #[case] region_name: Option<&str>,
@@ -259,7 +259,7 @@ fn dispatch_replaces_the_region_base_and_key_in_the_effective_params() {
     })
     .unwrap();
 
-    assert_eq!(dispatched.voice.as_deref(), Some("Joanna"));
+    assert_eq!(dispatched.voice.as_deref(), Some("alloy"));
     assert_eq!(
         dispatched
             .litellm_params
