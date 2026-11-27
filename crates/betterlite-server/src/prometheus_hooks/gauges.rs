@@ -11,12 +11,13 @@ type EntityGauges = EntityBudgetGauges<Handle>;
 // B3882's gauges read their labels from the schema B3875 registered, so the budget setters get the same metric names
 pub(crate) fn budget_gauges(collectors: &PrometheusCollectors) -> BudgetGauges<Handle> {
     let labels = &collectors.cached_labels;
+    let [team, org, key, user, customer] = entity_gauges(collectors, labels);
     BudgetGauges {
-        team: team_gauges(collectors, labels),
-        org: org_gauges(collectors, labels),
-        key: key_gauges(collectors, labels),
-        user: user_gauges(collectors, labels),
-        customer: customer_gauges(collectors, labels),
+        team,
+        org,
+        key,
+        user,
+        customer,
         team_members: gauge_field(
             labels,
             &collectors.litellm_team_members_metric,
@@ -30,74 +31,66 @@ pub(crate) fn budget_gauges(collectors: &PrometheusCollectors) -> BudgetGauges<H
     }
 }
 
-fn team_gauges(collectors: &PrometheusCollectors, labels: &LabelMap) -> EntityGauges {
-    entity(
-        labels,
-        &collectors.litellm_remaining_team_budget_metric, // ast-grep-ignore: no-long-names
-        &collectors.litellm_team_max_budget_metric,
-        &collectors.litellm_team_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
-        [
-            "litellm_remaining_team_budget_metric",
-            "litellm_team_max_budget_metric",
-            "litellm_team_budget_remaining_hours_metric",
-        ],
-    )
-}
+const TEAM_NAMES: [&str; 3] = [
+    "litellm_remaining_team_budget_metric",
+    "litellm_team_max_budget_metric",
+    "litellm_team_budget_remaining_hours_metric",
+];
+const ORG_NAMES: [&str; 3] = [
+    "litellm_remaining_org_budget_metric",
+    "litellm_org_max_budget_metric",
+    "litellm_org_budget_remaining_hours_metric",
+];
+const KEY_NAMES: [&str; 3] = [
+    "litellm_remaining_api_key_budget_metric",
+    "litellm_api_key_max_budget_metric",
+    "litellm_api_key_budget_remaining_hours_metric",
+];
+const USER_NAMES: [&str; 3] = [
+    "litellm_remaining_user_budget_metric",
+    "litellm_user_max_budget_metric",
+    "litellm_user_budget_remaining_hours_metric",
+];
+const CUSTOMER_NAMES: [&str; 3] = [
+    "litellm_remaining_customer_budget_metric",
+    "litellm_customer_max_budget_metric",
+    "litellm_customer_budget_remaining_hours_metric",
+];
 
-fn org_gauges(collectors: &PrometheusCollectors, labels: &LabelMap) -> EntityGauges {
-    entity(
-        labels,
-        &collectors.litellm_remaining_org_budget_metric, // ast-grep-ignore: no-long-names
-        &collectors.litellm_org_max_budget_metric,
-        &collectors.litellm_org_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
-        [
-            "litellm_remaining_org_budget_metric",
-            "litellm_org_max_budget_metric",
-            "litellm_org_budget_remaining_hours_metric",
-        ],
-    )
-}
-
-fn key_gauges(collectors: &PrometheusCollectors, labels: &LabelMap) -> EntityGauges {
-    entity(
-        labels,
-        &collectors.litellm_remaining_api_key_budget_metric, // ast-grep-ignore: no-long-names
-        &collectors.litellm_api_key_max_budget_metric,       // ast-grep-ignore: no-long-names
-        &collectors.litellm_api_key_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
-        [
-            "litellm_remaining_api_key_budget_metric",
-            "litellm_api_key_max_budget_metric",
-            "litellm_api_key_budget_remaining_hours_metric",
-        ],
-    )
-}
-
-fn user_gauges(collectors: &PrometheusCollectors, labels: &LabelMap) -> EntityGauges {
-    entity(
-        labels,
-        &collectors.litellm_remaining_user_budget_metric, // ast-grep-ignore: no-long-names
-        &collectors.litellm_user_max_budget_metric,
-        &collectors.litellm_user_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
-        [
-            "litellm_remaining_user_budget_metric",
-            "litellm_user_max_budget_metric",
-            "litellm_user_budget_remaining_hours_metric",
-        ],
-    )
-}
-
-fn customer_gauges(collectors: &PrometheusCollectors, labels: &LabelMap) -> EntityGauges {
-    entity(
-        labels,
-        &collectors.litellm_remaining_customer_budget_metric, // ast-grep-ignore: no-long-names
-        &collectors.litellm_customer_max_budget_metric,       // ast-grep-ignore: no-long-names
-        &collectors.litellm_customer_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
-        [
-            "litellm_remaining_customer_budget_metric",
-            "litellm_customer_max_budget_metric",
-            "litellm_customer_budget_remaining_hours_metric",
-        ],
-    )
+fn entity_gauges(collectors: &PrometheusCollectors, labels: &LabelMap) -> [EntityGauges; 5] {
+    let table = [
+        (
+            &collectors.litellm_remaining_team_budget_metric, // ast-grep-ignore: no-long-names
+            &collectors.litellm_team_max_budget_metric,
+            &collectors.litellm_team_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
+            TEAM_NAMES,
+        ),
+        (
+            &collectors.litellm_remaining_org_budget_metric, // ast-grep-ignore: no-long-names
+            &collectors.litellm_org_max_budget_metric,
+            &collectors.litellm_org_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
+            ORG_NAMES,
+        ),
+        (
+            &collectors.litellm_remaining_api_key_budget_metric, // ast-grep-ignore: no-long-names
+            &collectors.litellm_api_key_max_budget_metric,       // ast-grep-ignore: no-long-names
+            &collectors.litellm_api_key_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
+            KEY_NAMES,
+        ),
+        (
+            &collectors.litellm_remaining_user_budget_metric, // ast-grep-ignore: no-long-names
+            &collectors.litellm_user_max_budget_metric,
+            &collectors.litellm_user_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
+            USER_NAMES,
+        ),
+        (
+            &collectors.litellm_remaining_customer_budget_metric, // ast-grep-ignore: no-long-names
+            &collectors.litellm_customer_max_budget_metric,       // ast-grep-ignore: no-long-names
+            &collectors.litellm_customer_budget_remaining_hours_metric, // ast-grep-ignore: no-long-names
+            CUSTOMER_NAMES,
+        ),
+    ];
+    table.map(|(remaining, max, hours, names)| entity(labels, remaining, max, hours, names))
 }
 
 fn entity(
