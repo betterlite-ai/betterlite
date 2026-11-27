@@ -51,8 +51,8 @@ pub(crate) async fn pre_stage(request: &Request<Body>) -> PreStage {
             return PreStage::Rejected(StageFailure::from(AuthenticationFailure::Missing));
         };
         let transport = state.oauth_tokens.transport.as_ref();
-        let result = check_oauth2_token(settings, transport, &token).await;
-        return stage_from_result(result, AuthMethod::Oauth2Introspection, Some(&token));
+        let checked = check_oauth2_token(settings, transport, &token).await;
+        return stage_from_result(checked, AuthMethod::Oauth2Introspection, Some(&token));
     }
     if !settings.enable_oauth2_proxy_auth {
         return PreStage::Skipped;
@@ -71,8 +71,8 @@ pub(crate) async fn pre_stage(request: &Request<Body>) -> PreStage {
     };
     let trusted = state.trusted_network.settings.as_ref();
     let mappings = settings.config_mappings.as_ref();
-    let result = handle_oauth2_proxy_request(request.headers(), mappings, &network, trusted);
-    stage_from_result(result, AuthMethod::Oidc, None)
+    let mapped = handle_oauth2_proxy_request(request.headers(), mappings, &network, trusted);
+    stage_from_result(mapped, AuthMethod::Oidc, None)
 }
 
 fn stage_from_result<E>(
