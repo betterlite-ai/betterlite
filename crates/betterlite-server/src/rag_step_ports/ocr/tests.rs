@@ -230,7 +230,7 @@ async fn ocr_call_prefers_the_router_and_returns_its_pages_in_order() {
         requests: Mutex::new(Vec::new()),
         pages: vec!["router first".to_owned(), "router second".to_owned()],
     });
-    let port: Arc<dyn OcrOperation> = Arc::clone(&router);
+    let port: Arc<dyn OcrOperation> = Arc::<ScriptedRouter>::clone(&router);
     let backend = scripted_backend(&[]);
     let state = ingestion_state(Some(port), &backend, Some("mistral/mistral-ocr-latest"));
     let text = state

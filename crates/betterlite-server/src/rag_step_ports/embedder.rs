@@ -14,10 +14,10 @@ pub struct ListEmbedder {
 #[async_trait]
 impl RagEmbedder for ListEmbedder {
     async fn embed(&self, model: &str, input: Vec<String>) -> Result<Vec<Vec<f64>>, EmbedError> {
-        let backend: &dyn RagEmbedder = match &self.router {
-            Some(router) => router.as_ref(),
-            None => self.native.as_ref(),
-        };
+        let backend: &dyn RagEmbedder = self
+            .router
+            .as_ref()
+            .map_or_else(|| self.native.as_ref(), |router| router.as_ref());
         let chunks = input.len();
         let vectors = backend.embed(model, input).await?;
         let returned = vectors.len();

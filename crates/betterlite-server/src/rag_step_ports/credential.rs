@@ -30,9 +30,7 @@ impl CredentialLookupPort for CredentialLookup {
 }
 
 impl fmt::Debug for CredentialLookup {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("CredentialLookup")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CredentialLookup").finish_non_exhaustive()
     }
 }
