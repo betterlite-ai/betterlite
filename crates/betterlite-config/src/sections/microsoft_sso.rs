@@ -8,7 +8,7 @@ use crate::sections::Section;
 
 pub const MICROSOFT_CLIENT_SECRET: &str = "MICROSOFT_CLIENT_SECRET";
 pub const MICROSOFT_TENANT: &str = "MICROSOFT_TENANT";
-// ast-grep-ignore: no-long-names - the constant carries LiteLLM's variable name and the client names it in an error
+// ast-grep-ignore: no-long-names - the constant carries LiteLLM's environment variable name
 pub const MICROSOFT_AUTHORIZATION_ENDPOINT: &str = "MICROSOFT_AUTHORIZATION_ENDPOINT";
 pub const MICROSOFT_TOKEN_ENDPOINT: &str = "MICROSOFT_TOKEN_ENDPOINT";
 pub const MICROSOFT_USERINFO_ENDPOINT: &str = "MICROSOFT_USERINFO_ENDPOINT";
