@@ -5,12 +5,11 @@ use std::sync::Arc;
 use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_logging::prometheus::budget_lookups::records::OrgRecord;
-use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
 use rust_decimal::Decimal;
 
 use super::super::tests::support::{
-    DEPLOYMENT_FAILURES, FAILED, ORG_BUDGET, dec, error_information, event, fixture,
-    fixture_with_limits, payload, totals,
+    DEPLOYMENT_FAILURES, FAILED, ORG_BUDGET, dec, error_information, event, fixture, payload,
+    totals,
 };
 
 #[tokio::test]
@@ -59,17 +58,18 @@ async fn failed_counter_deployment_and_org_budget_run() {
 
 #[tokio::test]
 async fn errors_inside_the_failure_event_are_swallowed() {
-    let fixture = fixture_with_limits(SeriesLimits {
-        max_series: Some(0),
-        ttl: None,
-        cleanup_interval: None,
-    });
+    let fixture = fixture();
+    fixture.lookups.fail_org_info();
     let mut record = payload(Decimal::ZERO);
+    record.metadata.user_api_key_org_id = Some("org-1".to_owned());
     record.error_information = Some(error_information("Something went wrong"));
     fixture
         .hooks
         .async_log_failure_event(Arc::new(event(record)))
         .await
         .unwrap();
-    assert!(totals(&fixture.registry, FAILED).is_empty());
+    // the failed counter ran before the org lookup, and the store error never escaped the event
+    assert_eq!(fixture.lookups.orgs(), vec!["org-1".to_owned()]);
+    assert_eq!(totals(&fixture.registry, FAILED), vec![Decimal::ONE]);
+    assert!(totals(&fixture.registry, ORG_BUDGET).is_empty());
 }

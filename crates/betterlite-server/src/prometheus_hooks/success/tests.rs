@@ -109,16 +109,40 @@ async fn an_emitter_error_stops_the_later_steps() {
 }
 
 #[tokio::test]
-async fn a_full_series_table_refuses_later_series() {
+async fn the_series_limit_evicts_the_oldest_end_user_series() {
     let fixture = fixture_with_limits(SeriesLimits {
-        max_series: Some(0),
+        max_series: Some(1),
         ttl: None,
         cleanup_interval: None,
     });
-    let result = fixture
+    let first = IndexMap::from([(
+        "user_api_key_end_user_id".to_owned(),
+        Json::Text("user-a".to_owned()),
+    )]);
+    fixture
         .hooks
-        .async_log_success_event(Arc::new(event(payload(Decimal::ZERO))))
-        .await;
-    assert!(matches!(result, Err(LoggerError::Delivery { .. })));
-    assert!(totals(&fixture.registry, REQUESTS).is_empty());
+        .async_log_success_event(Arc::new(event_with_metadata(payload(Decimal::ZERO), first)))
+        .await
+        .unwrap();
+    let second = IndexMap::from([(
+        "user_api_key_end_user_id".to_owned(),
+        Json::Text("user-b".to_owned()),
+    )]);
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event_with_metadata(
+            payload(Decimal::ZERO),
+            second,
+        )))
+        .await
+        .unwrap();
+    let collector = fixture
+        .registry
+        .get(REQUESTS)
+        .expect("the requests metric is registered");
+    let series = collector.series_in_use_order();
+    let (labels, _sample) = series.first().expect("the requests metric has a series");
+    // the cap keeps the newer end-user series and drops the older one from the registry
+    assert_eq!(series.len(), 1);
+    assert!(labels.contains(&"user-b".to_owned()));
 }

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -44,6 +45,7 @@ pub(crate) const DEPLOYMENT_SUCCESSES: &str = "litellm_deployment_success_respon
 // the cache and database reads the fan-out makes, recorded so a test can see which ids reached them
 pub(crate) struct RecordingLookups {
     org_record: Mutex<Option<OrgRecord>>,
+    org_errors: AtomicBool,
     keys: Mutex<Vec<String>>,
     orgs: Mutex<Vec<String>>,
 }
@@ -52,6 +54,7 @@ impl RecordingLookups {
     fn new() -> Self {
         Self {
             org_record: Mutex::new(None),
+            org_errors: AtomicBool::new(false),
             keys: Mutex::new(Vec::new()),
             orgs: Mutex::new(Vec::new()),
         }
@@ -69,6 +72,10 @@ impl RecordingLookups {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    pub(crate) fn fail_org_info(&self) {
+        self.org_errors.store(true, Ordering::SeqCst);
     }
 
     pub(crate) fn set_org_record(&self, record: OrgRecord) {
@@ -100,6 +107,11 @@ impl BudgetLookups for RecordingLookups {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(org_id.to_owned());
+        if self.org_errors.load(Ordering::SeqCst) {
+            return Err(BudgetLookupError {
+                message: "the org store is down".to_owned(),
+            });
+        }
         let record = self
             .org_record
             .lock()
@@ -158,7 +170,11 @@ pub(crate) fn fixture() -> Fixture {
 pub(crate) fn fixture_with_limits(limits: SeriesLimits) -> Fixture {
     fixture_with_settings(PrometheusHookSettings {
         labels: PrometheusLabelSettings::with_defaults(),
-        end_user: EndUserCostTrackingSettings::default(),
+        // the tracker only caps a metric whose end_user label carries a value, so the fixture lets the label through
+        end_user: EndUserCostTrackingSettings {
+            disable_end_user_cost_tracking: None,
+            enable_prometheus_only: Some(true),
+        },
         tags: TagConfig::default(),
         limits,
     })

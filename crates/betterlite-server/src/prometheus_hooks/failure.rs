@@ -53,9 +53,10 @@ pub(crate) async fn record_failure(
     emit_failed_counter(hooks, &values, &metrics, now)?;
     emit_failure_zero_cost(hooks, payload, &values, &metrics)?;
     emit_deployment_failure(hooks, &call, payload, exception.as_ref(), now);
+    let org_id = payload.and_then(|record| record.metadata.user_api_key_org_id.as_deref());
     hooks
         .budget_lookups
-        .org_after_failure(values.org_id.as_deref())
+        .org_after_failure(org_id)
         .await
         .map_err(|error| PrometheusHookError::Budget {
             message: error.message,
