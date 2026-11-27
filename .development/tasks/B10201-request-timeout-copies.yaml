@@ -1,0 +1,72 @@
+id: B10201
+title: GlobalTimeout goes, and one RequestTimeout resolution serves every config section that reads request_timeout
+description: >-
+  `GlobalTimeout` in crates/betterlite-config/src/sections/routing_timeouts.rs L55-L59 is `RequestTimeout` in crates/betterlite-config/src/env_integer/timeout.rs L16-L20 field for field: `seconds: f64` and `explicitly_set: bool`, both Debug, Clone and Copy, and GlobalTimeout also derives PartialEq. RequestTimeout has 29 importing files in betterlite-config, betterlite-context, betterlite-core, betterlite-http, betterlite-python and the oracle, and GlobalTimeout three files, so RequestTimeout stays. The value a GlobalTimeout holds is also worked out three times with the same steps, `litellm_settings.request_timeout` through `resolve_number`, then REQUEST_TIMEOUT through `betterlite_env::number::<f64>`, then 6000: routing_timeouts.rs L104-L115, `request_timeout` in sections/health_readiness.rs L194-L204 (its own comment at L193 says it is the same resolution) and `resolve_timeout` in sections/speech_call.rs L145-L160. And 6000 is spelled as a private constant five times, routing_timeouts.rs L11, health_readiness.rs L24, speech_call.rs L13, image_variations.rs L9 and image_edit_call.rs L12, plus the literal in RequestTimeout::resolve (timeout.rs L26). This task keeps one of each. It is a refactor: every timeout value, default and error text stays the same, and nothing a user sees changes.
+
+
+  timeout.rs. RequestTimeout derives `Debug, Clone, Copy, PartialEq`, since routing_timeouts' Settings derives PartialEq and its tests compare the field. It gains `pub const DEFAULT_SECONDS: f64 = 6000.0;` with routing_timeouts' comment line (L10) above it, and `resolve` uses it at L26. It gains `pub fn resolve_configured<L>(configured: Option<RawNumber>, lookup: &L) -> Result<Self, ConfigError> where L: EnvironmentLookup`, holding routing_timeouts' steps (L104-L119): the config value is explicit, else a non-empty REQUEST_TIMEOUT is explicit, else DEFAULT_SECONDS is not, and both reads run before the choice, as all three copies do today, so an invalid REQUEST_TIMEOUT still fails a config that sets request_timeout.
+
+
+  Callers. routing_timeouts.rs: GlobalTimeout, DEFAULT_TIMEOUT_SECONDS and the inline steps go; `Settings.global` (L79) is a RequestTimeout, Default (L87-L90) builds it from DEFAULT_SECONDS, and convert sets `global: RequestTimeout::resolve_configured(self.litellm_settings.request_timeout, lookup)?`. health_readiness.rs: `request_timeout`, REQUEST_TIMEOUT_PATH (L16), REQUEST_TIMEOUT_VARIABLE (L21) and DEFAULT_REQUEST_TIMEOUT go; L119 reads `RequestTimeout::resolve_configured(...)?.seconds` and Default (L89) uses DEFAULT_SECONDS. speech_call.rs: `resolve_timeout` and its constant go the same way (L119, Default L74). image_variations.rs and image_edit_call.rs read only REQUEST_TIMEOUT, as LiteLLM's `constants.request_timeout` does, so their reads stay and only their constant goes (image_variations L42 and L66, image_edit_call L28 and L42 use DEFAULT_SECONDS). Imports that only the deleted code used go with it. The tests that build a GlobalTimeout build a RequestTimeout: config's routing_timeouts/tests.rs L9, L48 and L81 and the server's routing/routing_timeouts/tests.rs L6 and L20.
+
+
+  Tests. No new test: routing_timeouts' `global_timeout` table (absent, environment, empty environment, configured 6000 is explicit, configured beats environment, environment reference), health_readiness's request timeout cases (tests.rs L216-L218), speech_call's `resolves_the_request_timeout` and the image sections' tables already pin every branch of the shared function and must pass unchanged.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-config/src/env_integer/timeout.rs
+    - crates/betterlite-config/src/env_integer/timeout/**
+    - crates/betterlite-config/src/sections/routing_timeouts.rs
+    - crates/betterlite-config/src/sections/routing_timeouts/**
+    - crates/betterlite-config/src/sections/health_readiness.rs
+    - crates/betterlite-config/src/sections/health_readiness/**
+    - crates/betterlite-config/src/sections/speech_call.rs
+    - crates/betterlite-config/src/sections/speech_call/**
+    - crates/betterlite-config/src/sections/image_variations.rs
+    - crates/betterlite-config/src/sections/image_variations/**
+    - crates/betterlite-config/src/sections/image_edit_call.rs
+    - crates/betterlite-config/src/sections/image_edit_call/**
+    - crates/betterlite-server/src/routing/routing_timeouts/tests.rs
+  lint_tables: false
+references: []
+dod:
+  - text: RequestTimeout is the one global timeout type, it derives PartialEq, and GlobalTimeout is gone from every crate.
+    proof: [no-copies, config-tests, server-tests]
+  - text: RequestTimeout::resolve_configured is the one config, then REQUEST_TIMEOUT, then 6000 resolution, routing_timeouts, health_readiness and speech_call call it, and DEFAULT_SECONDS is the only 6000 constant in these files.
+    proof: [no-copies, config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: no-copies
+      why: GlobalTimeout, a second copy of the request_timeout resolution or a private 6000 constant is still in place
+      run: |-
+        test -z "$(grep -rnw 'GlobalTimeout' crates tools --include=*.rs)" &&
+        test -z "$(grep -nE 'const DEFAULT_(REQUEST_)?TIMEOUT(_SECONDS)?: f64|fn (request_timeout|resolve_timeout)\b|lookup\(.REQUEST_TIMEOUT.\)|REQUEST_TIMEOUT_VARIABLE' crates/betterlite-config/src/sections/routing_timeouts.rs crates/betterlite-config/src/sections/health_readiness.rs crates/betterlite-config/src/sections/speech_call.rs)" &&
+        test -z "$(grep -nE 'const DEFAULT_REQUEST_TIMEOUT' crates/betterlite-config/src/sections/image_variations.rs crates/betterlite-config/src/sections/image_edit_call.rs)" &&
+        grep -q 'pub const DEFAULT_SECONDS: f64 = 6000.0;' crates/betterlite-config/src/env_integer/timeout.rs &&
+        grep -q 'pub fn resolve_configured' crates/betterlite-config/src/env_integer/timeout.rs &&
+        grep -q 'derive(Debug, Clone, Copy, PartialEq)' crates/betterlite-config/src/env_integer/timeout.rs
+    - id: config-tests
+      why: a section now resolves request_timeout, its explicit flag or its default differently
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^(sections::(routing_timeouts|health_readiness|speech_call|image_variations|image_edit_call)|env_integer::timeout)::/)'
+    - id: server-tests
+      why: the router timeout plan no longer reads the global timeout from the config section
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::routing_timeouts::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "RequestTimeout::resolve's own REQUEST_TIMEOUT parse (timeout.rs L23-L35: trim, then f64's parser, so it takes inf and nan, failing as TimeoutError::Invalid) differs from betterlite_env::number (crates/betterlite-env/src/lib.rs L37-L60: digits, sign, dot and e only, failing as EnvError::Number). Making them agree changes what some calls accept and the error text, so it is a behavior decision, not part of this refactor."
+  - "betterlite-context's CoreSettings (core_settings.rs L18-L23) keeps RequestTimeout's two fields flattened as request_timeout_seconds and request_timeout_explicit."
+  - "betterlite-router's GlobalRequestTimeout (routing_timeouts/global.rs L5-L8) holds a validated Seconds, not an f64, and stays."
+  - "The REQUEST_TIMEOUT readers outside betterlite-config's sections, such as core batch_provider_create/timeout.rs and its own DEFAULT_TIMEOUT_SECONDS."
+pitfalls:
+  - "resolve_configured returns ConfigError like the sections do, so `?` in convert keeps every error text; do not route it through RequestTimeout::resolve or TimeoutError."
+  - "Both reads run before the choice in all three copies today, so a config that sets request_timeout still fails on an invalid REQUEST_TIMEOUT. Keep that order: reading the environment only as a fallback would let such a config load."
+  - "health_readiness parses its other variables with its own `trim().parse()` to take inf and nan (comments at L159 and L183); those stay, and only the request_timeout steps move."
+  - "This task changes betterlite-config, so the mutants check runs on resolve_configured; the existing tables cover the explicit flag and both fallbacks."
+review_level: standard
+budget:
+  max_changed_lines: 250
+  max_new_expects: 0
