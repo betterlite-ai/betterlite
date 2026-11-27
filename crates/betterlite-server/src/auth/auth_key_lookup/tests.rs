@@ -385,6 +385,14 @@ fn key_context_takes_the_team_role_from_the_team_member_row() {
 }
 
 #[test]
+fn empty_master_credential_is_refused() {
+    let empty = SecretString::from(String::new());
+    let master = SecretString::from("master".to_owned());
+    assert!(super::master_key_context(Some(&empty), &master).is_none());
+    assert!(super::master_key_context(Some(&empty), &empty).is_none());
+}
+
+#[test]
 fn master_key_context_carries_the_admin_user_and_role() {
     let master = SecretString::from("master".to_owned());
     let Some(context) = super::master_key_context(Some(&master), &master) else {
