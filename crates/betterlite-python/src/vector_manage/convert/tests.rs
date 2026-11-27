@@ -184,6 +184,19 @@ fn request_params_reads_the_three_transport_fields() {
 }
 
 #[test]
+fn request_params_leaves_a_null_as_none() {
+    let kwargs = IndexMap::from([
+        (String::from("api_base"), json("null")),
+        (String::from("api_key"), json("null")),
+        (String::from("ssl_verify"), json("null")),
+    ]);
+    let write = params(&kwargs).expect("a null value takes the default");
+    assert_eq!(write.api_base, None);
+    assert_eq!(write.ssl_verify, None);
+    assert!(write.api_key.is_none());
+}
+
+#[test]
 fn error_a_wrong_api_base_names_the_field() {
     let kwargs = IndexMap::from([(String::from("api_base"), json("5"))]);
     let refused = params(&kwargs).expect_err("a number is not an api_base");

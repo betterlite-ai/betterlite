@@ -8,11 +8,15 @@ use betterlite_core::api::vector_store_read::error::{
     VectorStoreReadError, failure as read_failure,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 
 use super::super::error::{NativeFailure, raise};
 use super::super::register;
 use super::NativeVectorManageSession;
+
+const SESSION_TEXT: &str = r#"{"environment":{}}"#;
 
 #[test]
 fn register_adds_the_vector_manage_class_and_error() {
@@ -36,11 +40,24 @@ fn register_adds_the_vector_manage_class_and_error() {
 #[test]
 fn a_malformed_session_text_is_an_error_not_a_panic() {
     Python::initialize();
-    Python::attach(|_py| {
+    Python::attach(|py| {
         assert!(matches!(
-            NativeVectorManageSession::new("not a session"),
+            NativeVectorManageSession::new(py, "not a session"),
             Err(_refused)
         ));
+    });
+}
+
+#[test]
+fn a_malformed_wire_text_is_a_value_error() {
+    Python::initialize();
+    Python::attach(|py| {
+        let session = NativeVectorManageSession::new(py, SESSION_TEXT).expect("the session builds");
+        let blobs = PyList::empty(py);
+        let error = session
+            .retrieve(py, "not a wire", &blobs)
+            .expect_err("the text is not a retrieve wire");
+        assert!(error.is_instance_of::<PyValueError>(py), "{error}");
     });
 }
 
