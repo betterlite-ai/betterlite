@@ -1,4 +1,4 @@
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 
 use super::error::SigningError;
 use super::headers::{merge_computed, prepare, without_computed};
@@ -67,6 +67,7 @@ where
         service: request.service_name,
         region: &region,
         credentials: &credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })?;
     let merged = merge_computed(supplied, computed);

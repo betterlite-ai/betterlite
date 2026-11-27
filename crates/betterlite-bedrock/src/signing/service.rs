@@ -1,4 +1,4 @@
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 
 use super::error::SigningError;
 use super::headers::{
@@ -122,6 +122,7 @@ fn sigv4_signed(
         service: request.service.as_str(),
         region,
         credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })?;
     reattach(&headers, &mut signed, has_token);

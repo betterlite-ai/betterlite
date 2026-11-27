@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 
 use crate::aws_settings::sources::Credentials;
 use crate::signing::error::SigningError;
@@ -26,6 +26,7 @@ pub fn sign_get_request(
         service: BEDROCK_SERVICE,
         region,
         credentials,
+        mode: SigningMode::SigV4Auth,
         now,
     })?;
     let merged = merge_computed(supplied, computed);

@@ -32,7 +32,7 @@ use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::Hub;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::{HeaderMap, Method};
@@ -849,6 +849,7 @@ fn assert_transmitted_signature(sent: &OutboundRequest) {
         service: "sagemaker",
         region: "us-west-2",
         credentials: &credentials,
+        mode: SigningMode::SigV4Auth,
         now: UNIX_EPOCH,
     })
     .expect("the transmitted request signs");

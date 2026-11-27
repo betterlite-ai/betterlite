@@ -1,4 +1,4 @@
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 
 use super::body::Body;
 use super::error::SigningError;
@@ -42,6 +42,7 @@ pub fn request_headers(request: RequestHeaders<'_>) -> Result<AwsSignedRequest, 
         service: "bedrock",
         region: request.region,
         credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })?;
     reattach(request.headers, &mut headers, has_token);

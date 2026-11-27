@@ -2,7 +2,8 @@ use std::time::SystemTime;
 
 use aws_credential_types::Credentials as SigV4Credentials;
 use aws_sigv4::http_request::{
-    SignableBody, SignableRequest, SigningParams, SigningSettings, sign,
+    PercentEncodingMode, SignableBody, SignableRequest, SigningParams, SigningSettings,
+    UriPathNormalizationMode, sign,
 };
 use aws_sigv4::sign::v4;
 use aws_smithy_runtime_api::client::identity::Identity;
@@ -10,6 +11,13 @@ use secrecy::ExposeSecret as _;
 
 use crate::credentials::Credentials;
 use crate::error::SigV4Error;
+
+// botocore's two header signers; S3SigV4Auth is the one that leaves the path as sent
+#[derive(Debug, Clone, Copy)]
+pub enum SigningMode {
+    SigV4Auth,
+    S3SigV4Auth,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Signable<'source> {
@@ -20,17 +28,27 @@ pub struct Signable<'source> {
     pub service: &'source str,
     pub region: &'source str,
     pub credentials: &'source Credentials,
+    pub mode: SigningMode,
     pub now: SystemTime,
 }
 
 pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, SigV4Error> {
     let identity = identity(request.credentials);
+    let settings = match request.mode {
+        SigningMode::SigV4Auth => SigningSettings::default(),
+        SigningMode::S3SigV4Auth => {
+            let mut s3_settings = SigningSettings::default();
+            s3_settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
+            s3_settings.percent_encoding_mode = PercentEncodingMode::Single;
+            s3_settings
+        }
+    };
     let parameters = v4::SigningParams::builder()
         .identity(&identity)
         .region(request.region)
         .name(request.service)
         .time(request.now)
-        .settings(SigningSettings::default())
+        .settings(settings)
         .build()
         .map_err(SigV4Error::Parameters)?;
     let signed = request.headers.iter().filter(|(name, _)| !unsigned(name));

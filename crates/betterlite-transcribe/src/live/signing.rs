@@ -7,7 +7,7 @@ use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::json_post::{JsonPost, sign_aws_json_post};
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 
 use crate::live::ProbeError;
 
@@ -68,6 +68,7 @@ pub(super) fn signed_get(
         service: S3_SERVICE,
         region,
         credentials,
+        mode: SigningMode::SigV4Auth,
         now,
     })
     .map_err(SigningError::from)

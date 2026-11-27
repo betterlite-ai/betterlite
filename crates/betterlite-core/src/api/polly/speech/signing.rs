@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use betterlite_sigv4::credentials::Credentials;
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use indexmap::IndexMap;
 
 use super::error::SpeechError;
@@ -29,6 +29,7 @@ pub fn sign_post(request: &SignablePost<'_>) -> Result<IndexMap<String, String>,
         service: SERVICE,
         region: request.region,
         credentials: request.credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })
     .map_err(SpeechError::Signing)?;

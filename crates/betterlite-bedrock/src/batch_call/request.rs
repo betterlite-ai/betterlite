@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use betterlite_context::aws_partition::get_aws_partition;
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use percent_encoding::utf8_percent_encode;
 
 use crate::aws_endpoints::model_id::MODEL_ID_SAFE;
@@ -46,6 +46,7 @@ pub fn sign_stop(
         service: BEDROCK_SERVICE,
         region,
         credentials,
+        mode: SigningMode::SigV4Auth,
         now,
     })?;
     let merged = merge_computed(supplied, computed);

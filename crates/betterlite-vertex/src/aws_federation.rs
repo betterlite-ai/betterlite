@@ -7,7 +7,7 @@ use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_sigv4::sign::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::header::InvalidHeaderValue;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;
@@ -213,6 +213,7 @@ where
             service: "sts",
             region,
             credentials: &credentials,
+            mode: SigningMode::SigV4Auth,
             now,
         })
         .map_err(SigningError::from)
