@@ -87,6 +87,15 @@ fn retry_after_should_retry_only_on_408_409_429_and_500_up(
 #[case::date_without_weekday(Some("21 Oct 2015 07:28:00 GMT"), 30)]
 #[case::date_in_the_past(Some("Wed, 21 Oct 2015 07:26:00 GMT"), -90)]
 #[case::date_with_a_month_that_does_not_exist(Some("Wed, 21 Octo 2015 07:28:00 GMT"), -1)]
+#[case::wrong_weekday(Some("Fri, 21 Oct 2015 07:28:00 GMT"), 30)]
+#[case::lower_case_month(Some("Wed, 21 oct 2015 07:28:00 GMT"), 30)]
+#[case::long_month(Some("21 October 2015 07:28:00 GMT"), 30)]
+#[case::two_digit_year(Some("Wed, 21 Oct 15 07:28:00 GMT"), 30)]
+#[case::underscore_year(Some("21 Oct 2_015 07:28:00 GMT"), 30)]
+#[case::named_zone(Some("Wed, 21 Oct 2015 03:28:00 EDT"), 30)]
+#[case::unknown_zone_is_utc(Some("Wed, 21 Oct 2015 07:28:00 XYZ"), 30)]
+#[case::clock_rollover(Some("21 Oct 2015 07:27:60 GMT"), 30)]
+#[case::underscore_seconds(Some("1_0"), 10)]
 fn retry_after_header_reads_seconds_or_an_http_date(
     #[case] header: Option<&str>,
     #[case] expected: i64,
