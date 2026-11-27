@@ -93,6 +93,7 @@ impl BaseRealtimeHttpConfig for RealtimeHttpConfig {
 }
 
 // The selection: only a provider LiteLLM lists reaches ProviderConfigManager, and only B157's two tags have a config.
+#[must_use]
 pub fn provider_config(
     resolved: &ResolvedModel,
     settings: &RealtimeHttpCallSettings,
@@ -125,6 +126,7 @@ pub struct RealtimeHttpCredentials {
     pub api_key: String,
 }
 
+#[must_use]
 pub fn credentials(
     resolved: &ResolvedModel,
     settings: &RealtimeHttpCallSettings,
@@ -134,26 +136,30 @@ pub fn credentials(
     let config = provider_config(resolved, settings);
     let raw_api_base = resolved.api_base.as_deref().or(api_base);
     let raw_api_key = resolved.api_key.as_ref().or(api_key);
-    let (base, key) = match &config {
-        Some(config) => (
-            config.get_api_base(raw_api_base).unwrap_or_default(),
-            config
-                .get_api_key(raw_api_key.map(|key| key.expose_secret().as_str()))
-                .unwrap_or_default(),
-        ),
-        None => (
-            raw_api_base
-                .or(settings.api_base.as_deref())
-                .unwrap_or(DEFAULT_API_BASE)
-                .to_owned(),
-            raw_api_key
-                .or(settings.api_key.as_ref())
-                .or(settings.openai_key.as_ref())
-                .or(settings.openai_api_key.as_ref())
-                .map(|secret| secret.expose_secret().to_owned())
-                .unwrap_or_default(),
-        ),
-    };
+    let (base, key) = config.as_ref().map_or_else(
+        || {
+            (
+                raw_api_base
+                    .or(settings.api_base.as_deref())
+                    .unwrap_or(DEFAULT_API_BASE)
+                    .to_owned(),
+                raw_api_key
+                    .or(settings.api_key.as_ref())
+                    .or(settings.openai_key.as_ref())
+                    .or(settings.openai_api_key.as_ref())
+                    .map(|secret| secret.expose_secret().to_owned())
+                    .unwrap_or_default(),
+            )
+        },
+        |selected| {
+            (
+                selected.get_api_base(raw_api_base).unwrap_or_default(),
+                selected
+                    .get_api_key(raw_api_key.map(SecretString::expose_secret))
+                    .unwrap_or_default(),
+            )
+        },
+    );
     RealtimeHttpCredentials {
         config,
         api_base: base.trim_end_matches('/').to_owned(),

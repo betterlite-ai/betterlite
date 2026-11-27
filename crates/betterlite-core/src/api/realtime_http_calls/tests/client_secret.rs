@@ -87,25 +87,25 @@ fn client_secret_falls_back_to_openai_key_then_the_environment_then_defaults() {
         .run_client_secret(client_secret_call(&kwargs, Some(OPENAI_MODEL)))
         .expect("the openai_key call");
     let first = with_openai_key.seen();
-    let posting = only_session(&first);
-    assert_eq!(posting.api_base, "https://env.example/v1");
-    assert_eq!(posting.api_key, "sk-openai-global");
+    let openai_key_posting = only_session(&first);
+    assert_eq!(openai_key_posting.api_base, "https://env.example/v1");
+    assert_eq!(openai_key_posting.api_key, "sk-openai-global");
     let from_environment = Harness::new(EMPTY_SETTINGS, &environment);
     from_environment
         .run_client_secret(client_secret_call(&kwargs, Some(OPENAI_MODEL)))
         .expect("the environment call");
     let second = from_environment.seen();
-    let posting = only_session(&second);
-    assert_eq!(posting.api_base, "https://env.example/v1");
-    assert_eq!(posting.api_key, "sk-env");
+    let environment_posting = only_session(&second);
+    assert_eq!(environment_posting.api_base, "https://env.example/v1");
+    assert_eq!(environment_posting.api_key, "sk-env");
     let without_anything = Harness::new(EMPTY_SETTINGS, &[]);
     without_anything
         .run_client_secret(client_secret_call(&kwargs, Some(OPENAI_MODEL)))
         .expect("the default call");
     let third = without_anything.seen();
-    let posting = only_session(&third);
-    assert_eq!(posting.api_base, "https://api.openai.com");
-    assert_eq!(posting.api_key, "");
+    let default_posting = only_session(&third);
+    assert_eq!(default_posting.api_base, "https://api.openai.com");
+    assert_eq!(default_posting.api_key, "");
 }
 
 #[test]
@@ -190,30 +190,32 @@ fn client_secret_fills_the_expiry_anchor() {
     let harness = Harness::new(EMPTY_SETTINGS, &[]);
     let kwargs = no_kwargs();
     let seconds = json(r#"{"seconds":60}"#);
-    let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.expires_after = Some(&seconds);
-    harness.run_client_secret(call).expect("the expiry call");
-    let zero = json(r#"{"anchor":"created_at","seconds":0}"#);
-    let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.expires_after = Some(&zero);
-    harness.run_client_secret(call).expect("the zero call");
-    let null_anchor = json(r#"{"anchor":null,"seconds":5}"#);
-    let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.expires_after = Some(&null_anchor);
+    let mut seconds_call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
+    seconds_call.expires_after = Some(&seconds);
     harness
-        .run_client_secret(call)
+        .run_client_secret(seconds_call)
+        .expect("the expiry call");
+    let zero = json(r#"{"anchor":"created_at","seconds":0}"#);
+    let mut zero_call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
+    zero_call.expires_after = Some(&zero);
+    harness.run_client_secret(zero_call).expect("the zero call");
+    let null_anchor = json(r#"{"anchor":null,"seconds":5}"#);
+    let mut null_anchor_call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
+    null_anchor_call.expires_after = Some(&null_anchor);
+    harness
+        .run_client_secret(null_anchor_call)
         .expect("the null anchor call");
     let seen = harness.seen();
     assert_eq!(seen.len(), 3);
     let first = expiry(&seen, 0);
-    let expected = fields(r#"{"anchor":"created_at","seconds":60}"#);
-    assert_eq!(first, Some(&Json::Object(expected)));
+    let first_expected = fields(r#"{"anchor":"created_at","seconds":60}"#);
+    assert_eq!(first, Some(&Json::Object(first_expected)));
     let second = expiry(&seen, 1);
-    let expected = fields(r#"{"anchor":"created_at","seconds":0}"#);
-    assert_eq!(second, Some(&Json::Object(expected)));
+    let second_expected = fields(r#"{"anchor":"created_at","seconds":0}"#);
+    assert_eq!(second, Some(&Json::Object(second_expected)));
     let third = expiry(&seen, 2);
-    let expected = fields(r#"{"seconds":5}"#);
-    assert_eq!(third, Some(&Json::Object(expected)));
+    let third_expected = fields(r#"{"seconds":5}"#);
+    assert_eq!(third, Some(&Json::Object(third_expected)));
 }
 
 fn expiry(seen: &[Seen], index: usize) -> Option<&Json> {

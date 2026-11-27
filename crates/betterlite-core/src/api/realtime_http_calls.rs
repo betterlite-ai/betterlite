@@ -229,8 +229,8 @@ fn calls_request<'req>(
 fn session_plan(operation: SessionOperation<'_>) -> Result<SessionPlan<'_>, RecordError> {
     Ok(match operation {
         ClientSecret(call) => {
-            let session = body::optional(call.session)?;
-            let expires_after = body::optional(call.expires_after)?;
+            let session = body::optional(call.session, "session")?;
+            let expires_after = body::optional(call.expires_after, "expires_after")?;
             SessionPlan {
                 common: &call.common,
                 model_name: body::client_secret_model(session.as_ref(), call.common.model),

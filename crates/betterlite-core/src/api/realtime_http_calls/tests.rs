@@ -40,7 +40,9 @@ use super::dispatch::{RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint
 use super::error::{RealtimeHttpCallsError, RecordError};
 use super::provider::RealtimeHttpConfig;
 use super::{DEFAULT_REALTIME_MODEL, DEFAULT_TRANSCRIPTION_MODEL};
-use crate::api::realtime_contracts::config::{BaseRealtimeHttpConfig, Environment, RealtimeUrl};
+use crate::api::realtime_contracts::config::{
+    BaseRealtimeHttpConfig as _, Environment, RealtimeUrl,
+};
 use crate::api::realtime_contracts::error::HeaderMap as JsonHeaders;
 use crate::api::vector_store_http_write::service::ClientKind;
 
@@ -881,14 +883,16 @@ impl RealtimeHttpDispatch for Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        ready(match failure {
-            Some(failure) => Err(failure),
-            None => Ok(answer.unwrap_or_else(|| UpstreamResponse {
-                status: 200,
-                headers: HeaderMap::new(),
-                body: b"{}".to_vec(),
-            })),
-        })
+        ready(failure.map_or_else(
+            || {
+                Ok(answer.unwrap_or_else(|| UpstreamResponse {
+                    status: 200,
+                    headers: HeaderMap::new(),
+                    body: b"{}".to_vec(),
+                }))
+            },
+            Err,
+        ))
     }
 }
 

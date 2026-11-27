@@ -25,6 +25,7 @@ where
 }
 
 // (req.session.model if req.session is not None else None) or req.model or "gpt-4o-realtime-preview"
+#[must_use]
 pub fn client_secret_model(session: Option<&RealtimeSessionConfig>, model: Option<&str>) -> String {
     let nested = session
         .and_then(|record| record.model.as_deref())
@@ -32,6 +33,7 @@ pub fn client_secret_model(session: Option<&RealtimeSessionConfig>, model: Optio
     model_or_default(nested.or(model))
 }
 
+#[must_use]
 pub fn model_or_default(model: Option<&str>) -> String {
     model
         .filter(|name| !name.is_empty())
@@ -46,15 +48,15 @@ pub fn client_secret(
     model: &str,
 ) -> Result<IndexMap<String, Json>, RecordError> {
     let mut body = IndexMap::new();
-    if let Some(expires_after) = expires_after {
+    if let Some(expiry) = expires_after {
         body.insert(
             String::from("expires_after"),
-            Json::Object(dumping(expires_after, "expires_after")?),
+            Json::Object(dumping(expiry, "expires_after")?),
         );
     }
-    if let Some(session) = session {
-        let mut fields = dumping(session, "session")?;
-        if session.model.is_some() {
+    if let Some(config) = session {
+        let mut fields = dumping(config, "session")?;
+        if config.model.is_some() {
             fields.insert(String::from("model"), Json::Text(model.to_owned()));
         }
         body.insert(String::from("session"), Json::Object(fields));
@@ -88,7 +90,7 @@ pub fn transcription_body(
     model: &str,
 ) -> Result<IndexMap<String, Json>, RecordError> {
     let mut body = dumping(request, "transcription_session")?;
-    body.remove("model");
+    body.shift_remove("model");
     if let Some(Json::Object(transcription)) = body.get_mut("input_audio_transcription") {
         transcription.insert(String::from("model"), Json::Text(model.to_owned()));
     }
@@ -100,10 +102,10 @@ pub fn calls_session(
     session: Option<&Json>,
     model: &str,
 ) -> Result<Option<IndexMap<String, Json>>, RecordError> {
-    let Some(session) = session.filter(|value| !matches!(value, Json::Null)) else {
+    let Some(source) = session.filter(|value| !matches!(value, Json::Null)) else {
         return Ok(None);
     };
-    let mut fields: IndexMap<String, Json> = converted(session, "session")?;
+    let mut fields: IndexMap<String, Json> = converted(source, "session")?;
     if fields.contains_key("model") {
         fields.insert(String::from("model"), Json::Text(model.to_owned()));
     }
@@ -129,6 +131,6 @@ where
     let fields: IndexMap<String, Json> = converted(value, field)?;
     Ok(fields
         .into_iter()
-        .filter(|(_, value)| !matches!(value, Json::Null))
+        .filter(|(_, entry)| !matches!(entry, Json::Null))
         .collect())
 }

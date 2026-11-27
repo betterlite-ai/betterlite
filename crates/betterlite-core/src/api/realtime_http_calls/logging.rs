@@ -33,6 +33,7 @@ pub fn log_pre_call(
 }
 
 // The maps update_from_kwargs reads, keyed as LiteLLM names them.
+#[must_use]
 pub fn params<const N: usize>(entries: [(&'static str, Json); N]) -> IndexMap<String, Json> {
     entries
         .into_iter()
