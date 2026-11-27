@@ -1,0 +1,86 @@
+id: B10168
+title: The SDK pass-through call reads VLLM_API_BASE through B8153's moved VLLM config
+description: >-
+  After B10164 and B10166, VLLM is the last pass-through config B8690 rebuilt inside betterlite-core. The VLLM arm of crates/betterlite-core/src/api/passthrough_call/urls.rs `complete_url` (L31-L41) takes the base from the api_base argument alone and refuses a missing one with its own copy of LiteLLM's text, `VLLM_MISSING_BASE` (urls.rs L19-L20, the same text as `VllmSetupError::MissingApiBase` in crates/betterlite-provider/src/vllm/error.rs L53-L56). So VLLM_API_BASE (vllm/common_utils.py L46-L53) never applies, and a VLLM pass-through that LiteLLM sends to the base in that variable fails here with a 500. B8153's `VllmPassthroughConfig` (crates/betterlite-provider/src/vllm/passthrough.rs) already reads it through `VllmModelInfo::get_api_base` (vllm/model_info.rs L17-L26), but betterlite-provider depends on betterlite-core, so core can't call it.
+
+
+  The move. B8153's three files move once to betterlite-openai. Core already depends on that crate, and it holds the hosted_vllm chat config that B8153's `VllmConfig` aliases (crates/betterlite-provider/src/vllm.rs L8-L11). Their code stays the same apart from import paths. crates/betterlite-openai/src/hosted_vllm/passthrough.rs holds `VllmPassthroughConfig` and declares `pub mod error; pub mod model_info; mod tests;`, with the two moved files under crates/betterlite-openai/src/hosted_vllm/passthrough/, and crates/betterlite-openai/src/hosted_vllm.rs gains `pub mod passthrough;`. betterlite-provider's vllm.rs drops `pub mod error;`, `pub mod model_info;` and `pub mod passthrough;` (L2-L4) and leaves no re-export behind. completion.rs (L1, ENGINE_ERROR), self_hosted_dispatch/error.rs (L7) and self_hosted_dispatch/tests/chat.rs (L18) import from `betterlite_openai::hosted_vllm::passthrough::error`. The tests in crates/betterlite-provider/src/vllm/tests.rs that cover the moved files move with them to hosted_vllm/passthrough/tests.rs (`hosted_vllm::passthrough::tests`). `vllm_config_is_the_hosted_vllm_chat_config` and `the_engine_path_answers_not_supported` stay in betterlite-provider, since they test vllm.rs and completion.rs.
+
+
+  The call. The VLLM arm builds `VllmPassthroughConfig { environment: &*config.environment }` over B10164's map and calls its get_complete_url (vllm/passthrough/transformation.py L15-L32). VLLM_MISSING_BASE goes. is_streaming_request's VLLM arm (crates/betterlite-core/src/api/passthrough_call/config.rs L105) asks the moved config, as the Azure and GigaChat arms ask theirs. A VllmError reaches ConfigError through one function: `status_error` (auth/providers.rs L132-L140) moves to config.rs beside ConfigError, and auth.rs (L32 and L105), urls.rs's `watsonx_url` (its copy of the same match at L84-L94) and the VLLM arm call it. An error without a status, the missing base included, stays a ValueError, so it is a synthesized 500 with LiteLLM's text, and one with a status keeps it. LiteLLM's VLLMModelInfo.get_api_key always returns None (common_utils.py L56-L58), so the call still sends no x-api-key header.
+
+
+  Tests. B10164's crates/betterlite-core/src/api/passthrough_call/tests/environment.rs gains `vllm_reads_the_base_from_vllm_api_base`: with VLLM_API_BASE set to the mock plus `/v1`, model `vllm/my-model`, endpoint `chat/completions` and no api_base, the mock gets `POST /v1/chat/completions`. It also gains `vllm_prefers_the_api_base_argument`, where an api_base pointing at the mock wins over a VLLM_API_BASE pointing elsewhere, and `vllm_treats_an_empty_base_as_unset`, where an empty VLLM_API_BASE and no api_base give `Mapped` with status 500, synthesized, and the VLLM_API_BASE text. tests/units.rs's urls_vllm_without_a_base_is_a_value_error keeps passing with an empty map.
+
+
+  Deviations. docs/deviations/B8690.yaml loses the row "No environment variable is read ..." and the row on configs rebuilt inside the module; B10166 left both naming only VLLM. The task adds no deviation of its own.
+scope:
+  paths:
+    - crates/betterlite-openai/src/hosted_vllm.rs
+    - crates/betterlite-openai/src/hosted_vllm/passthrough.rs
+    - crates/betterlite-openai/src/hosted_vllm/passthrough/**
+    - crates/betterlite-provider/src/vllm.rs
+    - crates/betterlite-provider/src/vllm/**
+    - crates/betterlite-provider/src/self_hosted_dispatch/error.rs
+    - crates/betterlite-provider/src/self_hosted_dispatch/tests/chat.rs
+    - crates/betterlite-core/src/api/passthrough_call/urls.rs
+    - crates/betterlite-core/src/api/passthrough_call/config.rs
+    - crates/betterlite-core/src/api/passthrough_call/auth.rs
+    - crates/betterlite-core/src/api/passthrough_call/auth/providers.rs
+    - crates/betterlite-core/src/api/passthrough_call/tests/environment.rs
+    - crates/betterlite-core/src/api/passthrough_call/tests/units.rs
+    - docs/deviations/B8690.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/common_utils.py#L31-L58
+    why: VLLMModelInfo; get_api_base falls back to VLLM_API_BASE and raises the ValueError text, and get_api_key always returns None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/passthrough/transformation.py#L11-L32
+    why: VLLMPassthroughConfig's is_streaming_request and get_complete_url over get_api_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9361-L9366
+    why: ProviderConfigManager returns VLLMPassthroughConfig for both vllm and hosted_vllm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L392-L509
+    why: llm_passthrough_route calls get_complete_url, then get_api_key and validate_environment, in this order.
+dod:
+  - text: With VLLM_API_BASE in the call's map and no api_base, a VLLM pass-through reaches that base; an api_base argument wins, and an empty or missing base is a synthesized 500 with LiteLLM's text.
+    proof: [env-tests, passthrough-tests]
+  - text: VllmModelInfo, VllmPassthroughConfig, VllmError and VllmSetupError live once, in betterlite-openai's hosted_vllm::passthrough, and betterlite-provider and core use them from there; core keeps no VLLM text and one status_error.
+    proof: [moved-tests, provider-tests, no-copies]
+  - text: B8690's environment row and rebuilt-config row are gone.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: moved-tests
+      why: the moved VLLM config, model info or errors are missing from betterlite-openai or behave differently there
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^hosted_vllm::passthrough::/)'
+    - id: provider-tests
+      why: the vllm module or the self-hosted dispatch broke after the move
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E '(test(/^vllm::/) | test(/^self_hosted_dispatch::/)) - test(/replays_the_/)'
+    - id: env-tests
+      why: VLLM_API_BASE never reaches the URL, the argument does not win, or an empty base is not refused
+      run: grep -q 'fn vllm_reads_the_base_from_vllm_api_base' crates/betterlite-core/src/api/passthrough_call/tests/environment.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::environment::/)'
+    - id: passthrough-tests
+      why: the shared status mapping or the VLLM arm broke another request, stream, params or error test of the call
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::/)'
+    - id: no-copies
+      why: the VLLM files still sit in betterlite-provider, core keeps its VLLM text, or the status match exists twice
+      run: test ! -e crates/betterlite-provider/src/vllm/model_info.rs && test ! -e crates/betterlite-provider/src/vllm/passthrough.rs && test ! -e crates/betterlite-provider/src/vllm/error.rs && test -z "$(grep -nE 'VLLM_MISSING_BASE|status\(\)\.map_or_else' crates/betterlite-core/src/api/passthrough_call/urls.rs)" && test "$(grep -rn 'fn status_error' crates/betterlite-core/src/api/passthrough_call | wc -l)" -eq 1
+    - id: deviation-rows
+      why: B8690 still lists the VLLM environment or rebuilt-config row
+      run: test -z "$(grep -n 'VLLM' docs/deviations/B8690.yaml)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "VLLMModelInfo.get_models and the /models credentials text move with the file but have no pass-through caller at the pin."
+  - "HOSTED_VLLM_API_BASE and HOSTED_VLLM_API_KEY: get_llm_provider applies them before the config runs (B10164)."
+  - "betterlite-error's native_errors_b::vllm exception mapping: a different module with its own owner."
+pitfalls:
+  - "VllmModelInfo treats an empty api_base and an empty VLLM_API_BASE as unset (model_info.rs L18 and L24); keep both filters when the file moves."
+  - "The MissingApiBase format string doubles its braces (error.rs L54) so the message prints `{LITELLM_API_BASE}` and `{endpoint}` literally; the moved test that checks the text must still pass."
+  - "VllmPassthroughConfig borrows `&(dyn EnvironmentLookup + Sync)`, and `BTreeMap<String, String>` implements EnvironmentLookup (crates/betterlite-config/src/loader.rs L31-L35), so B10164's Arc is borrowed, never cloned into a new map."
+  - "betterlite-openai must not depend on betterlite-provider; the moved files' `super::` imports become `crate::` or sibling paths inside hosted_vllm::passthrough."
+  - "auth.rs imports status_error from auth::providers today (auth.rs L32); after the move both files import it from the config module."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
