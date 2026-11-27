@@ -196,8 +196,16 @@ async fn unverifiable_project_spend_answers_503() {
     )
     .expect("the project row decodes");
     let rule = PricingRule {
+        auth: None,
         project: Some(project),
-        ..PricingRule::default()
+        model: RequestedModels::None,
+        catalog: None,
+        view: None,
+        provider: None,
+        global_model_aliases: BTreeMap::new(),
+        reader: None,
+        alerts: None,
+        global_spend: None,
     };
     let (status, body, reached) = run_rule(&config("0"), rule, MODEL_ROUTE, "{}").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
