@@ -14,7 +14,7 @@ use betterlite_openai::api::vector_store_records::records::vector::{
 };
 use betterlite_openai::vector_stores::files::FileCreateParams;
 use betterlite_openai::vector_stores::store::CreateParams;
-use http::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use http::header::{AUTHORIZATION, HeaderMap, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use http::{HeaderName, Method, StatusCode};
 use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
@@ -33,13 +33,13 @@ pub(super) enum OpenAiPortError {
     HeaderName {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderName,
+        source: InvalidHeaderName,
     },
     #[error("the {name} header value is not a header value")]
     Header {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the request body could not be encoded")]
     Encode {

@@ -166,7 +166,8 @@ async fn requests_report_a_transport_failure_without_the_token() {
             timeout: Duration::from_secs(1),
         })
         .await
-        .expect_err("nothing listens on the refused port");
+        .err()
+        .expect("nothing listens on the refused port");
     assert!(!error.to_string().contains(TOKEN));
     assert!(!format!("{error:?}").contains(TOKEN));
 }

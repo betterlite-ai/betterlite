@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::loader::{ConfigError, EnvironmentLookup};
-use betterlite_config::sections::Section;
+use betterlite_config::sections::Section as _;
 use betterlite_config::sections::studio_identity;
 use betterlite_core::rag::gemini_ingestion::GeminiDefaults;
 use betterlite_core::rag::gemini_ingestion::port::{
@@ -71,7 +71,6 @@ impl GeminiTransport for GeminiHttp {
 }
 
 // B1331's Studio identity rules are the one place a RAG port reads the environment
-#[must_use]
 pub fn defaults<Lookup>(environment: &Lookup) -> Result<GeminiDefaults, ConfigError>
 where
     Lookup: EnvironmentLookup,

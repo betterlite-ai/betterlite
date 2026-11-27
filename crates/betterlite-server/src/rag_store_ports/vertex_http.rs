@@ -11,7 +11,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use http::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use http::header::{AUTHORIZATION, HeaderMap, HeaderValue, InvalidHeaderValue};
 use http::{HeaderName, Method};
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
@@ -132,7 +132,7 @@ enum VertexRequestError {
     #[error("the bearer token is not a header value")]
     Token {
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the request could not be sent")]
     Transport {

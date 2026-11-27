@@ -5,10 +5,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
 use betterlite_core::api::vector_file_http_create_list::config::{
-    FilesConfig, FilesParams, OpenAiFilesConfig,
+    FilesConfig as _, FilesParams, OpenAiFilesConfig,
 };
 use betterlite_core::api::vector_store_http_create_read::config::{
-    CreateReadConfig, OpenAiCreateReadConfig,
+    CreateReadConfig as _, OpenAiCreateReadConfig,
 };
 use betterlite_core::api::vector_store_http_write::config::WriteParams;
 use betterlite_core::api::vector_store_http_write::error::header_map;
