@@ -7,6 +7,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use rstest::rstest;
@@ -213,6 +214,38 @@ async fn transport_posts_form_and_gets_without_body() {
     assert!(fetched[0].body.is_empty());
 }
 
+#[tokio::test]
+async fn redirect_followed_to_the_token_response() {
+    let idp = support::serve_redirecting_idp(200, INTROSPECTION_BODY).await;
+    let endpoint = format!("{}/userinfo", idp.base);
+    let configured = settings(Some(endpoint.as_str()), None, None);
+    let auth = check_oauth2_token(&configured, &support::client(), &token())
+        .await
+        .expect("the redirect target answers the token info request");
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-1"));
+    let seen = idp.take();
+    assert_eq!(seen.len(), 2, "the client follows the redirect");
+    assert_eq!(seen[0].target, "/userinfo");
+    assert_eq!(seen[1].target, "/token");
+    assert_eq!(
+        seen[1].authorization.as_deref(),
+        Some(format!("Bearer {TOKEN}").as_str())
+    );
+}
+
+#[tokio::test]
+async fn oversized_body_refused_before_the_decoder() {
+    let oversized = "x".repeat(MAX_OAUTH_RESPONSE_BYTES.saturating_add(1));
+    let idp = support::serve_idp(200, &oversized).await;
+    let endpoint = format!("{}/userinfo", idp.base);
+    let configured = settings(Some(endpoint.as_str()), None, None);
+    let error = check_oauth2_token(&configured, &support::client(), &token())
+        .await
+        .expect_err("a body over the response bound is refused");
+    let limit = format!("the response body is larger than {MAX_OAUTH_RESPONSE_BYTES} bytes");
+    assert!(error.to_string().contains(&limit), "{error}");
+}
+
 #[test]
 fn token_info_timeout_matches_the_client_default() {
     // the cached async client's default total timeout, so a hung provider is cut at the same point
@@ -370,14 +403,14 @@ async fn upstream_error() {
     );
     let generic = check_oauth2_token(
         &configured,
-        &Scripted::failing("connection refused"),
+        &Scripted::failing(TransportError::Closed),
         &token(),
     )
     .await
     .expect_err("a network failure is refused");
     assert_eq!(
         generic.to_string(),
-        "An error occurred during token validation: the token info request failed: connection refused"
+        "An error occurred during token validation: the token info request failed: the client is shutting down and takes no new requests"
     );
 }
 
@@ -397,9 +430,13 @@ async fn upstream_status_error() {
 #[tokio::test]
 async fn upstream_network_error() {
     let configured = settings(Some(ENDPOINT), Some("client"), Some("secret"));
-    let error = check_oauth2_token(&configured, &Scripted::failing("dns error"), &token())
-        .await
-        .expect_err("a transport failure is refused");
+    let error = check_oauth2_token(
+        &configured,
+        &Scripted::failing(TransportError::Closed),
+        &token(),
+    )
+    .await
+    .expect_err("a transport failure is refused");
     assert!(matches!(
         expect_validation(error),
         ValidationError::Transport(_)

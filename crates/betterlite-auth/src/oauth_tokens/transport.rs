@@ -3,11 +3,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
 use http::Method;
 use http::header::{HeaderMap, HeaderValue};
 use thiserror::Error;
 use url::Url;
 
+use crate::oauth_tokens::MAX_OAUTH_RESPONSE_BYTES;
 use crate::oauth_tokens::request::FORM_CONTENT_TYPE;
 
 // get_async_httpx_client's default total timeout, from LiteLLM's COMPLETION_HTTP_FALLBACK_SECONDS
@@ -29,8 +31,11 @@ pub struct TokenInfoResponse {
 
 #[derive(Debug, Error)]
 pub enum TokenInfoTransportError {
-    #[error("the token info request failed: {message}")]
-    Failed { message: String },
+    #[error("the token info request failed: {source}")]
+    Failed {
+        #[from]
+        source: TransportError,
+    },
 }
 
 #[async_trait]
@@ -60,19 +65,20 @@ impl TokenInfoTransport for ProxiedClient {
         } else {
             RequestBody::Empty
         };
+        let outbound = OutboundRequest {
+            method: request.method,
+            url: request.url,
+            query: Vec::new(),
+            headers: request.headers,
+            body,
+            deadline: TOKEN_INFO_TIMEOUT,
+        };
+        // httpx follows redirects by default; the client re-checks every hop's URL and credentials
         let response = self
-            .send_buffered(OutboundRequest {
-                method: request.method,
-                url: request.url,
-                query: Vec::new(),
-                headers: request.headers,
-                body,
-                deadline: TOKEN_INFO_TIMEOUT,
-            })
-            .await
-            .map_err(|error| TokenInfoTransportError::Failed {
-                message: error.to_string(),
-            })?;
+            .send_following(outbound)
+            .await?
+            .buffered(MAX_OAUTH_RESPONSE_BYTES)
+            .await?;
         Ok(TokenInfoResponse {
             status: response.status,
             body: response.body,

@@ -9,6 +9,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::oauth_tokens::Settings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -55,7 +56,7 @@ pub(super) fn token() -> SecretString {
 pub(super) struct Scripted {
     status: u16,
     body: String,
-    failure: Option<String>,
+    failure: Mutex<Option<TransportError>>,
     recorded: Mutex<Vec<TokenInfoRequest>>,
 }
 
@@ -64,16 +65,16 @@ impl Scripted {
         Self {
             status,
             body: body.to_owned(),
-            failure: None,
+            failure: Mutex::new(None),
             recorded: Mutex::new(Vec::new()),
         }
     }
 
-    pub(super) fn failing(message: &str) -> Self {
+    pub(super) fn failing(source: TransportError) -> Self {
         Self {
             status: 0,
             body: String::new(),
-            failure: Some(message.to_owned()),
+            failure: Mutex::new(Some(source)),
             recorded: Mutex::new(Vec::new()),
         }
     }
@@ -102,10 +103,13 @@ impl TokenInfoTransport for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        if let Some(message) = &self.failure {
-            return Err(TokenInfoTransportError::Failed {
-                message: message.clone(),
-            });
+        if let Some(source) = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            return Err(TokenInfoTransportError::Failed { source });
         }
         Ok(TokenInfoResponse {
             status: self.status,
@@ -186,8 +190,24 @@ impl Drop for Idp {
     }
 }
 
+enum Replies {
+    Answering(u16, String),
+    Redirecting(u16, String),
+}
+
 // a loopback identity provider the production ProxiedClient transport reaches over TCP
 pub(super) async fn serve_idp(status: u16, body: &str) -> Idp {
+    let replies = Replies::Answering(status, body.to_owned());
+    serve_idp_with(replies).await
+}
+
+// the first request is answered with a 302 to /token on the same origin, and the next one with the document
+pub(super) async fn serve_redirecting_idp(status: u16, body: &str) -> Idp {
+    let replies = Replies::Redirecting(status, body.to_owned());
+    serve_idp_with(replies).await
+}
+
+async fn serve_idp_with(replies: Replies) -> Idp {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("the identity provider binds");
@@ -196,9 +216,8 @@ pub(super) async fn serve_idp(status: u16, body: &str) -> Idp {
         .expect("the identity provider address is known");
     let seen: Arc<Mutex<Vec<Seen>>> = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&seen);
-    let reply = body.to_owned();
     let mut tasks = JoinSet::new();
-    tasks.spawn(accept(listener, status, reply, recorded));
+    tasks.spawn(accept(listener, replies, recorded));
     Idp {
         base: format!("http://{address}"),
         seen,
@@ -206,7 +225,8 @@ pub(super) async fn serve_idp(status: u16, body: &str) -> Idp {
     }
 }
 
-async fn accept(listener: TcpListener, status: u16, body: String, seen: Arc<Mutex<Vec<Seen>>>) {
+async fn accept(listener: TcpListener, replies: Replies, seen: Arc<Mutex<Vec<Seen>>>) {
+    let mut first = true;
     loop {
         let Ok((mut stream, _peer)) = listener.accept().await else {
             return;
@@ -217,14 +237,41 @@ async fn accept(listener: TcpListener, status: u16, body: String, seen: Arc<Mute
         seen.lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        let response = format!(
-            "HTTP/1.1 {status} OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-            body.len()
-        );
+        let response = reply(&listener, &replies, first);
+        first = false;
         if stream.write_all(response.as_bytes()).await.is_ok() {
             drop(stream.flush().await);
         }
     }
+}
+
+fn reply(listener: &TcpListener, replies: &Replies, first: bool) -> String {
+    match replies {
+        Replies::Answering(status, body) => answer(*status, body),
+        Replies::Redirecting(status, body) => {
+            if first {
+                redirect(listener)
+            } else {
+                answer(*status, body)
+            }
+        }
+    }
+}
+
+fn answer(status: u16, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {status} OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+fn redirect(listener: &TcpListener) -> String {
+    let address = listener
+        .local_addr()
+        .expect("the identity provider address is known");
+    format!(
+        "HTTP/1.1 302 Found\r\nlocation: http://{address}/token\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    )
 }
 
 async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {

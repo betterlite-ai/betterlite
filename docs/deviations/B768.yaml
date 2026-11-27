@@ -12,11 +12,13 @@ deviations:
       The secret-type rule forbids copying the raw credentials logged by check_oauth2_token.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L187-L191
   - what: >-
-      New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
+      New otherwise unbounded OAuth responses are bounded: the transport buffers at most 1048576 bytes
+      and the decoder rejects a body over that size or JSON depth 64, respecting smaller inherited
+      limits. A body over the bound is refused before its status is read, so it takes the generic
+      validation category rather than the status category.
     why: >-
-      Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
+      Bound the specific otherwise unbounded OAuth read named in this task; typed helpers inherit no
+      artificial parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L21-L41
   - what: >-
       When none of the configured oauth2_config_mappings headers is present, betterlite rejects the

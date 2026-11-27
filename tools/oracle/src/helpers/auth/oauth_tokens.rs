@@ -10,6 +10,7 @@ use betterlite_auth::oauth_tokens::transport::{
 use betterlite_config::sections::oauth_tokens::{
     DEFAULT_USER_ID_FIELD, DEFAULT_USER_ROLE_FIELD, DEFAULT_USER_TEAM_ID_FIELD, Settings,
 };
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
@@ -108,7 +109,7 @@ impl TokenInfoTransport for Scripted {
             .push(view(&request));
         if matches!(self.failure, Some(Failure::Network)) {
             return Err(TokenInfoTransportError::Failed {
-                message: "the identity provider is unreachable".to_owned(),
+                source: TransportError::Closed,
             });
         }
         Ok(TokenInfoResponse {
