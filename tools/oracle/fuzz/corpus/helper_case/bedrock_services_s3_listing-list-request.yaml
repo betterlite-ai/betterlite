@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-listing-list-request-seed
+call:
+  bedrock_services_s3_listing:
+    operation: list_request
+    requests:
+      - purpose: null
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket]]
+env: {}
+compare: {ignore: []}
