@@ -166,8 +166,9 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
-            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
-            Self::AuthIdentity(_) => AuthBackend::AuthKeyLookup,
+            Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
+                AuthBackend::AuthKeyLookup
+            }
             Self::MasterKey(_) => AuthBackend::MasterKey,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
@@ -199,8 +200,9 @@ pub(crate) fn dispatch(
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
-        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
-        StageInput::AuthIdentity(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
+        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
         StageInput::Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::AuthRequestPolicy(stage) => {

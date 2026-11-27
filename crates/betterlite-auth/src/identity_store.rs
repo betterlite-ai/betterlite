@@ -6,7 +6,7 @@ pub mod rows;
 use std::fmt;
 
 use opentelemetry::trace::SpanContext;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use self::error::IdentityStoreError;
 use self::ports::Dependencies;
@@ -67,17 +67,17 @@ impl IdentityStore {
             .token
             .token
             .as_ref()
-            .map(|value| value.expose_secret().to_owned());
+            .map(ExposeSecret::expose_secret);
         Ok(principal_from_key(
             &key,
             Projection {
                 auth_method,
                 issuer: None,
-                subject_fallback: token.as_deref(),
+                subject_fallback: token,
                 scopes: &[],
                 credential_ref: Some(CredentialRef {
                     key_id: None,
-                    token_id: token,
+                    token_id: token.map(str::to_owned),
                 }),
                 network,
             },

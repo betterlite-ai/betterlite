@@ -17,8 +17,8 @@ use super::principal::{Projection, principal_from_key};
 use super::rows;
 use crate::auth_cache::{WriteOptions, gateway_cache};
 use crate::auth_errors::conversion::as_proxy_exception;
-use crate::auth_identity::records::{NetworkContext, PrincipalType, SourceKey, TeamIdentity};
-use crate::auth_identity::roles::{AuthMethod, Role, TeamRole};
+use crate::auth_identity::records::{NetworkContext, SourceKey, TeamIdentity};
+use crate::auth_identity::roles::{AuthMethod, PrincipalType, Role, TeamRole};
 use crate::auth_key_lookup::cache::KeyCacheWriter;
 use crate::auth_key_lookup::error::KeyLookupError;
 use crate::auth_key_lookup::permission::KeyPermissionLookup;
@@ -571,7 +571,7 @@ async fn cache_port_returns_the_stored_key() {
         .async_set(Some(hashed.as_str()), &key, WriteOptions::default())
         .await
         .unwrap();
-    let stored = cache.read_key_object(&hashed).await.unwrap();
-    let stored = stored.expect("the stored key object comes back");
+    let found = cache.read_key_object(&hashed).await.unwrap();
+    let stored = found.expect("the stored key object comes back");
     assert_eq!(stored.view.token.key_name.as_deref(), Some("key-1"));
 }

@@ -236,9 +236,9 @@ impl StoreSetup {
         IdentityStore::new(
             Dependencies {
                 reader: self.reader.clone(),
-                cache: self.cache.clone(),
-                permissions: self.permissions.clone(),
-                writer: self.writer.clone(),
+                cache: Arc::clone(&self.cache),
+                permissions: Arc::clone(&self.permissions),
+                writer: Arc::clone(&self.writer),
             },
             self.span.clone(),
             self.check_cache_only,
