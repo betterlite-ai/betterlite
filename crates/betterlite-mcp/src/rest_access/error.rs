@@ -21,6 +21,7 @@ pub enum RestDetail {
     ErrorMessage { error: String, message: String },
 }
 
+// ast-grep-ignore: no-spelling-impls - text renders bare and objects as JSON, by variant
 impl fmt::Display for RestDetail {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
