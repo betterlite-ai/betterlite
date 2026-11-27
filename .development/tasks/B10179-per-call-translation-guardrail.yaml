@@ -100,7 +100,7 @@ checks:
         grep -q 'pub struct GuardrailToApply' crates/betterlite-guardrails/src/guardrail_translation.rs &&
         grep -q 'pub use betterlite_guardrails::guardrail_translation::GuardrailToApply' crates/betterlite-server/src/guardrails/unified_chat.rs &&
         test -z "$(grep -n 'struct GuardrailToApply' crates/betterlite-server/src/guardrails/unified_chat.rs)" &&
-        grep -q 'Undeliverable(UndeliverableStreamRewrite)' crates/betterlite-guardrails/src/guardrail_base/failure.rs &&
+        grep -qE 'Undeliverable[(](#\[from\] )?UndeliverableStreamRewrite[)]' crates/betterlite-guardrails/src/guardrail_base/failure.rs &&
         test -z "$(grep -rnE 'type Guardrail\b|&Self::Guardrail\b|T::Guardrail\b|H::Guardrail\b|Guardrail = G\b|UnifiedTranslation<G\b|PhantomData'
         crates/betterlite-guardrails/src/guardrail_translation.rs
         crates/betterlite-guardrails/src/llm_passthrough_dispatch.rs
