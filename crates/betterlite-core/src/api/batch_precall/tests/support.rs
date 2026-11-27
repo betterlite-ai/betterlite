@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, Ready, ready};
+use std::future::{Future, ready};
 use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -396,12 +396,15 @@ impl BatchPrecallStages for ScriptedStages {
         _data: &RequestData,
         usage: &BatchFileUsage,
         descriptors: Option<&[BatchLimitDescriptor]>,
-    ) -> Ready<Result<Option<Box<ProxyRateLimitError>>, StagesError>> {
+    ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StagesError>> + Send {
+        let tokens = usage.total_tokens;
+        let descriptor_list = descriptors.map(<[_]>::to_vec);
         let effect = Effect::Charge {
-            tokens: usage.total_tokens,
-            descriptors: descriptors.map(<[_]>::to_vec),
+            tokens,
+            descriptors: descriptor_list,
         };
-        ready(self.stage_answer(effect, StageName::Charge))
+        let answer = self.stage_answer(effect, StageName::Charge);
+        ready(answer)
     }
 
     fn http(&self, error: &StagesError) -> Option<BatchHttpError> {
@@ -707,14 +710,14 @@ impl BatchPrecallRemote for ScriptedRemote {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the test store has no Redis scripts")]
-pub(crate) struct NoScriptsError;
+#[error("the test store has no Redis scripts for a {call} call")]
+pub(crate) struct NoScriptsError {
+    call: &'static str,
+}
 
 pub(crate) struct NoScripts;
 
 // the store without Lua scripts answers every script call with the same typed failure, already resolved
-type NoScriptsReply<T> = Ready<Result<T, NoScriptsError>>;
-
 impl ReservationScripts for NoScripts {
     type Error = NoScriptsError;
 
@@ -724,22 +727,36 @@ impl ReservationScripts for NoScripts {
         _tokens: i64,
         _ttl_seconds: i64,
         _limit: i64,
-    ) -> NoScriptsReply<ReserveScriptReply> {
-        ready(Err(NoScriptsError))
+    ) -> impl Future<Output = Result<ReserveScriptReply, NoScriptsError>> + Send {
+        ready(Err(NoScriptsError { call: "reserve" }))
     }
 
-    fn refund(&self, _counter_key: &str, _tokens: i64) -> NoScriptsReply<()> {
-        ready(Err(NoScriptsError))
+    fn refund(
+        &self,
+        _counter_key: &str,
+        _tokens: i64,
+    ) -> impl Future<Output = Result<(), NoScriptsError>> + Send {
+        ready(Err(NoScriptsError { call: "refund" }))
     }
 }
 
 impl ReservationRecordScripts for NoScripts {
-    fn save(&self, _record_key: &str, _record: &str, _ttl_seconds: i64) -> NoScriptsReply<()> {
-        ready(Err(NoScriptsError))
+    fn save(
+        &self,
+        _record_key: &str,
+        _record: &str,
+        _ttl_seconds: i64,
+    ) -> impl Future<Output = Result<(), NoScriptsError>> + Send {
+        let failure = NoScriptsError { call: "save" };
+        ready(Err(failure))
     }
 
-    fn pop(&self, _record_key: &str, _ttl_seconds: i64) -> NoScriptsReply<Option<Vec<u8>>> {
-        ready(Err(NoScriptsError))
+    fn pop(
+        &self,
+        _record_key: &str,
+        _ttl_seconds: i64,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, NoScriptsError>> + Send {
+        ready(Err(NoScriptsError { call: "pop" }))
     }
 }
 
