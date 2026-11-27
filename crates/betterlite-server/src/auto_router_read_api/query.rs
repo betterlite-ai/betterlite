@@ -9,7 +9,7 @@ pub const MAX_READ_QUERY_BYTES: usize = 0x0010_0000;
 pub struct BenchmarksQuery {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
-    pub api_key: Option<String>,
+    pub key_hash: Option<String>,
     pub user_id: Option<String>,
 }
 
@@ -35,35 +35,51 @@ pub enum ReadQueryError {
 // Bound first, decode second; a repeated parameter keeps its last value, as Starlette reads a scalar
 pub fn decode_benchmarks_query(raw: &[u8]) -> Result<BenchmarksQuery, ReadQueryError> {
     let values = decode_pairs(raw)?;
-    let user_id = values.get("user_id").cloned();
-    if user_id.as_deref() == Some("") {
-        return Err(ReadQueryError::Invalid {
-            parameter: "user_id",
-            kind: "string_too_short",
-            msg: "String should have at least 1 character",
-        });
-    }
     Ok(BenchmarksQuery {
         start_date: values.get("start_date").cloned(),
         end_date: values.get("end_date").cloned(),
-        api_key: values.get("api_key").cloned(),
-        user_id,
+        key_hash: values.get("api_key").cloned(),
+        user_id: at_least_one_character(&values, "user_id")?,
     })
 }
 
 // session_id is required with no length bound, so an empty one still reaches the lookup
 pub fn decode_session_query(raw: &[u8]) -> Result<SessionQuery, ReadQueryError> {
     let values = decode_pairs(raw)?;
-    let Some(session_id) = values.get("session_id") else {
+    Ok(SessionQuery {
+        session_id: required(&values, "session_id")?,
+    })
+}
+
+// the pydantic min_length=1 rule on the optional user filter
+fn at_least_one_character(
+    values: &BTreeMap<String, String>,
+    parameter: &'static str,
+) -> Result<Option<String>, ReadQueryError> {
+    let value = values.get(parameter).cloned();
+    if value.as_deref() == Some("") {
         return Err(ReadQueryError::Invalid {
-            parameter: "session_id",
+            parameter,
+            kind: "string_too_short",
+            msg: "String should have at least 1 character",
+        });
+    }
+    Ok(value)
+}
+
+// the required parameter, with the pydantic error FastAPI answers for a missing field
+fn required(
+    values: &BTreeMap<String, String>,
+    parameter: &'static str,
+) -> Result<String, ReadQueryError> {
+    values
+        .get(parameter)
+        .cloned()
+        .ok_or(ReadQueryError::Invalid {
+            parameter,
             kind: "missing",
             msg: "Field required",
-        });
-    };
-    Ok(SessionQuery {
-        session_id: session_id.clone(),
-    })
+        })
 }
 
 fn decode_pairs(raw: &[u8]) -> Result<BTreeMap<String, String>, ReadQueryError> {

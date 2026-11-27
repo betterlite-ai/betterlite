@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::Router;
 use axum::extract::{Extension, RawQuery, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use chrono::Utc;
@@ -44,50 +44,26 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         deployments: configured_deployments(&state.config.model_list),
     });
     Router::new()
-        .route(BENCHMARKS_PATH, get(benchmarks_read))
-        .route(SESSION_PATH, get(session_read))
+        .route(BENCHMARKS_PATH, get(read))
+        .route(SESSION_PATH, get(read))
         .with_state(reads)
 }
 
-// FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)
-async fn benchmarks_read(
+// FastAPI checks the auth (401), then binds the query (422), then runs the endpoint body (403, 500)
+async fn read(
     State(state): State<Arc<ReadState>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
+    uri: Uri,
 ) -> Response {
     let Some(extension) = caller else {
         return unauthenticated();
     };
-    let identity = match caller_identity(&extension.principal) {
-        Ok(identity) => identity,
-        Err(source) => return failure(&ReadApiError::Identity { source }),
-    };
-    let query = match decode_benchmarks_query(raw_query.as_deref().unwrap_or_default().as_bytes()) {
-        Ok(query) => query,
-        Err(error) => return failure(&ReadApiError::from(error)),
-    };
-    if let Err(error) = require_admin(&identity, VIEW_ACTION, AdminRole::Viewer) {
-        return failure(&ReadApiError::from(error));
+    let raw = raw_query.as_deref().unwrap_or_default();
+    if uri.path() == BENCHMARKS_PATH {
+        return benchmarks_read(&state, &extension, raw).await;
     }
-    let Some(store) = state.store.as_deref() else {
-        return failure(&ReadApiError::DatabaseUnavailable);
-    };
-    match benchmarks_for(store, &query, &state.deployments, Utc::now().date_naive()).await {
-        Ok(benchmarks) => Json(benchmarks).into_response(),
-        Err(error) => failure(&error),
-    }
-}
-
-// the session read needs no role: any caller sees only the rows written under its own key
-async fn session_read(
-    State(state): State<Arc<ReadState>>,
-    caller: Option<Extension<AuthContext>>,
-    RawQuery(raw_query): RawQuery,
-) -> Response {
-    let Some(extension) = caller else {
-        return unauthenticated();
-    };
-    let query = match decode_session_query(raw_query.as_deref().unwrap_or_default().as_bytes()) {
+    let query = match decode_session_query(raw.as_bytes()) {
         Ok(query) => query,
         Err(error) => return failure(&ReadApiError::from(error)),
     };
@@ -100,6 +76,28 @@ async fn session_read(
     };
     match session_for(store, api_key.as_deref(), &query).await {
         Ok(response) => Json(response).into_response(),
+        Err(error) => failure(&error),
+    }
+}
+
+// the benchmarks read needs the key's identity and role before the database and the window
+async fn benchmarks_read(state: &ReadState, extension: &AuthContext, raw: &str) -> Response {
+    let identity = match caller_identity(&extension.principal) {
+        Ok(identity) => identity,
+        Err(source) => return failure(&ReadApiError::Identity { source }),
+    };
+    let query = match decode_benchmarks_query(raw.as_bytes()) {
+        Ok(query) => query,
+        Err(error) => return failure(&ReadApiError::from(error)),
+    };
+    if let Err(error) = require_admin(&identity, VIEW_ACTION, AdminRole::Viewer) {
+        return failure(&ReadApiError::from(error));
+    }
+    let Some(store) = state.store.as_deref() else {
+        return failure(&ReadApiError::DatabaseUnavailable);
+    };
+    match benchmarks_for(store, &query, &state.deployments, Utc::now().date_naive()).await {
+        Ok(benchmarks) => Json(benchmarks).into_response(),
         Err(error) => failure(&error),
     }
 }

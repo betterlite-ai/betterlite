@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use axum::extract::{Extension, RawQuery, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, Uri};
 use axum::response::Response;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -21,7 +21,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
-use super::{ReadState, benchmarks_read, session_read};
+use super::{BENCHMARKS_PATH, ReadState, SESSION_PATH, read};
 use crate::auth::auth_identity::AuthContext;
 use crate::auto_router_read_api::error::ReadApiError;
 use crate::auto_router_read_api::postgres::reads_from_state;
@@ -61,8 +61,9 @@ struct RecordingStore {
 impl RecordingStore {
     fn with_session(session: AutoRouterSession) -> Self {
         Self {
+            rows: Vec::new(),
             sessions: vec![session],
-            ..Self::default()
+            calls: Mutex::new(Vec::new()),
         }
     }
 
@@ -151,16 +152,32 @@ fn compared_row() -> SessionAggRow {
     SessionAggRow {
         router_name: "complexity-auto".to_owned(),
         router_type: "complexity".to_owned(),
+        tier_turns: BTreeMap::new(),
         sessions: 1,
         turns: 2,
+        unordered_turns: 0,
+        covered_turns: 0,
+        cache_hits: 0,
+        same_model_turns: 0,
+        same_model_hits: 0,
+        first_visit_turns: 0,
+        first_visit_hits: 0,
+        return_turns: 0,
+        return_hits: 0,
+        return_expired_misses: 0,
+        return_within_ttl_misses: 0,
+        ttl_5m_turns: 0,
+        ttl_1h_turns: 0,
+        total_tokens: 0,
         spend: money("2.0"),
         saved_spend: money("2.0"),
         savings_estimated_turns: 2,
         savings_estimated_actual_spend: money("2.0"),
+        savings_classifier_cost: None,
         savings_estimated_saved_spend: money("2.0"),
-        classifier_cost_recorded_turns: 2,
         classifier_cost: money("0.5"),
-        ..SessionAggRow::default()
+        classifier_cost_recorded_turns: 2,
+        session_seconds: Decimal::ZERO,
     }
 }
 
@@ -187,17 +204,36 @@ fn session_row(api_key: &str) -> AutoRouterSession {
     }
 }
 
+enum ReadKind {
+    Benchmarks,
+    Session,
+}
+
+async fn call(
+    kind: ReadKind,
+    store: Option<Arc<dyn AutoRouterReadStore>>,
+    caller: Option<Extension<AuthContext>>,
+    raw: Option<&str>,
+) -> Response {
+    let path = match kind {
+        ReadKind::Benchmarks => BENCHMARKS_PATH,
+        ReadKind::Session => SESSION_PATH,
+    };
+    read(
+        State(read_state(store)),
+        caller,
+        RawQuery(raw.map(str::to_owned)),
+        Uri::from_static(path),
+    )
+    .await
+}
+
 async fn benches(
     store: Option<Arc<dyn AutoRouterReadStore>>,
     caller: Option<Extension<AuthContext>>,
     raw: Option<&str>,
 ) -> Response {
-    benchmarks_read(
-        State(read_state(store)),
-        caller,
-        RawQuery(raw.map(str::to_owned)),
-    )
-    .await
+    call(ReadKind::Benchmarks, store, caller, raw).await
 }
 
 async fn session(
@@ -205,12 +241,7 @@ async fn session(
     caller: Option<Extension<AuthContext>>,
     raw: Option<&str>,
 ) -> Response {
-    session_read(
-        State(read_state(store)),
-        caller,
-        RawQuery(raw.map(str::to_owned)),
-    )
-    .await
+    call(ReadKind::Session, store, caller, raw).await
 }
 
 async fn decode<T: for<'de> Deserialize<'de>>(response: Response) -> T {
@@ -253,7 +284,8 @@ async fn a_member_cannot_read_benchmarks() {
 async fn an_admin_viewer_reads_the_benchmarks() {
     let store = RecordingStore {
         rows: vec![compared_row()],
-        ..RecordingStore::default()
+        sessions: Vec::new(),
+        calls: Mutex::new(Vec::new()),
     };
     let response = benches(
         Some(Arc::new(store)),

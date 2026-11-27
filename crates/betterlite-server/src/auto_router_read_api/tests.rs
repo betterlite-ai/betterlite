@@ -3,7 +3,7 @@
 mod postgres;
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -58,7 +58,32 @@ fn row(router_name: &str, router_type: &str) -> SessionAggRow {
     SessionAggRow {
         router_name: router_name.to_owned(),
         router_type: router_type.to_owned(),
-        ..SessionAggRow::default()
+        tier_turns: BTreeMap::new(),
+        sessions: 0,
+        turns: 0,
+        unordered_turns: 0,
+        covered_turns: 0,
+        cache_hits: 0,
+        same_model_turns: 0,
+        same_model_hits: 0,
+        first_visit_turns: 0,
+        first_visit_hits: 0,
+        return_turns: 0,
+        return_hits: 0,
+        return_expired_misses: 0,
+        return_within_ttl_misses: 0,
+        ttl_5m_turns: 0,
+        ttl_1h_turns: 0,
+        total_tokens: 0,
+        spend: Decimal::ZERO,
+        saved_spend: Decimal::ZERO,
+        savings_estimated_turns: 0,
+        savings_estimated_actual_spend: Decimal::ZERO,
+        savings_classifier_cost: None,
+        savings_estimated_saved_spend: Decimal::ZERO,
+        classifier_cost: Decimal::ZERO,
+        classifier_cost_recorded_turns: 0,
+        session_seconds: Decimal::ZERO,
     }
 }
 
@@ -71,7 +96,7 @@ fn query(
     BenchmarksQuery {
         start_date: start_date.map(str::to_owned),
         end_date: end_date.map(str::to_owned),
-        api_key: api_key.map(str::to_owned),
+        key_hash: api_key.map(str::to_owned),
         user_id: user_id.map(str::to_owned),
     }
 }
@@ -112,14 +137,50 @@ enum RecordedCall {
     },
 }
 
-#[derive(Default)]
 struct FakeStore {
     rows: Vec<SessionAggRow>,
     sessions: Vec<AutoRouterSession>,
     calls: Mutex<Vec<RecordedCall>>,
+    gate: Option<Arc<Notify>>,
 }
 
 impl FakeStore {
+    fn empty() -> Self {
+        Self {
+            rows: Vec::new(),
+            sessions: Vec::new(),
+            calls: Mutex::new(Vec::new()),
+            gate: None,
+        }
+    }
+
+    fn with_rows(rows: Vec<SessionAggRow>) -> Self {
+        Self {
+            rows,
+            ..Self::empty()
+        }
+    }
+
+    fn with_sessions(sessions: Vec<AutoRouterSession>) -> Self {
+        Self {
+            sessions,
+            ..Self::empty()
+        }
+    }
+
+    fn gated() -> Self {
+        Self {
+            gate: Some(Arc::new(Notify::new())),
+            ..Self::empty()
+        }
+    }
+
+    fn release(&self) {
+        if let Some(gate) = &self.gate {
+            gate.notify_one();
+        }
+    }
+
     fn calls(&self) -> Vec<RecordedCall> {
         self.calls
             .lock()
@@ -143,6 +204,9 @@ impl AutoRouterReadStore for FakeStore {
         api_key: Option<&str>,
         user_id: Option<&str>,
     ) -> Result<Vec<SessionAggRow>, ReadApiError> {
+        if let Some(gate) = &self.gate {
+            gate.notified().await;
+        }
         self.record(RecordedCall::AggRows {
             start: window.query_start.clone(),
             end: window.query_end.clone(),
@@ -166,31 +230,6 @@ impl AutoRouterReadStore for FakeStore {
             .iter()
             .find(|row| row.hashed_api_key == api_key && row.session_id == session_id)
             .cloned())
-    }
-}
-
-struct GatedStore {
-    gate: Notify,
-}
-
-#[async_trait]
-impl AutoRouterReadStore for GatedStore {
-    async fn agg_rows(
-        &self,
-        _window: &BenchmarkWindow,
-        _api_key: Option<&str>,
-        _user_id: Option<&str>,
-    ) -> Result<Vec<SessionAggRow>, ReadApiError> {
-        self.gate.notified().await;
-        Ok(Vec::new())
-    }
-
-    async fn latest_session(
-        &self,
-        _api_key: &str,
-        _session_id: &str,
-    ) -> Result<Option<AutoRouterSession>, ReadApiError> {
-        Ok(None)
     }
 }
 
@@ -248,10 +287,7 @@ fn compared() -> SessionAggRow {
 }
 
 async fn compared_complexity() {
-    let store = FakeStore {
-        rows: vec![compared()],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_rows(vec![compared()]);
     let answer = benchmarks_for(
         &store,
         &query(Some("2024-01-01"), Some("2024-01-02"), None, None),
@@ -295,10 +331,7 @@ async fn classifier_cost_only_when_covered() {
         classifier_cost_recorded_turns: 3,
         ..compared()
     };
-    let store = FakeStore {
-        rows: vec![partial],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_rows(vec![partial]);
     let answer = benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5))
         .await
         .unwrap();
@@ -313,10 +346,7 @@ async fn non_complexity_savings_zeroed() {
         router_type: "adaptive".to_owned(),
         ..compared()
     };
-    let store = FakeStore {
-        rows: vec![adaptive],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_rows(vec![adaptive]);
     let answer = benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5))
         .await
         .unwrap();
@@ -343,10 +373,7 @@ async fn unrecorded_baseline_outside_cohort() {
         classifier_cost_recorded_turns: 3,
         ..compared()
     };
-    let store = FakeStore {
-        rows: vec![unrecorded],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_rows(vec![unrecorded]);
     let answer = benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5))
         .await
         .unwrap();
@@ -390,10 +417,7 @@ async fn idle_routers_from_the_registry() {
             model: None,
         },
     ];
-    let store = FakeStore {
-        rows: vec![compared()],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_rows(vec![compared()]);
     let answer = benchmarks_for(
         &store,
         &query(Some("2024-01-01"), Some("2024-01-01"), None, None),
@@ -415,10 +439,7 @@ async fn idle_routers_from_the_registry() {
 }
 
 async fn session_row() {
-    let store = FakeStore {
-        sessions: vec![session(HASH_A, "s1", "2024-01-02T00:00:00")],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_sessions(vec![session(HASH_A, "s1", "2024-01-02T00:00:00")]);
     let answer = session_for(
         &store,
         Some(HASH_A),
@@ -438,7 +459,7 @@ async fn session_row() {
     assert_eq!(answer.savings_estimated_actual_spend, money("1.0"));
     assert_eq!(answer.saved_spend, Some(money("0.5")));
     assert_eq!(answer.baseline_spend, Some(money("2.0")));
-    assert_eq!(answer.savings_estimated_baseline_spend, Some(money("1.5")));
+    assert_eq!(answer.estimated_baseline_spend, Some(money("1.5")));
     assert_eq!(answer.baseline_model.as_deref(), Some("m1"));
     assert_eq!(
         answer.baseline_models,
@@ -463,10 +484,7 @@ async fn session_without_estimate() {
         baseline_models: BTreeMap::new(),
         ..session(HASH_A, "s2", "2024-01-02T00:00:00")
     };
-    let store = FakeStore {
-        sessions: vec![unrecorded],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_sessions(vec![unrecorded]);
     let answer = session_for(
         &store,
         Some(HASH_A),
@@ -478,7 +496,7 @@ async fn session_without_estimate() {
     .unwrap();
     assert_eq!(answer.saved_spend, None);
     assert_eq!(answer.baseline_spend, None);
-    assert_eq!(answer.savings_estimated_baseline_spend, None);
+    assert_eq!(answer.estimated_baseline_spend, None);
     assert_eq!(answer.baseline_model, None);
 }
 
@@ -545,7 +563,7 @@ async fn auto_router_read_api_boundaries(#[case] boundary: Boundary) {
 }
 
 async fn invalid_day(value: &str) {
-    let store = FakeStore::default();
+    let store = FakeStore::empty();
     let error = benchmarks_for(
         &store,
         &query(Some(value), None, None, None),
@@ -572,7 +590,7 @@ async fn invalid_day(value: &str) {
 }
 
 async fn reversed_range() {
-    let store = FakeStore::default();
+    let store = FakeStore::empty();
     let error = benchmarks_for(
         &store,
         &query(Some("2024-03-01"), Some("2024-02-29"), None, None),
@@ -625,7 +643,7 @@ fn repeated_and_unknown_parameters() {
             .unwrap();
     assert_eq!(decoded.start_date.as_deref(), Some("2024-02-02"));
     assert_eq!(decoded.end_date, None);
-    assert_eq!(decoded.api_key.as_deref(), Some(""));
+    assert_eq!(decoded.key_hash.as_deref(), Some(""));
     assert_eq!(decoded.user_id, None);
     let session = decode_session_query(b"session_id=s1&session_id=s2").unwrap();
     assert_eq!(session.session_id, "s2");
@@ -657,7 +675,7 @@ fn query_past_the_limit() {
 }
 
 async fn window_bounds() {
-    let store = FakeStore::default();
+    let store = FakeStore::empty();
     benchmarks_for(
         &store,
         &query(Some("2024-02-29"), Some("2024-02-29"), None, None),
@@ -678,7 +696,7 @@ async fn window_bounds() {
 }
 
 async fn filters() {
-    let store = FakeStore::default();
+    let store = FakeStore::empty();
     benchmarks_for(
         &store,
         &query(
@@ -739,7 +757,7 @@ fn member_forbidden() {
 }
 
 async fn session_not_found(session_id: &str, expected: &str) {
-    let store = FakeStore::default();
+    let store = FakeStore::empty();
     let error = session_for(
         &store,
         Some(HASH_A),
@@ -765,10 +783,7 @@ async fn bounded_session() {
     let exact = "a".repeat(256);
     assert_eq!(bounded_session_id(&exact), exact);
     let stored_exact = session(HASH_A, &exact, "2024-01-02T00:00:00");
-    let exact_store = FakeStore {
-        sessions: vec![stored_exact],
-        ..FakeStore::default()
-    };
+    let exact_store = FakeStore::with_sessions(vec![stored_exact]);
     let exact_answer = session_for(
         &exact_store,
         Some(HASH_A),
@@ -790,10 +805,7 @@ async fn bounded_session() {
     let bounded = bounded_session_id(&oversized);
     assert_eq!(bounded, sha256_id(&oversized));
     let stored_bounded = session(HASH_A, &bounded, "2024-01-02T00:00:00");
-    let bounded_store = FakeStore {
-        sessions: vec![stored_bounded],
-        ..FakeStore::default()
-    };
+    let bounded_store = FakeStore::with_sessions(vec![stored_bounded]);
     let answer = session_for(
         &bounded_store,
         Some(HASH_A),
@@ -814,10 +826,7 @@ async fn bounded_session() {
 }
 
 async fn no_caller_key() {
-    let store = FakeStore {
-        sessions: vec![session("", "s1", "2024-01-02T00:00:00")],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_sessions(vec![session("", "s1", "2024-01-02T00:00:00")]);
     let error = session_for(
         &store,
         None,
@@ -832,16 +841,14 @@ async fn no_caller_key() {
 }
 
 async fn cancellation() {
-    let store = GatedStore {
-        gate: Notify::new(),
-    };
+    let store = FakeStore::gated();
     let canceled = timeout(
         Duration::from_millis(1),
         benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5)),
     )
     .await;
     assert!(canceled.is_err());
-    store.gate.notify_one();
+    store.release();
     let answer = benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5))
         .await
         .unwrap();
@@ -853,10 +860,7 @@ async fn baseline_model_tie() {
         baseline_models: BTreeMap::from([("m1".to_owned(), 2), ("m2".to_owned(), 2)]),
         ..session(HASH_A, "s1", "2024-01-02T00:00:00")
     };
-    let store = FakeStore {
-        sessions: vec![tied],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_sessions(vec![tied]);
     let answer = session_for(
         &store,
         Some(HASH_A),
@@ -874,10 +878,7 @@ async fn baseline_model_coverage() {
         estimated_turns: 3,
         ..session(HASH_A, "s1", "2024-01-02T00:00:00")
     };
-    let store = FakeStore {
-        sessions: vec![below],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_sessions(vec![below]);
     let unnamed = session_for(
         &store,
         Some(HASH_A),
@@ -892,10 +893,7 @@ async fn baseline_model_coverage() {
         baseline_models: BTreeMap::from([("m1".to_owned(), 2), ("m2".to_owned(), 2)]),
         ..session(HASH_A, "s1", "2024-01-02T00:00:00")
     };
-    let store = FakeStore {
-        sessions: vec![covered],
-        ..FakeStore::default()
-    };
+    let store = FakeStore::with_sessions(vec![covered]);
     let named = session_for(
         &store,
         Some(HASH_A),

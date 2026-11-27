@@ -8,7 +8,8 @@ const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct CallerKeyView {
-    api_key: Option<String>,
+    #[serde(rename = "api_key")]
+    api_key_hash: Option<String>,
 }
 
 // user_api_key_dict.api_key: LiteLLM's stable alias for the master key, else the canonical hash B2314 keeps
@@ -21,5 +22,5 @@ pub fn caller_api_key(principal: &Principal) -> Result<Option<String>, serde_jso
         return Ok(None);
     };
     let view: CallerKeyView = serde_json::from_value(serde_json::to_value(key)?)?;
-    Ok(view.api_key)
+    Ok(view.api_key_hash)
 }

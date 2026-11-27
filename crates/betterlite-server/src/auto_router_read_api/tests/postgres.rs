@@ -94,15 +94,15 @@ const INSERT_SESSION_SQL: &str = r#"INSERT INTO "LiteLLM_AutoRouterSession"
     (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model,
      turns, spend, saved_spend, savings_estimated_turns, savings_estimated_actual_spend,
      savings_estimated_saved_spend, classifier_cost, classifier_cost_recorded_turns, tier_turns)
-    VALUES ($1, $2, $3, $4, $5::timestamp, $6::timestamp, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-        ($16::text)::jsonb)"#;
+    VALUES ($1, $2, $3, $4, $5::timestamp, $6::timestamp, $7, $8,
+        ($9::text::numeric)::double precision, $10, $11, $12, $13, $14, $15, ($16::text)::jsonb)"#;
 
 const INSERT_USER_SESSION_SQL: &str = r#"INSERT INTO "LiteLLM_AutoRouterUserSession"
     (user_id, api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model,
      turns, spend, saved_spend, savings_estimated_turns, savings_estimated_actual_spend,
      savings_estimated_saved_spend, classifier_cost, classifier_cost_recorded_turns, tier_turns)
-    VALUES ($1, $2, $3, $4, $5, $6::timestamp, $7::timestamp, $8, $9, $10, $11, $12, $13, $14, $15,
-        $16, ($17::text)::jsonb)"#;
+    VALUES ($1, $2, $3, $4, $5, $6::timestamp, $7::timestamp, $8, $9,
+        ($10::text::numeric)::double precision, $11, $12, $13, $14, $15, $16, ($17::text)::jsonb)"#;
 
 #[derive(Parser)]
 struct Environment {
@@ -163,8 +163,9 @@ impl Database {
             .expect("the statement runs");
     }
 
-    async fn seed_session(&self, seed: &Seed<'_>) {
-        let parameters: [&(dyn ToSql + Sync); 16] = [
+    async fn seed(&self, seed: &Seed<'_>, scope: Scope) {
+        let spend = seed.spend.to_string();
+        let shared: [&(dyn ToSql + Sync); 15] = [
             &seed.key,
             &seed.session,
             &seed.router,
@@ -173,39 +174,25 @@ impl Database {
             &seed.last,
             &seed.model,
             &seed.turns,
-            &seed.spend,
+            &spend,
             &seed.saved,
             &seed.estimate,
             &seed.actual,
             &seed.estimated_saved,
             &seed.classifier,
             &seed.recorded,
-            &seed.tiers,
         ];
-        self.execute(INSERT_SESSION_SQL, &parameters).await;
-    }
-
-    async fn seed_user_session(&self, seed: &Seed<'_>) {
-        let parameters: [&(dyn ToSql + Sync); 17] = [
-            &seed.user,
-            &seed.key,
-            &seed.session,
-            &seed.router,
-            &seed.kind,
-            &seed.first,
-            &seed.last,
-            &seed.model,
-            &seed.turns,
-            &seed.spend,
-            &seed.saved,
-            &seed.estimate,
-            &seed.actual,
-            &seed.estimated_saved,
-            &seed.classifier,
-            &seed.recorded,
-            &seed.tiers,
-        ];
-        self.execute(INSERT_USER_SESSION_SQL, &parameters).await;
+        let mut parameters: Vec<&(dyn ToSql + Sync)> = Vec::new();
+        match scope {
+            Scope::Session => parameters.extend(shared),
+            Scope::User => parameters.push(&seed.user),
+        }
+        parameters.push(&seed.tiers);
+        let statement = match scope {
+            Scope::Session => INSERT_SESSION_SQL,
+            Scope::User => INSERT_USER_SESSION_SQL,
+        };
+        self.execute(statement, &parameters).await;
     }
 
     async fn close(self) {
@@ -215,6 +202,11 @@ impl Database {
             .await
             .expect("the fixture closes");
     }
+}
+
+enum Scope {
+    Session,
+    User,
 }
 
 struct Seed<'a> {
@@ -227,7 +219,7 @@ struct Seed<'a> {
     last: &'a str,
     model: &'a str,
     turns: i32,
-    spend: f64,
+    spend: rust_decimal::Decimal,
     saved: f64,
     estimate: i32,
     actual: f64,
@@ -248,7 +240,7 @@ fn complexity_seed() -> Seed<'static> {
         last: "2024-01-01T00:01:00",
         model: "gpt-4o",
         turns: 4,
-        spend: 2.0,
+        spend: money("2.0"),
         saved: 2.0,
         estimate: 4,
         actual: 2.0,
@@ -270,66 +262,78 @@ fn window(start: &str, end: &str) -> super::BenchmarksQuery {
 #[tokio::test]
 async fn the_rollup_query_groups_compares_and_filters() {
     let database = Database::start().await;
-    database.seed_session(&complexity_seed()).await;
+    database.seed(&complexity_seed(), Scope::Session).await;
     database
-        .seed_session(&Seed {
-            key: "hash-b",
-            session: "s2",
-            turns: 2,
-            spend: 1.0,
-            saved: 1.0,
-            estimate: 2,
-            actual: 1.0,
-            estimated_saved: 1.0,
-            classifier: 0.25,
-            recorded: 2,
-            tiers: r#"{"COMPLEX": 2}"#,
-            ..complexity_seed()
-        })
+        .seed(
+            &Seed {
+                key: "hash-b",
+                session: "s2",
+                turns: 2,
+                spend: money("1.0"),
+                saved: 1.0,
+                estimate: 2,
+                actual: 1.0,
+                estimated_saved: 1.0,
+                classifier: 0.25,
+                recorded: 2,
+                tiers: r#"{"COMPLEX": 2}"#,
+                ..complexity_seed()
+            },
+            Scope::Session,
+        )
         .await;
     database
-        .seed_session(&Seed {
-            session: "s3",
-            router: "adaptive-auto",
-            kind: "adaptive",
-            turns: 2,
-            spend: 4.0,
-            saved: 4.0,
-            estimate: 2,
-            actual: 4.0,
-            estimated_saved: 4.0,
-            classifier: 0.5,
-            recorded: 1,
-            tiers: "{}",
-            ..complexity_seed()
-        })
+        .seed(
+            &Seed {
+                session: "s3",
+                router: "adaptive-auto",
+                kind: "adaptive",
+                turns: 2,
+                spend: money("4.0"),
+                saved: 4.0,
+                estimate: 2,
+                actual: 4.0,
+                estimated_saved: 4.0,
+                classifier: 0.5,
+                recorded: 1,
+                tiers: "{}",
+                ..complexity_seed()
+            },
+            Scope::Session,
+        )
         .await;
     database
-        .seed_session(&Seed {
-            session: "old",
-            first: "2023-12-31T00:00:00",
-            last: "2023-12-31T00:01:00",
-            ..complexity_seed()
-        })
+        .seed(
+            &Seed {
+                session: "old",
+                first: "2023-12-31T00:00:00",
+                last: "2023-12-31T00:01:00",
+                ..complexity_seed()
+            },
+            Scope::Session,
+        )
         .await;
     database
-        .seed_user_session(&Seed {
-            user: "u1",
-            key: "",
-            session: "us1",
-            router: "quality-auto",
-            kind: "quality",
-            turns: 3,
-            spend: 1.5,
-            saved: 1.5,
-            estimate: 3,
-            actual: 1.5,
-            estimated_saved: 1.5,
-            classifier: 0.25,
-            recorded: 3,
-            tiers: "{}",
-            ..complexity_seed()
-        })
+        .seed(
+            &Seed {
+                user: "u1",
+                key: "",
+                session: "us1",
+                router: "quality-auto",
+                kind: "quality",
+                turns: 3,
+                spend: money("1.5"),
+                saved: 1.5,
+                estimate: 3,
+                actual: 1.5,
+                estimated_saved: 1.5,
+                classifier: 0.25,
+                recorded: 3,
+                tiers: "{}",
+                ..complexity_seed()
+            },
+            Scope::User,
+        )
         .await;
     let reads = database.reads();
     let answer = benchmarks_for(&reads, &window("2024-01-01", "2024-01-01"), &[], day(1, 5))
@@ -371,7 +375,7 @@ async fn the_rollup_query_groups_compares_and_filters() {
     let keyed = benchmarks_for(
         &reads,
         &super::BenchmarksQuery {
-            api_key: Some("hash-b".to_owned()),
+            key_hash: Some("hash-b".to_owned()),
             ..window("2024-01-01", "2024-01-01")
         },
         &[],
@@ -393,22 +397,28 @@ async fn the_rollup_query_groups_compares_and_filters() {
 #[tokio::test]
 async fn the_latest_session_reads_the_newest_row_under_the_key() {
     let database = Database::start().await;
-    database.seed_session(&complexity_seed()).await;
+    database.seed(&complexity_seed(), Scope::Session).await;
     database
-        .seed_session(&Seed {
-            router: "adaptive-auto",
-            kind: "adaptive",
-            last: "2024-01-02T00:00:00",
-            model: "gpt-4o-mini",
-            ..complexity_seed()
-        })
+        .seed(
+            &Seed {
+                router: "adaptive-auto",
+                kind: "adaptive",
+                last: "2024-01-02T00:00:00",
+                model: "gpt-4o-mini",
+                ..complexity_seed()
+            },
+            Scope::Session,
+        )
         .await;
     database
-        .seed_session(&Seed {
-            key: "hash-b",
-            model: "o3",
-            ..complexity_seed()
-        })
+        .seed(
+            &Seed {
+                key: "hash-b",
+                model: "o3",
+                ..complexity_seed()
+            },
+            Scope::Session,
+        )
         .await;
     let reads = database.reads();
     let newest = reads

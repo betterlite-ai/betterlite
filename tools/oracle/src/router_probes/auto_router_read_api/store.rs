@@ -30,7 +30,6 @@ pub(super) struct SessionLookup {
 }
 
 // the store the reads open, fed the payload's rows and recording what each read asked for
-#[derive(Default)]
 pub(super) struct ProbeStore {
     rows: Vec<SessionAggRow>,
     sessions: Vec<(String, AutoRouterSession)>,
@@ -39,25 +38,20 @@ pub(super) struct ProbeStore {
 }
 
 impl ProbeStore {
-    pub(super) fn from_rows(rows: &[Value]) -> Result<Self, OperationError> {
+    pub(super) fn new(rows: &[Value], seeds: &[SessionSeed]) -> Result<Self, OperationError> {
+        let mut sessions = Vec::with_capacity(seeds.len());
+        for seed in seeds {
+            let seed_bytes = serde_json::to_vec(&seed.row).map_err(|error| invalid(&error))?;
+            let row: AutoRouterSession =
+                serde_json::from_slice(&seed_bytes).map_err(|error| invalid(&error))?;
+            sessions.push((seed.last_turn_at.clone(), row));
+        }
         let row_bytes = serde_json::to_vec(rows).map_err(|error| invalid(&error))?;
         Ok(Self {
             rows: decode_session_agg_rows(&row_bytes).map_err(|error| invalid(&error))?,
-            ..Self::default()
-        })
-    }
-
-    pub(super) fn from_sessions(seeds: &[SessionSeed]) -> Result<Self, OperationError> {
-        let mut sessions = Vec::with_capacity(seeds.len());
-        for seed in seeds {
-            let bytes = serde_json::to_vec(&seed.row).map_err(|error| invalid(&error))?;
-            let row: AutoRouterSession =
-                serde_json::from_slice(&bytes).map_err(|error| invalid(&error))?;
-            sessions.push((seed.last_turn_at.clone(), row));
-        }
-        Ok(Self {
             sessions,
-            ..Self::default()
+            query_bounds: Mutex::new(None),
+            lookup: Mutex::new(None),
         })
     }
 
@@ -74,6 +68,23 @@ impl ProbeStore {
             .unwrap_or_else(PoisonError::into_inner)
             .take()
     }
+
+    fn record_bounds(
+        &self,
+        window: &BenchmarkWindow,
+        api_key: Option<&str>,
+        user_id: Option<&str>,
+    ) {
+        *self
+            .query_bounds
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(QueryBounds {
+            start: window.query_start.clone(),
+            end: window.query_end.clone(),
+            api_key: api_key.map(str::to_owned),
+            user_id: user_id.map(str::to_owned),
+        });
+    }
 }
 
 #[async_trait]
@@ -84,15 +95,7 @@ impl AutoRouterReadStore for ProbeStore {
         api_key: Option<&str>,
         user_id: Option<&str>,
     ) -> Result<Vec<SessionAggRow>, ReadApiError> {
-        *self
-            .query_bounds
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(QueryBounds {
-            start: window.query_start.clone(),
-            end: window.query_end.clone(),
-            api_key: api_key.map(str::to_owned),
-            user_id: user_id.map(str::to_owned),
-        });
+        self.record_bounds(window, api_key, user_id);
         Ok(self.rows.clone())
     }
 

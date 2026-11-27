@@ -66,11 +66,11 @@ pub(super) async fn benchmarks_step(
     if !step.database {
         return Ok(StepOutcome::Failed { status: 500 });
     }
-    let store = ProbeStore::from_rows(&step.rows)?;
+    let store = ProbeStore::new(&step.rows, &[])?;
     let query = BenchmarksQuery {
         start_date: step.start_date.clone(),
         end_date: step.end_date.clone(),
-        api_key: step.api_key.clone(),
+        key_hash: step.api_key.clone(),
         user_id: step.user_id.clone(),
     };
     match benchmarks_for(&store, &query, &deployments(payload), today).await {
@@ -88,7 +88,7 @@ pub(super) async fn benchmarks_step(
 
 // the session read needs no role: the key in the input is the caller's partition
 pub(super) async fn session_step(step: &SessionStep) -> Result<StepOutcome, OperationError> {
-    let store = ProbeStore::from_sessions(&step.sessions)?;
+    let store = ProbeStore::new(&[], &step.sessions)?;
     let query = SessionQuery {
         session_id: step.session_id.clone(),
     };

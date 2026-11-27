@@ -41,8 +41,11 @@ pub struct SessionResponse {
     pub saved_spend: Option<Decimal>,
     #[serde(serialize_with = "serialize_optional_money")]
     pub baseline_spend: Option<Decimal>,
-    #[serde(serialize_with = "serialize_optional_money")]
-    pub savings_estimated_baseline_spend: Option<Decimal>,
+    #[serde(
+        rename = "savings_estimated_baseline_spend",
+        serialize_with = "serialize_optional_money"
+    )]
+    pub estimated_baseline_spend: Option<Decimal>,
     pub baseline_model: Option<String>,
     pub baseline_models: BTreeMap<String, i64>,
 }
@@ -60,7 +63,7 @@ pub async fn benchmarks_for(
         today,
     )?;
     let rows = store
-        .agg_rows(&window, query.api_key.as_deref(), query.user_id.as_deref())
+        .agg_rows(&window, query.key_hash.as_deref(), query.user_id.as_deref())
         .await?;
     let configured: Vec<StrategyDeployment<'_>> = deployments
         .iter()
@@ -115,7 +118,7 @@ fn session_response(session_id: &str, row: &AutoRouterSession) -> SessionRespons
         savings_estimated_actual_spend: row.estimated_actual_spend,
         saved_spend,
         baseline_spend,
-        savings_estimated_baseline_spend: estimated_baseline_spend,
+        estimated_baseline_spend,
         baseline_model: row.baseline_model().map(str::to_owned),
         baseline_models: row.baseline_models.clone(),
     }
