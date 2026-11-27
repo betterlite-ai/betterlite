@@ -15,7 +15,7 @@ use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
-use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::end_user_identity::EndUserIdentityStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;

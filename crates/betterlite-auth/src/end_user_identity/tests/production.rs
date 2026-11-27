@@ -20,7 +20,7 @@ use super::support::{
 };
 use crate::auth_cache::{WriteTtl, gateway_cache};
 use crate::auth_end_users::object::EndUserObjectError;
-use crate::auth_user_lookup::cache::UserCache as _;
+use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::lookup::UserLookup;
 
 fn adapter(
@@ -279,8 +279,7 @@ async fn real_user_lookup_probes_by_email() {
     );
     assert!(!store.calls().contains(&"create"));
     assert!(
-        cache
-            .read("alice@example.com")
+        UserCache::read(cache.as_ref(), "alice@example.com")
             .await
             .expect("the email row reads back")
             .is_some(),
@@ -314,8 +313,7 @@ async fn real_user_lookup_never_creates_a_user() {
     assert!(resolved.is_none());
     assert!(!store.calls().contains(&"create"));
     assert!(
-        cache
-            .read("ghost")
+        UserCache::read(cache.as_ref(), "ghost")
             .await
             .expect("the user cache reads back")
             .is_none(),
