@@ -16,6 +16,10 @@ description: >-
   What users see: nothing.
 scope:
   paths:
+    - "crates/betterlite-config/src/raw.rs"
+    - "crates/betterlite-config/src/lib.rs"
+    - "crates/betterlite-config/src/api/responses_poll_state.rs"
+    - "crates/betterlite-config/src/api/responses_hook_policy.rs"
     - crates/betterlite-config/src/env_integer/timeout.rs
     - crates/betterlite-config/src/env_integer/timeout/**
     - crates/betterlite-config/src/sections/routing_timeouts.rs
