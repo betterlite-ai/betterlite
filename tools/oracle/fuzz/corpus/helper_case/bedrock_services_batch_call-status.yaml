@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-services-batch-call-status
+call:
+  bedrock_services_batch_call:
+    operation: model_job_status
+    batch_id: "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+    replies:
+      - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc","status":"InProgress","submitTime":"2024-01-15T10:30:00Z","totalRecordCount":2,"successRecordCount":1}'}
+env: {}
+compare: {ignore: []}

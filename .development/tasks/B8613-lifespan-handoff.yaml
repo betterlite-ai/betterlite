@@ -72,7 +72,7 @@ description: >-
   DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
   implements B10021's trait). With a database store, build one B9948 `ModelsReadThrough`: RegistryReadThrough::new over
   ModelResync with B9948's DeploymentModelSync (the store, the same DeploymentSync Arc, the router handle and the
-  ModelReconcileLock DeploymentSync was built with) and B8612's ProxyDbObjects. Started carries it as
+  B10132 ModelReconcileLock DeploymentSync was built with) and B8612's ProxyDbObjects. Started carries it as
   `model_read_through: Option<Arc<dyn ModelReadThrough>>` (B9949's trait), None without a database: LiteLLM's attempt
   answers false with prisma_client None. lifespan/pass_through_port.rs holds `RouteInstaller` over the one
   PassThroughState and implements B8379's PassThroughInstaller: install calls B3616's initialize_pass_through_endpoints with

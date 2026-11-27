@@ -1,0 +1,62 @@
+id: B10115
+title: MCP master key admin credential
+description: >-
+  Two MCP paths accept the proxy master key in place of a virtual key: B4658's key reload behind the OAuth token endpoint and B4679's key reload behind MCP request admission. Before either reads a database, it asks whether the presented key hash belongs to the master key and, if so, answers with a proxy admin credential. In LiteLLM that is master_key_admin_auth in bridge_token_flow.py (L212-L234). B4679 needs only this function from B4658, so it is built here on its own, and B4658 and B4679 both call it.
+
+
+  Layout. Module master_key_admin in betterlite-auth, crates/betterlite-auth/src/master_key_admin.rs, an empty stub the crate's lib.rs already declares, with the tests in master_key_admin/tests.rs. It has to live in betterlite-auth because UserAPIKeyAuth keeps its fields pub(crate) and this code sets the via_virtual_key marker. It sits outside B4658's subject_state on purpose, so the two tasks never share a file. betterlite-auth already depends on betterlite-models, secrecy and subtle, so no Cargo.toml changes.
+
+
+  The function. `master_key_admin_auth(key_hash: &str, master_key: Option<&SecretString>, admin_name: &str) -> Result<Option<UserAPIKeyAuth>, MasterKeyAdminError>`. LiteLLM reads master_key and litellm_proxy_admin_name from proxy_server globals; here the caller passes them, and B8621 fills both from the proxy settings (admin_name defaults to LITELLM_PROXY_ADMIN_NAME, "default_user_id"). Ok(None) when master_key is None or its exposed text is empty, or when key_hash differs from the lowercase SHA-256 hex of the master key's UTF-8 bytes. Compute that digest with betterlite_models::key_digest::hashing::hash_token (LiteLLM's hash_token) and compare the two hex strings' bytes with subtle's ConstantTimeEq, the counterpart of secrets.compare_digest. On a match, build the key through `UserAPIKeyAuth::construct(AuthInput::Dict(..))` with three fields: api_key "litellm_proxy_master_key" (LiteLLM's LITELLM_PROXY_MASTER_KEY_ALIAS), user_role UserRole::ProxyAdmin.to_string() ("proxy_admin") and user_id admin_name. Then set extra.provenance.via_virtual_key to true and return Ok(Some(key)). An AuthError from construct comes back as MasterKeyAdminError, a thiserror enum in this module with one variant wrapping betterlite_auth::resolved_key::auth::AuthError through #[from]. B4679's AdmissionRejection::Subject wraps this error, and B4658's reload treats it as unresolvable.
+
+
+  Tests build keys with the function and read them back through the crate-private fields, since the tests sit inside betterlite-auth. Names start with admits_ for a match and refuses_ for every Ok(None) case, so the two checks below select them apart.
+scope:
+  paths:
+    - crates/betterlite-auth/src/master_key_admin.rs
+    - crates/betterlite-auth/src/master_key_admin/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L212-L234
+    why: Owned. master_key_admin_auth, the empty-key check, the digest comparison and the via_virtual_key assignment after construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L237-L262
+    why: Call site. _reload_active_key_by_hash tries the master key before it looks at the database (B4658).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1214-L1222
+    why: Call site. _reload_admitted_key returns the admin before any database, active or SCIM check (B4679).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L278-L284
+    why: hash_token, a plain SHA-256 hex digest of the UTF-8 text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3445-L3473
+    why: UserAPIKeyAuth's check_api_key. It strips via_virtual_key from the input and hashes only an sk- api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1699-L1699
+    why: LITELLM_PROXY_MASTER_KEY_ALIAS, "litellm_proxy_master_key".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1738-L1738
+    why: LITELLM_PROXY_ADMIN_NAME, "default_user_id", the default admin_name.
+dod:
+  - text: A key_hash equal to the SHA-256 hex of a non-empty master key gives a key whose api_key and token are litellm_proxy_master_key, whose user_role is proxy_admin, whose user_id is the given admin name and whose via_virtual_key marker is true.
+    proof: [admit-tests]
+  - text: No master key, an empty master key, the raw master key text, the uppercase form of the right digest and the digest of another key all give Ok(None).
+    proof: [refuse-tests]
+checks:
+  optional: []
+  commands:
+    - id: admit-tests
+      why: The master key admin is missing, carries the wrong api_key, role or user_id, or lacks via_virtual_key.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^master_key_admin::tests::(.*::)?admits_/)'
+    - id: refuse-tests
+      why: An empty master key, a raw key or a wrong digest is accepted as the master key.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^master_key_admin::tests::(.*::)?refuses_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The rest of bridge_token_flow.py: B4658 owns L35-L405 apart from this function (key and user reloads, key_is_active, ActiveSubjects), and B4666 owns L408 onward."
+  - "_reload_admitted_key and the rest of user_api_key_auth_mcp.py: B4679, the other caller of this function."
+  - "Reading master_key and litellm_proxy_admin_name from the config: B8621 passes them in. LiteLLM's function reads proxy_server globals, so it has no helper case."
+pitfalls:
+  - "UserAPIKeyAuth::construct strips via_virtual_key from the input map as a server-only field, so the marker must be set on extra.provenance after construct, as LiteLLM assigns it after the constructor."
+  - "Pass the alias to construct as written. construct runs LiteLLM's api_key hashing, leaves litellm_proxy_master_key alone because it has no sk- prefix, and copies it into token."
+  - "Compare against hash_token, not safe_hash_api_key: a master key without the sk- prefix comes back from safe_hash_api_key unhashed, so the admin would match the raw key instead of its digest."
+  - "Python's `not master_key` treats an empty string like None, so an empty SecretString must refuse even when key_hash is the digest of the empty string."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

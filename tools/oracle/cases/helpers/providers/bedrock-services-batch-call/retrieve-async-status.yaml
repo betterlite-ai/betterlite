@@ -1,0 +1,84 @@
+kind: helper
+name: bedrock-services-batch-call-retrieve-async-status
+call:
+  bedrock_services_batch_call:
+    operation: async_status
+    batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/abc123"
+    region: eu-west-1
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    reply:
+      status: 200
+      headers: {}
+      body: '{"invocationArn":"arn:aws:bedrock:eu-west-1:123456789012:async-invoke/abc123","status":"completed","submitTime":1705314600,"lastModifiedTime":1705314700,"endTime":1705314800,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/results.jsonl"}},"modelArn":"arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"}'
+calls:
+  - bedrock_services_batch_call:
+      operation: async_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/failed-1"
+      region: eu-west-1
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      reply:
+        status: 200
+        headers: {}
+        body: '{"invocationArn":"arn:aws:bedrock:eu-west-1:123456789012:async-invoke/failed-1","status":"failed","submitTime":1705314600,"lastModifiedTime":1705314700,"endTime":1705314800,"failureMessage":"quota exceeded","outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/results.jsonl"}},"modelArn":"arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"}'
+  - bedrock_services_batch_call:
+      operation: async_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/upper-1"
+      region: eu-west-1
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      reply:
+        status: 200
+        headers: {}
+        body: '{"invocationArn":"arn:aws:bedrock:eu-west-1:123456789012:async-invoke/upper-1","status":"InProgress","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/results.jsonl"}},"modelArn":"arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"}'
+  - bedrock_services_batch_call:
+      operation: async_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/no-model"
+      region: eu-west-1
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      reply:
+        status: 200
+        headers: {}
+        body: '{"invocationArn":"arn:aws:bedrock:eu-west-1:123456789012:async-invoke/no-model","status":"completed","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/results.jsonl"}}}'
+  - bedrock_services_batch_call:
+      operation: async_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/no-modified"
+      region: eu-west-1
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      reply:
+        status: 200
+        headers: {}
+        body: '{"invocationArn":"arn:aws:bedrock:eu-west-1:123456789012:async-invoke/no-modified","status":"completed","submitTime":1705314600,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://bucket/results.jsonl"}},"modelArn":"arn:aws:bedrock:eu-west-1::foundation-model/amazon.titan-embed-text-v2:0"}'
+  - bedrock_services_batch_call:
+      operation: async_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/server-error"
+      region: eu-west-1
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      reply:
+        status: 500
+        headers: {}
+        body: '{"message":"internal failure"}'
+  - bedrock_services_batch_call:
+      operation: async_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/not-json"
+      region: eu-west-1
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      reply:
+        status: 200
+        headers: {}
+        body: "not a json body"
+env: {}
+compare: {ignore: []}
