@@ -1,21 +1,50 @@
 task: B651
 deviations:
-  - what: A 2xx control-plane body that is not JSON is a decode error naming the shape. LiteLLM's botocore rest-json parser turns any non-empty body it cannot parse into {"message": <body>} and the handler projects a batch from it with that text as the failure message.
-    why: betterlite validates a success reply as JSON instead of inventing a message member from the raw bytes. A working Bedrock control plane answers with JSON, so no setup relies on the fabricated record.
+  - what: >-
+      A 2xx control-plane body that is not JSON is a decode error naming the shape.
+      LiteLLM's botocore rest-json parser turns any non-empty body it cannot parse into
+      {"message": <body>} and the handler projects a batch from it with that text as the
+      failure message.
+    why: >-
+      betterlite validates a success reply as JSON instead of inventing a message member from
+      the raw bytes. A working Bedrock control plane answers with JSON, so no setup relies on
+      the fabricated record.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L384
-  - what: A whitespace-only 2xx control-plane body is read as an empty record. LiteLLM's parser treats a whitespace-only body as text and returns {"message": "   "}, so the same reply carries that text in metadata.failure_message.
-    why: betterlite treats a body with no content the way botocore treats a truly empty one. The reply is malformed either way, and only the projected failure message differs.
+  - what: >-
+      A whitespace-only 2xx control-plane body is read as an empty record. LiteLLM's parser
+      treats a whitespace-only body as text and returns {"message": "   "}, so the same reply
+      carries that text in metadata.failure_message.
+    why: >-
+      betterlite treats a body with no content the way botocore treats a truly empty one. The
+      reply is malformed either way, and only the projected failure message differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L384
-  - what: A region outside lowercase letters, digits and hyphens is refused before any request. LiteLLM passes the value to boto3, so boto3 builds an endpoint such as bedrock.EU.amazonaws.com and the request fails at the network or signing stage.
-    why: betterlite validates the region it signs for, so a configuration mistake fails loudly instead of reaching a host that cannot exist.
+  - what: >-
+      A region outside lowercase letters, digits and hyphens is refused before any request.
+      LiteLLM passes the value to boto3, so boto3 builds an endpoint such as
+      bedrock.EU.amazonaws.com and the request fails at the network or signing stage.
+    why: >-
+      betterlite validates the region it signs for, so a configuration mistake fails loudly
+      instead of reaching a host that cannot exist.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L305
 kept_bugs:
-  - what: A JSON boolean record count counts as one for true and zero for false, because LiteLLM tests isinstance(value, int) and Python treats a bool as an int.
-    why: A setup that sends booleans where Bedrock documents integers keeps the counts LiteLLM reports, and both counting paths keep one rule.
+  - what: >-
+      A JSON boolean record count counts as one for true and zero for false, because LiteLLM
+      tests isinstance(value, int) and Python treats a bool as an int.
+    why: >-
+      A setup that sends booleans where Bedrock documents integers keeps the counts LiteLLM
+      reports, and both counting paths keep one rule.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L82
-  - what: A job reply without submitTime reports created_at as epoch zero rather than null, because LiteLLM writes _to_epoch(response.get("submitTime")) or 0.
-    why: The projection keeps LiteLLM's value for a reply that omits the field, so a client reading created_at sees the same instant as under LiteLLM.
+  - what: >-
+      A job reply without submitTime reports created_at as epoch zero rather than null,
+      because LiteLLM writes _to_epoch(response.get("submitTime")) or 0.
+    why: >-
+      The projection keeps LiteLLM's value for a reply that omits the field, so a client
+      reading created_at sees the same instant as under LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L394
-  - what: An async invoke job reports endTime in completed_at whether or not it completed, so a failed job carries it in completed_at as well as failed_at.
-    why: LiteLLM sets completed_at from endTime unconditionally on this path, and a client reading an async embedding batch depends on that projection.
+  - what: >-
+      An async invoke job reports endTime in completed_at whether or not it completed, so a
+      failed job carries it in completed_at as well as failed_at.
+    why: >-
+      LiteLLM sets completed_at from endTime unconditionally on this path, and a client
+      reading an async embedding batch depends on that projection.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L230
