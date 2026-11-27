@@ -33,7 +33,10 @@ fn accounting_failure(error: &AccountingError) -> Box<HelperError> {
     helper_error
 }
 
-fn snapshot<T: Clone>(values: &Mutex<Vec<T>>) -> Vec<T> {
+fn snapshot<T>(values: &Mutex<Vec<T>>) -> Vec<T>
+where
+    T: Clone,
+{
     values
         .lock()
         .unwrap_or_else(PoisonError::into_inner)

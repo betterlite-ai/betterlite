@@ -129,14 +129,16 @@ fn counted_shape(request: &TokenRequest<'_>) -> Value {
     if let Some(text) = request.text {
         return json!({"kind": "text", "model": request.model, "text": text.joined()});
     }
-    match request.messages {
-        Some(messages) => json!({
-            "kind": "messages",
-            "model": request.model,
-            "roles": messages.iter().map(|message| message.role.as_str()).collect::<Vec<_>>(),
-        }),
-        None => json!({"kind": "none", "model": request.model}),
-    }
+    request.messages.map_or_else(
+        || json!({"kind": "none", "model": request.model}),
+        |messages| {
+            json!({
+                "kind": "messages",
+                "model": request.model,
+                "roles": messages.iter().map(|message| message.role.as_str()).collect::<Vec<_>>(),
+            })
+        },
+    )
 }
 
 impl ScriptedCounter {
