@@ -6,7 +6,7 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
-use super::{ArmBuild, CatalogError, CatalogInputs};
+use super::{ArmBuild, CatalogError, CatalogInputs, listed_in_settings};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::callbacks::agentops::transport::AuthTransport;
 use crate::otel::callbacks::agentops::{AgentOpsCallback, AgentOpsConfig};
@@ -19,6 +19,7 @@ use crate::otel_provider_assembly::legacy_otel_init::{
 
 pub const CALLBACK_NAME: &str = "agentops";
 const RESOURCE_ATTRIBUTES_ENV: &str = "OTEL_RESOURCE_ATTRIBUTES";
+const ENVIRONMENT_NAME_ENV: &str = "OTEL_ENVIRONMENT_NAME";
 
 // The startup step: AgentOps fetches its JWT before the logger exists, and only a listed name builds one (agentops.py 56-65)
 pub async fn connect_agentops(
@@ -28,21 +29,10 @@ pub async fn connect_agentops(
     let config = AgentOpsConfig::from_env(inputs.env.as_ref());
     // With the switch on, V2 answers or the arm refuses its name, so its legacy logger never runs.
     let legacy_runs = matches!(maybe::v2_enabled(inputs), Ok(false));
-    if !configured(inputs) || !legacy_runs {
+    if !listed_in_settings(inputs, CALLBACK_NAME) || !legacy_runs {
         return AgentOpsCallback { config, auth: None };
     }
     AgentOpsCallback::connect(config, transport).await
-}
-
-// set_callbacks only builds the callbacks the config lists, in any of the three lists
-fn configured(inputs: &CatalogInputs) -> bool {
-    let settings = &inputs.config.sections.callback_settings;
-    settings
-        .callbacks
-        .iter()
-        .chain(settings.success_callback.iter())
-        .chain(settings.failure_callback.iter())
-        .any(|listed| listed == CALLBACK_NAME)
 }
 
 // litellm_logging's agentops arm: V2 first, then the AgentOps already in memory, then the connected one
@@ -63,7 +53,7 @@ pub fn build(
         return Ok(Arc::clone(existing));
     }
     // a key or team callback naming agentops never reached the startup step, and the resolver cannot fetch
-    let Some(startup) = connection.filter(|_| configured(inputs)) else {
+    let Some(startup) = connection.filter(|_| listed_in_settings(inputs, CALLBACK_NAME)) else {
         return Err(CatalogError::Unavailable {
             name: CALLBACK_NAME.to_owned(),
         });
@@ -118,7 +108,7 @@ pub(crate) fn legacy_otel(
     })
 }
 
-// the resource gets AgentOps' identity through OTEL_RESOURCE_ATTRIBUTES, with the operator's entries appended and winning
+// AgentOps' identity rides OTEL_RESOURCE_ATTRIBUTES, then OTEL_ENVIRONMENT_NAME, then the operator's entries; later ones win
 fn resource_environment(
     shared: &SharedOtel,
     connection: &AgentOpsCallback,
@@ -129,6 +119,15 @@ fn resource_environment(
         .iter()
         .map(|(name, value)| format!("{name}={}", utf8_percent_encode(value, NON_ALPHANUMERIC)))
         .collect();
+    if let Some(environment_name) = environment
+        .get(ENVIRONMENT_NAME_ENV)
+        .filter(|value| !value.is_empty())
+    {
+        attributes.push(format!(
+            "deployment.environment={}",
+            utf8_percent_encode(environment_name, NON_ALPHANUMERIC)
+        ));
+    }
     if let Some(operator) = environment
         .get(RESOURCE_ATTRIBUTES_ENV)
         .filter(|value| !value.is_empty())

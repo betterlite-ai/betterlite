@@ -14,7 +14,8 @@ deviations:
     why: >-
       AgentOps.__init__ fills self.resource_attributes, but OpenTelemetry._get_litellm_resource builds the resource from
       the generic OTEL_* config and never reads that attribute, so the project id is dropped. betterlite applies the map
-      through OTEL_RESOURCE_ATTRIBUTES, and the operator's own OTEL_* entries still win a name both set.
+      through OTEL_RESOURCE_ATTRIBUTES, and the operator's own OTEL_* entries still win a name both set, including
+      OTEL_ENVIRONMENT_NAME over AgentOps' deployment.environment.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/agentops/agentops.py#L74-L84
   - what: >-
       With LITELLM_OTEL_V2 on and no logger runtime injected, agentops answers the unavailable-adapter error naming

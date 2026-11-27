@@ -294,6 +294,21 @@ async fn the_agentops_identity_variables_reach_the_resource() {
     );
 }
 
+// LiteLLM builds deployment.environment from OTEL_ENVIRONMENT_NAME, so the operator's variable wins AgentOps' map
+#[tokio::test]
+async fn the_operator_environment_name_wins_the_resource() {
+    let inputs = catalog_inputs(CALLBACKS, &[API_KEY, ("OTEL_ENVIRONMENT_NAME", "staging")]);
+    let callback = connect_agentops(&inputs, &FakeTransport::token()).await;
+    let shared = SharedOtel::new(&inputs);
+    let otel = legacy_otel(&inputs, &shared, &callback).expect("the provider builds");
+    assert_eq!(
+        attributes(&otel.resource)
+            .get("deployment.environment")
+            .map(String::as_str),
+        Some("staging")
+    );
+}
+
 // the operator's OTEL_RESOURCE_ATTRIBUTES survive the composed value and win a name both set
 #[tokio::test]
 async fn the_operator_resource_attributes_stay_on_the_resource() {

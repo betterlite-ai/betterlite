@@ -104,6 +104,17 @@ pub struct CatalogInputs {
     pub shutdown: CancellationToken,
 }
 
+// the callback names litellm_settings lists, in any of its three lists
+fn listed_in_settings(inputs: &CatalogInputs, name: &str) -> bool {
+    let settings = &inputs.config.sections.callback_settings;
+    settings
+        .callbacks
+        .iter()
+        .chain(settings.success_callback.iter())
+        .chain(settings.failure_callback.iter())
+        .any(|listed| listed == name)
+}
+
 struct BaseLogger {
     name: String,
 }
@@ -176,19 +187,18 @@ impl LoggerCatalog {
             return Ok(Some(logger));
         }
         let shared = self.shared();
-        let built = {
-            let mut in_memory = self
-                .in_memory
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            (self.build)(
-                callback,
-                &self.inputs,
-                self.runtime.as_deref(),
-                &shared,
-                &mut in_memory,
-            )
-        };
+        let mut in_memory = self
+            .in_memory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let built = (self.build)(
+            callback,
+            &self.inputs,
+            self.runtime.as_deref(),
+            &shared,
+            &mut in_memory,
+        );
+        drop(in_memory);
         let resolved = self.resolve_built(callback, built)?;
         if callback == CallbackName::Otel && resolved.is_some() {
             self.auto_start_phoenix();
@@ -207,12 +217,8 @@ impl LoggerCatalog {
     // built on the first OTel arm: the snapshot never changes and the clients are shared by every arm
     fn shared(&self) -> Arc<SharedOtel> {
         let mut slot = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(shared) = slot.as_ref() {
-            return Arc::clone(shared);
-        }
-        let shared = Arc::new(SharedOtel::new(&self.inputs));
-        *slot = Some(Arc::clone(&shared));
-        shared
+        slot.get_or_insert_with(|| Arc::new(SharedOtel::new(&self.inputs)))
+            .clone()
     }
 
     fn auto_start_phoenix(&self) {
@@ -311,17 +317,10 @@ macro_rules! dispatch_logger {
 // the OTel arms take the runtime and the in-memory list, the connected arm also takes its startup callback
 dispatch_logger! {
     arms {
-        Arize => arize,
-        ArizePhoenix => arize_phoenix,
-        LangfuseOtel => langfuse_otel,
-        Langtrace => langtrace,
-        Levo => levo,
-        Logfire => logfire,
-        Newrelic => newrelic,
-        Otel => otel,
-        Signoz => signoz,
-        Traceloop => traceloop,
-        WeaveOtel => weave_otel,
+        Arize => arize, ArizePhoenix => arize_phoenix, LangfuseOtel => langfuse_otel,
+        Langtrace => langtrace, Levo => levo, Logfire => logfire,
+        Newrelic => newrelic, Otel => otel, Signoz => signoz,
+        Traceloop => traceloop, WeaveOtel => weave_otel,
     }
     connected { Agentops => agentops, }
     builders {
