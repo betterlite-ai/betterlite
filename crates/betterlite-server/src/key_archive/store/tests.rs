@@ -812,7 +812,7 @@ fn non_text_allowed_routes_are_refused() {
 }
 
 #[test]
-fn unparseable_expires_is_refused() {
+fn unparsable_expires_is_refused() {
     let record = record_from(r#"{"token": "sk-x", "expires": "tomorrow"}"#);
     let Err(error) = archived_parameters(std::slice::from_ref(&record)) else {
         panic!("a text expiry that is not a timestamp is refused");
