@@ -19,7 +19,22 @@ description: >-
   `app::spend::budget::interaction_release(&state.shared)` as its release argument, and
   `api::agents::collection_routes::routes(..)`. B3507's and B3508's route states keep B8801's
   `Arc<dyn PreCall<UserAPIKeyAuth>>`: build `app::inference::pre_call_step(state)` (B8802) once in google::mount and
-  hand the same Arc to both. Pass each routes function whatever else its task gives it, and register no path here.
+  hand the same Arc to both. B3506's routes take UserAPIKeyAuth as their key, B10178's generation value and B10197's countTokens values. Build
+  `sdk_call = Arc::new(app::inference::google_sdk_call::GoogleSdkCall::new(state, &process_environment()))` (B10196) and
+  `app::inference::google_generation::GoogleGeneration::new(state, Arc::clone(&pre_call), Arc::clone(&sdk_call), &calls)`, where calls is
+  the RouterCalls application() hands to the mount (below), once in
+  google::mount with that same pre-call Arc and pass it as `GenaiRoutesState.generation`; pass B10197's
+  `ContentTranslator::new(Arc::clone(&sdk_call))` as `translator` and `ProxyTokenCounter::new(state)` as `token_counter`, so the
+  four countTokens cases run on the production adapter and B8598's counter. Pass each routes function whatever else
+  its task gives it, and register no path here.
+
+
+  Router calls. application() (crates/betterlite-server/src/server.rs L179), where startup errors already surface, builds
+  B8631's `app::inference::router_calls(&state)` once after the state, maps a RouterPortError to a new
+  `ServerError::RouterCalls(#[source] RouterPortError)` and passes `&calls` through routes::router (routes.rs L272) and
+  app::mount (app.rs L22) to inference::mount and google::mount. Only inference::mount takes it, the mounts stay
+  infallible, and the callers in app/tests.rs pass a RouterCalls built the same way. server.rs has 295 of its 300
+  lines, so keep the net change there under five.
 
 
   Tests in app::inference::google::tests build a ServerState without a database, call mount on an empty Router and,
@@ -41,6 +56,10 @@ description: >-
   Playground interactions tab. It sends POST /v1beta/interactions {model, input, stream:true, previous_interaction_id?} (B3507). Add tools/oracle/cases/ui/playground/interactions-two-turns.yaml, two turns where the second carries the first turn's interaction id, against a mock upstream, using B860's Postgres fixture with B9942's bootstrap.
 scope:
   paths:
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/tests.rs
     - crates/betterlite-server/src/app/inference.rs
     - crates/betterlite-server/src/app/inference/google.rs
     - crates/betterlite-server/src/app/inference/google/**
