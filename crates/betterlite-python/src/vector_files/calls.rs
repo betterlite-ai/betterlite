@@ -35,35 +35,87 @@ impl ReadSide {
     }
 }
 
+// Which create-family call a wire stands for, so create and list share one prepared session
+enum FileSide<'wire> {
+    Create(&'wire CreateWire),
+    List(&'wire ListWire),
+}
+
+impl FileSide<'_> {
+    fn call_type(&self) -> &'static str {
+        match self {
+            Self::Create(_wire) => "create",
+            Self::List(_wire) => "list",
+        }
+    }
+
+    fn provider(&self) -> Option<&str> {
+        match self {
+            Self::Create(wire) => wire.custom_llm_provider.as_deref(),
+            Self::List(wire) => wire.custom_llm_provider.as_deref(),
+        }
+    }
+}
+
+// Which write a wire stands for: update carries a body, delete does not
+#[derive(Clone, Copy)]
+enum WriteSide {
+    Update,
+    Delete,
+}
+
+impl WriteSide {
+    const fn call_type(self) -> &'static str {
+        match self {
+            Self::Update => "update",
+            Self::Delete => "delete",
+        }
+    }
+}
+
 // Everything one native call runs, with the provider its failure names and the family error the service gave
 impl SessionCore {
     pub(crate) async fn run(&self, pending: Pending) -> Result<Json, CallError> {
         let asynchronous = pending.asynchronous;
         match pending.operation {
-            PendingOperation::Create(wire) => self.create(&wire, asynchronous).await,
-            PendingOperation::List(wire) => self.list(&wire, asynchronous).await,
+            PendingOperation::Create(wire) => {
+                self.file_call(FileSide::Create(&wire), asynchronous).await
+            }
+            PendingOperation::List(wire) => {
+                self.file_call(FileSide::List(&wire), asynchronous).await
+            }
             PendingOperation::Retrieve(wire) => {
                 self.read(&wire, ReadSide::Retrieve, asynchronous).await
             }
             PendingOperation::RetrieveContent(wire) => {
                 self.read(&wire, ReadSide::Content, asynchronous).await
             }
-            PendingOperation::Update(wire) => self.update(&wire, asynchronous).await,
-            PendingOperation::Delete(wire) => self.delete(&wire, asynchronous).await,
+            PendingOperation::Update(wire) => {
+                self.write_call(&wire, WriteSide::Update, asynchronous)
+                    .await
+            }
+            PendingOperation::Delete(wire) => {
+                self.write_call(&wire, WriteSide::Delete, asynchronous)
+                    .await
+            }
         }
     }
 
-    // B1072's create: the flag picks the async handler, and the service answers with the file object
-    async fn create(&self, wire: &CreateWire, asynchronous: bool) -> Result<Json, CallError> {
-        let provider = ensure_provider(wire.custom_llm_provider.as_deref()).to_owned();
-        let logging = Mutex::new(self.logging_state("create").map_err(|source| CallError {
-            provider: provider.clone(),
-            source: CallFailure::File(file_failure(
-                &FileCallError::Logging(source),
-                &provider,
-                &self.redactor,
-            )),
-        })?);
+    // B1072's create and list: one prepared session each, and the flag picks the async handler
+    async fn file_call(&self, side: FileSide<'_>, asynchronous: bool) -> Result<Json, CallError> {
+        let provider = ensure_provider(side.provider()).to_owned();
+        let logging =
+            Mutex::new(
+                self.logging_state(side.call_type())
+                    .map_err(|source| CallError {
+                        provider: provider.clone(),
+                        source: CallFailure::File(file_failure(
+                            &FileCallError::Logging(source),
+                            &provider,
+                            &self.redactor,
+                        )),
+                    })?,
+            );
         let deps = VectorFileCreateDeps {
             logging: &logging,
             redactor: &self.redactor,
@@ -74,44 +126,23 @@ impl SessionCore {
             service: self,
             deps,
         };
-        let request = create_request(wire);
-        let answer = if asynchronous {
-            creates.acreate(&request).await
-        } else {
-            creates.create(&request).await
-        };
-        answer.map_err(|source| CallError {
-            provider,
-            source: CallFailure::File(source),
-        })
-    }
-
-    // B1072's list: the five query fields are the caller's, and the answer is the file list page
-    async fn list(&self, wire: &ListWire, asynchronous: bool) -> Result<Json, CallError> {
-        let provider = ensure_provider(wire.custom_llm_provider.as_deref()).to_owned();
-        let logging = Mutex::new(self.logging_state("list").map_err(|source| CallError {
-            provider: provider.clone(),
-            source: CallFailure::File(file_failure(
-                &FileCallError::Logging(source),
-                &provider,
-                &self.redactor,
-            )),
-        })?);
-        let deps = VectorFileCreateDeps {
-            logging: &logging,
-            redactor: &self.redactor,
-            registry: None,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let creates = VectorFileCreates {
-            service: self,
-            deps,
-        };
-        let request = list_request(wire);
-        let answer = if asynchronous {
-            creates.alist(&request).await
-        } else {
-            creates.list(&request).await
+        let answer = match side {
+            FileSide::Create(wire) => {
+                let request = create_request(wire);
+                if asynchronous {
+                    creates.acreate(&request).await
+                } else {
+                    creates.create(&request).await
+                }
+            }
+            FileSide::List(wire) => {
+                let request = list_request(wire);
+                if asynchronous {
+                    creates.alist(&request).await
+                } else {
+                    creates.list(&request).await
+                }
+            }
         };
         answer.map_err(|source| CallError {
             provider,
@@ -164,17 +195,26 @@ impl SessionCore {
         })
     }
 
-    // B1074's update: attributes and the body are the caller's, and an empty dict is sent as given
-    async fn update(&self, wire: &WriteWire, asynchronous: bool) -> Result<Json, CallError> {
+    // B1074's update and delete: one prepared write session, and the flag picks the async handler
+    async fn write_call(
+        &self,
+        wire: &WriteWire,
+        side: WriteSide,
+        asynchronous: bool,
+    ) -> Result<Json, CallError> {
         let provider = ensure_provider(wire.custom_llm_provider.as_deref()).to_owned();
-        let logging = Mutex::new(self.logging_state("update").map_err(|source| CallError {
-            provider: provider.clone(),
-            source: CallFailure::Write(Box::new(write_failure(
-                VectorFileWriteError::Logging(source),
-                Some(&provider),
-                &self.redactor,
-            ))),
-        })?);
+        let logging =
+            Mutex::new(
+                self.logging_state(side.call_type())
+                    .map_err(|source| CallError {
+                        provider: provider.clone(),
+                        source: CallFailure::Write(Box::new(write_failure(
+                            VectorFileWriteError::Logging(source),
+                            Some(&provider),
+                            &self.redactor,
+                        ))),
+                    })?,
+            );
         let deps = VectorFileWriteDeps {
             logging: &logging,
             registry: None,
@@ -185,44 +225,23 @@ impl SessionCore {
             service: self,
             deps,
         };
-        let request = update_request(wire);
-        let answer = if asynchronous {
-            writes.aupdate(&request).await
-        } else {
-            writes.update(&request).await
-        };
-        answer.map_err(|source| CallError {
-            provider,
-            source: CallFailure::Write(Box::new(source)),
-        })
-    }
-
-    // B1074's delete: the object's id and the deletion answer, with no body or query of its own
-    async fn delete(&self, wire: &WriteWire, asynchronous: bool) -> Result<Json, CallError> {
-        let provider = ensure_provider(wire.custom_llm_provider.as_deref()).to_owned();
-        let logging = Mutex::new(self.logging_state("delete").map_err(|source| CallError {
-            provider: provider.clone(),
-            source: CallFailure::Write(Box::new(write_failure(
-                VectorFileWriteError::Logging(source),
-                Some(&provider),
-                &self.redactor,
-            ))),
-        })?);
-        let deps = VectorFileWriteDeps {
-            logging: &logging,
-            registry: None,
-            redactor: &self.redactor,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let writes = VectorFileWrites {
-            service: self,
-            deps,
-        };
-        let request = write_request(wire);
-        let answer = if asynchronous {
-            writes.adelete(&request).await
-        } else {
-            writes.delete(&request).await
+        let answer = match side {
+            WriteSide::Update => {
+                let request = update_request(wire);
+                if asynchronous {
+                    writes.aupdate(&request).await
+                } else {
+                    writes.update(&request).await
+                }
+            }
+            WriteSide::Delete => {
+                let request = write_request(wire);
+                if asynchronous {
+                    writes.adelete(&request).await
+                } else {
+                    writes.delete(&request).await
+                }
+            }
         };
         answer.map_err(|source| CallError {
             provider,

@@ -6,7 +6,6 @@ from pydantic import TypeAdapter
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import (
-    CallPayload,
     CallValue,
     acall_native,
     call_native,

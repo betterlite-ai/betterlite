@@ -99,7 +99,7 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     return rows
 
 
-def compare(ours: object, reference: dict[str, JsonValue]) -> None:
+def compare(ours: ResultT, reference: dict[str, JsonValue]) -> None:
     expected = JSON.validate_python(reference)
     assert JSON.validate_python(ours) == expected
 
@@ -412,7 +412,7 @@ def test_calls_refuse_provider() -> None:
     assert type(ours_caught.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
 
 
-def test_async_names_are_coroutines() -> None:
+def test_async_returns_coroutines() -> None:
     assert inspect.iscoroutinefunction(acreate)
     assert inspect.iscoroutinefunction(alist)
     assert inspect.iscoroutinefunction(aretrieve)
@@ -575,7 +575,7 @@ def test_async_flagged() -> None:
     assert DELETED.validate_python(removed) == plain_delete
 
 
-def test_error_provider_keeps_class_and_cause() -> None:
+def test_error_keeps_class_cause() -> None:
     with VectorFilesServer() as server:
         with pytest.raises(AuthenticationError) as ours_caught:
             create(
@@ -592,7 +592,8 @@ def test_error_provider_keeps_class_and_cause() -> None:
                 api_key=BAD_KEY,
             )
     assert type(ours_caught.value).__name__ == LITELLM_ERRORS.AuthenticationError.__name__
-    assert isinstance(ours_caught.value.__cause__, NativeVectorFileError)
+    assert ours_caught.value.__cause__ is not None
+    assert type(ours_caught.value.__cause__).__name__ == NativeVectorFileError.__name__
 
 
 def test_error_client_is_refused() -> None:
