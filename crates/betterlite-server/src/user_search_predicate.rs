@@ -47,7 +47,7 @@ pub fn user_term_sql(term: &UserSearchTerm, params: &mut Vec<SqlValue>) -> Strin
     parts.join(" AND ")
 }
 
-// Prisma matches nothing for an empty OR list, which a term on neither column also gives
+// Prisma matches nothing for an empty OR list, and a term on neither column matches everything
 #[must_use]
 pub fn user_search_sql(predicate: &UserSearchWhere, params: &mut Vec<SqlValue>) -> String {
     if predicate.or.is_empty() {

@@ -57,9 +57,9 @@ pub(super) async fn database(seed: &str) -> Fixture {
 }
 
 pub(super) fn user_insert(user_id: &str, email: Option<&str>) -> String {
-    let email = email.map_or_else(|| String::from("NULL"), |value| format!("'{value}'"));
+    let email_literal = email.map_or_else(|| String::from("NULL"), |value| format!("'{value}'"));
     format!(
-        "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('{user_id}', {email});"
+        "INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('{user_id}', {email_literal});"
     )
 }
 
