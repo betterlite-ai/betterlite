@@ -12,7 +12,7 @@ use betterlite_mcp::server_record::MCPServer;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use input::{Call, HeaderMap, Input, ServerSpec};
 
@@ -40,12 +40,12 @@ fn answer(call: &Call) -> HelperResult {
             alias,
             server_name,
             access_groups,
-        } => lookup_answer(
+        } => Ok(lookup_answer(
             headers,
             alias.as_deref(),
             server_name.as_deref(),
             access_groups,
-        ),
+        )),
         Call::PerServerAuthorization {
             server,
             server_auth_headers,
@@ -67,10 +67,10 @@ fn lookup_answer(
     alias: Option<&str>,
     server_name: Option<&str>,
     access_groups: &[String],
-) -> HelperResult {
+) -> Value {
     let built = header_map(headers);
     let resolved = lookup_server_auth(&built, alias, server_name, access_groups);
-    Ok(json!({ "resolved": resolved.map(exposed) }))
+    json!({ "resolved": resolved.map(exposed) })
 }
 
 fn per_server_answer(server: &ServerSpec, server_auth_headers: Option<&HeaderMap>) -> HelperResult {
