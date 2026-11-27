@@ -150,7 +150,12 @@ pub(super) fn registry_of(registry: &Registry, api_base: &str) -> CaseRegistry {
                 Json::Text(text) if text.as_str() == API_BASE_SENTINEL => {
                     Json::Text(api_base.to_owned())
                 }
-                other => other.clone(),
+                other @ Json::Null
+                | other @ Json::Bool(_)
+                | other @ Json::Number(_)
+                | other @ Json::Text(_)
+                | other @ Json::List(_)
+                | other @ Json::Object(_) => other.clone(),
             };
             (name.clone(), resolved)
         })
