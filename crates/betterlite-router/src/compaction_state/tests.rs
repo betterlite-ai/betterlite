@@ -52,7 +52,7 @@ fn list(items: Vec<Json>) -> Json {
 
 #[test]
 fn pending_needs_a_state() {
-    assert!(!compaction_pending(None, &JsonMap::new()));
+    assert!(!compaction_pending::<()>(None, &JsonMap::new()));
 }
 
 #[test]

@@ -38,16 +38,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let state = state_handle(&input.state);
         let pending = compaction_pending(state.as_ref(), &input.payload);
-        serde_json::to_value(Output { pending }).map_err(|error| {
-            Box::new(HelperError {
-                class: "SerializationError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })
+        serde_json::to_value(Output { pending }).map_err(Box::<HelperError>::from)
     }
 }
 

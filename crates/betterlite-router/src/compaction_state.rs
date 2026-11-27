@@ -99,10 +99,10 @@ pub fn compaction_pending<Summary>(
     state: Option<&SharedCompactionState<Summary>>,
     payload: &JsonMap,
 ) -> bool {
-    let Some(state) = state else {
+    let Some(shared) = state else {
         return false;
     };
-    let armed = state
+    let armed = shared
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .config
