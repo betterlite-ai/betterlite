@@ -13,11 +13,7 @@ from typing_extensions import override
 
 from .inputs import (
     CREATED_AT,
-    CustomerCall,
-    KeyCall,
-    OrgCall,
-    TeamCall,
-    UserCall,
+    EntityCall,
     key_snapshot,
     org_snapshot,
     team_snapshot,
@@ -101,42 +97,42 @@ class BudgetLogger(PrometheusLogger):
     ) -> float:
         return (budget_reset_at - self._now).total_seconds() / 3600
 
-    async def team(self, call: TeamCall) -> None:
-        await self._set_team_budget_metrics_after_api_request(
-            user_api_team=call["team_id"],
-            user_api_team_alias=call["team_alias"],
-            team_spend=call["team_spend"],
-            team_max_budget=call["team_max_budget"],
-            response_cost=call["response_cost"],
-            carried=team_snapshot(call["carried"]),
-        )
-
-    async def org(self, call: OrgCall) -> None:
-        await self._set_org_budget_metrics_after_api_request(
-            org_id=call["org_id"],
-            response_cost=call["response_cost"],
-            carried=org_snapshot(call["carried"]),
-            org_alias=call["org_alias"],
-        )
-
-    async def customer(self, call: CustomerCall) -> None:
-        await self._set_customer_budget_metrics_after_api_request(
-            end_user_id=call["end_user_id"],
-            response_cost=call["response_cost"],
-        )
-
-    async def key(self, call: KeyCall) -> None:
-        await self._set_api_key_budget_metrics_after_api_request(
-            user_api_key=call["user_api_key"],
-            user_api_key_alias=call["user_api_key_alias"],
-            response_cost=call["response_cost"],
-            key_max_budget=call["key_max_budget"],
-            key_spend=call["key_spend"],
-            carried=key_snapshot(call["carried"]),
-        )
-
-    async def user(self, call: UserCall) -> None:
-        await self._set_user_budget_metrics_after_api_request(
+    async def entity(self, call: EntityCall) -> None:
+        if call["function"] == "team":
+            await self._set_team_budget_metrics_after_api_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3936-L3965
+                user_api_team=call["team_id"],
+                user_api_team_alias=call["team_alias"],
+                team_spend=call["team_spend"],
+                team_max_budget=call["team_max_budget"],
+                response_cost=call["response_cost"],
+                carried=team_snapshot(call["carried"]),
+            )
+            return
+        if call["function"] == "org":
+            await self._set_org_budget_metrics_after_api_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4074-L4134
+                org_id=call["org_id"],
+                response_cost=call["response_cost"],
+                carried=org_snapshot(call["carried"]),
+                org_alias=call["org_alias"],
+            )
+            return
+        if call["function"] == "customer":
+            await self._set_customer_budget_metrics_after_api_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4185-L4217
+                end_user_id=call["end_user_id"],
+                response_cost=call["response_cost"],
+            )
+            return
+        if call["function"] == "key":
+            await self._set_api_key_budget_metrics_after_api_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4312-L4333
+                user_api_key=call["user_api_key"],
+                user_api_key_alias=call["user_api_key_alias"],
+                response_cost=call["response_cost"],
+                key_max_budget=call["key_max_budget"],
+                key_spend=call["key_spend"],
+                carried=key_snapshot(call["carried"]),
+            )
+            return
+        await self._set_user_budget_metrics_after_api_request(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4380-L4409
             user_id=call["user_id"],
             user_spend=call["user_spend"],
             user_max_budget=call["user_max_budget"],

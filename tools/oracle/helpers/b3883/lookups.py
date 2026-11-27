@@ -1,7 +1,5 @@
-import asyncio
 import sys
-from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from types import ModuleType
 from typing import Final, TypeAlias
 
@@ -18,7 +16,16 @@ from litellm.proxy.utils import PrismaClient, ProxyLogging
 from opentelemetry.trace import Span
 from pydantic import JsonValue
 
-from .inputs import LookupCall, RecordLookup, budget_table, parse_optional
+from .inputs import (
+    LookupCall,
+    RecordLookup,
+    budget_table,
+    end_user_object,
+    key_object,
+    org_object,
+    team_object,
+    user_object,
+)
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 
@@ -34,11 +41,9 @@ class ScriptedLookups:
         self.database = database
         self.entries: list[dict[str, JsonValue]] = []
 
-    def record(self, name: str, args: Mapping[str, JsonValue]) -> None:
+    def answer(self, name: str, args: Mapping[str, JsonValue]) -> RecordLookup | None:
         entry: dict[str, JsonValue] = {"name": name, "args": dict(args)}
         self.entries.append(entry)
-
-    def record_fields(self) -> RecordLookup | None:
         lookup = self.lookup
         if lookup["kind"] == "missing":
             return None
@@ -52,86 +57,46 @@ class ScriptedCall:
 
 class TeamLookup(ScriptedCall):
     async def __call__(
-        self,
-        team_id: str,
-        *_args: LookupArgument,
-        **_kwargs: LookupArgument,
+        self, team_id: str, *_args: LookupArgument, **_kwargs: LookupArgument
     ) -> LiteLLM_TeamTableCachedObj:
-        await asyncio.sleep(0)
-        self._scripted.record("team_info", {"team_id": team_id})
-        record = self._scripted.record_fields()
+        record = self._scripted.answer("team_info", {"team_id": team_id})
         if record is None:
             raise TeamNotFoundError(team_id=team_id)
-        return LiteLLM_TeamTableCachedObj(
-            team_id=team_id,
-            max_budget=record["max_budget"],
-            budget_reset_at=parse_optional(record["budget_reset_at"]),
-        )
+        return team_object(team_id, record)
 
 
 class OrgLookup(ScriptedCall):
     async def __call__(
-        self,
-        org_id: str,
-        *_args: LookupArgument,
-        include_budget_table: bool = False,
+        self, org_id: str, *_args: LookupArgument, include_budget_table: bool = False,
         **_kwargs: LookupArgument,
     ) -> LiteLLM_OrganizationTable | None:
-        await asyncio.sleep(0)
-        self._scripted.record(
-            "org_info",
-            {"org_id": org_id, "include_budget_table": include_budget_table},
+        record = self._scripted.answer(
+            "org_info", {"org_id": org_id, "include_budget_table": include_budget_table}
         )
-        record = self._scripted.record_fields()
-        if record is None:
-            return None
-        spend = record["spend"]
-        return LiteLLM_OrganizationTable(
-            organization_id=org_id,
-            organization_alias=record["organization_alias"],
-            spend=0.0 if spend is None else spend,
-            budget_id="scripted-budget",
-            created_by="oracle",
-            updated_by="oracle",
-            litellm_budget_table=budget_table(record["budget"]),
-        )
+        return None if record is None else org_object(org_id, record)
 
 
 class KeyLookup(ScriptedCall):
     async def __call__(
-        self,
-        hashed_token: str,
-        *_args: LookupArgument,
-        check_cache_only: bool | None = None,
+        self, hashed_token: str, *_args: LookupArgument, check_cache_only: bool | None = None,
         **_kwargs: LookupArgument,
     ) -> UserAPIKeyAuth:
-        await asyncio.sleep(0)
-        self._scripted.record(
-            "key_info",
-            {"hashed_token": hashed_token, "check_cache_only": check_cache_only},
+        record = self._scripted.answer(
+            "key_info", {"hashed_token": hashed_token, "check_cache_only": check_cache_only}
         )
-        record = self._scripted.record_fields()
         if record is None:
             raise RuntimeError("the key is not in the cache")
-        return UserAPIKeyAuth(
-            token=hashed_token,
-            budget_reset_at=parse_optional(record["budget_reset_at"]),
-        )
+        return key_object(hashed_token, record)
 
 
 class UserLookup(ScriptedCall):
     async def __call__(
-        self,
-        user_id: str | None,
-        *_args: LookupArgument,
-        user_id_upsert: bool | None = None,
-        check_db_only: bool | None = None,
-        **_kwargs: LookupArgument,
+        self, user_id: str | None, *_args: LookupArgument, user_id_upsert: bool | None = None,
+        check_db_only: bool | None = None, **_kwargs: LookupArgument,
     ) -> LiteLLM_UserTable | None:
-        await asyncio.sleep(0)
         if user_id is None:
             return None
-        self._scripted.record(
+        record = self._scripted.answer(
             "user_info",
             {
                 "user_id": user_id,
@@ -139,45 +104,26 @@ class UserLookup(ScriptedCall):
                 "check_db_only": check_db_only,
             },
         )
-        record = self._scripted.record_fields()
         if record is None:
             return None
-        return LiteLLM_UserTable(
-            user_id=user_id,
-            max_budget=record["max_budget"],
-            budget_reset_at=parse_optional(record["budget_reset_at"]),
-            user_email=record["user_email"],
-            user_alias=record["user_alias"],
-        )
+        return user_object(user_id, record)
 
 
 class EndUserCache(ScriptedCall):
     async def async_get_cache(
-        self,
-        key: str,
-        *_args: LookupArgument,
-        **_kwargs: LookupArgument,
+        self, key: str, *_args: LookupArgument, **_kwargs: LookupArgument
     ) -> LiteLLM_EndUserTable | None:
-        await asyncio.sleep(0)
-        self._scripted.record("cached_customer", {"cache_key": key})
-        record = self._scripted.record_fields()
+        record = self._scripted.answer("cached_customer", {"cache_key": key})
         if record is None:
             return None
-        spend = record["spend"]
-        return LiteLLM_EndUserTable(
-            user_id=key.removeprefix("end_user_id:"),
-            blocked=False,
-            spend=0.0 if spend is None else spend,
-            litellm_budget_table=budget_table(record["budget"]),
-        )
+        return end_user_object(key, record)
 
 
 class FakeBudgetTable(ScriptedCall):
     async def find_unique(self, *, where: Mapping[str, str]) -> LiteLLM_BudgetTableFull | None:
-        await asyncio.sleep(0)
-        budget_id = where["budget_id"]
-        self._scripted.record("default_customer_budget", {"budget_id": budget_id})
-        record = self._scripted.record_fields()
+        record = self._scripted.answer(
+            "default_customer_budget", {"budget_id": where["budget_id"]}
+        )
         if record is None:
             return None
         return budget_table(record["budget"])
@@ -203,29 +149,12 @@ class ProxyServer(ModuleType):
     user_api_key_cache: EndUserCache | None = None
 
 
-@contextmanager
-def patched(scripted: ScriptedLookups) -> Generator[None]:
+def install_lookups(scripted: ScriptedLookups) -> None:
     proxy_server = ProxyServer(PROXY_MODULE)
     proxy_server.prisma_client = FakePrismaClient(scripted) if scripted.database else None
     proxy_server.user_api_key_cache = EndUserCache(scripted)
-    saved_module = sys.modules.get(PROXY_MODULE)
-    saved_team = auth_checks.get_team_object
-    saved_org = auth_checks.get_org_object
-    saved_key = auth_checks.get_key_object
-    saved_user = auth_checks.get_user_object
     sys.modules[PROXY_MODULE] = proxy_server
     auth_checks.get_team_object = TeamLookup(scripted)
     auth_checks.get_org_object = OrgLookup(scripted)
     auth_checks.get_key_object = KeyLookup(scripted)
     auth_checks.get_user_object = UserLookup(scripted)
-    try:
-        yield
-    finally:
-        auth_checks.get_team_object = saved_team
-        auth_checks.get_org_object = saved_org
-        auth_checks.get_key_object = saved_key
-        auth_checks.get_user_object = saved_user
-        if saved_module is None:
-            del sys.modules[PROXY_MODULE]
-        else:
-            sys.modules[PROXY_MODULE] = saved_module
