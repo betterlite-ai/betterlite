@@ -12,6 +12,7 @@ use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManage
 use betterlite_redis::config_sync::publish::{PublishChange, redis_config_change_publisher};
 use betterlite_redis::config_sync::table_actions::TableActions;
 use deadpool_postgres::GenericClient as _;
+use serde::{Deserialize, Deserializer};
 
 use crate::api::vector_management_boundaries::rows::VectorStoreRows;
 use crate::api::vector_management_read::database::PostgresVectorDatabase;
@@ -82,11 +83,28 @@ impl NewVectorStoreRecord {
 }
 
 // exclude_unset: an omitted field is never written, an explicit null is written as null, any other value as it came
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum FieldChange<T> {
+    #[default]
     Omitted,
     Null,
     Value(T),
+}
+
+// a present key is null or a value; an absent one keeps the default, Omitted, which serde's own types cannot express
+impl<'de, T> Deserialize<'de> for FieldChange<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<T>::deserialize(deserializer).map(|present| match present {
+            Some(value) => Self::Value(value),
+            None => Self::Null,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,9 +178,9 @@ pub(super) fn insert_sql(document: &BTreeMap<String, JsonData>) -> String {
 
 // the row a write changed, decoded the way the reads decode one; a missing row stays missing
 pub(super) fn row_record(
-    row: Option<JsonData>,
+    stored: Option<JsonData>,
 ) -> Result<Option<LiteLlmManagedVectorStore>, TableError> {
-    let Some(row) = row else {
+    let Some(row) = stored else {
         return Ok(None);
     };
     let text = serde_json::to_string(&row).map_err(TableError::Row)?;

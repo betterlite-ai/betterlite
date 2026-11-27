@@ -83,16 +83,15 @@ impl IntoResponse for ManagementWriteError {
             Self::Request(error) => error.into_response(),
             // B2486's own rendering keeps the config-owned object and the team failure statuses
             Self::Management(error) => ManagementReadError::from(error).into_response(),
-            Self::DatabaseNotConnected => {
-                detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
-            }
             Self::AlreadyExists { .. } | Self::RequiredFields => {
                 detail(StatusCode::BAD_REQUEST, self.to_string())
             }
             Self::DeleteAccessDenied => detail(StatusCode::FORBIDDEN, self.to_string()),
-            Self::Params(_) | Self::PrivateJson(_) | Self::Cache(_) | Self::Json(_) => {
-                detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
-            }
+            Self::DatabaseNotConnected
+            | Self::Params(_)
+            | Self::PrivateJson(_)
+            | Self::Cache(_)
+            | Self::Json(_) => detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         }
     }
 }

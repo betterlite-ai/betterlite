@@ -16,26 +16,14 @@ use crate::api::vector_management_read::caller::CallerView;
 // model_dump(exclude_unset=True): absent, explicit null and a value stay apart, and the id never arrives here
 #[derive(Debug, Deserialize)]
 struct UpdateFields {
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    custom_llm_provider: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    vector_store_name: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    vector_store_description: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    vector_store_metadata: Option<Option<BTreeMap<String, Json>>>,
+    #[serde(default)]
+    custom_llm_provider: FieldChange<String>,
+    #[serde(default)]
+    vector_store_name: FieldChange<String>,
+    #[serde(default)]
+    vector_store_description: FieldChange<String>,
+    #[serde(default)]
+    vector_store_metadata: FieldChange<BTreeMap<String, Json>>,
 }
 
 // update_vector_store: the feature switch, then the try block's catch-all
@@ -84,15 +72,15 @@ where
     .await?;
     let fields: UpdateFields = serde_json::from_slice(raw).map_err(ManagementWriteError::Json)?;
     let changes = VectorStoreChanges {
-        custom_llm_provider: text_change(fields.custom_llm_provider),
-        vector_store_name: text_change(fields.vector_store_name),
-        vector_store_description: text_change(fields.vector_store_description),
+        custom_llm_provider: fields.custom_llm_provider,
+        vector_store_name: fields.vector_store_name,
+        vector_store_description: fields.vector_store_description,
         vector_store_metadata: metadata_change(fields.vector_store_metadata)?,
     };
-    let updated = VectorStoreWrites::update(database, &vector_store_id, changes)
+    let stored = VectorStoreWrites::update(database, &vector_store_id, changes)
         .await
         .map_err(VectorManagementError::Rows)?;
-    let Some(updated) = updated else {
+    let Some(updated) = stored else {
         return Err(ManagementWriteError::Management(
             VectorManagementError::NotFound {
                 vector_store_id: vector_store_id.clone(),
@@ -112,22 +100,14 @@ where
     )
 }
 
-fn text_change(field: Option<Option<String>>) -> FieldChange<String> {
-    match field {
-        None => FieldChange::Omitted,
-        Some(None) => FieldChange::Null,
-        Some(Some(text)) => FieldChange::Value(text),
-    }
-}
-
 // a stored metadata dict is JSON text; an explicit null stays null
 fn metadata_change(
-    field: Option<Option<BTreeMap<String, Json>>>,
+    field: FieldChange<BTreeMap<String, Json>>,
 ) -> Result<FieldChange<String>, ManagementWriteError> {
     match field {
-        None => Ok(FieldChange::Omitted),
-        Some(None) => Ok(FieldChange::Null),
-        Some(Some(metadata)) => {
+        FieldChange::Omitted => Ok(FieldChange::Omitted),
+        FieldChange::Null => Ok(FieldChange::Null),
+        FieldChange::Value(metadata) => {
             let text = safe_dumps(&metadata, DEFAULT_MAX_RECURSE_DEPTH, None)?;
             Ok(FieldChange::Value(text))
         }

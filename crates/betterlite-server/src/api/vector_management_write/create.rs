@@ -94,9 +94,9 @@ fn params_value(
 }
 
 pub(super) fn optional_metadata_text(
-    metadata: Option<&Json>,
+    field: Option<&Json>,
 ) -> Result<Option<String>, ManagementWriteError> {
-    let Some(metadata) = metadata else {
+    let Some(metadata) = field else {
         return Ok(None);
     };
     safe_dumps(metadata, DEFAULT_MAX_RECURSE_DEPTH, None)
@@ -105,9 +105,9 @@ pub(super) fn optional_metadata_text(
 }
 
 // an absent or empty dict stores {}, any other stores GenericLiteLLMParams.model_dump(exclude_none=True)
-pub(super) fn params_text(params: Option<&JsonObject>) -> Result<String, ManagementWriteError> {
+pub(super) fn params_text(field: Option<&JsonObject>) -> Result<String, ManagementWriteError> {
     let empty = JsonObject::new();
-    let Some(params) = params.filter(|params| !params.is_empty()) else {
+    let Some(params) = field.filter(|candidate| !candidate.is_empty()) else {
         return safe_dumps(&empty, DEFAULT_MAX_RECURSE_DEPTH, None)
             .map_err(ManagementWriteError::PrivateJson);
     };

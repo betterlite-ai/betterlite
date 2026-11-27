@@ -83,11 +83,11 @@ impl ManagedVectorStoreRow {
 }
 
 // the record field's JSON value as the decision tree the routes render; absent is null
-pub fn decode_json<T>(value: Option<&T>) -> Result<Json, ManagementWriteError>
+pub fn decode_json<T>(field: Option<&T>) -> Result<Json, ManagementWriteError>
 where
     T: Serialize,
 {
-    let Some(value) = value else {
+    let Some(value) = field else {
         return Ok(Json::Null);
     };
     let text = serde_json::to_string(value).map_err(ManagementWriteError::Json)?;

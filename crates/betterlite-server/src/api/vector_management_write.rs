@@ -66,11 +66,11 @@ pub async fn create_vector_store_in_db<Database>(
 where
     Database: VectorStoreWrites + Send + Sync,
 {
-    let Some(database) = database else {
+    let Some(connected) = database else {
         return Err(ManagementWriteError::DatabaseNotConnected);
     };
     let vector_store_id = vector_store.vector_store_id.clone();
-    let existing = VectorStoreRows::find_unique(database, &vector_store_id)
+    let existing = VectorStoreRows::find_unique(connected, &vector_store_id)
         .await
         .map_err(VectorManagementError::Rows)?;
     if existing.is_some() {
@@ -87,11 +87,11 @@ where
         team_id: vector_store.team_id,
         user_id: vector_store.user_id,
     };
-    let created = VectorStoreWrites::create(database, record)
+    let created = VectorStoreWrites::create(connected, record)
         .await
         .map_err(VectorManagementError::Rows)?;
-    if let Some(cache) = cache {
-        cache.add(created.clone())?;
+    if let Some(registry) = cache {
+        registry.add(created.clone())?;
     }
     tracing::info!("Vector store {vector_store_id} created in database successfully");
     Ok(created)

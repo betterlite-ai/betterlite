@@ -237,10 +237,11 @@ impl FakeDatabase {
             .unwrap_or_else(PoisonError::into_inner)
             .push(record);
         rows.push(store.clone());
+        drop(rows);
         Ok(store)
     }
 
-    fn replace(&self, vector_store_id: &str, changes: VectorStoreChanges) -> Found {
+    fn replace(&self, vector_store_id: &str, changes: &VectorStoreChanges) -> Found {
         let mut rows = self.begin("db:update", Failure::Update)?;
         self.inner
             .updates
@@ -254,9 +255,10 @@ impl FakeDatabase {
             .iter_mut()
             .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
             .map(|row| {
-                apply_changes(row, &changes);
+                apply_changes(row, changes);
                 row.clone()
             });
+        drop(rows);
         Ok(updated)
     }
 
@@ -300,7 +302,7 @@ impl VectorStoreWrites for FakeDatabase {
         vector_store_id: &str,
         changes: VectorStoreChanges,
     ) -> impl Future<Output = Found> + Send {
-        ready(self.replace(vector_store_id, changes))
+        ready(self.replace(vector_store_id, &changes))
     }
 
     fn delete(&self, vector_store_id: &str) -> impl Future<Output = Found> + Send {
@@ -434,6 +436,7 @@ impl FakeCache {
         if !stores.iter().any(|held| held.vector_store_id == known) {
             stores.push(store);
         }
+        drop(stores);
         Ok(())
     }
 
@@ -446,12 +449,14 @@ impl FakeCache {
             Some(index) => stores[index] = store,
             None => stores.push(store),
         }
+        drop(stores);
         Ok(())
     }
 
     fn discard(&self, vector_store_id: &str) -> Kept {
         let mut stores = self.gate("cache:remove", CacheFailure::Remove)?;
         stores.retain(|held| held.vector_store_id.as_deref() != Some(vector_store_id));
+        drop(stores);
         Ok(())
     }
 }
@@ -595,10 +600,11 @@ pub(super) fn read_state(setup: Setup) -> Arc<VectorManagementReadState<FakeData
 }
 
 pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase>> {
-    let cache = setup.cache.clone();
     let events = setup.events.clone();
-    let cache: Option<Arc<dyn VectorStoreCache>> =
-        cache.map(|store| -> Arc<dyn VectorStoreCache> { Arc::new(store.with_events(events)) });
+    let cache: Option<Arc<dyn VectorStoreCache>> = setup
+        .cache
+        .clone()
+        .map(|store| -> Arc<dyn VectorStoreCache> { Arc::new(store.with_events(events)) });
     Arc::new(VectorManagementWriteState {
         reads: read_state(setup),
         cache,

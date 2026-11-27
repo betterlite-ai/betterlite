@@ -68,10 +68,10 @@ where
             .await
             .map_err(VectorManagementError::Rows)?;
     }
-    if memory.is_some() {
-        if let Some(cache) = state.cache.as_ref() {
-            cache.remove(vector_store_id)?;
-        }
+    if memory.is_some()
+        && let Some(registry) = state.cache.as_ref()
+    {
+        registry.remove(vector_store_id)?;
     }
     Ok(VectorStoreDeleteResponse::deleted(vector_store_id))
 }

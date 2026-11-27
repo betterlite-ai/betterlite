@@ -3,10 +3,11 @@
 use std::sync::Arc;
 
 use axum::http::{HeaderMap, StatusCode};
+use betterlite_config::sections::management_rbac::Settings as FeatureSettings;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    CacheFailure, Events, Failure, FakeCache, FakeDatabase, Setup, build, capture_logs,
+    CacheFailure, Events, Failure, FakeCache, FakeDatabase, Setup, World, build, capture_logs,
     config_store, db_store, internal,
 };
 use super::{Column, at, content_type, decoded, field, field_count, stored_column, text};
@@ -20,14 +21,15 @@ const REGISTER_BODY: &str = r#"{"vector_store_id":"vs_a","custom_llm_provider":"
 
 #[tokio::test]
 async fn register_store_preserves_raw_embedding_reference() {
-    let events = Events::default();
-    let database = FakeDatabase::new(Vec::new());
-    let cache = FakeCache::new(Vec::new());
-    let mut setup = Setup::default();
-    setup.database = Some(database.clone());
-    setup.cache = Some(cache.clone());
-    setup.registry = Some(vec![config_store("vs_owned")]);
-    setup.events = events.clone();
+    let setup = Setup {
+        database: Some(FakeDatabase::new(Vec::new())),
+        cache: Some(FakeCache::new(Vec::new())),
+        registry: Some(vec![config_store("vs_owned")]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
     let state = build(setup);
     let (status, headers, body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::OK, status);
@@ -45,7 +47,7 @@ async fn register_store_preserves_raw_embedding_reference() {
     // the body's team_id and user_id are ignored: the created row belongs to the authenticated caller
     assert_eq!("t", text(at(created, "team_id")));
     assert_eq!("u", text(at(created, "user_id")));
-    // the response carries the raw embedding reference with every credential masked
+    // the response masks every credential but keeps the raw embedding reference
     let response_params = decoded(at(created, "litellm_params"));
     assert_eq!(
         Some(&Json::Text(REDACTED_BY_LITELM.to_owned())),
@@ -59,34 +61,34 @@ async fn register_store_preserves_raw_embedding_reference() {
         Some(&Json::Bool(false)),
         field(&response_params, "use_litellm_proxy")
     );
-    // the row stores the caller's identity and the raw reference, and no resolved credentials
+}
+
+#[tokio::test]
+async fn register_store_writes_the_caller_identity_and_raw_params() {
+    let events = Events::default();
+    let database = FakeDatabase::new(Vec::new());
+    let cache = FakeCache::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: Some(cache.clone()),
+        registry: Some(vec![config_store("vs_owned")]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: events.clone(),
+    };
+    let state = build(setup);
+    let (status, _, _) = call_new(&state, REGISTER_BODY).await;
+    assert_eq!(StatusCode::OK, status);
     let record = database.creates().pop().expect("the insert ran");
     assert_eq!(Some("t".to_owned()), record.team_id);
     assert_eq!(Some("u".to_owned()), record.user_id);
     let stored: Json = serde_json::from_str(&record.litellm_params).expect("params are JSON text");
-    assert_eq!(
-        Some(&Json::Text("embed".to_owned())),
-        field(&stored, "litellm_embedding_model")
-    );
-    assert_eq!(
-        Some(&Json::Text("secret".to_owned())),
-        field(&stored, "api_key")
-    );
-    assert_eq!(
-        Some(&Json::Bool(false)),
-        field(&stored, "use_litellm_proxy")
-    );
-    assert_eq!(
-        Some(&Json::Bool(false)),
-        field(&stored, "merge_reasoning_content_in_choices")
-    );
+    assert_raw_params(&stored);
     // the registry copy keeps the credentials the database holds
     let cached = cache.stores().pop().expect("the registry holds the store");
     assert_eq!(Some("t".to_owned()), cached.team_id);
-    assert_eq!(
-        Some(&Json::Text("secret".to_owned())),
-        field(&stored_column(&cached, Column::Params), "api_key")
-    );
+    assert_raw_params(&stored_column(&cached, Column::Params));
     assert_eq!(
         vec![
             "db:find".to_owned(),
@@ -97,12 +99,34 @@ async fn register_store_preserves_raw_embedding_reference() {
     );
 }
 
+fn assert_raw_params(stored: &Json) {
+    assert_eq!(
+        Some(&Json::Text("embed".to_owned())),
+        field(stored, "litellm_embedding_model")
+    );
+    assert_eq!(
+        Some(&Json::Text("secret".to_owned())),
+        field(stored, "api_key")
+    );
+    assert_eq!(Some(&Json::Bool(false)), field(stored, "use_litellm_proxy"));
+    assert_eq!(
+        Some(&Json::Bool(false)),
+        field(stored, "merge_reasoning_content_in_choices")
+    );
+}
+
 #[tokio::test]
 async fn create_requires_id_and_provider() {
     let events = Events::default();
-    let mut setup = Setup::default();
-    setup.database = Some(FakeDatabase::new(Vec::new()));
-    setup.events = events.clone();
+    let setup = Setup {
+        database: Some(FakeDatabase::new(Vec::new())),
+        cache: None,
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: events.clone(),
+    };
     let state = build(setup);
     assert_required(&state, r#"{"custom_llm_provider":"openai"}"#).await;
     assert_required(
@@ -133,10 +157,15 @@ async fn assert_required(state: &WriteState, payload: &str) {
 async fn create_refuses_config_owned_id_before_the_database() {
     let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
-    let mut setup = Setup::default();
-    setup.database = Some(database.clone());
-    setup.registry = Some(vec![config_store("vs_c")]);
-    setup.events = events.clone();
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(vec![config_store("vs_c")]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: events.clone(),
+    };
     let state = build(setup);
     let (status, _headers, body) = call_new(
         &state,
@@ -156,10 +185,15 @@ async fn create_refuses_config_owned_id_before_the_database() {
 async fn create_refuses_duplicate_id() {
     let events = Events::default();
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
-    let mut setup = Setup::default();
-    setup.database = Some(database.clone());
-    setup.registry = Some(Vec::new());
-    setup.events = events.clone();
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: events.clone(),
+    };
     let state = build(setup);
     let (status, _headers, body) = call_new(
         &state,
@@ -177,14 +211,16 @@ async fn create_refuses_duplicate_id() {
 
 #[tokio::test]
 async fn create_optional_database_values() {
-    let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
-    let cache = FakeCache::new(Vec::new());
-    let mut setup = Setup::default();
-    setup.database = Some(database.clone());
-    setup.cache = Some(cache.clone());
-    setup.registry = Some(Vec::new());
-    setup.events = events;
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
     let state = build(setup);
     let (status, _headers, body) = call_new(
         &state,
@@ -199,28 +235,68 @@ async fn create_optional_database_values() {
     assert_eq!(Some(String::new()), record.litellm_credential_name);
     // null params still store the empty dict
     assert_eq!("{}", record.litellm_params);
-    assert_eq!(None, record.team_id);
-    assert_eq!(Some("u1".to_owned()), record.user_id);
-    let document = record.document();
+    assert_eq!(Some("t".to_owned()), record.team_id);
+    assert_eq!(Some("u".to_owned()), record.user_id);
+    assert_eq!(
+        Some(&Json::Text(String::new())),
+        field(at(&body, "vector_store"), "vector_store_name")
+    );
+}
+
+#[tokio::test]
+async fn create_document_lists_only_the_present_columns() {
+    let database = FakeDatabase::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
+    let state = build(setup);
+    let (status, _, _) = call_new(
+        &state,
+        r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"","vector_store_description":"","vector_store_metadata":{},"litellm_params":null,"litellm_credential_name":""}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::OK, status);
+    let record = database.creates().pop().expect("the insert ran");
     assert_eq!(
         vec![
             "custom_llm_provider",
             "litellm_credential_name",
             "litellm_params",
+            "team_id",
             "user_id",
             "vector_store_description",
             "vector_store_id",
             "vector_store_metadata",
             "vector_store_name",
         ],
-        document.keys().map(String::as_str).collect::<Vec<_>>()
+        record
+            .document()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
     );
-    assert_eq!(
-        Some(&Json::Text(String::new())),
-        field(at(&body, "vector_store"), "vector_store_name")
-    );
-    // omitted optional fields never reach the create data, while the params column still exists
-    let (status, _headers, _body) = call_new(
+}
+
+#[tokio::test]
+async fn create_omitted_optional_fields() {
+    let database = FakeDatabase::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
+    let state = build(setup);
+    let (status, _, _) = call_new(
         &state,
         r#"{"vector_store_id":"vs_b","custom_llm_provider":"openai"}"#,
     )
@@ -231,6 +307,7 @@ async fn create_optional_database_values() {
         vec![
             "custom_llm_provider",
             "litellm_params",
+            "team_id",
             "user_id",
             "vector_store_id",
         ],
@@ -240,34 +317,54 @@ async fn create_optional_database_values() {
             .map(String::as_str)
             .collect::<Vec<_>>()
     );
+}
+
+#[tokio::test]
+async fn create_drops_non_dict_metadata_and_keeps_empty_params() {
+    let database = FakeDatabase::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
+    let state = build(setup);
     // a non-dict metadata is dropped after the record accepts it
-    let (status, _headers, _body) = call_new(
+    let (status, _, _) = call_new(
         &state,
         r#"{"vector_store_id":"vs_c","custom_llm_provider":"openai","vector_store_metadata":"text"}"#,
     )
     .await;
     assert_eq!(StatusCode::OK, status);
-    let record = database.creates().pop().expect("the insert ran");
-    assert_eq!(None, record.vector_store_metadata);
-    assert!(!record.document().contains_key("vector_store_metadata"));
+    let dropped = database.creates().pop().expect("the insert ran");
+    assert_eq!(None, dropped.vector_store_metadata);
+    assert!(!dropped.document().contains_key("vector_store_metadata"));
     // an empty params object also stores the empty dict
-    let (status, _headers, _body) = call_new(
+    let (second_status, _, _) = call_new(
         &state,
         r#"{"vector_store_id":"vs_d","custom_llm_provider":"openai","litellm_params":{}}"#,
     )
     .await;
-    assert_eq!(StatusCode::OK, status);
-    let record = database.creates().pop().expect("the insert ran");
-    assert_eq!("{}", record.litellm_params);
+    assert_eq!(StatusCode::OK, second_status);
+    let empty_params = database.creates().pop().expect("the insert ran");
+    assert_eq!("{}", empty_params.litellm_params);
 }
 
 #[tokio::test]
 async fn create_without_a_database_answers_500() {
     let events = Events::default();
-    let mut setup = Setup::default();
-    setup.cache = Some(FakeCache::new(Vec::new()));
-    setup.registry = Some(Vec::new());
-    setup.events = events.clone();
+    let setup = Setup {
+        database: None,
+        cache: Some(FakeCache::new(Vec::new())),
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: events.clone(),
+    };
     let state = build(setup);
     let (status, _headers, body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
@@ -279,13 +376,17 @@ async fn create_without_a_database_answers_500() {
 async fn create_database_failure_writes_nothing_to_the_cache() {
     let events = Events::default();
     let cache = FakeCache::new(Vec::new());
-    let mut setup = Setup::default();
-    setup.database = Some(FakeDatabase::new(Vec::new()).failing(Failure::Create));
-    setup.cache = Some(cache.clone());
-    setup.registry = Some(Vec::new());
-    setup.events = events.clone();
+    let setup = Setup {
+        database: Some(FakeDatabase::new(Vec::new()).failing(Failure::Create)),
+        cache: Some(cache.clone()),
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: events.clone(),
+    };
     let state = build(setup);
-    let (status, _headers, _body) = call_new(&state, REGISTER_BODY).await;
+    let (status, _, _) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!(
         vec!["db:find".to_owned(), "db:create".to_owned()],
@@ -296,14 +397,16 @@ async fn create_database_failure_writes_nothing_to_the_cache() {
 
 #[tokio::test]
 async fn create_cache_failure_keeps_the_database_row() {
-    let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
-    let cache = FakeCache::new(Vec::new()).failing(CacheFailure::Add);
-    let mut setup = Setup::default();
-    setup.database = Some(database.clone());
-    setup.cache = Some(cache);
-    setup.registry = Some(Vec::new());
-    setup.events = events.clone();
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: Some(FakeCache::new(Vec::new()).failing(CacheFailure::Add)),
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
     let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let (status, _headers, body) = call_new(&state, REGISTER_BODY).await;
@@ -319,9 +422,15 @@ async fn create_cache_failure_keeps_the_database_row() {
 // an HTTPException the route raises is rethrown without the catch-all's error log
 #[tokio::test]
 async fn create_refusal_does_not_log_an_error() {
-    let mut setup = Setup::default();
-    setup.database = Some(FakeDatabase::new(vec![db_store("vs_a")]));
-    setup.registry = Some(Vec::new());
+    let setup = Setup {
+        database: Some(FakeDatabase::new(vec![db_store("vs_a")])),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
     let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let (status, _headers, _body) = call_new(
@@ -335,13 +444,18 @@ async fn create_refusal_does_not_log_an_error() {
 
 #[tokio::test]
 async fn create_logs_the_created_id() {
-    let mut setup = Setup::default();
-    setup.database = Some(FakeDatabase::new(Vec::new()));
-    setup.cache = Some(FakeCache::new(Vec::new()));
-    setup.registry = Some(Vec::new());
+    let setup = Setup {
+        database: Some(FakeDatabase::new(Vec::new())),
+        cache: Some(FakeCache::new(Vec::new())),
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
     let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::INFO);
-    let (status, _headers, _body) = call_new(&state, REGISTER_BODY).await;
+    let (status, _, _) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::OK, status);
     assert!(
         logs.contents()

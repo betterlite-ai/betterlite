@@ -75,8 +75,8 @@ fn stored_column(store: &LiteLlmManagedVectorStore, column: Column) -> Json {
             .expect("the row holds metadata"),
     };
     let tree: Json = serde_json::from_value(value).expect("a JSON value");
-    match tree {
-        Json::Text(inner) => serde_json::from_str(&inner).expect("the column holds JSON text"),
-        other => other,
+    if let Json::Text(inner) = &tree {
+        return serde_json::from_str(inner).expect("the column holds JSON text");
     }
+    tree
 }
