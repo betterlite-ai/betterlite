@@ -23,7 +23,7 @@ deviations:
     link: ""
   - what: "A configured request timeout that is not a usable Duration (negative or unrepresentable) raises a typed error mapped to the ValueError class before the transform and the pre-call update; LiteLLM passes the float on and httpx raises inside the handler."
     why: "Durations are typed in betterlite, so the bad value is rejected where it is read; the HTTP result is the same 500-class failure."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L573-L574
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
   - what: "The handler is a stateless BASE_LLM_HTTP_HANDLER const behind the EvalsGetUpdateHandler trait that delegates to B9370's free functions; the pooled client comes from the service and there are no per-call client or shared_session kwargs."
     why: "Rust has no module-level mutable handler instance, and B9370 owns the transport. The service is handed the client the proxy builds, so a call still runs on the pooled connection LiteLLM's shared handler would use."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L541-L552
