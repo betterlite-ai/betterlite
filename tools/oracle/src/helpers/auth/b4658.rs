@@ -86,7 +86,7 @@ fn latin1(text: &str) -> Result<Vec<u8>, String> {
     text.chars()
         .map(|character| {
             u8::try_from(u32::from(character))
-                .map_err(|_error| format!("the header text {text:?} is not Latin-1"))
+                .map_err(|error| format!("the header text {text:?} is not Latin-1: {error}"))
         })
         .collect()
 }
