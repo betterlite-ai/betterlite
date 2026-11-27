@@ -65,7 +65,6 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
-use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
@@ -147,20 +146,6 @@ fn stage_input(
     }
 }
 
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
-
 fn model_pattern_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -209,10 +194,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
         StageInput::AuthEndUserIdentity(stage) => end_user_identity::prefetched(stage).await,
-        StageInput::AuthEndUsers(mut stage) => {
-            end_user_identity::prefetch_budget(&mut stage).await?;
-            Ok(StageInput::AuthEndUsers(stage))
-        }
+        StageInput::AuthEndUsers(stage) => end_user_identity::prefetch_budget(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)

@@ -755,12 +755,12 @@ async fn disabled_validation_without_id_clears_a_preseeded_budget_id() {
     request
         .extensions_mut()
         .insert(end_user_rule(&lookup, Some("unrelated-user")));
-    let Ok(mut stage) = auth_end_users::stage_input(&request, Some(&master_context(&master_key)))
+    let Ok(stage) = auth_end_users::stage_input(&request, Some(&master_context(&master_key)))
     else {
         panic!("the budget stage input is built");
     };
     assert_eq!(stage.rule.end_user_id.as_deref(), Some("unrelated-user"));
-    let Ok(()) = prefetch_budget(&mut stage).await else {
+    let Ok(StageInput::AuthEndUsers(stage)) = prefetch_budget(Box::new(stage)).await else {
         panic!("an absent ID skips the end-user budget lookup");
     };
     assert!(stage.rule.end_user_id.is_none());
