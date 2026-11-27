@@ -12,7 +12,7 @@ use betterlite_pyhost::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, PythonHost};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use self::answer::{failure_answer, read_probe, success_answer};
+use self::answer::{answer, failure_answer, read_probe};
 use self::fakes::{SavedModules, install};
 
 pub(crate) struct Op;
@@ -105,7 +105,7 @@ fn run_call(host: &PythonHost, call: &PipelineCall) -> Result<Value, Box<HelperE
     let outcome = host.attach(|py| decode_riva_audio_attached(py, &file_bytes));
     let probe = read_probe(host)?;
     Ok(match outcome {
-        Ok(audio) => success_answer(&audio, probe),
+        Ok(audio) => answer(probe, Value::Null, Value::Null, Some(&audio)),
         Err(error) => failure_answer(&error, probe),
     })
 }

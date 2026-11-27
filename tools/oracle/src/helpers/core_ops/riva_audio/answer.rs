@@ -30,10 +30,6 @@ pub(super) fn read_probe(host: &PythonHost) -> Result<Probe, Box<HelperError>> {
     .map_err(|error| helper_error("PythonError", error.to_string()))
 }
 
-pub(super) fn success_answer(audio: &ResampledAudio, probe: Probe) -> Value {
-    answer(probe, Value::Null, Value::Null, Some(audio))
-}
-
 pub(super) fn failure_answer(error: &RivaAudioError, probe: Probe) -> Value {
     let response = error.response();
     answer(
@@ -44,7 +40,12 @@ pub(super) fn failure_answer(error: &RivaAudioError, probe: Probe) -> Value {
     )
 }
 
-fn answer(probe: Probe, status: Value, message: Value, audio: Option<&ResampledAudio>) -> Value {
+pub(super) fn answer(
+    probe: Probe,
+    status: Value,
+    message: Value,
+    audio: Option<&ResampledAudio>,
+) -> Value {
     let Probe { events, staging } = probe;
     let state = staging_state(&staging);
     let (pcm_hex, sample_rate_hz, num_channels, duration_seconds) = match audio {
