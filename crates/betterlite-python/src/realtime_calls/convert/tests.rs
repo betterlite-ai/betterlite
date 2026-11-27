@@ -9,11 +9,11 @@ use betterlite_provider::api::realtime_http_transport::error::{
 };
 use indexmap::IndexMap;
 
-use super::{ConvertError, calls, client_secret, http_failure, parse};
+use super::{ConvertError, Payload, calls, client_secret, http_failure};
 
 // One payload the way main.py writes it: the arguments object and nothing else
 fn arguments(payload: &str) -> super::Arguments {
-    parse(payload).unwrap()
+    serde_json::from_str::<Payload>(payload).unwrap().arguments
 }
 
 #[test]

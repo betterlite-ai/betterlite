@@ -46,8 +46,6 @@ pub(crate) enum SessionError {
     HttpSettings(#[source] betterlite_config::api::realtime_http_calls::SettingsError),
     #[error("the outbound client could not be built: {0}")]
     Client(String),
-    #[error(transparent)]
-    Logging(#[from] betterlite_logging::logging_state::LoggingStateError),
     #[error("the redactor could not be built: {0}")]
     Redact(#[source] betterlite_redact::error::RedactionError),
 }

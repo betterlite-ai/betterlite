@@ -35,19 +35,19 @@ RESOLVED_MODEL: Final = "gpt-4o-realtime-preview"
 TRANSCRIPTION_MODEL: Final = "openai/gpt-realtime-whisper"
 NESTED_MODEL: Final = "gpt-realtime-whisper"
 INSTRUCTIONS: Final = "be brief"
-CLIENT_SECRET_PATH: Final = "/v1/realtime/client_secrets"
+CLIENTS_PATH: Final = "/v1/realtime/client_secrets"
 TRANSCRIPTION_PATH: Final = "/v1/realtime/transcription_sessions"
 CALLS_PATH: Final = "/v1/realtime/calls"
 EXPIRES_AT: Final = 1710000000
 SECONDS: Final = 60
 SESSION_ID: Final = "sess-1"
-CLIENT_SECRET_VALUE: Final = "ek-client-secret"
+EPHEMERAL_VALUE: Final = "ek-client-secret"
 TRANSCRIPTION_VALUE: Final = "ek-transcription-secret"
 AUTH_TEXT: Final = '{"error":{"message":"Incorrect API key provided: bad-key"}}'
 SDP_OFFER: Final = b"v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\n"
 SDP_ANSWER: Final = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
 CLIENT_SECRET_BODY: Final[dict[str, JsonValue]] = {
-    "value": CLIENT_SECRET_VALUE,
+    "value": EPHEMERAL_VALUE,
     "expires_at": EXPIRES_AT,
     "session": {"id": SESSION_ID, "type": "realtime", "model": RESOLVED_MODEL},
 }
@@ -149,7 +149,7 @@ class RealtimeHandler(BaseHTTPRequestHandler):
         if self.headers.get("Authorization") != f"Bearer {expected}":
             self.send_payload(UNAUTHORIZED, AUTH_TEXT, "application/json")
             return
-        if self.path == CLIENT_SECRET_PATH:
+        if self.path == CLIENTS_PATH:
             self.send_payload(OK, json.dumps(CLIENT_SECRET_BODY), "application/json")
         elif self.path == TRANSCRIPTION_PATH:
             self.send_payload(OK, json.dumps(TRANSCRIPTION_BODY), "application/json")
@@ -220,9 +220,12 @@ def test_signature_matches_litellm() -> None:
     assert inspect.iscoroutinefunction(arealtime_calls)
 
 
-def test_client_secret_calls() -> None:
+def test_http_calls() -> None:
+    transcription: dict[str, JsonValue] = {
+        "input_audio_transcription": {"model": NESTED_MODEL}
+    }
     with closing(RealtimeServer()) as server:
-        ours = asyncio.run(
+        ours_secret = asyncio.run(
             acreate_realtime_client_secret(
                 model=MODEL,
                 session={"type": "realtime", "instructions": INSTRUCTIONS},
@@ -231,8 +234,7 @@ def test_client_secret_calls() -> None:
                 api_key=GOOD_KEY,
             )
         )
-        ours_call = server.calls[-1]
-        theirs = asyncio.run(
+        theirs_secret = asyncio.run(
             REFERENCE_SECRET.acreate_realtime_client_secret(
                 model=MODEL,
                 session={"type": "realtime", "instructions": INSTRUCTIONS},
@@ -241,40 +243,48 @@ def test_client_secret_calls() -> None:
                 api_key=GOOD_KEY,
             )
         )
-        theirs_call = server.calls[-1]
-    assert ours_call["path"] == theirs_call["path"] == CLIENT_SECRET_PATH
-    assert JSON.validate_json(ours_call["body"]) == JSON.validate_json(theirs_call["body"])
-    assert JSON.validate_json(ours_call["body"]) == CLIENT_SECRET_REQUEST
-    assert DUMP.validate_json(ours.model_dump_json()) == DUMP.validate_python(theirs.json())
-    assert DUMP.validate_json(ours.model_dump_json()) == CLIENT_SECRET_BODY
-
-
-def test_transcription_calls() -> None:
-    session: dict[str, JsonValue] = {"input_audio_transcription": {"model": NESTED_MODEL}}
-    with closing(RealtimeServer()) as server:
-        ours = asyncio.run(
+        ours_secret_call = server.calls[-2]
+        theirs_secret_call = server.calls[-1]
+        ours_transcription = asyncio.run(
             acreate_realtime_transcription_session(
                 model=TRANSCRIPTION_MODEL,
-                transcription_session=session,
+                transcription_session=transcription,
                 api_base=server.url,
                 api_key=GOOD_KEY,
             )
         )
-        ours_call = server.calls[-1]
-        theirs = asyncio.run(
+        theirs_transcription = asyncio.run(
             REFERENCE_TRANSCRIPTION.acreate_realtime_transcription_session(
                 model=TRANSCRIPTION_MODEL,
-                transcription_session=session,
+                transcription_session=transcription,
                 api_base=server.url,
                 api_key=GOOD_KEY,
             )
         )
-        theirs_call = server.calls[-1]
-    assert ours_call["path"] == theirs_call["path"] == TRANSCRIPTION_PATH
-    assert JSON.validate_json(ours_call["body"]) == JSON.validate_json(theirs_call["body"])
-    assert JSON.validate_json(ours_call["body"]) == TRANSCRIPTION_REQUEST
-    assert DUMP.validate_json(ours.model_dump_json()) == DUMP.validate_python(theirs.json())
-    assert DUMP.validate_json(ours.model_dump_json()) == TRANSCRIPTION_BODY
+        ours_transcription_call = server.calls[-2]
+        theirs_transcription_call = server.calls[-1]
+    assert ours_secret_call["path"] == theirs_secret_call["path"] == CLIENTS_PATH
+    assert JSON.validate_json(ours_secret_call["body"]) == JSON.validate_json(
+        theirs_secret_call["body"]
+    )
+    assert JSON.validate_json(ours_secret_call["body"]) == CLIENT_SECRET_REQUEST
+    assert DUMP.validate_json(ours_secret.model_dump_json()) == DUMP.validate_python(
+        theirs_secret.json()
+    )
+    assert DUMP.validate_json(ours_secret.model_dump_json()) == CLIENT_SECRET_BODY
+    assert (
+        ours_transcription_call["path"]
+        == theirs_transcription_call["path"]
+        == TRANSCRIPTION_PATH
+    )
+    assert JSON.validate_json(ours_transcription_call["body"]) == JSON.validate_json(
+        theirs_transcription_call["body"]
+    )
+    assert JSON.validate_json(ours_transcription_call["body"]) == TRANSCRIPTION_REQUEST
+    assert DUMP.validate_json(
+        ours_transcription.model_dump_json()
+    ) == DUMP.validate_python(theirs_transcription.json())
+    assert DUMP.validate_json(ours_transcription.model_dump_json()) == TRANSCRIPTION_BODY
 
 
 def test_realtime_calls() -> None:

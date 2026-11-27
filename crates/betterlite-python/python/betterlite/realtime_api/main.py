@@ -11,6 +11,8 @@ from betterlite._endpoints.settings import read_settings
 from betterlite._native import NativeRealtimeError, NativeRealtimeSession
 from betterlite.types.realtime import (
     RealtimeClientSecretResponse,
+)
+from betterlite.types.realtime import (
     RealtimeTranscriptionSessionResponse as TranscriptionResponse,
 )
 
@@ -25,6 +27,7 @@ SETTINGS: Final[tuple[str, ...]] = (
     "vertex_location",
     "vertex_project",
 )
+HOISTED: Final[tuple[str, ...]] = ("client", "logger_fn", "shared_session")
 
 
 class Failure(TypedDict):
@@ -42,7 +45,7 @@ HTTP_FAILURE: Final[TypeAdapter[HttpFailure]] = TypeAdapter(HttpFailure)
 
 
 # LiteLLM's BaseLLMException and MaskedHTTPStatusError, the class of every realtime HTTP failure
-class RealtimeHttpFailure(Exception):
+class RealtimeEndpointError(Exception):
     status_code: int
     message: str
     headers: dict[str, str] | None
@@ -56,11 +59,11 @@ class RealtimeHttpFailure(Exception):
         super().__init__(message)
 
 
-class BaseLLMException(RealtimeHttpFailure):  # noqa: N818  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41
+class BaseLLMException(RealtimeEndpointError):
     ...
 
 
-class MaskedHTTPStatusError(RealtimeHttpFailure):
+class MaskedHTTPStatusError(RealtimeEndpointError):
     ...
 
 
@@ -89,6 +92,15 @@ def realtime_session() -> NativeRealtimeSession:
     return NativeRealtimeSession(json.dumps(settings))
 
 
+# Python objects cannot cross into Rust, so they are refused; the rest travel under "arguments"
+def realtime_payload(values: Mapping[str, CallValue]) -> CallPayload:
+    arguments: dict[str, CallValue] = dict(values)
+    hoisted: dict[str, CallValue] = {
+        name: arguments.pop(name, None) for name in HOISTED
+    }
+    return to_call_payload({"arguments": arguments, **hoisted})
+
+
 async def realtime_answer(method: AsyncNativeCall, payload: CallPayload) -> str:
     try:
         return await method(payload.text, payload.blobs)
@@ -96,53 +108,59 @@ async def realtime_answer(method: AsyncNativeCall, payload: CallPayload) -> str:
         raise_realtime_error(failure)
 
 
-async def acreate_realtime_client_secret(  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L128-L183
+async def acreate_realtime_client_secret(
     model: str | None = None,
     session: Mapping[str, CallValue] | None = None,
     expires_after: Mapping[str, CallValue] | None = None,
-    timeout: float | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L128-L183
     **kwargs: CallValue,
 ) -> RealtimeClientSecretResponse:
     values: dict[str, CallValue] = {"model": model, "timeout": timeout, **kwargs}
     if session is not None:
-        values["session"] = session
+        values["session"] = dict(session)
     if expires_after is not None:
-        values["expires_after"] = expires_after
-    answer = await realtime_answer(realtime_session().aclient_secret, to_call_payload(values))
+        values["expires_after"] = dict(expires_after)
+    answer = await realtime_answer(
+        realtime_session().aclient_secret, realtime_payload(values)
+    )
     return RealtimeClientSecretResponse.model_validate_json(answer)
 
 
 # ast-grep-ignore: no-long-names
-async def acreate_realtime_transcription_session(  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L189-L264
+async def acreate_realtime_transcription_session(
     model: str | None = None,
     transcription_session: Mapping[str, CallValue] | None = None,
-    timeout: float | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L189-L264
     **kwargs: CallValue,
 ) -> TranscriptionResponse:
     values: dict[str, CallValue] = {
         "model": model,
-        "transcription_session": transcription_session,
+        "transcription_session": (
+            dict(transcription_session) if transcription_session is not None else None
+        ),
         "timeout": timeout,
         **kwargs,
     }
     return TranscriptionResponse.model_validate_json(
-        await realtime_answer(realtime_session().atranscription_session, to_call_payload(values))
+        await realtime_answer(
+            realtime_session().atranscription_session, realtime_payload(values)
+        )
     )
 
 
-async def arealtime_calls(  # noqa: PLR0913, ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L270-L328
+async def arealtime_calls(
     openai_ephemeral_key: str,
     sdp_body: bytes,
     model: str | None = None,
     session: Mapping[str, CallValue] | None = None,
-    timeout: float | None = None,
+    timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L270-L328
     **kwargs: CallValue,
 ) -> str:
-    payload = to_call_payload(
+    payload = realtime_payload(
         {
             "openai_ephemeral_key": openai_ephemeral_key,
             "model": model,
-            "session": session,
+            "session": None if session is None else dict(session),
             "timeout": timeout,
             **kwargs,
         }

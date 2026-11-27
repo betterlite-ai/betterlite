@@ -5,6 +5,7 @@ use betterlite_core::api::realtime_http_calls::error::RealtimeHttpCallsError;
 use betterlite_models::decisions::Json;
 use betterlite_provider::api::realtime_http_transport::error::RealtimeHttpError;
 use indexmap::IndexMap;
+use pyo3::PyErr;
 use secrecy::SecretString;
 use serde::Deserialize;
 use thiserror::Error;
@@ -21,11 +22,17 @@ pub(crate) enum ConvertError {
     Missing(&'static str),
 }
 
+impl From<ConvertError> for PyErr {
+    fn from(error: ConvertError) -> Self {
+        CallFailure::class("ValueError", error.to_string()).exception()
+    }
+}
+
 // main.py's payload: one "arguments" object, and unknown keys stay in extra the way LiteLLM's kwargs allow them
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct Payload {
-    arguments: Arguments,
+pub(crate) struct Payload {
+    pub(crate) arguments: Arguments,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -72,11 +79,6 @@ pub(crate) struct Common {
     pub(crate) api_version: Option<String>,
     pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     pub(crate) kwargs: IndexMap<String, Json>,
-}
-
-pub(crate) fn parse(payload: &str) -> Result<Arguments, ConvertError> {
-    let payload: Payload = serde_json::from_str(payload)?;
-    Ok(payload.arguments)
 }
 
 fn common(arguments: Arguments) -> Common {

@@ -17,13 +17,10 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateError};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::Utc;
 use indexmap::IndexMap;
@@ -81,20 +78,8 @@ impl RealtimeSession {
         })
     }
 
-    pub(crate) fn resolution(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.known_model_names,
-            custom_providers: &self.custom_providers,
-            environment: &self.environment,
-            registry: self.registry.clone(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
-    }
-
     // B247's logging state for one call; the Python package registers no callbacks to hand records to
-    pub(crate) fn logging(&self, call_type: &str) -> Result<LoggingState, SessionError> {
+    pub(crate) fn logging(&self, call_type: &str) -> Result<LoggingState, LoggingStateError> {
         let init = LoggingInit {
             model: String::new(),
             call_type: call_type.to_owned(),
@@ -125,7 +110,6 @@ impl RealtimeSession {
             || Uuid::new_v4().to_string(),
             Duration::default,
         )
-        .map_err(SessionError::Logging)
     }
 
     pub(crate) fn pre_post(&self) -> PrePostEnv<'_> {
