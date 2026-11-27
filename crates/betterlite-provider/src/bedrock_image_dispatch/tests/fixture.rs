@@ -21,7 +21,7 @@ use crate::bedrock_image_dispatch::call::{BedrockImageOperation, Transport};
 use crate::bedrock_image_dispatch::error::BedrockImageError;
 use crate::bedrock_image_dispatch::execute::dispatch;
 use crate::bedrock_image_dispatch::test_support::{
-    DiscardingSink, Factory, Reply, Seen, Source, logging_state, prepost_env,
+    DiscardingSink, Factory, FixtureClient, Reply, Seen, Source, logging_state, prepost_env,
 };
 use crate::bedrock_image_dispatch::{BedrockImageRequest, BedrockImageResult};
 use crate::operation::{OperationRequest, OperationResult};
