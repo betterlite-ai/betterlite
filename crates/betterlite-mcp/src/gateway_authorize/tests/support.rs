@@ -27,12 +27,15 @@ use crate::server_record::MCPServer;
 pub(crate) const BASE: &str = "https://proxy.test:8443";
 pub(crate) const CALLBACK: &str = "http://127.0.0.1:8080/callback";
 
-pub(crate) fn cipher() -> DbCipher {
+pub(crate) const SALT: &str = "b4675-oracle-salt";
+
+pub(crate) fn cipher(salt: &str) -> DbCipher {
+    let settings = CipherSettings {
+        signing_key: Some(SecretString::from(salt)),
+        algorithm: Algorithm::XSalsa20Poly1305,
+    };
     StoredCipher {
-        settings: CipherSettings {
-            signing_key: Some(SecretString::from("b4675-oracle-salt")),
-            algorithm: Algorithm::XSalsa20Poly1305,
-        },
+        settings,
         nonces: OsNonces,
         diagnostics: TracingDiagnostics,
     }
@@ -43,7 +46,7 @@ pub(crate) fn client_id(redirect_uris: &[&str]) -> String {
         redirect_uris: redirect_uris.iter().map(|uri| (*uri).to_owned()).collect(),
         iat: 0,
     };
-    seal(GATEWAY_DCR_CLIENT_ID_PREFIX, &client, &cipher()).unwrap()
+    seal(GATEWAY_DCR_CLIENT_ID_PREFIX, &client, &cipher(SALT)).unwrap()
 }
 
 pub(crate) fn flow() -> ConnectFlow {
@@ -73,12 +76,15 @@ pub(crate) fn view(path: &str, query: Option<&str>, cookies: &[(&str, &str)]) ->
 }
 
 pub(crate) fn sealed_view(flow: &ConnectFlow, handle: &str) -> RequestView {
-    let sealed = seal("", flow, &cipher()).unwrap();
+    let sealed = seal("", flow, &cipher(SALT)).unwrap();
     let name = flow_cookie_name(handle);
     view(
         "/authorize/complete",
         None,
-        &[("mcp_connect_flow_other", "junk"), (name.as_str(), sealed.as_str())],
+        &[
+            ("mcp_connect_flow_other", "junk"),
+            (name.as_str(), sealed.as_str()),
+        ],
     )
 }
 

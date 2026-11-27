@@ -35,8 +35,7 @@ fn every_other_resource_shape_stays_unscoped() {
         Some(format!("{BASE}/srv-a")),
     ];
     for resource in shapes {
-        let scoped =
-            resolve_scoped_resource_server(&registry, BASE, resource.as_deref());
+        let scoped = resolve_scoped_resource_server(&registry, BASE, resource.as_deref());
         assert!(scoped.is_none(), "{resource:?}");
     }
 }

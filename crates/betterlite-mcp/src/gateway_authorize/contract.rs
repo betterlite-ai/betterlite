@@ -17,9 +17,9 @@ pub struct NativeClientAuthContract {
     pub resource: String,
     pub response_types_supported: [&'static str; 1],
     pub grant_types_supported: Vec<&'static str>,
-    pub code_challenge_methods_supported: [&'static str; 1],
-    pub token_endpoint_auth_methods_supported: [&'static str; 1],
-    pub revocation_endpoint_auth_methods_supported: [&'static str; 1],
+    pub code_challenge_methods_supported: [&'static str; 1], // ast-grep-ignore: no-long-names
+    pub token_endpoint_auth_methods_supported: [&'static str; 1], // ast-grep-ignore: no-long-names
+    pub revocation_endpoint_auth_methods_supported: [&'static str; 1], // ast-grep-ignore: no-long-names
 }
 
 #[must_use]

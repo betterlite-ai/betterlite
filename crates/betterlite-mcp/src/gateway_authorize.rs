@@ -3,7 +3,6 @@ pub mod connect;
 pub mod contract;
 pub mod reply;
 pub mod scope;
-#[cfg(test)]
 pub(crate) mod tests;
 pub mod url_parts;
 

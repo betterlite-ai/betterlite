@@ -86,10 +86,14 @@ impl GatewayReply {
             delete_cookie: None,
         }
     }
+}
 
-    #[must_use]
-    pub fn error(error: OauthError) -> Self {
-        Self::Error(error)
+impl From<Result<GatewayReply, OauthError>> for GatewayReply {
+    fn from(outcome: Result<GatewayReply, OauthError>) -> Self {
+        match outcome {
+            Ok(reply) => reply,
+            Err(error) => Self::Error(error),
+        }
     }
 }
 

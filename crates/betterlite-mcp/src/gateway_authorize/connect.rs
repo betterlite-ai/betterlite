@@ -149,10 +149,7 @@ where
     V: LookupVendorCredential + ?Sized,
     R: LookupServerReachability + ?Sized,
 {
-    match described_reply(call, ports, cipher).await {
-        Ok(reply) => reply,
-        Err(error) => GatewayReply::Error(error),
-    }
+    GatewayReply::from(described_reply(call, ports, cipher).await)
 }
 
 pub async fn complete_connect_flow<G, V, R>(
@@ -167,10 +164,7 @@ where
     V: LookupVendorCredential + ?Sized,
     R: LookupServerReachability + ?Sized,
 {
-    match completed(call, ports, cipher, guard, tokens).await {
-        Ok(reply) => reply,
-        Err(error) => GatewayReply::Error(error),
-    }
+    GatewayReply::from(completed(call, ports, cipher, guard, tokens).await)
 }
 
 fn flow_description(

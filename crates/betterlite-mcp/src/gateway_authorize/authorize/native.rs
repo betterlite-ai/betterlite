@@ -38,10 +38,7 @@ pub async fn native_client_authorize<T>(
 where
     T: LookupConsentTeams + ?Sized,
 {
-    match native_authorize(call, teams, page, cipher, tokens).await {
-        Ok(reply) => reply,
-        Err(error) => GatewayReply::Error(error),
-    }
+    GatewayReply::from(native_authorize(call, teams, page, cipher, tokens).await)
 }
 
 async fn native_authorize<T>(
