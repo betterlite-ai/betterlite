@@ -1,0 +1,112 @@
+id: B10135
+title: MCP management server access and management mode
+description: >-
+  Two questions recur across the MCP management routes. May this caller manage their own per-user state on server X? That is LiteLLM's _authorize_and_fetch_mcp_server, asked by B4723's credential routes and B4724's env var routes. Which servers does the dashboard show this caller? That is _resolve_accessible_mcp_servers, asked by B4724's status list and B4720's server list. Both used to sit in B4717 next to the credential redaction, so B4724 waited for the sanitizers and the inheritance code it never calls. This task builds the two answers, the restricted-key predicate they share with B4720, and the general_settings key that switches the dashboard between restricted and view_all.
+
+
+  Layout. The server code goes in betterlite-server, module mcp::management_server_access (crates/betterlite-server/src/mcp/management_server_access.rs, tests in management_server_access/tests.rs). The config key goes in betterlite-config, section mcp_management_mode (crates/betterlite-config/src/sections/mcp_management_mode.rs, tests in mcp_management_mode/tests.rs). Both files are empty stubs on main, declared in mcp.rs and sections.rs, and the section is already in the sections! list. mcp::management_access is a different module (B4711's database handle check); leave it alone. No Cargo.toml changes: betterlite-server already depends on betterlite-mcp, betterlite-auth, betterlite-db and betterlite-config.
+
+
+  Config section. ManagementMode is a public enum in the section with the variants Restricted (the default) and ViewAll. general_settings.user_mcp_management_mode is read as an optional string: exactly "view_all" gives ViewAll, and an absent key, null, "restricted" or any other string gives Restricted (LiteLLM's _get_user_mcp_management_mode). Expose it as config.sections.mcp_management_mode.mode. Copy the shape of sections/mcp_required_fields.rs: a Raw holding general_settings, a Settings and the Section impl. The server module takes the mode as a parameter and never reads config; B4720's and B4724's route states carry it.
+
+
+  Server module. Types come from other tasks: UserAPIKeyAuth and user_api_key_has_admin_view from B2314 (betterlite_auth::resolved_key::auth), McpServerTable (LiteLLM_MCPServerTable) from B858, ServerRegistry from B10020, and from B4731 (betterlite_mcp::registry) resolve_server with its DbLookup port and ResolveError, authorize_server with ServerAccessCheck, AuthorizeError and the not-found/forbidden choice, and all_server_tables. Read B4731's merged code for the exact paths and argument order. Every item below is pub; LiteLLM names in backticks.
+
+  1. `is_restricted_virtual_key_request(auth: &UserAPIKeyAuth) -> bool` (`_is_restricted_virtual_key_request`): true only when the key's allowed_routes is a non-empty list. UserAPIKeyAuth keeps its fields pub(crate), so read them through B883's RouteCaller::of_key(auth).allowed_routes in betterlite_auth::virtual_key_routes::caller: AllowedRoutes::Listed with at least one entry is true, and Unset, NotAList and an empty Listed are false. Do not add a reader to betterlite-auth. B4720 calls this to pick the virtual-key sanitizer.
+
+  2. `authorize_and_fetch_mcp_server(registry: &ServerRegistry, db: &impl DbLookup, access: &impl ServerAccessCheck, auth: &UserAPIKeyAuth, server_id: &str) -> Result<McpServerTable, ManagementAccessError<A::Error>>` (`_authorize_and_fetch_mcp_server`), A being the access port's type. First resolve_server(server_id) with no temp lookup, db as the DbLookup, no client ip on either side and match_name false; a lookup error is ManagementAccessError::Lookup. Then authorize_server(resolved, auth, access) with is_admin_view = user_api_key_has_admin_view(auth), not_found_detail {"error": "MCP Server <server_id> not found"}, forbidden_detail {"error": "User does not have permission to access mcp server with id <server_id>. You can only manage mcp servers that you have access to."}, non-admin-missing set to forbidden and allow_catalog_view false. AuthorizeError::NotFound and Forbidden become ManagementAccessError::NotFound and Forbidden with the same detail; AuthorizeError::Access becomes ManagementAccessError::Access with the port error as its source, never a denial. Return the table of the authorized resolution. The effect: PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY reach any server and get 404 for an unknown id; everyone else gets 403 for an unknown id or a server outside their allowed set, never 404. A server declared only in config.yaml has no database row and resolves through the registry.
+
+  3. AccessibleServerSources, a port this module declares for the two calls _resolve_accessible_mcp_servers makes beyond the registry, shaped like B4731's ServerAccessCheck: `type Error: std::error::Error + Send + Sync + 'static;`, `fn effective_auth_contexts(&self, auth: &UserAPIKeyAuth) -> impl Future<Output = Result<Vec<UserAPIKeyAuth>, Self::Error>> + Send;` for B10127's build_effective_auth_contexts, and `fn allowed_server_tables(&self, auth: &UserAPIKeyAuth) -> impl Future<Output = Result<Vec<McpServerTable>, Self::Error>> + Send;` for B6591's allowed_tables (LiteLLM get_all_allowed_mcp_servers). This task names nothing from B10127 or B6591; the tests use a fake, and the production adapter goes with the MCP identity wiring, which already holds B4672's UiSession and B6591's ServerUnion.
+
+  4. `resolve_accessible_mcp_servers(registry: &ServerRegistry, sources: &impl AccessibleServerSources, auth: &UserAPIKeyAuth, mode: ManagementMode) -> Result<Vec<McpServerTable>, S::Error>` (`_resolve_accessible_mcp_servers`), S being the sources' type. When mode is ViewAll and the key is not restricted (function 1), answer B4731's all_server_tables, every registry server in registry order, without calling the sources. Otherwise walk effective_auth_contexts(auth) in order, call allowed_server_tables for each context in order, and keep the first table seen for each server_id; answer them in first-seen order. An error from either call is returned as it is. The rows come back unredacted: B4724 reads their env_vars and reports only is_set, and a caller that shows rows applies B10134's or B4717's redaction itself.
+
+  ManagementAccessError<E> is this module's thiserror enum: NotFound and Forbidden carry B4731's detail map, which the routes answer as 404 and 403 with {"detail": detail}; Lookup keeps B4731's ResolveError and Access keeps E, each as #[source], and the routes pass both on as server errors. Do not call it VisibilityError: spend::visibility already has one.
+
+
+  Tests. management_server_access::tests uses synthetic records (server ids like test-srv-1), a fake DbLookup, a fake ServerAccessCheck and a fake AccessibleServerSources that record their calls and can fail on demand. Names starting with restricted_key_ cover function 1 (no list, an empty list, a non-empty list). Names starting with authorize_ cover function 2: an admin reaching a database server and a config-only server, an admin and a view-only admin getting the 404 text for an unknown id, a non-admin allowed through the port, a non-admin denied with the 403 text, a non-admin with an unknown id getting 403 and not 404, the access port never called for an admin view, a lookup error as Lookup and a port error as Access. Names starting with accessible_ cover function 4: view_all with an unrestricted key returning every registry table in order without calling the sources, view_all with a restricted key and restricted mode both taking the context walk, first-seen de-duplication across contexts, and an error from each port method coming back unchanged. sections::mcp_management_mode::tests loads YAML through the ConfigLoader the way sections/mcp_required_fields/tests.rs does: absent key, null, "restricted", "view_all", "VIEW_ALL" and an empty string. Add config_yaml corpus seeds named mcp-management-mode-* for B002's existing decoder, including a non-string value.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/management_server_access.rs
+    - crates/betterlite-server/src/mcp/management_server_access/**
+    - crates/betterlite-config/src/sections/mcp_management_mode.rs
+    - crates/betterlite-config/src/sections/mcp_management_mode/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/mcp-management-mode-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L741-L750
+    why: Owned. _is_restricted_virtual_key_request, a non-empty allowed_routes list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1112-L1120
+    why: Owned. _get_user_mcp_management_mode, exactly "view_all" or restricted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1160-L1179
+    why: Owned. _resolve_accessible_mcp_servers, the view_all shortcut and the first-seen union over auth contexts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2728-L2761
+    why: Owned. _authorize_and_fetch_mcp_server, the resolution, the admin view flag and the two detail texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L36-L122
+    why: resolve_mcp_server and authorize_mcp_server, built by B4731 as resolve_server and authorize_server; read for the 404 and 403 order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L136-L152
+    why: build_effective_auth_contexts, B10127's, behind the port's first method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7296-L7397
+    why: get_all_allowed_mcp_servers (B6591's allowed_tables, behind the port's second method) and get_all_mcp_servers_unfiltered (B4731's all_server_tables).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3006-L3009
+    why: user_mcp_management_mode in ConfigGeneralSettings, declared as "restricted", "view_all" or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2913-L2940
+    why: Call site in B4724. The all-servers env var status route.
+
+dod:
+  - text: is_restricted_virtual_key_request is true only for a key whose allowed_routes is a non-empty list.
+    proof: [restricted-key-tests]
+  - text: authorize_and_fetch_mcp_server resolves the server from the database and then the registry, gives any server to PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY with the 404 text for an unknown id, and gives everyone else the 403 text for an unknown or denied server, never 404.
+    proof: [authorize-tests]
+  - text: A lookup error and an access port error come back as Lookup and Access, not as a denial, and the access port is not asked for an admin view.
+    proof: [authorize-tests]
+  - text: resolve_accessible_mcp_servers returns every registry table in order for view_all and an unrestricted key without calling the sources, and otherwise the first-seen union of allowed tables over the effective auth contexts, passing port errors through.
+    proof: [accessible-tests]
+  - text: general_settings.user_mcp_management_mode loads as ViewAll only for exactly "view_all" and as Restricted for an absent key, null and every other string.
+    proof: [config-tests]
+  - text: The existing config YAML decoder replays the new mcp-management-mode seeds, including a non-string value.
+    proof: [config-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: restricted-key-tests
+      why: The restricted virtual key predicate is missing or treats an empty or absent list as restricted.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::management_server_access::tests::restricted_key_/)'
+    - id: authorize-tests
+      why: Server authorization is missing, leaks a 404 to a non-admin, uses the wrong text or turns a fault into a denial.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::management_server_access::tests::authorize_/)'
+    - id: accessible-tests
+      why: The accessible server set ignores the mode, loses the first-seen order or calls the sources for view_all.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::management_server_access::tests::accessible_/)'
+    - id: config-tests
+      why: user_mcp_management_mode does not load, or a value other than exactly view_all turns view_all on.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_management_mode::/)'
+    - id: config-corpus
+      why: The management mode key never reaches the YAML decoder's corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/mcp-management-mode-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "_redact_mcp_credentials and _preserved_admin_config_credentials: B10134. _redact_mcp_credentials_list, _user_is_full_admin, _resolve_credential_target_user_id, the sanitizers and the credential inheritance: B4717. This module calls none of them."
+  - "resolve_mcp_server, authorize_mcp_server, get_mcp_server_by_id and get_all_mcp_servers_unfiltered (resolve_server, authorize_server, server_by_id, all_server_tables): B4731. can_access_mcp_server: B4672. build_effective_auth_contexts: B10127. get_allowed_mcp_servers and get_all_allowed_mcp_servers (allowed_servers, allowed_tables): B6591. The production AccessibleServerSources and ServerAccessCheck over them: the MCP identity wiring."
+  - "_user_has_admin_view (user_api_key_has_admin_view): B2314. The route allowed_routes reader (RouteCaller): B883. get_mcp_server, the production DbLookup: B4711."
+  - "The routes that call this module and their HTTP bodies: B4720, B4723 and B4724. The other functions of mcp_management_endpoints.py: the tasks B139 lists."
+
+pitfalls:
+  - "is_admin_view is user_api_key_has_admin_view, so PROXY_ADMIN_VIEW_ONLY gets any server and the 404 here, while B4717's full-admin predicate (PROXY_ADMIN only) is a different question; do not swap them."
+  - "The non-admin answer for an unknown server_id is the 403 forbidden text, so ids cannot be enumerated; only an admin view sees the 404."
+  - "The view_all shortcut is skipped for a restricted virtual key even in view_all mode, so a route-restricted key always takes the context walk."
+  - "De-duplicate on server_id keeping the first table seen; a later context's copy of the same server must not replace it, and the answer keeps first-seen order, not registry order."
+  - "user_mcp_management_mode is compared as the exact string view_all; \"VIEW_ALL\", \"view-all\" and an empty string are all Restricted, and a missing key must not fail the config load."
+  - "Rows are returned with their credentials and env_vars; never serialize a result of resolve_accessible_mcp_servers or authorize_and_fetch_mcp_server into a response without a redaction step."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

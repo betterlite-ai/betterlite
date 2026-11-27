@@ -1,0 +1,13 @@
+id: B10146
+milestone: R2 bug fixes
+title: Batch request and timeout conversions live beside their types in betterlite-openai
+status: todo
+depends_on: [B1036, B1037, B7873]
+file: tasks/B10146-batch-request-conversions.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

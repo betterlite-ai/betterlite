@@ -111,7 +111,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "litellm/responses/mcp/chat_completions_handler.py: B956 owns _add_mcp_metadata_to_response L24-L82 and acompletion_with_mcp L85-L327, B957 owns L328-L651."
-  - "litellm/responses/mcp/litellm_proxy_mcp_handler.py and request_context.py: B948, B949, B950 and B951. litellm/responses/mcp/mcp_streaming_iterator.py: B952, B953 and B954. responses/main.py's MCP dispatch: B955."
+  - "litellm/responses/mcp/litellm_proxy_mcp_handler.py and request_context.py: B948, B949, B950, B951, B10121, B10122, B10123 and B10124. litellm/responses/mcp/mcp_streaming_iterator.py: B952, B953 and B954. responses/main.py's MCP dispatch: B955."
   - "litellm/experimental_mcp_client/client.py and tools.py: B4740 to B4746 and B9651 to B9654; Readme.md has no code."
   - "The MCP post-call content hook on loggers (litellm_logging.py L1633-L1709): B9650, called from B950's execution."
   - "Mounting /chat/completions, /v1/responses and /mcp-rest/tools/call: B014, B080 and B8626. The Python SDK's MCP runner: B5849."

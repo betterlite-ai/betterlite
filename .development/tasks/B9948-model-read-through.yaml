@@ -16,7 +16,7 @@ description: >-
 
   `DeploymentModelSync` implements B8231's `ModelSync` (betterlite-server, registry_read_through::resyncs) with
   LiteLLM's _resync_model_deployments (registry_read_through.py L107-L131). It holds the database store and its
-  Availability, B8611's `Arc<RouterHandle>`, B8381's `Arc<DeploymentSync>` and B836's `ModelReconcileLock`, the same
+  Availability, B8611's `Arc<RouterHandle>`, B8381's `Arc<DeploymentSync>` and B10132's `ModelReconcileLock`, the same
   handle DeploymentSync holds. `find_rows(ModelKey::Name(key))` returns the LiteLLM_ProxyModelTable rows with
   model_name equal to key, and `ModelKey::Id(key)` the rows with model_id equal to key. They are raw rows with no
   decryption: LiteLLM's ModelRepository(prisma_client).table.find_many reads them as stored, and _add_deployment
@@ -106,7 +106,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
 - "RegistryReadThrough, its miss cache and resync budget, ModelResync and the ModelSync and DbObjects ports: B8231."
-- "ProxyDbObjects: B8612. DeploymentSync's add_deployment, sync_credentials and add_rows: B8381. RouterHandle: B8611. ModelReconcileLock: B836."
+- "ProxyDbObjects: B8612. DeploymentSync's add_deployment, sync_credentials and add_rows: B8381. RouterHandle: B8611. ModelReconcileLock: B10132."
 - "Building the instance at startup and carrying it in Started: B8613. Putting it in Shared and the routes' model_read_through slot: B8610."
 - "The retry that calls attempt: B9949. The routes that call the retry: B9947 for chat, completions and embeddings, B9800 for /v1/messages."
 - "The guardrails and agents read-throughs: B3683 and B8612."
