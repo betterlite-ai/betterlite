@@ -70,7 +70,7 @@ async fn authorize_page(request: Request) -> Response {
     // B8624 wires the MCP registry into the server state; until then every page shows the fallback.
     match authorize_get(&query, None) {
         Ok(html) => Html(html).into_response(),
-        Err(error) => error_response(&error),
+        Err(error) => (error.status(), Json(error.body())).into_response(),
     }
 }
 
@@ -87,7 +87,8 @@ async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -
     {
         Ok(user_id) => user_id,
         Err(SessionAuthError::LoginRequired) => {
-            return error_response(&ConsentError::LoginRequired);
+            let error = ConsentError::LoginRequired;
+            return (error.status(), Json(error.body())).into_response();
         }
         Err(error @ SessionAuthError::Construct(_)) => {
             tracing::error!("mcp byok consent: the session principal did not construct: {error}");
@@ -119,12 +120,8 @@ async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -
         Ok(Accepted { location, .. }) => {
             (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
         }
-        Err(error) => error_response(&error),
+        Err(error) => (error.status(), Json(error.body())).into_response(),
     }
-}
-
-fn error_response(error: &ConsentError) -> Response {
-    (error.status(), Json(error.body())).into_response()
 }
 
 fn query_from(query: Option<&str>) -> GetQuery {

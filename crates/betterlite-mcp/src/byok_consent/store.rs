@@ -45,8 +45,10 @@ impl AuthCodeStore {
 
     #[must_use]
     pub fn count(&self) -> usize {
-        let codes = self.codes.lock().unwrap_or_else(PoisonError::into_inner);
-        codes.len()
+        match self.codes.lock() {
+            Ok(codes) => codes.len(),
+            Err(poisoned) => poisoned.into_inner().len(),
+        }
     }
 }
 
