@@ -527,8 +527,7 @@ fn skip_v2_logger_with_v2_off_clears_the_slot_and_leaves_the_span_open() {
     assert_eq!(data.status, Status::Unset);
 }
 
-#[test]
-fn facts_keep_the_class_message_code_and_headers() {
+fn facts_with_headers() -> ExceptionFacts {
     let error = ProxyException::new(ProxyExceptionInit {
         message: "test-failure".to_owned(),
         error_type: "ProxyException".to_owned(),
@@ -541,8 +540,12 @@ fn facts_keep_the_class_message_code_and_headers() {
         openai_code: None,
         provider_specific_fields: BTreeMap::new(),
     });
+    exception_facts("ProxyException", &error)
+}
 
-    let facts = exception_facts("ProxyException", &error);
+#[test]
+fn facts_keep_the_class_message_code_and_headers() {
+    let facts = facts_with_headers();
 
     assert_eq!(facts.class_name, "ProxyException");
     assert_eq!(facts.message.as_deref(), Some("test-failure"));
@@ -554,12 +557,24 @@ fn facts_keep_the_class_message_code_and_headers() {
         "the headers keep the ProxyException's key order"
     );
     assert_eq!(headers.get("x-request-id").map(String::as_str), Some("abc"));
+}
+
+#[test]
+fn facts_leave_the_exception_and_status_fields_unset() {
+    let facts = facts_with_headers();
+
     assert!(facts.class.is_none());
     assert!(facts.status_code.is_none());
     assert!(facts.response_status_code.is_none());
     assert!(facts.llm_provider.is_none());
     assert!(facts.category.is_none());
     assert!(facts.rate_limit_type.is_none());
+}
+
+#[test]
+fn facts_leave_the_budget_and_header_fields_unset() {
+    let facts = facts_with_headers();
+
     assert!(facts.budget_entity_type.is_none());
     assert!(facts.budget_entity_id.is_none());
     assert!(facts.budget_limit.is_none());
