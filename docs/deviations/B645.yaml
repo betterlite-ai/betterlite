@@ -15,8 +15,8 @@ deviations:
   - what: A LastModified timestamp without an offset is read as UTC, where LiteLLM's datetime.fromisoformat gives a naive datetime that timestamp() resolves in the host's local timezone.
     why: betterlite has no process timezone to resolve against, and S3 always sends a Z suffix; pinning UTC keeps one machine-independent answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L335-L339
-  - what: Only calendar-date ISO-8601 timestamps are parsed, with optional basic or extended time, a dot or comma fraction, and a numeric offset; week dates, ordinal dates and a lowercase z fail to parse, where Python's fromisoformat accepts them.
-    why: S3 writes only the calendar form in LastModified, and the narrow parser avoids a date grammar no listing produces.
+  - what: LastModified is read as the extended calendar form only, `YYYY-MM-DDTHH:MM:SS` with a `T`, `t` or space before the time, an optional dot or comma fraction and a `Z` or `±HH:MM` offset; basic format, a date without a time, an hour-only time, `±HHMM` and `±HH` offsets, week and ordinal dates and a lowercase `z` fail as invalid timestamps, where Python's fromisoformat reads a wider grammar.
+    why: S3 writes the extended form in LastModified, and the narrow parser avoids a date grammar no listing produces.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L335-L339
   - what: A Size beyond the signed 64-bit range fails as an invalid size, where Python's int keeps an arbitrarily large value in the file object.
     why: The file object stores bytes as i64, and no S3 object reaches that size.
