@@ -36,7 +36,7 @@ pub fn merge_extra_body(
 }
 
 // a null leaves an optional field out, and docs/compatibility.md reads any other value as its declared type
-fn decode<T>(name: &str, value: &Json) -> Result<Option<T>, EvalsGetUpdateError>
+pub(super) fn decode<T>(name: &str, value: &Json) -> Result<Option<T>, EvalsGetUpdateError>
 where
     T: DeserializeOwned,
 {

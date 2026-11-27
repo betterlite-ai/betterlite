@@ -398,7 +398,7 @@ async fn update_eval_uses_the_kwargs_api_base() {
 }
 
 #[tokio::test]
-async fn update_eval_empty_api_base_falls_back_to_the_default() {
+async fn update_eval_uses_an_explicit_empty_api_base_as_given() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
     calls.kwargs = map(&[("api_base", json("\"\""))]);
@@ -417,5 +417,5 @@ async fn update_eval_empty_api_base_falls_back_to_the_default() {
         .await
         .expect("the update succeeds");
     let updates = harness.handler.updates();
-    assert_eq!(updates[0].url, "https://api.openai.com/v1/evals/eval_1");
+    assert_eq!(updates[0].url, "/v1/evals/eval_1");
 }

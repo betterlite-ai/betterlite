@@ -195,3 +195,40 @@ async fn update_eval_reports_a_wrong_typed_metadata_in_extra_body() {
     );
     assert!(harness.handler.updates().is_empty());
 }
+
+#[tokio::test]
+async fn get_eval_reports_a_wrong_typed_api_base() {
+    let harness = Harness::new();
+    let mut calls = Calls::empty();
+    calls.kwargs = map(&[("api_base", json("42"))]);
+    let call = get_call(&calls, "eval_1");
+    let mut state = harness.logging_state("aget_eval");
+    let env = harness.env.pre_post();
+    let retrieval = EvalRetrieval {
+        call: &call,
+        logging: &mut state,
+        env: &env,
+    };
+    let failure = harness
+        .service()
+        .get_eval(retrieval)
+        .await
+        .expect_err("a wrong-typed api_base fails the get");
+    assert!(matches!(
+        &failure.error,
+        EvalsGetUpdateError::FieldType { .. }
+    ));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!(
+            "a wrong-typed value maps to a bad request, not {:?}",
+            failure.class
+        );
+    };
+    assert_eq!(details.body_param.as_deref(), Some("api_base"));
+    assert_eq!(
+        details.message,
+        "the api_base field does not have the declared type"
+    );
+    assert!(harness.handler.gets().is_empty());
+    assert!(harness.recorded().validated.is_empty());
+}

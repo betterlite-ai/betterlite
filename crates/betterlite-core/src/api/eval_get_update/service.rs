@@ -23,7 +23,7 @@ use crate::api::passthrough_call::logging::json_object;
 use super::call::{EvalRetrieval, EvalUpdate, GetEvalCall, Operation, UpdateEvalCall};
 use super::error::{EvalsGetUpdateError, EvalsGetUpdateFailureError, failure};
 use super::handler::{EvalsGetUpdateHandler, GetEvalHttpCall, UpdateEvalHttpCall};
-use super::request::{merge_extra_body, update_request};
+use super::request::{decode, merge_extra_body, update_request};
 
 // the collaborators the operations call: B9370's handler, the provider configs, the pooled client and B247's logging
 pub struct EvalsGetUpdateService<'deps, Handler, Configs> {
@@ -115,14 +115,15 @@ where
             WireCall::Get(get) => (&get.params, Operation::Get),
             WireCall::Update { call: update, .. } => (&update.params, Operation::Update),
         };
+        // GenericLiteLLMParams(**kwargs) runs before the provider lookup in LiteLLM, so a wrong-typed api_base fails first
+        let base = api_base(params.kwargs)?;
         let prepared = self.prepare(params, operation)?;
         let context = EvalsRequestContext {
             litellm_params: &prepared.litellm_params,
             headers: &prepared.headers,
         };
-        let base = api_base(&prepared.litellm_params);
         let (url, headers, optional_params, handler_call) =
-            transformed(&prepared, call, base, &context)?;
+            transformed(&prepared, call, &base, &context)?;
         self.send(
             &prepared,
             params,
@@ -269,13 +270,12 @@ fn transformed(
     }
 }
 
-// litellm_params.api_base or DEFAULT_OPENAI_API_BASE, where an empty string counts as unset
-fn api_base(litellm_params: &Object) -> &str {
-    litellm_params
-        .get("api_base")
-        .and_then(|value| value.as_str())
-        .filter(|text| !text.is_empty())
-        .unwrap_or(DEFAULT_OPENAI_API_BASE)
+// litellm_params.api_base, absent or null taking DEFAULT_OPENAI_API_BASE and any text used as given
+fn api_base(kwargs: &IndexMap<String, Json>) -> Result<String, EvalsGetUpdateError> {
+    let Some(value) = kwargs.get("api_base") else {
+        return Ok(DEFAULT_OPENAI_API_BASE.to_owned());
+    };
+    Ok(decode("api_base", value)?.unwrap_or_else(|| DEFAULT_OPENAI_API_BASE.to_owned()))
 }
 
 // GenericLiteLLMParams(**kwargs): the provider transforms read the caller's keywords as one object

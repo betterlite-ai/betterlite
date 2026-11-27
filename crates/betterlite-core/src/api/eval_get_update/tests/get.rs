@@ -117,10 +117,34 @@ async fn get_eval_uses_the_kwargs_api_base() {
 }
 
 #[tokio::test]
-async fn get_eval_empty_api_base_falls_back_to_the_default() {
+async fn get_eval_uses_an_explicit_empty_api_base_as_given() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
     calls.kwargs = map(&[("api_base", json("\"\""))]);
+    let call = get_call(&calls, "eval_1");
+    let mut state = harness.logging_state("aget_eval");
+    let env = harness.env.pre_post();
+    harness.handler.answer_get(Ok(eval("eval_1")));
+    let retrieval = EvalRetrieval {
+        call: &call,
+        logging: &mut state,
+        env: &env,
+    };
+    harness
+        .service()
+        .get_eval(retrieval)
+        .await
+        .expect("the get succeeds");
+    let gets = harness.handler.gets();
+    assert_eq!(gets[0].url, "/v1/evals/eval_1");
+    assert_eq!(harness.recorded().gets[0].api_base, "");
+}
+
+#[tokio::test]
+async fn get_eval_null_api_base_takes_the_default() {
+    let harness = Harness::new();
+    let mut calls = Calls::empty();
+    calls.kwargs = map(&[("api_base", json("null"))]);
     let call = get_call(&calls, "eval_1");
     let mut state = harness.logging_state("aget_eval");
     let env = harness.env.pre_post();
