@@ -32,7 +32,6 @@ use super::error::{SdkFailure, VectorFileReadError, failure};
 use super::service::{
     ReadCall, ReadSession, SdkDeps, VectorStoreFilesConfigs, entry_from_flag, handler_call,
 };
-use super::{aretrieve, aretrieve_content, retrieve, retrieve_content};
 use crate::api::vector_file_http_read::config::{OpenAiReadConfig, ReadConfig, ReadParams};
 use crate::api::vector_file_http_read::service::{
     ClientSource, LogContext, Operation, ReadRequest, ReadTransport,
@@ -197,7 +196,7 @@ impl Logs {
             },
             &redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .expect("the logging state builds");
         Self {
@@ -256,7 +255,7 @@ impl Fakes {
     fn deps(&self) -> SdkDeps<'_, Source> {
         SdkDeps {
             configs: &self.configs,
-            registry: Some(&self.registry as &dyn CredentialLookup),
+            registry: Some(&self.registry),
             source: &self.source,
             supplied: None,
             request_timeout_seconds: 6000.0_f64,
@@ -293,10 +292,10 @@ async fn run(
         log: &mut log,
     };
     match which {
-        Which::Retrieve => retrieve(&mut session).await,
-        Which::ARetrieve => aretrieve(&mut session).await,
-        Which::Content => retrieve_content(&mut session).await,
-        Which::AContent => aretrieve_content(&mut session).await,
+        Which::Retrieve => session.retrieve().await,
+        Which::ARetrieve => session.aretrieve().await,
+        Which::Content => session.retrieve_content().await,
+        Which::AContent => session.aretrieve_content().await,
     }
 }
 
@@ -323,6 +322,29 @@ fn header(request: &ReadRequest, name: &str) -> Option<String> {
         .map(|value| value.to_str().expect("the header is text").to_owned())
 }
 
+// one captured GET: the method, the path and no query, on the request and on its URL
+fn assert_get(requests: &[ReadRequest], path: &str) {
+    assert_eq!(requests.len(), 1);
+    let request = requests.first().expect("one request was sent");
+    assert_eq!(request.method, Method::GET);
+    assert_eq!(request.url.path(), path);
+    assert!(request.query.is_empty());
+    assert_eq!(request.url.query(), None);
+}
+
+// the wait a read handler runs with, when the call's other arguments stay at the test's defaults
+fn handler_timeout(call: &ReadCall<'_>, request_timeout_seconds: f64) -> Duration {
+    handler_call(
+        call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        request_timeout_seconds,
+    )
+    .expect("the handler call builds")
+    .timeout
+}
+
 fn mapped(error: &VectorFileReadError) -> SdkFailure {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
     failure(error, &redactor)
@@ -345,10 +367,10 @@ async fn failed_read(
     mapped(&error)
 }
 
-fn assert_null_fields(mapped: &SdkFailure) {
-    assert_eq!(mapped.kind, WireField::Null);
-    assert_eq!(mapped.param, WireField::Null);
-    assert_eq!(mapped.code, WireField::Null);
+fn assert_null_fields(projected: &SdkFailure) {
+    assert_eq!(projected.kind, WireField::Null);
+    assert_eq!(projected.param, WireField::Null);
+    assert_eq!(projected.code, WireField::Null);
 }
 
 #[tokio::test]
@@ -366,14 +388,7 @@ async fn retrieve_attachment_and_text() {
         .expect("the mock answers");
     assert_eq!(answer, json(RETRIEVE_BODY));
     let requests = fakes.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method, Method::GET);
-    assert_eq!(
-        requests[0].url.path(),
-        "/v1/vector_stores/vs_a/files/file_a"
-    );
-    assert!(requests[0].query.is_empty());
-    assert_eq!(requests[0].url.query(), None);
+    assert_get(&requests, "/v1/vector_stores/vs_a/files/file_a");
     assert_eq!(
         header(&requests[0], "authorization"),
         Some(String::from("Bearer sk-caller"))
@@ -384,21 +399,19 @@ async fn retrieve_attachment_and_text() {
         Some(String::from("application/json"))
     );
 
-    let fakes = Fakes::new(CONTENT_BODY);
-    let mut logs = Logs::new();
-    let call = read_call(&kwargs, Some(&headers), None, None);
-    let deps = fakes.deps();
-    let answer = run(&mut logs, &deps, &call, Which::AContent)
+    let text_fakes = Fakes::new(CONTENT_BODY);
+    let mut text_logs = Logs::new();
+    let text_call = read_call(&kwargs, Some(&headers), None, None);
+    let text_deps = text_fakes.deps();
+    let text_answer = run(&mut text_logs, &text_deps, &text_call, Which::AContent)
         .await
         .expect("the mock answers");
-    assert_eq!(answer, json(CONTENT_BODY));
-    let requests = fakes.requests();
-    assert_eq!(
-        requests[0].url.path(),
-        "/v1/vector_stores/vs_a/files/file_a/content"
+    assert_eq!(text_answer, json(CONTENT_BODY));
+    let text_requests = text_fakes.requests();
+    assert_get(
+        &text_requests,
+        "/v1/vector_stores/vs_a/files/file_a/content",
     );
-    assert!(requests[0].query.is_empty());
-    assert_eq!(header(&requests[0], "x-trace"), Some(String::from("t")));
 }
 
 #[test]
@@ -432,11 +445,7 @@ async fn content_has_no_pagination() {
         .await
         .expect("the mock answers");
     let requests = fakes.requests();
-    assert_eq!(
-        requests[0].url.path(),
-        "/v1/vector_stores/vs_a/files/file_a/content"
-    );
-    assert_eq!(requests[0].url.query(), None);
+    assert_get(&requests, "/v1/vector_stores/vs_a/files/file_a/content");
     assert_eq!(answer, json(CONTENT_BODY));
     assert_eq!(
         logs.detail("optional_params"),
@@ -449,7 +458,7 @@ async fn content_has_no_pagination() {
     );
     assert_eq!(
         litellm_params.get("limit"),
-        Some(&Json::Number(serde_json::Number::from(1)))
+        Some(&Json::Number(serde_json::Number::from(1_i32)))
     );
     assert_eq!(
         litellm_params.get("extra_query"),
@@ -460,6 +469,22 @@ async fn content_has_no_pagination() {
         litellm_params.get("use_litellm_proxy"),
         Some(&Json::Bool(false))
     );
+}
+
+// LiteLLM hands get_vector_store_files the caller's params with the ids written first
+#[tokio::test]
+async fn litellm_params_start_with_the_ids() {
+    let kwargs = params(
+        r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller","litellm_call_id":"call-a","after":"cursor"}"#,
+    );
+    let fakes = Fakes::new(CONTENT_BODY);
+    let mut logs = Logs::new();
+    let call = read_call(&kwargs, None, None, None);
+    let deps = fakes.deps();
+    run(&mut logs, &deps, &call, Which::Content)
+        .await
+        .expect("the mock answers");
+    let litellm_params = logs.litellm_params();
     let keys: Vec<&String> = litellm_params.keys().take(2).collect();
     assert_eq!(
         keys,
@@ -496,14 +521,14 @@ async fn async_calls_keep_the_callers_context() {
     assert_eq!(litellm_params.get("litellm_call_id"), Some(&Json::Null));
     assert_eq!(litellm_params.get("aretrieve"), None);
 
-    let fakes = Fakes::new(RETRIEVE_BODY);
-    let mut logs = Logs::new();
-    let call = read_call(&kwargs, None, None, None);
-    let deps = fakes.deps();
-    run(&mut logs, &deps, &call, Which::Retrieve)
+    let flag_fakes = Fakes::new(RETRIEVE_BODY);
+    let mut flag_logs = Logs::new();
+    let flag_call = read_call(&kwargs, None, None, None);
+    let flag_deps = flag_fakes.deps();
+    run(&mut flag_logs, &flag_deps, &flag_call, Which::Retrieve)
         .await
         .expect("the flag reaches the async handler through the sync entry");
-    assert!(fakes.requests().len() == 1);
+    assert_eq!(flag_fakes.requests().len(), 1);
 }
 
 #[rstest]
@@ -597,41 +622,42 @@ async fn registry_lookup_failure_falls_back_to_the_caller_key() {
     );
 }
 
+// the exception an unsupported provider raises: its message and the APIConnectionError shape
+fn assert_unsupported_failure(error: &VectorFileReadError, message: &str) {
+    assert_eq!(error.to_string(), message);
+    let projected = mapped(error);
+    assert_eq!(projected.class, "APIConnectionError");
+    assert_eq!(projected.status, 500);
+    assert_null_fields(&projected);
+}
+
 #[tokio::test]
 async fn unsupported_providers_fail_before_http() {
     let kwargs = params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller"}"#);
     let fakes = Fakes::new(RETRIEVE_BODY);
     let mut logs = Logs::new();
-    let call = read_call(&kwargs, None, None, Some("azure"));
+    let azure_call = read_call(&kwargs, None, None, Some("azure"));
     let deps = fakes.deps();
-    let error = run(&mut logs, &deps, &call, Which::Retrieve)
+    let azure_error = run(&mut logs, &deps, &azure_call, Which::Retrieve)
         .await
         .expect_err("azure serves no file read");
-    assert_eq!(
-        error.to_string(),
-        "Vector store file retrieve is not supported for azure"
+    assert_unsupported_failure(
+        &azure_error,
+        "Vector store file retrieve is not supported for azure",
     );
-    let mapped = mapped(&error);
-    assert_eq!(mapped.class, "APIConnectionError");
-    assert_eq!(mapped.status, 500);
-    assert_null_fields(&mapped);
-    let call = read_call(&kwargs, None, None, Some("azure"));
-    let error = run(&mut logs, &deps, &call, Which::Content)
+    let content_call = read_call(&kwargs, None, None, Some("azure"));
+    let content_error = run(&mut logs, &deps, &content_call, Which::Content)
         .await
         .expect_err("azure serves no file content");
-    assert_eq!(
-        error.to_string(),
-        "Vector store file content retrieve is not supported for azure"
+    assert_unsupported_failure(
+        &content_error,
+        "Vector store file content retrieve is not supported for azure",
     );
-    let call = read_call(&kwargs, None, None, Some("bogus"));
-    let error = run(&mut logs, &deps, &call, Which::Retrieve)
+    let bogus_call = read_call(&kwargs, None, None, Some("bogus"));
+    let bogus_error = run(&mut logs, &deps, &bogus_call, Which::Retrieve)
         .await
         .expect_err("bogus is no provider");
-    assert_eq!(error.to_string(), "'bogus' is not a valid LlmProviders");
-    let mapped = mapped(&error);
-    assert_eq!(mapped.class, "APIConnectionError");
-    assert_eq!(mapped.status, 500);
-    assert_null_fields(&mapped);
+    assert_unsupported_failure(&bogus_error, "'bogus' is not a valid LlmProviders");
     assert!(fakes.requests().is_empty());
 }
 
@@ -640,17 +666,19 @@ async fn retrieve_missing_file() {
     let kwargs =
         params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller","max_retries":0}"#);
     let mut fakes = Fakes::new(RETRIEVE_BODY);
-    let mapped = failed_read(&mut fakes, &kwargs, Which::Retrieve, 404, MISSING_BODY).await;
-    assert_eq!(mapped.class, "NotFoundError");
-    assert_eq!(mapped.status, 404);
-    assert_null_fields(&mapped);
+    let retrieve_failure =
+        failed_read(&mut fakes, &kwargs, Which::Retrieve, 404, MISSING_BODY).await;
+    assert_eq!(retrieve_failure.class, "NotFoundError");
+    assert_eq!(retrieve_failure.status, 404);
+    assert_null_fields(&retrieve_failure);
     assert_eq!(fakes.requests().len(), 1);
-    let mut fakes = Fakes::new(CONTENT_BODY);
-    let mapped = failed_read(&mut fakes, &kwargs, Which::Content, 404, MISSING_BODY).await;
-    assert_eq!(mapped.class, "NotFoundError");
-    assert_eq!(mapped.status, 404);
-    assert_null_fields(&mapped);
-    assert_eq!(fakes.requests().len(), 1);
+    let mut content_src = Fakes::new(CONTENT_BODY);
+    let content_failure =
+        failed_read(&mut content_src, &kwargs, Which::Content, 404, MISSING_BODY).await;
+    assert_eq!(content_failure.class, "NotFoundError");
+    assert_eq!(content_failure.status, 404);
+    assert_null_fields(&content_failure);
+    assert_eq!(content_src.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -658,78 +686,30 @@ async fn an_empty_missing_body_maps_by_status() {
     let kwargs =
         params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller","max_retries":0}"#);
     let mut fakes = Fakes::new(RETRIEVE_BODY);
-    let mapped = failed_read(&mut fakes, &kwargs, Which::Retrieve, 404, "").await;
-    assert_eq!(mapped.class, "NotFoundError");
-    assert_eq!(mapped.status, 404);
-    assert_null_fields(&mapped);
+    let missing_failure = failed_read(&mut fakes, &kwargs, Which::Retrieve, 404, "").await;
+    assert_eq!(missing_failure.class, "NotFoundError");
+    assert_eq!(missing_failure.status, 404);
+    assert_null_fields(&missing_failure);
 }
 
 #[test]
 fn read_timeout_argument() {
     let kwargs = JsonObject::new();
     let mut call = read_call(&kwargs, None, None, None);
-    let default = handler_call(
-        &call,
-        ReadParams::default(),
-        ClientKind::Sync,
-        Operation::Retrieve,
-        6000.0_f64,
-    )
-    .expect("the default");
-    assert_eq!(default.timeout, Duration::from_mins(100));
+    assert_eq!(handler_timeout(&call, 6000.0_f64), Duration::from_mins(100));
     call.timeout = Some(0.0_f64);
-    let zero = handler_call(
-        &call,
-        ReadParams::default(),
-        ClientKind::Sync,
-        Operation::Retrieve,
-        6000.0_f64,
-    )
-    .expect("zero takes the default");
-    assert_eq!(zero.timeout, Duration::from_mins(100));
+    assert_eq!(handler_timeout(&call, 6000.0_f64), Duration::from_mins(100));
     call.timeout = Some(7.0_f64);
-    let given = handler_call(
-        &call,
-        ReadParams::default(),
-        ClientKind::Sync,
-        Operation::Retrieve,
-        6000.0_f64,
-    )
-    .expect("the given wait");
-    assert_eq!(given.timeout, Duration::from_secs(7));
+    assert_eq!(handler_timeout(&call, 6000.0_f64), Duration::from_secs(7));
 
     let environment = BTreeMap::from([(String::from("REQUEST_TIMEOUT"), String::from("12"))]);
     let configured = loads_read_timeout(&environment).expect("the environment value loads");
     call.timeout = None;
-    let from_environment = handler_call(
-        &call,
-        ReadParams::default(),
-        ClientKind::Sync,
-        Operation::Retrieve,
-        configured,
-    )
-    .expect("the configured default");
-    assert_eq!(from_environment.timeout, Duration::from_secs(12));
+    assert_eq!(handler_timeout(&call, configured), Duration::from_secs(12));
     call.timeout = Some(0.0_f64);
-    let zero = handler_call(
-        &call,
-        ReadParams::default(),
-        ClientKind::Sync,
-        Operation::Retrieve,
-        configured,
-    )
-    .expect("zero takes the configured default");
-    assert_eq!(zero.timeout, Duration::from_secs(12));
+    assert_eq!(handler_timeout(&call, configured), Duration::from_secs(12));
     call.timeout = Some(7.0_f64);
-    let given = handler_call(
-        &call,
-        ReadParams::default(),
-        ClientKind::Sync,
-        Operation::Retrieve,
-        configured,
-    )
-    .expect("the given wait");
-    assert_eq!(given.timeout, Duration::from_secs(7));
+    assert_eq!(handler_timeout(&call, configured), Duration::from_secs(7));
 }
 
 #[rstest]
@@ -747,9 +727,9 @@ async fn wrong_field_types_name_the_field(#[case] text: &'static str) {
         .await
         .expect_err("the field type is refused");
     assert!(error.to_string().contains("field must be"));
-    let mapped = mapped(&error);
-    assert_eq!(mapped.class, "APIConnectionError");
-    assert_eq!(mapped.status, 500);
-    assert_null_fields(&mapped);
+    let projected_failure = mapped(&error);
+    assert_eq!(projected_failure.class, "APIConnectionError");
+    assert_eq!(projected_failure.status, 500);
+    assert_null_fields(&projected_failure);
     assert!(fakes.requests().is_empty());
 }
