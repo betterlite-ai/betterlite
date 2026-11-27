@@ -1,0 +1,15 @@
+task: B752
+deviations:
+  - what: A stored project, organization, tag or access-group ceiling that Postgres holds as NaN or an infinity cannot be read into betterlite's Decimal rows, so the row read fails and that entity is treated as unavailable; the organization, tag and access-group checks skip, and a project whose cached row cannot decode is absent before this stage runs. LiteLLM's float columns carry the nonfinite value through and its isfinite and comparison branches then allow or deny.
+    why: betterlite stores money as exact Decimal, which has no NaN or infinity, so no admission path can receive such a ceiling. Rows written through betterlite's management endpoints never hold one; only a direct database write can, and a working setup cannot create that row through the proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6373
+kept_bugs:
+  - what: An organization budget lookup that raises is swallowed, so an over-budget organization is admitted while the lookup is failing instead of failing the request.
+    why: LiteLLM catches every exception from get_org_object and returns, and a working proxy relies on that fail-open so a cache or database outage does not reject every request of an organization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6346-L6348
+  - what: A tag whose spend is exactly its max_budget passes, while the project, organization and access-group checks deny at equality.
+    why: LiteLLM's tag branch continues on tag_spend <= max_budget, and a working setup can rely on the last cent of a tagged budget being spendable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6459-L6460
+  - what: The first tag over its budget denies without scheduling the tag budget alert its docstring promises, unlike the project, organization and access-group checks.
+    why: LiteLLM's tag_max_budget_check_for_tags never calls budget_alerts, so no working setup receives a tag budget alert today and betterlite sends none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6461-L6467
