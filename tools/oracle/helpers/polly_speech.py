@@ -59,16 +59,16 @@ class Config(Protocol):
         self, model: str, api_base: str | None, litellm_params: Object, /) -> str: ...
 
     # ast-grep-ignore: no-long-names
-    def transform_text_to_speech_request(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L310-L318
+    def transform_text_to_speech_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L310-L318
         self, model: str, text: str, voice: str | None, optional_params: Object,
         litellm_params: Object, headers: dict[str, str], /
     ) -> SpeechRequestData: ...
 
-    def dispatch_text_to_speech(
-        self, model: str, text: str, voice: str | dict[str, JsonValue] | None, optional_params: Object,
-        litellm_params_dict: Object, logging_obj: Logging, timeout: float, extra_headers: None,
-        base_llm_http_handler: Handler, aspeech: bool, api_base: str | None, api_key: str | None,
-        /, **kwargs: JsonValue
+    def dispatch_text_to_speech(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L70-L84
+        self, model: str, text: str, voice: str | dict[str, JsonValue] | None,
+        optional_params: Object, litellm_params_dict: Object, logging_obj: Logging,
+        timeout: float, extra_headers: None, base_llm_http_handler: Handler,
+        aspeech: bool, api_base: str | None, api_key: str | None, /, **kwargs: JsonValue  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L81
     ) -> HttpxBinaryResponseContent: ...
 
 
@@ -210,13 +210,6 @@ def signed_view(headers: dict[str, str]) -> Signed:
     }
 
 
-def map_answer(call: Call) -> Answer:
-    voice, params = CONFIG.map_openai_params(
-        call["model"], call["optional_params"], call.get("voice"), drop_params=False, kwargs=call["kwargs"]
-    )
-    return {"ok": True, "voice": voice, "params": params}
-
-
 def url_answer(call: Call) -> Answer:
     url = CONFIG.get_complete_url(MODEL, call.get("api_base"), call["litellm_params"])
     return {"ok": True, "url": url}
@@ -229,7 +222,7 @@ def dispatch_answer(call: Call) -> Answer:
     try:
         CONFIG.dispatch_text_to_speech(
             MODEL, "", call.get("voice"), call["optional_params"], call["litellm_params"],
-            LOG, DEFAULT_TIMEOUT, None, recorder, False, call.get("api_base"),
+            LOG, DEFAULT_TIMEOUT, None, recorder, False, call.get("api_base"),  # noqa: FBT003  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L81
             call.get("api_key"), aws_region_name=call.get("kwargs_region"),
         )
     except ValueError:
@@ -285,7 +278,11 @@ def credential_answer(call: Call) -> Answer:
 
 def answer(call: Call) -> Answer:
     if call["function"] == "map_params":
-        return map_answer(call)
+        voice, params = CONFIG.map_openai_params(
+            call["model"], call["optional_params"], call.get("voice"), drop_params=False,
+            kwargs=call["kwargs"],
+        )
+        return {"ok": True, "voice": voice, "params": params}
     if call["function"] == "url":
         return url_answer(call)
     if call["function"] == "dispatch":
