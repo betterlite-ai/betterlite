@@ -1,0 +1,31 @@
+kind: helper
+name: batch-input-accounting-unsupported-row-estimate
+call:
+  batch_input_accounting:
+    file_id: file-malformed
+    content:
+      contents: |-
+        not json
+        {"body": {"model": "gpt-4o", "prompt": "hi"}}
+        {"body":
+        [1, 2]
+        "text"
+        42
+        null
+        {"body": {"model": "gpt-4o", "prompt": "hi", "max_tokens": 8}}
+    tokens: [2, 3]
+calls:
+  - batch_input_accounting:
+      file_id: file-blank-lines
+      content:
+        contents: "\n   \n\t\n{\"body\": {\"model\": \"gpt-4o\", \"prompt\": \"hi\"}}\n\n"
+      tokens: [1]
+  - batch_input_accounting:
+      file_id: file-unmeasurable
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+      tokens: [null, 4]
+env: {}
+compare: {ignore: []}

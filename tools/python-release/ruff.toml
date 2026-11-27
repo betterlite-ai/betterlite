@@ -1,0 +1,7 @@
+extend = "../../ruff.toml"
+src = ["."]
+
+[lint.per-file-ignores]
+"check_wheel.py" = ["INP001"] # a release script, not an importable package
+"smoke_wheel.py" = ["INP001"] # a release script, not an importable package
+"tests/*" = ["INP001", "S101"] # pytest finds the test files by path and checks with assert

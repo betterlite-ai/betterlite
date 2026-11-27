@@ -1665,6 +1665,9 @@ name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -4754,6 +4757,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-pyhost",
+ "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",

@@ -10,7 +10,7 @@ use betterlite_auth::auth_tag_budgets::groups::ModelAccessGroupBudget;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
@@ -59,6 +59,13 @@ pub(crate) fn database_for_request(request: &Request<Body>) -> bool {
         .extensions()
         .get::<Arc<ServerState>>()
         .is_some_and(|state| state.auth_tag_budgets.database)
+}
+
+pub(crate) async fn prefetched(
+    stage: Box<TagBudgetStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch(&stage).await.map_err(StageFailure::TagBudgets)?;
+    Ok(StageInput::AuthTagBudgets(stage))
 }
 
 // LiteLLM's common_checks: both batch reads fail open on a fetch error, so only a cache failure reaches here.
