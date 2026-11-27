@@ -820,10 +820,11 @@ def test_names_error_signatures() -> None:
 def test_names_enum_strings() -> None:
     ours = run_probe(OURS_PREFIX, OURS_MODULE, "enum_strings")
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "enum_strings")
-    assert ours["error_type"] == ours["error_value"] == "rate_limit_error"
-    assert theirs["error_type"] == "RouterErrorTypes.rate_limit_error"
-    assert ours["request_type"] == ours["request_value"] == "code_generation"
-    assert theirs["request_type"] == "RequestType.CODE_GENERATION"
+    assert ours["error_type"] == "RouterErrorTypes.rate_limit_error"
+    assert ours["error_value"] == "rate_limit_error"
+    assert ours["request_type"] == "RequestType.CODE_GENERATION"
+    assert ours["request_value"] == "code_generation"
+    assert ours == theirs
 
 
 def test_names_class_names() -> None:
