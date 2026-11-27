@@ -72,18 +72,33 @@ fn invalid_config(field: &str, expected: &'static str) -> CallbackConfigError {
     }
 }
 
+#[derive(Eq, PartialEq)]
+enum SingleEntry {
+    Allowed,
+    Rejected,
+}
+
+fn entry_list(
+    value: Option<&JsonValue>,
+    field: &str,
+    single: SingleEntry,
+) -> Result<Vec<String>, CallbackConfigError> {
+    match value {
+        None | Some(JsonValue::Null) => Ok(Vec::new()),
+        Some(JsonValue::String(name)) if single == SingleEntry::Allowed => Ok(vec![name.clone()]),
+        Some(JsonValue::Array(items)) => string_items(items, field),
+        Some(
+            JsonValue::String(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
+        ) => Err(invalid_config(field, "a list of strings")),
+    }
+}
+
 // A stored callback list the delete path rewrites: null is the absent default, and any other non-list is rejected
 pub(crate) fn strict_entries(
     value: Option<&JsonValue>,
     field: &str,
 ) -> Result<Vec<String>, CallbackConfigError> {
-    let Some(present) = value.filter(|entry| !entry.is_null()) else {
-        return Ok(Vec::new());
-    };
-    let JsonValue::Array(items) = present else {
-        return Err(invalid_config(field, "a list of strings"));
-    };
-    string_items(items, field)
+    entry_list(value, field, SingleEntry::Rejected)
 }
 
 // normalize_callback: the settings page reads a single string as one entry, as LiteLLM does
@@ -91,10 +106,7 @@ pub(crate) fn normalized_entries(
     value: Option<&JsonValue>,
     field: &str,
 ) -> Result<Vec<String>, CallbackConfigError> {
-    match value {
-        Some(JsonValue::String(name)) => Ok(vec![name.clone()]),
-        other => strict_entries(other, field),
-    }
+    entry_list(value, field, SingleEntry::Allowed)
 }
 
 fn string_items(items: &[JsonValue], field: &str) -> Result<Vec<String>, CallbackConfigError> {
