@@ -3,7 +3,8 @@ from typing import Final, Literal, TypeAlias, TypedDict, cast
 from litellm.responses.mcp.litellm_proxy_mcp_handler import (
     LiteLLM_Proxy_MCP_Handler,
 )
-from litellm.types.llms.openai import ResponseOutputItem, ResponsesAPIResponse
+from litellm.types.llms.openai import ResponsesAPIResponse
+from openai.types.responses.response_output_item import ResponseOutputItem
 from pydantic import JsonValue, TypeAdapter
 
 RESPONSE: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
@@ -56,7 +57,7 @@ def answer(call: Call) -> JsonValue:
 
 def extracted_values(response: dict[str, JsonValue]) -> list[JsonValue]:
     decoded = RESPONSE.validate_python(response)
-    calls = cast(list[ResponseOutputItem | dict[str, JsonValue]], LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response(decoded))  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L565-L577
+    calls = cast(list[ResponseOutputItem | dict[str, JsonValue]], LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response(decoded))  # noqa: E501, SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L565-L577
     values: list[JsonValue] = [details_value(tool_call) for tool_call in calls]
     return values
 
@@ -64,9 +65,13 @@ def extracted_values(response: dict[str, JsonValue]) -> list[JsonValue]:
 def details_answer(tool_call: OutputToolCall | MappingToolCall) -> JsonValue:
     if tool_call["kind"] == "mapping":
         return details_value(tool_call["fields"])
-    body: dict[str, JsonValue] = {"id": "resp_tool_selection", "created_at": 1, "output": [tool_call["item"]]}
+    body: dict[str, JsonValue] = {
+        "id": "resp_tool_selection",
+        "created_at": 1,
+        "output": [tool_call["item"]],
+    }
     decoded = RESPONSE.validate_python(body)
-    return details_value(cast(ResponseOutputItem | dict[str, JsonValue], decoded.output[0]))  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L603-L635
+    return details_value(cast(ResponseOutputItem | dict[str, JsonValue], decoded.output[0]))  # type: ignore[misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L603-L635
 
 
 def details_value(tool_call: ResponseOutputItem | dict[str, JsonValue]) -> JsonValue:
