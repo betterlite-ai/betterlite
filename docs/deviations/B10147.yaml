@@ -3,7 +3,7 @@ deviations:
   - what: The cache and the toolset store are injected ports (ToolsetCache, ToolsetByName) instead of proxy_server's user_api_key_cache and prisma_client globals.
     why: the repo wires dependencies through constructors and has no module-level state.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3660-L3736
-  - what: A cached value that is neither a toolset object nor the "__not_found__" string counts as a cache miss and is read from the store again and overwritten, where LiteLLM hands the raw cached value back to its caller.
-    why: the cached value decodes into a typed CachedToolset, so a value outside the two written forms fails to decode; the task fixes that failure as a miss, the way DualCache.async_get_cache answers None on a read failure. No working LiteLLM setup can rely on receiving a non-toolset from this lookup.
+  - what: A cached value that does not decode into a typed CachedToolset counts as a cache miss, so the lookup reads the store again and overwrites it. LiteLLM instead answers a hit with the raw value when it is neither the sentinel nor a dict, builds MCPToolset from a dict while ignoring undeclared fields, and raises when a declared field has the wrong type.
+    why: the cached value decodes into a typed CachedToolset, and a value that does not decode is a miss by this module's port contract, the way DualCache.async_get_cache answers None on a read failure. The miss reads the store again and rewrites the key, so a value outside the current wire form is replaced instead of reaching a caller as an untyped value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3712-L3720
 kept_bugs: []
