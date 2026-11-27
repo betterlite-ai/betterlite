@@ -151,28 +151,30 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
                 StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
             }
             EntityModelAccessError::Member(budget) => {
-                StageFailure::ModelGrants(Box::new(team_budget_exception(&budget)))
+                StageFailure::AuthModelGrants(Box::new(team_budget_exception(&budget)))
             }
             EntityModelAccessError::Project(lookup) => {
-                StageFailure::ModelGrants(Box::new(org_lookup_exception(&lookup)))
+                StageFailure::AuthModelGrants(Box::new(org_lookup_exception(&lookup)))
             }
             EntityModelAccessError::TeamRow(row) => {
                 tracing::debug!(error = %row, "the caller team snapshot did not build");
-                StageFailure::ModelGrants(Box::new(lookup_exception(&row.to_string())))
+                StageFailure::AuthModelGrants(Box::new(lookup_exception(&row.to_string())))
             }
         },
         AgentModelGrantsError::Ceiling(groups) => {
-            StageFailure::ModelGrants(Box::new(group_lookup_exception(&groups)))
+            StageFailure::AuthModelGrants(Box::new(group_lookup_exception(&groups)))
         }
         AgentModelGrantsError::Caller(caller) => match *caller {
             AgentCallerError::Team { source, .. } => {
-                StageFailure::ModelGrants(Box::new(team_lookup_exception(&source)))
+                StageFailure::AuthModelGrants(Box::new(team_lookup_exception(&source)))
             }
             caller_failure @ (AgentCallerError::User { .. } | AgentCallerError::Record(_)) => {
-                StageFailure::ModelGrants(Box::new(lookup_exception(&caller_failure.to_string())))
+                StageFailure::AuthModelGrants(Box::new(lookup_exception(
+                    &caller_failure.to_string(),
+                )))
             }
         },
-        AgentModelGrantsError::Unavailable => StageFailure::ModelGrants(Box::new(
+        AgentModelGrantsError::Unavailable => StageFailure::AuthModelGrants(Box::new(
             lookup_exception(&AgentModelGrantsError::Unavailable.to_string()),
         )),
     }

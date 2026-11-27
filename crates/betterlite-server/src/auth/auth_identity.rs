@@ -129,7 +129,7 @@ pub trait BudgetAdmission {
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
-    ModelGrants(Box<ProxyException>),
+    AuthModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),

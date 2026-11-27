@@ -107,7 +107,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(
             StageFailure::ModelAccess(_)
             | StageFailure::EntityModelAccess(_)
-            | StageFailure::ModelGrants(_)
+            | StageFailure::AuthModelGrants(_)
             | StageFailure::AuthRequestPolicy(_)
             | StageFailure::ResourceGrants(_)
             | StageFailure::TagBudgets(_)

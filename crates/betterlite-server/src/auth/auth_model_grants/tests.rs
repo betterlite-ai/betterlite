@@ -220,7 +220,7 @@ async fn missing_source_is_initialization_error() {
     };
     assert!(matches!(
         prefetch_stage(staged).await,
-        Err(StageFailure::ModelGrants(_))
+        Err(StageFailure::AuthModelGrants(_))
     ));
 }
 
@@ -325,7 +325,7 @@ fn missing_access_group_keeps_http_status() {
             access_group_id: "group-1".to_owned(),
         }),
     };
-    let StageFailure::ModelGrants(exception) =
+    let StageFailure::AuthModelGrants(exception) =
         stage_failure(AgentModelGrantsError::Ceiling(Box::new(group_error)))
     else {
         panic!("missing access groups preserve their HTTP status");
@@ -344,7 +344,7 @@ fn unavailable_access_policy_keeps_http_status() {
             cause: Box::new(TeamFailure::Throttled),
         }),
     };
-    let StageFailure::ModelGrants(exception) =
+    let StageFailure::AuthModelGrants(exception) =
         stage_failure(AgentModelGrantsError::Ceiling(Box::new(policy_error)))
     else {
         panic!("unavailable access policies preserve their HTTP status");
@@ -360,7 +360,7 @@ fn missing_caller_team_keeps_http_status() {
             team_id: "missing-team".to_owned(),
         }),
     };
-    let StageFailure::ModelGrants(exception) =
+    let StageFailure::AuthModelGrants(exception) =
         stage_failure(AgentModelGrantsError::Caller(Box::new(caller_error)))
     else {
         panic!("missing caller teams preserve their HTTP status");
