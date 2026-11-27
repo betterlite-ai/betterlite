@@ -1,11 +1,8 @@
 use betterlite_db::mcp_stored_contracts::MCPAuth;
 use betterlite_models::decisions::Json;
 
-use super::checks::{config_per_server_oauth_discovery, dcr_bridge_value};
 use super::config::McpServerConfig;
-use super::error::ConfigError;
 use super::record::ResolvedOAuth;
-use super::values::{auth_text, optional_text_repr, truthy};
 use crate::oauth_discovery::fetch::MetadataFetcher;
 use crate::oauth_discovery::flow::{
     DiscoveryRequest, discover_metadata, fetch_issuer_anchored_metadata,
@@ -233,7 +230,7 @@ pub(super) fn gate_metadata(
             metadata,
             plan.endpoints.manual_authorization_url.as_deref(),
             server_ref,
-            truthy(dcr_bridge),
+            matches!(dcr_bridge, Some(Json::Bool(true))),
         );
     }
     metadata
@@ -284,37 +281,4 @@ fn resolved_endpoints(plan: &OAuthPlan, metadata: Option<&MCPOAuthMetadata>) -> 
             .clone()
             .or_else(|| metadata.and_then(|found| found.registration_url.clone())),
     }
-}
-
-pub(super) fn validate_config(
-    config: &McpServerConfig,
-    server_ref: &str,
-    plan: &OAuthPlan,
-) -> Result<(bool, Option<bool>), ConfigError> {
-    if plan.auth_type == Some(MCPAuth::Oauth2) && plan.flow.is_none() {
-        return Err(ConfigError::Oauth2Flow {
-            server_ref: server_ref.to_owned(),
-            flow: optional_text_repr(plan.raw_flow.as_deref()),
-        });
-    }
-    let per_server = config_per_server_oauth_discovery(
-        config,
-        server_ref,
-        plan.auth_type,
-        plan.flow,
-        config.delegate_auth_to_upstream.unwrap_or(false),
-    )?;
-    let dcr_bridge = dcr_bridge_value(config.dcr_bridge.as_ref(), server_ref)?;
-    if dcr_bridge == Some(true)
-        && !matches!(
-            plan.auth_type,
-            Some(MCPAuth::TruePassthrough | MCPAuth::OauthDelegate)
-        )
-    {
-        return Err(ConfigError::DcrBridgeAuthType {
-            server_ref: server_ref.to_owned(),
-            auth_type: optional_text_repr(plan.auth_type.map(auth_text)),
-        });
-    }
-    Ok((per_server, dcr_bridge))
 }

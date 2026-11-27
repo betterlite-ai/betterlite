@@ -65,18 +65,26 @@ async fn side_the_redacted_dump_masks_every_secret() {
 }
 
 #[test]
-fn side_redacted_dump_leaves_absent_secrets_as_none() {
+fn side_redacted_dump_leaves_absent_secrets_as_null() {
     let server = json_server(
         r#"{"server_id": "test-id", "name": "test_server", "transport": "http", "authentication_token": "tok"}"#,
     );
     let mut servers = IndexMap::new();
     servers.insert(String::from("test-id"), server);
     let dump = redacted_registry_dump(&servers);
-    let fields = dump.get("test-id").unwrap();
-    assert_eq!(fields.get("authentication_token").unwrap(), REDACTED_VALUE);
-    assert_eq!(fields.get("client_secret").unwrap(), "None");
-    assert_eq!(fields.get("client_private_key").unwrap(), "None");
-    assert_eq!(fields.get("name").unwrap(), "test_server");
+    let Some(Json::Object(fields)) = dump.get("test-id") else {
+        panic!("the dump holds one JSON object per server");
+    };
+    assert_eq!(
+        fields.get("authentication_token"),
+        Some(&Json::Text(String::from(REDACTED_VALUE)))
+    );
+    assert_eq!(fields.get("client_secret"), Some(&Json::Null));
+    assert_eq!(fields.get("client_private_key"), Some(&Json::Null));
+    assert_eq!(
+        fields.get("name"),
+        Some(&Json::Text(String::from("test_server")))
+    );
 }
 
 #[tokio::test]

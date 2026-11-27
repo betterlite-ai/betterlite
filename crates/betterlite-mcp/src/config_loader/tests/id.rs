@@ -92,7 +92,7 @@ async fn id_a_blank_pinned_id_is_rejected() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': server_id must be a non-empty string (got '   ')."
+        "Invalid config for MCP server 'test_server': server_id must be a non-empty string."
     );
 }
 
@@ -107,7 +107,7 @@ async fn id_a_non_string_pinned_id_is_rejected() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': server_id must be a non-empty string (got 42)."
+        "Invalid config for MCP server 'test_server': server_id must be a non-empty string."
     );
 }
 

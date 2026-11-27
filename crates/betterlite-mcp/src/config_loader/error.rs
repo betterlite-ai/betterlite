@@ -8,10 +8,8 @@ use crate::server_record::ServerRecordError;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error(
-        "Invalid config for MCP server '{server_name}': server_id must be a non-empty string (got {raw})."
-    )]
-    ServerId { server_name: String, raw: String },
+    #[error("Invalid config for MCP server '{server_name}': server_id must be a non-empty string.")]
+    ServerId { server_name: String },
     #[error(
         "Invalid config for MCP server '{server_name}': server_id '{server_id}' is already used by MCP server '{claimed_by}'. Each mcp_servers entry needs its own id."
     )]
@@ -36,28 +34,23 @@ pub enum ConfigError {
         owners: String,
     },
     #[error(
-        "Invalid config for MCP server '{server_ref}': auth_type oauth2 requires an explicit oauth2_flow (got {flow}). Set oauth2_flow: client_credentials for machine-to-machine servers (the proxy mints a shared token at token_url using client_id/client_secret, no user interaction) or oauth2_flow: authorization_code for interactive servers (per-user tokens via browser sign-in, including delegate_auth_to_upstream)."
+        "Invalid config for MCP server '{server_ref}': auth_type oauth2 requires an explicit oauth2_flow. Set oauth2_flow: client_credentials for machine-to-machine servers (the proxy mints a shared token at token_url using client_id/client_secret, no user interaction) or oauth2_flow: authorization_code for interactive servers (per-user tokens via browser sign-in, including delegate_auth_to_upstream)."
     )]
-    Oauth2Flow { server_ref: String, flow: String },
+    Oauth2Flow { server_ref: String },
     #[error(
-        "Invalid config for MCP server '{server_ref}': per_server_oauth_discovery must be a boolean (got {raw})."
+        "Invalid config for MCP server '{server_ref}': per_server_oauth_discovery must be a boolean."
     )]
-    PerServerDiscoveryType { server_ref: String, raw: String },
+    PerServerDiscoveryType { server_ref: String },
     #[error(
         "Invalid config for MCP server '{server_ref}': per_server_oauth_discovery is only supported for auth_type oauth2 with oauth2_flow authorization_code and without delegate_auth_to_upstream."
     )]
     PerServerDiscoveryEligible { server_ref: String },
+    #[error("Invalid config for MCP server '{server_ref}': dcr_bridge must be a boolean.")]
+    DcrBridgeType { server_ref: String },
     #[error(
-        "Invalid config for MCP server '{server_ref}': dcr_bridge must be a boolean (got {raw})."
+        "Invalid config for MCP server '{server_ref}': dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate. The DCR bridge serves gateway-hosted OAuth discovery for the client-forwarded token modes; interactive oauth2 servers already run the gateway authorization-code flow."
     )]
-    DcrBridgeType { server_ref: String, raw: String },
-    #[error(
-        "Invalid config for MCP server '{server_ref}': dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate (got {auth_type}). The DCR bridge serves gateway-hosted OAuth discovery for the client-forwarded token modes; interactive oauth2 servers already run the gateway authorization-code flow."
-    )]
-    DcrBridgeAuthType {
-        server_ref: String,
-        auth_type: String,
-    },
+    DcrBridgeAuthType { server_ref: String },
     #[error("Invalid config for MCP server '{server_ref}': token_validation must be an object.")]
     TokenValidation { server_ref: String },
     #[error("Invalid config for MCP server '{server_ref}': {source}")]

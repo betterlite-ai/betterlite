@@ -8,7 +8,7 @@ use secrecy::SecretString;
 
 use super::config::{McpServerConfig, ScopesConfig};
 use super::error::ConfigError;
-use super::values::stored_json;
+use super::values::{stored_entries, stored_json};
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
 use crate::server_build::json::normalize_cost_info;
 use crate::server_oauth::merge::{ScopesInput, extract_scopes};
@@ -215,12 +215,10 @@ pub(super) fn build_mcp_info(
     server_name: &str,
     config: &McpServerConfig,
 ) -> Result<MCPInfo, ConfigError> {
-    let mut info: BTreeMap<String, JsonValue> = BTreeMap::new();
-    if let Some(entries) = &config.mcp_info {
-        for (key, value) in entries {
-            info.insert(key.clone(), stored_json(value));
-        }
-    }
+    let mut info: BTreeMap<String, JsonValue> = match &config.mcp_info {
+        Some(entries) => stored_entries(entries),
+        None => BTreeMap::new(),
+    };
     if !info.contains_key("server_name") {
         info.insert(
             "server_name".to_owned(),
@@ -262,34 +260,20 @@ fn config_token_validation(
     value: Option<&Json>,
     server_ref: &str,
 ) -> Result<Option<BTreeMap<String, JsonValue>>, ConfigError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let Json::Object(entries) = value else {
-        return Err(ConfigError::TokenValidation {
-            server_ref: server_ref.to_owned(),
-        });
-    };
-    Ok(Some(
-        entries
-            .iter()
-            .map(|(key, entry)| (key.clone(), stored_json(entry)))
-            .collect(),
-    ))
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(entries)) => Ok(Some(stored_entries(entries))),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(ConfigError::TokenValidation {
+                server_ref: server_ref.to_owned(),
+            })
+        }
+    }
 }
 
 fn config_env_vars(config: &McpServerConfig) -> Option<Vec<BTreeMap<String, JsonValue>>> {
-    config.env_vars.as_ref().map(|entries| {
-        entries
-            .iter()
-            .map(|entry| {
-                entry
-                    .iter()
-                    .map(|(key, value)| (key.clone(), stored_json(value)))
-                    .collect()
-            })
-            .collect()
-    })
+    let entries = config.env_vars.as_ref()?;
+    Some(entries.iter().map(stored_entries).collect())
 }
 
 pub(super) fn config_scopes(config: &McpServerConfig) -> Option<Vec<String>> {

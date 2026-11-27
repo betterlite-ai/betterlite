@@ -5,11 +5,11 @@ use betterlite_db::mcp_stored_contracts::{
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::server_record::MCPOAuthIdentityBinding;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct McpServerConfig {
     pub server_id: Option<Json>,
@@ -37,7 +37,6 @@ pub struct McpServerConfig {
     pub token_endpoint_auth_method: Option<MCPTokenEndpointAuthMethod>,
     pub scopes: Option<ScopesConfig>,
     pub dcr_bridge: Option<Json>,
-    #[serde(default, deserialize_with = "deserialize_present_json")]
     pub per_server_oauth_discovery: Option<Json>,
     pub extra_headers: Option<Vec<String>>,
     pub allowed_tools: Option<Vec<String>>,
@@ -82,12 +81,4 @@ pub struct McpServerConfig {
 pub enum ScopesConfig {
     Text(String),
     List(Vec<String>),
-}
-
-// An explicit null must stay distinguishable from a missing key, so this bypasses Option's null handling
-fn deserialize_present_json<'de, D>(deserializer: D) -> Result<Option<Json>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Json::deserialize(deserializer).map(Some)
 }

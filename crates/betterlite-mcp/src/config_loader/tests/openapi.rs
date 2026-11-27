@@ -196,9 +196,11 @@ async fn openapi_tools_use_the_short_prefix_when_enabled() {
     let prefix = compute_short_server_prefix(&server.fields.server_id, 0).unwrap();
     let names = fixture.tools.names();
     assert!(!names.is_empty());
-    for name in names {
-        assert!(name.starts_with(&format!("{prefix}-")));
-    }
+    assert!(
+        names
+            .iter()
+            .all(|name| name.starts_with(&format!("{prefix}-")))
+    );
 }
 
 #[tokio::test]

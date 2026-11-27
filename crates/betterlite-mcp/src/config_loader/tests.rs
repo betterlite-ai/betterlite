@@ -28,7 +28,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use crate::config_loader::checks::config_ids_capturing_db_identifiers;
+use crate::config_loader::checks::config_ids_taken_by_db;
 use crate::config_loader::config::McpServerConfig;
 use crate::config_loader::dump::{REDACTED_VALUE, redacted_registry_dump};
 use crate::config_loader::error::ConfigError;

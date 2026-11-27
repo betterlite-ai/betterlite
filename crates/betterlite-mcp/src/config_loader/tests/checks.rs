@@ -1,5 +1,5 @@
 #[test]
-fn collision_config_ids_capturing_db_identifiers_are_reported() {
+fn collision_config_ids_taken_by_db_are_reported() {
     let db = json_server(
         r#"{"server_id": "db-id", "name": "db-name", "transport": "http", "server_name": "db-server", "alias": "db-alias"}"#,
     );
@@ -11,7 +11,7 @@ fn collision_config_ids_capturing_db_identifiers_are_reported() {
     ]
     .into_iter()
     .collect();
-    let captured = config_ids_capturing_db_identifiers(&ids, &[db]);
+    let captured = config_ids_taken_by_db(&ids, &[db]);
     let expected: BTreeSet<String> = [String::from("db-name"), String::from("db-server")]
         .into_iter()
         .collect();
@@ -167,7 +167,7 @@ async fn validation_oauth2_without_a_flow_is_rejected() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': auth_type oauth2 requires an explicit oauth2_flow (got None). Set oauth2_flow: client_credentials for machine-to-machine servers (the proxy mints a shared token at token_url using client_id/client_secret, no user interaction) or oauth2_flow: authorization_code for interactive servers (per-user tokens via browser sign-in, including delegate_auth_to_upstream)."
+        "Invalid config for MCP server 'test_server': auth_type oauth2 requires an explicit oauth2_flow. Set oauth2_flow: client_credentials for machine-to-machine servers (the proxy mints a shared token at token_url using client_id/client_secret, no user interaction) or oauth2_flow: authorization_code for interactive servers (per-user tokens via browser sign-in, including delegate_auth_to_upstream)."
     );
 }
 
@@ -182,23 +182,21 @@ async fn validation_oauth2_with_an_unknown_flow_is_rejected() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': auth_type oauth2 requires an explicit oauth2_flow (got 'implicit'). Set oauth2_flow: client_credentials for machine-to-machine servers (the proxy mints a shared token at token_url using client_id/client_secret, no user interaction) or oauth2_flow: authorization_code for interactive servers (per-user tokens via browser sign-in, including delegate_auth_to_upstream)."
+        "Invalid config for MCP server 'test_server': auth_type oauth2 requires an explicit oauth2_flow. Set oauth2_flow: client_credentials for machine-to-machine servers (the proxy mints a shared token at token_url using client_id/client_secret, no user interaction) or oauth2_flow: authorization_code for interactive servers (per-user tokens via browser sign-in, including delegate_auth_to_upstream)."
     );
 }
 
 #[tokio::test]
-async fn validation_per_server_oauth_discovery_null_is_rejected() {
+async fn validation_per_server_oauth_discovery_null_takes_the_default() {
     let fixture = Fixture::new();
-    let error = fixture
+    fixture
         .load(&config(
             r#"{"test_server": {"url": "https://mcp.test", "per_server_oauth_discovery": null}}"#,
         ))
         .await
-        .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "Invalid config for MCP server 'test_server': per_server_oauth_discovery must be a boolean (got None)."
-    );
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
+    assert!(!server.fields.per_server_oauth_discovery);
 }
 
 #[tokio::test]
@@ -212,7 +210,7 @@ async fn validation_per_server_oauth_discovery_must_be_a_boolean() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': per_server_oauth_discovery must be a boolean (got 'yes')."
+        "Invalid config for MCP server 'test_server': per_server_oauth_discovery must be a boolean."
     );
 }
 
@@ -257,7 +255,7 @@ async fn validation_dcr_bridge_must_be_a_boolean() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': dcr_bridge must be a boolean (got 'yes')."
+        "Invalid config for MCP server 'test_server': dcr_bridge must be a boolean."
     );
 }
 
@@ -272,7 +270,7 @@ async fn validation_dcr_bridge_needs_passthrough_or_delegate() {
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "Invalid config for MCP server 'test_server': dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate (got 'bearer_token'). The DCR bridge serves gateway-hosted OAuth discovery for the client-forwarded token modes; interactive oauth2 servers already run the gateway authorization-code flow."
+        "Invalid config for MCP server 'test_server': dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate. The DCR bridge serves gateway-hosted OAuth discovery for the client-forwarded token modes; interactive oauth2 servers already run the gateway authorization-code flow."
     );
 }
 

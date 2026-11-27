@@ -6,9 +6,10 @@ use indexmap::IndexMap;
 
 use super::config::McpServerConfig;
 use super::error::ConfigError;
-use super::values::python_repr;
+use super::plan::OAuthPlan;
 use crate::server_payload::names::validate_mcp_server_name;
-use crate::server_payload::request::is_per_server_oauth_discovery_eligible;
+// ast-grep-ignore: no-long-names
+use crate::server_payload::request::is_per_server_oauth_discovery_eligible as per_server_eligible;
 use crate::server_record::{MCPServer, OAuth2Flow, ServerFlag};
 
 pub fn validate_config_server_names(
@@ -70,7 +71,7 @@ pub fn config_identifier_owners(
 }
 
 #[must_use]
-pub fn config_ids_capturing_db_identifiers(
+pub fn config_ids_taken_by_db(
     config_server_ids: &BTreeSet<String>,
     db_servers: &[MCPServer],
 ) -> BTreeSet<String> {
@@ -103,7 +104,7 @@ pub struct CollisionCheck<'check> {
     pub identifier_owners: &'check BTreeMap<String, BTreeSet<String>>,
 }
 
-pub fn reject_config_server_id_collision(check: CollisionCheck<'_>) -> Result<(), ConfigError> {
+pub fn reject_id_collision(check: CollisionCheck<'_>) -> Result<(), ConfigError> {
     if let Some(claimed_by) = check.assigned_server_ids.get(check.server_id) {
         return Err(ConfigError::CollisionClaimed {
             server_name: check.server_name.to_owned(),
@@ -141,14 +142,46 @@ pub fn dcr_bridge_value(raw: Option<&Json>, server_ref: &str) -> Result<Option<b
     match raw {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(flag)) => Ok(Some(*flag)),
-        Some(other) => Err(ConfigError::DcrBridgeType {
-            server_ref: server_ref.to_owned(),
-            raw: python_repr(other),
-        }),
+        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            Err(ConfigError::DcrBridgeType {
+                server_ref: server_ref.to_owned(),
+            })
+        }
     }
 }
 
-pub fn config_per_server_oauth_discovery(
+pub fn validate_config(
+    config: &McpServerConfig,
+    server_ref: &str,
+    plan: &OAuthPlan,
+) -> Result<(bool, Option<bool>), ConfigError> {
+    if plan.auth_type == Some(MCPAuth::Oauth2) && plan.flow.is_none() {
+        return Err(ConfigError::Oauth2Flow {
+            server_ref: server_ref.to_owned(),
+        });
+    }
+    let per_server = per_server_discovery(
+        config,
+        server_ref,
+        plan.auth_type,
+        plan.flow,
+        config.delegate_auth_to_upstream.unwrap_or(false),
+    )?;
+    let dcr_bridge = dcr_bridge_value(config.dcr_bridge.as_ref(), server_ref)?;
+    if dcr_bridge == Some(true)
+        && !matches!(
+            plan.auth_type,
+            Some(MCPAuth::TruePassthrough | MCPAuth::OauthDelegate)
+        )
+    {
+        return Err(ConfigError::DcrBridgeAuthType {
+            server_ref: server_ref.to_owned(),
+        });
+    }
+    Ok((per_server, dcr_bridge))
+}
+
+pub fn per_server_discovery(
     config: &McpServerConfig,
     server_ref: &str,
     auth_type: Option<MCPAuth>,
@@ -156,22 +189,15 @@ pub fn config_per_server_oauth_discovery(
     delegate_auth_to_upstream: bool,
 ) -> Result<bool, ConfigError> {
     let enabled = match config.per_server_oauth_discovery.as_ref() {
-        None => false,
+        None | Some(Json::Null) => false,
         Some(Json::Bool(flag)) => *flag,
-        Some(other) => {
+        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             return Err(ConfigError::PerServerDiscoveryType {
                 server_ref: server_ref.to_owned(),
-                raw: python_repr(other),
             });
         }
     };
-    if enabled
-        && !is_per_server_oauth_discovery_eligible(
-            auth_type,
-            oauth2_flow,
-            delegate_auth_to_upstream,
-        )
-    {
+    if enabled && !per_server_eligible(auth_type, oauth2_flow, delegate_auth_to_upstream) {
         return Err(ConfigError::PerServerDiscoveryEligible {
             server_ref: server_ref.to_owned(),
         });

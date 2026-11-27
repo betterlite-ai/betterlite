@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use sha2::{Digest as _, Sha256};
 
 use super::error::ConfigError;
-use super::values::{auth_text, python_repr, transport_seed};
+use super::values::auth_text;
 
 #[must_use]
 pub fn generate_stable_server_id(
@@ -13,9 +13,14 @@ pub fn generate_stable_server_id(
     auth_type: Option<MCPAuth>,
     alias: Option<&str>,
 ) -> String {
+    let transport = match transport {
+        None => "MCPTransport.http",
+        Some(MCPTransport::Sse) => "sse",
+        Some(MCPTransport::Http) => "http",
+        Some(MCPTransport::Stdio) => "stdio",
+    };
     let seed = format!(
-        "{server_name}|{url}|{}|{}|{}",
-        transport_seed(transport),
+        "{server_name}|{url}|{transport}|{}|{}",
         auth_type.map_or("", auth_text),
         alias.unwrap_or("")
     );
@@ -24,23 +29,19 @@ pub fn generate_stable_server_id(
 }
 
 pub fn pinned_config_server_id(
-    raw_server_id: Option<&Json>,
+    raw: Option<&Json>,
     server_name: &str,
 ) -> Result<Option<String>, ConfigError> {
-    let Some(value) = raw_server_id else {
+    let Some(value) = raw else {
         return Ok(None);
     };
-    let Json::Text(text) = value else {
-        return Err(ConfigError::ServerId {
-            server_name: server_name.to_owned(),
-            raw: python_repr(value),
-        });
+    let trimmed = match value {
+        Json::Text(text) => text.trim(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => "",
     };
-    let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err(ConfigError::ServerId {
             server_name: server_name.to_owned(),
-            raw: python_repr(value),
         });
     }
     Ok(Some(trimmed.to_owned()))
