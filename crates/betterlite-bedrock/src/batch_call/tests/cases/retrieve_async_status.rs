@@ -30,6 +30,8 @@ const NO_SUBMIT_TIME: &str = r#"{"invocationArn":"arn:aws:bedrock:us-west-2:1234
 const NO_END: &str = r#"{"invocationArn":"arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1","modelArn":"arn:aws:bedrock:us-west-2::foundation-model/model","status":"completed","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://out/result.jsonl"}}}"#;
 const NO_INVOCATION_ARN: &str = r#"{"modelArn":"arn:aws:bedrock:us-west-2::foundation-model/model","status":"completed","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://out/result.jsonl"}}}"#;
 const NO_MODEL_ARN: &str = r#"{"invocationArn":"arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1","status":"completed","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://out/result.jsonl"}}}"#;
+const NO_STATUS: &str = r#"{"invocationArn":"arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1","modelArn":"arn:aws:bedrock:us-west-2::foundation-model/model","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{"s3Uri":"s3://out/result.jsonl"}}}"#;
+const NO_S3_URI: &str = r#"{"invocationArn":"arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1","modelArn":"arn:aws:bedrock:us-west-2::foundation-model/model","status":"completed","submitTime":1705314600,"lastModifiedTime":1705314700,"outputDataConfig":{"s3OutputDataConfig":{}}}"#;
 
 pub(super) fn retrieve_async_status() {
     completed();
@@ -154,6 +156,8 @@ fn missing_fields() {
         (NO_SUBMIT_TIME, "submitTime"),
         (NO_INVOCATION_ARN, "invocationArn"),
         (NO_MODEL_ARN, "modelArn"),
+        (NO_STATUS, "status"),
+        (NO_S3_URI, "s3Uri"),
     ];
     for (body, field) in missing {
         let (result, _factory) = run(200, body);
