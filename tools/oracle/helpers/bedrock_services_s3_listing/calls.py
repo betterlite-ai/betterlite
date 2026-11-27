@@ -3,15 +3,13 @@ import os
 import time
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
-from typing import Final
+from typing import Final, Literal, NotRequired, TypedDict
 
 import httpx
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
 from litellm.types.llms.openai import FileContentRequest
 from pydantic import JsonValue, TypeAdapter
-
-from .schema import Call, RequestOperation
 
 JSON: Final = TypeAdapter(JsonValue)
 SIGNING_SECONDS: Final = 1_704_067_200
@@ -24,6 +22,88 @@ BASE_ENVIRONMENT: Final[dict[str, str]] = {
     "AWS_SECRET_ACCESS_KEY": "secret",
     "TZ": "UTC",
 }
+
+
+class Call(TypedDict):
+    purpose: NotRequired[str | None]
+    file_id: NotRequired[str | None]
+    status: NotRequired[int]
+    body: NotRequired[str]
+    headers: NotRequired[list[tuple[str, str]]]
+    litellm_params: NotRequired[dict[str, JsonValue]]
+    optional_params: NotRequired[dict[str, JsonValue]]
+    environment: NotRequired[dict[str, str]]
+    trusted: NotRequired[list[tuple[str, JsonValue]]]
+
+
+class ListingCall(TypedDict):
+    status: int
+    body: str
+    headers: NotRequired[list[tuple[str, str]]]
+    litellm_params: NotRequired[dict[str, JsonValue]]
+    environment: NotRequired[dict[str, str]]
+    trusted: NotRequired[list[tuple[str, JsonValue]]]
+
+
+class DeleteResponseCall(TypedDict):
+    status: int
+    body: str
+    headers: NotRequired[list[tuple[str, str]]]
+    additional_args: NotRequired[dict[str, JsonValue] | None]
+
+
+class RetrieveCall(TypedDict):
+    file_id: str
+    litellm_params: NotRequired[dict[str, JsonValue]]
+    optional_params: NotRequired[dict[str, JsonValue]]
+
+
+class ListRequests(TypedDict):
+    operation: Literal["list_request"]
+    requests: list[Call]
+
+
+class NextRequests(TypedDict):
+    operation: Literal["next_request"]
+    next: list[Call]
+
+
+class ListResponses(TypedDict):
+    operation: Literal["list_response"]
+    listings: list[ListingCall]
+
+
+class DeleteRequests(TypedDict):
+    operation: Literal["delete_request"]
+    deletes: list[Call]
+
+
+class ContentRequests(TypedDict):
+    operation: Literal["content_request"]
+    contents: list[Call]
+
+
+class DeleteResponses(TypedDict):
+    operation: Literal["delete_response"]
+    delete_responses: list[DeleteResponseCall]
+
+
+class Retrieves(TypedDict):
+    operation: Literal["retrieve"]
+    retrieves: list[RetrieveCall]
+
+
+Input = (
+    ListRequests
+    | NextRequests
+    | ListResponses
+    | DeleteRequests
+    | ContentRequests
+    | DeleteResponses
+    | Retrieves
+)
+
+RequestOperation = Literal["list_request", "next_request", "delete_request", "content_request"]
 
 
 class FixedNow:
@@ -72,7 +152,9 @@ def response_of(status: int, body: str, headers: list[tuple[str, str]] | None) -
     return httpx.Response(status_code=status, headers=pairs, content=body.encode())
 
 
-def request_reply(params: dict[str, JsonValue], transformed: tuple[str, dict[str, str]]) -> JsonValue:
+def request_reply(
+    params: dict[str, JsonValue], transformed: tuple[str, dict[str, str]]
+) -> JsonValue:
     url, query = transformed
     body: dict[str, JsonValue] = {
         "failed": False,
@@ -83,7 +165,9 @@ def request_reply(params: dict[str, JsonValue], transformed: tuple[str, dict[str
     return reply(body)
 
 
-def signed_request(config: BedrockFilesConfig, operation: RequestOperation, call: Call) -> JsonValue:
+def signed_request(
+    config: BedrockFilesConfig, operation: RequestOperation, call: Call
+) -> JsonValue:
     reset_environment(call.get("environment"))
     params = params_of(call.get("litellm_params"), call.get("trusted"))
     optional = optional_of(call.get("optional_params"))

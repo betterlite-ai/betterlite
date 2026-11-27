@@ -1,6 +1,6 @@
 import json
 import xml.etree.ElementTree as ET
-from typing import Final, TypedDict
+from typing import Final, TypedDict, cast
 from unittest.mock import MagicMock
 
 import httpx
@@ -8,8 +8,16 @@ from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
 from pydantic import JsonValue, TypeAdapter
 
-from .calls import JSON, params_of, reply, reset_environment, response_of
-from .schema import DeleteResponseCall, ListingCall, RetrievalRequest, RetrieveCall
+from .calls import (
+    JSON,
+    DeleteResponseCall,
+    ListingCall,
+    RetrieveCall,
+    params_of,
+    reply,
+    reset_environment,
+    response_of,
+)
 
 
 class FileReply(TypedDict):
@@ -69,9 +77,10 @@ def retrieve(config: BedrockFilesConfig, call: RetrieveCall) -> list[JsonValue]:
     optional: dict[str, JsonValue] = {}
     response = httpx.Response(status_code=200, content=b"")
     outcomes: list[JsonValue] = []
-    retrieval: RetrievalRequest = config
     try:
-        _request = retrieval.transform_retrieve_file_request(call["file_id"], optional, params)
+        _request = cast("tuple[str, dict[str, str]]", config.transform_retrieve_file_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1268-L1274
+            call["file_id"], optional, params
+        ))
     except NotImplementedError:
         outcomes.append(reply({"failed": True, "status": None}))
     try:
