@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -35,6 +36,10 @@ const CACHE_FAILURE_PREFIX: &str = concat!(
     "litellm.proxy.hooks.batch_redis_get.py::async_pre_call_hook(): Exception occu",
     "red - "
 );
+
+// secrets-stay-secret: the verbose lines show the caller's api_key redacted, while the cache key and namespace keep it raw
+const MASKED_NAME: &str = "litellm:REDACTED:aretrieve_batch";
+const MASKED_KEY: &str = "litellm:REDACTED:aretrieve_batch:abc";
 
 fn expected_create_effects(enqueued: bool) -> Vec<Effect> {
     let mut effects = vec![
@@ -487,8 +492,8 @@ fn expected_cache_diagnostics(scenario: CacheScenario) -> Vec<BatchDiagnostic> {
         | CacheScenario::AtMaxAge
         | CacheScenario::PastMaxAge => Vec::new(),
         CacheScenario::WarmFromRedis => vec![
-            debug_line(&format!("cache_key_name: {CACHE_NAME}")),
-            debug_line(&format!("redis keys: ['{CACHE_KEY}']")),
+            debug_line(&format!("cache_key_name: {MASKED_NAME}")),
+            debug_line(&format!("redis keys: ['{MASKED_KEY}']")),
         ],
     }
 }
@@ -578,7 +583,7 @@ async fn retrieve_backing_store_hit() {
     assert!(rig.memory.pipeline_keys().is_empty());
     assert!(rig.remote.batch_keys().is_empty());
     let scanned = vec![
-        format!("cache_key_name: {CACHE_NAME}"),
+        format!("cache_key_name: {MASKED_NAME}"),
         String::from("redis keys: []"),
     ];
     assert_eq!(retrieved.printed, scanned);
@@ -677,7 +682,7 @@ async fn retrieve_reports_bad_metadata(#[case] metadata: Option<Json>, #[case] r
     assert_eq!(
         retrieved.diagnostics,
         vec![
-            debug_line(&format!("cache_key_name: {CACHE_NAME}")),
+            debug_line(&format!("cache_key_name: {MASKED_NAME}")),
             debug_line("redis keys: []"),
             error_line(format!("{CACHE_FAILURE_PREFIX}{reason}")),
         ]
@@ -696,10 +701,16 @@ enum CacheFailure {
 
 fn failing_rig(failure: CacheFailure) -> (Rig, BatchPrecallInput) {
     let mut rig = Rig::new();
-    let input = match failure {
+    script_failure(&mut rig, failure);
+    let cache_key = (failure != CacheFailure::ReadWarm).then_some(CACHE_KEY);
+    (rig, retrieve_input(cache_key, None))
+}
+
+// the fault and scripted answer each cache failure needs; only a request without a cache key reaches the remote key lookup
+fn script_failure(rig: &mut Rig, failure: CacheFailure) {
+    match failure {
         CacheFailure::ScanLogged => {
             rig.remote.scan = RemoteAnswer::Failed(String::from("redis is down"));
-            retrieve_input(Some(CACHE_KEY), None)
         }
         CacheFailure::ScanRaised => {
             rig.remote.scan = RemoteAnswer::Http {
@@ -708,17 +719,14 @@ fn failing_rig(failure: CacheFailure) -> (Rig, BatchPrecallInput) {
             };
             // a readable value, so the cached answer stays empty only because the raise skips the read
             rig.remote.get = RemoteAnswer::Value(Some(envelope(None, batch_response())));
-            retrieve_input(Some(CACHE_KEY), None)
         }
         CacheFailure::MemoryRead => {
             rig.memory
                 .store(CACHE_KEY, envelope(None, batch_response()));
             rig.memory.get_failure = Some(String::from("memory read failed"));
-            retrieve_input(Some(CACHE_KEY), None)
         }
         CacheFailure::RemoteRead => {
             rig.remote.get = RemoteAnswer::Failed(String::from("redis read failed"));
-            retrieve_input(Some(CACHE_KEY), None)
         }
         CacheFailure::WarmWrite => {
             rig.remote.scan = RemoteAnswer::Value(vec![String::from(CACHE_KEY)]);
@@ -727,33 +735,30 @@ fn failing_rig(failure: CacheFailure) -> (Rig, BatchPrecallInput) {
                 envelope(None, batch_response()),
             )]);
             rig.memory.set_many_failure = Some(String::from("memory write failed"));
-            retrieve_input(Some(CACHE_KEY), None)
         }
         CacheFailure::ReadWarm => {
             rig.remote.key = Some(String::from(CACHE_KEY));
             rig.remote.get = RemoteAnswer::Value(Some(envelope(None, batch_response())));
             rig.memory.set_failure = Some(String::from("memory write failed"));
-            retrieve_input(None, None)
         }
-    };
-    (rig, input)
+    }
 }
 
 fn expected_failure_diagnostics(failure: CacheFailure) -> Vec<BatchDiagnostic> {
     match failure {
         CacheFailure::ScanLogged => vec![
-            debug_line(&format!("cache_key_name: {CACHE_NAME}")),
+            debug_line(&format!("cache_key_name: {MASKED_NAME}")),
             error_line(format!("{CACHE_FAILURE_PREFIX}redis is down")),
         ],
-        CacheFailure::ScanRaised => vec![debug_line(&format!("cache_key_name: {CACHE_NAME}"))],
+        CacheFailure::ScanRaised => vec![debug_line(&format!("cache_key_name: {MASKED_NAME}"))],
         CacheFailure::MemoryRead => Vec::new(),
         CacheFailure::RemoteRead | CacheFailure::ReadWarm => vec![
-            debug_line(&format!("cache_key_name: {CACHE_NAME}")),
+            debug_line(&format!("cache_key_name: {MASKED_NAME}")),
             debug_line("redis keys: []"),
         ],
         CacheFailure::WarmWrite => vec![
-            debug_line(&format!("cache_key_name: {CACHE_NAME}")),
-            debug_line(&format!("redis keys: ['{CACHE_KEY}']")),
+            debug_line(&format!("cache_key_name: {MASKED_NAME}")),
+            debug_line(&format!("redis keys: ['{MASKED_KEY}']")),
             error_line(format!("{CACHE_FAILURE_PREFIX}memory write failed")),
         ],
     }
@@ -862,11 +867,11 @@ struct FailingRefunds;
 impl BatchRefundSink for FailingRefunds {
     type Error = RefundStoreError;
 
-    async fn handle(
+    fn handle(
         &self,
         _input: &BatchEnqueuedRefundInput,
-    ) -> Result<BatchEnqueuedRefundResult, RefundStoreError> {
-        Err(RefundStoreError)
+    ) -> impl Future<Output = Result<BatchEnqueuedRefundResult, RefundStoreError>> + Send {
+        ready(Err(RefundStoreError))
     }
 }
 
