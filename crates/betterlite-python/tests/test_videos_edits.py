@@ -81,6 +81,12 @@ CHARACTER_RECORD: Final[dict[str, JsonValue]] = {
     "created_at": CREATED_AT,
     "name": CHARACTER_NAME,
 }
+MOCKED_CHARACTER: Final[dict[str, JsonValue]] = {
+    "id": "char-mocked",
+    "object": "character",
+    "created_at": CREATED_AT,
+    "name": CHARACTER_NAME,
+}
 EDITED_RECORD: Final[dict[str, JsonValue]] = {
     "id": "vid-edited",
     "object": "video",
@@ -576,6 +582,43 @@ def test_refused_provider_calls() -> None:
     assert created.value.status_code == edited.value.status_code == BAD_REQUEST
     assert extended.value.status_code == BAD_REQUEST
     assert server.calls == []
+
+
+def test_character_mock_calls() -> None:
+    create_arguments: dict[str, CallValue] = {
+        "name": CHARACTER_NAME,
+        "video": MEDIA_BYTES,
+        "custom_llm_provider": REFUSED_CHARACTER_PROVIDER,
+        "mock_response": MOCKED_CHARACTER,
+    }
+    get_arguments: dict[str, CallValue] = {
+        "character_id": CHARACTER_ID,
+        "custom_llm_provider": REFUSED_CHARACTER_PROVIDER,
+        "mock_response": MOCKED_CHARACTER,
+    }
+    with closing(EditServer()) as server:
+        create_values = endpoint_values(server, **create_arguments)
+        get_values = endpoint_values(server, **get_arguments)
+        reference_answers = [
+            REFERENCE.video_create_character(**create_values),
+            REFERENCE.video_get_character(**get_values),
+            asyncio.run(awaited(REFERENCE_ASYNC.avideo_create_character(**create_values))),
+            asyncio.run(awaited(REFERENCE_ASYNC.avideo_get_character(**get_values))),
+        ]
+        ours_answers = [
+            OURS.video_create_character(**create_values),
+            OURS.video_get_character(**get_values),
+            asyncio.run(awaited(OURS_ASYNC.avideo_create_character(**create_values))),
+            asyncio.run(awaited(OURS_ASYNC.avideo_get_character(**get_values))),
+        ]
+    reference_records = [
+        JSON_RECORD.validate_json(answer.model_dump_json()) for answer in reference_answers
+    ]
+    ours_records = [
+        JSON_RECORD.validate_json(answer.model_dump_json()) for answer in ours_answers
+    ]
+    assert server.calls == []
+    assert ours_records == reference_records == [MOCKED_CHARACTER] * len(ours_records)
 
 
 def test_unsupported_objects() -> None:
