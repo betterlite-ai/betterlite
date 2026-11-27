@@ -35,6 +35,15 @@ fn overlay_unified_targets_when_model_id_blank() {
 }
 
 #[test]
+fn overlay_unified_blank_parts_leave_data() {
+    let deps = store_deps(None, None, true);
+    let mut data = object(r#"{"vector_store_id":"unified"}"#);
+    let id = encoded("litellm_proxy:vector_store;model_id,;target_model_names,,m2;resource_id,   ");
+    unified_store_and_registry_overlay(&mut data, &id, &deps).unwrap();
+    assert_eq!(data, object(r#"{"vector_store_id":"unified"}"#));
+}
+
+#[test]
 fn overlay_unified_skips_registry() {
     let mut registry = VectorStoreRegistry::default();
     registry.stores.push(store(
