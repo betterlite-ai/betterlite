@@ -610,6 +610,22 @@ def test_async_flagged() -> None:
     assert DELETED.validate_python(removed) == plain_delete
 
 
+def test_async_flag_must_be_true() -> None:
+    with VectorFilesServer() as server:
+        ours = create(
+            vector_store_id=STORE_ID, file_id=FILE_ID, api_base=server.url, api_key=GOOD_KEY,
+            acreate=1,
+        )
+        reference = LITELLM.create(
+            vector_store_id=STORE_ID, file_id=FILE_ID, api_base=server.url, api_key=GOOD_KEY,
+            acreate=1,
+        )
+        ours_call, reference_call = server.calls
+    assert not inspect.isawaitable(ours)
+    assert ours_call["body"] == reference_call["body"]
+    compare(ours, reference)
+
+
 def test_error_keeps_class_cause() -> None:
     with VectorFilesServer() as server:
         with pytest.raises(AuthenticationError) as ours_caught:
