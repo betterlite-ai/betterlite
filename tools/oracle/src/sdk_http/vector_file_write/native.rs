@@ -119,10 +119,10 @@ fn kwargs_for(run: &Run, api_base: &str) -> IndexMap<String, Json> {
         kwargs.insert(String::from("extra_query"), Json::Object(query.clone()));
     }
     // delete has no extra_body argument, so the value reaches LiteLLM through **kwargs and never the wire
-    if run.operation == Operation::Delete {
-        if let Some(body) = &run.extra_body {
-            kwargs.insert(String::from("extra_body"), Json::Object(body.clone()));
-        }
+    if run.operation == Operation::Delete
+        && let Some(body) = &run.extra_body
+    {
+        kwargs.insert(String::from("extra_body"), Json::Object(body.clone()));
     }
     if let Some(unknown) = &run.unknown {
         kwargs.insert(String::from("unknown"), unknown.clone());
