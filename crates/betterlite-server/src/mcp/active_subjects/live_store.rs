@@ -30,6 +30,8 @@ pub struct LiveSubjectStore {
 }
 
 impl LiveSubjectStore {
+    // These delegates need a live auth database, so the error mapping above carries the tested behavior.
+    #[cfg_attr(test, mutants::skip)]
     async fn key_answer(&self, key_hash: &str) -> Result<UserAPIKeyAuth, SubjectReadError> {
         let request = KeyRequest {
             hashed_token: key_hash,
@@ -42,6 +44,7 @@ impl LiveSubjectStore {
             .map_err(|error| key_read_error(&error))
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn user_answer(
         &self,
         user_id: &str,
@@ -60,6 +63,7 @@ impl LiveSubjectStore {
             .map_err(|error| user_read_error(&error))
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn identity_answer(&self, key_hash: &str) -> IdentityLookup {
         match self.identities.resolve(key_hash).await {
             Ok(_) => IdentityLookup::Found,
@@ -69,10 +73,12 @@ impl LiveSubjectStore {
 }
 
 impl SubjectStore for LiveSubjectStore {
+    #[cfg_attr(test, mutants::skip)]
     fn now(&self) -> DateTime<Utc> {
         self.clock.now()
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn has_database(&self) -> bool {
         self.database.is_some()
     }

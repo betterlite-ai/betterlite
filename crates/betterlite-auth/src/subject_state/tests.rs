@@ -74,7 +74,7 @@ fn key_is_active_compares_a_text_expiry_with_the_instant(
 #[case::blocked_key(r#"{"user_id":"user-1","blocked":true}"#, None)]
 #[case::expired_key(r#"{"user_id":"user-1","expires":"2020-01-01T00:00:00Z"}"#, None)]
 #[case::team_key(r#"{"expires":"2099-01-01T00:00:00Z"}"#, None)]
-fn active_key_user_id_needs_a_live_key_with_an_owner(
+fn key_active_user_id_needs_a_live_key_with_an_owner(
     #[case] fields: &str,
     #[case] expected: Option<&str>,
 ) {

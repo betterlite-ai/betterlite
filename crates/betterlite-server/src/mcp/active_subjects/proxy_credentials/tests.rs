@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_auth::session_token_codec::record::SessionRecord;
 use betterlite_auth::user_roles::UserRole;
@@ -9,6 +10,8 @@ use betterlite_mcp::gateway_dcr::ports::{
     ConsentTeam, LookupConsentTeams, MintProxyCredential, ProxyCredentialMintFailure,
     ReloadUserFailure,
 };
+use betterlite_secrets::error::SecretError;
+use betterlite_secrets::secret_codec::NonceSource;
 use chrono::TimeDelta;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
@@ -16,7 +19,7 @@ use secrecy::ExposeSecret as _;
 use super::super::tests::{
     FakeStore, UserAnswer, detail, fixed_now, session_codec, subjects, user_row,
 };
-use super::super::{SubjectReadError, UserRowSource};
+use super::super::{SharedNonces, SubjectReadError, UserRowSource};
 use crate::cli_team_grants::records::CliSsoTeamDetail;
 
 const DAY_SECONDS: u64 = 86_400;
@@ -124,7 +127,7 @@ async fn consent_drops_details_without_a_team_id() {
 }
 
 #[tokio::test]
-async fn mint_reads_the_database_source_and_returns_the_user_failure() {
+async fn mint_refusal_reads_the_database_source_and_returns_the_user_failure() {
     let store = FakeStore {
         user: UserAnswer::Failed(SubjectReadError::Unavailable),
         ..FakeStore::new()
@@ -143,7 +146,7 @@ async fn mint_reads_the_database_source_and_returns_the_user_failure() {
 }
 
 #[tokio::test]
-async fn mint_refuses_a_team_the_user_is_not_in_before_any_team_read() {
+async fn mint_refusal_team_the_user_is_not_in_before_any_team_read() {
     let store = FakeStore {
         user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
         details: Some(vec![detail("team-a", "alias-a", &[])]),
@@ -157,7 +160,7 @@ async fn mint_refuses_a_team_the_user_is_not_in_before_any_team_read() {
 }
 
 #[tokio::test]
-async fn mint_without_team_details_is_unavailable() {
+async fn mint_refusal_without_team_details_is_unavailable() {
     let store = FakeStore {
         user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
         details: None,
@@ -172,7 +175,7 @@ async fn mint_without_team_details_is_unavailable() {
 }
 
 #[tokio::test]
-async fn mint_without_a_team_for_live_teams_is_team_required() {
+async fn mint_refusal_without_a_team_for_live_teams_is_team_required() {
     let store = FakeStore {
         user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
         details: Some(vec![detail("team-a", "alias-a", &[])]),
@@ -187,7 +190,7 @@ async fn mint_without_a_team_for_live_teams_is_team_required() {
 }
 
 #[tokio::test]
-async fn mint_refuses_a_member_whose_team_row_is_gone() {
+async fn mint_refusal_member_whose_team_row_is_gone() {
     let store = FakeStore {
         user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
         details: Some(Vec::new()),
@@ -199,7 +202,7 @@ async fn mint_refuses_a_member_whose_team_row_is_gone() {
 }
 
 #[tokio::test]
-async fn mint_with_no_team_for_a_user_whose_teams_are_gone() {
+async fn mint_refusal_with_no_team_for_a_user_whose_teams_are_gone() {
     let store = FakeStore {
         user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["gone"]}"#)),
         details: Some(Vec::new()),
@@ -212,7 +215,7 @@ async fn mint_with_no_team_for_a_user_whose_teams_are_gone() {
 }
 
 #[tokio::test]
-async fn mint_without_teams_never_reads_team_details() {
+async fn mint_refusal_without_teams_never_reads_team_details() {
     let store = FakeStore {
         user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","models":["gpt-4o"]}"#)),
         details: None,
@@ -235,7 +238,7 @@ async fn mint_without_teams_never_reads_team_details() {
     ProxyCredentialMintFailure::NoActiveKey
 )]
 #[tokio::test]
-async fn mint_refuses_a_user_that_is_not_live(
+async fn mint_refusal_user_that_is_not_live(
     #[case] answer: UserAnswer,
     #[case] expected: ProxyCredentialMintFailure,
 ) {
@@ -304,6 +307,24 @@ async fn mint_token_without_a_team_carries_the_user_models_and_effective_role() 
     assert_eq!(record.team_id, None);
     assert_eq!(record.user_role, role("internal_user"));
     assert!(record.team_models.is_empty());
+}
+
+#[tokio::test]
+struct MarkerNonces;
+
+impl NonceSource for MarkerNonces {
+    fn fill(&self, nonce: &mut [u8]) -> Result<(), SecretError> {
+        nonce.fill(0xAB);
+        Ok(())
+    }
+}
+
+#[test]
+fn mint_token_fills_each_nonce_through_the_shared_source() {
+    let shared = SharedNonces(Arc::new(MarkerNonces));
+    let mut nonce = [0_u8; 4];
+    NonceSource::fill(&shared, &mut nonce).unwrap();
+    assert_eq!(nonce, [0xAB; 4]);
 }
 
 #[tokio::test]
