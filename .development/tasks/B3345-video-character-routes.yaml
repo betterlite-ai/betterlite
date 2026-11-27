@@ -17,7 +17,7 @@ description: >-
   to that name. The provider is the first truthy of: B10059's header reader (custom-llm-provider), B10059's query
   reader (custom_llm_provider), B3330's get_custom_provider_from_data(data) (the body field, then the extra_body
   field), and the literal "openai". The result is written to data["custom_llm_provider"]. B004's
-  B8801's PreCall step runs first (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`), then base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
+  B8801's PreCall step runs first (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state and construct it here with B8802's `app::inference::pre_call_step(state)` in routes(state), independently of B8804's changes to other routes; never build `PreCallStep::standalone`), then base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
   user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version values. The entry's
   dispatch calls the SDK function B3341's avideo_create_character or the router wrapper, as the Dispatch paragraph says; B004 owns the response headers and _handle_llm_api_exception; every
   exception from the call goes through that handler.

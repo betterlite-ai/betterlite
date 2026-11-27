@@ -1,7 +1,7 @@
 id: B8544
 milestone: M9 agents and mcp
 title: Install the managed agent admission port
-status: blocked
+status: todo
 depends_on: [B700, B726, B855, B4773, B4776, B4778, B4780, B4781, B8645]
 file: tasks/B8544-managed-admission-port.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: B141
 split_from: B141
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, agents API can wait"
+blocked_reason: null
 pr: null

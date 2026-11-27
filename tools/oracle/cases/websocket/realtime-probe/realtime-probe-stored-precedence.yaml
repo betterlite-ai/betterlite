@@ -1,0 +1,46 @@
+kind: helper
+name: realtime-probe-stored-precedence
+call:
+  realtime_probe_websocket:
+    scenarios:
+      - model: probe-model
+        custom_llm_provider: openai
+        model_params:
+          litellm_credential_name: shared
+          api_key: sk-explicit
+        stored:
+          - credential_name: shared
+            credential_values: {api_key: sk-stored, api_base: https://stored.example}
+      - model: probe-model
+        custom_llm_provider: openai
+        model_params:
+          litellm_credential_name: shared
+          api_key: null
+        stored:
+          - credential_name: shared
+            credential_values: {api_key: sk-stored, api_base: https://stored.example}
+      - model: probe-model
+        custom_llm_provider: openai
+        api_key: sk-named
+        api_base: https://named.example
+        model_params:
+          api_key: sk-parameter
+          api_base: https://parameter.example
+      - model: probe-model
+        custom_llm_provider: xai
+        model_params:
+          litellm_credential_name: 7
+          api_key: sk-xai
+        stored:
+          - credential_name: shared
+            credential_values: {api_key: sk-stored}
+      - model: probe-model
+        custom_llm_provider: openai
+        model_params:
+          litellm_credential_name: missing
+        stored:
+          - credential_name: shared
+            credential_values: {api_base: https://stored.example}
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "16777216"
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+task: B1127
+deviations:
+  - what: A realtime health probe caps a websocket message at 16777216 bytes while LiteLLM passes no cap at all.
+    why: B002 reads the cap from an environment variable with betterlite's own default, so an unset variable never leaves the connection unbounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L339
+kept_bugs:
+  - what: An Azure probe with no api key resolves an Azure AD token through B529 at probe time, as LiteLLM does, so an expired or unavailable credential fails the probe rather than the configuration load.
+    why: A working LiteLLM setup relies on the proxy-wide Azure AD configuration producing a token on demand for health checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L616-L628

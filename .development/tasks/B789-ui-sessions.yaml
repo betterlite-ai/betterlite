@@ -7,7 +7,8 @@ description: >-
   Own every function in password_endpoints.py L52-L170 and session_endpoints.py L48-L175,
   registering POST /user/password/change and POST /session/logout exactly once. Neither uses
   management_endpoint_wrapper: password values must never reach generic management span kwargs.
-  B2333 owns the extracted expired-session cleanup job, including its batch-size setting.
+  The expired-session cleanup job and its batch-size setting belong independently to B2333;
+  these routes build their own revocation flow and call no cleanup-worker code.
 
   Password change requires B8411 ChangePasswordRequest.current_password and new_password strings,
   both excluded from diagnostic representations; missing/wrong-type fields return schema 422.
