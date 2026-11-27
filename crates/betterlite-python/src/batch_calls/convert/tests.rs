@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use betterlite_config::sections::{batch_provider_create, batch_provider_read, xai_identity};
 use betterlite_core::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
@@ -13,16 +12,14 @@ use betterlite_core::api::batch_provider_read::{
     BatchProviderReadInput, BatchReadProvider, BatchReadTimeoutValue,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::TimeoutError;
-use betterlite_openai::api::batch_records::{BatchIdRequest, CreateBatchRequest};
 use betterlite_openai::batches::records::{
-    BatchEndpoint, BatchObject, CompletionWindow, ExpiryAnchor, OutputExpiry,
+    BatchEndpoint, BatchObject, CompletionWindow, ExpiryAnchor, MissingBatchField, OutputExpiry,
 };
-use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
-use indexmap::IndexMap;
+use betterlite_openai::batches::sdk::TimeoutError as SdkTimeoutError;
+use betterlite_openai::batches::sdk::TimeoutPhases;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 
-use super::request::{BodyError, DurationError, batch_create, batch_query, duration_of};
 use super::{
     BatchAnswer, CallMode, HiddenParams, ModuleSettings, SessionWire, create_input, create_payload,
     parse, read_input, read_payload, section_settings,
@@ -63,36 +60,11 @@ struct AnswerView {
     hidden_params: HiddenParams,
 }
 
-fn batch_body() -> CreateBatchRequest {
-    CreateBatchRequest {
-        completion_window: Some(CompletionWindow::Day),
-        endpoint: Some(BatchEndpoint::ChatCompletions),
-        input_file_id: Some("file-1".to_owned()),
-        metadata: Some(IndexMap::from([("k".to_owned(), "v".to_owned())])),
-        output_expires_after: Some(OutputExpiry {
-            anchor: ExpiryAnchor::CreatedAt,
-            seconds: 60,
-        }),
-        extra_headers: None,
-        extra_body: None,
-        timeout: Some(12.5),
-    }
-}
-
 fn read_call(provider: &str, model: Option<&str>) -> BatchProviderReadInput {
     let mut input: BatchProviderReadInput = read_payload(r#"{"batch_id":"batch-1"}"#).unwrap();
     input.provider = BatchReadProvider::from(provider.to_owned());
     input.model = model.map(str::to_owned);
     input
-}
-
-const fn phases() -> TimeoutPhases {
-    TimeoutPhases {
-        connect: None,
-        read: None,
-        write: None,
-        pool: None,
-    }
 }
 
 #[test]
@@ -424,136 +396,6 @@ fn request_xai_settings_read_the_xai_environment() {
 }
 
 #[test]
-fn request_create_body_carries_the_typed_fields() {
-    let request = batch_create(&batch_body()).unwrap();
-    assert_eq!(request.completion_window, CompletionWindow::Day);
-    assert_eq!(request.endpoint, BatchEndpoint::ChatCompletions);
-    assert_eq!(request.input_file_id, "file-1");
-    assert_eq!(
-        request
-            .metadata
-            .as_ref()
-            .unwrap()
-            .get("k")
-            .map(String::as_str),
-        Some("v")
-    );
-    assert_eq!(
-        request.output_expires_after,
-        Some(OutputExpiry {
-            anchor: ExpiryAnchor::CreatedAt,
-            seconds: 60,
-        })
-    );
-    assert_eq!(request.timeout, Some(12.5_f64));
-    assert!(request.extra_headers.is_none());
-    assert!(request.extra_body.is_none());
-}
-
-#[test]
-fn request_create_body_names_the_missing_field() {
-    let error = batch_create(&CreateBatchRequest::default()).unwrap_err();
-    assert_eq!(
-        error,
-        BodyError::Missing {
-            field: "completion_window"
-        }
-    );
-    let no_endpoint = CreateBatchRequest {
-        completion_window: Some(CompletionWindow::Day),
-        endpoint: None,
-        input_file_id: None,
-        metadata: None,
-        output_expires_after: None,
-        extra_headers: None,
-        extra_body: None,
-        timeout: None,
-    };
-    assert_eq!(
-        batch_create(&no_endpoint).unwrap_err(),
-        BodyError::Missing { field: "endpoint" }
-    );
-    let no_file = CreateBatchRequest {
-        completion_window: Some(CompletionWindow::Day),
-        endpoint: Some(BatchEndpoint::Embeddings),
-        input_file_id: None,
-        metadata: None,
-        output_expires_after: None,
-        extra_headers: None,
-        extra_body: None,
-        timeout: None,
-    };
-    assert_eq!(
-        batch_create(&no_file).unwrap_err(),
-        BodyError::Missing {
-            field: "input_file_id"
-        }
-    );
-}
-
-#[test]
-fn request_query_carries_the_batch_id() {
-    let request = batch_query(&BatchIdRequest {
-        batch_id: Some("batch-1".to_owned()),
-        extra_headers: Some(IndexMap::from([("h".to_owned(), "v".to_owned())])),
-        extra_body: None,
-        timeout: Some(3.0_f64),
-    })
-    .unwrap();
-    assert_eq!(request.batch_id, "batch-1");
-    assert_eq!(
-        request
-            .extra_headers
-            .as_ref()
-            .unwrap()
-            .get("h")
-            .map(String::as_str),
-        Some("v")
-    );
-    assert_eq!(request.timeout, Some(3.0_f64));
-    assert_eq!(
-        batch_query(&BatchIdRequest::default()).unwrap_err(),
-        BodyError::Missing { field: "batch_id" }
-    );
-}
-
-#[test]
-fn request_duration_follows_the_timeout_pieces() {
-    assert_eq!(
-        duration_of(&Timeout::Seconds(30.0)).unwrap(),
-        Duration::from_secs(30)
-    );
-    let read = TimeoutPhases {
-        connect: None,
-        read: Some(5.0_f64),
-        write: Some(9.0_f64),
-        pool: None,
-    };
-    assert_eq!(
-        duration_of(&Timeout::Phases(read)).unwrap(),
-        Duration::from_secs(5)
-    );
-    assert_eq!(
-        duration_of(&Timeout::Phases(phases())).unwrap(),
-        Duration::from_secs(600)
-    );
-    assert_eq!(
-        duration_of(&Timeout::Seconds(-1.0)).unwrap_err(),
-        DurationError::Invalid { seconds: -1.0_f64 }
-    );
-    let negative_read = TimeoutPhases {
-        connect: Some(-2.0_f64),
-        read: Some(-3.0_f64),
-        write: None,
-        pool: None,
-    };
-    assert_eq!(
-        duration_of(&Timeout::Phases(negative_read)).unwrap_err(),
-        DurationError::Invalid { seconds: -3.0_f64 }
-    );
-}
-
-#[test]
 fn request_create_hidden_params_take_the_callers_api_base() {
     let input: BatchProviderCreateInput = create_payload(CREATE_PAYLOAD).unwrap();
     let hidden = HiddenParams::new(
@@ -835,7 +677,7 @@ fn error_read_payload_maps_an_unwired_provider() {
 
 #[test]
 fn error_read_payload_maps_a_request_failure() {
-    let failure = DispatchFailure::Request(BodyError::Missing { field: "batch_id" });
+    let failure = DispatchFailure::Request(MissingBatchField::Missing { field: "batch_id" });
     let payload = read_error_payload(&BatchProviderReadError::Dispatch(failure), "openai", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));
@@ -844,7 +686,7 @@ fn error_read_payload_maps_a_request_failure() {
 
 #[test]
 fn error_read_payload_maps_a_timeout_failure() {
-    let failure = DispatchFailure::Timeout(DurationError::Invalid { seconds: -1.0_f64 });
+    let failure = DispatchFailure::Timeout(SdkTimeoutError::Invalid { seconds: -1.0_f64 });
     let payload = read_error_payload(&BatchProviderReadError::Dispatch(failure), "openai", None);
     assert_eq!(payload.error_type, "BadRequestError");
     assert_eq!(payload.status_code, Some(400));

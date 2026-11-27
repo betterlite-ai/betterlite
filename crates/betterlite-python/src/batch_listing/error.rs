@@ -2,6 +2,7 @@ use betterlite_core::api::batch_provider_cancel::BatchProviderCancelError;
 use betterlite_core::api::batch_provider_list::error::BatchProviderListError;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
+use betterlite_openai::batches::sdk::TimeoutError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
@@ -11,7 +12,6 @@ use super::convert::{ConvertError, SettingsError};
 use super::payload::{
     ErrorPayload, ProviderError, dispatch_fields, error_payload, provider_error_payload,
 };
-use super::transport::DurationError;
 
 create_exception!(betterlite_native, NativeBatchListError, PyException);
 
@@ -56,7 +56,7 @@ pub(crate) enum DispatchFailure {
     #[error("{0}")]
     Connection(String),
     #[error(transparent)]
-    Timeout(#[from] DurationError),
+    Timeout(#[from] TimeoutError),
     #[error("provider `{provider}` has no batch listing or cancel call in this build")]
     Unsupported { provider: String },
 }
