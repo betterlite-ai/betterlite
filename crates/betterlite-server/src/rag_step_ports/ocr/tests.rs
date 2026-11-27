@@ -66,10 +66,11 @@ impl OcrBackend for ScriptedBackend {
         request: LiteLLMOcrRequest<OcrDocumentInput>,
     ) -> Result<OCRResponse, NativeOcrError> {
         self.requests.lock().unwrap().push(request);
-        match self.failure.lock().unwrap().take() {
-            Some(error) => Err(error),
-            None => Ok(native_answer(&self.pages)),
-        }
+        self.failure
+            .lock()
+            .unwrap()
+            .take()
+            .map_or_else(|| Ok(native_answer(&self.pages)), Err)
     }
 }
 

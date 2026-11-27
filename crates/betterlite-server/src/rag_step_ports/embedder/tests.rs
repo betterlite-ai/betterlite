@@ -19,13 +19,15 @@ struct ScriptedEmbedder {
 impl RagEmbedder for ScriptedEmbedder {
     async fn embed(&self, model: &str, input: Vec<String>) -> Result<Vec<Vec<f64>>, EmbedError> {
         self.calls.lock().unwrap().push((model.to_owned(), input));
-        match &self.failure {
-            Some(message) => Err(EmbedError::Failed {
-                model: model.to_owned(),
-                message: message.clone(),
-            }),
-            None => Ok(self.answer.as_ref().clone()),
-        }
+        self.failure.as_ref().map_or_else(
+            || Ok(self.answer.as_ref().clone()),
+            |message| {
+                Err(EmbedError::Failed {
+                    model: model.to_owned(),
+                    message: message.clone(),
+                })
+            },
+        )
     }
 }
 
