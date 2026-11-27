@@ -98,9 +98,10 @@ class Deployment:
 
     async def __call__(self, **kwargs: JsonValue) -> JsonValue:
         call = SummaryCall.model_validate(kwargs)
+        messages: list[JsonValue] = [*call.messages]
         request: dict[str, JsonValue] = {
             "model": f"openai/{call.model}",
-            "messages": call.messages,
+            "messages": messages,
             "max_tokens": call.max_tokens,
             "timeout": call.timeout,
             "litellm_metadata": call.litellm_metadata,
@@ -146,13 +147,17 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
         polyfilled = await call_dispatch(scenario)
         result = SHAPE.validate_python(cast(dict[str, JsonValue], asdict(polyfilled)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/result.py#L21
     except errors.AnthropicContextManagementError as error:
-        failure = SHAPE.validate_python(
-            {"class": ANTHROPIC_ERROR, "status_code": error.status_code, "message": error.message}
-        )
+        failure_payload: dict[str, JsonValue] = {
+            "class": ANTHROPIC_ERROR,
+            "status_code": error.status_code,
+            "message": error.message,
+        }
+        failure = SHAPE.validate_python(failure_payload)
     finally:
         object.__setattr__(litellm, "token_counter", REAL_COUNTER)
         object.__setattr__(litellm, "acompletion", REAL_ACOMPLETION)
-    return SHAPE.validate_python({"result": result, "failure": failure})
+    payload: dict[str, JsonValue] = {"result": result, "failure": failure}
+    return SHAPE.validate_python(payload)
 
 
 class ContextEditDispatchRequest(BaseModel):

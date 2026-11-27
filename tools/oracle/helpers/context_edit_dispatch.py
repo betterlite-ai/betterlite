@@ -1,7 +1,8 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
-from typing import Final, Literal, Protocol, TypedDict, cast
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 from litellm.llms.anthropic.pass_through.context_management import (
     PolyfillResult,
@@ -20,6 +21,9 @@ from typing_extensions import override
 DIAGNOSTIC_PREFIX: Final = "context_management polyfill:"
 ANTHROPIC_ERROR: Final = "AnthropicContextManagementError"
 JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+
+EditorResult: TypeAlias = PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]
+EditorFn: TypeAlias = Callable[..., EditorResult | Awaitable[EditorResult]]
 
 
 class Input(TypedDict):
@@ -183,14 +187,11 @@ async def call_dispatch(
 def run_scenario(scenario: Scenario) -> dict[str, JsonValue]:
     editor = ScriptedEditor(scenario.clear, scenario.compact)
     # the registry the dispatcher consults: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/dispatcher.py#L23-L26
-    object.__setattr__(
-        dispatcher,
-        "_EDITOR_REGISTRY",
-        {
-            CLEAR_TOOL_USES_EDIT_TYPE: editor.clear_tool_uses,
-            COMPACT_EDIT_TYPE: editor.compact_uses,
-        },
-    )
+    registry: dict[str, EditorFn] = {
+        CLEAR_TOOL_USES_EDIT_TYPE: editor.clear_tool_uses,
+        COMPACT_EDIT_TYPE: editor.compact_uses,
+    }
+    object.__setattr__(dispatcher, "_EDITOR_REGISTRY", registry)
     capture = LogCapture()
     logger = logging.getLogger("LiteLLM")
     previous_handlers = logger.handlers
@@ -205,18 +206,28 @@ def run_scenario(scenario: Scenario) -> dict[str, JsonValue]:
         polyfilled = asyncio.run(call_dispatch(scenario, router, principal))
         result = JSON_OBJECT.validate_python(cast(dict[str, JsonValue], asdict(polyfilled)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/result.py#L21
     except errors.AnthropicContextManagementError as error:
-        failure = JSON_OBJECT.validate_python(
-            {"class": ANTHROPIC_ERROR, "status_code": error.status_code, "message": error.message}
-        )
+        failure_payload: dict[str, JsonValue] = {
+            "class": ANTHROPIC_ERROR,
+            "status_code": error.status_code,
+            "message": error.message,
+        }
+        failure = JSON_OBJECT.validate_python(failure_payload)
     finally:
         logger.handlers = previous_handlers
         logger.setLevel(previous_level)
-    return JSON_OBJECT.validate_python(
-        {"result": result, "failure": failure, "calls": editor.calls, "diagnostics": capture.lines}
-    )
+    calls: list[JsonValue] = [*editor.calls]
+    diagnostics: list[JsonValue] = [*capture.lines]
+    payload: dict[str, JsonValue] = {
+        "result": result,
+        "failure": failure,
+        "calls": calls,
+        "diagnostics": diagnostics,
+    }
+    return JSON_OBJECT.validate_python(payload)
 
 
 def run(input_value: Input) -> JsonValue:
     call = CALL.validate_python(input_value)
-    runs = [run_scenario(scenario) for scenario in call.scenarios]
-    return JSON_OBJECT.validate_python({"runs": runs})
+    runs: list[JsonValue] = [run_scenario(scenario) for scenario in call.scenarios]
+    payload: dict[str, JsonValue] = {"runs": runs}
+    return JSON_OBJECT.validate_python(payload)
