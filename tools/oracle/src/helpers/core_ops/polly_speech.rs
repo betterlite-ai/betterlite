@@ -82,9 +82,27 @@ fn answer(runtime: &Runtime, call: &Call) -> Value {
             environment: region_environment(&call.environment),
         }),
         "map_params" => map_answer(call),
-        "url" => url_answer(call),
+        "url" => url_answer(call.api_base.as_deref(), &call.litellm_params),
         "request" => request_answer(runtime, call),
-        "credential_arguments" => credential_answer(call),
+        "credential_arguments" => {
+            let Ok(sources) = credentials::sources(&call.litellm_params) else {
+                return json!({ "ok": false });
+            };
+            json!({
+                "ok": true, "arguments": {
+                    "aws_access_key_id": sources.aws_access_key_id,
+                    "aws_secret_access_key": sources.aws_secret_access_key,
+                    "aws_session_token": sources.aws_session_token,
+                    "aws_region_name": sources.aws_region_name,
+                    "aws_session_name": sources.aws_session_name,
+                    "aws_profile_name": sources.aws_profile_name,
+                    "aws_role_name": sources.aws_role_name,
+                    "aws_web_identity_token": sources.aws_web_identity_token,
+                    "aws_sts_endpoint": sources.aws_sts_endpoint,
+                    "aws_external_id": sources.aws_external_id,
+                }
+            })
+        }
         _ => json!({ "ok": false }),
     }
 }
@@ -110,12 +128,11 @@ fn map_answer(call: &Call) -> Value {
 }
 
 // get_complete_url takes the base as an argument and reads only the region off litellm_params
-fn url_answer(call: &Call) -> Value {
-    let region = call
-        .litellm_params
+fn url_answer(api_base: Option<&str>, litellm_params: &Object) -> Value {
+    let region = litellm_params
         .get("aws_region_name")
         .and_then(Value::as_str);
-    let url = complete_url(call.api_base.as_deref(), region);
+    let url = complete_url(api_base, region);
     json!({ "ok": true, "url": url })
 }
 
@@ -154,26 +171,6 @@ fn signed_answer(signed: &TextToSpeechRequest) -> Value {
     json!({
         "ok": true, "url": signed.url, "dict_body_absent": signed.data.dict_body.is_none(), "body": body,
         "signed": { "scheme": fields.scheme, "credential": fields.credential, "scope": fields.scope, "signed_headers": fields.signed_headers, "signature_ok": fields.signature_ok, "date_ok": fields.date_ok, "header_names": fields.header_names, "content_type": fields.content_type, "security_token": fields.security_token },
-    })
-}
-
-fn credential_answer(call: &Call) -> Value {
-    let Ok(sources) = credentials::sources(&call.litellm_params) else {
-        return json!({ "ok": false });
-    };
-    json!({
-        "ok": true, "arguments": {
-            "aws_access_key_id": sources.aws_access_key_id,
-            "aws_secret_access_key": sources.aws_secret_access_key,
-            "aws_session_token": sources.aws_session_token,
-            "aws_region_name": sources.aws_region_name,
-            "aws_session_name": sources.aws_session_name,
-            "aws_profile_name": sources.aws_profile_name,
-            "aws_role_name": sources.aws_role_name,
-            "aws_web_identity_token": sources.aws_web_identity_token,
-            "aws_sts_endpoint": sources.aws_sts_endpoint,
-            "aws_external_id": sources.aws_external_id,
-        }
     })
 }
 
