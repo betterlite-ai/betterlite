@@ -1,6 +1,13 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use rstest::rstest;
+use tracing::Subscriber;
+use tracing::subscriber::with_default;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context, Layer};
 
 use super::RedirectAllowlists;
 use super::loopback::validate_loopback_redirect_uri;
@@ -182,6 +189,43 @@ fn trusted_untrusted_proxy_ignores_headers() {
         ..untrusted
     };
     assert_eq!(trusted_outcome(trusted), Ok(()));
+}
+
+struct WarnCapture(Arc<AtomicUsize>);
+
+impl<S: Subscriber> Layer<S> for WarnCapture {
+    fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+        if event.metadata().level() == &tracing::Level::WARN {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+#[test]
+fn trusted_rejection_warns_before_it_is_returned() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let subscriber = tracing_subscriber::registry().with(WarnCapture(Arc::clone(&count)));
+    let origin = RequestOrigin {
+        base_url: "https://proxy.example.com",
+        x_forwarded_proto: None,
+        x_forwarded_host: None,
+        x_forwarded_port: None,
+        from_trusted_proxy: false,
+    };
+    let outcome = with_default(subscriber, || {
+        validate_trusted_redirect_uri(
+            &origin,
+            "",
+            "https://evil.example/callback",
+            &RedirectAllowlists::default(),
+        )
+    });
+    let rejection = outcome.unwrap_err();
+    assert_eq!(
+        rejection.redirect_uri.as_deref(),
+        Some("https://evil.example/callback")
+    );
+    assert_eq!(count.load(Ordering::Relaxed), 1);
 }
 
 #[test]
