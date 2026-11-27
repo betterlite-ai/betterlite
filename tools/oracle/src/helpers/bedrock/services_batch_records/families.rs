@@ -144,16 +144,6 @@ impl Families {
         part("bedrock_claude_invoke", input, pointer)
     }
 
-    fn claude_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
-        let mapped = self.claude("map_params", mapping_model, &[], params)?;
-        serde_json::from_value(mapped).map_err(failure)
-    }
-
-    fn claude_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
-        let body = self.claude("transform", model, messages, params)?;
-        serde_json::from_value(body).map_err(failure)
-    }
-
     fn converse_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
         let map_input = json!({"function": "map_params", "model": model, "model_cost": self.model_cost, "environment": {}, "non_default_params": params, "optional_params": {}, "global_drop": false, "call_drop": false});
         let mapped_params = part("bedrock_converse_params", map_input, "/params")?;
@@ -166,7 +156,8 @@ impl Families {
 #[async_trait::async_trait]
 impl BatchFamilies for Families {
     async fn anthropic_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
-        self.claude_params(mapping_model, params)
+        let mapped = self.claude("map_params", mapping_model, &[], params)?;
+        serde_json::from_value(mapped).map_err(failure)
     }
 
     async fn anthropic_body(
@@ -175,8 +166,8 @@ impl BatchFamilies for Families {
         messages: &[Json],
         params: &Params,
     ) -> Attempt<Json> {
-        let body = self.claude_body(model, messages, params)?;
-        Ok(body)
+        let body = self.claude("transform", model, messages, params)?;
+        serde_json::from_value(body).map_err(failure)
     }
 
     async fn nova_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
