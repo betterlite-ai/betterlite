@@ -3,11 +3,13 @@ use http::header::CONTENT_TYPE;
 use rstest::rstest;
 
 use super::super::error::RunwaySpeechError;
-use super::support::{Reply, fetch, header_text, request_headers, settings, submission};
+use super::support::{
+    DEADLINE, LIMITS, Reply, fetch, header_text, request_headers, settings, submission,
+};
 
 #[tokio::test]
 async fn a_completed_submission_is_polled_anyway() {
-    let (answer, requests, pauses) = fetch(
+    let (answer, requests, pauses, _) = fetch(
         &settings(&[]),
         &[
             Reply::json(
@@ -52,7 +54,7 @@ fn assert_poll_headers(headers: &HeaderMap) {
 #[tokio::test]
 async fn polling_ignores_the_configured_base() {
     let loaded = settings(&[("RUNWAYML_API_BASE", "https://proxy.example.test")]);
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &loaded,
         &[
             Reply::json(
@@ -75,7 +77,7 @@ async fn polling_ignores_the_configured_base() {
 #[tokio::test]
 async fn polling_takes_the_configured_version_when_the_request_has_none() {
     let loaded = settings(&[("RUNWAYML_DEFAULT_API_VERSION", "2030-01-01")]);
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &loaded,
         &[
             Reply::json(
@@ -97,7 +99,7 @@ async fn polling_takes_the_configured_version_when_the_request_has_none() {
 
 #[tokio::test]
 async fn a_request_without_authorization_polls_with_an_empty_one() {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[
             Reply::json(
@@ -120,7 +122,7 @@ async fn a_request_without_authorization_polls_with_an_empty_one() {
 
 #[tokio::test]
 async fn a_lowercase_request_header_is_still_found() {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[
             Reply::json(
@@ -147,7 +149,7 @@ async fn a_lowercase_request_header_is_still_found() {
 #[case::empty(r#"{"id":"","status":"PENDING"}"#)]
 #[tokio::test]
 async fn a_submission_without_a_task_id_fails_before_polling(#[case] body: &'static str) {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[],
         &submission(200, body),
@@ -162,7 +164,7 @@ async fn a_submission_without_a_task_id_fails_before_polling(#[case] body: &'sta
 
 #[tokio::test]
 async fn a_submission_that_is_not_a_task_keeps_its_status() {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[],
         &submission(502, "bad gateway"),
@@ -195,7 +197,7 @@ async fn a_submission_that_is_not_a_task_keeps_its_status() {
 )]
 #[tokio::test]
 async fn an_output_without_an_audio_url_fails(#[case] poll: &'static str) {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[Reply::json(200, poll)],
         &submission(200, r#"{"id":"t","status":"PENDING"}"#),
@@ -209,7 +211,7 @@ async fn an_output_without_an_audio_url_fails(#[case] poll: &'static str) {
 
 #[tokio::test]
 async fn a_non_string_first_output_fails_even_with_a_later_url() {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[Reply::json(
             200,
@@ -226,7 +228,7 @@ async fn a_non_string_first_output_fails_even_with_a_later_url() {
 
 #[tokio::test]
 async fn only_the_first_output_url_is_fetched() {
-    let (answer, requests, pauses) = fetch(
+    let (answer, requests, pauses, _) = fetch(
         &settings(&[]),
         &[
             Reply::json(200, r#"{"id":"t","status":"RUNNING"}"#),
@@ -248,8 +250,58 @@ async fn only_the_first_output_url_is_fetched() {
 }
 
 #[tokio::test]
+async fn a_redirected_audio_url_is_followed_to_the_audio() {
+    let (answer, requests, _, downloads) = fetch(
+        &settings(&[]),
+        &[
+            Reply::json(
+                200,
+                r#"{"id":"t","status":"SUCCEEDED","output":["https://delivery.test/moved.mp3"]}"#,
+            ),
+            Reply::redirect("https://cdn.test/audio.mp3"),
+            Reply::audio("audio/mpeg", "redirected-bytes"),
+        ],
+        &submission(200, r#"{"id":"t","status":"PENDING"}"#),
+        &request_headers(&[("Authorization", "Bearer k")]),
+    )
+    .await;
+    let content = answer.unwrap();
+    assert_eq!(content.body, b"redirected-bytes".to_vec());
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[1].0, "https://delivery.test/moved.mp3");
+    assert_eq!(requests[2].0, "https://cdn.test/audio.mp3");
+    assert_eq!(downloads.len(), 1);
+    assert_eq!(downloads[0].url, "https://delivery.test/moved.mp3");
+    assert_eq!(downloads[0].max_bytes, LIMITS.max_json_bytes);
+    assert_eq!(downloads[0].deadline, DEADLINE);
+}
+
+#[tokio::test]
+async fn a_redirect_without_a_location_reports_its_status() {
+    let (answer, requests, _, _) = fetch(
+        &settings(&[]),
+        &[
+            Reply::json(
+                200,
+                r#"{"id":"t","status":"SUCCEEDED","output":["https://delivery.test/a.mp3"]}"#,
+            ),
+            Reply::json(307, ""),
+        ],
+        &submission(200, r#"{"id":"t","status":"PENDING"}"#),
+        &request_headers(&[("Authorization", "Bearer k")]),
+    )
+    .await;
+    let error = answer.unwrap_err();
+    assert!(matches!(
+        error,
+        RunwaySpeechError::DownloadStatus { status: 307 }
+    ));
+    assert_eq!(requests.len(), 2);
+}
+
+#[tokio::test]
 async fn a_download_failure_reports_its_status() {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[
             Reply::json(
@@ -273,7 +325,7 @@ async fn a_download_failure_reports_its_status() {
 
 #[tokio::test]
 async fn an_audio_url_that_is_not_a_url_fails() {
-    let (answer, requests, _) = fetch(
+    let (answer, requests, _, _) = fetch(
         &settings(&[]),
         &[Reply::json(
             200,

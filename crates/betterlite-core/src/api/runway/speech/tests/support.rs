@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::credentials::LiteLlmGlobals;
@@ -17,6 +18,7 @@ use secrecy::SecretString;
 use serde_json::json;
 use url::Url;
 
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::runway::speech::dispatch::{
     DispatchCall, DispatchEnvironment, HandlerFailure, HandlerRequest, TextToSpeechHandler,
     dispatch_text_to_speech,
@@ -26,6 +28,14 @@ use crate::api::runway::speech::mapping::VOICE_KEY;
 use crate::api::runway::speech::response::RunwaySpeechTransform;
 use crate::api::runway::tasks::poll::{PollClock, TaskTransport};
 use crate::api::runway::tasks::settings::RunwaySettings;
+use crate::api::runway::video_lifecycle::artifact::ArtifactTransport;
+
+pub(super) const LIMITS: ApiLimits = ApiLimits {
+    max_json_bytes: 1024,
+    max_event_bytes: 256,
+    max_items: 16,
+};
+pub(super) const DEADLINE: Duration = Duration::from_secs(5);
 
 pub(super) fn settings(pairs: &[(&str, &str)]) -> RunwaySettings {
     let lookup: BTreeMap<String, String> = pairs
@@ -110,11 +120,27 @@ impl Reply {
             headers: vec![("content-type", content_type)],
         }
     }
+
+    pub(super) fn redirect(location: &'static str) -> Self {
+        Self {
+            status: 302,
+            body: String::new(),
+            headers: vec![("location", location)],
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct Download {
+    pub(super) url: String,
+    pub(super) max_bytes: usize,
+    pub(super) deadline: Duration,
 }
 
 pub(super) struct Script {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<(String, HeaderMap)>>,
+    downloads: Mutex<Vec<Download>>,
 }
 
 impl Script {
@@ -122,12 +148,62 @@ impl Script {
         Self {
             replies: Mutex::new(replies.iter().cloned().collect()),
             requests: Mutex::new(Vec::new()),
+            downloads: Mutex::new(Vec::new()),
         }
     }
 
     pub(super) fn requests(&self) -> Vec<(String, HeaderMap)> {
         self.requests.lock().unwrap().clone()
     }
+
+    pub(super) fn downloads(&self) -> Vec<Download> {
+        self.downloads.lock().unwrap().clone()
+    }
+
+    fn record(&self, url: &Url, headers: &HeaderMap) {
+        self.requests
+            .lock()
+            .unwrap()
+            .push((url.to_string(), headers.clone()));
+    }
+
+    fn next_reply(&self) -> Reply {
+        self.replies.lock().unwrap().pop_front().unwrap_or(Reply {
+            status: 500,
+            body: String::new(),
+            headers: Vec::new(),
+        })
+    }
+}
+
+fn respond(reply: &Reply) -> UpstreamResponse {
+    let headers: HeaderMap = reply
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            )
+        })
+        .collect();
+    UpstreamResponse {
+        status: reply.status,
+        headers,
+        body: reply.body.as_bytes().to_vec(),
+    }
+}
+
+// httpx follows these five statuses, and only when a Location header says where to
+fn redirect_target(reply: &Reply) -> Option<String> {
+    if !matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
+        return None;
+    }
+    reply
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("location"))
+        .map(|(_, value)| (*value).to_owned())
 }
 
 impl TaskTransport for Script {
@@ -136,30 +212,34 @@ impl TaskTransport for Script {
         url: Url,
         headers: HeaderMap,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.requests
-            .lock()
-            .unwrap()
-            .push((url.to_string(), headers));
-        let reply = self.replies.lock().unwrap().pop_front().unwrap_or(Reply {
-            status: 500,
-            body: String::new(),
-            headers: Vec::new(),
+        self.record(&url, &headers);
+        ready(Ok(respond(&self.next_reply())))
+    }
+}
+
+impl ArtifactTransport for Script {
+    fn fetch(
+        &self,
+        request: OutboundRequest,
+        max_bytes: usize,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        let mut url = request.url;
+        self.downloads.lock().unwrap().push(Download {
+            url: url.to_string(),
+            max_bytes,
+            deadline: request.deadline,
         });
-        let reply_headers: HeaderMap = reply
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                (
-                    HeaderName::from_static(name),
-                    HeaderValue::from_static(value),
-                )
-            })
-            .collect();
-        ready(Ok(UpstreamResponse {
-            status: reply.status,
-            headers: reply_headers,
-            body: reply.body.into_bytes(),
-        }))
+        loop {
+            self.record(&url, &request.headers);
+            let reply = self.next_reply();
+            let Some(target) = redirect_target(&reply) else {
+                return ready(Ok(respond(&reply)));
+            };
+            let Ok(next) = Url::parse(&target) else {
+                return ready(Ok(respond(&reply)));
+            };
+            url = next;
+        }
     }
 }
 
@@ -345,6 +425,7 @@ pub(super) async fn fetch(
     Result<BinaryContent, RunwaySpeechError>,
     Vec<(String, HeaderMap)>,
     Vec<u64>,
+    Vec<Download>,
 ) {
     let script = Script::new(replies);
     let clock = Clock::new(0);
@@ -352,8 +433,15 @@ pub(super) async fn fetch(
         transport: &script,
         clock: &clock,
         settings: loaded,
+        limits: LIMITS,
+        deadline: DEADLINE,
     }
     .transform(submission, headers)
     .await;
-    (answer, script.requests(), clock.pauses())
+    (
+        answer,
+        script.requests(),
+        clock.pauses(),
+        script.downloads(),
+    )
 }

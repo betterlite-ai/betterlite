@@ -1,16 +1,22 @@
+use std::time::Duration;
+
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::files::stream::flatten_headers;
-use http::HeaderMap;
 use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use url::Url;
 
 use super::error::RunwaySpeechError;
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::runway::tasks::TaskKind;
+use crate::api::runway::tasks::error::RunwayTaskError;
 use crate::api::runway::tasks::poll::{PollClock, TaskPoller, TaskTransport};
 use crate::api::runway::tasks::record::{TaskOutput, TaskOutputs, decode_runway_task};
 use crate::api::runway::tasks::settings::RunwaySettings;
+use crate::api::runway::video_lifecycle::artifact::ArtifactTransport;
 
 const POLL_API_BASE: &str = "https://api.dev.runwayml.com";
 const VERSION_HEADER: &str = "x-runway-version";
@@ -19,9 +25,11 @@ pub struct RunwaySpeechTransform<'client, T, C> {
     pub transport: &'client T,
     pub clock: &'client C,
     pub settings: &'client RunwaySettings,
+    pub limits: ApiLimits,
+    pub deadline: Duration,
 }
 
-impl<T: TaskTransport + Sync, C: PollClock + Sync> RunwaySpeechTransform<'_, T, C> {
+impl<T: TaskTransport + ArtifactTransport, C: PollClock + Sync> RunwaySpeechTransform<'_, T, C> {
     pub async fn transform(
         &self,
         submission: &UpstreamResponse,
@@ -48,10 +56,22 @@ impl<T: TaskTransport + Sync, C: PollClock + Sync> RunwaySpeechTransform<'_, T, 
         .poll(POLL_API_BASE, &task_id, &headers)
         .await?;
         let audio = audio_url(completed.output.as_ref())?;
+        self.download(audio).await
+    }
+
+    async fn download(&self, audio: &str) -> Result<BinaryContent, RunwaySpeechError> {
         let url = Url::parse(audio).map_err(RunwaySpeechError::AudioUrl)?;
+        let request = OutboundRequest {
+            method: Method::GET,
+            url,
+            query: Vec::new(),
+            headers: HeaderMap::new(),
+            body: RequestBody::Empty,
+            deadline: self.deadline,
+        };
         let reply = self
             .transport
-            .get(url, HeaderMap::new())
+            .fetch(request, self.limits.max_json_bytes)
             .await
             .map_err(RunwaySpeechError::Download)?;
         if !(200..300).contains(&reply.status) {
@@ -70,13 +90,14 @@ fn poll_headers(
 ) -> Result<HeaderMap, RunwaySpeechError> {
     let authorization = header_value(original, "authorization").unwrap_or_default();
     let version = header_value(original, VERSION_HEADER).unwrap_or(default_version);
-    let mut bearer = HeaderValue::try_from(authorization).map_err(RunwaySpeechError::Header)?;
+    let mut bearer =
+        HeaderValue::try_from(authorization).map_err(RunwayTaskError::InvalidHeader)?;
     bearer.set_sensitive(true);
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, bearer);
     headers.insert(
         HeaderName::from_static(VERSION_HEADER),
-        HeaderValue::try_from(version).map_err(RunwaySpeechError::Header)?,
+        HeaderValue::try_from(version).map_err(RunwayTaskError::InvalidHeader)?,
     );
     Ok(headers)
 }

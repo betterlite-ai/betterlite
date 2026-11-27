@@ -1,5 +1,4 @@
 use betterlite_http::proxy::transport_error::TransportError;
-use http::header::InvalidHeaderValue;
 use indexmap::IndexMap;
 use thiserror::Error;
 
@@ -24,8 +23,6 @@ pub enum RunwaySpeechError {
     AudioUrlNotString,
     #[error("the RunwayML TTS audio URL is not a valid URL")]
     AudioUrl(#[source] url::ParseError),
-    #[error("a RunwayML TTS header value holds a character a header cannot carry")]
-    Header(#[source] InvalidHeaderValue),
     #[error("the RunwayML TTS audio download failed")]
     Download(#[source] TransportError),
     #[error("the RunwayML TTS audio download answered HTTP {status}")]
@@ -51,7 +48,6 @@ impl RunwaySpeechError {
             | Self::MissingAudioUrl
             | Self::AudioUrlNotString
             | Self::AudioUrl(_)
-            | Self::Header(_)
             | Self::Download(_)
             | Self::DownloadStatus { .. }
             | Self::InvalidOption { .. }

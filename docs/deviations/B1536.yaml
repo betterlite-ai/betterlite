@@ -6,6 +6,12 @@ deviations:
   - what: The poll timeout and the default X-Runway-Version are read from the environment each time a call runs, through B1534's settings, where LiteLLM reads RUNWAYML_POLLING_TIMEOUT and RUNWAYML_DEFAULT_API_VERSION once when its constants module is imported.
     why: A process that changes those variables between calls sees the new value here and the imported one in LiteLLM; a setup that sets them before the process starts behaves the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L480-L492
+  - what: The audio download stops at ApiLimits.max_json_bytes (16 MiB) and reports the download transport error, where LiteLLM's client.get reads the whole audio body into memory without a bound.
+    why: The task requires the bounded read through B1087 so one provider audio file cannot exhaust proxy memory; an audio body larger than the limit is refused rather than buffered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L512
+  - what: A download answer outside the 2xx range is reported as DownloadStatus, where LiteLLM's raise_for_status raises only for 4xx and 5xx and returns a 3xx it could not follow as the audio content.
+    why: Only a 2xx response carries the audio, as in every other download path in the proxy; a redirect that was not followed is a failed download, not audio bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L512-L513
 kept_bugs:
   - what: The task poll and the audio download always use https://api.dev.runwayml.com, the default host, even when the submission went to another api_base or RUNWAYML_API_BASE.
     why: The task requires the default-host poll, a direct Runway setup works exactly that way, and polling the submission host instead would change the host LiteLLM contacts for every proxy setup.
