@@ -14,7 +14,7 @@ use betterlite_core::rag::ingestion::credentials::{
     CredentialLookup as CredentialLookupPort, CredentialLookupError,
 };
 use betterlite_core::rag::ingestion::ocr::{OcrError, OcrOperation, OcrRequest, OcrResponse};
-use betterlite_core::rag::ingestion::upload::UrlFetchError;
+use betterlite_core::rag::ingestion::upload::{UrlFetch as _, UrlFetchError};
 use betterlite_core::rag::ingestion::{IngestionPorts, IngestionState};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::user_url::error::{SsrfError, UserUrlError};
