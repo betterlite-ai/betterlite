@@ -44,7 +44,10 @@ description: >-
   LiveServerAccess and keep it on McpIdentity: can_access(auth, server_id) is B4672's UiSession::can_access_mcp_server(auth,
   server_id, lister) with that same ContextServers as the lister (LiteLLM passes
   global_mcp_server_manager.get_allowed_mcp_servers), the UiSession built from McpAccess and B4672's LiveSessionReads, and
-  Error is UiSessionError.
+  Error is UiSessionError. Also implement B10135's AccessibleServerSources as LiveAccessibleSources and keep it on
+  McpIdentity: effective_auth_contexts(auth) is B10127's build_effective_auth_contexts(auth, teams, human) with the same
+  teams port and human this file builds B4672's UiSession from, and allowed_server_tables(auth) is B6591's
+  ServerUnion::allowed_tables(auth) on McpIdentity's ServerUnion. Its Error is UnionError, since the context walk cannot fail.
 
 
   Access (access.rs). B4671's McpAccess with LiveAccessReads over B737's team read, B887 and B752's budget checks, and
@@ -83,7 +86,7 @@ references:
 dod:
   - text: The four settings structs are filled from config and mcp_gateway_env with LiteLLM's defaults.
     proof: [identity-tests]
-  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591, and B4731's ServerAccessCheck, has a production
+  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591, B4731's ServerAccessCheck and B10135's AccessibleServerSources, has a production
       implementation over its owning crate.
     proof: [identity-tests]
   - text: McpIdentity builds once from McpCore and Shared with no global.

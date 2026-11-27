@@ -1,0 +1,42 @@
+task: B7883
+deviations:
+  - what: Each function keeps the 600 second default timeout only for the character calls.
+    why: The source does so, and the other calls use the standard timeout.
+    link: ""
+  - what: This task has no helper oracle cases.
+    why: The functions call a native session, so pytest compares both packages against one local server.
+    link: ""
+  - what: A character call whose provider has a video config other than OpenAI's is refused with the source's unsupported error.
+    why: Only OpenAI's character transform is built here. LiteLLM looks the provider up in ProviderConfigManager and runs that provider's own handler, so a provider such as runwayml fails here with BadRequestError where LiteLLM would send its request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1172-L1178
+  - what: video_edit and video_extension answer 400 not supported for every provider but openai.
+    why: The config lookup returns a config only for the OpenAI tag, and the core reports the same not-supported error LiteLLM raises when its own provider lookup misses. LiteLLM's ProviderConfigManager does return a config for other video providers, and its handler would run them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1436
+  - what: A video may be given as a path, which LiteLLM's FileContent type does not take, and a path or an open file is uploaded with its basename as the multipart filename.
+    why: The task asks for bytes, a path or an open file; the payload layer reads the path's bytes and names the upload by basename, where LiteLLM hands a Path to httpx and fails reading it, and names an open file by its raw name attribute, the full path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L588-L610
+  - what: A character video given as a two- or three-item tuple is uploaded from the tuple's content under the tuple's name.
+    why: LiteLLM's video_create_character types the video as FileTypes, whose two- and three-item tuple forms it declares, but _video_file_tuple nests the whole tuple as the multipart file object, so httpx calls read on a tuple and raises AttributeError; betterlite takes the tuple's name and content and sends the upload LiteLLM cannot send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L588-L610
+  - what: The sync entry points block on the same native async handler the async ones await.
+    why: One Rust operation per call serves both Python twins, and the sync wrapper blocks on it, where LiteLLM's sync path builds its own blocking request. The request and the mapped errors on the wire are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7736-L7765
+  - what: No logging callbacks receive these calls, and no request log record is written.
+    why: The Python package has no LiteLLM callbacks to hand a logging object to, so the native side builds a logging state with a silent sink where LiteLLM fills litellm_logging_obj and its pre and post call hooks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1183-L1191
+  - what: A client, shared_session or logger_fn keyword raises UnsupportedCallArgument instead of being used.
+    why: Those are Python objects that cannot cross to Rust, and the shared payload layer refuses them before a request is built; LiteLLM accepts a client and calls through it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1203
+  - what: The VideoGenerationRequestUtils helper class becomes two plain functions in the private betterlite.videos._utils module.
+    why: The task asks for plain functions with the same output, and the module is private, so a caller that imported LiteLLM's helper class from litellm.videos.utils has no betterlite equivalent path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/utils.py#L9-L13
+kept_bugs:
+  - what: extra_body and extra_query are accepted by both character calls and never sent to the provider.
+    why: LiteLLM's signatures carry both keywords but its handler call forwards only extra_headers, so a working setup can pass them and see them ignored; betterlite drops them the same way instead of rejecting the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1193-L1204
+  - what: video_edit and avideo_edit accept extra_query and never send it to the provider.
+    why: LiteLLM's signature carries the keyword but its handler call forwards extra_headers and extra_body only, so a working setup can pass extra_query and see it ignored; betterlite drops it the same way instead of rejecting the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1451
+  - what: video_extension and avideo_extension accept extra_query and never send it to the provider.
+    why: LiteLLM's signature carries the keyword but its handler call forwards extra_headers and extra_body only, so a working setup can pass extra_query and see it ignored; betterlite drops it the same way instead of rejecting the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1589
