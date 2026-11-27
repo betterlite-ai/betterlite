@@ -1,6 +1,6 @@
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::managed_resource_rows::wire::{
-    PublicInternet, RowFlag, RowTimestamp, SecretMap, SecretMapField,
+    PublicInternet, RowFlag, SecretMap, SecretMapField,
 };
 use betterlite_db::mcp_stored_contracts::MCPTransport;
 
@@ -75,10 +75,17 @@ const EMPTY_ROW: McpServerTable = McpServerTable {
     review_notes: None,
 };
 
-impl ServerRegistry {
-    // LiteLLM's _build_mcp_server_table
+pub trait ServerTables {
     #[must_use]
-    pub fn server_table(&self, server: &MCPServer) -> McpServerTable {
+    fn server_table(&self, server: &MCPServer) -> McpServerTable;
+
+    #[must_use]
+    fn all_server_tables(&self) -> Vec<McpServerTable>;
+}
+
+impl ServerTables for ServerRegistry {
+    // LiteLLM's _build_mcp_server_table
+    fn server_table(&self, server: &MCPServer) -> McpServerTable {
         let fields = &server.fields;
         let mut row = EMPTY_ROW;
         let declared = self.is_config_declared_server(&fields.server_id);
@@ -93,8 +100,7 @@ impl ServerRegistry {
     }
 
     // LiteLLM's get_all_mcp_servers_unfiltered
-    #[must_use]
-    pub fn all_server_tables(&self) -> Vec<McpServerTable> {
+    fn all_server_tables(&self) -> Vec<McpServerTable> {
         self.get_registry()
             .into_iter()
             .map(|server| self.server_table(server))

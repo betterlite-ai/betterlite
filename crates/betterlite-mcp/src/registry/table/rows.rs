@@ -87,7 +87,7 @@ fn row_timestamp(value: Option<DateTime<Utc>>, server_id: &str) -> Option<RowTim
     let timestamp = value?;
     let encoded = serde_json::to_string(&timestamp)
         .inspect_err(|error| {
-            warn!("MCP server {server_id}: a timestamp cannot be encoded: {error}")
+            warn!("MCP server {server_id}: a timestamp cannot be encoded: {error}");
         })
         .ok()?;
     serde_json::from_str(&encoded)

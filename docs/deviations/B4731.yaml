@@ -24,7 +24,7 @@ deviations:
   - what: is_config is true for a server declared in the config that no database row overrides, where LiteLLM tests server_id against the config and DB union registry it is iterating.
     why: betterlite keeps the config and DB records in separate maps, so the task's check (config-declared and absent from the DB map) expresses the row's intent, and a record taken from the union registry would always give false.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7336
-  - what: server_exposes_tool is an associated function of ServerRegistry, where LiteLLM has it as a method.
+  - what: server_exposes_tool is a free function in the registry module, where LiteLLM has it as a method.
     why: it reads only the record and the owner map, and the task's inputs name no registry state.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2908-L2914
 kept_bugs: []

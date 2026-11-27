@@ -79,7 +79,7 @@ fn secret_map(values: &BTreeMap<String, String>) -> SecretMap {
     secrets
 }
 
-fn row_oauth2_flow(flow: OAuth2Flow) -> McpOAuth2Flow {
+const fn row_oauth2_flow(flow: OAuth2Flow) -> McpOAuth2Flow {
     match flow {
         OAuth2Flow::ClientCredentials => McpOAuth2Flow::ClientCredentials,
         OAuth2Flow::AuthorizationCode => McpOAuth2Flow::AuthorizationCode,

@@ -13,6 +13,7 @@ use super::{
     ResolutionSource, ResolveError, ResolveTarget, ResolvedServer, ServerAccessCheck, TempLookup,
     authorize_server, resolve_server,
 };
+use crate::registry::table::ServerTables as _;
 use crate::registry::tests::support::{record, registry, registry_with, settings};
 use crate::server_build::BuildError;
 use crate::server_record::MCPServer;

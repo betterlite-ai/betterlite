@@ -8,7 +8,9 @@ use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::mcp::table_access::types::McpTableError;
 use thiserror::Error;
 
+use super::lookup::ServerLookups as _;
 use super::servers::ServerRegistry;
+use super::table::ServerTables as _;
 use crate::server_build::BuildError;
 use crate::server_record::MCPServer;
 

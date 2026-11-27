@@ -3,10 +3,23 @@ use betterlite_auth::trusted_network::internal::{is_internal_ip, parse_internal_
 use super::servers::ServerRegistry;
 use crate::server_record::MCPServer;
 
-impl ServerRegistry {
-    // LiteLLM's _is_server_accessible_from_ip
+pub trait ServerLookups {
     #[must_use]
-    pub fn is_accessible_from_ip(&self, server: &MCPServer, client_ip: Option<&str>) -> bool {
+    fn is_accessible_from_ip(&self, server: &MCPServer, client_ip: Option<&str>) -> bool;
+
+    #[must_use]
+    fn server_by_id(&self, server_id: &str, client_ip: Option<&str>) -> Option<&MCPServer>;
+
+    #[must_use]
+    fn server_by_name(&self, server_name: &str, client_ip: Option<&str>) -> Option<&MCPServer>;
+
+    #[must_use]
+    fn filtered_registry(&self, client_ip: Option<&str>) -> Vec<(String, &MCPServer)>;
+}
+
+impl ServerLookups for ServerRegistry {
+    // LiteLLM's _is_server_accessible_from_ip
+    fn is_accessible_from_ip(&self, server: &MCPServer, client_ip: Option<&str>) -> bool {
         let Some(ip) = client_ip else {
             return true;
         };
@@ -26,7 +39,7 @@ impl ServerRegistry {
     }
 
     // LiteLLM's get_mcp_server_by_id: the first hit wins, and a blocked hit never falls through
-    pub fn server_by_id(&self, server_id: &str, client_ip: Option<&str>) -> Option<&MCPServer> {
+    fn server_by_id(&self, server_id: &str, client_ip: Option<&str>) -> Option<&MCPServer> {
         let server = self
             .get_registry()
             .into_iter()
@@ -36,7 +49,7 @@ impl ServerRegistry {
     }
 
     // LiteLLM's get_mcp_server_by_name, whose three passes stop at the first record they match
-    pub fn server_by_name(&self, server_name: &str, client_ip: Option<&str>) -> Option<&MCPServer> {
+    fn server_by_name(&self, server_name: &str, client_ip: Option<&str>) -> Option<&MCPServer> {
         let registry = self.get_registry();
         let by_alias = registry
             .iter()
@@ -69,8 +82,7 @@ impl ServerRegistry {
     }
 
     // LiteLLM's get_filtered_registry: the server_id and record of every reachable server
-    #[must_use]
-    pub fn filtered_registry(&self, client_ip: Option<&str>) -> Vec<(String, &MCPServer)> {
+    fn filtered_registry(&self, client_ip: Option<&str>) -> Vec<(String, &MCPServer)> {
         self.get_registry()
             .into_iter()
             .filter(|server| self.is_accessible_from_ip(server, client_ip))

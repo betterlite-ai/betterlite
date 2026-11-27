@@ -11,6 +11,9 @@ use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
+use crate::registry::lookup::ServerLookups as _;
+use crate::registry::permissions::PermissionExpansion as _;
+use crate::registry::table::ServerTables as _;
 use support::{record, registry, registry_with, settings};
 
 const PRIVATE: &str = r#"{"server_id":"test-a","name":"Alpha","transport":"http","available_on_public_internet":false}"#;
@@ -555,13 +558,10 @@ fn table_static_headers_and_env_stay_secret() {
     let row = &tables[0];
     let static_headers = row.static_headers.as_ref().unwrap();
     assert_eq!(
-        static_headers.0.get("X-Static").unwrap().expose_secret(),
+        static_headers.0["X-Static"].expose_secret(),
         "static-secret"
     );
-    assert_eq!(
-        row.env.0.get("ENVKEY").unwrap().expose_secret(),
-        "env-secret"
-    );
+    assert_eq!(row.env.0["ENVKEY"].expose_secret(), "env-secret");
 }
 
 #[test]

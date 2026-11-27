@@ -1,14 +1,13 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use betterlite_config::sections::mcp_env_values::StdioPolicy;
 
-use crate::registry::servers::ServerRegistry;
 use crate::registry::tests::support::{record, registry};
 use crate::server_utils::prefixes::PrefixPolicy;
 
-use super::ToolOwners;
+use super::{ToolOwnerLookups as _, ToolOwners, server_exposes_tool};
 
 const ALPHA: &str =
     r#"{"server_id":"test-a","name":"Alpha Server","transport":"http","alias":"alpha"}"#;
@@ -70,7 +69,7 @@ fn prefix_map_has_the_alias_and_server_id_forms() {
 #[test]
 fn exposes_tool_through_the_bare_spelling() {
     let known = owners(&[("echo", "Alpha Server")]);
-    assert!(ServerRegistry::server_exposes_tool(
+    assert!(server_exposes_tool(
         &record(ALPHA),
         "echo",
         &known,
@@ -81,7 +80,7 @@ fn exposes_tool_through_the_bare_spelling() {
 #[test]
 fn exposes_tool_through_a_prefixed_spelling() {
     let known = owners(&[("alpha-echo", "Alpha Server")]);
-    assert!(ServerRegistry::server_exposes_tool(
+    assert!(server_exposes_tool(
         &record(ALPHA),
         "echo",
         &known,
@@ -92,7 +91,7 @@ fn exposes_tool_through_a_prefixed_spelling() {
 #[test]
 fn exposes_tool_of_another_server_is_false() {
     let known = owners(&[("echo", "Beta Server")]);
-    assert!(!ServerRegistry::server_exposes_tool(
+    assert!(!server_exposes_tool(
         &record(ALPHA),
         "echo",
         &known,
@@ -103,7 +102,7 @@ fn exposes_tool_of_another_server_is_false() {
 #[test]
 fn exposes_tool_normalizes_a_spaced_name() {
     let known = owners(&[("echo", "Spaced Name")]);
-    assert!(ServerRegistry::server_exposes_tool(
+    assert!(server_exposes_tool(
         &record(SPACED),
         "echo",
         &known,
@@ -114,7 +113,7 @@ fn exposes_tool_normalizes_a_spaced_name() {
 #[test]
 fn exposes_tool_ignores_an_empty_owner() {
     let known = owners(&[("echo", "")]);
-    assert!(!ServerRegistry::server_exposes_tool(
+    assert!(!server_exposes_tool(
         &record(BLANK_NAME),
         "echo",
         &known,

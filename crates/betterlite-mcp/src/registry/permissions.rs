@@ -7,10 +7,20 @@ use tracing::debug;
 use super::servers::ServerRegistry;
 use crate::server_record::MCPServer;
 
-impl ServerRegistry {
-    // LiteLLM's expand_permission_list: ids, then aliases and names, and anything else as given
+pub trait PermissionExpansion {
     #[must_use]
-    pub fn expand_permission_list(&self, identifiers: &[String]) -> Vec<String> {
+    fn expand_permission_list(&self, identifiers: &[String]) -> Vec<String>;
+
+    #[must_use]
+    fn expand_tool_permissions(
+        &self,
+        tool_permissions: Option<&BTreeMap<String, Vec<String>>>,
+    ) -> BTreeMap<String, Vec<String>>;
+}
+
+impl PermissionExpansion for ServerRegistry {
+    // LiteLLM's expand_permission_list: ids, then aliases and names, and anything else as given
+    fn expand_permission_list(&self, identifiers: &[String]) -> Vec<String> {
         let registry = self.get_registry();
         let mut expanded: IndexSet<String> = IndexSet::new();
         for identifier in identifiers {
@@ -21,45 +31,44 @@ impl ServerRegistry {
                 expanded.insert(identifier.clone());
                 continue;
             }
-            let mut matched = false;
-            for server in &registry {
-                if names_server(server, identifier) {
-                    expanded.insert(server.fields.server_id.clone());
-                    matched = true;
-                }
-            }
-            if !matched {
+            let matching: Vec<String> = registry
+                .iter()
+                .filter(|server| names_server(server, identifier))
+                .map(|server| server.fields.server_id.clone())
+                .collect();
+            if matching.is_empty() {
                 debug!(
                     "MCP permission entry {identifier:?} is not a known server; keeping it for the access check"
                 );
                 expanded.insert(identifier.clone());
+            } else {
+                expanded.extend(matching);
             }
         }
         expanded.into_iter().collect()
     }
 
     // LiteLLM's expand_tool_permissions: expand each key to its servers and union the tools
-    #[must_use]
-    pub fn expand_tool_permissions(
+    fn expand_tool_permissions(
         &self,
         tool_permissions: Option<&BTreeMap<String, Vec<String>>>,
     ) -> BTreeMap<String, Vec<String>> {
         let Some(permissions) = tool_permissions else {
             return BTreeMap::new();
         };
-        let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut grouped: BTreeMap<String, IndexSet<String>> = BTreeMap::new();
         for (identifier, tools) in permissions {
-            let servers = self.expand_permission_list(from_ref(identifier));
-            for server_id in servers {
-                let entry = grouped.entry(server_id).or_default();
-                for tool in tools {
-                    if !entry.contains(tool) {
-                        entry.push(tool.clone());
-                    }
-                }
+            for server_id in self.expand_permission_list(from_ref(identifier)) {
+                grouped
+                    .entry(server_id)
+                    .or_default()
+                    .extend(tools.iter().cloned());
             }
         }
         grouped
+            .into_iter()
+            .map(|(server_id, tools)| (server_id, tools.into_iter().collect()))
+            .collect()
     }
 }
 

@@ -19,10 +19,26 @@ pub struct ToolOwners {
     pub mapping: BTreeMap<String, String>,
 }
 
-impl ServerRegistry {
-    // LiteLLM's _known_prefix_to_server: a form two servers share stays with the first registered
+pub trait ToolOwnerLookups {
     #[must_use]
-    pub fn known_prefix_to_server(&self, policy: &PrefixPolicy) -> BTreeMap<String, &MCPServer> {
+    fn known_prefix_to_server(&self, policy: &PrefixPolicy) -> BTreeMap<String, &MCPServer>;
+
+    #[must_use]
+    fn server_for_tool_name(
+        &self,
+        tool_name: &str,
+        owners: &ToolOwners,
+        policy: &PrefixPolicy,
+        stdio: &StdioPolicy,
+    ) -> Option<&MCPServer>;
+
+    #[must_use]
+    fn server_owning_prefix(&self, tool_name: &str, policy: &PrefixPolicy) -> Option<&MCPServer>;
+}
+
+impl ToolOwnerLookups for ServerRegistry {
+    // LiteLLM's _known_prefix_to_server: a form two servers share stays with the first registered
+    fn known_prefix_to_server(&self, policy: &PrefixPolicy) -> BTreeMap<String, &MCPServer> {
         let mut prefix_to_server = BTreeMap::new();
         for server in self.get_registry().into_iter().rev() {
             for prefix in iter_known_server_prefixes(server, policy) {
@@ -32,34 +48,8 @@ impl ServerRegistry {
         prefix_to_server
     }
 
-    // LiteLLM's server_exposes_tool: a spelling of the tool name whose owner this server is
-    #[must_use]
-    pub fn server_exposes_tool(
-        server: &MCPServer,
-        tool_name: &str,
-        owners: &ToolOwners,
-        policy: &PrefixPolicy,
-    ) -> bool {
-        let prefixes = iter_known_server_prefixes(server, policy);
-        let mut owned: BTreeSet<String> = prefixes
-            .iter()
-            .map(|prefix| prefix.replace(' ', "_"))
-            .collect();
-        if !server.fields.name.is_empty() {
-            owned.insert(server.fields.name.replace(' ', "_"));
-        }
-        let spellings = known_tool_name_spellings(tool_name, &prefixes, &policy.separator);
-        spellings.iter().any(|spelling| {
-            owners
-                .mapping
-                .get(spelling)
-                .is_some_and(|owner| owned.contains(&owner.replace(' ', "_")))
-        })
-    }
-
     // LiteLLM's _get_mcp_server_from_tool_name: the owner map first, then the known prefixes
-    #[must_use]
-    pub fn server_for_tool_name(
+    fn server_for_tool_name(
         &self,
         tool_name: &str,
         owners: &ToolOwners,
@@ -84,23 +74,43 @@ impl ServerRegistry {
         let prefixes: Vec<String> = prefix_to_server.keys().cloned().collect();
         let (prefix, original_tool_name) = match_known_server_prefix(tool_name, &prefixes, policy)?;
         let server = prefix_to_server.get(&prefix).copied()?;
-        let exposed = Self::server_exposes_tool(server, &original_tool_name, owners, policy);
+        let exposed = server_exposes_tool(server, &original_tool_name, owners, policy);
         let stdio_blocked = server.fields.transport == MCPTransport::Stdio
             && is_mcp_stdio_blocked(Some("stdio"), stdio);
         (exposed || stdio_blocked).then_some(server)
     }
 
     // LiteLLM's server_owning_tool_name_prefix
-    #[must_use]
-    pub fn server_owning_prefix(
-        &self,
-        tool_name: &str,
-        policy: &PrefixPolicy,
-    ) -> Option<&MCPServer> {
+    fn server_owning_prefix(&self, tool_name: &str, policy: &PrefixPolicy) -> Option<&MCPServer> {
         let prefix_to_server = self.known_prefix_to_server(policy);
         let prefixes: Vec<String> = prefix_to_server.keys().cloned().collect();
         let matched = match_known_server_prefix(tool_name, &prefixes, policy)?;
         let prefix = matched.0;
         prefix_to_server.get(&prefix).copied()
     }
+}
+
+// LiteLLM's server_exposes_tool: a spelling of the tool name whose owner this server is
+#[must_use]
+pub fn server_exposes_tool(
+    server: &MCPServer,
+    tool_name: &str,
+    owners: &ToolOwners,
+    policy: &PrefixPolicy,
+) -> bool {
+    let prefixes = iter_known_server_prefixes(server, policy);
+    let mut owned: BTreeSet<String> = prefixes
+        .iter()
+        .map(|prefix| prefix.replace(' ', "_"))
+        .collect();
+    if !server.fields.name.is_empty() {
+        owned.insert(server.fields.name.replace(' ', "_"));
+    }
+    let spellings = known_tool_name_spellings(tool_name, &prefixes, &policy.separator);
+    spellings.iter().any(|spelling| {
+        owners
+            .mapping
+            .get(spelling)
+            .is_some_and(|owner| owned.contains(&owner.replace(' ', "_")))
+    })
 }
