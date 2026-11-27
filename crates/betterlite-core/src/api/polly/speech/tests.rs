@@ -10,6 +10,7 @@ use secrecy::SecretString;
 use serde_json::json;
 
 use super::body::{is_ssml, request_body, serialize};
+use super::config::PollySpeechConfig;
 use super::credentials::{self, CredentialResolver, CredentialSources, ResolvedCredentials};
 use super::endpoint::{DEFAULT_REGION, complete_url};
 use super::error::SpeechError;
@@ -18,7 +19,7 @@ use super::region::{FALLBACK_REGION, RegionEnvironment, dispatch_region};
 use super::request::{
     Dispatch, SignedRequest, TextToSpeechRequest, configured_url, dispatch, transform_request,
 };
-use crate::api::speech_call::operations::SpeechMappingOptions;
+use crate::api::speech_call::operations::{SpeechConfigOperation, SpeechMappingOptions};
 
 const EXAMPLE_KEY: &str = "AKIDEXAMPLE";
 const EXAMPLE_SECRET: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
@@ -859,4 +860,19 @@ fn a_non_string_credential_is_rejected_with_the_field_name() {
         error.to_string(),
         "the AWS Polly parameter aws_access_key_id must be a string"
     );
+}
+
+#[test]
+fn the_speech_config_operation_delegates_to_the_mapping() {
+    let params = object(r#"{"response_format": "opus"}"#);
+    let options = SpeechMappingOptions {
+        voice: voice_of(r#""alloy""#),
+        drop_params: false,
+        kwargs: Object::new(),
+    };
+    let expected = map_openai_params("aws_polly/standard", &params, &options);
+    let actual = PollySpeechConfig.map_openai_params("aws_polly/standard", params, &options);
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual.1["engine"], json!("standard"));
 }
