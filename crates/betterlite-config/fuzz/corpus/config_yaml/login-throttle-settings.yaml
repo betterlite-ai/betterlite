@@ -1,0 +1,10 @@
+# LITELLM_DISABLE_LOGIN_RATE_LIMIT is unset here, so the throttle stays enabled while these settings load.
+general_settings:
+  max_failed_login_attempts_per_source: 12
+  max_failed_login_attempts_per_source_overrides:
+    "10.0.0.0/8": 4
+    "10.1.2.3": 0
+    "10.2.0.0/16": " 2 "
+  failed_login_window_seconds: " 60 "
+  failed_login_block_seconds: 300
+  trusted_proxy_ranges: ["10.0.0.0/8"]
