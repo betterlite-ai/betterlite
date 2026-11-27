@@ -1,0 +1,87 @@
+id: B10154
+title: Router generic call contract
+description: >-
+  Several router tasks hand a call to an executor picked by its call type name: B6021's generic engine, B8352's embedding, image, audio, rerank and text calls, B8353's, B10142's and B10143's batch calls, and the family executors of B6460 (video), B7430 (containers), B8691 (passthrough) and B8355 (the Python crate). In LiteLLM that executor is a plain callable, `original_generic_function` (router.py L5272-L5303), called with the merged keyword arguments and returning whatever the provider function returns (L5334-L5414). This task builds the Rust types for that boundary once, so B8352 and the others stop waiting for B6021's whole engine. There is no Python class behind it, so it has no oracle cases.
+
+
+  Module `router_call_contract` in betterlite-sdk: crates/betterlite-sdk/src/router_call_contract.rs, an empty stub that lib.rs already declares, with the child modules `error` (router_call_contract/error.rs) and `executors` (router_call_contract/executors.rs). The module uses only types the crate already reaches: betterlite-error's `ErrorClass` and `class_message` (B184), betterlite-models' `Json` and `HiddenParams` (B3510, models::decisions), this crate's `call_setup::RequestMap` (B5367) and betterlite-core's `PassthroughReply` and `PassthroughCallError` (B8690, api::passthrough_call). It imports neither betterlite-router nor betterlite-server, which deny.toml forbids for this crate.
+
+
+  `GenericRequest { call_type: String, args: RequestMap }` is one call: the call type name (`aembedding`, `acreate_batch`, `allm_passthrough_route` and so on) and the keyword arguments as an ordered map of `Json`. The map keeps LiteLLM's dict order, so a later key wins the way `{**data, **kwargs}` does. It has no slot for a client: a family that needs one puts it in the map as JSON, as B8691 does with `client`. `GenericCallExecutor` is a `Send + Sync` trait with one method, `async fn call(&self, request: GenericRequest) -> Result<GenericOutcome, GenericError>`, declared with `#[async_trait]` (already a dependency of the crate) so callers hold it as `Arc<dyn GenericCallExecutor>`.
+
+
+  `GenericOutcome` is what the callable returned, in four forms. `Json(Json)` is a finished answer, the JSON dump of the provider's response object. `Bytes(Vec<u8>)` is a finished binary answer, for the functions that return `bytes` such as `avideo_content` and the container file content. `Stream(Box<dyn GenericStream>)` is a streaming answer. `Http(PassthroughReply)` is the `httpx.Response` that `allm_passthrough_route` returns (litellm/passthrough/main.py L268-L354), kept as betterlite-core's own type so B8691 hands the same reply, full body or relay stream, back to the proxy.
+
+
+  `GenericStream: Send` is the source iterator behind a streaming answer, with the attributes LiteLLM's `FallbackAwareAnthropicMessagesStream` reads off its source (router.py L622-L659). It is an `#[async_trait]` trait with seven methods and no default bodies: `async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, GenericError>` (None at the end), `async fn close(&mut self)`, `fn hidden_params(&self) -> HiddenParams` (empty when the source has none), `fn has_buffered_provider_output(&self) -> bool`, `fn chunks(&self) -> Option<&[Json]>` (each chunk's ModelResponseStream dump), `fn messages(&self) -> Option<&[Json]>` and `fn model(&self) -> Option<&str>`. The executor that returns a stream implements it, and B6021's `MessagesStream` reads it.
+
+
+  `GenericError` in error.rs is the failure of one call, a thiserror enum with two variants. `UnknownCallType(String)` means no executor is registered under that name; its text is `no executor is registered for the call type <name>`. `Failed(Box<GenericFailure>)` is anything the callable or the router raised, with the text of its cause. `GenericFailure { cause: FailureCause, failed_deployment_id: Option<String>, retry_skip_deployment_id: Option<String> }` carries the two ids LiteLLM stamps on an exception for the retry and cooldown checks (L3880-L3914): `failed_deployment_id` comes from `_stamp_failed_deployment_id_with_effective_model_info` in the generic attempt, `retry_skip_deployment_id` from `_stamp_retry_skip_deployment_id` in the single-call and batch attempts. `FailureCause` is a thiserror enum with three variants. `Class(ErrorClass)` is a LiteLLM exception (a provider error an executor mapped, a selection miss, the safeguard refusal), with `class_message`'s text. `Passthrough(PassthroughCallError)` is what `allm_passthrough_route` raises, kept whole so B8691 returns it unchanged, with that error's own text. `Argument { key: String, expected: &'static str }` is a request key whose value an executor cannot read as the type it needs, with the text `the <key> argument is not <expected>`. `From<ErrorClass>` and `From<PassthroughCallError>` for GenericError build `Failed` with both ids empty. Filling the ids belongs to the attempts (B6021, B8352, B10143), not to this module.
+
+
+  `GenericExecutors` in executors.rs is the list of (call type name, executor) a router object is built with. It stands in for factory_function's call type branches because each family task brings its own executors (B6021's deviation), while B8354's RouterCallType enum keeps the closed set of names. `GenericExecutors::new(executors: Vec<(String, Arc<dyn GenericCallExecutor>)>) -> Result<Self, DuplicateCallType>` keeps the list in its order and refuses an entry whose name is already in it; `DuplicateCallType(String)` is executors.rs's thiserror error with the text `the call type <name> has two executors`. `executor(&self, call_type: &str) -> Result<Arc<dyn GenericCallExecutor>, GenericError>` returns the executor registered under the name, or `GenericError::UnknownCallType` with it. B6021's RouterGeneric, B8352's RouterSingleCalls and B8353's RouterBatchCalls each keep one, so the lookup is written once.
+
+
+  Tests use recording fakes and no network. router_call_contract/executors/tests.rs covers the list: the right one of two fakes comes back and a call through the returned Arc reaches it, an unknown name answers UnknownCallType with that name, and a duplicate name is refused with its name in the text. router_call_contract/tests.rs holds tests whose names start with `outcome_` (an Http outcome gives back its PassthroughReply status, headers and body; a boxed GenericStream yields its chunks, then None, and answers the five readers) and `error_` (each text above, both From conversions with empty ids, a `PassthroughCallError::UpstreamStatus` coming back out with the same status, headers and body). To build a body in tests, add `bytes = "1.12.1"` (betterlite-core's version) under [dev-dependencies] in crates/betterlite-sdk/Cargo.toml.
+scope:
+  paths:
+  - crates/betterlite-sdk/src/router_call_contract.rs
+  - crates/betterlite-sdk/src/router_call_contract/**
+  - crates/betterlite-sdk/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5272-L5303
+    why: original_generic_function and original_function, the callables GenericCallExecutor stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5414
+    why: The call with the merged keyword arguments, its answer passed back as it is, and the failed deployment stamp on an error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5780-L5797
+    why: Dispatch by call type name, the lookup GenericExecutors serves.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L622-L659
+    why: The source iterator attributes GenericStream exposes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3880-L3914
+    why: The failed deployment and retry skip stamps that GenericFailure carries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4693-L4734
+    why: A single-call attempt, with the executor's arguments and the retry skip stamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L268-L354
+    why: allm_passthrough_route returns an httpx.Response and re-raises HTTPStatusError as it is.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L7009
+    why: async_wrapper, which has no branch for an unknown call type.
+dod:
+  - text: "`GenericExecutors::new` keeps the list and refuses a duplicate name with `DuplicateCallType`, and `executor` returns the `Arc<dyn GenericCallExecutor>` registered under a name, whose call reaches it, or `GenericError::UnknownCallType` with the name."
+    proof: [executors-tests]
+  - text: "An `Http` outcome gives back its `PassthroughReply` unchanged, and a `Stream` outcome's `Box<dyn GenericStream>` yields its chunks, ends with None and answers all five readers."
+    proof: [outcome-tests]
+  - text: "`GenericError` and `FailureCause` show the texts above, the two `From` conversions build `Failed` with both ids empty, and a passthrough error comes back out with the same variant and fields."
+    proof: [error-tests]
+checks:
+  optional: []
+  commands:
+  - id: executors-tests
+    why: The executor list misses a name, keeps a duplicate, or answers an unknown name without UnknownCallType.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_contract::executors::tests::/)'
+  - id: outcome-tests
+    why: An Http outcome loses part of its reply or a stream hides a reader.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_contract::tests::outcome_/)'
+  - id: error-tests
+    why: An error text is wrong, a conversion stamps an id, or a passthrough error comes back changed.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_contract::tests::error_/)'
+oracle_cases: []
+deviations:
+  - what: "A call type with no executor answers `GenericError::UnknownCallType` naming it."
+    why: LiteLLM's async_wrapper has no branch for an unknown name and returns None; betterlite does not answer a call it never made with an empty result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L7009
+out_of_scope:
+  - "The generic engine that calls the executors, RouterGeneric, the anthropic_messages executor and MessagesStream: B6021. Filling failed_deployment_id and retry_skip_deployment_id by B017's stamp rules: the attempts of B6021, B8352 and B10143."
+  - "The family executors: B6460 (video), B7430 (containers), B8691 (passthrough), B8355 (the Python crate) and the batch route executors of B1050 and B1051."
+  - "Mapping router errors into ErrorClass for the router's ports, and GenericError back for the router: B8631's adapters."
+  - "The call type enum and factory_function's table: B8354."
+pitfalls:
+  - "serde_json's Value and Map are disallowed types in clippy.toml and its Map sorts keys, so the request map is call_setup::RequestMap of betterlite-models' Json, which keeps LiteLLM's key order and needs no #[expect]."
+  - "Keep `UnknownCallType` a top-level variant of GenericError: B8352, B8353, B8354, B8355 and B8631 match `GenericError::UnknownCallType` by that path."
+  - "Give GenericStream's readers no default bodies, so a source that has chunks or hidden params cannot answer None or an empty map by leaving a method out."
+  - "PassthroughReply has no Debug and PassthroughCallError is not Clone: move them through, and take outcomes apart with let-else in tests instead of assert_eq."
+  - "A duplicate name fails when the list is built, never at lookup, so a wiring mistake shows when the router is built and not on the first call."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -131,7 +131,7 @@ out_of_scope:
 - 'litellm/router_strategy/complexity_router/config.py: B333 owns: JevClassifierConfig._reject_blank_instructions
   (L697-L700), JevClassifierConfig._reject_blank_api_key (L704-L707), JevClassifierConfig._keep_the_environment_key_on_the_environment_base
   (L710-L722), ComplexityRouterConfig._validate_jev_classifier_config (L1649-L1657).'
-- 'litellm/router_strategy/complexity_router/config.py: B336 owns: ComplexityRouterConfig._normalize_context_compaction
+- 'litellm/router_strategy/complexity_router/config.py: B10153 owns: ContextCompactionConfig (L844-L850), ComplexityRouterConfig._normalize_context_compaction
   (L1342-L1343).'
 - 'litellm/router_strategy/complexity_router/config.py: B353 owns: ComplexityRouterConfig._validate_llm_v2
   (L1707-L1740).'

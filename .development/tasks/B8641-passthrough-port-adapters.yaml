@@ -15,7 +15,7 @@ description: >-
   Vector stores (vector.rs). These back the three ports of B3624 and one of B3623. The vector store registries and access rules (B1060, B1061, B10014, B1063 and B9998's `vector_stores` field) and Milvus (B7892) are later work, so write the no-vector-store adapters, as LiteLLM runs with `litellm.vector_store_index_registry` and `litellm.vector_store_registry` None.
   - `VectorRegistryAdapter` implements `VectorRegistryPort`: has_index_registry and has_store_registry are false and no index or store is found.
   - `VectorAccessAdapter` implements `VectorAccessPort` and fails every check closed with a 500 and detail "no vector store registry is installed". The same struct implements B3623's `VertexStoreAccess` the same way: no managed store, and assert_access fails with that error.
-  - `VectorProviderAdapter` implements `VectorProviderPort`. `VectorProvider::AzureAi` goes to B558's AzureAIVectorStoreConfig (auth_headers is get_auth_credentials, complete_url is get_complete_url, has_config is true); `VectorProvider::Milvus` answers "no vector store provider is installed for 'milvus'".
+  - `VectorProviderAdapter` implements `VectorProviderPort`. `VectorProvider::AzureAi` goes to B558's AzureAIVectorStoreConfig (auth_headers is get_auth_credentials, complete_url is get_complete_url, has_config is true); `VectorProvider::Milvus` has no config (has_config is false) and answers "no vector store provider is installed for 'milvus'".
   B9998 replaces these with the real adapters over its `vector_stores` field later.
 
   Vertex (vertex.rs). The rest of B3623's ports.
@@ -27,7 +27,7 @@ description: >-
 
   Config writes. B8520's `GeneralSettingsStore` is backed by `shared.general_settings`. When B8612's type already implements B8520's trait, `PassThroughPorts` holds it as is; when B8612 declares its own trait, write `SettingsAdapter` here that forwards get_field and update_field and keeps the status and detail of each error unchanged.
 
-  Tests (tests.rs). One test group per file, each with a recording double of the backing service where the service is a trait, or a small real value (a Router built from a two deployment config, an in memory credential router) where it is a struct. Each test checks that the call reaches the backing service with the right arguments and that its result or error comes back unchanged.
+  Tests (tests.rs). One test group per file, each with a recording double of the backing service where the service is a trait, or a small real value (a Router built from a two deployment config, an in memory credential router) where it is a struct. Each test checks that the call reaches the backing service with the right arguments and that its result or error comes back unchanged. The vector adapter tests go in ports/vector/tests.rs instead, as module ports::vector::tests, since B7892 later replaces the Milvus arm and updates its test there.
 scope:
   paths:
     - crates/betterlite-server/src/app/pass_through/ports.rs
@@ -64,7 +64,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::router(::|$)/)'
     - id: vector-tests
       why: a vector port reaches the wrong registry, access check or provider config
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::vector(::|$)/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::vector::tests::/)'
     - id: vertex-tests
       why: a Vertex route port authenticates, reads credentials or relays wrongly
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::vertex(::|$)/)'

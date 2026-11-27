@@ -1,20 +1,22 @@
 id: B336
 title: Complexity routing through context compaction
 description: 'Integrate B3545 native compaction with B385 typed summary inputs and B386 context-fit checks. Own
-  pending state, recursion protection, native/client-managed routing, authorized summary calls and post-summary
+  arming, recursion protection, native/client-managed routing, authorized summary calls and post-summary
   revalidation. Adapt through server services for B080/B081, charge B068 caller cost and preserve
   cancellation. Keep the integration adapter in betterlite-server in this task module; consume predecessor
-  public interfaces without editing their implementation crates. Configuration boundary keys introduced
-  or consumed here: context_compaction. Pinned declaration defaults: context_compaction=ContextCompactionConfig.
-  Resolve env values once in betterlite-config, never in router code. Implement the owned native service
+  public interfaces without editing their implementation crates. B10153 parses context_compaction into
+  config.sections.router_compaction (ContextCompactionConfig, Off for false or null) and builds the state in
+  betterlite-router compaction_state: CompactionState, SharedCompactionState, initialize_compaction_state, client_managed
+  and compaction_pending. This task arms that state, picks the summary handle its Summary type parameter holds,
+  fills it and calls those names; it never builds a second state or a second client-managed check. Implement the owned native service
   in crates/betterlite-router/src/router_compaction.rs. B301 registers ProbeOperation::RouterCompaction and its Python entry as stubs, so fill only tools/oracle/src/router_probes/router_compaction.rs and tools/oracle/litellm/probes/router_compaction.py and leave mod.rs and registry.py as they are; the adapters only call
   production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/context_compaction.py:
-  surface_for_call (L68-L69), initialize_compaction_state (L94-L96), arm_compaction (L99-L123),
-  _has_compactor (L126-L138), _client_managed (L141-L150), reject_recursive_compactor
-  (L157-L159), compaction_pending (L162-L164), _reject (L167-L170), _generate_summary (L317-L336), compact_to_fit
+  surface_for_call (L68-L69), arm_compaction (L99-L123),
+  _has_compactor (L126-L138), reject_recursive_compactor
+  (L157-L159), _reject (L167-L170), _generate_summary (L317-L336), compact_to_fit
   (L360-L371), _check_client_managed_admission (L374-L387), _compact_to_fit (L416-L515). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
   the same primitive instead of separate ports. B10084 builds the executor trait and the child-call scope in
@@ -38,10 +40,6 @@ scope:
   - tools/oracle/src/router_probes/router_compaction/**
   - tools/oracle/litellm/probes/router_compaction.py
   - tools/oracle/cases/routing/router-compaction/**
-  - crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-*
-  - crates/betterlite-config/fuzz/Cargo.toml
-  - crates/betterlite-config/src/sections/router_compaction.rs
-  - crates/betterlite-config/src/sections/router_compaction/**
   - crates/betterlite-router/Cargo.toml
   - tools/oracle/helpers/b336.py
   - tools/oracle/helpers/b336/**
@@ -61,8 +59,8 @@ references:
   why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L51-L53
   why: The executor protocol B10084 turns into the CompactionExecutor trait this task takes per call.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1342-L1343
-  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1335-L1343
+  why: The context_compaction setting B10153 parses; null and false turn arming off, a missing key arms with defaults.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L486-L499
   why: The privacy flag is decided over the parent payload right before the summary task starts, and the summary runs inside it.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L465-L475
@@ -91,12 +89,6 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-invalid.yaml;
-    the valid seed contains context_compaction. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
-    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
-  proof:
-  - config-corpus
-  - router-compaction-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -122,13 +114,6 @@ checks:
       -- tools/oracle/litellm/probes/router_compaction.py)" && uv run --locked --project tools/oracle/litellm
       ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
       tools/oracle/litellm/probes
-  - id: config-corpus
-    why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-invalid.yaml
-      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/router-compaction-" && grep -Fq 'context_compaction' crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml
-      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
-      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/router-compaction/native-versus-portable.yaml
 - tools/oracle/cases/routing/router-compaction/client-managed-compaction.yaml
@@ -148,6 +133,9 @@ out_of_scope:
 - 'litellm/router_strategy/complexity_router/context_compaction.py: B10084 owns CompactionExecutor.__call__ (L51-L53)
   with CompactionExecutorError, native_compaction_call (L79-L86), native_compaction_parent (L89-L91) and
   is_native_compaction_call (L153-L154). This task calls them.'
+- 'litellm/router_strategy/complexity_router/context_compaction.py and config.py: B10153 owns CompactionState (L59-L65),
+  initialize_compaction_state (L94-L96), _client_managed (L141-L150), compaction_pending (L162-L164), ContextCompactionConfig
+  (config.py L844-L850) and _normalize_context_compaction (config.py L1342-L1343). This task calls them.'
 pitfalls:
 - Do not implement a second summarizer or a new provider endpoint in this task.
 - A successful summary can still exceed the target context and must be checked again.

@@ -17,9 +17,10 @@ description: >-
   (LiteLLM's _get_vertex_publisher_or_api_spec_from_url), get_custom_llm_provider_from_url, the Vertex logging payload factory
   (_create_vertex_response_logging_payload_for_generate_content) and the cost trait that B3638 declares there. From B1304:
   get_vertex_location_from_url. From B1326: decode_generate_content and its envelope assembly. From B1362: the Vertex Veo create-response method
-  (LiteLLM's VertexAIVideoConfig.transform_video_create_response). From B032: the partner response-config selector
-  (get_vertex_ai_partner_model_config; anthropic gives B1333's config, ai21 and openapi and mistralai give B1335's, any other publisher is an
-  error). From B1389: the Discovery Engine search response method (LiteLLM's transform_search_vector_store_response). From B3639:
+  (LiteLLM's VertexAIVideoConfig.transform_video_create_response). From B10159 (betterlite-vertex, partner_response_config): the partner
+  response-config selector (get_vertex_ai_partner_model_config, which takes B3638's VertexPublisher; anthropic gives the Claude config, ai21 the
+  AI21 one, openapi and mistralai the Llama3 one) and PartnerResponseConfig::transform_response, which runs the selected config's reply
+  transform. From B1389: the Discovery Engine search response method (LiteLLM's transform_search_vector_store_response). From B3639:
   VertexPredictLogger. From B3641: VertexBatchLogging. Read the merged code for the exact Rust names and signatures and call them. Do not copy
   their logic. If a function you need is not there, or if the cost trait cannot take a call_type ("create_video", "vector_store_search") next to
   the response, model, provider and vertex_location, or if B3605's response-object enum has no variant for the video object, the batch record
@@ -86,8 +87,8 @@ description: >-
   "/publishers/mistralai/", "anthropic" for "/publishers/anthropic/", "ai21" for "/publishers/ai21/", "openapi" for "/endpoints/openapi/", else
   None). Parse the body as JSON first and return the error when it does not parse, whatever the publisher (LiteLLM calls httpx_response.json()
   before it looks at the publisher, and drops the value). The result starts as an empty chat response. When the publisher is Some, get the partner
-  config from B032's selector (an unsupported publisher is an error) and let it transform the body into the chat response with the same dummy
-  message, empty request data, empty params and an empty api key. With publisher None the empty response is used as is. Then call B3638's payload
+  config from B10159's selector and let its transform_response turn the body into the chat response with the same dummy message, empty request
+  data and empty params; a transform error is returned. With publisher None the empty response is used as is. Then call B3638's payload
   factory with the model "vertex_ai/" + model (the prefix is added here and not by extract_model_from_url), custom_llm_provider "vertex_ai" and
   vertex_location. Return the response and the kwargs.
 
@@ -152,7 +153,7 @@ dod:
     proof: [generate-tests]
   - text: The EmbedContent and Predict branches call B3639's two methods with the fields named above, and the request body only goes to the embed one.
     proof: [predict-tests]
-  - text: The RawPredict branch parses the JSON first, uses the partner config only for a known publisher, errors on an unsupported one, and prices with the model "vertex_ai/" plus the extracted model.
+  - text: The RawPredict branch parses the JSON first, uses the partner config only when the route names a publisher, returns its transform error, and prices with the model "vertex_ai/" plus the extracted model.
     proof: [raw-predict-tests]
   - text: >-
       The Search branch prices with model "vertex_ai/search_api" and call_type "vector_store_search", returns the {"response": ...} wrapper, and writes kwargs, litellm_params.base_model and model_call_details["response_cost"] without a custom_llm_provider.
@@ -160,7 +161,7 @@ dod:
   - text: >-
       The BatchPredictionJobs branch hands B3641 the status, body, route, start time and metadata taken from kwargs["litellm_params"]["metadata"] (empty when missing or null) and the call log, and returns its record and kwargs.
     proof: [batch-tests]
-  - text: A leaf error (a body that does not decode, an unsupported publisher, a cost failure) comes back as Err and no partial result is returned.
+  - text: A leaf error (a body that does not decode, a partner transform failure, a cost failure) comes back as Err and no partial result is returned.
     proof: [error-tests]
   - text: The helper adapter's Python passes the strict lint and type check.
     proof: [helper-python]
@@ -229,7 +230,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-search-in-project-name.yaml
   - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-no-match.yaml
 deviations:
-  - what: The error text of a failing leaf (a body that does not decode, an unsupported publisher) is the Rust error text, not Python's exception text.
+  - what: The error text of a failing leaf (a body that does not decode, a partner transform failure) is the Rust error text, not Python's exception text.
     why: Exception strings are runtime wording (docs/compatibility.md); the failure still rises to the caller as an error, as in LiteLLM.
   - what: The helper cases cover the branch order only. The adapter patches the leaf each branch reaches and reports which one was hit.
     why: A helper adapter cannot build the logging object and proxy state that the full Python handler reads, and the branch bodies are pinned by native tests against the leaf tasks' own oracle cases.
@@ -239,7 +240,7 @@ out_of_scope:
   - "_handle_logging_vertex_collected_chunks and _build_complete_streaming_response (the stream side) belong to B3640."
   - "B3605 owns success_handler's TRACKED_VERTEX_METHOD_ROUTES and TRACKED_VERTEX_RESOURCE_ROUTES consts and the is_vertex_route predicate, and B3606 owns the branch choice between Gemini, Vertex and the other providers. This task owns only the choice inside the Vertex handler. B3606 owns the Vertex Live branch."
   - "The Vertex Live handler (VertexAILivePassthroughLoggingHandler, B3643) is never called from vertex_passthrough_handler in LiteLLM; B3606 reaches it through its own VertexAiLive branch."
-  - "The Veo response parsing (B1362), the Gemini response decoder (B1326), the partner response configs (B032, B1333, B1335) and the Discovery Engine response decoder (B1389) are called here and not rebuilt. The completion_cost service itself (B068) is reached through B3638's cost trait, passed in by B8931."
+  - "The Veo response parsing (B1362), the Gemini response decoder (B1326), the partner response-config selector and its reply transforms (B10159, over B1333, B1335 and B504) and the Discovery Engine response decoder (B1389) are called here and not rebuilt. The completion_cost service itself (B068) is reached through B3638's cost trait, passed in by B8931."
 pitfalls:
   - "Every branch test is a plain substring test over the whole route string, project and model names included, so a model path or project id that contains 'search' reaches the Search branch unless an earlier test matches first."
   - "'predict' is lowercase, so 'rawPredict', 'streamRawPredict' and 'batchPredictionJobs' do not match the Predict branch, and 'predictLongRunning' is caught by the Video test that runs before it."
