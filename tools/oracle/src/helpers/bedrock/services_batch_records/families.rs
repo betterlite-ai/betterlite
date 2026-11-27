@@ -155,37 +155,10 @@ impl Families {
     }
 
     fn converse_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
-        let mapped_params = self.part(
-            "bedrock_converse_params",
-            json!({
-                "function": "map_params",
-                "model": model,
-                "model_cost": self.model_cost,
-                "environment": {},
-                "non_default_params": params,
-                "optional_params": {},
-                "global_drop": false,
-                "call_drop": false,
-            }),
-            "/params",
-        )?;
-        let value = self.call(
-            "bedrock_converse_request",
-            json!({
-                "model": model,
-                "messages": messages,
-                "model_cost": self.model_cost,
-                "optional_params": mapped_params,
-                "litellm_params": {},
-                "global_drop": false,
-                "modify_params": false,
-                "neutralize_orphaned_blocks": true,
-            }),
-        )?;
-        let body = value
-            .pointer("/body")
-            .cloned()
-            .ok_or_else(|| failure("the Converse request returned no body"))?;
+        let map_input = json!({"function": "map_params", "model": model, "model_cost": self.model_cost, "environment": {}, "non_default_params": params, "optional_params": {}, "global_drop": false, "call_drop": false});
+        let mapped_params = self.part("bedrock_converse_params", map_input, "/params")?;
+        let request_input = json!({"model": model, "messages": messages, "model_cost": self.model_cost, "optional_params": mapped_params, "litellm_params": {}, "global_drop": false, "modify_params": false, "neutralize_orphaned_blocks": true});
+        let body = self.part("bedrock_converse_request", request_input, "/body")?;
         serde_json::from_value(body).map_err(failure)
     }
 }
