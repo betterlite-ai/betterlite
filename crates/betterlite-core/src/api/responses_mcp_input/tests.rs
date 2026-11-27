@@ -9,7 +9,10 @@ use super::{create_follow_up_input, is_persistence_disabled};
 use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_mcp_results::McpToolResult;
 
-fn parse<T: DeserializeOwned>(document: &str) -> T {
+fn parse<T>(document: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(document).expect("the fixture decodes")
 }
 
@@ -39,9 +42,9 @@ fn store_false_only(#[case] request: &str, #[case] expected: bool) {
     ),
     r#"[{"type":"message","role":"user","content":"hi"},{"type":"function_call_output","call_id":"call_1","output":"42"}]"#
 )]
-#[case::empty_text(Some(r#""""#), r#"[]"#)]
-#[case::empty_list(Some(r#"[]"#), r#"[]"#)]
-#[case::none(None, r#"[]"#)]
+#[case::empty_text(Some(r#""""#), "[]")]
+#[case::empty_list(Some("[]"), "[]")]
+#[case::none(None, "[]")]
 fn original_input_first(#[case] original: Option<&str>, #[case] expected: &str) {
     let response = response_with("[]");
     let original_input = original.map(parse::<ResponsesInput>);
@@ -99,11 +102,15 @@ fn message_content_before_turn_items(#[case] preserve_reasoning: bool, #[case] e
 )]
 #[case::no_call_id(
     r#"[{"type":"function_call","name":"weather","arguments":"{}"}]"#,
-    r#"[]"#
+    "[]"
+)]
+#[case::empty_ids(
+    r#"[{"type":"function_call","call_id":"","id":"","name":"weather","arguments":"{}"}]"#,
+    "[]"
 )]
 #[case::no_name(
     r#"[{"type":"function_call","call_id":"call_5","arguments":"{}"}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::null_arguments(
     r#"[{"type":"function_call","call_id":"call_6","name":"weather","arguments":null}]"#,
