@@ -97,7 +97,7 @@ fn stage_is_registered() {
         .install(port_set)
         .expect("the ports install");
     let installed = staged_request(&state);
-    let Ok(StageInput::AuthIdentity(stage)) = lookup_stage_input(&installed) else {
+    let StageInput::AuthIdentity(stage) = lookup_stage_input(&installed) else {
         panic!("the installed store takes the auth key lookup stage");
     };
     let text = format!("{stage:?}");

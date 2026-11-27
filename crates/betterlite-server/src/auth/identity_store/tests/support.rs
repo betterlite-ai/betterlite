@@ -118,7 +118,8 @@ pub(super) fn ports(reader: Option<Arc<KeyReader>>) -> (Ports, Arc<RecordingWrit
     let writer = Arc::new(RecordingWriter::default());
     let cache: Arc<dyn KeyObjectCache> = Arc::new(MissCache);
     let permissions: Arc<dyn KeyPermissionLookup> = Arc::new(NoPermissions);
-    let writer_port: Arc<dyn KeyCacheWriter> = Arc::clone(&writer);
+    let fake_writer = Arc::clone(&writer);
+    let writer_port: Arc<dyn KeyCacheWriter> = fake_writer;
     (
         Ports {
             reader,
