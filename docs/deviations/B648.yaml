@@ -1,3 +1,6 @@
 task: B648
-deviations: []
+deviations:
+  - what: A deployment's litellm_params.model_alias_map is merged over litellm_settings.model_alias_map, in file order, and batch record models resolve through the merged map.
+    why: The task requires deployment inputs from litellm_params and global inputs from litellm_settings, while LiteLLM OSS only reads the global litellm.model_alias_map in the batch transformer, so a deployment-level map changes routing here where LiteLLM ignores it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L997
 kept_bugs: []
