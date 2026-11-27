@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_core::api::vector_file_read::error::VectorFileReadError;
 use betterlite_core::api::vector_file_write::error::{
     VectorFileWriteError, VectorFileWriteFailure, failure as write_failure,
@@ -9,6 +11,7 @@ use betterlite_core::api::vector_store_search::error::SdkFailure;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
 
 use super::list::list_request;
 use super::read::read_call;
@@ -34,11 +37,8 @@ fn request_create_carries_the_caller_fields() {
     let request = create_request(&wire);
     assert_eq!(request.transport.vector_store_id, "vs_a");
     assert_eq!(request.file_id, "file_1");
-    assert_eq!(request.attributes.map(|values| values.len()), Some(1));
-    assert_eq!(
-        request.chunking_strategy.map(|values| values.len()),
-        Some(1)
-    );
+    assert_eq!(request.attributes.map(BTreeMap::len), Some(1));
+    assert_eq!(request.chunking_strategy.map(IndexMap::len), Some(1));
     assert_eq!(
         request
             .transport
@@ -47,11 +47,8 @@ fn request_create_carries_the_caller_fields() {
             .map(String::as_str),
         Some("t")
     );
-    assert_eq!(
-        request.transport.extra_query.map(|query| query.len()),
-        Some(1)
-    );
-    assert_eq!(request.transport.extra_body.map(|body| body.len()), Some(1));
+    assert_eq!(request.transport.extra_query.map(IndexMap::len), Some(1));
+    assert_eq!(request.transport.extra_body.map(IndexMap::len), Some(1));
     assert_eq!(request.transport.timeout, Some(2.5_f64));
     assert_eq!(request.transport.custom_llm_provider, Some("openai"));
     assert_eq!(request.transport.kwargs.len(), 1);
@@ -90,10 +87,7 @@ fn request_list_keeps_the_query_fields_and_sends_no_body() {
     assert_eq!(request.filter, Some("completed"));
     assert_eq!(request.limit, Some(3));
     assert_eq!(request.order, Some("desc"));
-    assert_eq!(
-        request.transport.extra_query.map(|query| query.len()),
-        Some(1)
-    );
+    assert_eq!(request.transport.extra_query.map(IndexMap::len), Some(1));
     assert!(request.transport.extra_body.is_none());
     assert_eq!(request.transport.timeout, Some(4.0_f64));
 }
@@ -139,8 +133,8 @@ fn request_update_adds_attributes_and_body_to_the_shared_write() {
         Some("t")
     );
     assert_eq!(request.write.timeout, Some(6.0_f64));
-    assert_eq!(request.attributes.map(|values| values.len()), Some(1));
-    assert_eq!(request.extra_body.map(|body| body.len()), Some(1));
+    assert_eq!(request.attributes.map(BTreeMap::len), Some(1));
+    assert_eq!(request.extra_body.map(IndexMap::len), Some(1));
 }
 
 #[test]
@@ -170,7 +164,7 @@ fn request_update_sends_an_empty_attributes_map() {
     )
     .unwrap();
     let request = update_request(&wire);
-    assert_eq!(request.attributes.map(|values| values.len()), Some(0));
+    assert_eq!(request.attributes.map(BTreeMap::len), Some(0));
 }
 
 #[test]

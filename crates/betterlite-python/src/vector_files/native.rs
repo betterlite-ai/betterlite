@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
+use super::calls::run;
 use super::convert::{ConvertError, parse};
 use super::error::raise;
 use super::session::{Pending, PendingOperation, SessionCore};
@@ -151,7 +152,7 @@ fn block_on(py: Python<'_>, core: &SessionCore, operation: PendingOperation) -> 
         operation,
         asynchronous: false,
     };
-    let outcome = py.detach(|| get_runtime().block_on(core.run(pending)));
+    let outcome = py.detach(|| get_runtime().block_on(run(core, pending)));
     let body = outcome.map_err(|error| raise(py, &error, &core.redactor))?;
     to_text(&body)
 }
@@ -167,7 +168,7 @@ fn awaitable(
         asynchronous: true,
     };
     let coroutine = future_into_py(py, async move {
-        let body = Box::pin(core.run(pending))
+        let body = Box::pin(run(&core, pending))
             .await
             .map_err(|error| Python::attach(|attached| raise(attached, &error, &core.redactor)))?;
         to_text(&body)

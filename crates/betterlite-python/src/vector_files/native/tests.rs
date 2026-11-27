@@ -35,13 +35,11 @@ fn payload(address: &SocketAddr, method: &str) -> String {
             r#""file_id":"file_1","attributes":{"source":"doc.md"},"extra_body":{"flag":true},"#
         }
         "list" | "alist" => r#""filter":"completed","limit":3,"order":"desc","#,
-        "retrieve" | "aretrieve" | "retrieve_content" | "aretrieve_content" => {
-            r#""file_id":"file_1","#
-        }
+        "retrieve" | "aretrieve" | "retrieve_content" | "aretrieve_content" | "delete"
+        | "adelete" => r#""file_id":"file_1","#,
         "update" | "aupdate" => {
             r#""file_id":"file_1","attributes":{"source":"new.md"},"extra_body":{"flag":true},"#
         }
-        "delete" | "adelete" => r#""file_id":"file_1","#,
         _ => panic!("unknown test operation"),
     };
     format!(
@@ -49,7 +47,7 @@ fn payload(address: &SocketAddr, method: &str) -> String {
     )
 }
 
-fn invoke(method: &str, payload: &str) -> String {
+fn invoke(settings: &str, method: &str, payload: &str) -> String {
     Python::initialize();
     Python::attach(|py| {
         let module = PyModule::new(py, "vector_file_test").unwrap();
@@ -59,7 +57,7 @@ fn invoke(method: &str, payload: &str) -> String {
         let session = module
             .getattr("NativeVectorFileSession")
             .unwrap()
-            .call1((r#"{"environment":{}}"#,))
+            .call1((settings,))
             .unwrap();
         let globals = PyDict::new(py);
         globals.set_item("session", session).unwrap();
@@ -79,7 +77,7 @@ fn roundtrip(method: &str, response: &str, path: &str, sent: &[&str], answer: &s
     )
     .unwrap();
     let payload = payload(&serving.address, method);
-    let text = invoke(method, &payload);
+    let text = invoke(r#"{"environment":{}}"#, method, &payload);
     let request = serving.finish().unwrap();
     assert!(request.line.starts_with(path), "{}", request.line);
     assert!(
@@ -332,7 +330,6 @@ fn a_call_that_outlives_its_timeout_raises_the_family_error() {
 
 #[test]
 fn session_settings_supply_the_credentials_the_call_uses() {
-    Python::initialize();
     let serving = serve(
         reply("200 OK", &[("content-type", "application/json")], FILE),
         Duration::ZERO,
@@ -342,29 +339,12 @@ fn session_settings_supply_the_credentials_the_call_uses() {
         r#"{{"environment":{{}},"api_base":"http://{}/v1","api_key":"sk-global"}}"#,
         serving.address
     );
-    Python::attach(|py| {
-        let module = PyModule::new(py, "vector_file_settings_test").unwrap();
-        register(&module).unwrap();
-        let session = module
-            .getattr("NativeVectorFileSession")
-            .unwrap()
-            .call1((settings,))
-            .unwrap();
-        let globals = PyDict::new(py);
-        globals.set_item("session", session).unwrap();
-        globals.set_item("method", "create").unwrap();
-        globals
-            .set_item(
-                "payload",
-                r#"{"vector_store_id":"vs_a","file_id":"file_1","kwargs":{}}"#,
-            )
-            .unwrap();
-        globals.set_item("blobs", Vec::<Vec<u8>>::new()).unwrap();
-        py.run(INVOKE, Some(&globals), None).unwrap();
-        let answer = globals.get_item("answer").unwrap().unwrap();
-        let text: String = answer.extract().unwrap();
-        assert!(text.contains(r#""id":"file_1""#), "{text}");
-    });
+    let text = invoke(
+        &settings,
+        "create",
+        r#"{"vector_store_id":"vs_a","file_id":"file_1","kwargs":{}}"#,
+    );
+    assert!(text.contains(r#""id":"file_1""#), "{text}");
     let request = serving.finish().unwrap();
     assert!(
         request
