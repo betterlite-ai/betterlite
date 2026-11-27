@@ -15,7 +15,7 @@ use super::ports::{KeyObjectCache, Ports};
 use super::principal::{Projection, principal_from_key};
 use super::rows;
 use crate::auth_cache::{WriteOptions, gateway_cache};
-use crate::auth_identity::records::{PrincipalType, SourceKey, TeamIdentity};
+use crate::auth_identity::records::{NetworkContext, PrincipalType, SourceKey, TeamIdentity};
 use crate::auth_identity::roles::{AuthMethod, Role, TeamRole};
 use crate::auth_key_lookup::cache::KeyCacheWriter;
 use crate::auth_key_lookup::error::KeyLookupError;
@@ -363,6 +363,47 @@ async fn resolve_uses_the_stored_token_over_the_requested_hash() {
         calls.first().map(|(token, _, _)| token.as_str()),
         Some("requested-hash")
     );
+}
+
+#[tokio::test]
+async fn resolve_as_carries_the_auth_method_and_network() {
+    let source = FakeSource::new(vec![Ok(Some(view_from_text(KEY_ROW)))]);
+    let store = StoreSetup {
+        reader: Some(reader(Arc::clone(&source))),
+        ..setup()
+    }
+    .store();
+    let network = NetworkContext {
+        client_ip: Some("203.0.113.7".to_owned()),
+        host: None,
+        via_trusted_proxy: true,
+    };
+    let principal = store
+        .resolve_as("hashed-token", AuthMethod::BearerJwt, Some(network.clone()))
+        .await
+        .unwrap();
+    assert_eq!(principal.auth_method, AuthMethod::BearerJwt);
+    assert_eq!(principal.network, network);
+}
+
+#[tokio::test]
+async fn permission_none_stays_absent() {
+    let source = FakeSource::new(vec![Ok(Some(view_from_text(
+        r#"{"token":"hashed-token","user_id":"u1","object_permission_id":"op-1"}"#,
+    )))]);
+    let permissions = FakePermissions::new(vec![Ok(None)]);
+    let writer = FakeWriter::new(false);
+    let store = StoreSetup {
+        reader: Some(reader(Arc::clone(&source))),
+        permissions: Arc::clone(&permissions),
+        writer: Arc::clone(&writer),
+        ..setup()
+    }
+    .store();
+    let key = store.resolve_key("hashed-token").await.unwrap();
+    assert!(key.view.token.object_permission.is_none());
+    assert_eq!(permissions.calls(), vec![("op-1".to_owned(), false)]);
+    assert_eq!(writer.seen_permission(), vec![false]);
 }
 
 #[test]
