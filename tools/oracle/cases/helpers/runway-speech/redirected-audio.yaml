@@ -1,0 +1,30 @@
+kind: helper
+name: runway-speech-redirected-audio
+call:
+  runway_speech:
+    operation: response
+    params:
+      model: eleven_multilingual_v2
+      environment: {}
+      submission:
+        status: 200
+        headers:
+          content-type: application/json
+        body: '{"id":"task_redirect","status":"PENDING"}'
+      request_headers:
+        Authorization: Bearer sk-audio
+      step_millis: 0
+      replies:
+        - status: 200
+          headers: {}
+          body: '{"id":"task_redirect","status":"SUCCEEDED","output":["https://delivery.test/moved.mp3"]}'
+        - status: 302
+          headers:
+            location: https://cdn.test/audio.mp3
+          body: ""
+        - status: 200
+          headers:
+            content-type: audio/mpeg
+          body: redirected-audio
+env: {}
+compare: {ignore: []}
