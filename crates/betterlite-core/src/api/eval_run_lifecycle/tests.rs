@@ -82,19 +82,19 @@ impl Wire {
         logging: &mut LoggingState,
     ) -> String {
         match self {
-            Wire::Get => {
+            Self::Get => {
                 aget_run(deps, request, logging)
                     .await
                     .expect("the get succeeds")
                     .id
             }
-            Wire::Cancel => {
+            Self::Cancel => {
                 acancel_run(deps, request, logging)
                     .await
                     .expect("the cancel succeeds")
                     .id
             }
-            Wire::Delete => {
+            Self::Delete => {
                 adelete_run(deps, request, logging)
                     .await
                     .expect("the delete succeeds")
