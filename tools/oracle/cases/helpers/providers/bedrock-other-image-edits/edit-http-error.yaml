@@ -1,0 +1,54 @@
+kind: helper
+name: bedrock-other-image-edits-http-error
+call:
+  bedrock_other_image_edits:
+    function: error
+    model_cost:
+      canvas-fixture-edit: {supports_nova_canvas_image_edit: true, output_cost_per_image: 0.25}
+      stability.stable-image-inpaint-v1:0: {litellm_provider: bedrock, output_cost_per_image: 0.07}
+    probes:
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {status: 429, headers: {x-amzn-errortype: ThrottlingException}, body: '{"message": "slow down"}'}
+      - model: canvas-fixture-edit
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {status: 500, body: '{"message": "boom"}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {status: 302, body: '{"images": []}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {failure: timeout}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {failure: failed}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: async
+        aimage_edit: true
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {status: 403, headers: {x-amzn-errortype: AccessDenied}, body: '{"message": "denied"}'}
+env: {}
+compare: {ignore: []}
