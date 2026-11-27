@@ -379,12 +379,15 @@ async fn eval_run_lifecycle_async_variants_await_the_handler_with_the_flag() {
     let run = aget_run(&deps, &request, &mut logging)
         .await
         .expect("the async get succeeds");
+    let after_get = config.params().expect("the get params were validated");
     let cancelled = acancel_run(&deps, &request, &mut logging)
         .await
         .expect("the async cancel succeeds");
+    let after_cancel = config.params().expect("the cancel params were validated");
     let deleted = adelete_run(&deps, &request, &mut logging)
         .await
         .expect("the async delete succeeds");
+    let after_delete = config.params().expect("the delete params were validated");
     assert_eq!(
         (
             run.id.as_str(),
@@ -399,14 +402,12 @@ async fn eval_run_lifecycle_async_variants_await_the_handler_with_the_flag() {
         seen[0].url,
         format!("{OPENAI_BASE}/v1/evals/{EVAL_ID}/runs/{RUN_ID}")
     );
-    let params = config
-        .params()
-        .expect("validate_environment saw the params");
-    assert!(!params.contains_key("aget_run"));
-    assert!(!params.contains_key("acancel_run"));
-    assert!(!params.contains_key("adelete_run"));
-    assert!(params.contains_key("api_key"));
-    assert!(params.contains_key("trace_extra"));
+    // the wrapper's own flag is popped for each action, so it never reaches the params
+    assert!(!after_get.contains_key("aget_run"));
+    assert!(!after_cancel.contains_key("acancel_run"));
+    assert!(!after_delete.contains_key("adelete_run"));
+    assert!(after_delete.contains_key("api_key"));
+    assert!(after_delete.contains_key("trace_extra"));
 }
 
 // An error the async handler raises is mapped once, with the provider the call resolved
