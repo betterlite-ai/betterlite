@@ -59,7 +59,6 @@ where
         messages: Json::List(input.messages.to_vec()),
         data: RawBody::Object(input.request_data.clone()),
     };
-    let wants_json = json_mode.unwrap_or(false);
     let response = transform_openai_response(
         &reply,
         state,
@@ -71,7 +70,7 @@ where
                     message: String::from("the Llama reply is not a JSON object"),
                 });
             };
-            let answer = project(source, model, wants_json, identifier)?;
+            let answer = project(source, model, json_mode.unwrap_or(false), identifier)?;
             serde_json::to_value(answer).map_err(|error| ForwardingFailure {
                 message: error.to_string(),
             })
