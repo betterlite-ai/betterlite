@@ -79,12 +79,12 @@ pub async fn session_for(
     api_key: Option<&str>,
     query: &SessionQuery,
 ) -> Result<SessionResponse, ReadApiError> {
-    let Some(api_key) = api_key else {
+    let Some(caller_key) = api_key else {
         // a caller without a key binds NULL, which matches no row: the same 404 without the round trip
         return Err(session_not_found(&query.session_id));
     };
     let session_id = bounded_session_id(&query.session_id);
-    let Some(row) = store.latest_session(api_key, &session_id).await? else {
+    let Some(row) = store.latest_session(caller_key, &session_id).await? else {
         return Err(session_not_found(&query.session_id));
     };
     Ok(session_response(&query.session_id, &row))

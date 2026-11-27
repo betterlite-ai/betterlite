@@ -22,7 +22,7 @@ use super::error::ReadApiError;
 use super::store::AutoRouterReadStore;
 
 // AUTOROUTER_BENCHMARKS_SQL, kept verbatim and wrapped so the rows come back as one jsonb array
-pub(crate) const BENCHMARKS_SQL: &str = r##"
+pub(crate) const BENCHMARKS_SQL: &str = r#"
 WITH windowed AS (
     SELECT api_key, session_id, router_name, router_type, first_turn_at, last_turn_at,
         last_model, models, turns, unordered_turns, covered_turns, cache_hits,
@@ -99,7 +99,7 @@ FROM (
     ) agg
     LEFT JOIN tier_maps USING (router_name, router_type)
 ) AS agg_rows
-"##;
+"#;
 
 pub(crate) struct PgAutoRouterReads {
     pub(crate) store: PostgresStore,

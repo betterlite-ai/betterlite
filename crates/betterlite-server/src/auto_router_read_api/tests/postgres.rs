@@ -12,7 +12,7 @@ use tokio_postgres::types::ToSql;
 use super::query;
 use crate::auto_router_read_api::postgres::PgAutoRouterReads;
 use crate::auto_router_read_api::service::benchmarks_for;
-use crate::auto_router_read_api::store::AutoRouterReadStore;
+use crate::auto_router_read_api::store::AutoRouterReadStore as _;
 use crate::benchmark_aggregates::window::BenchmarkWindow;
 
 const SCHEMA: &str = r#"
@@ -214,15 +214,15 @@ enum Scope {
     User,
 }
 
-struct Seed<'a> {
-    user: &'a str,
-    key: &'a str,
-    session: &'a str,
-    router: &'a str,
-    kind: &'a str,
-    first: &'a str,
-    last: &'a str,
-    model: &'a str,
+struct Seed<'text> {
+    user: &'text str,
+    key: &'text str,
+    session: &'text str,
+    router: &'text str,
+    kind: &'text str,
+    first: &'text str,
+    last: &'text str,
+    model: &'text str,
     turns: i32,
     spend: Decimal,
     saved: f64,
@@ -231,7 +231,7 @@ struct Seed<'a> {
     estimated_saved: f64,
     classifier: f64,
     recorded: i32,
-    tiers: &'a str,
+    tiers: &'text str,
 }
 
 fn complexity_seed() -> Seed<'static> {
@@ -268,80 +268,83 @@ fn window(start: &str, end: &str) -> super::BenchmarksQuery {
 async fn the_rollup_query_groups_compares_and_filters() {
     let database = Database::start().await;
     database.seed(&complexity_seed(), Scope::Session).await;
-    database
-        .seed(
-            &Seed {
-                key: "hash-b",
-                session: "s2",
-                turns: 2,
-                spend: money("1.0"),
-                saved: 1.0,
-                estimate: 2,
-                actual: 1.0,
-                estimated_saved: 1.0,
-                classifier: 0.25,
-                recorded: 2,
-                tiers: r#"{"COMPLEX": 2}"#,
-                ..complexity_seed()
-            },
-            Scope::Session,
-        )
-        .await;
-    database
-        .seed(
-            &Seed {
-                session: "s3",
-                router: "adaptive-auto",
-                kind: "adaptive",
-                turns: 2,
-                spend: money("4.0"),
-                saved: 4.0,
-                estimate: 2,
-                actual: 4.0,
-                estimated_saved: 4.0,
-                classifier: 0.5,
-                recorded: 1,
-                tiers: "{}",
-                ..complexity_seed()
-            },
-            Scope::Session,
-        )
-        .await;
-    database
-        .seed(
-            &Seed {
-                session: "old",
-                first: "2023-12-31T00:00:00",
-                last: "2023-12-31T00:01:00",
-                ..complexity_seed()
-            },
-            Scope::Session,
-        )
-        .await;
-    database
-        .seed(
-            &Seed {
-                user: "u1",
-                key: "",
-                session: "us1",
-                router: "quality-auto",
-                kind: "quality",
-                turns: 3,
-                spend: money("1.5"),
-                saved: 1.5,
-                estimate: 3,
-                actual: 1.5,
-                estimated_saved: 1.5,
-                classifier: 0.25,
-                recorded: 3,
-                tiers: "{}",
-                ..complexity_seed()
-            },
-            Scope::User,
-        )
-        .await;
+    database.seed(&second_session(), Scope::Session).await;
+    database.seed(&adaptive_session(), Scope::Session).await;
+    database.seed(&old_session(), Scope::Session).await;
+    database.seed(&user_session(), Scope::User).await;
     let reads = database.reads();
-    let answer = benchmarks_for(&reads, &window("2024-01-01", "2024-01-01"), &[], day(1, 5))
+    rollup_groups(&reads).await;
+    rollup_savings(&reads).await;
+    filtered_views(&reads).await;
+    database.close().await;
+}
+
+fn second_session() -> Seed<'static> {
+    Seed {
+        key: "hash-b",
+        session: "s2",
+        turns: 2,
+        spend: money("1.0"),
+        saved: 1.0,
+        estimate: 2,
+        actual: 1.0,
+        estimated_saved: 1.0,
+        classifier: 0.25,
+        recorded: 2,
+        tiers: r#"{"COMPLEX": 2}"#,
+        ..complexity_seed()
+    }
+}
+
+fn adaptive_session() -> Seed<'static> {
+    Seed {
+        session: "s3",
+        router: "adaptive-auto",
+        kind: "adaptive",
+        turns: 2,
+        spend: money("4.0"),
+        saved: 4.0,
+        estimate: 2,
+        actual: 4.0,
+        estimated_saved: 4.0,
+        classifier: 0.5,
+        recorded: 1,
+        tiers: "{}",
+        ..complexity_seed()
+    }
+}
+
+fn old_session() -> Seed<'static> {
+    Seed {
+        session: "old",
+        first: "2023-12-31T00:00:00",
+        last: "2023-12-31T00:01:00",
+        ..complexity_seed()
+    }
+}
+
+fn user_session() -> Seed<'static> {
+    Seed {
+        user: "u1",
+        key: "",
+        session: "us1",
+        router: "quality-auto",
+        kind: "quality",
+        turns: 3,
+        spend: money("1.5"),
+        saved: 1.5,
+        estimate: 3,
+        actual: 1.5,
+        estimated_saved: 1.5,
+        classifier: 0.25,
+        recorded: 3,
+        tiers: "{}",
+        ..complexity_seed()
+    }
+}
+
+async fn rollup_groups(reads: &PgAutoRouterReads) {
+    let answer = benchmarks_for(reads, &window("2024-01-01", "2024-01-01"), &[], day(1, 5))
         .await
         .unwrap();
     assert_eq!(answer.groups.len(), 3);
@@ -356,18 +359,25 @@ async fn the_rollup_query_groups_compares_and_filters() {
     assert_eq!(answer.groups[1].router_name, "complexity-auto");
     assert_eq!(answer.groups[1].sessions, 2);
     assert_eq!(answer.groups[1].turns, 6);
-    assert_eq!(answer.groups[1].tier_turns.get("SIMPLE"), Some(&4));
-    assert_eq!(answer.groups[1].tier_turns.get("COMPLEX"), Some(&2));
-    assert_eq!(answer.groups[1].classifier_cost, Some(money("0.75")));
-    assert_eq!(
-        answer.groups[1].savings_classifier_cost,
-        Some(money("0.75"))
-    );
-    assert_eq!(answer.groups[1].saved_spend, Some(money("3.0")));
-    assert_eq!(answer.groups[1].baseline_spend, Some(money("6.0")));
-    assert_eq!(answer.groups[1].saved_pct, Some(money("50")));
+}
+
+async fn rollup_savings(reads: &PgAutoRouterReads) {
+    let answer = benchmarks_for(reads, &window("2024-01-01", "2024-01-01"), &[], day(1, 5))
+        .await
+        .unwrap();
+    let group = &answer.groups[1];
+    assert_eq!(group.tier_turns.get("SIMPLE"), Some(&4));
+    assert_eq!(group.tier_turns.get("COMPLEX"), Some(&2));
+    assert_eq!(group.classifier_cost, Some(money("0.75")));
+    assert_eq!(group.savings_classifier_cost, Some(money("0.75")));
+    assert_eq!(group.saved_spend, Some(money("3.0")));
+    assert_eq!(group.baseline_spend, Some(money("6.0")));
+    assert_eq!(group.saved_pct, Some(money("50")));
+}
+
+async fn filtered_views(reads: &PgAutoRouterReads) {
     let mine = benchmarks_for(
-        &reads,
+        reads,
         &super::BenchmarksQuery {
             user_id: Some("u1".to_owned()),
             ..window("2024-01-01", "2024-01-01")
@@ -381,7 +391,7 @@ async fn the_rollup_query_groups_compares_and_filters() {
     assert_eq!(mine.groups[0].router_name, "quality-auto");
     assert_eq!(mine.groups[0].turns, 3);
     let keyed = benchmarks_for(
-        &reads,
+        reads,
         &super::BenchmarksQuery {
             key_hash: Some("hash-b".to_owned()),
             ..window("2024-01-01", "2024-01-01")
@@ -393,41 +403,38 @@ async fn the_rollup_query_groups_compares_and_filters() {
     .unwrap();
     assert_eq!(keyed.groups.len(), 1);
     assert_eq!(keyed.groups[0].turns, 2);
-    let past = benchmarks_for(&reads, &window("2023-12-31", "2023-12-31"), &[], day(1, 5))
+    let past = benchmarks_for(reads, &window("2023-12-31", "2023-12-31"), &[], day(1, 5))
         .await
         .unwrap();
     assert_eq!(past.groups.len(), 1);
     assert_eq!(past.groups[0].router_name, "complexity-auto");
     assert_eq!(past.groups[0].turns, 4);
-    database.close().await;
+}
+
+fn newer_session() -> Seed<'static> {
+    Seed {
+        router: "adaptive-auto",
+        kind: "adaptive",
+        last: "2024-01-02T00:00:00",
+        model: "gpt-4o-mini",
+        ..complexity_seed()
+    }
+}
+
+fn other_key_session() -> Seed<'static> {
+    Seed {
+        key: "hash-b",
+        model: "o3",
+        ..complexity_seed()
+    }
 }
 
 #[tokio::test]
 async fn the_latest_session_reads_the_newest_row_under_the_key() {
     let database = Database::start().await;
     database.seed(&complexity_seed(), Scope::Session).await;
-    database
-        .seed(
-            &Seed {
-                router: "adaptive-auto",
-                kind: "adaptive",
-                last: "2024-01-02T00:00:00",
-                model: "gpt-4o-mini",
-                ..complexity_seed()
-            },
-            Scope::Session,
-        )
-        .await;
-    database
-        .seed(
-            &Seed {
-                key: "hash-b",
-                model: "o3",
-                ..complexity_seed()
-            },
-            Scope::Session,
-        )
-        .await;
+    database.seed(&newer_session(), Scope::Session).await;
+    database.seed(&other_key_session(), Scope::Session).await;
     let reads = database.reads();
     let newest = reads
         .latest_session("hash-a", "s1")
@@ -465,8 +472,8 @@ async fn a_store_without_a_pool_reports_the_database_failure() {
     let error = reads.agg_rows(&window, None, None).await.unwrap_err();
     assert_eq!(error.status_code(), 500);
     assert!(error.to_string().contains("No DB Connected"));
-    let error = reads.latest_session("hash-a", "s1").await.unwrap_err();
-    assert_eq!(error.status_code(), 500);
+    let session_error = reads.latest_session("hash-a", "s1").await.unwrap_err();
+    assert_eq!(session_error.status_code(), 500);
 }
 
 fn money(text: &str) -> Decimal {

@@ -1,5 +1,7 @@
 use rstest::rstest;
 
+use crate::auto_router_read_api::service::SessionResponse;
+use crate::benchmark_aggregates::group::Benchmarks;
 use crate::routing::auto_router_read_api::ConfiguredRouter;
 
 use super::*;
@@ -70,6 +72,20 @@ async fn compared_complexity() {
     assert_eq!(answer.start_date, "2024-01-01");
     assert_eq!(answer.end_date, "2024-01-02");
     assert_eq!(answer.routers_in_scope, 1);
+    compared_group(&answer);
+    compared_totals(&answer);
+    assert_eq!(
+        store.calls(),
+        [RecordedCall::AggRows {
+            start: "2024-01-01T00:00:00".to_owned(),
+            end: "2024-01-03T00:00:00".to_owned(),
+            api_key: None,
+            user_id: None,
+        }]
+    );
+}
+
+fn compared_group(answer: &Benchmarks) {
     let group = &answer.groups[0];
     // the compared row stands in for the estimate at read time: its own turns and spend compare
     assert_eq!(group.savings_estimated_turns, 4);
@@ -81,20 +97,14 @@ async fn compared_complexity() {
     assert_eq!(group.saved_per_session, Some(money("1")));
     assert_eq!(group.classifier_cost, Some(money("0.5")));
     assert_eq!(group.tier_turns.get("SIMPLE"), Some(&4));
+}
+
+fn compared_totals(answer: &Benchmarks) {
     assert_eq!(answer.totals.sessions, 2);
     assert_eq!(answer.totals.avg_turns_per_session, money("2"));
     assert_eq!(answer.totals.avg_session_seconds, money("200"));
     assert_eq!(answer.totals.avg_tokens_per_session, money("500"));
     assert_eq!(answer.totals.baseline_spend, Some(money("4.0")));
-    assert_eq!(
-        store.calls(),
-        [RecordedCall::AggRows {
-            start: "2024-01-01T00:00:00".to_owned(),
-            end: "2024-01-03T00:00:00".to_owned(),
-            api_key: None,
-            user_id: None,
-        }]
-    );
 }
 
 async fn classifier_cost_only_when_covered() {
@@ -157,8 +167,8 @@ async fn unrecorded_baseline_outside_cohort() {
     assert_eq!(answer.totals.saved_pct, None);
 }
 
-async fn idle_routers_from_the_registry() {
-    let deployments = vec![
+fn idle_registry() -> Vec<ConfiguredRouter> {
+    vec![
         ConfiguredRouter {
             model_name: "complexity-auto".to_owned(),
             model: Some("auto_router/complexity_router".to_owned()),
@@ -187,7 +197,11 @@ async fn idle_routers_from_the_registry() {
             model_name: "unnamed-model".to_owned(),
             model: None,
         },
-    ];
+    ]
+}
+
+async fn idle_routers_from_the_registry() {
+    let deployments = idle_registry();
     let store = FakeStore::with_rows(vec![compared()]);
     let answer = benchmarks_for(
         &store,
@@ -220,28 +234,40 @@ async fn session_row() {
     )
     .await
     .unwrap();
-    assert_eq!(answer.session_id, "s1");
-    assert_eq!(answer.router_name, "complexity-auto");
-    assert_eq!(answer.router_type, "complexity");
-    assert_eq!(answer.turns, 4);
-    assert_eq!(answer.last_model, "gpt-4o");
-    assert_eq!(answer.spend, money("1.5"));
-    assert_eq!(answer.savings_estimated_turns, 4);
-    assert_eq!(answer.savings_estimated_actual_spend, money("1.0"));
-    assert_eq!(answer.saved_spend, Some(money("0.5")));
-    assert_eq!(answer.baseline_spend, Some(money("2.0")));
-    assert_eq!(answer.estimated_baseline_spend, Some(money("1.5")));
-    assert_eq!(answer.baseline_model.as_deref(), Some("m1"));
-    assert_eq!(
-        answer.baseline_models,
-        BTreeMap::from([("m1".to_owned(), 3), ("m2".to_owned(), 1),])
-    );
+    session_identity(&answer);
+    session_savings(&answer);
+    session_baseline(&answer);
     assert_eq!(
         store.calls(),
         [RecordedCall::LatestSession {
             api_key: HASH_A.to_owned(),
             session_id: "s1".to_owned(),
         }]
+    );
+}
+
+fn session_identity(answer: &SessionResponse) {
+    assert_eq!(answer.session_id, "s1");
+    assert_eq!(answer.router_name, "complexity-auto");
+    assert_eq!(answer.router_type, "complexity");
+    assert_eq!(answer.turns, 4);
+    assert_eq!(answer.last_model, "gpt-4o");
+}
+
+fn session_savings(answer: &SessionResponse) {
+    assert_eq!(answer.spend, money("1.5"));
+    assert_eq!(answer.savings_estimated_turns, 4);
+    assert_eq!(answer.savings_estimated_actual_spend, money("1.0"));
+    assert_eq!(answer.saved_spend, Some(money("0.5")));
+    assert_eq!(answer.baseline_spend, Some(money("2.0")));
+    assert_eq!(answer.estimated_baseline_spend, Some(money("1.5")));
+}
+
+fn session_baseline(answer: &SessionResponse) {
+    assert_eq!(answer.baseline_model.as_deref(), Some("m1"));
+    assert_eq!(
+        answer.baseline_models,
+        BTreeMap::from([("m1".to_owned(), 3), ("m2".to_owned(), 1),])
     );
 }
 

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
+use axum::body::to_bytes;
 use axum::extract::{Extension, RawQuery, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::Response;
@@ -143,8 +144,8 @@ fn key_principal(fields: &str) -> Principal {
     principal("key-owner", SourceKey(Some(key)))
 }
 
-fn authenticated(principal: Principal) -> Option<Extension<AuthContext>> {
-    Some(Extension(AuthContext { principal }))
+fn authenticated(principal: Principal) -> Extension<AuthContext> {
+    Extension(AuthContext { principal })
 }
 
 fn money(text: &str) -> Decimal {
@@ -191,7 +192,7 @@ fn session_row(api_key: &str) -> AutoRouterSession {
         session_id: "s1".to_owned(),
         router_name: "complexity-auto".to_owned(),
         router_type: "complexity".to_owned(),
-        first_turn_at: at.clone(),
+        first_turn_at: at,
         last_turn_at: at,
         last_model: "gpt-4o".to_owned(),
         turns: 2,
@@ -222,12 +223,12 @@ async fn call(
         ReadKind::Benchmarks => BENCHMARKS_PATH,
         ReadKind::Session => SESSION_PATH,
     };
-    read(
+    Box::pin(read(
         State(read_state(store)),
         caller,
         RawQuery(raw.map(str::to_owned)),
         Uri::from_static(path),
-    )
+    ))
     .await
 }
 
@@ -247,10 +248,11 @@ async fn session(
     call(ReadKind::Session, store, caller, raw).await
 }
 
-async fn decode<T: for<'de> Deserialize<'de>>(response: Response) -> T {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .unwrap();
+async fn decode<T>(response: Response) -> T
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -271,7 +273,9 @@ async fn a_member_cannot_read_benchmarks() {
     let store: Arc<dyn AutoRouterReadStore> = Arc::new(RecordingStore::default());
     let response = benches(
         Some(store),
-        authenticated(key_principal(r#"{"user_role":"internal_user"}"#)),
+        Some(authenticated(key_principal(
+            r#"{"user_role":"internal_user"}"#,
+        ))),
         None,
     )
     .await;
@@ -292,7 +296,9 @@ async fn an_admin_viewer_reads_the_benchmarks() {
     };
     let response = benches(
         Some(Arc::new(store)),
-        authenticated(key_principal(r#"{"user_role":"proxy_admin_viewer"}"#)),
+        Some(authenticated(key_principal(
+            r#"{"user_role":"proxy_admin_viewer"}"#,
+        ))),
         Some("start_date=2024-01-01&end_date=2024-01-02"),
     )
     .await;
@@ -309,22 +315,22 @@ async fn an_admin_viewer_reads_the_benchmarks() {
 async fn a_proxy_without_a_database_answers_500() {
     let response = benches(
         None,
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some("start_date=2024-01-01"),
     )
     .await;
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let body: Detail = decode(response).await;
     assert_eq!(body.detail, DB_NOT_CONNECTED);
-    let response = session(
+    let session_response = session(
         None,
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some("session_id=s1"),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body: Detail = decode(response).await;
-    assert_eq!(body.detail, DB_NOT_CONNECTED);
+    assert_eq!(session_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let session_body: Detail = decode(session_response).await;
+    assert_eq!(session_body.detail, DB_NOT_CONNECTED);
 }
 
 #[tokio::test]
@@ -332,7 +338,7 @@ async fn an_unparsable_day_is_a_400_detail() {
     let store: Arc<dyn AutoRouterReadStore> = Arc::new(RecordingStore::default());
     let response = benches(
         Some(store),
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some("start_date=2024-13-01"),
     )
     .await;
@@ -351,7 +357,7 @@ async fn an_oversized_query_is_a_422_detail() {
     let oversized = "a".repeat(MAX_READ_QUERY_BYTES.saturating_add(1));
     let response = benches(
         Some(store),
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some(oversized.as_str()),
     )
     .await;
@@ -371,7 +377,7 @@ async fn an_empty_user_filter_is_the_validation_envelope() {
     let store: Arc<dyn AutoRouterReadStore> = Arc::new(RecordingStore::default());
     let response = benches(
         Some(store),
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some("user_id="),
     )
     .await;
@@ -392,7 +398,7 @@ async fn the_session_read_binds_the_callers_canonical_key() {
     let store = RecordingStore::with_session(session_row(&canonical));
     let response = session(
         Some(Arc::new(store)),
-        authenticated(key_principal(r#"{"api_key":"sk-test"}"#)),
+        Some(authenticated(key_principal(r#"{"api_key":"sk-test"}"#))),
         Some("session_id=s1"),
     )
     .await;
@@ -408,10 +414,10 @@ async fn the_master_key_reads_under_its_stable_alias() {
     let store = Arc::new(RecordingStore::with_session(session_row(
         "litellm_proxy_master_key",
     )));
-    let handle: Arc<dyn AutoRouterReadStore> = store.clone();
+    let handle: Arc<dyn AutoRouterReadStore> = Arc::clone(&store);
     let response = session(
         Some(handle),
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some("session_id=s1"),
     )
     .await;
@@ -425,7 +431,7 @@ async fn the_master_key_reads_under_its_stable_alias() {
 #[tokio::test]
 async fn a_missing_session_id_is_the_validation_envelope() {
     let store: Arc<dyn AutoRouterReadStore> = Arc::new(RecordingStore::default());
-    let response = session(Some(store), authenticated(master_principal()), None).await;
+    let response = session(Some(store), Some(authenticated(master_principal())), None).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: Validation = decode(response).await;
     assert_eq!(body.detail[0].kind, "missing");
@@ -438,7 +444,7 @@ async fn an_unknown_session_is_a_404_with_the_quoted_id() {
     let store: Arc<dyn AutoRouterReadStore> = Arc::new(RecordingStore::default());
     let response = session(
         Some(store),
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some("session_id=it%27s"),
     )
     .await;
@@ -455,7 +461,9 @@ async fn an_unknown_session_is_a_404_with_the_quoted_id() {
 async fn a_malformed_query_is_422_before_the_member_403() {
     let response = benches(
         None,
-        authenticated(key_principal(r#"{"user_role":"internal_user"}"#)),
+        Some(authenticated(key_principal(
+            r#"{"user_role":"internal_user"}"#,
+        ))),
         Some("user_id="),
     )
     .await;
@@ -464,7 +472,7 @@ async fn a_malformed_query_is_422_before_the_member_403() {
 
 #[tokio::test]
 async fn a_missing_session_id_is_422_before_the_database_500() {
-    let response = session(None, authenticated(master_principal()), None).await;
+    let response = session(None, Some(authenticated(master_principal())), None).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
@@ -484,11 +492,11 @@ async fn an_oversized_session_id_reaches_the_store_bounded() {
     let oversized = "a".repeat(257);
     let bounded = bounded_session_id(&oversized);
     let store = Arc::new(RecordingStore::with_session(session_row(&bounded)));
-    let handle: Arc<dyn AutoRouterReadStore> = store.clone();
+    let handle: Arc<dyn AutoRouterReadStore> = Arc::clone(&store);
     let raw = format!("session_id={oversized}");
     let response = session(
         Some(handle),
-        authenticated(master_principal()),
+        Some(authenticated(master_principal())),
         Some(raw.as_str()),
     )
     .await;

@@ -534,18 +534,7 @@ fn sha256_id(value: &str) -> String {
 async fn bounded_session() {
     let exact = "a".repeat(256);
     assert_eq!(bounded_session_id(&exact), exact);
-    let stored_exact = session(HASH_A, &exact, "2024-01-02T00:00:00");
-    let exact_store = FakeStore::with_sessions(vec![stored_exact]);
-    let exact_answer = session_for(
-        &exact_store,
-        Some(HASH_A),
-        &SessionQuery {
-            session_id: exact.clone(),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(exact_answer.session_id, exact);
+    let exact_store = store_under_its_bounded_id(&exact).await;
     assert_eq!(
         exact_store.calls(),
         [RecordedCall::LatestSession {
@@ -554,27 +543,32 @@ async fn bounded_session() {
         }]
     );
     let oversized = "a".repeat(257);
-    let bounded = bounded_session_id(&oversized);
-    assert_eq!(bounded, sha256_id(&oversized));
-    let stored_bounded = session(HASH_A, &bounded, "2024-01-02T00:00:00");
-    let bounded_store = FakeStore::with_sessions(vec![stored_bounded]);
+    let hashed = sha256_id(&oversized);
+    assert_eq!(bounded_session_id(&oversized), hashed);
+    let hashed_store = store_under_its_bounded_id(&oversized).await;
+    assert_eq!(
+        hashed_store.calls(),
+        [RecordedCall::LatestSession {
+            api_key: HASH_A.to_owned(),
+            session_id: hashed,
+        }]
+    );
+}
+
+async fn store_under_its_bounded_id(raw: &str) -> FakeStore {
+    let bounded = bounded_session_id(raw);
+    let store = FakeStore::with_sessions(vec![session(HASH_A, &bounded, "2024-01-02T00:00:00")]);
     let answer = session_for(
-        &bounded_store,
+        &store,
         Some(HASH_A),
         &SessionQuery {
-            session_id: oversized.clone(),
+            session_id: raw.to_owned(),
         },
     )
     .await
     .unwrap();
-    assert_eq!(answer.session_id, oversized);
-    assert_eq!(
-        bounded_store.calls(),
-        [RecordedCall::LatestSession {
-            api_key: HASH_A.to_owned(),
-            session_id: bounded,
-        }]
-    );
+    assert_eq!(answer.session_id, raw);
+    store
 }
 
 async fn no_caller_key() {
@@ -599,7 +593,7 @@ async fn cancellation() {
         benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5)),
     )
     .await;
-    assert!(canceled.is_err());
+    canceled.unwrap_err();
     store.release();
     let answer = benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5))
         .await
@@ -645,9 +639,9 @@ async fn baseline_model_coverage() {
         baseline_models: BTreeMap::from([("m1".to_owned(), 2), ("m2".to_owned(), 2)]),
         ..session(HASH_A, "s1", "2024-01-02T00:00:00")
     };
-    let store = FakeStore::with_sessions(vec![covered]);
+    let covered_store = FakeStore::with_sessions(vec![covered]);
     let named = session_for(
-        &store,
+        &covered_store,
         Some(HASH_A),
         &SessionQuery {
             session_id: "s1".to_owned(),
