@@ -31,7 +31,7 @@ pub trait EvalLifecycleConfigLookup: Send + Sync {
     fn eval_config(&self, provider: &str) -> Option<Self::Config>;
 }
 
-// The collaborators an eval lifecycle call reads: the provider factory, the pooled client, B185's redactor and B198's request timeout
+// The collaborators an eval lifecycle call reads: the provider factory, the pooled client, B187's redactor and B198's request timeout
 pub struct EvalLifecycleDeps<'deps, Configs: ?Sized> {
     pub configs: &'deps Configs,
     pub client: &'deps ProxiedClient,
