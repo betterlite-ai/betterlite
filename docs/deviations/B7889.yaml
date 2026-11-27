@@ -5,7 +5,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6297-L6328
   - what: arealtime_calls returns the SDP answer text instead of the httpx.Response LiteLLM hands back.
     why: The answer is the body text LiteLLM's caller reads from that response, and no client response object crosses into Python.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6342-L6352
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6498-L6502
   - what: BaseLLMException and MaskedHTTPStatusError are defined in betterlite.realtime_api.main rather than in the shared exception package.
     why: betterlite._completion.errors.EXCEPTION_TYPES has no entry for either class, and the realtime module is the only caller that raises them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41
