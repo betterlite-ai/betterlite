@@ -1,0 +1,33 @@
+kind: helper
+name: polly-speech-voice-and-formats
+call:
+  polly_speech:
+    calls:
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: alloy}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: echo}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: fable}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: onyx}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: nova}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: shimmer}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: Joanna}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: Alloy}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: ""}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: null}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}, voice: {name: Matthew}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: mp3}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: opus}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: aac}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: flac}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: wav}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: pcm}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: ogg}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: MP3}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {response_format: ""}, kwargs: {}}
+    - {function: dispatch, optional_params: {}, litellm_params: {}, environment: {}, voice: alloy}
+    - {function: dispatch, optional_params: {}, litellm_params: {}, environment: {}, voice: {name: Matthew}}
+    - {function: dispatch, optional_params: {}, litellm_params: {}, environment: {}, voice: {}}
+    - {function: dispatch, optional_params: {}, litellm_params: {}, environment: {}, voice: {name: null}}
+    - {function: dispatch, optional_params: {}, litellm_params: {}, environment: {}, voice: Joanna}
+    - {function: dispatch, optional_params: {}, litellm_params: {}, environment: {}, voice: ""}
+compare: {ignore: []}
+env: {}

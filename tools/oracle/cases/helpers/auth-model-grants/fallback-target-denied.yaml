@@ -1,0 +1,20 @@
+kind: helper
+name: auth-model-grants-fallback-target-denied
+call:
+  auth_model_grants:
+    steps:
+      # the source reads metadata first and litellm_metadata second, skipping shapes that do not decode
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, user_id: user-1, models: ["gpt-4o"]}}}}
+      - {function: fallback, model: "other-model", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, user_id: user-1, models: ["gpt-4o"]}}}}
+      # a team snapshot read off the key denies a target the key itself may call
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, user_id: user-1, team_id: team-1, team_models: ["gpt-4o-mini"]}}}}
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, user_id: user-1, team_id: team-1, team_models: ["gpt-4o"]}}}}
+      # metadata without a token falls through to litellm_metadata
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {}, litellm_metadata: {user_api_key_auth: {token: sk-2, models: ["gpt-4o"]}}}}
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: "not-an-object"}, litellm_metadata: {user_api_key_auth: {token: sk-2, models: ["gpt-4o"]}}}}
+      # no decodable token anywhere: the fallback is not restricted
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: "not-an-object"}, litellm_metadata: {user_api_key_auth: "also-not"}}}
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: []}}
+      - {function: fallback, model: "gpt-4o", enabled: true}
+env: {}
+compare: {ignore: []}

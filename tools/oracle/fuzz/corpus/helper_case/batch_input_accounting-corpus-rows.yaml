@@ -1,0 +1,12 @@
+kind: helper
+name: batch-input-accounting-corpus-rows
+call:
+  batch_input_accounting:
+    file_id: corpus-file
+    content:
+      contents: |-
+        {"body": {"model": "gpt-4o", "prompt": "hello"}}
+        {"body": {"model": "gpt-4o", "max_tokens": 4}}
+    tokens: [5]
+env: {}
+compare: {ignore: []}

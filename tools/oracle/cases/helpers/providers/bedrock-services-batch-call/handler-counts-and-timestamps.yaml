@@ -1,0 +1,65 @@
+kind: helper
+name: bedrock-services-batch-call-handler-counts-and-timestamps
+call:
+  bedrock_services_batch_call:
+    operation: model_job_status
+    batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+    region: eu-west-1
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    replies:
+      - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Failed","submitTime":"2024-01-15T10:30:00Z","lastModifiedTime":"2024-01-15T10:35:00Z","endTime":"2024-01-15T10:40:00Z","totalRecordCount":10,"successRecordCount":7,"errorRecordCount":3,"message":"job failed","inputDataConfig":{"s3InputDataConfig":{"s3Uri":"s3://input-bucket/data/eval.jsonl"}}}'}
+calls:
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"InProgress","submitTime":1705314600,"lastModifiedTime":1705314900,"endTime":1705315200}'}
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Completed","submitTime":"2024-01-15T10:30:00Z","endTime":"2024-01-15T10:40:00Z"}'}
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Stopped","endTime":"2024-01-15T10:40:00Z"}'}
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Expired","endTime":"2024-01-15T10:40:00Z"}'}
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"InProgress","lastModifiedTime":null}'}
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"InProgress","totalRecordCount":2,"successRecordCount":0}'}
+  - bedrock_services_batch_call:
+      operation: model_job_status
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"InProgress","totalRecordCount":true,"successRecordCount":true,"errorRecordCount":false}'}
+env: {}
+compare: {ignore: []}

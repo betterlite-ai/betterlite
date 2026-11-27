@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-services-batch-call-cancel
+call:
+  bedrock_services_batch_call:
+    operation: cancel
+    batch_id: job-1
+    region: eu-west-1
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    replies:
+      - {status: 200, headers: {}, body: ""}
+      - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Stopped"}'}
+env: {}
+compare: {ignore: []}

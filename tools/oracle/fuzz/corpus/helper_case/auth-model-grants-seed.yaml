@@ -1,0 +1,9 @@
+kind: helper
+name: auth-model-grants-seed
+call:
+  auth_model_grants:
+    steps:
+      - {function: agent, model: "gpt-4o", token: {token: sk-agent, agent_id: agent-1}, managed: {agent_id: agent-1, agent_name: alpha, agent_card_params: {}}, managed_ceilings: [["gpt-4o"]]}
+      - {function: fallback, model: "gpt-4o", enabled: true, request: {metadata: {user_api_key_auth: {token: sk-1, models: ["gpt-4o"]}}}}
+env: {}
+compare: {ignore: []}

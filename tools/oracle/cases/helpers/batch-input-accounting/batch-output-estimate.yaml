@@ -1,0 +1,41 @@
+kind: helper
+name: batch-input-accounting-batch-output-estimate
+call:
+  batch_input_accounting:
+    file_id: file-caps
+    content:
+      contents: |-
+        {"body": {"model": "gpt-4o", "prompt": "hi", "max_tokens": 100}}
+        {"body": {"model": "gpt-4o", "prompt": "hi", "max_tokens": 10, "n": 3}}
+        {"body": {"model": "gpt-4o", "prompt": "hi", "max_completion_tokens": 40}}
+        {"body": {"model": "gpt-4o", "prompt": "hi", "max_output_tokens": 25}}
+        {"body": {"model": "gpt-4o", "prompt": "hi"}}
+    tokens: [1, 2, 3, 4, 5]
+calls:
+  - batch_input_accounting:
+      file_id: file-embeddings
+      content:
+        contents: |-
+          {"url": "/v1/embeddings", "body": {"model": "text-embedding-3-small", "input": "hello"}}
+      tokens: [4]
+  - batch_input_accounting:
+      file_id: file-floor
+      descriptors:
+        - key: model_per_project_otpm
+          value: project
+          rate_limit:
+            tokens_per_unit: 120
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+          {"body": {"model": "gpt-4o", "prompt": "hi", "n": 2}}
+      tokens: [1, 2]
+  - batch_input_accounting:
+      file_id: file-no-body
+      content:
+        contents: |-
+          {"body": null}
+          {"body": {}}
+          {"body": {"model": "gpt-4o"}}
+env: {}
+compare: {ignore: []}
