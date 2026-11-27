@@ -7,7 +7,7 @@ use betterlite_db::identity_rows::key::{DeletedVerificationToken, LiteLLMVerific
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::Parser;
-use deadpool_postgres::{Client, GenericClient, Manager, Pool};
+use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::types::{Json, ToSql};
 use tokio_postgres::{NoTls, Row};
@@ -342,7 +342,7 @@ fn assert_json(row: &Row, record: &DeletedVerificationToken) {
     );
 }
 
-fn assert_scalars(row: &Row, record: &DeletedVerificationToken) {
+fn assert_limits(row: &Row, record: &DeletedVerificationToken) {
     assert_eq!(
         row.get::<_, Option<bool>>("blocked"),
         record.token.blocked.map(|flag| flag.0)
@@ -367,6 +367,9 @@ fn assert_scalars(row: &Row, record: &DeletedVerificationToken) {
         .max_budget
         .expect("the full token carries a max budget");
     assert_eq!(max_budget.to_bits(), archived.as_f64().to_bits());
+}
+
+fn assert_rotation(row: &Row, record: &DeletedVerificationToken) {
     let parallel = row
         .get::<_, Option<i32>>("max_parallel_requests")
         .expect("the full record carries a parallel limit");
@@ -548,6 +551,9 @@ fn assert_minimal_defaults(row: &Row) {
             .0,
         BTreeMap::new()
     );
+}
+
+fn assert_minimal_arrays(row: &Row) {
     assert_eq!(
         row.get::<_, Option<Vec<String>>>("models"),
         Some(Vec::new())
@@ -577,7 +583,8 @@ async fn insert_writes_the_record_postgres() {
     assert_accounting(&row, &record);
     assert_texts(&row, &record);
     assert_json(&row, &record);
-    assert_scalars(&row, &record);
+    assert_limits(&row, &record);
+    assert_rotation(&row, &record);
     assert_arrays(&row, &record);
     assert_stamps(&row);
     assert_deletion(&row, &record);
@@ -604,6 +611,7 @@ async fn insert_leaves_absent_values_null_postgres() {
     assert_null_texts(&row);
     assert_null_scalars(&row);
     assert_minimal_defaults(&row);
+    assert_minimal_arrays(&row);
     assert_eq!(
         row.get::<_, String>("id"),
         record.id.clone().expect("the record carries an id")
@@ -670,6 +678,24 @@ async fn insert_of_a_duplicate_id_reports_a_database_error_postgres() {
     assert!(matches!(&error, KeyArchiveError::Database { .. }));
     assert_eq!(error.to_string(), "the deleted key archive write failed");
     assert!(!error.to_string().contains("sk-hashed-abc123"));
+    database.close().await;
+}
+
+#[tokio::test]
+async fn insert_of_a_batch_with_one_duplicate_writes_nothing_postgres() {
+    let database = Database::start().await;
+    let record = record_from(SAMPLE_TOKEN);
+    let fresh = record_from(r#"{"token": "sk-fresh", "key_name": "fresh-key"}"#);
+    let client = database.client().await;
+    save_deleted_verification_token_records(&client, std::slice::from_ref(&record))
+        .await
+        .unwrap();
+    let error = save_deleted_verification_token_records(&client, &[fresh, record])
+        .await
+        .expect_err("the batch collides on the id");
+    assert!(matches!(&error, KeyArchiveError::Database { .. }));
+    let row = database.query_one(SELECT_COUNT, &[]).await;
+    assert_eq!(row.get::<_, i64>(0), 1);
     database.close().await;
 }
 
