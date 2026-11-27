@@ -48,7 +48,10 @@ async fn embedding_failures_become_error_text_in_tool_and_proxy_search() {
     .await
     .expect("an embedding failure is a tool error");
     assert!(tool_search.is_error);
-    assert_eq!(text_of(&tool_search), "embedding down");
+    assert_eq!(
+        text_of(&tool_search),
+        "embedding the search query failed: embedding down"
+    );
     let arguments = object_arguments(&[("query", JsonValue::String("alpha".to_owned()))]);
     let proxy_search = handle_mcp_proxy_tool(
         ProxyToolRequest {
@@ -60,5 +63,8 @@ async fn embedding_failures_become_error_text_in_tool_and_proxy_search() {
     .await
     .expect("an embedding failure is a tool error");
     assert!(proxy_search.is_error);
-    assert_eq!(text_of(&proxy_search), "embedding down");
+    assert_eq!(
+        text_of(&proxy_search),
+        "embedding the search query failed: embedding down"
+    );
 }
