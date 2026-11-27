@@ -27,10 +27,11 @@ use crate::eval_calls::error::{EvalOperationFailure, FailureGroup, SessionError}
 use crate::eval_calls::payload::{CreatePayload, IdPayload, ListPayload, Params, UpdatePayload};
 
 // The operation one Python call asks for: the four requests the evals API serves, and the two lifecycle calls.
+// Each payload is large and every arm carries one, so they stay on the heap and the enum stays one word plus its tag.
 pub(super) enum EvalCall {
     Request(Box<RequestCall>),
-    Delete(IdPayload),
-    Cancel(IdPayload),
+    Delete(Box<IdPayload>),
+    Cancel(Box<IdPayload>),
 }
 
 pub(super) enum RequestCall {

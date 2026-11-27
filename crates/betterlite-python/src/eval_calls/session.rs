@@ -93,25 +93,25 @@ impl NativeEvalSession {
 
     fn delete_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
         let payload = IdPayload::parse(request).map_err(EvalOperationFailure::from)?;
-        let call = EvalCall::Delete(payload);
+        let call = EvalCall::Delete(Box::new(payload));
         run_blocking(py, &self.core, call)
     }
 
     fn adelete_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
         let payload = IdPayload::parse(request).map_err(EvalOperationFailure::from)?;
-        let call = EvalCall::Delete(payload);
+        let call = EvalCall::Delete(Box::new(payload));
         run_spawned(py, &self.core, call)
     }
 
     fn cancel_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
         let payload = IdPayload::parse(request).map_err(EvalOperationFailure::from)?;
-        let call = EvalCall::Cancel(payload);
+        let call = EvalCall::Cancel(Box::new(payload));
         run_blocking(py, &self.core, call)
     }
 
     fn acancel_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
         let payload = IdPayload::parse(request).map_err(EvalOperationFailure::from)?;
-        let call = EvalCall::Cancel(payload);
+        let call = EvalCall::Cancel(Box::new(payload));
         run_spawned(py, &self.core, call)
     }
 }
