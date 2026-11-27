@@ -46,36 +46,24 @@ impl MaxBudget {
         if value.is_nan() {
             return Self::Nan;
         }
-        if value.is_infinite() {
-            return Self::infinity(value.is_sign_negative());
-        }
-        Decimal::from_f64(value)
-            .map_or_else(|| Self::infinity(value.is_sign_negative()), Self::Finite)
-    }
-
-    const fn infinity(negative: bool) -> Self {
-        if negative {
-            Self::NegativeInfinity
-        } else {
-            Self::PositiveInfinity
+        match Decimal::from_f64(value) {
+            Some(amount) => Self::Finite(amount),
+            None if value.is_sign_negative() => Self::NegativeInfinity,
+            None => Self::PositiveInfinity,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Settings {
     pub enforce_user_param: bool,
     pub reject_clientside_tags: bool,
     pub max_budget: MaxBudget,
 }
 
-impl Default for Settings {
+impl Default for MaxBudget {
     fn default() -> Self {
-        Self {
-            enforce_user_param: false,
-            reject_clientside_tags: false,
-            max_budget: MaxBudget::Finite(Decimal::ZERO),
-        }
+        Self::Finite(Decimal::ZERO)
     }
 }
 
@@ -99,17 +87,12 @@ impl Section for Raw {
     }
 }
 
-// proxy_server.py reads this one with float(value): an int stays exact Decimal money, a bool counts as 0 or 1,
-// and text is whatever Python's float() reads, inf and nan included
+// proxy_server.py reads this one with float(value): an int stays exact money, a bool counts as 0 or 1, text as Python reads it
 fn budget(number: RawNumber) -> Result<MaxBudget, ConfigError> {
     match number {
         RawNumber::Integer(integer) => Ok(MaxBudget::Finite(Decimal::from(integer))),
         RawNumber::Float(float) => Ok(MaxBudget::from_f64(float)),
-        RawNumber::Boolean(flag) => Ok(MaxBudget::Finite(if flag {
-            Decimal::ONE
-        } else {
-            Decimal::ZERO
-        })),
+        RawNumber::Boolean(flag) => Ok(MaxBudget::Finite(Decimal::from(i32::from(flag)))),
         RawNumber::Text(text) => parse_float(text.trim(), BUDGET_PATH).map(MaxBudget::from_f64),
     }
 }
