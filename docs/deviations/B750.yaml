@@ -1,0 +1,9 @@
+task: B750
+deviations:
+  - what: A NaN or negative-infinite per-token rate on a zero-cost model group never makes the model free; betterlite treats it as an unknown cost and enforces every budget check, while LiteLLM's > 0 comparison is false for both values and, once the group's cost is explicitly configured, frees the model.
+    why: A non-finite rate is not a price a working setup can rely on, and reading it as free would waive every budget check for the model. betterlite charges the model until the catalog holds a finite rate; a positive infinity is charged by both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L512
+kept_bugs:
+  - what: A finite negative per-token rate is never charged, so a model group whose explicit input and output rates are both zero or negative is admitted as free and waives every budget check.
+    why: The task pins LiteLLM's > 0 comparison for negative rates rather than != 0, and betterlite keeps it, so a config that relied on a negative rate not counting as spend behaves the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L512
