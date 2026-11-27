@@ -266,7 +266,6 @@ struct Overlay {
     reload_error: Option<ConfigOverlayPortError>,
     serve_error: Option<ConfigOverlayPortError>,
     served: Mutex<Vec<Vec<JsonValue>>>,
-    reloads: Mutex<Vec<()>>,
 }
 
 impl Overlay {
@@ -276,7 +275,6 @@ impl Overlay {
             reload_error: None,
             serve_error: None,
             served: Mutex::new(Vec::new()),
-            reloads: Mutex::new(Vec::new()),
         }
     }
 
@@ -286,22 +284,11 @@ impl Overlay {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
-
-    fn reload_count(&self) -> usize {
-        self.reloads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
-    }
 }
 
 #[async_trait]
 impl ConfigOverlayPort for Overlay {
     async fn reload_config(&self) -> Result<ConfigWithBaseline, ConfigOverlayPortError> {
-        self.reloads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(());
         if let Some(error) = self.reload_error {
             return Err(error);
         }
@@ -825,6 +812,20 @@ async fn pass_through_reserve_database_unavailable_answers_503_without_an_audit(
     assert!(body_text(response).await.contains("no_db_connection"));
     assert_eq!(fakes.store.inserted_rows().len(), 1);
     assert!(fakes.audit_rows().is_empty());
+    fakes.overlay.serve_error = Some(ConfigOverlayPortError::PassThrough);
+    let serve_failure = update_config_general_settings(
+        services!(fakes, state),
+        &caller(ADMIN),
+        &update(
+            PASSTHROUGH,
+            json!([{"path": "/bria", "target": "https://example.test"}]),
+        ),
+    )
+    .await
+    .expect_err("the re-serve failed");
+    let response = serve_failure.into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(fakes.audit_rows().is_empty());
 }
 
 #[tokio::test]
@@ -943,7 +944,8 @@ async fn ui_field_reload_validates_before_it_reloads() {
         bad_request(refusal),
         "budget_exceeded_throttle_percentage must be a number in (0, 1] or empty"
     );
-    assert_eq!(fakes.overlay.reload_count(), 0);
+    assert!(fakes.store.section_writes().is_empty());
+    assert!(fakes.audit_rows().is_empty());
     assert_eq!(
         fakes
             .runtime
