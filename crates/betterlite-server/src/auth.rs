@@ -186,9 +186,8 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthTagBudgets(stage) => {
-            auth_tag_budgets::prefetch(&stage)
-                .await
-                .map_err(StageFailure::TagBudgets)?;
+            let prefetched = auth_tag_budgets::prefetch(&stage).await;
+            prefetched.map_err(StageFailure::TagBudgets)?;
             Ok(StageInput::AuthTagBudgets(stage))
         }
         StageInput::AuthKeyBudgets(stage) => {
