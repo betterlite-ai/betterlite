@@ -1,0 +1,56 @@
+kind: helper
+name: runway-speech-first-output-only
+call:
+  runway_speech:
+    operation: response
+    params:
+      model: eleven_multilingual_v2
+      environment:
+        RUNWAYML_API_BASE: https://proxy.example.test
+      submission:
+        status: 200
+        headers:
+          content-type: application/json
+        body: '{"id":"task_done","status":"SUCCEEDED"}'
+      request_headers:
+        Authorization: Bearer case-token
+        X-Runway-Version: "2025-03-03"
+      step_millis: 0
+      replies:
+        - status: 200
+          headers: {}
+          body: '{"id":"task_done","status":"SUCCEEDED","output":["https://delivery.test/first.mp3","https://delivery.test/second.mp3"]}'
+        - status: 200
+          headers:
+            content-type: audio/mpeg
+          body: first-audio
+calls:
+  - runway_speech:
+      operation: response
+      params:
+        model: eleven_multilingual_v2
+        environment:
+          RUNWAYML_API_BASE: https://proxy.example.test
+        submission:
+          status: 200
+          headers:
+            content-type: application/json
+          body: '{"id":"task_pending","status":"PENDING"}'
+        request_headers:
+          Authorization: Bearer case-token
+          X-Runway-Version: "2025-03-03"
+        step_millis: 0
+        replies:
+          - status: 200
+            headers: {}
+            body: '{"id":"task_pending","status":"RUNNING"}'
+          - status: 200
+            headers: {}
+            body: '{"id":"task_pending","status":"SUCCEEDED","output":["https://delivery.test/first.mp3","https://delivery.test/second.mp3"]}'
+          - status: 200
+            headers:
+              content-type: audio/mpeg
+            body: first-audio
+env:
+  RUNWAYML_API_BASE: https://proxy.example.test
+compare: {ignore: []}

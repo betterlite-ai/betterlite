@@ -1,0 +1,6 @@
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o
+litellm_settings:
+  request_timeout: 12

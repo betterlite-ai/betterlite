@@ -1,0 +1,53 @@
+kind: helper
+name: runway-speech-null-voice-default
+call:
+  runway_speech:
+    operation: request
+    params:
+      model: ""
+      input: hello there
+      optional_params:
+        runwayml_voice: null
+      headers: {}
+calls:
+  - runway_speech:
+      operation: request
+      params:
+        model: runway-custom
+        input: hello there
+        optional_params: {}
+        headers:
+          X-Trace: abc
+  - runway_speech:
+      operation: request
+      params:
+        model: eleven_multilingual_v2
+        input: hello there
+        optional_params:
+          runwayml_voice:
+            type: runway-preset
+            presetId: Maya
+        headers: {}
+  - runway_speech:
+      operation: request
+      params:
+        model: runway-custom
+        input: hello there
+        optional_params:
+          runwayml_voice: {}
+          model: ignored
+          promptText: ignored
+          voice: ignored
+          speed: "2"
+        headers: {}
+  - runway_speech:
+      operation: request
+      params:
+        model: ""
+        input: hello there
+        optional_params:
+          runwayml_voice: null
+          voice: co
+        headers: {}
+env: {}
+compare: {ignore: []}

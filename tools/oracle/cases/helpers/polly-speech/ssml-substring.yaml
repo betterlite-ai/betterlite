@@ -1,0 +1,31 @@
+kind: helper
+name: polly-speech-ssml-substring
+call:
+  polly_speech:
+    calls:
+    - function: request
+      text: "<speak>hi</speak>"
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+    - function: request
+      text: "<speak rate=\"slow\">hi</speak>"
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+    - function: request
+      text: "<SPEAK>hi</SPEAK>"
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+    - function: request
+      text: hello
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+    - function: request
+      text: "x<speak>y"
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+    - function: request
+      text: "<speak"
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+compare: {ignore: []}
+env: {}

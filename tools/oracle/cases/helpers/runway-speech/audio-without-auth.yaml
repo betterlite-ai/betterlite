@@ -1,0 +1,66 @@
+kind: helper
+name: runway-speech-audio-without-auth
+call:
+  runway_speech:
+    operation: response
+    params:
+      model: eleven_multilingual_v2
+      environment: {}
+      submission:
+        status: 200
+        headers:
+          content-type: application/json
+        body: '{"id":"task_audio","status":"PENDING"}'
+      request_headers:
+        X-Runway-Version: "2025-03-03"
+      step_millis: 0
+      replies:
+        - status: 200
+          headers: {}
+          body: '{"id":"task_audio","status":"SUCCEEDED","output":["https://delivery.test/authless.mp3"]}'
+        - status: 200
+          headers:
+            content-type: audio/mpeg
+          body: authless-audio
+calls:
+  - runway_speech:
+      operation: response
+      params:
+        model: eleven_multilingual_v2
+        environment: {}
+        submission:
+          status: 200
+          headers: {}
+          body: '{"id":"task_default","status":"PENDING"}'
+        request_headers: {}
+        step_millis: 0
+        replies:
+          - status: 200
+            headers: {}
+            body: '{"id":"task_default","status":"SUCCEEDED","output":["https://delivery.test/authless.mp3"]}'
+          - status: 200
+            headers:
+              content-type: audio/mpeg
+            body: authless-audio
+  - runway_speech:
+      operation: response
+      params:
+        model: eleven_multilingual_v2
+        environment: {}
+        submission:
+          status: 200
+          headers: {}
+          body: '{"id":"task_lower","status":"PENDING"}'
+        request_headers:
+          x-runway-version: "2024-12-01"
+        step_millis: 0
+        replies:
+          - status: 200
+            headers: {}
+            body: '{"id":"task_lower","status":"SUCCEEDED","output":["https://delivery.test/authless.mp3"]}'
+          - status: 200
+            headers:
+              content-type: audio/mpeg
+            body: authless-audio
+env: {}
+compare: {ignore: []}
