@@ -40,43 +40,59 @@ fn answer(call: &Call) -> HelperResult {
             alias,
             server_name,
             access_groups,
-        } => {
-            let built = header_map(headers);
-            let resolved = lookup_server_auth(
-                &built,
-                alias.as_deref(),
-                server_name.as_deref(),
-                access_groups,
-            );
-            Ok(json!({ "resolved": resolved.map(exposed) }))
-        }
+        } => lookup_answer(
+            headers,
+            alias.as_deref(),
+            server_name.as_deref(),
+            access_groups,
+        ),
         Call::PerServerAuthorization {
             server,
             server_auth_headers,
-        } => {
-            let built = build_server(server)?;
-            let per_server = server_auth_headers.as_ref().map(header_map);
-            // ast-grep-ignore: no-long-names - the owned predicate keeps LiteLLM's name
-            let has_header = client_has_per_server_auth_header(&built, per_server.as_ref());
-            Ok(json!({ "has_header": has_header }))
-        }
+        } => per_server_answer(server, server_auth_headers.as_ref()),
         Call::PassthroughAuthorization {
             server,
             server_auth_headers,
             oauth2_headers,
-        } => {
-            let built = build_server(server)?;
-            let per_server = server_auth_headers.as_ref().map(header_map);
-            let top_level = oauth2_headers.as_ref().map(top_level_map);
-            // ast-grep-ignore: no-long-names - the owned predicate keeps LiteLLM's name
-            let has_passthrough = client_has_passthrough_authorization(
-                &built,
-                top_level.as_ref(),
-                per_server.as_ref(),
-            );
-            Ok(json!({ "has_passthrough": has_passthrough }))
-        }
+        } => passthrough_answer(
+            server,
+            server_auth_headers.as_ref(),
+            oauth2_headers.as_ref(),
+        ),
     }
+}
+
+fn lookup_answer(
+    headers: &HeaderMap,
+    alias: Option<&str>,
+    server_name: Option<&str>,
+    access_groups: &[String],
+) -> HelperResult {
+    let built = header_map(headers);
+    let resolved = lookup_server_auth(&built, alias, server_name, access_groups);
+    Ok(json!({ "resolved": resolved.map(exposed) }))
+}
+
+fn per_server_answer(server: &ServerSpec, server_auth_headers: Option<&HeaderMap>) -> HelperResult {
+    let built = build_server(server)?;
+    let per_server = server_auth_headers.map(header_map);
+    // ast-grep-ignore: no-long-names - the owned predicate keeps LiteLLM's name
+    let has_header = client_has_per_server_auth_header(&built, per_server.as_ref());
+    Ok(json!({ "has_header": has_header }))
+}
+
+fn passthrough_answer(
+    server: &ServerSpec,
+    server_auth_headers: Option<&HeaderMap>,
+    oauth2_headers: Option<&BTreeMap<String, String>>,
+) -> HelperResult {
+    let built = build_server(server)?;
+    let per_server = server_auth_headers.map(header_map);
+    let top_level = oauth2_headers.map(top_level_map);
+    // ast-grep-ignore: no-long-names - the owned predicate keeps LiteLLM's name
+    let has_passthrough =
+        client_has_passthrough_authorization(&built, top_level.as_ref(), per_server.as_ref());
+    Ok(json!({ "has_passthrough": has_passthrough }))
 }
 
 fn header_map(source: &HeaderMap) -> ServerAuthHeaders {

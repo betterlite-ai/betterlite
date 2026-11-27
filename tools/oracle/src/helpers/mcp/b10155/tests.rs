@@ -21,7 +21,7 @@ use rstest::rstest;
 fn replays_b10155_client_auth_headers_against_litellm(#[case] name: &str) {
     let root = Path::new(ORACLE_DIR);
     let source = fs::read_to_string(root.join(format!("cases/helpers/{name}.yaml"))).unwrap();
-    let case = serde_saphyr::from_str::<HelperCase>(&source).unwrap();
+    let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
     let result = run_case(&[crate::GROUP], &case, false).unwrap();
     assert!(matches!(result, HelperRun::Match), "{name}");
 }
