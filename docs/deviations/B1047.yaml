@@ -1,0 +1,64 @@
+task: B1047
+deviations:
+  - what: >-
+      The batch cache hook's constructor maps litellm.cache.async_get_cache onto its own async_get_cache for the whole
+      process. betterlite has no process-wide cache object: the retrieve flow calls the hook's read directly, through
+      the service that owns it.
+    why: >-
+      A monkey patch on another module's object is Python plumbing. The read order, the warm set with its 60-second
+      ttl, the decode and the None answer on every failure are unchanged, and the oracle compares them through the
+      typed service instead of the patched global.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L22-L26
+  - what: >-
+      The hook keeps the in-memory cache of the last pre-call on itself (self.in_memory_cache) and async_get_cache
+      reads that field. betterlite passes the memory store into the retrieve service and reads it there.
+    why: >-
+      Both hooks share one proxy cache object in LiteLLM, so the last-write field always holds the same store; an
+      injected store gives the same keys without cross-request state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L52
+  - what: >-
+      print_verbose always writes its line through verbose_proxy_logger.debug and, when litellm.set_verbose is True,
+      also prints the same line to stdout. betterlite returns the line in the result's diagnostics and repeats it in
+      the result's printed list while the caller asks for it; it writes nothing to stdout.
+    why: >-
+      The service is a library layer without the process's stdout, so the caller owns the print. The text, its order
+      and the flag that turns it on are kept, and the oracle helper captures stdout and never compares it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L28-L32
+  - what: >-
+      A swallowed exception in the cache hook logs the error line and then a debug line holding Python's
+      traceback.format_exc(). betterlite logs the error line only; the failures LiteLLM logs with exc_info, such as
+      "Error in batch rate limiting", lose that attached traceback too.
+    why: >-
+      There is no Python traceback to format in Rust, and the failure type already carries its cause. The error line,
+      its text and its place in the order are kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L86-L89
+  - what: >-
+      A cached value is checked against B1087's ApiLimits JSON boundary before it is decoded, so a value over the
+      configured size counts as a miss. LiteLLM reads and decodes a value of any size.
+    why: >-
+      Every outside payload in betterlite passes the shared boundaries first, and this value comes from the redis
+      store. Real cached batch responses stay far below the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L539
+  - what: >-
+      The pre-call hook's HTTPException is returned as the result's outcome (Raised, or Rejected for a rate-limit
+      refusal) and the consuming route raises it; the retrieve result carries the same HTTP error in its raised field.
+    why: >-
+      The composition service answers with a typed result and never raises, so the route task owns the response. The
+      error value, its status and its text travel unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1273-L1275
+  - what: >-
+      A batch request whose input_file_id, custom_llm_provider or principal fields have a type the wire record cannot
+      hold is answered with an error that names the field. LiteLLM hands the value on until something fails, and the
+      create hook's catch-all then logs it and lets the request continue.
+    why: >-
+      Parity stops at the declared types and docs/compatibility.md makes a wrong type an error that names its field.
+      A request built to the declared types never reaches this branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1218-L1221
+  - what: >-
+      A request whose metadata is missing or is not an object makes the namespace write fail with betterlite's own
+      reason text, where LiteLLM's error line ends with the Python exception's text ("'metadata'").
+    why: >-
+      Error messages are betterlite's own under rule errors-match-litellm, and the line prefix and its ERROR level
+      match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L82
+kept_bugs: []
