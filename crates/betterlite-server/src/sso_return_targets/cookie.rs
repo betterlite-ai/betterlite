@@ -54,7 +54,6 @@ pub fn set_session_token_cookie(
     )
 }
 
-#[must_use]
 pub fn session_token_cookie(jwt_token: &str, secure: bool) -> Result<String, SsoReturnTargetError> {
     let coded = cookie_value(jwt_token).ok_or(SsoReturnTargetError::CookieValue)?;
     let mut cookie = format!("{TOKEN_COOKIE}={coded}; Path=/; SameSite=lax");

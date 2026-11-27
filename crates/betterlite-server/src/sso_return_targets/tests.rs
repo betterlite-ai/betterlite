@@ -57,7 +57,8 @@ struct FixedEntropy;
 impl VerifierEntropy for FixedEntropy {
     fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         for (position, slot) in bytes.iter_mut().enumerate() {
-            *slot = u8::try_from(position).unwrap();
+            let byte = u8::try_from(position).map_err(|_source| getrandom::Error::UNSUPPORTED)?;
+            *slot = byte;
         }
         Ok(())
     }
@@ -150,8 +151,7 @@ fn header_values(response: &Response<Body>, name: header::HeaderName) -> Vec<Str
 fn redirect_to<'request, Redis, User>(
     return_to: Option<&'request str>,
     control_plane_url: Option<&'request str>,
-    request: &'request Request<Body>,
-    trusted_network: &'request TrustedNetworkSettings,
+    secure: bool,
     caches: LoginCodeCaches<'request, Redis, User>,
 ) -> ReturnToRedirect<'request, Redis, User, FixedEntropy>
 where
@@ -159,12 +159,11 @@ where
     User: LoginCodeCache,
 {
     ReturnToRedirect {
-        request,
-        trusted_network,
         now_unix: NOW,
         return_to,
         jwt_token: JWT,
         control_plane_url,
+        secure,
         caches,
         entropy: &FIXED_ENTROPY,
     }
@@ -244,7 +243,7 @@ async fn open_breaker_redis_cache() -> RedisCache {
 #[rstest]
 #[case::root("/", true)]
 #[case::relative("/dashboard?tab=1", true)]
-#[case::unicode("/résumé", true)]
+#[case::unicode("/r\u{e9}sum\u{e9}", true)]
 #[case::bare("dashboard", false)]
 #[case::empty("", false)]
 #[case::protocol_relative("//evil.example", false)]
@@ -335,7 +334,7 @@ fn builds_the_session_cookie_without_httponly() {
 #[case::semicolon("/a;b", "\"/a\\073b\"")]
 #[case::quotes("/a\"b", "\"/a\\\"b\"")]
 #[case::backslash("/a\\b", "\"/a\\\\b\"")]
-#[case::unicode("/résumé", "\"/r\\351sum\\351\"")]
+#[case::unicode("/r\u{e9}sum\u{e9}", "\"/r\\351sum\\351\"")]
 #[case::code_255("/\u{00ff}", "\"/\\377\"")]
 #[case::above_255("/\u{20ac}", "\"/\u{20ac}\"")]
 #[case::empty("", "\"\"")]
@@ -510,14 +509,12 @@ fn builds_the_sso_callback_url(
 
 #[tokio::test]
 async fn redirects_a_relative_target_with_the_session_cookie() {
-    let request = https_request();
-    let settings = https_settings();
+    let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
         Some("/dashboard?tab=1"),
         Some(CONTROL_PLANE),
-        &request,
-        &settings,
+        secure,
         login_caches(&cache, None),
     ))
     .await
@@ -541,38 +538,43 @@ async fn redirects_a_relative_target_with_the_session_cookie() {
 
 #[tokio::test]
 async fn redirects_a_cross_origin_target_behind_a_login_code() {
-    let request = https_request();
-    let settings = https_settings();
+    let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
         Some("https://cp.example.com/done?x=1"),
         Some(CONTROL_PLANE),
-        &request,
-        &settings,
+        secure,
         login_caches(&cache, None),
     ))
     .await
     .unwrap()
     .unwrap();
 
-    let recorded = cache.writes.lock().unwrap();
-    assert_eq!(recorded.len(), 1);
-    let entry = &recorded[0];
-    let code = entry.key.strip_prefix(LOGIN_CODE_PREFIX).unwrap();
-    assert_eq!(code.len(), 43);
-    assert!(
-        code.chars()
-            .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '-' | '_'))
-    );
-    assert_eq!(entry.token, JWT);
-    assert_eq!(entry.redirect_url, "https://cp.example.com/done?x=1");
-    assert_eq!(entry.ttl_seconds, 60.0_f64);
+    let login_code = {
+        let recorded = cache.writes.lock().unwrap();
+        assert_eq!(recorded.len(), 1);
+        let entry = &recorded[0];
+        let code = entry
+            .key
+            .strip_prefix(LOGIN_CODE_PREFIX)
+            .unwrap()
+            .to_owned();
+        assert_eq!(code.len(), 43);
+        assert!(
+            code.chars()
+                .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '-' | '_'))
+        );
+        assert_eq!(entry.token, JWT);
+        assert_eq!(entry.redirect_url, "https://cp.example.com/done?x=1");
+        assert_eq!(entry.ttl_seconds.to_bits(), 60.0_f64.to_bits());
+        code
+    };
 
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         header_values(&response, header::LOCATION),
         vec![format!(
-            "https://cp.example.com/done?x=1&login=success&code={code}"
+            "https://cp.example.com/done?x=1&login=success&code={login_code}"
         )]
     );
     assert_eq!(
@@ -583,15 +585,13 @@ async fn redirects_a_cross_origin_target_behind_a_login_code() {
 
 #[tokio::test]
 async fn prefers_the_redis_usage_cache_and_appends_with_a_question_mark() {
-    let request = https_request();
-    let settings = https_settings();
+    let secure = is_secure_request(&https_request(), &https_settings());
     let redis = RecordingCache::default();
     let user = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
         Some("https://cp.example.com/done"),
         Some(CONTROL_PLANE),
-        &request,
-        &settings,
+        secure,
         login_caches(&user, Some(&redis)),
     ))
     .await
@@ -607,15 +607,13 @@ async fn prefers_the_redis_usage_cache_and_appends_with_a_question_mark() {
 
 #[tokio::test]
 async fn returns_none_for_missing_or_untrusted_targets() {
-    let request = https_request();
-    let settings = https_settings();
+    let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
 
     let missing = sso_return_to_redirect(&redirect_to(
         None,
         Some(CONTROL_PLANE),
-        &request,
-        &settings,
+        secure,
         login_caches(&cache, None),
     ))
     .await
@@ -625,8 +623,7 @@ async fn returns_none_for_missing_or_untrusted_targets() {
     let unconfigured = sso_return_to_redirect(&redirect_to(
         Some("https://cp.example.com/done"),
         None,
-        &request,
-        &settings,
+        secure,
         login_caches(&cache, None),
     ))
     .await
@@ -636,8 +633,7 @@ async fn returns_none_for_missing_or_untrusted_targets() {
     let mismatch = sso_return_to_redirect(&redirect_to(
         Some("https://evil.example.com/done"),
         Some(CONTROL_PLANE),
-        &request,
-        &settings,
+        secure,
         login_caches(&cache, None),
     ))
     .await
@@ -648,14 +644,12 @@ async fn returns_none_for_missing_or_untrusted_targets() {
 
 #[tokio::test]
 async fn reports_a_cache_write_failure() {
-    let request = https_request();
-    let settings = https_settings();
+    let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::failing();
     let error = sso_return_to_redirect(&redirect_to(
         Some("https://cp.example.com/done"),
         Some(CONTROL_PLANE),
-        &request,
-        &settings,
+        secure,
         login_caches(&cache, None),
     ))
     .await

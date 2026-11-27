@@ -1,10 +1,9 @@
 use axum::body::Body;
-use axum::http::{Request, Response, StatusCode, header};
-use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
+use axum::http::{Response, StatusCode, header};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::SsoReturnTargetError;
-use super::cookie::{delete_return_to_cookie, is_secure_request, session_token_cookie};
+use super::cookie::{delete_return_to_cookie, session_token_cookie};
 use super::login_code::{
     LOGIN_CODE_PREFIX, LOGIN_CODE_TTL_SECONDS, LoginCode, LoginCodeCache, LoginCodeCaches,
     generate_login_code,
@@ -40,12 +39,12 @@ const LOCATION_SAFE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'#');
 
 pub struct ReturnToRedirect<'request, Redis, User, Entropy> {
-    pub request: &'request Request<Body>,
-    pub trusted_network: &'request TrustedNetworkSettings,
     pub now_unix: i64,
     pub return_to: Option<&'request str>,
     pub jwt_token: &'request str,
     pub control_plane_url: Option<&'request str>,
+    // axum's Body is not Sync, so a request reference is not Send; the caller resolves the Secure flag instead
+    pub secure: bool,
     pub caches: LoginCodeCaches<'request, Redis, User>,
     pub entropy: &'request Entropy,
 }
@@ -62,9 +61,8 @@ where
     let Some(return_to) = input.return_to else {
         return Ok(None);
     };
-    let secure = is_secure_request(input.request, input.trusted_network);
     if is_same_origin_return_path(return_to) {
-        let token = session_token_cookie(input.jwt_token, secure)?;
+        let token = session_token_cookie(input.jwt_token, input.secure)?;
         let cookies = [token, delete_return_to_cookie(input.now_unix)];
         return redirect_response(return_to, &cookies).map(Some);
     }
