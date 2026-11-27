@@ -240,6 +240,19 @@ async fn cookie_valid_with_key() {
 }
 
 #[tokio::test]
+async fn cookie_sk_key_without_database() {
+    let claims = Claims {
+        key: Some("sk-live-key"),
+        ..ui_claims()
+    };
+    let now = DateTime::from_timestamp(NOW, 0).unwrap();
+    let auth = byok_session_auth(Some(&token(claims, MASTER_KEY)), MASTER_KEY, None, now)
+        .await
+        .unwrap();
+    assert_eq!(key_identity(&auth).user_id, Some("user-1".to_owned()));
+}
+
+#[tokio::test]
 async fn cookie_empty_key_claim() {
     let claims = Claims {
         key: Some(""),

@@ -35,9 +35,14 @@ fn redirect_loopback_policy(
 ) {
     let rejected = validate_loopback_redirect_uri(redirect_uri)
         .err()
-        .map(|error| (error.description, error.hint));
-    let expected =
-        rejection.map(|(description, hint)| (description.to_owned(), hint.map(str::to_owned)));
+        .map(|error| (error.description, error.hint, error.redirect_uri));
+    let expected = rejection.map(|(description, hint)| {
+        (
+            description.to_owned(),
+            hint.map(str::to_owned),
+            Option::<String>::None,
+        )
+    });
     assert_eq!(rejected, expected);
 }
 
