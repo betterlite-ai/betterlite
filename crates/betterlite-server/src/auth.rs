@@ -172,9 +172,7 @@ fn model_pattern_input(
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
     let stage = model_stage_input(request, context.clone(), resolver);
-    if backend == AuthBackend::AuthRequestModels {
-        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-    }
+    // the request model stage only resolves, so it runs in the shared input builder
     let requested = match resolve(&stage) {
         Ok(requested) => requested,
         Err(error) => {
@@ -182,6 +180,9 @@ fn model_pattern_input(
             return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
     };
+    if backend == AuthBackend::AuthRequestModels {
+        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+    }
     let rule = rule_for_request(request);
     let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
@@ -192,18 +193,6 @@ fn model_pattern_input(
             max_recurse_depth: depth,
         },
     )))
-}
-
-pub(crate) fn auth_request_models_stage(
-    stage: &RequestModelStageInput,
-) -> Result<AuthContext, StageFailure> {
-    match resolve(stage) {
-        Ok(_) => Ok(stage.context.clone()),
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
-    }
 }
 
 fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
