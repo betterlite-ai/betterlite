@@ -1,0 +1,52 @@
+id: B10121
+title: MCP tool result record
+description: >-
+  LiteLLM's MCP gateway hands each executed tool call on as an MCPToolResult, a TypedDict with three required keys: tool_call_id (str or None), result (str) and name (str or None), litellm_proxy_mcp_handler.py L54-L57. B950's _execute_tool_calls makes one per call (L898-L972), and six tasks read them without needing that executor: B10123's chat tool messages (L1007-L1015), B10124's function_call_output items (L1094-L1100), B951's MCP call events and tool_execution_results output (L1225-L1272, L1347), B954's streamed rounds, B955's Responses dispatch and B988's Messages loop. The record is its own task so those readers wait on it and not on B950.
+
+
+  Code goes in betterlite-core, module api::responses_mcp_results (crates/betterlite-core/src/api/responses_mcp_results.rs), with its tests in responses_mcp_results/tests.rs. The file is an empty stub that api.rs already declares.
+
+
+  McpToolResult is a plain struct with pub fields tool_call_id: Option<String>, result: String and name: Option<String>, declared in that order, deriving Debug, Clone, PartialEq, Eq, Serialize and Deserialize. It serializes as a JSON object with exactly those three keys in that order and writes null for an absent id or name; B951 dumps the list into its tool_execution_results output text with json.dumps, which keeps _execute_tool_calls' key order and its nulls. Decoding needs all three keys and a string result, since the TypedDict declares every key required and result as str: a missing key, a null result or a non-string value is a serde error that names the field (docs/compatibility.md), never a default. Helper adapters of the reading tasks decode their scripted tool results through this Deserialize, so it is the one place the shape is checked.
+
+
+  The module has no function and reads no setting. Tests in tests.rs: serializes_keys_in_order (a record with id and name set, and one with both null, each compared with its exact JSON text) and decode_requires_every_key (an rstest with one named case per missing key, one for a null result and one for a numeric name, each asserting the error names that field, plus a case that decodes a full object back to the record). No oracle case: MCPToolResult has no behavior of its own, and the reading tasks compare it through theirs.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/responses_mcp_results.rs
+    - crates/betterlite-core/src/api/responses_mcp_results/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L54-L57
+    why: Owned. The TypedDict, its three keys and their declared types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L897-L972
+    why: B950's producer. Every branch, the guardrail and error ones included, appends the same three keys in the order tool_call_id, result, name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
+    why: B951's reader that writes the list with json.dumps(indent=2), so key order and nulls show in the output text.
+dod:
+  - text: McpToolResult serializes as tool_call_id, result, name in that order and writes null for an absent id or name.
+    proof: [case-serializes-keys-in-order]
+  - text: Decoding refuses a missing key, a null result and a non-string value with an error naming the field, and a full object decodes back to the same record.
+    proof: [case-decode-requires-every-key]
+checks:
+  optional: []
+  commands:
+    - id: case-serializes-keys-in-order
+      why: the key order or the written nulls differ from the dict _execute_tool_calls builds
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_results::tests::serializes_keys_in_order($|::)/)'
+    - id: case-decode-requires-every-key
+      why: a missing key or a null result decodes to a default instead of failing on the field
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_results::tests::decode_requires_every_key($|::)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "_execute_tool_calls and the result text it puts in each record (_parse_mcp_result, the guardrail and HTTPException messages): B950."
+  - "Reading the records into chat tool messages: B10123. Into function_call_output input items: B10124. Into MCP call events and the tool_execution_results output item: B951."
+  - "The other functions in litellm_proxy_mcp_handler.py: B948 and B949 before L540, B10122 for the approval predicate and tool call readers, B950 for chat tool call extraction, argument and result parsing and failure logging, B951 for the follow-up call, request params, events and output items."
+pitfalls:
+  - "betterlite-logging already has an McpToolResult (B9650's post-call hook content); it is a different record in another crate, so do not reuse it or convert between the two."
+  - "#[serde(default)] or skip_serializing_if on any field would make a lost result read as an empty tool answer and drop the null keys B951's json.dumps output shows."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

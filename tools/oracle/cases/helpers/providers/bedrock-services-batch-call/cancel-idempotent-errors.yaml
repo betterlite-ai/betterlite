@@ -1,0 +1,63 @@
+kind: helper
+name: bedrock-services-batch-call-cancel-idempotent-errors
+call:
+  bedrock_services_batch_call:
+    operation: cancel
+    batch_id: job-1
+    region: eu-west-1
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    replies:
+      - {status: 409, headers: {x-amzn-errortype: ConflictException}, body: ""}
+      - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Stopped"}'}
+calls:
+  - bedrock_services_batch_call:
+      operation: cancel
+      batch_id: job-1
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 400, headers: {x-amzn-errortype: ValidationException}, body: ""}
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"Stopping"}'}
+  - bedrock_services_batch_call:
+      operation: cancel
+      batch_id: job-1
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 409, headers: {x-amzn-errortype: ConflictException}, body: ""}
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:model-invocation-job/job-1","status":"InProgress"}'}
+  - bedrock_services_batch_call:
+      operation: cancel
+      batch_id: job-1
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 400, headers: {}, body: '{"code":"AccessDeniedException"}'}
+  - bedrock_services_batch_call:
+      operation: cancel
+      batch_id: job-1
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 300, headers: {}, body: ""}
+  - bedrock_services_batch_call:
+      operation: cancel
+      batch_id: job-1
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 400, headers: {x-amzn-errortype: ValidationException}, body: ""}
+        - {status: 500, headers: {}, body: '{"code":"InternalServerException"}'}
+  - bedrock_services_batch_call:
+      operation: cancel
+      batch_id: "arn:aws:bedrock:eu-west-1:123456789012:async-invoke/abc"
+      region: eu-west-1
+      credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY}
+      replies:
+        - {status: 200, headers: {}, body: ""}
+        - {status: 200, headers: {}, body: '{"jobArn":"arn:aws:bedrock:eu-west-1:123456789012:async-invoke/abc","status":"Stopped"}'}
+env: {}
+compare: {ignore: []}

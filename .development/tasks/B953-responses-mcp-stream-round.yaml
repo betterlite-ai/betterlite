@@ -9,7 +9,7 @@ description: >-
   Advance transition resumes the same round state after B954 has supplied tool results.
 
   Implement crates/betterlite-core/src/api/responses_mcp_stream_round.rs with typed round input, transition and
-  result records. Inject the already decoded event stream, B949 discovery output, B950 tool-selection decision,
+  result records. Inject the already decoded event stream, B949 discovery output, B10122 tool-selection decision,
   B932 provider-call service, logger and ID source at construction; do not read environment variables or credentials
   from this module. Reuse B925 event/iterator types and B1087 limits. The initial provider call must set
   stream=True, copy every original request parameter including tools, and expose its provider HTTP transcript through
@@ -67,7 +67,7 @@ description: >-
 
   The owned ranges contain 279 nonblank, non-comment physical lines. Budget 300 implementation lines, 150 native
   behavior lines, 85 helper fixtures/adapters, 35 provider transcript/wiring and 30 tests/oracle plumbing: 600
-  changed lines. Direct inputs are B171, B925, B949, B950, B952, B932 and B1087.
+  changed lines. Direct inputs are B171, B925, B949, B10122, B952, B932 and B1087.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -88,7 +88,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L264-L352
   why: The complete iterator constructor, every initialized field, the "unknown" model fallback, and the initial phase flags.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L354-L431
-  why: Header-source precedence/merge behavior, B950's auto-execution predicate call, and the exact error-event fields and fallback message.
+  why: Header-source precedence/merge behavior, B10122's auto-execution predicate call, and the exact error-event fields and fallback message.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L433-L434
   why: The async-iterator identity returned by __aiter__.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L517-L606
@@ -97,8 +97,8 @@ references:
   why: Output-index offset mutation, follow-up lifecycle suppression, terminal completion deferral and response-ID consistency repair.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L687-L729
   why: The initial B932 aresponses call, forced stream flag, copied parameters, metadata defaults, non-stream warning and exception/error-event state.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L540-L648
-  why: The owned iterator delegates auto-execution selection and response tool-call extraction to B950, including the exact proxy-tool condition.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L540-L635
+  why: The owned iterator delegates auto-execution selection and response tool-call extraction to B10122, including the exact proxy-tool condition.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1070-L1137
   why: B905's forwarded MCP header defaults, raw-header merge contract and x-mcp-{server_alias}-{header_name} normalization consumed at this call site.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L576-L761
@@ -211,7 +211,7 @@ deviations: []
 out_of_scope:
 - 'litellm/responses/mcp/mcp_streaming_iterator.py: B952 owns _output_items L38-L40, _function_call_id L43-L53, _set_event_field L56-L58, create_mcp_list_tools_events L61-L177 and create_mcp_call_events L180-L261; B953 consumes their typed records and does not copy them.'
 - 'litellm/responses/mcp/mcp_streaming_iterator.py: B954 owns MCPEnhancedStreamingIterator.__anext__ L436-L445, _anext_impl L447-L515, _generate_tool_execution_events L731-L880, _create_follow_up_iterator L882-L951, __iter__ L953-L954 and __next__ L956-L974; B953 emits actions instead of calling these methods.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns _should_auto_execute_tools L540-L563, _extract_tool_calls_from_response L566-L577 and _extract_tool_call_details L604-L635; B953 consumes their decision and tool records.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10122 owns _should_auto_execute_tools L540-L563, _extract_tool_calls_from_response L566-L577 and _extract_tool_call_details L604-L635; B953 consumes their decision and tool records.'
 - 'litellm/responses/utils.py: B905 owns ResponsesAPIRequestUtils.extract_mcp_headers_from_request L1070-L1137 and the LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME / mcp_client_side_auth_header_name precedence; B953 preserves the header values returned at its call boundary.'
 - 'litellm/responses/main.py: B932 owns aresponses L576-L761; B953 owns only the initial iterator call-site preparation and uses the injected/mock provider seam.'
 - 'litellm/responses/streaming_iterator.py: B925 owns BaseResponsesAPIStreamingIterator and its byte/event decoding; B953 consumes decoded ResponsesAPIResponse and ResponsesAPIStreamingResponse values.'

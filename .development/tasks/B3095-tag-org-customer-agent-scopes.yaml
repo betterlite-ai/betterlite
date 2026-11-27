@@ -31,7 +31,7 @@ description: >-
     variant that calls `user_entity_query` and `team_entity_query` (B3094) or the four functions above.
   - `pub async fn resolve_entity_scope(entity: Entity, context: &EntityScopeContext<'_>, query: &EntityQuery)
     -> Result<ResolvedScope, EntityScopeError>` is an exhaustive `match` on `Entity`. It does not check dates;
-    B3096's `resolved_scope` does that first.
+    B10138's `resolved_scope` does that first.
 
   `EntityScopeContext<'a>` is a struct with the caller's `UserAPIKeyAuth` (B2314), the database handle the tag, organization and customer
   owner functions below take (B4787 adds a reference to its `AgentActivityResolver` later), and whatever extra dependency value B815's `resolve_team_daily_activity_scope`
