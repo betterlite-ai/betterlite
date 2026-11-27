@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
+
 use betterlite_cache::envelope::decode::decode_cached;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
+use betterlite_redact::structured::REDACTED;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use crate::api::batch_input_accounting::error::BatchHttpError;
@@ -36,9 +39,10 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
         let mut data = call.data.clone();
         let mut diagnostics = Vec::new();
         let mut printed = Vec::new();
-        let name = cache_key_name(call)?;
+        let api_key = fields::principal_text(&call.principal, "api_key")?;
+        let name = format!("litellm:{}:{}", api_key.unwrap_or("None"), call.call_type);
         let raised = self
-            .warm(&name, &mut data, &mut diagnostics, &mut printed)
+            .warm(&name, api_key, &mut data, &mut diagnostics, &mut printed)
             .await;
         let cached = if raised.is_some() {
             None
@@ -58,6 +62,7 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
     async fn warm(
         &self,
         name: &str,
+        api_key: Option<&str>,
         data: &mut RequestData,
         diagnostics: &mut Vec<BatchDiagnostic>,
         printed: &mut Vec<String>,
@@ -67,7 +72,12 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
             && let Some(remote) = self.remote
             && remote.is_redis()
         {
-            self.print_verbose(&format!("cache_key_name: {name}"), diagnostics, printed);
+            self.print_verbose(
+                &format!("cache_key_name: {name}"),
+                api_key,
+                diagnostics,
+                printed,
+            );
             let keys = match remote.scan(name, SCAN_COUNT).await {
                 Ok(keys) => keys,
                 Err(failure) => return warm_failed(failure, diagnostics),
@@ -75,6 +85,7 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
             let listed: Vec<String> = keys.iter().map(|key| format!("'{key}'")).collect();
             self.print_verbose(
                 &format!("redis keys: [{}]", listed.join(", ")),
+                api_key,
                 diagnostics,
                 printed,
             );
@@ -101,12 +112,16 @@ impl<Memory: BatchPrecallMemory, Remote: BatchPrecallRemote> RetrieveCache<'_, M
     fn print_verbose(
         &self,
         message: &str,
+        api_key: Option<&str>,
         diagnostics: &mut Vec<BatchDiagnostic>,
         printed: &mut Vec<String>,
     ) {
-        diagnostics.push(debug(message.to_owned()));
+        // secrets-stay-secret: a verbose line masks the caller's key, while the cache key and namespace keep it raw
+        let message =
+            api_key.map_or_else(|| message.to_owned(), |key| message.replace(key, REDACTED));
+        diagnostics.push(debug(message.clone()));
         if self.verbose_stdout {
-            printed.push(message.to_owned());
+            printed.push(message);
         }
     }
 
@@ -151,15 +166,6 @@ fn warm_failed(
     }
 }
 
-fn cache_key_name(call: &BatchRetrieveCall) -> Result<String, BatchPrecallError> {
-    let api_key = fields::principal_text(&call.principal, "api_key")?;
-    Ok(format!(
-        "litellm:{}:{}",
-        api_key.unwrap_or("None"),
-        call.call_type
-    ))
-}
-
 // litellm.cache._get_cache_logic behind the typed cache value model, bounded by the JSON limit like every outside payload
 fn decode(
     cached: &Json,
@@ -172,8 +178,36 @@ fn decode(
         known_bytes: bytes.len(),
     });
     limits.check(boundary).ok()?;
-    let value: CacheValue = serde_json::from_slice(&bytes).ok()?;
+    let value = cache_value(cached)?;
     let decoded = decode_cached(Some(&value), max_age, (clock)()).ok()??;
-    let encoded = serde_json::to_vec(&decoded).ok()?;
-    serde_json::from_slice(&encoded).ok()
+    // serde's Value keeps numbers as numbers, so a decoded CacheValue crosses back through it
+    serde_json::from_value(serde_json::to_value(&decoded).ok()?).ok()
+}
+
+// arbitrary_precision floats would land in CacheValue::Object, so this direction maps by hand
+fn cache_value(value: &Json) -> Option<CacheValue> {
+    match value {
+        Json::Null => Some(CacheValue::Null),
+        Json::Bool(flag) => Some(CacheValue::Boolean(*flag)),
+        Json::Number(number) => match (number.as_i64(), number.as_f64()) {
+            (Some(whole), _) => Some(CacheValue::Integer(whole)),
+            (None, Some(float)) => Some(CacheValue::Float(float)),
+            (None, None) => None,
+        },
+        Json::Text(text) => Some(CacheValue::Text(text.clone())),
+        Json::List(items) => {
+            let mut converted = Vec::with_capacity(items.len());
+            for item in items {
+                converted.push(cache_value(item)?);
+            }
+            Some(CacheValue::Array(converted))
+        }
+        Json::Object(fields) => {
+            let mut converted = BTreeMap::new();
+            for (key, item) in fields {
+                converted.insert(key.clone(), cache_value(item)?);
+            }
+            Some(CacheValue::Object(converted))
+        }
+    }
 }
