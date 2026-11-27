@@ -92,7 +92,7 @@ pub async fn session_for(
 
 // python's {session_id!r}, the form LiteLLM prints the raw query value in
 fn session_not_found(session_id: &str) -> ReadApiError {
-    match python::repr(session_id) {
+    match python::repr(&session_id) {
         Ok(session) => ReadApiError::SessionNotFound { session },
         Err(source) => ReadApiError::Store {
             message: source.to_string(),
