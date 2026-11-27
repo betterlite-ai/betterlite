@@ -1,0 +1,6 @@
+task: B10169
+deviations:
+  - what: The incremental stream loop keeps a Bytes item in responses_so_far and never re-emits it, where LiteLLM's trailing-metadata replay appends every item without choices, a raw bytes frame included, after the final text flush.
+    why: The loop runs only for the chat completions route, whose stream yields parsed chunks and never bytes, so no working setup can reach the difference; the task's Incremental loop paragraph fixes this behavior on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L711-L760
+kept_bugs: []
