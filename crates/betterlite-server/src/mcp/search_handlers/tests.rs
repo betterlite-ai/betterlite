@@ -735,6 +735,28 @@ async fn proxy_tool_call_rejects_non_object_arguments() {
 }
 
 #[tokio::test]
+async fn proxy_tool_call_treats_missing_arguments_as_empty() {
+    let listed = tool("alpha", "finds alpha", REQUIRED_SCHEMA, "srv");
+    let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
+    let mut fake = Fake::default();
+    fake.tools = vec![listed];
+    fake.allowed_servers = vec!["srv".to_owned()];
+    let caller = caller();
+    let scope = McpRequestScope::default();
+    let arguments = proxy_arguments(&tool_id);
+    let request = ProxyToolRequest {
+        name: "call_tool",
+        arguments: &arguments,
+    };
+    let result = handle_mcp_proxy_tool(request, &context(&fake, &caller, &scope))
+        .await
+        .expect("missing arguments are validated as an empty object");
+    assert!(result.is_error);
+    assert!(text_of(&result).starts_with("Invalid arguments:"));
+    assert!(fake.seen.lock().unwrap().executions.is_empty());
+}
+
+#[tokio::test]
 async fn proxy_tool_call_delegates_to_the_tool_call_handler() {
     let listed = tool("alpha", "finds alpha", REQUIRED_SCHEMA, "srv");
     let tool_id = mcp_proxy_tool_id(&listed).expect("an identified tool");
