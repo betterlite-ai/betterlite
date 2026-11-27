@@ -39,13 +39,13 @@ fn replaced_data_source(extra: &Object, current: Object) -> Result<Object, EvalR
     let Some(value) = extra.get("data_source") else {
         return Ok(current);
     };
-    match value.as_object() {
-        Some(found) => Ok(found.clone()),
-        None => Err(EvalRunCallError::FieldType {
+    value
+        .as_object()
+        .cloned()
+        .ok_or(EvalRunCallError::FieldType {
             field: "data_source",
             expected: "an object",
-        }),
-    }
+        })
 }
 
 // CreateRunRequest.metadata starts absent; only extra_body sets it, and a null there clears it
@@ -56,13 +56,14 @@ fn extra_metadata(extra: &Object) -> Result<Option<Object>, EvalRunCallError> {
     if value.is_null() {
         return Ok(None);
     }
-    match value.as_object() {
-        Some(found) => Ok(Some(found.clone())),
-        None => Err(EvalRunCallError::FieldType {
+    value
+        .as_object()
+        .cloned()
+        .map(Some)
+        .ok_or(EvalRunCallError::FieldType {
             field: "metadata",
             expected: "an object or null",
-        }),
-    }
+        })
 }
 
 // name, after and before are optional: an extra value replaces them, and a null clears them
@@ -77,13 +78,14 @@ fn replaced_text(
     if value.is_null() {
         return Ok(None);
     }
-    match value.as_str() {
-        Some(found) => Ok(Some(found.to_owned())),
-        None => Err(EvalRunCallError::FieldType {
+    value
+        .as_str()
+        .map(str::to_owned)
+        .map(Some)
+        .ok_or(EvalRunCallError::FieldType {
             field,
             expected: "a string or null",
-        }),
-    }
+        })
 }
 
 // ListRunsParams.order is Literal["asc", "desc"], while LiteLLM's signature only declares str

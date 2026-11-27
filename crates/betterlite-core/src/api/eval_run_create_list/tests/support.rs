@@ -42,8 +42,8 @@ use crate::api::eval_run_create_list::providers::{
 };
 use crate::api::eval_run_create_list::{CreateRunWork, EvalRunCreateList, ListRunsWork};
 
-// the request timeout a deployment injects, REQUEST_TIMEOUT's 6000 seconds
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
+// the request timeout a deployment injects, REQUEST_TIMEOUT's 100 minutes
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 
 // what the transforms recorded: the operation, the eval id and the headers the context carried
 #[derive(Clone, Debug, PartialEq, Eq)]

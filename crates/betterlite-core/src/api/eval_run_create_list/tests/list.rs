@@ -227,7 +227,7 @@ fn list_uses_the_kwargs_api_key_and_api_base() {
     assert_eq!(header(&seen.headers, "Authorization"), "Bearer sk-other");
 }
 
-// `timeout or request_timeout`: REQUEST_TIMEOUT is the injected standard timeout, 6000 seconds
+// `timeout or request_timeout`: REQUEST_TIMEOUT is the injected standard timeout, 100 minutes
 #[test]
 fn list_defaults_the_timeout_to_the_request_timeout() {
     let params = kwargs("{}");
@@ -243,7 +243,7 @@ fn list_defaults_the_timeout_to_the_request_timeout() {
     let lists = calls.transport.lists();
     let seen = lists.first().expect("the list reached the transport");
     assert_eq!(seen.timeout, REQUEST_TIMEOUT);
-    assert_eq!(REQUEST_TIMEOUT, Duration::from_secs(6000));
+    assert_eq!(REQUEST_TIMEOUT, Duration::from_mins(100));
 }
 
 #[test]

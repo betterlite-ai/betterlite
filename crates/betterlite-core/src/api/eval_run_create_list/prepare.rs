@@ -54,10 +54,9 @@ where
     let Some(tag) = select_evals_config(provider_id) else {
         return Err(operation.unsupported(provider));
     };
-    match providers.evals_config(tag) {
-        Some(config) => Ok(config),
-        None => Err(operation.unsupported(provider)),
-    }
+    providers
+        .evals_config(tag)
+        .ok_or_else(|| operation.unsupported(provider))
 }
 
 // create_run and list_runs pop their async flag before anything else reads kwargs
@@ -119,10 +118,10 @@ fn log_call(
 
 // what a call hands the shared steps: which operation's wording, its kwargs flag and the caller's headers
 #[derive(Clone, Copy)]
-struct StageInput<'a> {
+struct StageInput<'input> {
     operation: Operation,
-    flag: &'a str,
-    extra_headers: Option<&'a Headers>,
+    flag: &'input str,
+    extra_headers: Option<&'input Headers>,
 }
 
 // the steps between kwargs and the transform: the flag, the selector, the params and the resolved headers
