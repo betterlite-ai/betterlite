@@ -546,7 +546,7 @@ fn null_row_fields_read_as_defaults() {
 }
 
 // the cached dump holds every optional decimal as a number: a null in the flattened view fails its custom deserializer
-const CACHE_PORT_FIELDS: &str = r#"{"token":"hashed-token","key_name":"key-1","user_id":"u1","models":["gpt-4"],"spend":1.5,"max_budget":0,"team_spend":0,"team_max_budget":0,"team_soft_budget":0,"soft_budget":0,"team_member_spend":0,"end_user_max_budget":0,"organization_max_budget":0,"last_refreshed_at":0,"user_spend":0,"user_max_budget":0}"#;
+const CACHE_PORT_FIELDS: &str = r#"{"token":"hashed-token","key_name":"key-1","user_id":"u1","models":["gpt-4"],"max_budget":0,"team_spend":0,"team_max_budget":0,"team_soft_budget":0,"soft_budget":0,"team_member_spend":0,"end_user_max_budget":0,"organization_max_budget":0,"last_refreshed_at":0,"user_spend":0,"user_max_budget":0}"#;
 
 #[tokio::test]
 async fn cache_port_returns_the_stored_key() {
