@@ -222,6 +222,17 @@ fn header_and_payload_must_be_json_objects() {
 }
 
 #[test]
+fn json_that_python_accepts_but_standard_json_refuses() {
+    let nan = token(
+        HEADER,
+        r#"{"exp":1,"login_method":"sso","user_id":"user-1","x":NaN}"#,
+    );
+    assert_eq!(decode_session_cookie(&nan), Err(DecodeError::Payload));
+    let bom = token("\u{feff}{\"alg\":\"HS256\"}", VALID_PAYLOAD);
+    assert_eq!(decode_session_cookie(&bom), Err(DecodeError::Header));
+}
+
+#[test]
 fn segment_padding_follows_the_compact_encoding_rules() {
     let compact = String::from_utf8(token(HEADER, VALID_PAYLOAD)).unwrap();
     assert_eq!(
