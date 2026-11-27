@@ -3,9 +3,11 @@ use std::time::Duration;
 use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_models::decisions::Json;
 
-use super::fixture::{GenerateFixture, NOW_SECONDS, Run, answer, params, run};
+use super::fixture::{Run, answer, params, run};
+use super::generate_fixture::GenerateFixture;
 use crate::bedrock_image_dispatch::call::BedrockImageOperation;
 use crate::bedrock_image_dispatch::error::BedrockImageError;
+use crate::bedrock_image_dispatch::test_support::NOW_SECONDS;
 
 const TITAN_MODEL: &str = "amazon.titan-image-generator-v2:0";
 const TITAN_BODY: &str = r#"{"images": ["dGl0YW4=", "dGl0YW4y"]}"#;
@@ -107,53 +109,43 @@ async fn titan_provider_error() {
 }
 
 pub(super) async fn stability_image() {
-    stability1_success().await;
-    stability3_success().await;
+    stability_success().await;
     stability3_finish_reason().await;
-    stability1_provider_error().await;
+    provider_error(STABILITY1_MODEL, 400).await;
 }
 
-async fn stability1_success() {
-    let fixture = GenerateFixture::new(
-        Some(STABILITY1_MODEL),
-        "a cat",
-        params(r#"{"aws_region_name": "us-east-1", "width": 1024, "height": 1024}"#),
-    );
-    let run = run(
-        BedrockImageOperation::Generate(fixture.operation()),
-        answer(200, r#"{"artifacts": [{"base64": "czE="}]}"#),
-    )
-    .await;
-    let body = run.generation_body();
-    assert_eq!(
-        body,
-        params(
+async fn stability_success() {
+    let cases = [
+        (
+            STABILITY1_MODEL,
+            r#"{"aws_region_name": "us-east-1", "width": 1024, "height": 1024}"#,
             r#"{"text_prompts": [{"text": "a cat", "weight": 1}], "width": 1024, "height": 1024}"#,
+            "prompt",
+            r#"{"artifacts": [{"base64": "czE="}]}"#,
+            "czE=",
+        ),
+        (
+            STABILITY3_MODEL,
+            r#"{"aws_region_name": "us-east-1", "aspect_ratio": "16:9", "seed": 7}"#,
+            r#"{"prompt": "a cat", "aspect_ratio": "16:9", "seed": 7}"#,
+            "text_prompts",
+            r#"{"images": ["czM="]}"#,
+            "czM=",
+        ),
+    ];
+    for (model, optional_params, expected, absent, reply, image) in cases {
+        let fixture = GenerateFixture::new(Some(model), "a cat", params(optional_params));
+        let run = run(
+            BedrockImageOperation::Generate(fixture.operation()),
+            answer(200, reply),
         )
-    );
-    assert!(!body.contains_key("prompt"));
-    assert_eq!(run.images(), vec!["czE=".to_owned()]);
-    assert_eq!(run.created(), Some(NOW_SECONDS));
-}
-
-async fn stability3_success() {
-    let fixture = GenerateFixture::new(
-        Some(STABILITY3_MODEL),
-        "a cat",
-        params(r#"{"aws_region_name": "us-east-1", "aspect_ratio": "16:9", "seed": 7}"#),
-    );
-    let run = run(
-        BedrockImageOperation::Generate(fixture.operation()),
-        answer(200, r#"{"images": ["czM="]}"#),
-    )
-    .await;
-    let body = run.generation_body();
-    assert_eq!(
-        body,
-        params(r#"{"prompt": "a cat", "aspect_ratio": "16:9", "seed": 7}"#)
-    );
-    assert!(!body.contains_key("text_prompts"));
-    assert_eq!(run.images(), vec!["czM=".to_owned()]);
+        .await;
+        let body = run.generation_body();
+        assert_eq!(body, params(expected));
+        assert!(!body.contains_key(absent));
+        assert_eq!(run.images(), vec![image.to_owned()]);
+        assert_eq!(run.created(), Some(NOW_SECONDS));
+    }
 }
 
 async fn stability3_finish_reason() {
@@ -176,20 +168,20 @@ async fn stability3_finish_reason() {
     );
 }
 
-async fn stability1_provider_error() {
-    let fixture = GenerateFixture::new(Some(STABILITY1_MODEL), "a cat", params(REGION));
+async fn provider_error(model: &str, status: u16) {
+    let fixture = GenerateFixture::new(Some(model), "a cat", params(REGION));
     let run = run(
         BedrockImageOperation::Generate(fixture.operation()),
-        answer(400, r#"{"message": "bad request"}"#),
+        answer(status, r#"{"message": "the upstream failed"}"#),
     )
     .await;
-    assert_eq!(run.error().status(), Some(400));
+    assert_eq!(run.error().status(), Some(status));
     assert_eq!(run.requests().len(), 1);
 }
 
 pub(super) async fn canvas_image() {
     canvas_success().await;
-    canvas_provider_error().await;
+    provider_error(CANVAS_MODEL, 500).await;
 }
 
 async fn canvas_success() {
@@ -217,15 +209,4 @@ async fn canvas_success() {
     );
     assert_eq!(run.images(), vec!["bm92YQ==".to_owned()]);
     assert_eq!(run.created(), Some(NOW_SECONDS));
-}
-
-async fn canvas_provider_error() {
-    let fixture = GenerateFixture::new(Some(CANVAS_MODEL), "a cat", params(REGION));
-    let run = run(
-        BedrockImageOperation::Generate(fixture.operation()),
-        answer(500, r#"{"message": "the upstream failed"}"#),
-    )
-    .await;
-    assert_eq!(run.error().status(), Some(500));
-    assert_eq!(run.requests().len(), 1);
 }

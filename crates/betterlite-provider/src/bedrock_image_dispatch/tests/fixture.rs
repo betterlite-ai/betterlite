@@ -1,35 +1,28 @@
-use std::str;
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::canvas_results::COST_HEADER;
-use betterlite_bedrock::image_call::plan::{ImageEnvironment, LogContext};
+use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_bedrock::image_call::transport::{ClientKind, ImageReply, ImageRequest};
-use betterlite_bedrock::image_edits::plan::{EditEnvironment, EditImage};
 use betterlite_bedrock::image_edits::response::EditReply;
 use betterlite_bedrock::image_models::params::Params;
 use betterlite_bedrock::image_models::response::ModelResponse;
+use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 
-use crate::bedrock_image_dispatch::call::{
-    BedrockImageOperation, EditOperation, GenerateOperation, Transport,
-};
+use crate::bedrock_image_dispatch::call::{BedrockImageOperation, Transport};
 use crate::bedrock_image_dispatch::error::BedrockImageError;
 use crate::bedrock_image_dispatch::execute::dispatch;
 use crate::bedrock_image_dispatch::test_support::{
-    DiscardingSink, Factory, Reply, Seen, Source, instant, logging_state, prepost_env,
+    DiscardingSink, Factory, Reply, Seen, Source, logging_state, prepost_env,
 };
 use crate::bedrock_image_dispatch::{BedrockImageRequest, BedrockImageResult};
 use crate::operation::OperationRequest;
-
-pub(crate) use crate::bedrock_image_dispatch::test_support::{Catalog, NOW_SECONDS};
-pub(crate) use betterlite_bedrock::image_edits::plan::EditPlan;
-pub(crate) use betterlite_bedrock::model_routes::ParamMap;
 
 // The prices and the Nova Canvas flag the edit selector reads; generation never consults it
 const MODEL_COST: &str = r#"{
@@ -65,96 +58,6 @@ pub(crate) fn answer(status: u16, body: &str) -> Reply {
         headers: Vec::new(),
         body: body.as_bytes().to_vec(),
     })
-}
-
-// The operation the caller resolved: a field left `None` or `false` is what the arm omits
-pub(crate) struct GenerateFixture {
-    pub(crate) model: Option<String>,
-    pub(crate) prompt: String,
-    pub(crate) optional_params: Params,
-    pub(crate) extra_headers: Option<Vec<(String, String)>>,
-    pub(crate) timeout: Option<Duration>,
-    pub(crate) aimg_generation: bool,
-}
-
-impl GenerateFixture {
-    pub(crate) fn new(model: Option<&str>, prompt: &str, optional_params: Params) -> Self {
-        Self {
-            model: model.map(str::to_owned),
-            prompt: prompt.to_owned(),
-            optional_params,
-            extra_headers: None,
-            timeout: None,
-            aimg_generation: false,
-        }
-    }
-
-    pub(crate) fn operation(&self) -> GenerateOperation<'_> {
-        GenerateOperation {
-            model: self.model.as_deref(),
-            prompt: &self.prompt,
-            optional_params: self.optional_params.clone(),
-            extra_headers: self.extra_headers.as_deref(),
-            api_base: None,
-            api_key: None,
-            timeout: self.timeout,
-            aimg_generation: self.aimg_generation,
-            environment: ImageEnvironment::default(),
-            now: instant(NOW_SECONDS).expect("the fixture instant is after the Unix epoch"),
-            created: NOW_SECONDS,
-        }
-    }
-}
-
-pub(crate) struct EditFixture {
-    pub(crate) model: Option<String>,
-    pub(crate) prompt: Option<String>,
-    pub(crate) images: Vec<EditImage>,
-    pub(crate) optional_params: ImageParams,
-    pub(crate) extra_headers: Option<Vec<(String, String)>>,
-    pub(crate) timeout: Option<Duration>,
-    pub(crate) aimage_edit: bool,
-    pub(crate) now: SystemTime,
-}
-
-impl EditFixture {
-    pub(crate) fn new(
-        model: Option<&str>,
-        prompt: Option<&str>,
-        images: Vec<EditImage>,
-        optional_params: ImageParams,
-    ) -> Self {
-        Self {
-            model: model.map(str::to_owned),
-            prompt: prompt.map(str::to_owned),
-            images,
-            optional_params,
-            extra_headers: None,
-            timeout: None,
-            aimage_edit: false,
-            now: instant(NOW_SECONDS).expect("the fixture instant is after the Unix epoch"),
-        }
-    }
-
-    pub(crate) fn operation<'fixture, 'cost, 'context>(
-        &'fixture self,
-        plan: EditPlan<'cost, 'context>,
-    ) -> EditOperation<'fixture, 'cost, 'context> {
-        EditOperation {
-            model: self.model.as_deref(),
-            prompt: self.prompt.as_deref(),
-            images: &self.images,
-            optional_params: self.optional_params.clone(),
-            extra_headers: self.extra_headers.as_deref(),
-            api_base: None,
-            api_key: None,
-            timeout: self.timeout,
-            aimage_edit: self.aimage_edit,
-            environment: EditEnvironment::default(),
-            now: self.now,
-            plan,
-        }
-    }
 }
 
 pub(crate) struct Run {
@@ -201,10 +104,6 @@ impl Run {
     pub(crate) fn posted(&self) -> &ImageRequest {
         assert_eq!(self.requests.len(), 1, "one dispatch posts one request");
         &self.requests[0]
-    }
-
-    pub(crate) fn text(&self) -> &str {
-        str::from_utf8(&self.posted().body).expect("the request body is UTF-8")
     }
 
     pub(crate) fn generation_body(&self) -> Params {
@@ -309,8 +208,16 @@ pub(crate) async fn run_request(
     };
     Run {
         result,
-        calls: factory.calls(),
-        requests: factory.seen_requests(),
+        calls: factory
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
+        requests: factory
+            .seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
         state,
     }
 }

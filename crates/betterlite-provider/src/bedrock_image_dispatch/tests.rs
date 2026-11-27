@@ -1,7 +1,9 @@
 #![cfg(test)]
 
+mod edit_fixture;
 mod editing;
 mod fixture;
+mod generate_fixture;
 mod generation;
 mod unsupported_operation;
 

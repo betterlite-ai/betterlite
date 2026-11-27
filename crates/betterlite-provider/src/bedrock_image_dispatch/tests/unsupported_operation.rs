@@ -2,10 +2,9 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::image_edits::plan::EditImage;
 
-use super::fixture::{
-    Catalog, EditFixture, EditPlan, GenerateFixture, answer, image_params, model_cost, params, run,
-    run_request,
-};
+use super::edit_fixture::{EditFixture, EditSetup};
+use super::fixture::{answer, image_params, params, run, run_request};
+use super::generate_fixture::GenerateFixture;
 use crate::bedrock_image_dispatch::call::BedrockImageOperation;
 use crate::bedrock_image_dispatch::error::BedrockImageError;
 use crate::openai_media_dispatch::OpenAiMediaRequest;
@@ -20,8 +19,7 @@ async fn bedrock_image_dispatch_unsupported_operation() {
     unsupported_arm().await;
     mismatched_request().await;
     generation_without_a_model().await;
-    edit_without_a_model().await;
-    edit_before_the_epoch().await;
+    edit_rejections().await;
 }
 
 async fn unsupported_arm() {
@@ -84,56 +82,29 @@ async fn generation_without_a_model() {
     assert!(generated.requests().is_empty());
 }
 
-async fn edit_without_a_model() {
-    let model_cost = model_cost();
-    let catalog = Catalog::empty().expect("the empty catalog parses");
-    let context = catalog.context();
-    let plan = EditPlan {
-        model_cost: &model_cost,
-        resolution: &context,
-    };
-    let mut missing_model = EditFixture::new(
+// The edit arm refuses the absent model first and the clock before the epoch second
+async fn edit_rejections() {
+    let setup = EditSetup::new();
+    let mut fixture = EditFixture::new(
         Some(STABILITY_MODEL),
         Some("edit it"),
         vec![EditImage::Text("aW1n".to_owned())],
         image_params(REGION),
     );
-    missing_model.model = None;
-    let missing = run(
-        BedrockImageOperation::Edit(missing_model.operation(plan)),
-        answer(200, "{}"),
-    )
-    .await;
+    fixture.model = None;
+    let missing = setup.run(&fixture, answer(200, "{}")).await;
     assert_eq!(
         missing.error().to_string(),
         "Model needs to be set for bedrock"
     );
     assert!(matches!(missing.error(), BedrockImageError::ModelRequired));
     assert!(missing.requests().is_empty());
-}
 
-async fn edit_before_the_epoch() {
-    let model_cost = model_cost();
-    let catalog = Catalog::empty().expect("the empty catalog parses");
-    let context = catalog.context();
-    let plan = EditPlan {
-        model_cost: &model_cost,
-        resolution: &context,
-    };
-    let mut early = EditFixture::new(
-        Some(STABILITY_MODEL),
-        Some("edit it"),
-        vec![EditImage::Text("aW1n".to_owned())],
-        image_params(REGION),
-    );
-    early.now = SystemTime::UNIX_EPOCH
+    fixture.model = Some(STABILITY_MODEL.to_owned());
+    fixture.now = SystemTime::UNIX_EPOCH
         .checked_sub(Duration::from_secs(1))
         .expect("the Unix epoch has a second before it");
-    let clock = run(
-        BedrockImageOperation::Edit(early.operation(plan)),
-        answer(200, "{}"),
-    )
-    .await;
+    let clock = setup.run(&fixture, answer(200, "{}")).await;
     assert_eq!(
         clock.error().to_string(),
         "the supplied clock is before the Unix epoch"

@@ -94,18 +94,6 @@ pub struct Factory {
 }
 
 impl Factory {
-    #[must_use]
-    pub fn calls(&self) -> Vec<(ClientKind, Option<Duration>)> {
-        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.clone()
-    }
-
-    #[must_use]
-    pub fn seen_requests(&self) -> Vec<ImageRequest> {
-        let seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        seen.clone()
-    }
-
     fn client(&self, kind: ClientKind, timeout: Option<Duration>) -> FixtureClient {
         self.calls
             .lock()
