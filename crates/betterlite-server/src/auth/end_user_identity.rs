@@ -144,15 +144,6 @@ async fn installed_resolver(stage: &EndUserIdentityStageInput) -> Option<Arc<End
     }
 }
 
-pub(crate) async fn prefetched(
-    mut stage: Box<EndUserIdentityStageInput>,
-) -> Result<StageInput, StageFailure> {
-    prefetch(&mut stage)
-        .await
-        .map_err(StageFailure::EndUserIdentity)?;
-    Ok(StageInput::AuthEndUserIdentity(stage))
-}
-
 // the budget stage that follows the validation takes its variant here too, since it reads the id this stage kept
 pub(crate) fn budget_stage(
     request: &Request<Body>,

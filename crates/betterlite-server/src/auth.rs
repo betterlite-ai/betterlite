@@ -193,7 +193,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
-        StageInput::AuthEndUserIdentity(stage) => end_user_identity::prefetched(stage).await,
+        StageInput::AuthEndUserIdentity(mut stage) => {
+            end_user_identity::prefetch(&mut stage)
+                .await
+                .map_err(StageFailure::EndUserIdentity)?;
+            Ok(StageInput::AuthEndUserIdentity(stage))
+        }
         StageInput::AuthEndUsers(stage) => end_user_identity::prefetch_budget(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
