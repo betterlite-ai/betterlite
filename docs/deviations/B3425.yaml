@@ -1,0 +1,75 @@
+task: B3425
+deviations:
+  - what: >-
+      The async twins are async functions that set the wrapper's kwargs flag and await B9371's handler on
+      the caller's task. There is no run_in_executor, functools.partial or contextvars.copy_context, and
+      they never call their sync twins on a worker thread.
+    why: >-
+      Rust has no event loop to hop through and no per-thread context to copy, and an async handler already
+      suspends on I/O, so a pool thread adds a hop and loses the caller's task. The flag still marks the
+      call in kwargs before GenericLiteLLMParams reads the rest, so _is_async reaches the handler exactly as
+      LiteLLM's sync body computes it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1490-L1506
+  - what: >-
+      The blocking functions drive the shared async handler on a current-thread runtime they build and
+      drop. Called from inside a running runtime they return EvalRunError::SyncInRuntime, which
+      exception_type maps to a 500 APIConnectionError whose message is "a blocking eval run call cannot
+      run inside an async runtime".
+    why: >-
+      B9371's handlers are async only where LiteLLM's sync body calls a synchronous client, and building a
+      runtime inside another runtime panics in Tokio. The typed error lets the gateway answer instead of
+      aborting the request's task.
+    link: ""
+  - what: >-
+      Errors surface as EvalRunFailure with the typed cause in error and the error class one
+      litellm.exception_type call produced in class, instead of being raised. An already-classified
+      exception is not classified twice, and a preparation error is mapped with the provider the call
+      resolved, as LiteLLM's sync body does.
+    why: >-
+      Rust has no exception unwinding across the SDK boundary; every call module returns this pair. The
+      provider, message and status of each class are the ones exception_type builds from the same
+      original exception and the same custom_llm_provider.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1608-L1615
+  - what: >-
+      The logging object arrives as the logging argument instead of kwargs["litellm_logging_obj"], and
+      litellm_call_id is read from kwargs with a None default. update_from_kwargs runs on that state with
+      optional_params {eval_id, run_id}, litellm_params {litellm_call_id} and a custom_llm_provider in
+      additional_params.
+    why: >-
+      Rust has no logging object in the keyword bag: the state is a typed &mut LoggingState threaded
+      through the call, and update_from_kwargs passes custom_llm_provider through additional_params, as
+      the skills calls do. The recorded keys and values are the ones LiteLLM records for the same call.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1584-L1590
+  - what: >-
+      B9371's handler boundary takes the provider config, URL, headers, timeout and _is_async.
+      litellm_params, the logging object, client and shared_session stay with the caller of that boundary,
+      because betterlite's handlers read the pooled client and the logging state from their own arguments
+      and the transform already consumed litellm_params.
+    why: >-
+      The client is B173's one pooled ProxiedClient and the logging state is threaded by the operation, so
+      the extra keyword arguments LiteLLM forwards to base_llm_http_handler have no distinct value left to
+      carry. The URL, headers, timeout and flag are the parameters those handlers apply.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1595-L1604
+  - what: >-
+      An api_base that is neither a string nor null is this module's ApiBase error, a 400 BadRequest whose
+      body_param names api_base, where pydantic refuses GenericLiteLLMParams construction inside get_run's
+      try and exception_type receives a ValidationError with no provider status.
+    why: >-
+      docs/compatibility.md asks for an error that names the field when the declared type cannot hold the
+      caller's value, and 400 is the status betterlite gives a caller's own malformed field.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L322-L324
+kept_bugs:
+  - what: >-
+      A get run call never applies its timeout. The operation resolves timeout or request_timeout and
+      passes it to get_run_handler, and that handler, owned by B9371, does not put it on the GET, so the
+      request runs on the pooled client's read deadline.
+    why: >-
+      The pinned get_run_handler accepts the timeout and drops it the same way, so a working setup's get
+      calls run on the client's deadline; docs/deviations/B9371.yaml records the handler's side of it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13440
