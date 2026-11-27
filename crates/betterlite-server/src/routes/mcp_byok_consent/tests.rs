@@ -18,7 +18,7 @@ use secrecy::SecretString;
 use serde::Serialize;
 use tower::ServiceExt as _;
 
-use super::{AUTHORIZE_PATH, ConsentState, router_with};
+use super::{AUTHORIZE_PATH, ConsentState, MAX_FORM_FIELDS, router_with};
 
 const MASTER_KEY: &str = "sk-oracle-master";
 const CALLBACK: &str = "http://127.0.0.1:1456/callback";
@@ -111,23 +111,15 @@ fn get(uri: &str) -> Request<Body> {
     Request::builder().uri(uri).body(Body::empty()).unwrap()
 }
 
-fn post(uri: &str, body: &str) -> Request<Body> {
-    Request::builder()
+fn post(uri: &str, body: &str, cookie: Option<&str>) -> Request<Body> {
+    let mut builder = Request::builder()
         .method("POST")
         .uri(uri)
-        .header(header::CONTENT_TYPE, FORM_TYPE)
-        .body(Body::from(body.to_owned()))
-        .unwrap()
-}
-
-fn post_with_cookie(uri: &str, body: &str, cookie: &str) -> Request<Body> {
-    Request::builder()
-        .method("POST")
-        .uri(uri)
-        .header(header::CONTENT_TYPE, FORM_TYPE)
-        .header(header::COOKIE, cookie)
-        .body(Body::from(body.to_owned()))
-        .unwrap()
+        .header(header::CONTENT_TYPE, FORM_TYPE);
+    if let Some(cookie_value) = cookie {
+        builder = builder.header(header::COOKIE, cookie_value);
+    }
+    builder.body(Body::from(body.to_owned())).unwrap()
 }
 
 async fn send(router: Router, request: Request<Body>) -> Response {
@@ -268,7 +260,7 @@ async fn an_empty_query_parameter_counts_as_present() {
 async fn the_post_without_a_cookie_is_login_required() {
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post(AUTHORIZE_PATH, &valid_form()),
+        post(AUTHORIZE_PATH, &valid_form(), None),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -279,7 +271,7 @@ async fn the_post_without_a_cookie_is_login_required() {
 async fn the_post_without_a_master_key_is_login_required() {
     let response = send(
         app(AuthCodeStore::new(), None, None),
-        post(AUTHORIZE_PATH, &valid_form()),
+        post(AUTHORIZE_PATH, &valid_form(), None),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -291,7 +283,7 @@ async fn a_signed_in_form_redirects_to_the_callback_with_code_and_state() {
     let cookies = cookie(&ui_claims(), MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FOUND);
@@ -310,7 +302,7 @@ async fn the_post_accepts_the_username_password_login() {
     let cookies = cookie(&claims, MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FOUND);
@@ -325,7 +317,7 @@ async fn the_post_refuses_a_byok_session_token() {
     let cookies = cookie(&claims, MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -341,7 +333,7 @@ async fn the_post_refuses_an_expired_cookie() {
     let cookies = cookie(&claims, MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -352,7 +344,7 @@ async fn the_post_refuses_a_cookie_signed_with_another_key() {
     let cookies = cookie(&ui_claims(), "sk-other-master");
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -367,7 +359,7 @@ async fn the_post_refuses_a_revoked_session_key() {
     let cookies = cookie(&claims, MASTER_KEY);
     let response = send(
         app(AuthCodeStore::new(), Some(MASTER_KEY), keyring(false)),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -382,7 +374,7 @@ async fn the_post_lets_a_live_session_key_through() {
     let cookies = cookie(&claims, MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FOUND);
@@ -394,7 +386,7 @@ async fn the_post_answers_422_when_a_required_field_is_missing() {
     let body = format!("redirect_uri={CALLBACK}&code_challenge=challenge");
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &body, &cookies),
+        post(AUTHORIZE_PATH, &body, Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -413,7 +405,7 @@ async fn the_post_lists_every_missing_field_in_declaration_order() {
     let cookies = cookie(&ui_claims(), MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, "client_id=client-1", &cookies),
+        post(AUTHORIZE_PATH, "client_id=client-1", Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -447,7 +439,11 @@ async fn the_post_answers_422_for_a_body_that_is_not_a_form() {
 async fn the_session_check_precedes_the_form_check() {
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, "client_id=client-1", "token=not-a-jwt"),
+        post(
+            AUTHORIZE_PATH,
+            "client_id=client-1",
+            Some("token=not-a-jwt"),
+        ),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -462,7 +458,7 @@ async fn a_repeated_form_field_keeps_the_last_value() {
 
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &body, &cookies),
+        post(AUTHORIZE_PATH, &body, Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FOUND);
@@ -471,16 +467,13 @@ async fn a_repeated_form_field_keeps_the_last_value() {
 #[tokio::test]
 async fn the_post_refuses_a_form_with_too_many_fields() {
     let cookies = cookie(&ui_claims(), MASTER_KEY);
-    let mut body = String::new();
-    for index in 0..=1000 {
-        if !body.is_empty() {
-            body.push('&');
-        }
-        body.push_str(&format!("field{index}=1"));
-    }
+    let body = (0..=MAX_FORM_FIELDS)
+        .map(|index| format!("field{index}=1"))
+        .collect::<Vec<_>>()
+        .join("&");
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &body, &cookies),
+        post(AUTHORIZE_PATH, &body, Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -496,7 +489,7 @@ async fn the_post_refuses_a_non_loopback_redirect_uri() {
     let body = "redirect_uri=https://example.com/cb&code_challenge=challenge&api_key=sk-user";
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, body, &cookies),
+        post(AUTHORIZE_PATH, body, Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -515,7 +508,7 @@ async fn the_post_refuses_a_challenge_method_that_is_not_s256() {
     );
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &body, &cookies),
+        post(AUTHORIZE_PATH, &body, Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -530,7 +523,7 @@ async fn the_post_defaults_a_missing_challenge_method_to_s256() {
     let cookies = cookie(&ui_claims(), MASTER_KEY);
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FOUND);
@@ -539,13 +532,11 @@ async fn the_post_defaults_a_missing_challenge_method_to_s256() {
 #[tokio::test]
 async fn the_post_answers_503_at_capacity() {
     let codes = AuthCodeStore::new();
-    for index in 0..AUTH_CODES_MAX_SIZE {
-        codes.insert(format!("seed-{index}"), live_seed());
-    }
+    (0..AUTH_CODES_MAX_SIZE).for_each(|index| codes.insert(format!("seed-{index}"), live_seed()));
     let cookies = cookie(&ui_claims(), MASTER_KEY);
     let response = send(
         signed_in(codes),
-        post_with_cookie(AUTHORIZE_PATH, &valid_form(), &cookies),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -561,7 +552,7 @@ async fn the_post_uses_an_ampersand_when_the_redirect_uri_has_a_query() {
     let body = "redirect_uri=http%3A%2F%2F127.0.0.1%3A1456%2Fcallback%3Ftenant%3Dacme&code_challenge=challenge&api_key=sk-user";
     let response = send(
         signed_in(AuthCodeStore::new()),
-        post_with_cookie(AUTHORIZE_PATH, body, &cookies),
+        post(AUTHORIZE_PATH, body, Some(&cookies)),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FOUND);

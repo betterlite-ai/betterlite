@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use crate::byok_consent::get::{GetQuery, authorize_get};
 use crate::byok_consent::test_support::{page_query as query, registry, server};
 use crate::server_record::MCPServer;
@@ -52,15 +54,18 @@ fn the_duration_defaults_to_until_revoked() {
     assert!(page().contains("name=\"duration\" id=\"durInput\" value=\"until_revoked\""));
 }
 
-#[test]
-fn the_duration_pills_offer_litellms_five_choices() {
+#[rstest]
+#[case::hour("1h")]
+#[case::day("24h")]
+#[case::week("7d")]
+#[case::month("30d")]
+#[case::until_revoked("until_revoked")]
+fn the_duration_pills_offer_litellms_five_choices(#[case] duration: &str) {
     let html = page();
-    for duration in ["1h", "24h", "7d", "30d", "until_revoked"] {
-        assert!(
-            html.contains(&format!("selDur('{duration}',this)")),
-            "the pill for {duration} is missing"
-        );
-    }
+    assert!(
+        html.contains(&format!("selDur('{duration}',this)")),
+        "the pill for {duration} is missing"
+    );
     assert!(html.contains("class=\"pill sel\" onclick=\"selDur('24h',this)\""));
 }
 
@@ -90,23 +95,20 @@ fn the_page_names_the_server_in_its_title() {
     assert!(registry_page().contains("<title>Connect GitHub &mdash; LiteLLM</title>"));
 }
 
-#[test]
-fn no_placeholder_survives_rendering() {
+#[rstest]
+#[case::server("{server}")]
+#[case::initial("{initial}")]
+#[case::client_id("{client_id}")]
+#[case::redirect_uri("{redirect_uri}")]
+#[case::challenge("{challenge}")]
+#[case::method("{method}")]
+#[case::state("{state}")]
+#[case::server_id("{server_id}")]
+#[case::access("{access}")]
+#[case::help("{help}")]
+fn no_placeholder_survives_rendering(#[case] placeholder: &str) {
     let html = registry_page();
-    for placeholder in [
-        "{server}",
-        "{initial}",
-        "{client_id}",
-        "{redirect_uri}",
-        "{challenge}",
-        "{method}",
-        "{state}",
-        "{server_id}",
-        "{access}",
-        "{help}",
-    ] {
-        assert!(!html.contains(placeholder), "{placeholder} was not filled");
-    }
+    assert!(!html.contains(placeholder), "{placeholder} was not filled");
 }
 
 #[test]
