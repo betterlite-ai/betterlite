@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,8 +20,8 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
-use tokio::time::sleep;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{Instant, sleep};
 use url::Url;
 use uuid::Uuid;
 
@@ -29,6 +30,7 @@ use crate::api::messages_context_clear::result::CompactionKind;
 use crate::api::summary_execution::completion::{
     ExecutorCompletion, SummaryCall, SummaryCompletion as _,
 };
+use crate::mock::{chat, embedding};
 
 use super::support::{Fixture, Port, Sample, capture_logs, list, object, run};
 
@@ -67,8 +69,8 @@ fn executor(responses: BTreeMap<String, MockResponse>, usage: UsageDefaults) -> 
             usage,
             permission: MockPermission::default(),
         },
-        mock_chat: crate::mock::chat::response,
-        mock_embedding: crate::mock::embedding::response,
+        mock_chat: chat::response,
+        mock_embedding: embedding::response,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds"),
         bundled_catalog: Arc::default(),
     }
@@ -87,7 +89,7 @@ fn deployment(model_id: &str, api_base: &str) -> ChatDeployment {
         authorization: None,
         api_key: Some(SecretString::from("sk-test")),
         organization: None,
-        timeout: Duration::from_secs(6000),
+        timeout: Duration::from_mins(100),
         timeout_seconds: 6000.0,
         model_id: model_id.to_owned(),
         weight: 0,
@@ -114,10 +116,10 @@ async fn a_mock_provider_executor_runs_the_summary_end_to_end() {
         executor: &executor,
         deployment: &deployment,
     };
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let result = run(
         &fixture,
-        Sample::default().request(MODEL),
+        Sample::new().request(MODEL),
         Port::Direct(&completion),
     )
     .await
@@ -143,11 +145,11 @@ async fn a_mock_provider_failure_is_a_summary_call_failure() {
         executor: &executor,
         deployment: &deployment,
     };
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let (logs, _guard) = capture_logs();
     let result = run(
         &fixture,
-        Sample::default().request(MODEL),
+        Sample::new().request(MODEL),
         Port::Direct(&completion),
     )
     .await
@@ -169,13 +171,13 @@ async fn a_max_tokens_past_u32_fails_the_summary_call() {
         executor: &executor,
         deployment: &deployment,
     };
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     let settings = fixture.settings.as_mut().expect("one summary settings");
     settings.context_management_summary_max_tokens = u64::from(u32::MAX).saturating_add(1);
     let (logs, _guard) = capture_logs();
     let result = run(
         &fixture,
-        Sample::default().request(MODEL),
+        Sample::new().request(MODEL),
         Port::Direct(&completion),
     )
     .await
@@ -261,7 +263,7 @@ async fn answer_with(listener: TcpListener) -> String {
     request
 }
 
-async fn read_http_request(stream: &mut tokio::net::TcpStream) -> String {
+async fn read_http_request(stream: &mut TcpStream) -> String {
     let mut received = Vec::new();
     let mut chunk = [0_u8; 4096];
     loop {
@@ -269,8 +271,7 @@ async fn read_http_request(stream: &mut tokio::net::TcpStream) -> String {
             .windows(4)
             .position(|window| window == b"\r\n\r\n".as_slice())
         {
-            let head =
-                std::str::from_utf8(&received[..head_end]).expect("the request head is UTF-8");
+            let head = from_utf8(&received[..head_end]).expect("the request head is UTF-8");
             let length = head
                 .lines()
                 .find_map(|line| {
@@ -279,7 +280,7 @@ async fn read_http_request(stream: &mut tokio::net::TcpStream) -> String {
                         .then(|| value.trim().parse::<usize>().expect("a content length"))
                 })
                 .expect("a content length");
-            if received.len() >= head_end + 4 + length {
+            if received.len() >= head_end.saturating_add(4).saturating_add(length) {
                 break;
             }
         }
@@ -310,14 +311,14 @@ async fn a_stalled_provider_reaches_the_sixty_second_deadline() {
         executor: &executor,
         deployment: &deployment,
     };
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let (logs, _guard) = capture_logs();
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     let (outcome, ()) = tokio::join!(
         async {
             let outcome = run(
                 &fixture,
-                Sample::default().request(MODEL),
+                Sample::new().request(MODEL),
                 Port::Direct(&completion),
             )
             .await;
@@ -325,8 +326,8 @@ async fn a_stalled_provider_reaches_the_sixty_second_deadline() {
         },
         hold_open(listener),
     );
-    let (result, elapsed) = outcome;
-    let result = result.expect("the editor runs");
+    let (execution, elapsed) = outcome;
+    let result = execution.expect("the editor runs");
     let edit = result.applied_edits.first().expect("one applied edit");
     assert_eq!(edit.error.as_deref(), Some("summary_call_failed"));
     assert!(logs.contains(

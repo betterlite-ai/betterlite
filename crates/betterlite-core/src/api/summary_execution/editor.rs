@@ -49,6 +49,12 @@ pub struct EditorServices<'services, Checks, Repositories, Budgets, Hooks, Count
 
 impl<Checks, Repositories, Budgets, Hooks, Counter>
     EditorServices<'_, Checks, Repositories, Budgets, Hooks, Counter>
+where
+    Checks: SummaryModelChecks,
+    Repositories: SummaryAccessRepositories,
+    Budgets: SummaryModelBudgets,
+    Hooks: ProxyHooks,
+    Counter: Sync,
 {
     // compact.py prefers llm_router.acompletion and falls back to litellm.acompletion
     pub(super) async fn complete(
@@ -73,35 +79,27 @@ where
     Hooks: ProxyHooks,
     Counter: HistoryTokenCounter + Sync,
 {
-    let (trigger, applied) = validate(request.edit_spec)?;
+    let (trigger, mut applied) = validate(request.edit_spec)?;
     let phase = phase_a(request.messages, request.system);
-    let (summary_model, max_tokens) = read_summary_settings(services.settings);
-    let Some(summary_model) = summary_model else {
-        let mut applied = applied;
+    let (configured_model, max_tokens) = read_summary_settings(services.settings);
+    let Some(summary_model) = configured_model else {
         applied.error = Some("summary_model_not_configured".to_owned());
         return encode(slice_only(&phase, applied));
     };
-    let current = measure(&request, &phase, services.counter).await;
-    tracing::debug!(
-        "compact_20260112: current_tokens={} trigger={}",
-        current,
-        trigger
-    );
-    if u64::try_from(current).unwrap_or(u64::MAX) <= trigger {
+    if !over_trigger(&request, &phase, services.counter, trigger).await {
         return encode(slice_only(&phase, applied));
     }
-    let denial = policy_denial(
+    if let Some(refusal) = policy_denial(
         request.principal,
         services.proxy,
         services.budgets,
         services.hooks,
         &summary_model,
     )
-    .await?;
-    if let Some(denial) = denial {
-        tracing::warn!("{}", denial.warning(&summary_model));
-        let mut applied = applied;
-        applied.error = Some(denial.code().to_owned());
+    .await?
+    {
+        tracing::warn!("{}", refusal.warning(&summary_model));
+        applied.error = Some(refusal.code().to_owned());
         return encode(forward(
             phase.downstream.clone(),
             phase.system.clone(),
@@ -120,7 +118,12 @@ where
 }
 
 // a failed count is not fatal: LiteLLM warns and assumes the request is under the threshold
-async fn measure<Counter>(request: &EditorRequest<'_>, phase: &PhaseA, counter: &Counter) -> usize
+async fn over_trigger<Counter>(
+    request: &EditorRequest<'_>,
+    phase: &PhaseA,
+    counter: &Counter,
+    trigger: u64,
+) -> bool
 where
     Counter: HistoryTokenCounter + Sync,
 {
@@ -132,7 +135,7 @@ where
         system: phase.system.as_ref(),
     };
     let translator = AdapterTranslator;
-    match count_effective_tokens(components, &translator, counter).await {
+    let current = match count_effective_tokens(components, &translator, counter).await {
         Ok(tokens) => tokens,
         Err(error) => {
             tracing::warn!(
@@ -141,5 +144,11 @@ where
             );
             0
         }
-    }
+    };
+    tracing::debug!(
+        "compact_20260112: current_tokens={} trigger={}",
+        current,
+        trigger
+    );
+    u64::try_from(current).unwrap_or(u64::MAX) > trigger
 }

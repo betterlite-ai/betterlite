@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tracing::field::{Field, Visit};
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
@@ -81,6 +81,6 @@ impl<Inner: Subscriber> Layer<Inner> for Diagnostics {
 pub(super) fn capture() -> (Diagnostics, DefaultGuard) {
     let diagnostics = Diagnostics::default();
     let subscriber = registry().with(diagnostics.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     (diagnostics, guard)
 }

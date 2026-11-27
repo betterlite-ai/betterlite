@@ -34,25 +34,26 @@ pub fn phase_a(messages: &[Json], system: Option<&SystemPrompt>) -> PhaseA {
         .and_then(|fields| fields.get("content"))
         .and_then(Json::as_str)
         .filter(|text| !text.is_empty());
-    let system = match prior {
-        Some(summary) => {
+    let augmented = prior.map_or_else(
+        || system.cloned(),
+        |summary| {
             tracing::info!(
                 "compact_20260112: compaction summary added to main call system prefix ({} chars)",
                 summary.chars().count()
             );
             Some(augment_system_with_summary(system, summary))
-        }
-        None => system.cloned(),
-    };
+        },
+    );
     let downstream = strip_compaction_blocks(&effective);
     PhaseA {
         effective,
         downstream,
-        system,
+        system: augmented,
     }
 }
 
 // the slice-only exits keep the stripped tail and fall back to the last question only when it is empty
+#[must_use]
 pub fn slice_only(phase: &PhaseA, applied: AppliedEdit) -> Draft {
     let messages = if phase.downstream.is_empty() {
         vec![select_last_user_question(&phase.effective)]
@@ -63,7 +64,7 @@ pub fn slice_only(phase: &PhaseA, applied: AppliedEdit) -> Draft {
 }
 
 // the slice-only and skipped-summary exits fill the same five fields; only how they pick the messages differs
-pub(super) fn forward(
+pub(super) const fn forward(
     messages: Vec<Json>,
     system: Option<SystemPrompt>,
     applied: AppliedEdit,

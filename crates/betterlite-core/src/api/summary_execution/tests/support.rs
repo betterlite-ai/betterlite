@@ -20,7 +20,7 @@ use betterlite_tokenizer::count::error::CountError;
 use rust_decimal::Decimal;
 use serde_json::Number;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
@@ -406,8 +406,8 @@ pub(crate) struct Fixture {
     pub(crate) direct: ScriptedCompletion,
 }
 
-impl Default for Fixture {
-    fn default() -> Self {
+impl Fixture {
+    pub(crate) fn new() -> Self {
         let recorder = Recorder::default();
         let answer = "<summary> NEW </summary>";
         Self {
@@ -443,9 +443,7 @@ impl Default for Fixture {
             recorder,
         }
     }
-}
 
-impl Fixture {
     pub(crate) fn deny_access(&mut self) {
         self.checks.deny = true;
     }
@@ -506,8 +504,8 @@ pub(crate) struct Sample {
     pub(crate) principal: Option<UserAPIKeyAuth>,
 }
 
-impl Default for Sample {
-    fn default() -> Self {
+impl Sample {
+    pub(crate) fn new() -> Self {
         Self {
             messages: list(
                 r#"[
@@ -589,7 +587,7 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
     }
 }
 
-pub(crate) fn capture_logs() -> (Logs, tracing::subscriber::DefaultGuard) {
+pub(crate) fn capture_logs() -> (Logs, DefaultGuard) {
     let logs = Logs::default();
     let subscriber = registry().with(logs.clone());
     let guard = set_default(subscriber);

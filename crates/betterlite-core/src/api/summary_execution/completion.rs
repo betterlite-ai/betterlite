@@ -97,7 +97,7 @@ impl SummaryCompletion for ExecutorCompletion<'_> {
             .map_err(|error| SummaryCallFailure {
                 message: error.to_string(),
             })?;
-        Ok(answer_from_response(outcome.response))
+        Ok(answer_from_response(&outcome.response))
     }
 }
 
@@ -120,7 +120,7 @@ fn decision_object(fields: &Object) -> IndexMap<String, DecisionJson> {
         .collect()
 }
 
-fn answer_from_response(response: ChatResponse) -> CompletionAnswer {
+fn answer_from_response(response: &ChatResponse) -> CompletionAnswer {
     let content = response
         .choices
         .first()

@@ -89,15 +89,18 @@ fn usage_defaults_to_zero(#[case] raw: &str) {
 
 #[test]
 fn usage_reads_numbers_and_numeric_strings() {
-    let counted = usage(r#"{"usage":{"prompt_tokens":"12","completion_tokens":"3"}}"#)
+    let from_strings = usage(r#"{"usage":{"prompt_tokens":"12","completion_tokens":"3"}}"#)
         .expect("numeric strings");
-    assert_eq!((counted.input_tokens, counted.output_tokens), (12, 3));
-    let counted =
+    assert_eq!(
+        (from_strings.input_tokens, from_strings.output_tokens),
+        (12, 3)
+    );
+    let from_float =
         usage(r#"{"usage":{"prompt_tokens":12.9,"completion_tokens":3}}"#).expect("a float");
-    assert_eq!((counted.input_tokens, counted.output_tokens), (12, 3));
-    let counted = usage(r#"{"usage":{"prompt_tokens":true,"completion_tokens":false}}"#)
+    assert_eq!((from_float.input_tokens, from_float.output_tokens), (12, 3));
+    let from_bools = usage(r#"{"usage":{"prompt_tokens":true,"completion_tokens":false}}"#)
         .expect("bool counts");
-    assert_eq!((counted.input_tokens, counted.output_tokens), (1, 0));
+    assert_eq!((from_bools.input_tokens, from_bools.output_tokens), (1, 0));
 }
 
 #[rstest]

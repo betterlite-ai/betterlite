@@ -20,7 +20,8 @@ use crate::api::summary_execution::extract::ExtractionError;
 use crate::api::summary_history::last_question::CONTINUE_PROMPT;
 
 use super::support::{
-    Answer, Counted, Fixture, Port, Sample, capture_logs, list, object, principal, run, spec,
+    Answer, Counted, Fixture, Port, RecordedCall, Sample, capture_logs, list, object, principal,
+    run, spec,
 };
 
 const MODEL: &str = "main-model";
@@ -62,9 +63,9 @@ fn assert_untouched_tail(result: &PolyfillResult) {
 
 #[tokio::test]
 async fn trigger_validation_precedes_every_call() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let (logs, _guard) = capture_logs();
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.spec =
         spec(r#"{"type":"compact_20260112","trigger":{"type":"input_tokens","value":49999}}"#);
     match run(&fixture, sample.request(MODEL), Port::Routed).await {
@@ -85,9 +86,9 @@ async fn trigger_validation_precedes_every_call() {
 
 #[tokio::test]
 async fn absent_trigger_logs_the_default_threshold() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let (logs, _guard) = capture_logs();
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.spec = spec(r#"{"type":"compact_20260112"}"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -108,12 +109,12 @@ async fn absent_trigger_logs_the_default_threshold() {
 
 #[tokio::test]
 async fn pause_after_compaction_only_warns() {
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.spec = spec(
         r#"{"type":"compact_20260112","trigger":{"type":"output_tokens","value":60000},
             "pause_after_compaction":true}"#,
     );
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
@@ -127,12 +128,12 @@ async fn pause_after_compaction_only_warns() {
     );
     assert!(result.compaction_block.is_some());
     sample.spec = spec(r#"{"type":"compact_20260112","pause_after_compaction":false}"#);
-    let quiet = Fixture::default();
-    let result = run(&quiet, sample.request(MODEL), Port::Routed)
+    let quiet = Fixture::new();
+    let quiet_result = run(&quiet, sample.request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert!(
-        result
+        quiet_result
             .applied_edits
             .first()
             .expect("one applied edit")
@@ -143,9 +144,9 @@ async fn pause_after_compaction_only_warns() {
 
 #[tokio::test]
 async fn missing_summary_model_slices_without_counting() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.settings = None;
-    let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let result = run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert_error(&result, "summary_model_not_configured");
@@ -153,20 +154,20 @@ async fn missing_summary_model_slices_without_counting() {
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(fixture.counter.calls().is_empty());
     assert_eq!(fixture.summary_calls(), 0);
-    let mut fixture = Fixture::default();
-    fixture.settings = Some(Settings::default());
-    let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let mut configured = Fixture::new();
+    configured.settings = Some(Settings::default());
+    let configured_result = run(&configured, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
-    assert_error(&result, "summary_model_not_configured");
-    assert_eq!(encoded(&result.messages), TAIL);
+    assert_error(&configured_result, "summary_model_not_configured");
+    assert_eq!(encoded(&configured_result.messages), TAIL);
 }
 
 #[tokio::test]
 async fn slice_only_falls_back_to_the_last_question_only_when_empty() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.settings = Some(Settings::default());
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.system = None;
     sample.messages =
         list(r#"[{"role":"assistant","content":[{"type":"compaction","content":"S"}]}]"#);
@@ -187,9 +188,9 @@ async fn slice_only_falls_back_to_the_last_question_only_when_empty() {
 #[tokio::test]
 async fn count_at_the_threshold_stops_before_the_summary() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.counter.conversation = 150_000;
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.spec = spec(r#"{"type":"compact_20260112"}"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -211,9 +212,9 @@ async fn count_at_the_threshold_stops_before_the_summary() {
 #[tokio::test]
 async fn count_above_the_threshold_proceeds_to_the_summary() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.counter.conversation = 150_001;
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.spec = spec(r#"{"type":"compact_20260112"}"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -225,10 +226,10 @@ async fn count_above_the_threshold_proceeds_to_the_summary() {
 
 #[tokio::test]
 async fn count_reads_the_stripped_history_and_the_augmented_system() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.counter.conversation = 150_000;
     fixture.counter.text = 1;
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.spec = spec(r#"{"type":"compact_20260112"}"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -253,9 +254,9 @@ async fn count_reads_the_stripped_history_and_the_augmented_system() {
 #[tokio::test]
 async fn counter_failure_warns_and_continues() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.counter.fail = true;
-    let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let result = run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert_eq!(fixture.summary_calls(), 0);
@@ -269,9 +270,9 @@ async fn counter_failure_warns_and_continues() {
 #[tokio::test]
 async fn access_denial_skips_budget_rate_and_the_summary() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.deny_access();
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.principal = Some(principal(r#"{"models":["other-model"]}"#));
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -287,9 +288,9 @@ async fn access_denial_skips_budget_rate_and_the_summary() {
 
 #[tokio::test]
 async fn a_denied_summary_keeps_an_empty_tail_empty() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.deny_access();
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.principal = Some(principal(r#"{"models":["other-model"]}"#));
     sample.messages =
         list(r#"[{"role":"assistant","content":[{"type":"compaction","content":"S"}]}]"#);
@@ -304,9 +305,9 @@ async fn a_denied_summary_keeps_an_empty_tail_empty() {
 #[tokio::test]
 async fn budget_denial_runs_after_access_and_stops_before_rate() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.deny_budget();
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.principal = Some(principal(BUDGETED));
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -323,9 +324,9 @@ async fn budget_denial_runs_after_access_and_stops_before_rate() {
 #[tokio::test]
 async fn rate_denial_runs_after_budget() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.deny_rate();
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.principal = Some(principal(BUDGETED));
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -341,8 +342,8 @@ async fn rate_denial_runs_after_budget() {
 
 #[tokio::test]
 async fn an_allowed_policy_runs_every_check_then_one_summary() {
-    let fixture = Fixture::default();
-    let mut sample = Sample::default();
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
     sample.principal = Some(principal(BUDGETED));
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -355,8 +356,8 @@ async fn an_allowed_policy_runs_every_check_then_one_summary() {
 
 #[tokio::test]
 async fn an_available_router_is_called_once() {
-    let fixture = Fixture::default();
-    run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let fixture = Fixture::new();
+    run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert_eq!(fixture.router.count(), 1);
@@ -365,10 +366,10 @@ async fn an_available_router_is_called_once() {
 
 #[tokio::test]
 async fn without_a_router_the_direct_pipeline_is_called_once() {
-    let fixture = Fixture::default();
+    let fixture = Fixture::new();
     run(
         &fixture,
-        Sample::default().request(MODEL),
+        Sample::new().request(MODEL),
         Port::Direct(&fixture.direct),
     )
     .await
@@ -379,8 +380,8 @@ async fn without_a_router_the_direct_pipeline_is_called_once() {
 
 #[tokio::test]
 async fn summary_request_arguments_match_litellm() {
-    let fixture = Fixture::default();
-    let mut sample = Sample::default();
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
     sample.metadata = Some(object(
         r#"{"user_api_key":"k","litellm_call_id":"c","user_api_key_end_user_id":"end-1",
             "provider_metadata":{"x":1}}"#,
@@ -394,9 +395,15 @@ async fn summary_request_arguments_match_litellm() {
         .first()
         .expect("one summary call")
         .clone();
+    assert_summary_arguments(&call);
+    assert_summary_messages(&call.messages);
+    assert!(result.compaction_block.is_some());
+}
+
+fn assert_summary_arguments(call: &RecordedCall) {
     assert_eq!(call.model, "sum");
     assert_eq!(call.max_tokens, 4096);
-    assert_eq!(call.timeout_seconds, 60.0);
+    assert_eq!(call.timeout_seconds.to_bits(), 60.0_f64.to_bits());
     assert_eq!(call.user.as_deref(), Some("end-1"));
     assert_eq!(call.region, None);
     let keys: Vec<&str> = call.metadata.keys().map(String::as_str).collect();
@@ -413,7 +420,9 @@ async fn summary_request_arguments_match_litellm() {
         Some("k")
     );
     assert!(call.metadata.get("provider_metadata").is_none());
-    let messages = &call.messages;
+}
+
+fn assert_summary_messages(messages: &[Json]) {
     assert_eq!(messages.len(), 3);
     let first = messages[0].as_object().expect("a system message");
     assert_eq!(first.get("role").and_then(Json::as_str), Some("system"));
@@ -437,13 +446,12 @@ async fn summary_request_arguments_match_litellm() {
             .expect("the call encodes")
             .contains("Do not call any tools")
     );
-    assert!(result.compaction_block.is_some());
 }
 
 #[tokio::test]
 async fn declared_tools_add_the_no_tools_suffix() {
-    let fixture = Fixture::default();
-    let mut sample = Sample::default();
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
     sample.tools = Some(list(
         r#"[{"name":"lookup","description":"d","input_schema":{"type":"object"}}]"#,
     ));
@@ -463,12 +471,12 @@ async fn declared_tools_add_the_no_tools_suffix() {
 
 #[tokio::test]
 async fn configured_max_tokens_travel_to_the_call() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.settings = Some(Settings {
         context_management_summary_model: Some(String::from("sum")),
         context_management_summary_max_tokens: 512,
     });
-    run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert_eq!(
@@ -492,8 +500,8 @@ async fn only_a_nonempty_string_end_user_travels(
     #[case] metadata: &str,
     #[case] expected: Option<&str>,
 ) {
-    let fixture = Fixture::default();
-    let mut sample = Sample::default();
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
     sample.metadata = Some(object(metadata));
     run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -512,9 +520,9 @@ async fn only_a_nonempty_string_end_user_travels(
 
 #[tokio::test]
 async fn the_principal_region_travels_to_the_route() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.attach_policy = false;
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.principal = Some(principal(r#"{"allowed_model_region":"us"}"#));
     run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -539,8 +547,8 @@ fn an_unknown_model_region_never_reaches_the_editor() {
 #[tokio::test]
 async fn summary_success_replaces_the_old_prefix() {
     let (logs, _guard) = capture_logs();
-    let fixture = Fixture::default();
-    let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let fixture = Fixture::new();
+    let result = run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     let call = fixture
@@ -559,14 +567,22 @@ async fn summary_success_replaces_the_old_prefix() {
         serde_json::to_string(&result.messages).expect("the result encodes"),
         r#"[{"role":"user","content":"recent question"}]"#
     );
-    let block = result.compaction_block.clone().expect("a compaction block");
-    assert_eq!(block.kind, CompactionKind::Compaction);
-    assert_eq!(block.content.as_deref(), Some("NEW"));
-    assert_eq!(block.signature, None);
+    assert_summary_result(&result);
     let edit = result.applied_edits.first().expect("one applied edit");
     assert_eq!(edit.summary_input_tokens, Some(12));
     assert_eq!(edit.summary_output_tokens, Some(3));
     assert!(edit.error.is_none());
+    assert!(logs.contains(
+        "INFO compact_20260112: compaction summary added to main call system prefix (3 chars)"
+    ));
+    assert_eq!(fixture.summary_calls(), 1);
+}
+
+fn assert_summary_result(result: &PolyfillResult) {
+    let block = result.compaction_block.clone().expect("a compaction block");
+    assert_eq!(block.kind, CompactionKind::Compaction);
+    assert_eq!(block.content.as_deref(), Some("NEW"));
+    assert_eq!(block.signature, None);
     assert_eq!(
         result.iterations_usage.clone().expect("iterations usage"),
         [UsageIteration {
@@ -575,16 +591,12 @@ async fn summary_success_replaces_the_old_prefix() {
             output_tokens: Some(3),
         }]
     );
-    assert!(logs.contains(
-        "INFO compact_20260112: compaction summary added to main call system prefix (3 chars)"
-    ));
-    assert_eq!(fixture.summary_calls(), 1);
 }
 
 #[tokio::test]
 async fn the_summary_keeps_only_the_last_real_user_question() {
-    let fixture = Fixture::default();
-    let mut sample = Sample::default();
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
     sample.messages = list(
         r#"[{"role":"user","content":"q1"},{"role":"assistant","content":"a1"},
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"t"}]},
@@ -601,8 +613,8 @@ async fn the_summary_keeps_only_the_last_real_user_question() {
 
 #[tokio::test]
 async fn without_an_eligible_question_the_continuation_prompt_is_kept() {
-    let fixture = Fixture::default();
-    let mut sample = Sample::default();
+    let fixture = Fixture::new();
+    let mut sample = Sample::new();
     sample.messages = list(r#"[{"role":"assistant","content":"a1"}]"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
@@ -617,9 +629,9 @@ async fn without_an_eligible_question_the_continuation_prompt_is_kept() {
 #[tokio::test]
 async fn a_failed_summary_call_preserves_the_tail() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.router.answer = Answer::Failure(String::from("boom"));
-    let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let result = run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert_error(&result, "summary_call_failed");
@@ -637,9 +649,9 @@ async fn a_failed_summary_call_preserves_the_tail() {
 
 #[tokio::test]
 async fn a_failed_summary_keeps_an_empty_tail_empty() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.router.answer = Answer::Failure(String::from("boom"));
-    let mut sample = Sample::default();
+    let mut sample = Sample::new();
     sample.messages =
         list(r#"[{"role":"assistant","content":[{"type":"compaction","content":"S"}]}]"#);
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
@@ -652,11 +664,11 @@ async fn a_failed_summary_keeps_an_empty_tail_empty() {
 #[tokio::test]
 async fn a_response_without_a_summary_block_fails_extraction_quietly() {
     let (logs, _guard) = capture_logs();
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.router.answer = answer(
         r#"{"choices":[{"message":{"content":"no tag"}}],"usage":{"prompt_tokens":1,"completion_tokens":2}}"#,
     );
-    let result = run(&fixture, Sample::default().request(MODEL), Port::Routed)
+    let result = run(&fixture, Sample::new().request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
     assert_error(&result, "summary_extraction_failed");
@@ -669,10 +681,10 @@ async fn a_response_without_a_summary_block_fails_extraction_quietly() {
 
 #[tokio::test]
 async fn a_nonstring_text_part_is_an_error() {
-    let mut fixture = Fixture::default();
+    let mut fixture = Fixture::new();
     fixture.router.answer =
         answer(r#"{"choices":[{"message":{"content":[{"type":"text","text":5}]}}]}"#);
-    match run(&fixture, Sample::default().request(MODEL), Port::Routed).await {
+    match run(&fixture, Sample::new().request(MODEL), Port::Routed).await {
         Err(SummaryExecutionError::Extraction(ExtractionError::NonTextPart)) => {}
         other => panic!("expected the non-text part error: {other:?}"),
     }

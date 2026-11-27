@@ -1,3 +1,5 @@
+use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+
 use crate::api::messages_context_clear::constants::SUMMARY_TIMEOUT_SECONDS;
 use crate::api::messages_context_clear::result::{
     AppliedEdit, CompactionBlock, CompactionKind, UsageIteration, UsageKind,
@@ -16,6 +18,9 @@ use crate::api::summary_history::prompt::{build_summary_prompt, extract_summary_
 use crate::api::summary_history::summary_messages::build_summary_messages;
 use crate::api::summary_history::system::augment_system_with_summary;
 use crate::api::summary_history::translate::AdapterTranslator;
+use crate::api::summary_model_access::checks::SummaryModelChecks;
+use crate::api::summary_model_access::repositories::SummaryAccessRepositories;
+use crate::api::summary_model_limits::budget::SummaryModelBudgets;
 use crate::api::summary_model_limits::rate::ProxyHooks;
 
 // one above-threshold summary: the request's own history and system, the chosen model, and the applied edit so far
@@ -32,7 +37,11 @@ pub async fn summarize<Checks, Repositories, Budgets, Hooks, Counter>(
     services: &EditorServices<'_, Checks, Repositories, Budgets, Hooks, Counter>,
 ) -> Result<Draft, SummaryExecutionError<Hooks::Error>>
 where
+    Checks: SummaryModelChecks,
+    Repositories: SummaryAccessRepositories,
+    Budgets: SummaryModelBudgets,
     Hooks: ProxyHooks,
+    Counter: Sync,
 {
     let prompt = build_summary_prompt(
         task.request.edit_spec.instructions.as_ref(),
@@ -47,16 +56,7 @@ where
     )
     .await;
     let metadata = propagate_metadata(task.request.litellm_metadata);
-    let region = match task.request.principal {
-        Some(principal) => {
-            let encoded =
-                serde_json::to_value(principal).map_err(SummaryExecutionError::Principal)?;
-            let fields: PrincipalRegion =
-                serde_json::from_value(encoded).map_err(SummaryExecutionError::Principal)?;
-            fields.allowed_model_region
-        }
-        None => None,
-    };
+    let region = model_region(task.request.principal)?;
     let call = SummaryCall {
         model: task.summary_model,
         messages: &messages,
@@ -81,14 +81,26 @@ where
     }
 }
 
+// the caller's allowed_model_region reaches the router as a top-level argument, never the provider body
+fn model_region<HookError>(
+    principal: Option<&UserAPIKeyAuth>,
+) -> Result<Option<String>, SummaryExecutionError<HookError>> {
+    let Some(principal) = principal else {
+        return Ok(None);
+    };
+    let encoded = serde_json::to_value(principal).map_err(SummaryExecutionError::Principal)?;
+    let fields: PrincipalRegion =
+        serde_json::from_value(encoded).map_err(SummaryExecutionError::Principal)?;
+    Ok(fields.allowed_model_region)
+}
+
 // a response without a usable summary tag is nonfatal and logs no call-failure warning
 fn finish<HookError>(
     task: SummaryTask<'_, '_>,
     answer: &CompletionAnswer,
 ) -> Result<Draft, SummaryExecutionError<HookError>> {
     let raw = extract_response_text(answer)?;
-    let summary = extract_summary_text(raw.as_deref())?;
-    let Some(summary) = summary else {
+    let Some(summary) = extract_summary_text(raw.as_deref())? else {
         let mut applied = task.applied;
         applied.error = Some("summary_extraction_failed".to_owned());
         return Ok(forward(

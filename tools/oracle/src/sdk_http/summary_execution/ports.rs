@@ -22,6 +22,8 @@ use betterlite_core::api::summary_execution::completion::{
     ExecutorCompletion, SummaryCall, SummaryCallFailure, SummaryCompletion,
 };
 use betterlite_core::api::summary_execution::extract::CompletionAnswer;
+use betterlite_core::mock::chat::response as mock_chat;
+use betterlite_core::mock::embedding::response as mock_embedding;
 
 use super::super::error::SdkHttpError;
 use super::{CallRecord, Route};
@@ -49,8 +51,8 @@ pub(super) fn executor() -> Result<ChatExecutor, SdkHttpError> {
         clock: || 1_700_000_000,
         next_id: || Uuid::from_u128(7),
         mock: MockSettings::default(),
-        mock_chat: betterlite_core::mock::chat::response,
-        mock_embedding: betterlite_core::mock::embedding::response,
+        mock_chat,
+        mock_embedding,
         redactor,
         bundled_catalog: Arc::default(),
     })
