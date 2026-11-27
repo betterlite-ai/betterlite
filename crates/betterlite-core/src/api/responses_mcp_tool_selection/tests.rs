@@ -90,6 +90,9 @@ fn function_calls_in_output_order(
 enum CallForm {
     Mapping,
     Output,
+    Message,
+    FunctionCall,
+    Image,
 }
 
 #[rstest]
@@ -120,6 +123,20 @@ enum CallForm {
     Some("weather"),
     None,
     Some("fc_1")
+)]
+#[case::null_call_id_uses_id(
+    CallForm::Mapping,
+    r#"{"call_id":null,"id":"fc_1","name":"weather"}"#,
+    Some("weather"),
+    None,
+    Some("fc_1")
+)]
+#[case::null_name_stays_empty(
+    CallForm::Mapping,
+    r#"{"name":null,"arguments":"{}"}"#,
+    None,
+    Some(r#""{}""#),
+    None
 )]
 #[case::nested_function_wins_over_top_level(
     CallForm::Mapping,
@@ -198,6 +215,69 @@ enum CallForm {
     None,
     Some("call_1")
 )]
+#[case::output_arm_with_null_function_extra(
+    CallForm::Output,
+    r#"{"type":"function_call","call_id":"call_1","name":"top","arguments":"{}","function":null}"#,
+    Some("top"),
+    Some(r#""{}""#),
+    Some("call_1")
+)]
+#[case::output_message_arm(
+    CallForm::Output,
+    r#"{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[]}"#,
+    None,
+    None,
+    None
+)]
+#[case::message_details(
+    CallForm::Message,
+    r#"{"type":"function_call","id":"msg_1","status":"completed","role":"assistant","content":[],"call_id":"call_message","name":"search","arguments":"{}"}"#,
+    Some("search"),
+    Some(r#""{}""#),
+    Some("call_message")
+)]
+#[case::message_details_with_function_extra(
+    CallForm::Message,
+    r#"{"type":"function_call","id":"msg_2","status":"completed","role":"assistant","content":[],"call_id":"call_message","name":"search","arguments":"{}","function":{"name":"inner"}}"#,
+    None,
+    None,
+    Some("call_message")
+)]
+#[case::message_details_input_when_arguments_null(
+    CallForm::Message,
+    r#"{"type":"function_call","id":"msg_3","status":"completed","role":"assistant","content":[],"call_id":"call_message","name":"search","arguments":null,"input":{"q":1}}"#,
+    Some("search"),
+    Some(r#"{"q":1}"#),
+    Some("call_message")
+)]
+#[case::typed_function_call_arm(
+    CallForm::FunctionCall,
+    r#"{"type":"function_call","arguments":"{}","call_id":"call_typed","name":"clock","id":"fc_1","status":"completed"}"#,
+    Some("clock"),
+    Some(r#""{}""#),
+    Some("call_typed")
+)]
+#[case::typed_function_call_input_when_arguments_null(
+    CallForm::FunctionCall,
+    r#"{"type":"function_call","arguments":null,"call_id":"call_typed","name":"clock","id":null,"input":{"q":1},"status":"completed"}"#,
+    Some("clock"),
+    Some(r#"{"q":1}"#),
+    Some("call_typed")
+)]
+#[case::typed_function_call_with_function_extra(
+    CallForm::FunctionCall,
+    r#"{"type":"function_call","arguments":"{}","call_id":"call_typed","name":"clock","id":null,"status":"completed","function":{"name":"inner"}}"#,
+    None,
+    None,
+    Some("call_typed")
+)]
+#[case::image_call_arm(
+    CallForm::Image,
+    r#"{"type":"image_generation_call","id":"img_1","status":"completed","result":null}"#,
+    None,
+    None,
+    None
+)]
 fn tool_call_details_precedence(
     #[case] form: CallForm,
     #[case] tool_call: &str,
@@ -212,6 +292,15 @@ fn tool_call_details_precedence(
         CallForm::Output => McpToolCall::Output(Box::new(
             serde_json::from_str(tool_call).expect("the tool call decodes"),
         )),
+        CallForm::Message => McpToolCall::Output(Box::new(ResponseOutputItem::Message(
+            serde_json::from_str(tool_call).expect("the message decodes"),
+        ))),
+        CallForm::FunctionCall => McpToolCall::Output(Box::new(ResponseOutputItem::FunctionCall(
+            serde_json::from_str(tool_call).expect("the typed call decodes"),
+        ))),
+        CallForm::Image => McpToolCall::Output(Box::new(ResponseOutputItem::ImageGeneration(
+            serde_json::from_str(tool_call).expect("the image call decodes"),
+        ))),
     };
     let details = extract_tool_call_details(&selected).expect("the details read");
     let expected_arguments = arguments
