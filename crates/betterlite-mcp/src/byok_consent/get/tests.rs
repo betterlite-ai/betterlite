@@ -31,6 +31,16 @@ fn a_refused_request_keeps_litellms_status_and_body(
 }
 
 #[test]
+fn a_query_parameter_sets_its_field() {
+    let mut query = GetQuery::default();
+    query.set("response_type", "code".to_owned());
+    query.set("server_id", "srv-1".to_owned());
+    query.set("unknown", "ignored".to_owned());
+    assert_eq!(query.response_type.as_deref(), Some("code"));
+    assert_eq!(query.server_id.as_deref(), Some("srv-1"));
+}
+
+#[test]
 fn a_non_loopback_redirect_uri_carries_the_rejection_detail() {
     let query = GetQuery {
         redirect_uri: Some("https://example.com/callback".to_owned()),
