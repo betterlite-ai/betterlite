@@ -1,4 +1,6 @@
 import sys
+from collections.abc import Callable
+from functools import partial
 from types import ModuleType
 from typing import Final, Literal, NotRequired, Protocol, TypedDict, cast
 
@@ -6,7 +8,7 @@ import botocore.parsers  # type: ignore[import-untyped]  # https://github.com/Be
 import botocore.session  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
 import httpx
 import litellm
-from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionError  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L146
+from botocore.exceptions import ClientError  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L146
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.batches.handler import BedrockBatchesHandler
@@ -70,16 +72,6 @@ class SignatureConfig(Protocol):
     signature_version: str
 
 
-class HandlerCall(Protocol):
-    def __call__(
-        self,
-        batch_id: str,
-        aws_region_name: str | None,
-        logging_obj: "Recorder | None",
-        **kwargs: JsonValue,
-    ) -> LiteLLMBatch: ...
-
-
 class Provider:
     def __init__(self, keys: Keys) -> None:
         self.access_key = keys["access_key_id"]
@@ -136,7 +128,7 @@ class Service:
             }
         )
         if not self.replies:
-            raise EndpointConnectionError(endpoint_url="https://bedrock")
+            raise ConnectionResetError("the fixture has no queued reply")
         reply = self.replies.pop(0)
         parsed = parsed_reply(reply, operation)
         if reply["status"] >= CLIENT_ERROR_STATUS:
@@ -187,18 +179,6 @@ class Fixture:
         return AsyncHTTPHandler(transport=transport)
 
 
-class Handler(BedrockBatchesHandler):
-    def status(self, case: Input, recorder: Recorder | None) -> LiteLLMBatch:
-        call = cast(HandlerCall, self._handle_model_invocation_job_status)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L262
-        return call(case["batch_id"], case.get("region"), recorder)
-
-    def async_status(
-        self, case: Input, region: str, credentials: dict[str, JsonValue]
-    ) -> LiteLLMBatch:
-        call = cast(HandlerCall, self._handle_async_invoke_status)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
-        return call(case["batch_id"], region, None, **credentials)
-
-
 def project_batch(batch: LiteLLMBatch) -> JsonValue:
     dumped = cast(dict[str, JsonValue], batch.model_dump())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4320
     return {key: dumped.get(key) for key in PROJECTED_KEYS}
@@ -228,65 +208,88 @@ def async_credentials(case: Input) -> dict[str, JsonValue]:
     return credentials
 
 
-def control_plane(case: Input, *, cancel: bool) -> JsonValue:
-    provider = Provider(case["credentials"])
-    BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
-    service = Service(case["replies"])
-    sys.modules["boto3"] = FakeBoto3(service)
-    recorder = Recorder() if case.get("logging") is True else None
-    handler = Handler()
+def settled(
+    call: Callable[[], LiteLLMBatch],
+    provider: Provider,
+    calls: JsonValue,
+    requests: JsonValue,
+    events: JsonValue,
+) -> JsonValue:
     try:
-        if cancel:
-            batch = BedrockBatchesHandler.cancel_batch(
-                case["batch_id"], aws_region_name=case.get("region"), logging_obj=recorder
-            )
-        else:
-            batch = handler.status(case, recorder)
+        outcome: dict[str, JsonValue] = {"batch": project_batch(call()), "error": None}
     except ClientError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L146
         body = CLIENT_ERROR.validate_python(error.response)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L146
-        outcome: dict[str, JsonValue] = {"batch": None, "error": client_error(body)}
+        outcome = {"batch": None, "error": client_error(body)}
     except ValidationError:
         outcome = {"batch": None, "error": {"kind": "invalid_status", "status": None, "code": None}}
     except (AttributeError, KeyError, TypeError):
         outcome = {"batch": None, "error": {"kind": "shape", "status": None, "code": None}}
-    except BotoCoreError:
+    except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L667
         outcome = {"batch": None, "error": {"kind": "sdk", "status": None, "code": None}}
-    else:
-        outcome = {"batch": project_batch(batch), "error": None}
     return {
-        "batch": outcome["batch"], "error": outcome["error"],
-        "calls": JSON.validate_python(service.calls),
+        "batch": outcome["batch"],
+        "error": outcome["error"],
+        "calls": calls,
         "resolved": JSON.validate_python(provider.regions),
-        "requests": [], "log": [] if recorder is None else JSON.validate_python(recorder.events),
+        "requests": requests,
+        "log": events,
     }
 
 
-def async_status(case: Input) -> JsonValue:
+def control_plane(case: Input, *, cancel: bool) -> JsonValue:
+    replies = case.get("replies")
+    if replies is None:
+        raise ValueError("the control plane scenario needs replies")
     provider = Provider(case["credentials"])
     BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
-    fixture = Fixture(case["reply"])
+    service = Service(replies)
+    sys.modules["boto3"] = FakeBoto3(service)
+    recorder = Recorder() if case.get("logging") is True else None
+    status_call = cast(
+        "Callable[[str, str | None, Recorder | None], LiteLLMBatch]",
+        BedrockBatchesHandler._handle_model_invocation_job_status,  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L262
+    )
+    if cancel:
+        call: Callable[[], LiteLLMBatch] = partial(
+            BedrockBatchesHandler.cancel_batch,
+            case["batch_id"],
+            aws_region_name=case.get("region"),
+            logging_obj=recorder,
+        )
+    else:
+        call = partial(status_call, case["batch_id"], case.get("region"), recorder)
+    events = JSON.validate_python([] if recorder is None else recorder.events)
+    return settled(
+        call,
+        provider,
+        JSON.validate_python(service.calls),
+        JSON.validate_python([]),
+        events,
+    )
+
+
+def async_status(case: Input) -> JsonValue:
+    reply = case.get("reply")
+    if reply is None:
+        raise ValueError("the async scenario needs one reply")
+    provider = Provider(case["credentials"])
+    BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
+    fixture = Fixture(reply)
     embedding_module.get_async_httpx_client = fixture.client  # type: ignore[assignment, attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L648
     region = case.get("region")
     if region is None:
         region = "us-east-1"
-    handler = Handler()
-    try:
-        batch = handler.async_status(case, region, async_credentials(case))
-    except ValidationError:
-        outcome: dict[str, JsonValue] = {
-            "batch": None, "error": {"kind": "invalid_status", "status": None, "code": None},
-        }
-    except (AttributeError, KeyError, TypeError):
-        outcome = {"batch": None, "error": {"kind": "shape", "status": None, "code": None}}
-    except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L667
-        outcome = {"batch": None, "error": {"kind": "sdk", "status": None, "code": None}}
-    else:
-        outcome = {"batch": project_batch(batch), "error": None}
-    return {
-        "batch": outcome["batch"], "error": outcome["error"],
-        "calls": [], "resolved": [],
-        "requests": JSON.validate_python(fixture.requests), "log": [],
-    }
+    async_call = cast(
+        "Callable[..., LiteLLMBatch]",
+        BedrockBatchesHandler._handle_async_invoke_status,  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
+    )
+    return settled(
+        partial(async_call, case["batch_id"], region, None, **async_credentials(case)),
+        provider,
+        JSON.validate_python([]),
+        JSON.validate_python(fixture.requests),
+        JSON.validate_python([]),
+    )
 
 
 def run(input_value: Input) -> JsonValue:
