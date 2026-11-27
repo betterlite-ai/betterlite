@@ -20,70 +20,48 @@ pub(super) fn resample<'py>(
     if source_rate == target_rate || size == 0 {
         return Ok(samples.clone());
     }
-    match soxr_attempt(py, &numpy, samples, source_rate, target_rate) {
-        Attempt::Done(resampled) => return Ok(resampled),
-        Attempt::Missing => {}
-        Attempt::Failed(error) => return Err(error),
-    }
-    match scipy_attempt(py, &numpy, samples, source_rate, target_rate) {
-        Attempt::Done(resampled) => return Ok(resampled),
-        Attempt::Missing => {}
-        Attempt::Failed(error) => return Err(error),
+    for resampler in [Resampler::Soxr, Resampler::Scipy] {
+        if let Some(resampled) =
+            try_resampler(py, &numpy, resampler, samples, source_rate, target_rate)?
+        {
+            return Ok(resampled);
+        }
     }
     linear(py, &numpy, samples, source_rate, target_rate)
 }
 
-enum Attempt<'py> {
-    Done(Bound<'py, PyAny>),
-    Missing,
-    Failed(RivaAudioError),
+#[derive(Clone, Copy)]
+enum Resampler {
+    Soxr,
+    Scipy,
 }
 
-fn soxr_attempt<'py>(
+fn try_resampler<'py>(
     py: Python<'py>,
     numpy: &Bound<'py, PyModule>,
+    resampler: Resampler,
     samples: &Bound<'py, PyAny>,
     source_rate: i64,
     target_rate: i64,
-) -> Attempt<'py> {
-    match call_soxr(py, numpy, samples, source_rate, target_rate) {
-        Ok(resampled) => Attempt::Done(resampled),
-        Err(error) if error.is_instance_of::<PyImportError>(py) => Attempt::Missing,
-        Err(error) => Attempt::Failed(call_failure(py, "soxr.resample", &error)),
+) -> Result<Option<Bound<'py, PyAny>>, RivaAudioError> {
+    let outcome = match resampler {
+        Resampler::Soxr => py
+            .import("soxr")
+            .and_then(|soxr| soxr.getattr("resample"))
+            .and_then(|call| call.call1((samples, source_rate, target_rate)))
+            .and_then(|resampled| as_float32(py, numpy, &resampled)),
+        Resampler::Scipy => scipy_resample(py, samples, source_rate, target_rate)
+            .and_then(|resampled| as_float32(py, numpy, &resampled)),
+    };
+    match outcome {
+        Ok(resampled) => Ok(Some(resampled)),
+        Err(error) if error.is_instance_of::<PyImportError>(py) => Ok(None),
+        Err(error) => Err(call_failure(py, operation(resampler), &error)),
     }
 }
 
-fn call_soxr<'py>(
+fn scipy_resample<'py>(
     py: Python<'py>,
-    numpy: &Bound<'py, PyModule>,
-    samples: &Bound<'py, PyAny>,
-    source_rate: i64,
-    target_rate: i64,
-) -> PyResult<Bound<'py, PyAny>> {
-    let soxr = py.import("soxr")?;
-    let resampled = soxr
-        .getattr("resample")?
-        .call1((samples, source_rate, target_rate))?;
-    as_float32(py, numpy, &resampled)
-}
-
-fn scipy_attempt<'py>(
-    py: Python<'py>,
-    numpy: &Bound<'py, PyModule>,
-    samples: &Bound<'py, PyAny>,
-    source_rate: i64,
-    target_rate: i64,
-) -> Attempt<'py> {
-    match call_scipy(py, numpy, samples, source_rate, target_rate) {
-        Ok(resampled) => Attempt::Done(resampled),
-        Err(error) if error.is_instance_of::<PyImportError>(py) => Attempt::Missing,
-        Err(error) => Attempt::Failed(call_failure(py, "scipy.signal.resample_poly", &error)),
-    }
-}
-
-fn call_scipy<'py>(
-    py: Python<'py>,
-    numpy: &Bound<'py, PyModule>,
     samples: &Bound<'py, PyAny>,
     source_rate: i64,
     target_rate: i64,
@@ -96,11 +74,16 @@ fn call_scipy<'py>(
         .call1((&source_int, &target_int))?;
     let up = target_int.call_method1("__floordiv__", (&divisor,))?;
     let down = source_int.call_method1("__floordiv__", (&divisor,))?;
-    let resampled = py
-        .import("scipy.signal")?
+    py.import("scipy.signal")?
         .getattr("resample_poly")?
-        .call1((samples, up, down))?;
-    as_float32(py, numpy, &resampled)
+        .call1((samples, up, down))
+}
+
+const fn operation(resampler: Resampler) -> &'static str {
+    match resampler {
+        Resampler::Soxr => "soxr.resample",
+        Resampler::Scipy => "scipy.signal.resample_poly",
+    }
 }
 
 fn as_float32<'py>(

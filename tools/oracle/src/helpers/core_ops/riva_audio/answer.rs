@@ -31,32 +31,38 @@ pub(super) fn read_probe(host: &PythonHost) -> Result<Probe, Box<HelperError>> {
 }
 
 pub(super) fn success_answer(audio: &ResampledAudio, probe: Probe) -> Value {
-    let Probe { events, staging } = probe;
-    let state = staging_state(&staging);
-    json!({
-        "status": Value::Null,
-        "message": Value::Null,
-        "pcm_hex": hex::encode(audio.pcm_bytes.as_slice()),
-        "sample_rate_hz": audio.sample_rate_hz,
-        "num_channels": audio.num_channels,
-        "duration_seconds": audio.duration_seconds.to_f64(),
-        "events": events,
-        "staging_suffix": state.suffix,
-        "staging_removed": state.removed,
-    })
+    answer(probe, Value::Null, Value::Null, Some(audio))
 }
 
 pub(super) fn failure_answer(error: &RivaAudioError, probe: Probe) -> Value {
+    let response = error.response();
+    answer(
+        probe,
+        json!(response.status_code),
+        json!(error.to_string()),
+        None,
+    )
+}
+
+fn answer(probe: Probe, status: Value, message: Value, audio: Option<&ResampledAudio>) -> Value {
     let Probe { events, staging } = probe;
     let state = staging_state(&staging);
-    let response = error.response();
+    let (pcm_hex, sample_rate_hz, num_channels, duration_seconds) = match audio {
+        Some(track) => (
+            Some(hex::encode(track.pcm_bytes.as_slice())),
+            Some(track.sample_rate_hz),
+            Some(track.num_channels),
+            track.duration_seconds.to_f64(),
+        ),
+        None => (None, None, None, None),
+    };
     json!({
-        "status": response.status_code,
-        "message": error.to_string(),
-        "pcm_hex": Value::Null,
-        "sample_rate_hz": Value::Null,
-        "num_channels": Value::Null,
-        "duration_seconds": Value::Null,
+        "status": status,
+        "message": message,
+        "pcm_hex": pcm_hex,
+        "sample_rate_hz": sample_rate_hz,
+        "num_channels": num_channels,
+        "duration_seconds": duration_seconds,
         "events": events,
         "staging_suffix": state.suffix,
         "staging_removed": state.removed,

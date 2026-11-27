@@ -187,19 +187,19 @@ fn read_audioread(
         .getattr("channels")
         .and_then(|channels| as_int(py, &channels))
         .map_err(|error| decode_failure(py, &error))?;
-    let chunks = audioread_chunks(py, numpy, source)?;
-    let samples = audioread_samples(py, numpy, chunks, channels)?;
+    let samples = audioread_samples(py, numpy, source, channels)?;
     Ok(DecodedAudio {
         samples: samples.unbind(),
         source_rate: samplerate,
     })
 }
 
-fn audioread_chunks<'py>(
+fn audioread_samples<'py>(
     py: Python<'py>,
     numpy: &Bound<'py, PyModule>,
     source: &Bound<'py, PyAny>,
-) -> Result<Vec<Bound<'py, PyAny>>, RivaAudioError> {
+    channels: i64,
+) -> Result<Bound<'py, PyAny>, RivaAudioError> {
     let fail = |error: PyErr| decode_failure(py, &error);
     let dtype = numpy.getattr("int16").map_err(fail)?;
     let frombuffer = numpy.getattr("frombuffer").map_err(fail)?;
@@ -231,16 +231,6 @@ fn audioread_chunks<'py>(
             message: NO_SAMPLES.to_owned(),
         });
     }
-    Ok(chunks)
-}
-
-fn audioread_samples<'py>(
-    py: Python<'py>,
-    numpy: &Bound<'py, PyModule>,
-    chunks: Vec<Bound<'py, PyAny>>,
-    channels: i64,
-) -> Result<Bound<'py, PyAny>, RivaAudioError> {
-    let fail = |error: PyErr| decode_failure(py, &error);
     let list = PyList::new(py, chunks).map_err(fail)?;
     let concatenated = numpy
         .getattr("concatenate")
