@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use axum::http::StatusCode;
 use rstest::rstest;
 
 use super::support::{Harness, get_request, json, master_key, request_with_body};
+use crate::callback_config::body::{callback_delete_request, config_yaml_request};
 
 #[tokio::test]
 async fn config_yaml_answers_hello_world() {
@@ -49,4 +52,13 @@ async fn config_yaml_requires_authentication() {
     let harness = Harness::new(BTreeMap::new());
     let (status, _body) = harness.call(get_request("/config/yaml"), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[rstest]
+fn replays_the_callback_config_body_corpus(
+    #[files("fuzz/corpus/callback_config_body/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).expect("a corpus file");
+    drop(callback_delete_request(&bytes));
+    drop(config_yaml_request(&bytes));
 }
