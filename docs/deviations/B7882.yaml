@@ -1,0 +1,24 @@
+task: B7882
+deviations:
+  - what: Failed GET responses report the byte count when their body or a header value is not UTF-8, while retaining the provider status.
+    why: Lossy text decoding would hide invalid bytes. The adapter follows the shared video transport's diagnostic behavior instead of substituting replacement characters.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8682-L8708
+  - what: An input_reference given as a path or an open file is uploaded with its basename as the multipart filename.
+    why: The shared payload layer reads a Path and preserves its bytes instead of losing the file; the pinned LiteLLM comparison sends no input_reference part for a Path. Open binary files are sent by both implementations, with betterlite using the basename and LiteLLM using the full image.name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L574-L586
+  - what: video_content and video_status raise the mapped provider exception when the provider answers with an error status.
+    why: LiteLLM's GET helper never calls raise_for_status, so a 404 video_content returns the error body's bytes and a 401 video_status cannot reach exception_type; betterlite maps the status to NotFoundError or AuthenticationError instead of losing the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1435-L1456
+  - what: The precedence among generation, remix and list options is resolved in the native Rust call, not in the Python entry points.
+    why: The ten Python functions only collect their arguments into the call payload and the request builder in Rust owns the merge of extra_headers and extra_body over provider defaults, so the winning value is decided once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L219-L228
+  - what: No oracle helper cases cover the five video calls.
+    why: The native session reaches provider HTTP endpoints and the oracle compares LiteLLM against the betterlite wheel, so the reference-call test file runs both implementations against one local HTTP server instead.
+    link: ""
+  - what: The sync entry points block on the same async native handler the async ones await.
+    why: The session exposes one Rust handler per operation and the sync call blocks on it, where LiteLLM's sync path builds a separate blocking HTTP client; the request and the mapped errors on the wire are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7386-L7415
+kept_bugs:
+  - what: avideo_list resolves the provider before the mock short circuit, so an async mock list still needs the provider inputs a real call needs.
+    why: LiteLLM calls get_llm_provider at the top of avideo_list, before the sync function that checks mock_response, and a working setup passes custom_llm_provider, so betterlite keeps the same order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L688-L696
