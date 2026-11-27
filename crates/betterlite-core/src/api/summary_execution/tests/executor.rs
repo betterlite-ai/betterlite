@@ -296,7 +296,8 @@ async fn hold_open(listener: TcpListener) {
     let mut chunk = [0_u8; 4096];
     let read = stream.read(&mut chunk).await.expect("the request bytes");
     assert_ne!(read, 0, "the client sends its request before the deadline");
-    sleep(Duration::from_secs(30)).await;
+    // outlast the 60-second summary deadline, so its timer fires before the socket closes
+    sleep(Duration::from_secs(120)).await;
 }
 
 #[tokio::test(start_paused = true)]

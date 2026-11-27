@@ -56,7 +56,7 @@ fn assert_error(result: &PolyfillResult, code: &str) {
 }
 
 fn assert_untouched_tail(result: &PolyfillResult) {
-    assert_eq!(encoded(&result.messages), TAIL);
+    assert_eq!(result.messages, list(TAIL));
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(result.compaction_block.is_none());
     assert!(result.iterations_usage.is_none());
@@ -151,7 +151,7 @@ async fn missing_summary_model_slices_without_counting() {
         .await
         .expect("the editor runs");
     assert_error(&result, "summary_model_not_configured");
-    assert_eq!(encoded(&result.messages), TAIL);
+    assert_eq!(result.messages, list(TAIL));
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(fixture.counter.calls().is_empty());
     assert_eq!(fixture.summary_calls(), 0);
@@ -161,7 +161,7 @@ async fn missing_summary_model_slices_without_counting() {
         .await
         .expect("the editor runs");
     assert_error(&configured_result, "summary_model_not_configured");
-    assert_eq!(encoded(&configured_result.messages), TAIL);
+    assert_eq!(configured_result.messages, list(TAIL));
 }
 
 #[tokio::test]
@@ -177,7 +177,7 @@ async fn slice_only_falls_back_to_the_last_question_only_when_empty() {
         .expect("the editor runs");
     assert_error(&result, "summary_model_not_configured");
     let expected = format!(r#"[{{"role":"user","content":"{CONTINUE_PROMPT}"}}]"#);
-    assert_eq!(encoded(&result.messages), expected);
+    assert_eq!(result.messages, list(&expected));
     assert_eq!(
         result.system,
         Some(DecisionJson::Text(
@@ -205,7 +205,7 @@ async fn count_at_the_threshold_stops_before_the_summary() {
             .is_none()
     );
     assert_eq!(fixture.summary_calls(), 0);
-    assert_eq!(encoded(&result.messages), TAIL);
+    assert_eq!(result.messages, list(TAIL));
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(logs.contains("DEBUG compact_20260112: current_tokens=150000 trigger=150000"));
 }
@@ -246,7 +246,16 @@ async fn count_reads_the_stripped_history_and_the_augmented_system() {
         panic!("expected a conversation count");
     };
     assert_eq!(model.as_str(), MODEL);
-    assert_eq!(encoded(messages), TAIL);
+    assert_eq!(messages.len(), 2);
+    let first = messages[0].as_object().expect("the assistant turn");
+    assert_eq!(first.get("role").and_then(Json::as_str), Some("assistant"));
+    assert_eq!(first.get("content").and_then(Json::as_str), Some("ack"));
+    let second = messages[1].as_object().expect("the user turn");
+    assert_eq!(second.get("role").and_then(Json::as_str), Some("user"));
+    assert_eq!(
+        second.get("content").and_then(Json::as_str),
+        Some("recent question")
+    );
     assert!(tools.is_none());
     assert_eq!(fixture.counter.texts(), [augmented("S")]);
     assert!(result.compaction_block.is_some());
@@ -431,16 +440,15 @@ fn assert_summary_messages(messages: &[Json]) {
         first.get("content").and_then(Json::as_str),
         Some(augmented("S").as_str())
     );
+    let second = messages[1].as_object().expect("the assistant turn");
+    assert_eq!(second.get("role").and_then(Json::as_str), Some("assistant"));
+    assert_eq!(second.get("content").and_then(Json::as_str), Some("ack"));
+    let expected = format!("recent question\n\n{COMPACT_DEFAULT_INSTRUCTIONS}");
+    let third = messages[2].as_object().expect("the question turn");
+    assert_eq!(third.get("role").and_then(Json::as_str), Some("user"));
     assert_eq!(
-        serde_json::to_string(&messages[1]).expect("the turn encodes"),
-        r#"{"role":"assistant","content":"ack"}"#
-    );
-    let expected = format!(
-        r#"{{"role":"user","content":"recent question\n\n{COMPACT_DEFAULT_INSTRUCTIONS}"}}"#
-    );
-    assert_eq!(
-        serde_json::to_string(&messages[2]).expect("the question encodes"),
-        expected
+        third.get("content").and_then(Json::as_str),
+        Some(expected.as_str())
     );
     assert!(
         !serde_json::to_string(messages)
@@ -583,8 +591,8 @@ async fn summary_success_replaces_the_old_prefix() {
     );
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("NEW"))));
     assert_eq!(
-        serde_json::to_string(&result.messages).expect("the result encodes"),
-        r#"[{"role":"user","content":"recent question"}]"#
+        result.messages,
+        list(r#"[{"role":"user","content":"recent question"}]"#)
     );
     assert_summary_result(&result);
     let edit = result.applied_edits.first().expect("one applied edit");
@@ -624,10 +632,7 @@ async fn the_summary_keeps_only_the_last_real_user_question() {
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
-    assert_eq!(
-        serde_json::to_string(&result.messages).expect("the result encodes"),
-        r#"[{"role":"user","content":"q1"}]"#
-    );
+    assert_eq!(result.messages, list(r#"[{"role":"user","content":"q1"}]"#));
 }
 
 #[tokio::test]
@@ -639,10 +644,7 @@ async fn without_an_eligible_question_the_continuation_prompt_is_kept() {
         .await
         .expect("the editor runs");
     let expected = format!(r#"[{{"role":"user","content":"{CONTINUE_PROMPT}"}}]"#);
-    assert_eq!(
-        serde_json::to_string(&result.messages).expect("the result encodes"),
-        expected
-    );
+    assert_eq!(result.messages, list(&expected));
 }
 
 #[tokio::test]
