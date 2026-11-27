@@ -170,13 +170,11 @@ REPLACE = cast("Callable[[object | None, str], object | None]", endpoints._repla
 
 def error_view(raised: HTTPException) -> JsonValue:
     detail = TypeAdapter(str | dict[str, str]).validate_python(raised.detail)
-    text = ""
     match detail:
         case str():
-            text = detail
+            return JSON.validate_python({"status": raised.status_code, "detail": detail})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
         case dict():
-            text = detail["error"]
-    return JSON.validate_python({"status": raised.status_code, "detail": text})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
+            return JSON.validate_python({"status": raised.status_code, "detail": detail["error"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L434-L452
 
 
 def request_for(script: RequestScript | None) -> Request:
