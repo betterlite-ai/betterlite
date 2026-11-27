@@ -49,7 +49,7 @@ description: >-
   server.rs's run as Arc::new(ChatStreamAssembler) (B252, the value main's server.rs passes today; B9840 later swaps in its
   LoggedStreamAssembler on this one line) and handed to both B10185's start_logging and application(). This is
   the swap: B012's chat and embeddings logging, B8931's pass-through runtime (RuntimeInputs, which B8640 fills from
-  this Arc) and B10185's success handler, which LoggingWiring builds over the assembler start_logging is given, all take this one Arc, so none of them
+  this Arc) and B10185's success handler (LoggingWiring builds it over the assembler start_logging is given) all take this one Arc, so none of them
   builds an assembler of its own.
   `success: Arc<OwnedSuccessHandler>` (B10185, betterlite-logging logging_success::owned): `Arc::clone(&logging.success)` from the
   LoggingWiring run starts, handed to application() with the assembler. B8631's pass-through hop and every later route that logs a

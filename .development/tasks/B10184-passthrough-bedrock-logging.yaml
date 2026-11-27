@@ -1,0 +1,117 @@
+id: B10184
+title: The SDK pass-through call logs Bedrock and Bedrock Mantle replies and streams through B658's ports
+description: >-
+  After B10177 the SDK pass-through call logs a Bedrock or Bedrock Mantle reply as an unrecognized result and a Bedrock stream not at all, since its logged.rs answers None for both AWS tags. B658's plan has the hooks LiteLLM runs (crates/betterlite-bedrock/src/passthrough.rs L167-L197, bedrock/passthrough/transformation.py L234-L282), but its three ports have no production implementation: `ChatConfigSelection` (crates/betterlite-streaming/src/stream_base_assembly/provider_metadata.rs L46-L52), `NativeReplyTransform` (passthrough/reply.rs L31-L33) and `StreamLogAssembler` (passthrough/collector.rs L21-L27) are implemented only in tests (passthrough/tests.rs L84-L170, crates/betterlite-provider/src/bedrock_interactive_dispatch/tests/passthrough_support.rs L53-L125), and B10166's AwsPassthrough port carries no logging method. This task builds the three in betterlite-bedrock, where B658's plan and its types live, and reaches them from the call through the AWS port.
+
+
+  Sync against async. LiteLLM's hooks are sync: logging_non_streaming_response calls transform_response directly, and the collector's build_logged_response calls stream_chunk_builder without awaiting (transformation.py L85-L92, L123-L124). B3572's contract and B658's ports match it, so neither changes. Two Rust pieces are async only for their token counter: `decode_invoke_reply` (crates/betterlite-bedrock/src/invoke_response.rs L56-L68) awaits the Pegasus branch's TokenCounter (L78-L81, pegasus/counter.rs L7-L11), and stream_chunk_builder awaits UsageTokenCounter. The adapters use B10186's `CollectedCounter` from betterlite-streaming collected_assembly, whose futures are ready at once, and finish with `FutureExt::now_or_never` from futures-util (already a betterlite-bedrock dependency); a future that does not finish in one poll is an error, never a block.
+
+
+  The selector. A new file passthrough/chat_config.rs, declared with `pub mod chat_config;` in passthrough.rs, holds `pub struct PassthroughChatConfig;` with ChatConfigSelection. The model always arrives as `invoke/<model>` or `converse/<model>` (reply.rs L39-L44). For ProviderId::Bedrock it answers `ChatConfigTag::Bedrock(select_bedrock_chat_config(route, invoke_provider, base_model))` (crates/betterlite-context/src/bedrock_config_selection/chat.rs L92-L135), the function select_chat_config's Bedrock row calls (chat_config_selection/selection.rs L105-L108), with the route from `ModelRouteSelector::route(model, None)` (model_routes.rs L133-L141) over an empty price map and converse list, since the prefix answers from its route table before either is read, the invoke provider from aws_endpoints/provider.rs L88 and the base model from betterlite-context's get_bedrock_base_model (bedrock_model.rs L75). This is LiteLLM's get_bedrock_chat_config (bedrock/common_utils.py L1563-L1637). For ProviderId::BedrockMantle it answers `ChatConfigTag::BedrockMantleChat` (chat_config_selection/table.rs L139; utils.py L8489-L8492). Every other provider answers Ok(None), so logged_reply reports NoProviderConfig as LiteLLM raises "No provider config found" (transformation.py L259-L260).
+
+
+  The reply transform. A new file passthrough/native_reply.rs holds `pub struct PassthroughReplyTransform { pub redactor: Redactor, pub counter: CollectedCounter }`. LiteLLM's transform_response writes its post_call record on the pass-through logging object (transformation.py L262-L275), so B658's port gets that object: `NativeReplyTransform::transform(&self, request: &NativeReplyRequest<'_>, logging_obj: &mut dyn PassthroughLogging)`, and betterlite-openai's PassthroughLogging (passthrough/transformation/types.rs L69-L71) gains a provided `fn logging_state(&mut self) -> Option<&mut LoggingState>` answering None; B10177's adapter over `&mut LoggingState` (core passthrough_call/success.rs) overrides it with Some. The transform builds a LogContext from that state and a PrePostEnv over its redactor and TracingSink, and without a state answers a ProviderError that logged_reply already warns about. It matches the tag. `Bedrock(Converse)` runs converse_response's `transform_response` (transform.rs L79-L88) with the request's messages, data and empty optional params. The invoke tags (Titan, Anthropic, AnthropicClaude, Llama, Ai21, Cohere, Mistral, TwelveLabs, Moonshot, DeepSeekR1, Qwen3, Qwen2, Nova, Invoke) run decode_invoke_reply and convert its InvokeReply. `BedrockMantleChat` runs betterlite-openai's OpenAI-compatible `compatible_wire::transform_response` (compatible_wire.rs L131-L137), LiteLLM's OpenAILikeChatConfig (bedrock_mantle/chat/transformation.py L36). The other Bedrock tags cannot come from an invoke/ or converse/ model and answer a ProviderError naming the class (chat.rs L61-L85). Each answer is serialized with serde_json::to_value. A new file passthrough/counters.rs implements betterlite-bedrock's own counter traits for CollectedCounter: pegasus's TokenCounter, converse_usage's ReasoningTokenCounter (transform.rs L13) and betterlite-anthropic's through B10186's impl. decode_invoke_reply and its delegates ask for reasoning counters with `Failure = Infallible` (invoke_response.rs L64-L67, invoke_response/delegate.rs L33 and L79, qwen_deepseek.rs L171-L172), while the bundled engine can fail; widen those bounds to `Failure: fmt::Display`, since processing_error takes `&dyn fmt::Display` (invoke_response/error.rs L72-L75) and the inner transforms are already generic (claude_invoke/response.rs L9-L17, nova_chat/invoke.rs L263-L271). The Infallible callers keep compiling.
+
+
+  The stream assembler. A new file passthrough/stream_log.rs holds `pub struct PassthroughStreamAssembler { pub counter: CollectedCounter }` with StreamLogAssembler: it converts each StreamChunk to the builder's Chunk with serde_json::to_value and serde_json::from_value, runs B10186's assemble_collected, and returns a Chat response as Json; an error or a Text response logs a warning and answers None, as LiteLLM's builder logs and returns None.
+
+
+  One collector and one reply path. The plan's create_stream_collector body (passthrough.rs L189-L195) moves to `pub fn event_stream_collector<'plan>(target: &PassthroughTarget<'_>, assembler: &'plan dyn StreamLogAssembler, clock: CollectorClock) -> BedrockEventStreamCollector<'plan>` in collector.rs, and the plan calls it. `reply::logged_reply` takes `ReplyPorts { selector, transform }`, a new struct in reply.rs, and the logging object in place of the plan, and the plan's logging_non_streaming_response passes its two fields and its logging_obj (L167-L181). The port calls both without building a plan.
+
+
+  The port. B10166's `AwsPassthrough` (crates/betterlite-core/src/api/passthrough_call/aws.rs) gains `fn logged_reply(&self, flavor: AwsFlavor, target: &PassthroughTarget<'_>, response: &RelayedResponse<'_>, request_data: &Object, logging_obj: &mut dyn PassthroughLogging) -> Option<Json>` and `fn stream_collector<'port>(&'port self, flavor: AwsFlavor, target: &PassthroughTarget<'_>) -> Box<dyn PassthroughStreamCollector<Logged = Json> + Send + 'port>`. B10166's BedrockSdkCall holds a PassthroughChatConfig, a PassthroughReplyTransform and a PassthroughStreamAssembler, built in from_environment (a missing bundled vocabulary or a Redactor failure is a ConfigError::ValueError), and its impl calls logged_reply and event_stream_collector with them and B658's CollectorClock over its `now`. For Mantle, logged_reply goes through B625's `logging_non_streaming_response` (mantle_settings/passthrough.rs L70-L100) with logged_reply as its forward, as BedrockMantlePassthroughConfig does (bedrock_mantle/passthrough/transformation.py L53-L71), and the stream uses the same collector, since that config inherits Bedrock's. In core, logged.rs's Bedrock and BedrockMantle arms ask `logged_reply` and map the Json to SuccessResult::Chat. PassthroughCallConfig's create_stream_collector answers the port's collector behind an adapter that maps its Json the same way for the two AWS tags; for every other tag it calls `raw_bytes_collector(config, target)`, a new pub function in betterlite-openai passthrough/transformation.rs holding the trait default's body (L268-L276), and the default calls it too. Delete the rest of B10177's "no provider-built logged response" row in docs/deviations/B10177.yaml.
+
+
+  Tests. In passthrough/tests: `chat_config_selects_converse_for_a_converse_model`, `chat_config_selects_the_invoke_provider_config` (an `invoke/anthropic.claude-3-5-sonnet` model gives AnthropicClaude, an `invoke/meta.llama3` one Llama), `chat_config_answers_mantle_chat_for_bedrock_mantle`, `reply_transform_logs_a_converse_reply` (the usage reaches the response and the post_call record lands on the state), `reply_transform_logs_an_invoke_anthropic_reply`, `reply_transform_without_a_logging_state_logs_nothing`, `stream_assembler_builds_one_response_from_converse_chunks`. In passthrough/sdk_call tests: `sdk_call_logs_a_converse_reply` and `sdk_call_collects_a_converse_stream` (event-stream frames in, one ModelResponse out). In core's passthrough_call/tests/success.rs, with a fake AwsPassthrough: `a_bedrock_reply_logs_the_port_answer_as_chat` and `a_bedrock_stream_flushes_the_port_collector_answer`.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/passthrough.rs
+    - crates/betterlite-bedrock/src/passthrough/chat_config.rs
+    - crates/betterlite-bedrock/src/passthrough/native_reply.rs
+    - crates/betterlite-bedrock/src/passthrough/stream_log.rs
+    - crates/betterlite-bedrock/src/passthrough/counters.rs
+    - crates/betterlite-bedrock/src/passthrough/reply.rs
+    - crates/betterlite-bedrock/src/passthrough/collector.rs
+    - crates/betterlite-bedrock/src/passthrough/sdk_call.rs
+    - crates/betterlite-bedrock/src/passthrough/sdk_call/**
+    - crates/betterlite-bedrock/src/passthrough/tests.rs
+    - crates/betterlite-bedrock/src/passthrough/tests/**
+    - crates/betterlite-bedrock/src/invoke_response.rs
+    - crates/betterlite-bedrock/src/invoke_response/delegate.rs
+    - crates/betterlite-bedrock/src/qwen_deepseek.rs
+    - crates/betterlite-openai/src/passthrough/transformation.rs
+    - crates/betterlite-openai/src/passthrough/transformation/types.rs
+    - crates/betterlite-openai/src/passthrough/transformation/tests.rs
+    - crates/betterlite-provider/src/bedrock_interactive_dispatch/passthrough.rs
+    - crates/betterlite-provider/src/bedrock_interactive_dispatch/tests/passthrough_support.rs
+    - crates/betterlite-core/src/api/passthrough_call/aws.rs
+    - crates/betterlite-core/src/api/passthrough_call/config.rs
+    - crates/betterlite-core/src/api/passthrough_call/logged.rs
+    - crates/betterlite-core/src/api/passthrough_call/success.rs
+    - crates/betterlite-core/src/api/passthrough_call/tests/**
+    - crates/betterlite-python/src/passthrough_calls/session/tests.rs
+    - docs/deviations/B10177.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L85-L131
+    why: the event stream collector builds its logged response with a sync stream_chunk_builder call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L305
+    why: the logged reply picks the chat config from the invoke/ or converse/ model and runs its transform_response with the logging object; the collector picks its decoder from the endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1563-L1637
+    why: get_bedrock_chat_config maps the route, invoke provider and base model to a config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8473-L8492
+    why: the provider config map sends bedrock to get_bedrock_chat_config and bedrock_mantle to BedrockMantleChatConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/passthrough/transformation.py#L53-L71
+    why: Mantle logs a converse reply with the Bedrock shape and inherits the rest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L36-L40
+    why: BedrockMantleChatConfig is an OpenAILikeChatConfig.
+dod:
+  - text: PassthroughChatConfig picks LiteLLM's Bedrock config for an invoke/ or converse/ model and Mantle chat for bedrock_mantle.
+    proof: [bedrock-tests]
+  - text: A Bedrock or Bedrock Mantle full reply under 400 reaches dispatch_success_handlers as Chat with the transformed ModelResponse, and the transform's post_call record lands on the call's state.
+    proof: [bedrock-tests, core-tests]
+  - text: A Bedrock or Mantle stream flushes one assembled ModelResponse through the port's collector.
+    proof: [bedrock-tests, core-tests]
+  - text: The plan and the port share one collector builder and one reply path, the raw-bytes collector has one body, and B10177's row about missing provider responses is gone.
+    proof: [no-copies, openai-tests, provider-tests, deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: bedrock-tests
+      why: a port picks the wrong config, loses the usage, blocks on its counter or the SDK call stops logging through it
+      run: grep -rq 'fn reply_transform_logs_a_converse_reply' crates/betterlite-bedrock/src/passthrough && grep -rq 'fn sdk_call_collects_a_converse_stream' crates/betterlite-bedrock/src/passthrough && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^passthrough::/) | test(/^invoke_response::/) | test(/^qwen_deepseek::/)'
+    - id: core-tests
+      why: the call no longer logs the port's reply or stream, or a non-AWS stream lost its raw-bytes collector
+      run: grep -q 'fn a_bedrock_stream_flushes_the_port_collector_answer' crates/betterlite-core/src/api/passthrough_call/tests/success.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::/)'
+    - id: openai-tests
+      why: the raw-bytes collector or the logging trait changed for the other providers
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^passthrough::/) | test(/^gigachat_passthrough::/)'
+    - id: provider-tests
+      why: B681's dispatch no longer builds or calls the plan with the widened ports
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^bedrock_interactive_dispatch::/)'
+    - id: python-session-tests
+      why: the Python session's port lost its new logging methods
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^passthrough_calls::/)'
+    - id: no-copies
+      why: the plan and the port each build the collector, or the trait default keeps its own raw-bytes literal
+      run: test "$(grep -c 'decoder_selection(' crates/betterlite-bedrock/src/passthrough.rs)" -eq 0 && test "$(grep -c 'RawBytesStreamCollector {' crates/betterlite-openai/src/passthrough/transformation.rs)" -eq 1
+    - id: deviation-rows
+      why: B10177 still says a Bedrock reply has no provider-built logged response
+      run: test -z "$(grep -n 'no provider-built logged response' docs/deviations/B10177.yaml)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Azure, Azure AI and GigaChat assembly, the bundled counter and assemble_collected: B10186."
+  - "The Bedrock tags no invoke/ or converse/ model reaches (ClaudePlatform, OpenAi, RuntimeChatCompletions, InvokeAgent, AgentCore, Mantle): LiteLLM's pass-through never builds their configs either."
+  - "A production AWS credential chain: B10166 passes NoCredentialChain."
+pitfalls:
+  - "passthrough.rs has 197 lines and B10166 adds sdk_call; the ports go in their own files and passthrough.rs only declares them."
+  - "The route selector's empty catalog is safe only because the model starts with invoke/ or converse/; never call PassthroughChatConfig with a bare model."
+  - "Convert serde values with serde_json::to_value and from_value, never through from_str: arbitrary_precision is on in these crates."
+  - "now_or_never answers Pending as an error; no block_on, block_in_place or new runtime."
+  - "Widening the reasoning bounds keeps the fuzz target (crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_response.rs L153) compiling, since Infallible implements Display."
+  - "The logging state the transform borrows comes from the PassthroughLog guard logged.rs already holds; do not lock the log a second time."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
