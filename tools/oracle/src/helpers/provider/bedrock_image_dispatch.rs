@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::image_call::plan::LogContext;
@@ -37,12 +37,6 @@ pub(super) enum Case {
     CanvasImage,
     CanvasEdit,
     StabilityEdit,
-}
-
-impl Case {
-    pub(super) const fn is_edit(self) -> bool {
-        matches!(self, Self::CanvasEdit | Self::StabilityEdit)
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,7 +126,11 @@ pub(super) async fn exchange(
     };
     Ok(Outcome {
         result: outcome(dispatched)?,
-        requests: factory.seen_requests(),
+        requests: factory
+            .seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone(),
         state,
     })
 }

@@ -2,27 +2,26 @@ use std::collections::BTreeMap;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::canvas_results::COST_HEADER;
-use betterlite_bedrock::image_call::plan::ImageEnvironment;
 use betterlite_bedrock::image_call::transport::ImageRequest;
-use betterlite_bedrock::image_edits::plan::{EditEnvironment, EditImage, EditPlan};
 use betterlite_bedrock::image_edits::response::EditReply;
-use betterlite_bedrock::image_models::params::Params;
 use betterlite_bedrock::image_models::response::ModelResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::bedrock_image_dispatch::BedrockImageResult;
-use betterlite_provider::bedrock_image_dispatch::call::{
-    BedrockImageOperation, EditOperation, GenerateOperation,
-};
-use betterlite_provider::bedrock_image_dispatch::error::BedrockImageError;
-use betterlite_provider::bedrock_image_dispatch::test_support::{Catalog, NOW_SECONDS, instant};
+use betterlite_provider::bedrock_image_dispatch::call::BedrockImageOperation;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::{Case, Input, Outcome, Probe, exchange};
-use crate::openai_media_dispatch::{OTHER_OUTCOME, failure};
+use crate::openai_media_dispatch::failure;
+
+mod edit;
+mod generation;
+
+use self::edit::edit_row;
+use self::generation::generation_row;
 
 // Every probe runs the same production dispatch entry with its own fake transport
 pub(super) async fn case_rows(input: &Input) -> HelperResult {
@@ -34,77 +33,21 @@ pub(super) async fn case_rows(input: &Input) -> HelperResult {
 }
 
 async fn probe_row(input: &Input, probe: &Probe) -> Result<Value, Box<HelperError>> {
-    if input.case.is_edit() {
+    if matches!(input.case, Case::CanvasEdit | Case::StabilityEdit) {
         edit_row(input, probe).await
     } else {
         generation_row(probe).await
     }
 }
 
-async fn generation_row(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let prompt = probe
-        .prompt
-        .as_deref()
-        .ok_or_else(|| failure("Prompt", "a generation probe carries a prompt"))?;
-    let extra = header_pairs(probe.extra_headers.as_ref());
-    let operation = GenerateOperation {
-        model: Some(probe.model.as_str()),
-        prompt,
-        optional_params: generation_params(probe)?,
-        extra_headers: extra.as_deref(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        aimg_generation: false,
-        environment: ImageEnvironment::default(),
-        now: instant(NOW_SECONDS).map_err(|error| failure("Clock", error))?,
-        created: NOW_SECONDS,
-    };
-    let outcome = exchange(
-        BedrockImageOperation::Generate(operation),
-        probe.reply.answer(),
-        credentials(probe)?,
-    )
-    .await?;
-    generation_value(&outcome, probe)
-}
-
-async fn edit_row(input: &Input, probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let images: Vec<EditImage> = probe.images.iter().cloned().map(EditImage::Text).collect();
-    let catalog = Catalog::empty().map_err(|error| failure("Catalog", error))?;
-    let context = catalog.context();
-    let extra = header_pairs(probe.extra_headers.as_ref());
-    let operation = EditOperation {
-        model: Some(probe.model.as_str()),
-        prompt: probe.prompt.as_deref(),
-        images: &images,
-        optional_params: probe.optional_params.clone(),
-        extra_headers: extra.as_deref(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        aimage_edit: false,
-        environment: EditEnvironment::default(),
-        now: instant(NOW_SECONDS).map_err(|error| failure("Clock", error))?,
-        plan: EditPlan {
-            model_cost: &input.model_cost,
-            resolution: &context,
-        },
-    };
-    let outcome = exchange(
-        BedrockImageOperation::Edit(operation),
-        probe.reply.answer(),
-        credentials(probe)?,
-    )
-    .await?;
-    edit_value(&outcome, probe)
-}
-
-// The generation leaf reads the typed parameter record the arm already normalised
-fn generation_params(probe: &Probe) -> Result<Params, Box<HelperError>> {
-    let value = serde_json::to_value(Json::Object(probe.optional_params.clone()))
-        .map_err(|error| failure("Params", error))?;
-    serde_json::from_value(value).map_err(|error| failure("Params", error))
+// The family modules build the call; this hands it to the one dispatcher with the probe's identity
+pub(super) async fn exchange_row(
+    operation: BedrockImageOperation<'_, '_, '_>,
+    probe: &Probe,
+) -> Result<Value, Box<HelperError>> {
+    let outcome = exchange(operation, probe.reply.answer(), credentials(probe)?).await?;
+    let request = request_value(&outcome, probe)?;
+    Ok(result_row(&outcome, request))
 }
 
 // The probe's own aws keys are the identity the credential source hands over; the leaf pops the same keys
@@ -127,7 +70,9 @@ fn text_param(params: &ImageParams, name: &'static str) -> Result<String, Box<He
     }
 }
 
-fn header_pairs(headers: Option<&BTreeMap<String, String>>) -> Option<Vec<(String, String)>> {
+pub(super) fn header_pairs(
+    headers: Option<&BTreeMap<String, String>>,
+) -> Option<Vec<(String, String)>> {
     headers.map(|pairs| {
         pairs
             .iter()
@@ -136,51 +81,34 @@ fn header_pairs(headers: Option<&BTreeMap<String, String>>) -> Option<Vec<(Strin
     })
 }
 
-fn generation_value(outcome: &Outcome, probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let request = request_value(outcome, probe)?;
+// One row per probe: the posted request, whether the dispatch succeeded, and what it returned or reported
+fn result_row(outcome: &Outcome, request: Value) -> Value {
     match &outcome.result {
-        Ok(BedrockImageResult::Generate(response)) => Ok(json!({
+        Ok(BedrockImageResult::Generate(response)) => json!({
             "request": request,
             "ok": true,
             "status": Value::Null,
             "images": generation_images(response),
             "cost": Value::Null,
             "post_call": post_call(outcome),
-        })),
-        Ok(BedrockImageResult::Edit(_)) => Err(failure("Variant", OTHER_OUTCOME)),
-        Err(error) => failure_value(outcome, probe, error),
-    }
-}
-
-fn edit_value(outcome: &Outcome, probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let request = request_value(outcome, probe)?;
-    match &outcome.result {
-        Ok(BedrockImageResult::Edit(reply)) => Ok(json!({
+        }),
+        Ok(BedrockImageResult::Edit(reply)) => json!({
             "request": request,
             "ok": true,
             "status": Value::Null,
             "images": edit_images(reply),
             "cost": reply.additional_headers.get(COST_HEADER),
             "post_call": post_call(outcome),
-        })),
-        Ok(BedrockImageResult::Generate(_)) => Err(failure("Variant", OTHER_OUTCOME)),
-        Err(error) => failure_value(outcome, probe, error),
+        }),
+        Err(error) => json!({
+            "request": request,
+            "ok": false,
+            "status": error.status(),
+            "images": Value::Array(Vec::new()),
+            "cost": Value::Null,
+            "post_call": post_call(outcome),
+        }),
     }
-}
-
-fn failure_value(
-    outcome: &Outcome,
-    probe: &Probe,
-    error: &BedrockImageError,
-) -> Result<Value, Box<HelperError>> {
-    Ok(json!({
-        "request": request_value(outcome, probe)?,
-        "ok": false,
-        "status": error.status(),
-        "images": Value::Array(Vec::new()),
-        "cost": Value::Null,
-        "post_call": post_call(outcome),
-    }))
 }
 
 // The posted request both families compare: where it went, what it carried, and how it was signed
