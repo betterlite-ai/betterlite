@@ -4,10 +4,10 @@ description: >-
   Two Python sessions still answer every AWS credential request with a stub. The Google GenAI session's Vertex auth passes `UnavailableAws` (crates/betterlite-python/src/genai/provider.rs L49-L58, used in `lookup` at L198), so a Vertex AWS workload identity pool credential fails with "AWS credential provider is unavailable" where LiteLLM's VertexAIAwsWifAuth calls BaseAWSLLM.get_credentials (vertex_ai_aws_wif.py L53-L120). B10166's pass-through session builds `BedrockSdkCall::from_environment(&environment, NoCredentialChain, SystemTime::now)` (crates/betterlite-python/src/passthrough_calls/session.rs, `SessionCore::build`), so a plain Bedrock or Mantle pass-through without a Bearer token fails even with aws_access_key_id and aws_secret_access_key in litellm_params; B10166 lists that as its deviation. B10175 builds the production chain, `betterlite_bedrock::credentials::chain::AwsCredentialChain`. Each session builds one from its own environment and passes it, the way the server builds one in `application()`.
 
 
-  One secret lookup for Python sessions. The chain needs a SecretLookup. betterlite-python has one environment-only lookup with its three stub ports, `secret_lookup`, `NoOidcHttp`, `NoAzureTokens` and `FixedClock` in decision_calls/core.rs L183-L230, used by decision_calls/core/sandbox.rs L21. They move to a new module crates/betterlite-python/src/secret_ports.rs, declared with `mod secret_ports;` in lib.rs, with `secret_lookup` as `pub(crate)` and its comment saying that a Python session has no secret manager, OIDC provider or Azure token source, so an `os.environ/` name reads the session environment and an `oidc/` name fails. decision_calls and both sessions call it; no session writes its own SecretLookup.
+  One secret lookup for Python sessions. The chain needs a SecretLookup. Both sessions pass `SecretLookup::environment_only()`, which B10193 adds to betterlite-secret-managers and gives decision_calls in place of its own copy: a Python session has no secret manager, OIDC provider or Azure token source, so an `os.environ/` name reads the session environment and an `oidc/` name fails. No session writes its own SecretLookup.
 
 
-  Google GenAI. B10183 moves the provider config and the session core to betterlite-vertex's `betterlite_vertex::genai::session` (crates/betterlite-vertex/src/genai/session.rs and session/provider.rs): `NativeContentConfig` there already holds `aws: Arc<dyn AwsCredentialsSource>`, `lookup` puts it into `LoadDeps.aws`, and `GenaiSession::new` takes it in `SessionParts`. The Python `GenaiCore::build` (crates/betterlite-python/src/genai/session.rs) passes `Arc::new(UnavailableAws)` there. Read both files on main when this task starts. Here build makes `AwsCredentialChain::from_environment(environment.clone(), &clients.default, Arc::new(secret_lookup()))` once, after the client steps, and passes `Arc::new(chain)` in its place, so every call of the session shares the one cache; a failure is a new `SessionError::AwsCredentials` variant (genai/error.rs) with the source. `UnavailableAws` and its comment go from crates/betterlite-python/src/genai/provider.rs; when nothing else is left in that file, the file goes with its `mod provider;` line in genai.rs. The vertex session needs no change.
+  Google GenAI. B10183 moves the provider config and the session core to betterlite-vertex's `betterlite_vertex::genai::session` (crates/betterlite-vertex/src/genai/session.rs and session/provider.rs): `NativeContentConfig` there already holds `aws: Arc<dyn AwsCredentialsSource>`, `lookup` puts it into `LoadDeps.aws`, and `GenaiSession::new` takes it in `SessionParts`. The Python `GenaiCore::build` (crates/betterlite-python/src/genai/session.rs) passes `Arc::new(UnavailableAws)` there. Read both files on main when this task starts. Here build makes `AwsCredentialChain::from_environment(environment.clone(), &clients.default, Arc::new(SecretLookup::environment_only()))` once, after the client steps, and passes `Arc::new(chain)` in its place, so every call of the session shares the one cache; a failure is a new `SessionError::AwsCredentials` variant (genai/error.rs) with the source. `UnavailableAws` and its comment go from crates/betterlite-python/src/genai/provider.rs; when nothing else is left in that file, the file goes with its `mod provider;` line in genai.rs. The vertex session needs no change.
 
 
   Bedrock pass-through. `SessionCore::build` builds the chain the same way from the map B10164 keeps, with the session's `client`, and passes it to `BedrockSdkCall::from_environment` in place of `NoCredentialChain`. `NoCredentialChain` goes from crates/betterlite-bedrock/src/passthrough/sdk_call.rs, and so does its test in sdk_call's tests; a fake source that fails takes over that test's check that a credential failure is the synthesized 500. The B8631 and B8694 tasks pass the server's `Shared.aws_credentials` instead. docs/deviations/B10166.yaml loses its credential chain row (`deviations: []` if it was the only one).
@@ -19,9 +19,6 @@ description: >-
   What users see. In the Python package, a Bedrock or Bedrock Mantle pass-through without a Bearer token signs with SigV4 from litellm_params keys, the AWS SDK environment keys, a profile, a role or web identity, as LiteLLM does, instead of failing with a synthesized 500 "AWS credential provider is unavailable". Vertex calls with an AWS workload identity pool credential get their AWS identity the same way.
 scope:
   paths:
-    - crates/betterlite-python/src/secret_ports.rs
-    - crates/betterlite-python/src/decision_calls/core.rs
-    - crates/betterlite-python/src/decision_calls/core/sandbox.rs
     - crates/betterlite-python/src/genai/session.rs
     - crates/betterlite-python/src/genai/session/**
     - crates/betterlite-python/src/genai.rs
@@ -47,7 +44,7 @@ dod:
     proof: [python-tests, no-stubs]
   - text: A Python Bedrock pass-through signs SigV4 with the session's environment keys or the litellm_params keys at the call's region.
     proof: [python-tests, sdk-call-tests]
-  - text: betterlite-python has one environment-only SecretLookup builder, and B10166's credential chain row is gone.
+  - text: Both Python sessions build their chain over SecretLookup::environment_only(), and B10166's credential chain row is gone.
     proof: [no-stubs]
 checks:
   optional: []
@@ -60,13 +57,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^passthrough::sdk_call::/)'
     - id: no-stubs
       why: a stub credential source, a second Python SecretLookup literal or B10166's row is still in place
-      run: test -z "$(grep -rnE 'UnavailableAws|NoCredentialChain' crates/betterlite-python/src crates/betterlite-bedrock/src)" && test "$(grep -rn 'SecretLookup {' crates/betterlite-python/src | grep -vc '/tests')" = 1 && test -z "$(grep -n 'credential chain' docs/deviations/B10166.yaml)"
+      run: test -z "$(grep -rnE 'UnavailableAws|NoCredentialChain' crates/betterlite-python/src crates/betterlite-bedrock/src)" && test -z "$(grep -rn 'SecretLookup {' crates/betterlite-python/src | grep -v '/tests')" && test -z "$(grep -n 'credential chain' docs/deviations/B10166.yaml)"
 oracle_cases: []
 deviations: []
 out_of_scope:
   - "The server side, Shared.aws_credentials and its users: B10175, B8631 and B8694."
-  - "LiteLLM's AWS_* fallback names inside get_credentials: B10175's deviation row covers them for every chain."
-  - "Python's MCP SigV4 signer, which builds betterlite-http's own AwsSources and credential cache (crates/betterlite-python/src/mcp/setup.rs L110-L129): it signs MCP requests with betterlite-http's copy of the loader (crates/betterlite-http/src/mcp_sigv4/credentials.rs L16-L28), not this chain."
+  - "LiteLLM's AWS_* fallback names inside get_credentials: B10192 moves them into the resolver for every chain."
+  - "Python's MCP SigV4 signer, which builds betterlite-http's own AwsSources and credential cache (crates/betterlite-python/src/mcp/setup.rs L110-L129): it signs MCP requests with betterlite-http's copy of the loader (crates/betterlite-http/src/mcp_sigv4/credentials.rs L16-L28), not this chain. B10193 replaces that copy with the shared loader in betterlite-http's aws_sources."
   - "Python OCR's UnsignedAws for Textract (crates/betterlite-python/src/search_ocr/ocr_client.rs L77-L90): B092's AwsRequestSigner owns the signed path."
 pitfalls:
   - "B10164 and B10166 change passthrough_calls/session.rs first; read it on main when this task starts and keep their environment map and port."

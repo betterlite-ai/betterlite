@@ -1,3 +1,4 @@
+pub mod collected_assembly;
 pub mod error;
 pub mod passthrough_reconstruction;
 pub mod provider_chunk_decode;

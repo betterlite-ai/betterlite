@@ -1,0 +1,13 @@
+task: B10162
+deviations:
+  - what: >-
+      public_mcp_servers and set_public_mcp_servers are methods of the PublicMcpServers trait implemented for
+      ServerRegistry, not inherent methods on the type, so a caller imports the trait next to the registry.
+    why: >-
+      The ServerRegistry struct and its one inherent impl block live in
+      crates/betterlite-mcp/src/registry/servers.rs, and the workspace denies clippy::multiple_inherent_impl, so a
+      second inherent impl block in registry/public_list.rs does not build. The method names, signatures and
+      behavior stay the ones the task fixes, and B4718, B4720, B4721 and B8627 read and replace the live list
+      through them after importing the trait.
+    link: ""
+kept_bugs: []
