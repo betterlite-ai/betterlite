@@ -12,6 +12,7 @@ use self::StageInput::Authenticated;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
+use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
@@ -39,6 +40,7 @@ pub enum AuthBackend {
     AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
+    AuthModelGrants,
     EntityModelAccess,
     AuthResourceGrants,
     AuthTagBudgets,
@@ -62,6 +64,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
+    AuthBackend::AuthModelGrants,
     AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
@@ -86,6 +89,7 @@ pub enum StageInput {
     AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
+    AuthModelGrants(Box<AgentModelGrantsStageInput>),
     EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
@@ -124,6 +128,7 @@ pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
+    AuthModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
     TrustedNetwork(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
@@ -169,6 +174,7 @@ impl StageInput {
             Self::AuthRequestModels(_) => AuthBackend::AuthRequestModels,
             Self::AuthModelPatterns(_) => AuthBackend::AuthModelPatterns,
             Self::EntityModelAccess(_) => AuthBackend::EntityModelAccess,
+            Self::AuthModelGrants(_) => AuthBackend::AuthModelGrants,
             Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
@@ -212,6 +218,7 @@ pub(crate) fn dispatch(
             run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
         }
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
