@@ -1,0 +1,99 @@
+id: B10127
+title: MCP dashboard session auth contexts
+description: >-
+  A dashboard session token acts for its signed-in user, and every MCP listing or management route that resolves access for it walks a list of auth contexts: one copy of the session per real team behind it, then the user's own admitted identity. LiteLLM builds that list in ui_session_utils.py with build_effective_auth_contexts, admitted_user_context and clone_user_api_key_auth_with_team. B4672's acting_user_auth and can_access_mcp_server, B8645's HumanSources adapter for the agent checks, and the routes in B4720 and B4723 all call these, so they are their own task and B8645 no longer waits for B4672's tool grants. This task builds those three functions and the two small auth copies under them, plus the read view B4672's toolset code uses, and nothing else from that file.
+
+
+  Layout. Module session_auth in betterlite-auth: crates/betterlite-auth/src/session_auth.rs with its tests in session_auth/tests.rs. The file is an empty stub that lib.rs already declares; B4672 used to own it and no longer touches it. The code lives in betterlite-auth because UserAPIKeyAuth keeps team_id, user_id, object_permission, requires_fresh_policy and parent_otel_span pub(crate) there, and UserAPIKeyAuth keeps its one inherent impl in resolved_key, so everything here is a free function. B10070's ui_session_identity (is_ui_session_credential, the UiSessionTeams port and resolve_ui_session_team_ids) and B10126's admitted_user (DelegatedHuman and AdmittedUserError) are in the same crate; no Cargo.toml changes.
+
+
+  1. with_team_id(auth: &UserAPIKeyAuth, team_id: &str) -> UserAPIKeyAuth is clone_user_api_key_auth_with_team: a full copy of the auth, server-only fields included, with only team_id replaced.
+
+
+  2. with_parent_span_of(auth: &UserAPIKeyAuth, session: &UserAPIKeyAuth) -> UserAPIKeyAuth is the model_copy at ui_session_utils.py L111: a copy of auth whose parent_otel_span is the session's, every other field kept.
+
+
+  3. own_grant_view(auth: &UserAPIKeyAuth) -> OwnGrantView<'_> gives OwnGrantView { has_object_permission: bool, object_permission_id: Option<&str>, has_admin_view: bool }, where has_admin_view is B2314's user_api_key_has_admin_view (proxy_admin and proxy_admin_viewer only). B4672's acting_user_auth and its own toolset grant read it; it has no LiteLLM function of its own.
+
+
+  4. admitted_user_context<H: DelegatedHuman>(auth: &UserAPIKeyAuth, human: &H) -> Option<UserAPIKeyAuth>, async. A credential that is not a session credential (B10070's is_ui_session_credential, which already requires a non-empty user_id) gives None without calling the port. Otherwise human.reload_admitted_user(user_id, the session's requires_fresh_policy). An Err logs the warning "MCP dashboard session: admitted-subject reload failed for {user_id}: {error}" with the error's Display (its detail) and gives None. A success returns with_parent_span_of(&admitted, auth), so the admitted user rides on the session's trace span.
+
+
+  5. build_effective_auth_contexts<U: UiSessionTeams + ?Sized, H: DelegatedHuman>(auth: &UserAPIKeyAuth, teams: &U, human: &H) -> Vec<UserAPIKeyAuth>, async. team_ids = resolve_ui_session_team_ids(auth, teams), awaited first. The contexts are with_team_id(auth, id) for each id in that order, or a single clone of auth when the list is empty. Then admitted_user_context(auth, human) runs and, when it is Some, is appended last. Nothing here fails: the team resolver and the admitted context both swallow their read errors, as LiteLLM's do.
+
+
+  Callers pass the ports they already hold: B4672's UiSession passes its teams port and its McpAccess's human, B8645 passes B10070's UserLookup implementation and B10126's AdmittedUserReload. Tests in session_auth/tests.rs build auths with UserAPIKeyAuth::construct and set the session's team_id to UI_SESSION_TOKEN_TEAM_ID, script UiSessionTeams and DelegatedHuman with fakes that record their calls and fresh flags, and use ids that start with test-. Name the tests copy_ (with_team_id and with_parent_span_of), grant_view_ (own_grant_view), admitted_ (admitted_user_context) and contexts_ (build_effective_auth_contexts) so the checks below select them.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/session_auth.rs
+    - crates/betterlite-auth/src/session_auth/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L24-L35
+    why: Owned. clone_user_api_key_auth_with_team.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L91-L111
+    why: Owned. admitted_user_context, the session check, the fresh flag it passes, the warning on a reload failure and the parent span copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L136-L152
+    why: Owned. build_effective_auth_contexts, the per-team copies, the fallback to the session itself and the admitted context last.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L114-L133
+    why: Caller. acting_user_auth (B4672) calls admitted_user_context after the admin view check that own_grant_view serves.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L155-L164
+    why: Caller. can_access_mcp_server (B4672) walks these contexts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L618-L635
+    why: Caller. The agent checks take build_effective_auth_contexts as their effective_contexts (B4780's HumanSources, implemented by B8645).
+
+dod:
+  - text: >-
+      with_team_id copies the whole auth and changes only team_id, with_parent_span_of copies the whole auth and changes only the parent span,
+      and own_grant_view reports the object permission presence, its id and the admin view flag for proxy_admin and proxy_admin_viewer only.
+    proof: [copy-tests]
+  - text: >-
+      admitted_user_context gives None for a credential that is not a dashboard session without calling the port, reloads the user with the session's requires_fresh_policy,
+      gives None and a warning for a reload error, and otherwise returns the reloaded user carrying the session's parent span.
+    proof: [contexts-tests]
+  - text: >-
+      build_effective_auth_contexts returns one copy per resolved team in order, or the session itself when no team resolves, followed by the admitted context when there is one,
+      and keeps the per-team copies when the admitted context exists.
+    proof: [contexts-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: copy-tests
+      why: an auth copy changes more than its one field or the own grant view reads the wrong field
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_auth::tests::copy_/) | test(/^session_auth::tests::grant_view_/)'
+    - id: contexts-tests
+      why: the admitted user context or the effective auth contexts differ from LiteLLM's order, fallback or failure handling
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_auth::tests::admitted_/) | test(/^session_auth::tests::contexts_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The team ids and the user reload come through B10070's UiSessionTeams and B10126's DelegatedHuman ports passed as arguments, instead of get_user_object and MCPRequestHandler.reload_admitted_user read from proxy_server.
+    why: betterlite has no module-level state; the production ports run the same reads, so the contexts are the same.
+  - what: Every Err from the reload is treated as LiteLLM's HTTPException case (warning, then None). LiteLLM lets a non-HTTP exception escape, which here is only B10126's Auth error for a user row whose user_role fails validation; betterlite drops the user's own context with the warning instead of answering 500.
+    why: the port returns one error type, and every other reload failure is an HTTPException in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L104-L110
+  - what: No oracle cases; every function here is covered by Rust tests with fakes.
+    why: admitted_user_context and build_effective_auth_contexts read prisma_client and MCPRequestHandler through proxy_server, B10070's cases already compare the team id resolution, and the HTTP cases come with the routes that list servers for a session (B4720, B4723, B4726 to B4728).
+
+out_of_scope:
+  - "is_ui_session_credential, resolve_ui_session_team_ids, UI_SESSION_TOKEN_TEAM_ID and UiSessionTeams: B10070. This task calls them."
+  - "acting_user_auth, can_access_mcp_server, _restricts_mcp, is_keyless_mcp_subject, toolset_grant_contexts, _own_toolset_ids, _inherited_toolset_ids, _context_toolset_ids and granted_toolset_ids: B4672, which calls the functions here."
+  - "reload_admitted_user, DelegatedHuman and AdmittedUserError: B10126."
+  - "Callers outside ui_session_utils.py (rest_endpoints.py, mcp_management_endpoints.py, agent_permission_handler.py, vector_store_endpoints/utils.py) are planned with those files: B4720, B4723, B4726 to B4728, B4717 and B8645."
+
+pitfalls:
+  - The admitted context goes LAST, after the per-team copies, and the copies stay even when it exists; a session with no resolved teams contributes the session auth itself, not an empty list.
+  - The reload uses the session's own requires_fresh_policy, so a fresh-policy session skips the user cache for the reload as well as for the team ids.
+  - The parent span is copied from the session onto the reloaded user, never the other way round; the reloaded user's own fields all stay.
+  - with_team_id is a full copy, so the admitted marker and the other server-only fields of the session carry over; building a fresh auth from a dict would drop them, since UserAPIKeyAuth::construct strips them.
+  - The team ids are resolved before the reload runs, as in LiteLLM, so a test that counts port calls sees the teams read first.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

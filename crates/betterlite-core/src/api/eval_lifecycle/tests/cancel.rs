@@ -4,6 +4,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::types::CancelledStatus;
+use rstest::rstest;
 
 use super::support::{
     CANCELLED, Operation, REQUEST_TIMEOUT, RealConfigs, RecordingLookup, Rig,
@@ -151,24 +152,31 @@ async fn cancel_eval_logs_the_eval_id_before_the_send() {
     assert_eq!(optional.get("eval_id"), Some(&text("eval_1")));
 }
 
+#[rstest]
+#[case::known_without_evals("mistral")]
+#[case::unknown_name("not-a-provider")]
 #[tokio::test]
-async fn cancel_eval_names_the_operation_for_an_unsupported_provider() {
+async fn cancel_eval_names_the_operation_for_an_unsupported_provider(#[case] provider_name: &str) {
     let serving = json_server("200 OK", CANCELLED, Duration::ZERO);
     let mut rig = Rig::new(RealConfigs, TransportLimits::DEFAULT, REQUEST_TIMEOUT);
     let params = openai_kwargs("https://api.example");
     let request = EvalLifecycleCall {
-        custom_llm_provider: Some("mistral"),
+        custom_llm_provider: Some(provider_name),
         ..call("eval_1", &params)
     };
     let failure = run(&mut rig, Operation::Cancel, &request)
         .await
-        .expect_err("mistral has no evals API");
+        .expect_err("the provider has no evals API");
     let ErrorClass::BadRequest(details) = &failure.class else {
         panic!("a bad request, got {:?}", failure.class);
     };
     assert_eq!(details.status.0, 400);
-    assert_eq!(details.provider.as_deref(), Some("mistral"));
-    assert_eq!(details.message, "CANCEL eval is not supported for mistral");
+    assert_eq!(details.provider.as_deref(), Some(provider_name));
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(
+        details.message,
+        format!("CANCEL eval is not supported for {provider_name}")
+    );
     assert_no_request(serving);
 }
 

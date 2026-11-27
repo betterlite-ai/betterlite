@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-missing-user-id
+call:
+  b4655:
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImxvZ2luX21ldGhvZCI6InNzbyJ9.K0liHMUWMOzTsdCkmDKltJwYjtoHiWcxHsKbaGbdkUs"
+    master_key: sk-oracle-master
+    key_resolves: true
+    now: 1700000000
+env: {}
+compare:
+  ignore: []

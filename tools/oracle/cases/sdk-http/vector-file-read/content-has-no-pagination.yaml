@@ -1,0 +1,49 @@
+kind: sdk_http
+name: vector-file-read-content-has-no-pagination
+call:
+  vector_file_read:
+    runs:
+      - operation: content
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        options:
+          api_key: sk-caller
+          litellm_call_id: call-1
+          after: cursor
+          limit: 1
+          extra_query: {trace: ignored}
+      - operation: content
+        mode: async
+        vector_store_id: vs_a
+        file_id: file_a
+        options:
+          api_key: sk-caller
+          litellm_call_id: call-2
+          after: cursor-2
+          limit: 2
+          extra_query: {trace: ignored-2}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      file_id: file_a
+      filename: a
+      attributes: {tag: x}
+      content:
+        - {type: text, text: hello}
+        - {type: text, text: world}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      file_id: file_a
+      filename: a
+      attributes: {tag: x}
+      content:
+        - {type: text, text: hello}
+        - {type: text, text: world}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

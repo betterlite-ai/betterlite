@@ -64,8 +64,9 @@ repos:
         exclude: ^\.development/|^crates/betterlite-config/assets/content_filter/
         require_serial: true
       - id: fmt
-        name: cargo fmt
-        entry: cargo fmt --
+        name: rustfmt
+        # cargo fmt formats every workspace target whatever files it gets, so the hook formats only the staged files and the gate fmt check covers the rest
+        entry: rustfmt --edition 2024
         language: system
         types: [rust]
         exclude: ^\.development/gate/

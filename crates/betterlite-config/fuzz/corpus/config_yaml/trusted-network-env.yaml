@@ -1,0 +1,6 @@
+general_settings:
+  trusted_proxy_ranges:
+    - os.environ/TRUSTED_PROXY_CIDR
+  mcp_trusted_proxy_ranges:
+    - 10.0.0.0/8
+  mcp_xff_num_trusted_hops: os.environ/XFF_HOPS

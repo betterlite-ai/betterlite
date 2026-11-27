@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-other-image-edits-canvas-edit-dispatch
+call:
+  bedrock_other_image_edits:
+    function: prepare
+    model_cost:
+      canvas-fixture-edit: {supports_nova_canvas_image_edit: true, output_cost_per_image: 0.25}
+    probes:
+      - model: canvas-fixture-edit
+        prompt: edit it
+        images: [aW1n, dHdv]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, width: 512, numberOfImages: 2}
+        reply: {body: '{"images": ["b3V0"]}'}
+      - model: canvas-fixture-edit
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, taskType: BACKGROUND_REMOVAL, numberOfImages: 2}
+        reply: {body: '{"images": ["YmFjaw=="]}'}
+      - model: canvas-fixture-edit
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, taskType: IMAGE_VARIATION, similarityStrength: 0.7}
+        reply: {body: '{"images": ["eA=="]}'}
+env: {}
+compare: {ignore: []}

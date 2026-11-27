@@ -1,0 +1,59 @@
+kind: sdk_http
+name: vector-file-create-list-attachment-registry-precedence
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_create_list:
+    registry:
+      vector_store_id: vs_a
+      credential_values:
+        api_key: sk-registry
+        custom_llm_provider: azure
+        api_base: $API_BASE
+    runs:
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create: {file_id: file_a}
+        options: {api_key: sk-caller, litellm_call_id: call-a}
+      - operation: list
+        mode: sync
+        vector_store_id: vs_a
+        list: {}
+        options: {api_key: sk-caller, litellm_call_id: call-b}
+        custom_llm_provider: ""
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create: {file_id: file_a}
+        options: {api_key: sk-caller, litellm_call_id: call-c}
+        custom_llm_provider: azure
+      - operation: list
+        mode: sync
+        vector_store_id: vs_a
+        list: {}
+        options: {api_key: sk-caller, litellm_call_id: call-d}
+        custom_llm_provider: azure
+      - operation: create
+        mode: sync
+        vector_store_id: vs_a
+        create: {file_id: file_a}
+        options: {api_key: sk-caller, litellm_call_id: call-e}
+        custom_llm_provider: bogus
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /vector_file_create_list/value/runs/2/failure/message
+      why: betterlite renders the source ValueError where LiteLLM prefixes its mapped exception class
+    - pointer: /vector_file_create_list/value/runs/3/failure/message
+      why: betterlite renders the source ValueError where LiteLLM prefixes its mapped exception class
+    - pointer: /vector_file_create_list/value/runs/4/failure/message
+      why: betterlite renders the source ValueError where LiteLLM prefixes its mapped exception class

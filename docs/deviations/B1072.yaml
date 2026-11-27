@@ -1,0 +1,6 @@
+task: B1072
+deviations:
+  - what: "vector_store_files.list and alist raise the provider's SDK exception (AuthenticationError for a 401) when the reply status is 400 or more, where LiteLLM returns the error body as the list response."
+    why: "LiteLLM's HTTPHandler.get never calls raise_for_status, so a failed list comes back as an error dict cast to VectorStoreFileListResponse, while its post does raise and create raises; no working setup can rely on an error object where a list response belongs, and the task requires both operations to fail through B011's mapping."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1435-L1456"
+kept_bugs: []

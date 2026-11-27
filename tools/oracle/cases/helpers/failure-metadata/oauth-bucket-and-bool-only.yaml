@@ -1,0 +1,17 @@
+kind: helper
+name: failure-metadata-oauth-bucket-and-bool-only
+call:
+  failure_metadata: {function: stamp, request_data: {}, request_route: null}
+calls:
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: true}}, request_route: null}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: false}}, request_route: null}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: "true"}}, request_route: null}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: 1}}, request_route: null}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: null}}, request_route: null}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: true}, litellm_metadata: {}}, request_route: null}
+  - failure_metadata: {function: stamp, request_data: {litellm_metadata: {used_client_oauth_token: false}, metadata: {used_client_oauth_token: true}}, request_route: "/v1/messages"}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: true}}, request_route: "/v1/messages"}
+  - failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: true}}, request_route: "/v1/chat/completions"}
+  - failure_metadata: {function: stamp, request_data: {litellm_metadata: {used_client_oauth_token: true}}, request_route: "/v1/batches"}
+env: {}
+compare: {ignore: []}
