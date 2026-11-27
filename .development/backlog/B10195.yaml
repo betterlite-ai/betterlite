@@ -1,8 +1,8 @@
 id: B10195
 milestone: R2 bug fixes
-title: key_management_system aws_secret_manager installs a working AWS Secrets Manager client that signs through the credential chain
+title: The aws_secret_manager and aws_kms clients sign through the credential chain, with an async credential resolver
 status: todo
-depends_on: [B10175, B10193]
+depends_on: [B10175, B10193, B10191]
 file: tasks/B10195-aws-secrets-manager-client.yaml
 covers: []
 parent: null

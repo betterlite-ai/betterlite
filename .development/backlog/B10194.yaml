@@ -2,7 +2,7 @@ id: B10194
 milestone: R2 bug fixes
 title: The SQS, S3, DynamoDB and FOCUS S3 loggers get AWS credentials through the credential chain
 status: todo
-depends_on: [B10175, B10192]
+depends_on: [B10175, B10192, B10190, B10191]
 file: tasks/B10194-aws-logger-credentials.yaml
 covers: []
 parent: null
