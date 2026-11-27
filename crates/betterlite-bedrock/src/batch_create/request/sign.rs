@@ -6,7 +6,6 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_context::aws_partition::get_aws_partition;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
 use serde_json::value::RawValue;
 
 use super::build::{CreateBatchInput, build_create_request};
@@ -14,7 +13,7 @@ use super::wire::{BedrockCreateRequest, SignedBatchRequest};
 use crate::aws_settings::sources::Credentials;
 use crate::batch_create::BatchCreateError;
 use crate::credentials::error::CredentialError;
-use crate::request_policy::aws_params::merge_aws_request_params;
+use crate::request_policy::aws_params::{merge_aws_request_params, raw_params};
 use crate::request_policy::{Params, RequestValue};
 use crate::signing::batch::{BatchData, BatchRequest, sign_batch_request};
 use crate::signing::request::AwsSignedRequest;
@@ -107,20 +106,11 @@ fn merged_params(
     deployment: &BTreeMap<String, Box<RawValue>>,
     request: &BTreeMap<String, Box<RawValue>>,
 ) -> Result<BTreeMap<String, Box<RawValue>>, BatchCreateError> {
-    let merged = merge_aws_request_params(&policy_params(deployment), &policy_params(request));
-    let mut signing = BTreeMap::new();
-    for (name, value) in merged {
-        let text = match value {
-            RequestValue::Raw(text) => text,
-            other
-            @ (RequestValue::Text(_) | RequestValue::Secret(_) | RequestValue::Mapping(_)) => {
-                serde_json::to_string(&policy_json(other)).map_err(BatchCreateError::RequestJson)?
-            }
-        };
-        let raw = RawValue::from_string(text).map_err(BatchCreateError::RequestJson)?;
-        signing.insert(name, raw);
-    }
-    Ok(signing)
+    raw_params(&merge_aws_request_params(
+        &policy_params(deployment),
+        &policy_params(request),
+    ))
+    .map_err(BatchCreateError::RequestJson)
 }
 
 fn policy_params(params: &BTreeMap<String, Box<RawValue>>) -> Params {
@@ -136,18 +126,4 @@ fn policy_params(params: &BTreeMap<String, Box<RawValue>>) -> Params {
         built.insert(name.clone(), documented);
     }
     built
-}
-
-fn policy_json(value: RequestValue) -> Json {
-    match value {
-        RequestValue::Text(text) => Json::Text(text),
-        RequestValue::Secret(secret) => Json::Text(secret.expose_secret().to_owned()),
-        RequestValue::Mapping(fields) => Json::Object(
-            fields
-                .into_iter()
-                .map(|(name, entry)| (name, policy_json(entry)))
-                .collect(),
-        ),
-        RequestValue::Raw(text) => serde_json::from_str(&text).unwrap_or(Json::Null),
-    }
 }

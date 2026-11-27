@@ -1,0 +1,79 @@
+id: B10176
+title: Python sessions resolve AWS credentials through the credential chain for Bedrock pass-through and Vertex workload identity
+description: >-
+  Two Python sessions still answer every AWS credential request with a stub. The Google GenAI session's Vertex auth passes `UnavailableAws` (crates/betterlite-python/src/genai/provider.rs L49-L58, used in `lookup` at L198), so a Vertex AWS workload identity pool credential fails with "AWS credential provider is unavailable" where LiteLLM's VertexAIAwsWifAuth calls BaseAWSLLM.get_credentials (vertex_ai_aws_wif.py L53-L120). B10166's pass-through session builds `BedrockSdkCall::from_environment(&environment, NoCredentialChain, SystemTime::now)` (crates/betterlite-python/src/passthrough_calls/session.rs, `SessionCore::build`), so a plain Bedrock or Mantle pass-through without a Bearer token fails even with aws_access_key_id and aws_secret_access_key in litellm_params; B10166 lists that as its deviation. B10175 builds the production chain, `betterlite_bedrock::credentials::chain::AwsCredentialChain`. Each session builds one from its own environment and passes it, the way the server builds one in `application()`.
+
+
+  One secret lookup for Python sessions. The chain needs a SecretLookup. betterlite-python has one environment-only lookup with its three stub ports, `secret_lookup`, `NoOidcHttp`, `NoAzureTokens` and `FixedClock` in decision_calls/core.rs L183-L230, used by decision_calls/core/sandbox.rs L21. They move to a new module crates/betterlite-python/src/secret_ports.rs, declared with `mod secret_ports;` in lib.rs, with `secret_lookup` as `pub(crate)` and its comment saying that a Python session has no secret manager, OIDC provider or Azure token source, so an `os.environ/` name reads the session environment and an `oidc/` name fails. decision_calls and both sessions call it; no session writes its own SecretLookup.
+
+
+  Google GenAI. `SessionCore::build` (genai/session.rs L88-L126) builds `AwsCredentialChain::from_environment(environment.clone(), &clients.default, Arc::new(secret_lookup()))` once, after `NativeClients::build`, and keeps it in a new `aws` field; a failure is a new `SessionError::AwsCredentials` variant (genai/error.rs L41) with the source. `NativeContentConfig` (provider.rs L60-L68) gains `aws: Arc<dyn AwsCredentialsSource>`, which `config()` (session.rs L167-L181) sets from `Arc::new(self.aws.clone())`, so every call of the session shares the one cache. `lookup` (provider.rs L186-L210) puts it into `LoadDeps.aws`. `lookup` already has five parameters, the limit, so the owned parts it needs (vertex, google, clock and aws) travel in one private struct the closure in `target` (L131-L149) moves in. `UnavailableAws` and its comment go.
+
+
+  Bedrock pass-through. `SessionCore::build` builds the chain the same way from the map B10164 keeps, with the session's `client`, and passes it to `BedrockSdkCall::from_environment` in place of `NoCredentialChain`. `NoCredentialChain` goes from crates/betterlite-bedrock/src/passthrough/sdk_call.rs, and so does its test in sdk_call's tests; a fake source that fails takes over that test's check that a credential failure is the synthesized 500. The B8631 and B8694 tasks pass the server's `Shared.aws_credentials` instead. docs/deviations/B10166.yaml loses its credential chain row (`deviations: []` if it was the only one).
+
+
+  Tests. genai/session/tests.rs gains `config_resolves_aws_through_the_session_chain`: a session built with `{"environment": {"AWS_ACCESS_KEY_ID": "AKIDSESSION", "AWS_SECRET_ACCESS_KEY": "session-secret", "AWS_EC2_METADATA_DISABLED": "true"}}` answers those keys from `config(..).aws` for empty settings. passthrough_calls/session/tests.rs gains `call_signs_bedrock_with_the_session_keys`: a session built with `{"environment": {"AWS_ACCESS_KEY_ID": "AKIDSESSION", "AWS_SECRET_ACCESS_KEY": "session-secret", "AWS_REGION_NAME": "us-east-1", "AWS_BEDROCK_RUNTIME_ENDPOINT": <mock>, "AWS_EC2_METADATA_DISABLED": "true"}}` sends model `bedrock/anthropic.claude-3-haiku` with endpoint `model/anthropic.claude-3-haiku/invoke`, and the mock gets an Authorization header that starts with `AWS4-HMAC-SHA256 Credential=AKIDSESSION/` and names `/us-east-1/bedrock/aws4_request`. It also gains `call_signs_bedrock_with_litellm_params_keys`: with only the endpoint and AWS_EC2_METADATA_DISABLED in the environment and aws_access_key_id and aws_secret_access_key in litellm_params, the header names that key id. decision_calls' tests keep passing on the moved lookup.
+
+
+  What users see. In the Python package, a Bedrock or Bedrock Mantle pass-through without a Bearer token signs with SigV4 from litellm_params keys, the AWS SDK environment keys, a profile, a role or web identity, as LiteLLM does, instead of failing with a synthesized 500 "AWS credential provider is unavailable". Vertex calls with an AWS workload identity pool credential get their AWS identity the same way.
+scope:
+  paths:
+    - crates/betterlite-python/src/secret_ports.rs
+    - crates/betterlite-python/src/decision_calls/core.rs
+    - crates/betterlite-python/src/decision_calls/core/sandbox.rs
+    - crates/betterlite-python/src/genai/session.rs
+    - crates/betterlite-python/src/genai/session/**
+    - crates/betterlite-python/src/genai/provider.rs
+    - crates/betterlite-python/src/genai/provider/**
+    - crates/betterlite-python/src/genai/error.rs
+    - crates/betterlite-python/src/passthrough_calls/session.rs
+    - crates/betterlite-python/src/passthrough_calls/session/tests.rs
+    - crates/betterlite-python/src/passthrough_calls/error.rs
+    - crates/betterlite-bedrock/src/passthrough/sdk_call.rs
+    - crates/betterlite-bedrock/src/passthrough/sdk_call/**
+    - docs/deviations/B10166.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1657-L1730
+    why: _sign_request resolves credentials at the config's region before SigV4; L1697-L1699 is the step NoCredentialChain refused.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_aws_wif.py#L53-L120
+    why: credentials_from_explicit_aws, which asks BaseAWSLLM.get_credentials for the AWS identity the Vertex exchange signs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L227-L238
+    why: the IAM credential cache LiteLLM shares across the process; a session shares one across its calls.
+dod:
+  - text: Both Python sessions build one AwsCredentialChain from their environment and client, the GenAI Vertex auth and the Bedrock pass-through resolve through it, and neither UnavailableAws nor NoCredentialChain is left.
+    proof: [python-tests, no-stubs]
+  - text: A Python Bedrock pass-through signs SigV4 with the session's environment keys or the litellm_params keys at the call's region.
+    proof: [python-tests, sdk-call-tests]
+  - text: betterlite-python has one environment-only SecretLookup builder, and B10166's credential chain row is gone.
+    proof: [no-stubs]
+checks:
+  optional: []
+  commands:
+    - id: python-tests
+      why: a session does not build or pass the chain, or the moved secret lookup broke a decision call
+      run: grep -rq 'fn config_resolves_aws_through_the_session_chain' crates/betterlite-python/src/genai/session && grep -q 'fn call_signs_bedrock_with_the_session_keys' crates/betterlite-python/src/passthrough_calls/session/tests.rs && grep -q 'fn call_signs_bedrock_with_litellm_params_keys' crates/betterlite-python/src/passthrough_calls/session/tests.rs && cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^genai::/) | test(/^passthrough_calls::session::tests::/) | test(/^decision_calls::/)'
+    - id: sdk-call-tests
+      why: removing NoCredentialChain lost the check that a credential failure is the synthesized 500
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^passthrough::sdk_call::/)'
+    - id: no-stubs
+      why: a stub credential source, a second Python SecretLookup literal or B10166's row is still in place
+      run: test -z "$(grep -rnE 'UnavailableAws|NoCredentialChain' crates/betterlite-python/src crates/betterlite-bedrock/src)" && test "$(grep -rn 'SecretLookup {' crates/betterlite-python/src | grep -vc '/tests')" = 1 && test -z "$(grep -n 'credential chain' docs/deviations/B10166.yaml)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The server side, Shared.aws_credentials and its users: B10175, B8631 and B8694."
+  - "LiteLLM's AWS_* fallback names inside get_credentials: B10175's deviation row covers them for every chain."
+  - "Python's MCP SigV4 signer, which builds betterlite-http's own AwsSources and credential cache (crates/betterlite-python/src/mcp/setup.rs L110-L129): it signs MCP requests with betterlite-http's copy of the loader (crates/betterlite-http/src/mcp_sigv4/credentials.rs L16-L28), not this chain."
+  - "Python OCR's UnsignedAws for Textract (crates/betterlite-python/src/search_ocr/ocr_client.rs L77-L90): B092's AwsRequestSigner owns the signed path."
+pitfalls:
+  - "B10164 and B10166 change passthrough_calls/session.rs first; read it on main when this task starts and keep their environment map and port."
+  - "Test environments set AWS_EC2_METADATA_DISABLED=true and leave out HOME, AWS_CONFIG_FILE, AWS_SHARED_CREDENTIALS_FILE and the container credential variables, so nothing reaches instance metadata or the developer's ~/.aws."
+  - "A session builds the chain once in build(), never per call: a clone shares the cache, so every call of the session reuses a fetched role or web identity credential until it expires."
+  - "The chain's NativeSources use the session's ProxiedClient, so STS and the SDK chain go through the session's proxy policy; don't build a second client for it."
+  - "The SigV4 assertions check the credential scope prefix and region, never the signature or the date: the pass-through signs with SystemTime::now."
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

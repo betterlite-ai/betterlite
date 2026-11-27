@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-tool-search-config-invalid
+call:
+  b4686:
+    handler: mcp_tool_search
+    query: alpha
+    settings: {top_k: 0}
+    tools:
+      - {name: alpha-tool, server_id: srv, description: finds alpha}
+    caller: {user_id: u1}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/content/0/text
+      why: pydantic and betterlite word the same invalid top_k message differently
