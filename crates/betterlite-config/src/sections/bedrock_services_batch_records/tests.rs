@@ -78,6 +78,22 @@ fn unrelated_keys_still_load() {
     assert!(settings.model_alias_map.is_empty());
 }
 
+// pre_call's own null alias map test loads through every section, this one included
+#[test]
+fn null_alias_maps_load_as_empty() {
+    let source = "
+litellm_settings:
+  model_alias_map: null
+model_list:
+  - model_name: first
+    litellm_params:
+      model: bedrock/first
+      model_alias_map: null
+";
+    let settings = settings(source).expect("an explicit null alias map is empty");
+    assert!(settings.model_alias_map.is_empty());
+}
+
 fn settings(source: &str) -> Result<Settings, ConfigError> {
     ConfigLoader {
         lookup: BTreeMap::new(),

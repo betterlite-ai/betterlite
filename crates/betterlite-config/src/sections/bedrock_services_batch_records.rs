@@ -23,14 +23,15 @@ struct Deployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct DeploymentParams {
+    // an explicit null is the same as absent, as pre_call reads the global key
     #[serde(default)]
-    model_alias_map: BTreeMap<String, String>,
+    model_alias_map: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct GlobalSettings {
     #[serde(default)]
-    model_alias_map: BTreeMap<String, String>,
+    model_alias_map: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -46,9 +47,14 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut model_alias_map = self.litellm_settings.model_alias_map;
+        let mut model_alias_map = self.litellm_settings.model_alias_map.unwrap_or_default();
         for deployment in self.model_list {
-            model_alias_map.extend(deployment.litellm_params.model_alias_map);
+            model_alias_map.extend(
+                deployment
+                    .litellm_params
+                    .model_alias_map
+                    .unwrap_or_default(),
+            );
         }
         Ok(Settings { model_alias_map })
     }

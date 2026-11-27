@@ -96,7 +96,6 @@ impl Call {
 #[error("the fixture holds no body")]
 struct MissingFixture;
 
-#[derive(Default)]
 pub(super) struct Families {
     pub(super) nova_calls: Mutex<Vec<Call>>,
     pub(super) anthropic_params_calls: Mutex<Vec<(String, Params)>>,
@@ -110,10 +109,29 @@ pub(super) struct Families {
 }
 
 impl Families {
-    pub(super) fn batch() -> Self {
-        let mut families = Self::default();
-        families.batch = true;
+    pub(super) fn empty() -> Self {
+        Self {
+            nova_calls: Mutex::new(Vec::new()),
+            anthropic_params_calls: Mutex::new(Vec::new()),
+            anthropic_body_calls: Mutex::new(Vec::new()),
+            responses_calls: Mutex::new(Vec::new()),
+            nova_body: None,
+            anthropic_params: None,
+            anthropic_body: None,
+            responses_body: None,
+            batch: false,
+        }
+    }
+
+    pub(super) fn with_nova_body() -> Self {
+        let mut families = Self::empty();
         families.nova_body = Some(json(r#"{"messages":[],"inferenceConfig":{}}"#));
+        families
+    }
+
+    pub(super) fn batch() -> Self {
+        let mut families = Self::with_nova_body();
+        families.batch = true;
         families
     }
 
@@ -321,7 +339,18 @@ pub(super) fn transform_with(
 }
 
 pub(super) fn chat_body_of(body: &Json, kind: BatchRecordKind) -> Result<Json, BatchRecordsError> {
-    runtime().block_on(to_chat_body(body, kind, &Families::default()))
+    runtime().block_on(to_chat_body(body, kind, &Families::empty()))
+}
+
+// The text or raw source text of one request param, so a test reads a value back without PartialEq.
+pub(super) fn param_text<'params>(
+    params: &'params RequestParams,
+    name: &str,
+) -> Option<&'params str> {
+    match params.get(name) {
+        Some(RequestValue::Text(text) | RequestValue::Raw(text)) => Some(text.as_str()),
+        Some(RequestValue::Secret(_) | RequestValue::Mapping(_)) | None => None,
+    }
 }
 
 pub(super) fn error_of(result: Result<Vec<Json>, BatchRecordsError>) -> BatchRecordsError {

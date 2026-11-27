@@ -3,7 +3,7 @@ use secrecy::SecretString;
 
 use super::support::{
     ACCESS_KEY, Families, GATEWAY_MODEL, OTHER_ACCESS_KEY, OTHER_SECRET_KEY, SECRET_KEY,
-    batch_file, booking_params, run_upload,
+    batch_file, booking_params, param_text, run_upload,
 };
 use crate::batch_records::error::BatchRecordsError;
 use crate::batch_records::upload::FileUploadHandoff;
@@ -56,12 +56,12 @@ fn batch_records_credential_identity_isolation() {
     // the same object with the same id is the same URL: nothing about identity leaks into it
     assert_eq!(first_handoff.url, second_handoff.url);
     assert_eq!(
-        first_params.get("s3_access_key_id"),
-        Some(&RequestValue::Text(String::from(ACCESS_KEY)))
+        param_text(&first_params, "s3_access_key_id"),
+        Some(ACCESS_KEY)
     );
     assert_eq!(
-        second_params.get("s3_access_key_id"),
-        Some(&RequestValue::Text(String::from(OTHER_ACCESS_KEY)))
+        param_text(&second_params, "s3_access_key_id"),
+        Some(OTHER_ACCESS_KEY)
     );
     assert!(!format!("{:?}", first_params).contains(SECRET_KEY));
     assert!(!format!("{:?}", second_params).contains(OTHER_SECRET_KEY));

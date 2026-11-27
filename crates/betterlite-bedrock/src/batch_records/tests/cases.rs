@@ -7,8 +7,8 @@ use betterlite_prompts::media_metadata::{FileBody, FileData};
 
 use super::support::{
     ACCESS_KEY, FIXED_UUID, Families, GATEWAY_MODEL, SECRET_KEY, batch_file, booking_params,
-    chat_body_of, error_of, json, params, record, run_upload, run_upload_missing_file, transform,
-    transform_with, value,
+    chat_body_of, error_of, json, param_text, params, record, run_upload, run_upload_missing_file,
+    transform, transform_with, value,
 };
 use crate::batch_records::chat_body::text_completion_to_chat;
 use crate::batch_records::error::BatchRecordsError;
@@ -16,7 +16,7 @@ use crate::batch_records::record::{LINE_BOUNDARIES, OpenAiBatchRecord};
 use crate::request_policy::RequestValue;
 
 pub(super) fn chat_batch_record() {
-    let families = Families::default();
+    let families = Families::empty();
     let records = transform(
         &families,
         r#"{"custom_id":"a","url":"/v1/chat/completions","body":{"model":"openai.gpt-oss-20b-1:0","messages":[{"role":"developer","content":"be nice"},{"content":"hi","role":"user"}],"max_tokens":16}}"#,
@@ -42,7 +42,7 @@ pub(super) fn chat_batch_record() {
     assert!(families.responses_calls().is_empty());
 
     // the anthropic family maps through the invoke route model and the filtered body params
-    let mut anthropic = Families::default();
+    let mut anthropic = Families::empty();
     anthropic.anthropic_params = Some(params(r#"{"max_tokens":256,"json_mode":true}"#));
     anthropic.anthropic_body = Some(json(
         r#"{"anthropic_version":"bedrock-2023-05-31","messages":[]}"#,
@@ -90,7 +90,7 @@ pub(super) fn chat_batch_record() {
 }
 
 pub(super) fn text_completion_to_chat_case() {
-    let families = Families::default();
+    let families = Families::empty();
     let records = transform(
         &families,
         r#"{"custom_id":"c","url":"/v1/completions","body":{"model":"qwen.qwen3-32b-v1:0","prompt":"hello"}}"#,
@@ -149,7 +149,7 @@ pub(super) fn text_completion_to_chat_case() {
 }
 
 pub(super) fn responses_to_chat() {
-    let mut families = Families::default();
+    let mut families = Families::empty();
     families.responses_body = Some(json(
         r#"{"messages":[{"role":"user","content":"hi"}],"max_output_tokens":5}"#,
     ));
@@ -176,7 +176,7 @@ pub(super) fn responses_to_chat() {
 }
 
 pub(super) fn embedding_batch_record() {
-    let families = Families::default();
+    let families = Families::empty();
     let records = transform(
         &families,
         r#"{"custom_id":"e","url":"/v1/embeddings","body":{"model":"amazon.titan-embed-text-v2:0","input":"hello"}}"#,
@@ -199,7 +199,7 @@ pub(super) fn embedding_batch_record() {
 }
 
 pub(super) fn alias_and_target_model() {
-    let aliased_families = nova_families();
+    let aliased_families = Families::with_nova_body();
     let aliases = BTreeMap::from([(
         String::from("my-alias"),
         String::from("amazon.nova-pro-v1:0"),
@@ -212,7 +212,7 @@ pub(super) fn alias_and_target_model() {
     let calls = aliased_families.nova_calls();
     assert_eq!(calls[0].model, "amazon.nova-pro-v1:0");
 
-    let target_families = nova_families();
+    let target_families = Families::with_nova_body();
     let unnamed = record(
         r#"{"custom_id":"b","url":"/v1/chat/completions","body":{"model":"my-custom","messages":[{"content":"hi","role":"user"}]}}"#,
     );
@@ -229,7 +229,7 @@ pub(super) fn alias_and_target_model() {
     );
 
     // a record that names its own provider keeps that model even when a target model exists
-    let named_families = Families::default();
+    let named_families = Families::empty();
     let named = record(
         r#"{"custom_id":"c","url":"/v1/chat/completions","body":{"model":"openai.gpt-oss-20b-1:0","messages":[{"content":"hi","role":"user"}]}}"#,
     );
@@ -246,7 +246,7 @@ pub(super) fn alias_and_target_model() {
     let model_less = record(
         r#"{"custom_id":"d","url":"/v1/chat/completions","body":{"messages":[{"content":"hi","role":"user"}]}}"#,
     );
-    let model_less_families = nova_families();
+    let model_less_families = Families::with_nova_body();
     transform_with(
         &model_less_families,
         &[model_less],
@@ -261,7 +261,7 @@ pub(super) fn alias_and_target_model() {
 }
 
 pub(super) fn default_record_id() {
-    let families = Families::default();
+    let families = Families::empty();
     let sources = [
         "/v1/chat/completions",
         "/v1/chat/completions",
@@ -375,22 +375,16 @@ pub(super) fn malformed_jsonl_line() {
         content: FileBody::Bytes(b"plain text".to_vec()),
         content_type: Some(String::from("text/plain")),
     };
-    let (plain_result, _) = run_upload(
-        &Families::default(),
-        &plain,
-        None,
-        "",
-        &mut booking_params(),
-    );
+    let (plain_result, _) = run_upload(&Families::empty(), &plain, None, "", &mut booking_params());
     let plain_handoff = plain_result.expect("the plain upload signs");
     assert_eq!(plain_handoff.data, "plain text");
     let bare = FileData::Direct(FileBody::BareString(String::from("plain text")));
-    let (bare_result, _) = run_upload(&Families::default(), &bare, None, "", &mut booking_params());
+    let (bare_result, _) = run_upload(&Families::empty(), &bare, None, "", &mut booking_params());
     assert!(matches!(
         bare_result.expect_err("the bare string is refused"),
         BatchRecordsError::Media(_)
     ));
-    let (missing, _) = run_upload_missing_file(&Families::default());
+    let (missing, _) = run_upload_missing_file(&Families::empty());
     assert_eq!(missing.to_string(), "file is required");
     // a row after a failing one never becomes a partial upload
     let partially_valid = FileData::Direct(FileBody::Bytes(
@@ -412,7 +406,7 @@ pub(super) fn malformed_jsonl_line() {
 }
 
 pub(super) fn nova_batch_record() {
-    let families = nova_families();
+    let families = Families::with_nova_body();
     let records = transform(
         &families,
         r#"{"custom_id":"n","url":"/v1/chat/completions","body":{"model":"amazon.nova-pro-v1:0","messages":[{"role":"developer","content":"be nice"},{"content":"hi","role":"user"}],"max_tokens":16,"top_k":5}}"#,
@@ -438,12 +432,6 @@ pub(super) fn nova_batch_record() {
         params(r#"{"max_tokens":16,"top_k":5}"#)
     );
     assert!(families.anthropic_params_calls().is_empty());
-}
-
-fn nova_families() -> Families {
-    let mut families = Families::default();
-    families.nova_body = Some(json(r#"{"messages":[],"inferenceConfig":{}}"#));
-    families
 }
 
 pub(super) fn upload_signing_handoff() {
@@ -511,13 +499,15 @@ pub(super) fn upload_signing_handoff() {
             .iter()
             .any(|(name, _value)| name == "X-Amz-Content-SHA256")
     );
-    assert_eq!(
-        after.get("upload_url"),
-        Some(&RequestValue::Text(signed.url.clone()))
-    );
-    assert_eq!(
+    assert_eq!(param_text(&after, "upload_url"), Some(signed.url.as_str()));
+    // the content length travels as raw JSON text, so it is never quoted on the wire
+    assert!(matches!(
         after.get("_s3_upload_content_length"),
-        Some(&RequestValue::Raw(signed.data.len().to_string()))
+        Some(RequestValue::Raw(_))
+    ));
+    assert_eq!(
+        param_text(&after, "_s3_upload_content_length"),
+        Some(signed.data.len().to_string().as_str())
     );
     // the same batch record with a target model instead of a record model takes the litellm model
     let mut params_with_model = booking_params();
