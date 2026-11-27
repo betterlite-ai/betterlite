@@ -1,7 +1,7 @@
 id: B10151
 milestone: M4 keys, spend and management
 title: Team default member budget id and membership budget source
-status: todo
+status: done
 depends_on: [B171, B2310]
 file: tasks/B10151-team-budget-source.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management_helpers/bulk_team_member_budgets.py"
 parent: B057
 split_from: B809
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3358

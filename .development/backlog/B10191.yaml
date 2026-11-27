@@ -1,0 +1,13 @@
+id: B10191
+milestone: R2 bug fixes
+title: The SigV4 header signers in secret-managers, SQS, DynamoDB, MCP and Strands sign through betterlite-sigv4
+status: todo
+depends_on: [B10173, B4413, B3995, B3991, B4742, B3512]
+file: tasks/B10191-sigv4-header-signers.yaml
+covers: []
+parent: B10190
+split_from: B10190
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,181 @@
+id: B10153
+title: Context compaction config and the pending compaction state
+description: >-
+  LiteLLM keeps one CompactionState per routed call in the request kwargs under `_context_compaction_state`. The router
+  creates it when the call starts (router.py L7547-L7552), the pre-routing hook arms it with the complexity router's
+  `context_compaction` settings, and three readers ask `compaction_pending(kwargs)` before they count or move a prompt:
+  the router's pre-call checks, the complexity router's context-window placement and the proxy's cache-aware routing
+  (cache_aware_routing.py L253). B336 arms the state and runs the summary; B3124's cache-aware routing needs only the
+  predicate. This task builds the state, the config it holds and the predicate below both, so B3124 stops waiting for
+  B336's summary work and B336 builds on the same state instead of a second one.
+
+
+  The config. `context_compaction` sits in a deployment's `complexity_router_config` (config.py L844-L850 and
+  L1335-L1343). Parse it in betterlite-config's section `router_compaction`
+  (crates/betterlite-config/src/sections/router_compaction.rs, a stub already in the sections! list), reading
+  `litellm_params.complexity_router_config` from every model_list entry the way sections::cache_cost_routing does.
+  Settings are index-aligned with model_list: None for a deployment without complexity_router_config, otherwise
+  `ContextCompaction::Off` for `false` or `null` (the `_normalize_context_compaction` validator turns null into False)
+  and `ContextCompaction::On(ContextCompactionConfig)` for an object or a missing key, because the field's
+  default_factory builds a config, so a complexity router compacts unless told not to. `ContextCompactionConfig` has
+  `model: Option<String>` (default None, at least one character), `trigger_ratio: f64` (default 0.9, above 0 and below
+  1), `max_tokens: i64` (default 4096, at least 512) and `timeout_seconds: f64` (default 120, above 0). An unknown key
+  inside the object (extra="forbid"), `true`, or a value outside a bound is a load error naming its path, for example
+  `model_list.0.litellm_params.complexity_router_config.context_compaction.trigger_ratio`, as cache_cost_routing does for
+  its timeout. Resolve `os.environ/` values with the same resolve helpers cache_cost_routing uses.
+
+
+  The state. Module compaction_state in betterlite-router: crates/betterlite-router/src/compaction_state.rs, tests in
+  compaction_state/tests.rs; the file is an empty stub lib.rs already declares. `CompactionState<Summary>` has LiteLLM's
+  five fields (L59-L65): `config: Option<ContextCompactionConfig>`, `candidates: Vec<String>`, `summary: Option<(String,
+  Summary)>`, `parent_model: Option<String>` and `surface: Option<Surface>`, where Surface is B385's
+  `compaction_history::contracts::Surface`. `Summary` is the handle B336 stores for the call's one summary task (the
+  asyncio.Task[str] next to the history hash). Its error carries the router error that B3545's CompactionRouter leaves as
+  an associated type, so this module takes the handle as a type parameter and never reads it. betterlite's request
+  kwargs are a typed JSON map (`router_predicates::JsonMap`) that cannot hold the state, so it travels beside them as
+  `SharedCompactionState<Summary>`, an `Arc<std::sync::Mutex<CompactionState<Summary>>>`. Every fallback hop and attempt
+  of one call holds a clone, so B336's arming and summary writes reach all of them, as LiteLLM's writes to the shared
+  object do. Take a poisoned lock back with PoisonError::into_inner, as latency_observations does.
+
+
+  The functions. `initialize_compaction_state(existing: Option<&SharedCompactionState<Summary>>, surface: Surface) ->
+  SharedCompactionState<Summary>` (L94-L96) returns a clone of the existing handle with nothing changed, its surface
+  included, and otherwise a new state with only the surface set. `client_managed(payload: &JsonMap) -> bool`
+  (L141-L150) is true when `previous_response_id`, `conversation`, `context_management` or `compaction` is present and
+  not null, or when an item of the `input` list has `type` reasoning, compaction or item_reference, a non-null
+  `encrypted_content`, or a `content` block whose `type` is encrypted_content. It is public because B336's
+  arm_compaction and compact_to_fit call it as well. `compaction_pending(state: Option<&SharedCompactionState<Summary>>,
+  payload: &JsonMap) -> bool` (L162-L164) is true only when the state exists, its config is Some and client_managed is
+  false. Read string fields with B385's `compaction_history::blocks::field_text`.
+
+
+  Oracle helper b10153. Its input has `state` (absent, unarmed or armed) and a request `payload`, and it answers
+  `{pending: bool}`. The Python side copies the payload, puts `CompactionState(config=ContextCompactionConfig() if armed
+  else None)` under the literal key `_context_compaction_state` unless the state is absent, and calls LiteLLM's public
+  compaction_pending. The Rust side builds the same state with `ContextCompactionConfig`'s defaults and `Summary = ()`
+  and calls compaction_pending here.
+
+
+  Tests. compaction_state::tests::pending_* cover the predicate: absent, unarmed and armed states, and each
+  client_managed exclusion, each top-level key with a value and with null, each input item kind, an encrypted_content
+  item and an encrypted_content block, a string `input`, and an encrypted block inside `messages` that still leaves the
+  request pending. compaction_state::tests::initialize_* cover the handle: Arc::ptr_eq on reuse, the existing surface
+  kept, a fresh state's empty fields, and a write through one clone read through another. sections::router_compaction
+  tests load each form: no complexity_router_config, a missing key, false, null, a full object, each bound just inside
+  and just outside, an empty model, an unknown key, `true` and an os.environ/ value.
+scope:
+  paths:
+    - crates/betterlite-router/src/compaction_state.rs
+    - crates/betterlite-router/src/compaction_state/**
+    - crates/betterlite-config/src/sections/router_compaction.rs
+    - crates/betterlite-config/src/sections/router_compaction/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-*
+    - tools/oracle/cases/helpers/compaction-state/**
+    - tools/oracle/fuzz/corpus/helper_case/compaction-state-*
+    - tools/oracle/helpers/b10153.py
+    - tools/oracle/helpers/b10153/**
+    - tools/oracle/src/helpers/router/b10153.rs
+    - tools/oracle/src/helpers/router/b10153/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L45
+    why: The kwargs key the helper's Python side writes the state under.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L59-L65
+    why: Owned. CompactionState and its five fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L94-L96
+    why: Owned. initialize_compaction_state keeps an existing state and its surface.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L141-L150
+    why: Owned. _client_managed, the four top-level keys and the input item and block checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L162-L164
+    why: Owned. compaction_pending.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L179-L181
+    why: B385's _blocks, which reads only a list value under the key and gives nothing for a string input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L844-L850
+    why: Owned. ContextCompactionConfig, its defaults, bounds and extra="forbid".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1335-L1343
+    why: Owned. The context_compaction field with its default_factory, and _normalize_context_compaction turning null into False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7547-L7552
+    why: Caller. async_function_with_fallbacks creates the state once per call; B9810 does this on the gateway routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12483-L12485
+    why: Caller. The pre-call checks skip the token count while compaction is pending.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L246-L256
+    why: Caller. B3124's cache-aware routing keeps the classified model while compaction is pending.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/README.md#L74-L86
+    why: "The documented `context_compaction: false` beside cache_aware_routing."
+dod:
+  - text: compaction_pending is true only for an existing armed state on a request client_managed lets through, and false for an absent or unarmed state and for each client-managed key, input item kind, encrypted_content item and encrypted_content block.
+    proof: [pending-tests, oracle, helper-python]
+  - text: initialize_compaction_state hands back the existing handle with its surface, or a new state holding only the surface, and a write through one clone is read through the other.
+    proof: [initialize-tests]
+  - text: The router_compaction section gives None without complexity_router_config, On with LiteLLM's defaults for a missing key, Off for false and null, and a load error naming the path for an out-of-bounds value, an empty model, an unknown key or true.
+    proof: [config-tests]
+  - text: New router-compaction config seeds with context_compaction replay through the bounded config parser.
+    proof: [config-corpus]
+  - text: New compaction-state seeds for b10153 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: pending-tests
+      why: compaction_pending ignores the state or misses one of LiteLLM's client-managed exclusions.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^compaction_state::tests::pending_/)'
+    - id: initialize-tests
+      why: initialize_compaction_state copies or replaces an existing state, or a write does not reach every clone.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^compaction_state::tests::initialize_/)'
+    - id: config-tests
+      why: context_compaction is not loaded, keeps the wrong default, or accepts a value LiteLLM refuses.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::router_compaction::/)'
+    - id: config-corpus
+      why: The new router-compaction seeds are missing, lack context_compaction, or do not replay.
+      run: >-
+        test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml &&
+        test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-invalid.yaml &&
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/router-compaction-" &&
+        grep -Fq 'context_compaction' crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-valid.yaml &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The b10153 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10153.py tools/oracle/helpers/b10153)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10153 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/compaction-state-*")" &&
+        grep -lE '^[[:space:]]+b10153:' tools/oracle/fuzz/corpus/helper_case/compaction-state-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/compaction-state/armed-chat-request.yaml
+  - tools/oracle/cases/helpers/compaction-state/unarmed-state.yaml
+  - tools/oracle/cases/helpers/compaction-state/no-state.yaml
+  - tools/oracle/cases/helpers/compaction-state/null-client-fields.yaml
+  - tools/oracle/cases/helpers/compaction-state/previous-response-id.yaml
+  - tools/oracle/cases/helpers/compaction-state/context-management.yaml
+  - tools/oracle/cases/helpers/compaction-state/reasoning-input-item.yaml
+  - tools/oracle/cases/helpers/compaction-state/item-reference-input.yaml
+  - tools/oracle/cases/helpers/compaction-state/encrypted-content-item.yaml
+  - tools/oracle/cases/helpers/compaction-state/encrypted-content-block.yaml
+  - tools/oracle/cases/helpers/compaction-state/string-input.yaml
+deviations: []
+out_of_scope:
+  - "context_compaction.py: B336 owns surface_for_call (L68-L69), arm_compaction (L99-L123), _has_compactor (L126-L138), reject_recursive_compactor (L157-L159), _reject (L167-L170), _generate_summary (L317-L336), compact_to_fit (L360-L371), _check_client_managed_admission (L374-L387) and _compact_to_fit (L416-L515). It arms this state, picks the Summary handle, fills it and reads the config."
+  - "context_compaction.py: B385 owns _unavailable (L173-L176), _blocks (L179-L181), _tool_ids (L184-L202), _history (L205-L232), _count (L235-L241), _budget (L244-L263), _compactor_model (L266-L297), _native_prefix (L300-L314), _compactor_input (L339-L357) and _portable_history (L390-L413)."
+  - "context_compaction.py: B10084 owns CompactionExecutor.__call__ (L51-L53), native_compaction_call (L79-L86), native_compaction_parent (L89-L91) and is_native_compaction_call (L153-L154)."
+  - "config.py: every other model and validator has the owner B332's out_of_scope names."
+  - "Creating the state on each gateway call: B9810. Arming it in the pre-routing hook: B021 through B336. Asking the predicate in cache-aware routing: B3124."
+  - "The pre-call checks and the context-window placement already take a plain compaction_pending bool (static_eligibility's RequestFacts and context_placement's request); whoever builds those records fills it from this predicate."
+pitfalls:
+  - "A missing `context_compaction` key means compaction on with every default, since the field's default_factory builds a ContextCompactionConfig; only `false` or `null` turns it off."
+  - "client_managed reads only the `input` list, never `messages`: a chat request with encrypted or thinking blocks in its messages is still pending."
+  - "The top-level checks are `is not None`, so `previous_response_id: null` or `conversation: null` leaves the request pending."
+  - "initialize_compaction_state must hand back the same Arc; a fallback hop that gets a fresh state loses the first attempt's arming and summary."
+  - "Keep each lock inside one function and never hand out a guard: B336 awaits the summary handle, and a guard held across that await blocks every other attempt of the call."
+  - "trigger_ratio is open at both ends (0 and 1 are refused), max_tokens accepts 512 itself, and timeout_seconds refuses 0."
+  - "An `input` entry or content block that is not an object matches nothing; LiteLLM raises a ValidationError there, which docs/compatibility.md covers as a value outside the declared type, so no case sends one."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

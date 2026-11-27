@@ -4,13 +4,18 @@ description: >-
   Second part of operations.py. This part owns the code that prepares the headers sent to each
   upstream server and the credential checks that run before a call.
 
-  It owns _client_has_per_server_auth_header, _client_has_passthrough_authorization,
-  _get_user_oauth_extra_headers_from_db, _prefetch_oauth_creds_for_user, _prepare_mcp_server_headers
+  It owns _get_user_oauth_extra_headers_from_db, _prefetch_oauth_creds_for_user, _prepare_mcp_server_headers
   (which per-server header the client sent, which stored credential applies, which token wins, and
   the call to record_auth_resolution from B8194, passing the request's McpContext from B8191), _merge_gateway_initialize_instructions,
   _raise_if_initialize_grants_no_mcp_servers, _get_byok_credential, _check_byok_credential and
   _challenge_missing_token_exchange_subject. A missing BYOK credential and a missing token
   exchange subject each produce a challenge the client can act on, with the Python's text.
+
+  The two client header predicates, _client_has_per_server_auth_header and
+  _client_has_passthrough_authorization (L681-L731), and the per-server header lookup are B10155's,
+  in betterlite-mcp module client_auth_headers. _prepare_mcp_server_headers picks the per-server
+  header (L799-L810) with B10155's client_auth_headers::lookup::lookup_server_auth; call it, don't
+  copy its rules.
 
   The plan registers helper operation b8196 as a not_built stub in tools/oracle/src/helpers/mcp/lib.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8196.rs, write tools/oracle/helpers/b8196.py, and leave both registries as they are.
 
@@ -29,8 +34,8 @@ scope:
   lint_tables: false
 
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L681-L935
-    why: Client header checks, OAuth prefetch, header preparation and initialize handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L734-L935
+    why: OAuth prefetch, header preparation and initialize handling.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1624-L1768
     why: BYOK credential lookup and check, and the token exchange challenge.
 
@@ -76,13 +81,11 @@ out_of_scope:
   - Credential mode resolution and client adaptation (B4667).
   - Server scoping (B8195).
   - Listing and execution (B8197, B8198).
+  - "The client header predicates and lookup_mcp_server_auth_in_headers: B10155."
 
 pitfalls:
   - >-
     Never log a header value. Log the header names and the resolution kind only.
-  - >-
-    The passthrough check reads the Authorization header the client sent. A gateway key in that
-    header is not a passthrough credential. Read lines 714 to 733 for the exact test.
   - "record_auth_resolution (B8194) takes B8191's McpContext as an argument. _prepare_mcp_server_headers takes the McpContext from its caller and passes it on; nothing reads the request from a static or a task local."
 
 review_level: security

@@ -16,7 +16,7 @@ description: >-
 
   Routes. /mcp/proxy forwards to path /mcp in proxy mode. /mcp (BASE_MCP_ROUTE) forwards to /mcp so the bare spelling
   never answers 307. /toolset/{toolset_name}/mcp answers 503 "Database not available" without a database, 404 "Toolset
-  '<name>' not found" when B6592's get_toolset_by_name_cached misses, else forwards to /mcp scoped to that toolset id.
+  '<name>' not found" when B10147's toolset_by_name_cached (LiteLLM get_toolset_by_name_cached) misses, else forwards to /mcp scoped to that toolset id.
   /{mcp_server_name}/mcp resolves in this order: a registered server name or alias visible from the client ip (B4731's
   server_by_name with B743's client ip) forwards to /mcp/<name>; a name with a comma goes through
   `resolve_csv_tokens`, and an empty result is 404 "No MCP server, toolset, or access group in '<segment>' resolved to

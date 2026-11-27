@@ -1,0 +1,11 @@
+kind: helper
+name: team-problems-forbidden-problem
+call:
+  b10130:
+    calls:
+      - forbidden: "Call not allowed. User not proxy admin OR team admin OR org admin for this team. route='/management/v1/teams/team-1/members/bulk_delete'"
+      - forbidden: "Call not allowed. User not proxy admin OR team admin OR org admin for this team. route='/management/v1/teams/team-1/members/bulk_update'"
+      - forbidden: "Only PROXY_ADMIN or ORG_ADMIN users may delete users."
+      - forbidden: ""
+env: {}
+compare: {ignore: []}

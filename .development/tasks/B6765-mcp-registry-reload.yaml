@@ -93,7 +93,7 @@ deviations:
 out_of_scope:
   - "Building a record from a row: B6763. Loading config servers: B6764."
   - "The registry type and its reads: B4731. Allowed-server unions: B6591."
-  - "Health checks and toolset caches: B6592."
+  - "Health checks: B6592. Toolset name cache lookup and invalidation: B10147."
   - "The table repository (MCPServerRepository) and approval filter query: B4711."
   - "The management routes that call add, update and remove: the admin route tasks."
 

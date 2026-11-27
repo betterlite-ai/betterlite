@@ -1,0 +1,27 @@
+kind: helper
+name: jwt-keys-outage-backoff-30-seconds
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 3600.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+          # the recorded outage answers without a fetch while the 30 second marker lives
+          - now: 1029.0
+            kid: a
+          - now: 1030.0
+            kid: a
+          # one second past the marker the provider is tried again
+          - now: 1031.0
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+env: {}
+compare: {ignore: []}

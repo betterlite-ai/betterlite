@@ -1,0 +1,13 @@
+kind: helper
+name: user-activity-scope-admin-selection
+call:
+  b10158:
+    calls:
+      - {user_id: null, caller: {user_id: null, user_role: proxy_admin}}
+      - {user_id: target-user, caller: {user_id: null, user_role: proxy_admin}}
+      - {user_id: "", caller: {user_id: admin-owner, user_role: proxy_admin}}
+      - {user_id: null, caller: {user_id: null, user_role: proxy_admin_viewer}}
+      - {user_id: target-user, caller: {user_id: admin-owner, user_role: proxy_admin_viewer}}
+      - {user_id: "", caller: {user_id: null, user_role: proxy_admin_viewer}}
+env: {}
+compare: {ignore: []}

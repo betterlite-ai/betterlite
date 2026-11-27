@@ -2,7 +2,7 @@ id: B7430
 milestone: M5 api families
 title: Container router wrappers and route choice
 status: todo
-depends_on: [B016, B6021, B014, B903, B3360, B3363, B3366, B3367, B3368, B3369, B3370, B9964, B8631]
+depends_on: [B016, B6021, B014, B903, B3360, B3363, B3366, B3367, B3368, B3369, B3370, B9964, B8631, B10154]
 file: tasks/B7430-container-router-calls.yaml
 covers:
   - "litellm/router.py"
