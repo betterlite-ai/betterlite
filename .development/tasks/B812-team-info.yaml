@@ -25,9 +25,11 @@ description: >-
   loop and does not replace the original keys, so do not claim this handler strips hashes. The HTTP
   key_collection_projection case compares the actual serialized key rows. The spend-only fallback after
   the earlier missing-row exception is unreachable and needs no invented success case. Fetch all team
-  memberships with B803. A string team_member_budget_id (including empty) from B809 triggers one budget
-  lookup; a missing row stays null, while an exception logs info and returns the unmodified team.
-  Only a found budget is an active default for B809 budget_source classification (custom/team_default/none).
+  memberships with B803. A string team_member_budget_id (including empty), read with B10151's
+  team_default_budget_id from the team row's metadata, triggers one budget lookup; a missing row stays
+  null, while an exception logs info and returns the unmodified team. Only a found budget is an active
+  default: pass it, or None, with each membership's budget_id to B10151's member_budget_source for
+  budget_source (custom/team_default/none, B10151's TeamMemberBudgetSource). This task builds neither.
   Cases default_budget_found_missing_error and membership_budget_sources cover both response and log.
 
   Resolve groups through B1209's one-query batch helper. No group IDs leaves inherited fields untouched;
@@ -171,8 +173,9 @@ out_of_scope:
     (L3763-L3915).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B809 owns _check_not_resetting_own_spend (L3918-L3928),
     _raise_reset_spend_error (L3931-L3933), _validate_team_member_reset_spend_value (L3936-L3961), reset_team_member_spend_fn
-    (L3970-L4033), _team_default_budget_id (L4040-L4043), _existing_team_default_budget_id (L4046-L4053),
-    _member_budget_source (L4056-L4059), reset_team_member_budget_fn (L4069-L4123).'
+    (L3970-L4033), _existing_team_default_budget_id (L4046-L4053), reset_team_member_budget_fn (L4069-L4123).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10151 owns _TeamMetadataView (L4036-L4037), _team_default_budget_id
+    (L4040-L4043), _member_budget_source (L4056-L4059); this task calls the two functions.'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B810 owns _create_results_from_response (L4126-L4162),
     bulk_team_member_add (L4172-L4308), team_member_permissions (L6256-L6313), update_team_member_permissions
     (L6321-L6374), bulk_update_team_member_permissions (L6384-L6436), _compute_and_batch_updates (L6439-L6460),

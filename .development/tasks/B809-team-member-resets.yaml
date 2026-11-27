@@ -22,13 +22,14 @@ description: >-
   leaves the database reset committed. B734 owns floor/counter publication semantics; this route does
   not use KeySpendReset's separate contract.
 
-  _team_default_budget_id validates metadata as a mapping and accepts only a string value, including
-  empty string. _existing_team_default_budget_id queries B801's budget table only when a string exists
-  and returns None for a dangling reference. Budget reset connects membership to the existing default
+  B10151's team_default_budget_id reads the default id from the team's metadata (a string, the empty
+  string included). _existing_team_default_budget_id calls it, queries B801's budget table only when it
+  returns an id, and returns None for a dangling reference. Budget reset connects membership to the existing default
   or disconnects it with {disconnect: true}; it never deletes or changes the old/shared budget row or
   membership spend. Then invalidate member spend state WITHOUT new_spend. Return budget_id,
-  previous_budget_id and budget_source=team_default or none. The reusable _member_budget_source returns
-  custom for a nonnull ID unequal to the default, team_default for an existing default, else none.
+  previous_budget_id and budget_source=team_default or none, from B10151's member_budget_source with the
+  existing default as both arguments, so this route never answers custom. B10151 also owns the
+  TeamMemberBudgetSource enum; this task builds neither function nor the enum.
 
   All errors are HTTPException details {error: message} or dependency exceptions. There is no local
   catch or handle_exception_on_proxy call; B003/B865 preserve the actual public envelope. HTTP cases
@@ -39,9 +40,8 @@ description: >-
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
   _check_not_resetting_own_spend (L3918-L3928; 11 source lines), _raise_reset_spend_error (L3931-L3933;
   3 source lines), _validate_team_member_reset_spend_value (L3936-L3961; 22 source lines), reset_team_member_spend_fn
-  (L3970-L4033; 56 source lines), _team_default_budget_id (L4040-L4043; 4 source lines), _existing_team_default_budget_id
-  (L4046-L4053; 8 source lines), _member_budget_source (L4056-L4059; 4 source lines), reset_team_member_budget_fn
-  (L4069-L4123; 49 source lines).
+  (L3970-L4033; 56 source lines), _existing_team_default_budget_id (L4046-L4053; 8 source lines),
+  reset_team_member_budget_fn (L4069-L4123; 49 source lines).
 
 
   Register these actual HTTP routes and aliases exactly once: POST /team/{team_id}/member/{user_id}/reset_spend
@@ -54,8 +54,8 @@ description: >-
   setup errors and comparing both the member budget row and its spend-cache value after injected faults.
 
 
-  Sizing: 157 nonblank, noncomment source lines plus metadata view; allow 175 production,
-  285 behavior/Postgres tests and 65 route wiring lines, 525 within 550.
+  Sizing: 149 nonblank, noncomment source lines after B10151 took the metadata view and the two pure
+  helpers; allow 165 production, 275 behavior/Postgres tests and 65 route wiring lines, 505 within 550.
 
 
   Install B052 and B865 on the two member-reset registrations, retaining each handler's separate catch behavior.
@@ -88,12 +88,10 @@ references:
     why: Own _validate_team_member_reset_spend_value; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3964-L4033
     why: Own reset_team_member_spend_fn; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4040-L4043
-    why: Own _team_default_budget_id; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4046-L4053
     why: Own _existing_team_default_budget_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4056-L4059
-    why: Own _member_budget_source; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4036-L4059
+    why: B10151 owns _TeamMetadataView, _team_default_budget_id and _member_budget_source; this task calls them.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4062-L4123
     why: Own reset_team_member_budget_fn; preserve caller-visible values and failure ordering.
 dod:
@@ -104,8 +102,7 @@ dod:
       numeric_string_reset, helper_bool_numeric, wrong_reset_type, nonfinite_spend,
       above_current_spend, above_budget, validation_order, equality_allowed, null_spend_zero,
       missing_budget_uncapped, member_spend_only, spend_cache_failure_committed,
-      default_id_wrong_type, default_id_empty_string, dangling_default_disconnect,
-      budget_reset_keeps_spend, custom_budget_source, null_budget_source,
+      dangling_default_disconnect, budget_reset_keeps_spend, null_budget_source,
       budget_cache_without_new_spend and reset_response_fields.'
     proof:
       - behavior-tests
@@ -179,6 +176,8 @@ out_of_scope:
     (L3170-L3197), _schedule_team_member_add_audit_logs (L3200-L3242).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B808 owns team_member_add (L3356-L3505), team_member_update
     (L3763-L3915).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10151 owns _TeamMetadataView (L4036-L4037), _team_default_budget_id
+    (L4040-L4043), _member_budget_source (L4056-L4059); this task calls the two functions.'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B810 owns _create_results_from_response (L4126-L4162),
     bulk_team_member_add (L4172-L4308), team_member_permissions (L6256-L6313), update_team_member_permissions
     (L6321-L6374), bulk_update_team_member_permissions (L6384-L6436), _compute_and_batch_updates (L6439-L6460),
