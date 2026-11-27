@@ -51,6 +51,8 @@ pub trait LoginCodeCache: Send + Sync {
 
 #[async_trait]
 impl LoginCodeCache for RedisCache {
+    // a Redis write needs a live Redis cache, so the mutation run cannot kill this body
+    #[cfg_attr(test, mutants::skip)]
     async fn store(
         &self,
         key: &str,
