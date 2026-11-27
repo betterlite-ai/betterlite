@@ -303,8 +303,39 @@ fn eval_run_lifecycle_unsupported_known_provider_names_the_action() {
         delete_failure.error.to_string(),
         "DELETE run is not supported for azure"
     );
-    assert!(matches!(&get_failure.class, ErrorClass::ApiConnection(_)));
-    assert_eq!(get_failure.class.metadata().status_code, 500);
+    let ErrorClass::BadRequest(get_details) = &get_failure.class else {
+        panic!("a bad request, got {:?}", get_failure.class);
+    };
+    let ErrorClass::BadRequest(cancel_details) = &cancel_failure.class else {
+        panic!("a bad request, got {:?}", cancel_failure.class);
+    };
+    let ErrorClass::BadRequest(delete_details) = &delete_failure.class else {
+        panic!("a bad request, got {:?}", delete_failure.class);
+    };
+    assert_eq!(
+        [
+            get_details.status.0,
+            cancel_details.status.0,
+            delete_details.status.0
+        ],
+        [400, 400, 400]
+    );
+    assert_eq!(
+        [
+            get_details.model.as_deref(),
+            cancel_details.model.as_deref(),
+            delete_details.model.as_deref()
+        ],
+        [Some(""), Some(""), Some("")]
+    );
+    assert_eq!(
+        [
+            get_details.provider.as_deref(),
+            cancel_details.provider.as_deref(),
+            delete_details.provider.as_deref()
+        ],
+        [Some("azure"), Some("azure"), Some("azure")]
+    );
     assert!(fake.calls().is_empty());
 }
 
@@ -321,12 +352,61 @@ fn eval_run_lifecycle_unsupported_unknown_provider_raises_the_lookup_error() {
         ..base_request(&kwargs)
     };
     let mut logging = state("get_run");
-    let failure = get_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
+    let get_failure =
+        get_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
+    let cancel_failure =
+        cancel_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
+    let delete_failure =
+        delete_run(&deps, &unknown, &mut logging).expect_err("the name is outside the set");
     assert_eq!(
-        failure.error.to_string(),
+        get_failure.error.to_string(),
         "'not-a-provider' is not a valid LlmProviders"
     );
-    assert!(matches!(&failure.class, ErrorClass::ApiConnection(_)));
+    assert_eq!(
+        cancel_failure.error.to_string(),
+        "'not-a-provider' is not a valid LlmProviders"
+    );
+    assert_eq!(
+        delete_failure.error.to_string(),
+        "'not-a-provider' is not a valid LlmProviders"
+    );
+    let ErrorClass::BadRequest(get_details) = &get_failure.class else {
+        panic!("a bad request, got {:?}", get_failure.class);
+    };
+    let ErrorClass::BadRequest(cancel_details) = &cancel_failure.class else {
+        panic!("a bad request, got {:?}", cancel_failure.class);
+    };
+    let ErrorClass::BadRequest(delete_details) = &delete_failure.class else {
+        panic!("a bad request, got {:?}", delete_failure.class);
+    };
+    assert_eq!(
+        [
+            get_details.status.0,
+            cancel_details.status.0,
+            delete_details.status.0
+        ],
+        [400, 400, 400]
+    );
+    assert_eq!(
+        [
+            get_details.model.as_deref(),
+            cancel_details.model.as_deref(),
+            delete_details.model.as_deref()
+        ],
+        [Some(""), Some(""), Some("")]
+    );
+    assert_eq!(
+        [
+            get_details.provider.as_deref(),
+            cancel_details.provider.as_deref(),
+            delete_details.provider.as_deref()
+        ],
+        [
+            Some("not-a-provider"),
+            Some("not-a-provider"),
+            Some("not-a-provider")
+        ]
+    );
     assert!(fake.calls().is_empty());
 }
 
