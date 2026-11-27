@@ -44,34 +44,6 @@ pub(super) static COLUMNS: [Column; 51] = [
         kind: ColumnKind::Text,
     },
     Column {
-        name: "soft_budget_cooldown",
-        kind: ColumnKind::Boolean,
-    },
-    Column {
-        name: "spend",
-        kind: ColumnKind::Number,
-    },
-    Column {
-        name: "total_spend",
-        kind: ColumnKind::Number,
-    },
-    Column {
-        name: "expires",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "models",
-        kind: ColumnKind::TextArray,
-    },
-    Column {
-        name: "aliases",
-        kind: ColumnKind::Json,
-    },
-    Column {
-        name: "config",
-        kind: ColumnKind::Json,
-    },
-    Column {
         name: "user_id",
         kind: ColumnKind::Text,
     },
@@ -88,20 +60,64 @@ pub(super) static COLUMNS: [Column; 51] = [
         kind: ColumnKind::Text,
     },
     Column {
-        name: "permissions",
-        kind: ColumnKind::Json,
+        name: "budget_duration",
+        kind: ColumnKind::Text,
     },
     Column {
-        name: "max_parallel_requests",
-        kind: ColumnKind::Integer,
+        name: "key_type",
+        kind: ColumnKind::Text,
     },
     Column {
-        name: "metadata",
-        kind: ColumnKind::Json,
+        name: "budget_id",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "organization_id",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "object_permission_id",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "created_by",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "updated_by",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "rotation_interval",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "deleted_by",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "deleted_by_api_key",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "litellm_changed_by",
+        kind: ColumnKind::Text,
+    },
+    Column {
+        name: "soft_budget_cooldown",
+        kind: ColumnKind::Boolean,
     },
     Column {
         name: "blocked",
         kind: ColumnKind::Boolean,
+    },
+    Column {
+        name: "auto_rotate",
+        kind: ColumnKind::Boolean,
+    },
+    Column {
+        name: "max_parallel_requests",
+        kind: ColumnKind::Integer,
     },
     Column {
         name: "tpm_limit",
@@ -116,16 +132,60 @@ pub(super) static COLUMNS: [Column; 51] = [
         kind: ColumnKind::Integer,
     },
     Column {
+        name: "rotation_count",
+        kind: ColumnKind::Integer,
+    },
+    Column {
+        name: "spend",
+        kind: ColumnKind::Number,
+    },
+    Column {
+        name: "total_spend",
+        kind: ColumnKind::Number,
+    },
+    Column {
         name: "max_budget",
         kind: ColumnKind::Number,
     },
     Column {
-        name: "budget_duration",
-        kind: ColumnKind::Text,
+        name: "expires",
+        kind: ColumnKind::Timestamp,
     },
     Column {
         name: "budget_reset_at",
         kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "created_at",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "updated_at",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "settings_updated_at",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "last_active",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "last_rotation_at",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "key_rotation_at",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "deleted_at",
+        kind: ColumnKind::Timestamp,
+    },
+    Column {
+        name: "models",
+        kind: ColumnKind::TextArray,
     },
     Column {
         name: "allowed_cache_controls",
@@ -136,12 +196,24 @@ pub(super) static COLUMNS: [Column; 51] = [
         kind: ColumnKind::TextArray,
     },
     Column {
-        name: "key_type",
-        kind: ColumnKind::Text,
-    },
-    Column {
         name: "access_group_ids",
         kind: ColumnKind::TextArray,
+    },
+    Column {
+        name: "aliases",
+        kind: ColumnKind::Json,
+    },
+    Column {
+        name: "config",
+        kind: ColumnKind::Json,
+    },
+    Column {
+        name: "permissions",
+        kind: ColumnKind::Json,
+    },
+    Column {
+        name: "metadata",
+        kind: ColumnKind::Json,
     },
     Column {
         name: "model_spend",
@@ -158,78 +230,6 @@ pub(super) static COLUMNS: [Column; 51] = [
     Column {
         name: "router_settings",
         kind: ColumnKind::Json,
-    },
-    Column {
-        name: "budget_id",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "organization_id",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "object_permission_id",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "created_at",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "created_by",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "updated_at",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "updated_by",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "settings_updated_at",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "last_active",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "rotation_count",
-        kind: ColumnKind::Integer,
-    },
-    Column {
-        name: "auto_rotate",
-        kind: ColumnKind::Boolean,
-    },
-    Column {
-        name: "rotation_interval",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "last_rotation_at",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "key_rotation_at",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "deleted_at",
-        kind: ColumnKind::Timestamp,
-    },
-    Column {
-        name: "deleted_by",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "deleted_by_api_key",
-        kind: ColumnKind::Text,
-    },
-    Column {
-        name: "litellm_changed_by",
-        kind: ColumnKind::Text,
     },
 ];
 

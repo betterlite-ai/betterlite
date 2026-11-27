@@ -136,6 +136,47 @@ const SAMPLE_TOKEN: &str = r#"{
     "budget_limits": [{"budget_id": "budget-row"}]
 }"#;
 
+const SAMPLE_NUMBERS: [(&str, f64); 3] = [
+    ("spend", 12.5),
+    ("total_spend", 40.25),
+    ("max_budget", 100.75),
+];
+
+const SAMPLE_LIMITS: [(&str, Option<i64>); 3] = [
+    ("tpm_limit", Some(1000)),
+    ("rpm_limit", Some(500)),
+    ("tpd_limit", Some(100_000)),
+];
+
+const SAMPLE_INSTANTS: [(&str, &str); 9] = [
+    ("expires", "2027-03-04T05:06:07.890"),
+    ("budget_reset_at", "2027-01-02T00:00:00.500"),
+    ("created_at", "2026-01-02T03:04:05.678"),
+    ("updated_at", "2026-02-03T04:05:06.789"),
+    ("settings_updated_at", "2026-02-04T05:06:07.891"),
+    ("last_active", "2026-02-05T06:07:08.912"),
+    ("last_rotation_at", "2026-02-06T07:08:09.123"),
+    ("key_rotation_at", "2026-02-07T08:09:10.234"),
+    ("deleted_at", "2026-05-06T07:08:09.123"),
+];
+
+const SAMPLE_PAYLOADS: [(&str, &str); 6] = [
+    ("aliases", r#"{"team": "alpha"}"#),
+    ("config", r#"{"region": "eu"}"#),
+    ("permissions", r#"{"manage_keys": true}"#),
+    ("metadata", r#"{"tier": "gold"}"#),
+    ("model_spend", r#"{"gpt-4o": 3.25}"#),
+    ("model_max_budget", r#"{"gpt-4o": 50.5}"#),
+];
+
+const SAMPLE_ARRAYS: [(&str, &[&str]); 5] = [
+    ("models", &["gpt-4o", "claude-3"]),
+    ("allowed_cache_controls", &["no-cache"]),
+    ("allowed_routes", &["/chat/completions"]),
+    ("access_group_ids", &["group-1", "group-2"]),
+    ("policies", &[]),
+];
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -250,36 +291,20 @@ async fn only_row(database: &Database) -> Row {
 }
 
 fn assert_identity(row: &Row, record: &DeletedVerificationToken) {
+    let id = record.id.clone().expect("the record carries an id");
+    assert_eq!(row.get::<_, String>("id"), id);
+    let token = record.token.token.as_ref();
     assert_eq!(
-        row.get::<_, String>("id"),
-        record.id.clone().expect("the record carries an id")
+        row.get::<_, String>("token").as_str(),
+        token.expect("a token").expose_secret()
     );
-    let archived = record
-        .token
-        .token
-        .as_ref()
-        .map(|secret| secret.expose_secret().as_str())
-        .expect("the record carries a token");
-    assert_eq!(row.get::<_, String>("token"), archived);
 }
 
-fn assert_accounting(row: &Row, record: &DeletedVerificationToken) {
-    assert_eq!(
-        row.get::<_, bool>("soft_budget_cooldown"),
-        record.token.soft_budget_cooldown.0
-    );
-    assert_eq!(
-        row.get::<_, f64>("spend").to_bits(),
-        record.token.spend.as_f64().to_bits()
-    );
-    assert_eq!(
-        row.get::<_, f64>("total_spend").to_bits(),
-        record.token.total_spend.as_f64().to_bits()
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("expires"),
-        Some(instant("2027-03-04T05:06:07.890"))
-    );
+fn assert_accounting(row: &Row) {
+    for (column, amount) in SAMPLE_NUMBERS {
+        let stored: f64 = row.get(column);
+        assert_eq!(stored.to_bits(), amount.to_bits(), "{column}");
+    }
 }
 
 fn assert_texts(row: &Row, record: &DeletedVerificationToken) {
@@ -303,71 +328,31 @@ fn assert_texts(row: &Row, record: &DeletedVerificationToken) {
     });
 }
 
-fn assert_json(row: &Row, record: &DeletedVerificationToken) {
+fn assert_json(row: &Row) {
+    for (column, text) in SAMPLE_PAYLOADS {
+        let expected: Payload = serde_json::from_str(text).expect("a sample payload");
+        let stored: Json<Payload> = row.get(column);
+        assert_eq!(stored.0, expected, "{column}");
+    }
+}
+
+fn assert_json_extras(row: &Row, record: &DeletedVerificationToken) {
+    let fallbacks: Json<BTreeMap<String, Vec<String>>> = row.get("budget_fallbacks");
+    let router: Option<Json<Payload>> = row.get("router_settings");
+    assert_eq!(fallbacks.0, record.token.budget_fallbacks);
     assert_eq!(
-        row.get::<_, Json<Payload>>("aliases").0,
-        record.token.aliases
-    );
-    assert_eq!(row.get::<_, Json<Payload>>("config").0, record.token.config);
-    assert_eq!(
-        row.get::<_, Json<Payload>>("permissions").0,
-        record.token.permissions
-    );
-    assert_eq!(
-        row.get::<_, Json<Payload>>("metadata").0,
-        record.token.metadata
-    );
-    assert_eq!(
-        row.get::<_, Json<Payload>>("model_spend").0,
-        record.token.model_spend
-    );
-    assert_eq!(
-        row.get::<_, Json<Payload>>("model_max_budget").0,
-        record.token.model_max_budget
-    );
-    assert_eq!(
-        row.get::<_, Json<BTreeMap<String, Vec<String>>>>("budget_fallbacks")
-            .0,
-        record.token.budget_fallbacks
-    );
-    let router = row
-        .get::<_, Option<Json<Payload>>>("router_settings")
-        .expect("the full record carries router settings");
-    assert_eq!(
-        router.0,
-        record
-            .token
-            .router_settings
-            .clone()
-            .expect("the full token carries router settings")
+        router.map(|json| json.0),
+        record.token.router_settings.clone()
     );
 }
 
-fn assert_limits(row: &Row, record: &DeletedVerificationToken) {
-    assert_eq!(
-        row.get::<_, Option<bool>>("blocked"),
-        record.token.blocked.map(|flag| flag.0)
-    );
-    assert_eq!(
-        row.get::<_, Option<i64>>("tpm_limit"),
-        record.token.tpm_limit
-    );
-    assert_eq!(
-        row.get::<_, Option<i64>>("rpm_limit"),
-        record.token.rpm_limit
-    );
-    assert_eq!(
-        row.get::<_, Option<i64>>("tpd_limit"),
-        record.token.tpd_limit
-    );
-    let max_budget = row
-        .get::<_, Option<f64>>("max_budget")
-        .expect("the full record carries a max budget");
-    let archived = record
-        .token
-        .max_budget
-        .expect("the full token carries a max budget");
-    assert_eq!(max_budget.to_bits(), archived.as_f64().to_bits());
+fn assert_limits(row: &Row) {
+    assert!(row.get::<_, bool>("soft_budget_cooldown"));
+    assert_eq!(row.get::<_, Option<bool>>("blocked"), Some(false));
+    for (column, limit) in SAMPLE_LIMITS {
+        let stored: Option<i64> = row.get(column);
+        assert_eq!(stored, limit, "{column}");
+    }
 }
 
 fn assert_rotation(row: &Row, record: &DeletedVerificationToken) {
@@ -394,68 +379,25 @@ fn assert_rotation(row: &Row, record: &DeletedVerificationToken) {
     );
 }
 
-fn assert_arrays(row: &Row, record: &DeletedVerificationToken) {
-    assert_eq!(
-        row.get::<_, Option<Vec<String>>>("models"),
-        Some(vec![String::from("gpt-4o"), String::from("claude-3")])
-    );
-    assert_eq!(
-        row.get::<_, Option<Vec<String>>>("allowed_cache_controls"),
-        Some(vec![String::from("no-cache")])
-    );
-    assert_eq!(
-        row.get::<_, Option<Vec<String>>>("allowed_routes"),
-        Some(vec![String::from("/chat/completions")])
-    );
-    assert_eq!(
-        row.get::<_, Option<Vec<String>>>("access_group_ids"),
-        record.token.access_group_ids
-    );
-    assert_eq!(
-        row.get::<_, Option<Vec<String>>>("policies"),
-        Some(Vec::new())
-    );
+fn assert_arrays(row: &Row) {
+    for (column, values) in SAMPLE_ARRAYS {
+        let stored: Option<Vec<String>> = row.get(column);
+        let expected: Vec<String> = values.iter().copied().map(String::from).collect();
+        assert_eq!(stored, Some(expected), "{column}");
+    }
 }
 
 fn assert_stamps(row: &Row) {
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("created_at"),
-        Some(instant("2026-01-02T03:04:05.678"))
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("updated_at"),
-        Some(instant("2026-02-03T04:05:06.789"))
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("settings_updated_at"),
-        Some(instant("2026-02-04T05:06:07.891"))
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("last_active"),
-        Some(instant("2026-02-05T06:07:08.912"))
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("last_rotation_at"),
-        Some(instant("2026-02-06T07:08:09.123"))
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("key_rotation_at"),
-        Some(instant("2026-02-07T08:09:10.234"))
-    );
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("budget_reset_at"),
-        Some(instant("2027-01-02T00:00:00.500"))
-    );
+    for (column, text) in SAMPLE_INSTANTS {
+        let stored: Option<NaiveDateTime> = row.get(column);
+        assert_eq!(stored, Some(instant(text)), "{column}");
+    }
 }
 
 fn assert_deletion(row: &Row, record: &DeletedVerificationToken) {
     assert_eq!(
         row.get::<_, Option<String>>("organization_id"),
         record.organization_id
-    );
-    assert_eq!(
-        row.get::<_, NaiveDateTime>("deleted_at"),
-        instant("2026-05-06T07:08:09.123")
     );
     assert_eq!(
         row.get::<_, Option<String>>("deleted_by"),
@@ -581,12 +523,13 @@ async fn insert_writes_the_record_postgres() {
         .unwrap();
     let row = only_row(&database).await;
     assert_identity(&row, &record);
-    assert_accounting(&row, &record);
+    assert_accounting(&row);
     assert_texts(&row, &record);
-    assert_json(&row, &record);
-    assert_limits(&row, &record);
+    assert_json(&row);
+    assert_json_extras(&row, &record);
+    assert_limits(&row);
     assert_rotation(&row, &record);
-    assert_arrays(&row, &record);
+    assert_arrays(&row);
     assert_stamps(&row);
     assert_deletion(&row, &record);
     database.close().await;

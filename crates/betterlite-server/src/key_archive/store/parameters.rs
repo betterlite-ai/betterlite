@@ -47,142 +47,122 @@ pub(super) fn archived_parameters(
 ) -> Result<Vec<Parameter>, KeyArchiveError> {
     let mut parameters = Vec::with_capacity(records.len().saturating_mul(COLUMNS.len()));
     for record in records {
-        push_identity(&mut parameters, record);
-        push_accounting(&mut parameters, record)?;
-        push_lists(&mut parameters, record)?;
-        push_owner(&mut parameters, record);
-        push_limits(&mut parameters, record)?;
-        push_policy(&mut parameters, record);
-        push_stamps(&mut parameters, record);
-        push_deletion(&mut parameters, record);
+        parameters.extend(text_parameters(record));
+        parameters.extend(boolean_parameters(record));
+        parameters.extend(integer_parameters(record));
+        parameters.extend(number_parameters(record));
+        parameters.extend(timestamp_parameters(record)?);
+        parameters.extend(array_parameters(record)?);
+        parameters.extend(json_parameters(record));
     }
     Ok(parameters)
 }
 
-fn push_identity(parameters: &mut Vec<Parameter>, record: &DeletedVerificationToken) {
+fn text_parameters(record: &DeletedVerificationToken) -> [Parameter; 19] {
     let token = &record.token;
     let hashed = token
         .token
         .as_ref()
         .map(|secret| secret.expose_secret().to_owned());
-    parameters.push(Parameter::Text(record.id.clone()));
-    parameters.push(Parameter::Text(hashed));
-    parameters.push(Parameter::Text(token.key_name.clone()));
-    parameters.push(Parameter::Text(token.key_alias.clone()));
-}
-
-fn push_accounting(
-    parameters: &mut Vec<Parameter>,
-    record: &DeletedVerificationToken,
-) -> Result<(), KeyArchiveError> {
-    let token = &record.token;
-    parameters.push(Parameter::Boolean(token.soft_budget_cooldown.0));
-    parameters.push(Parameter::Number(Some(token.spend)));
-    parameters.push(Parameter::Number(Some(token.total_spend)));
-    parameters.push(Parameter::Timestamp(expiry_instant(
-        token.expires.as_ref(),
-    )?));
-    Ok(())
-}
-
-fn push_lists(
-    parameters: &mut Vec<Parameter>,
-    record: &DeletedVerificationToken,
-) -> Result<(), KeyArchiveError> {
-    let token = &record.token;
-    parameters.push(Parameter::TextArray(text_values(
-        Some(token.models.as_slice()),
-        "models",
-    )?));
-    parameters.push(Parameter::JsonPayload(Json(token.aliases.clone())));
-    parameters.push(Parameter::JsonPayload(Json(token.config.clone())));
-    Ok(())
-}
-
-fn push_owner(parameters: &mut Vec<Parameter>, record: &DeletedVerificationToken) {
-    let token = &record.token;
-    parameters.push(Parameter::Text(token.user_id.clone()));
-    parameters.push(Parameter::Text(token.team_id.clone()));
-    parameters.push(Parameter::Text(token.agent_id.clone()));
-    parameters.push(Parameter::Text(token.project_id.clone()));
-    parameters.push(Parameter::JsonPayload(Json(token.permissions.clone())));
-    parameters.push(Parameter::Integer(token.max_parallel_requests));
-    parameters.push(Parameter::JsonPayload(Json(token.metadata.clone())));
-}
-
-fn push_limits(
-    parameters: &mut Vec<Parameter>,
-    record: &DeletedVerificationToken,
-) -> Result<(), KeyArchiveError> {
-    let token = &record.token;
-    parameters.push(Parameter::OptionalBoolean(token.blocked.map(|flag| flag.0)));
-    parameters.push(Parameter::Integer(token.tpm_limit));
-    parameters.push(Parameter::Integer(token.rpm_limit));
-    parameters.push(Parameter::Integer(token.tpd_limit));
-    parameters.push(Parameter::Number(token.max_budget));
-    parameters.push(Parameter::Text(token.budget_duration.clone()));
-    parameters.push(Parameter::Timestamp(timestamp_instant(
-        token.budget_reset_at,
-    )));
-    let cache_controls = token.allowed_cache_controls.0.as_deref();
-    parameters.push(Parameter::TextArray(text_values(
-        cache_controls,
-        "allowed_cache_controls",
-    )?));
-    let routes = token.allowed_routes.0.as_deref();
-    parameters.push(Parameter::TextArray(text_values(routes, "allowed_routes")?));
-    Ok(())
-}
-
-fn push_policy(parameters: &mut Vec<Parameter>, record: &DeletedVerificationToken) {
-    let token = &record.token;
-    parameters.push(Parameter::Text(token.key_type.clone()));
-    parameters.push(Parameter::TextArray(token.access_group_ids.clone()));
-    parameters.push(Parameter::JsonPayload(Json(token.model_spend.clone())));
-    parameters.push(Parameter::JsonPayload(Json(token.model_max_budget.clone())));
-    parameters.push(Parameter::JsonFallbacks(Json(
-        token.budget_fallbacks.clone(),
-    )));
-    parameters.push(Parameter::OptionalJsonPayload(
-        token.router_settings.clone().map(Json),
-    ));
-    parameters.push(Parameter::Text(token.budget_id.clone()));
-    parameters.push(Parameter::Text(record.organization_id.clone()));
-    parameters.push(Parameter::Text(token.object_permission_id.clone()));
-}
-
-fn push_stamps(parameters: &mut Vec<Parameter>, record: &DeletedVerificationToken) {
-    let token = &record.token;
-    parameters.push(Parameter::Timestamp(timestamp_instant(token.created_at)));
-    parameters.push(Parameter::Text(token.created_by.clone()));
-    parameters.push(Parameter::Timestamp(timestamp_instant(token.updated_at)));
-    parameters.push(Parameter::Text(token.updated_by.clone()));
-    parameters.push(Parameter::Timestamp(timestamp_instant(
-        token.settings_updated_at,
-    )));
-    parameters.push(Parameter::Timestamp(timestamp_instant(token.last_active)));
-    parameters.push(Parameter::Integer(token.rotation_count.0));
-    parameters.push(Parameter::OptionalBoolean(
-        token.auto_rotate.0.map(|flag| flag.0),
-    ));
-    parameters.push(Parameter::Text(token.rotation_interval.clone()));
-    parameters.push(Parameter::Timestamp(timestamp_instant(
-        token.last_rotation_at,
-    )));
-    parameters.push(Parameter::Timestamp(timestamp_instant(
-        token.key_rotation_at,
-    )));
-}
-
-fn push_deletion(parameters: &mut Vec<Parameter>, record: &DeletedVerificationToken) {
     let actor = record
         .deleted_by_api_key
         .as_ref()
         .map(|secret| secret.expose_secret().to_owned());
-    parameters.push(Parameter::Timestamp(timestamp_instant(record.deleted_at)));
-    parameters.push(Parameter::Text(record.deleted_by.clone()));
-    parameters.push(Parameter::Text(actor));
-    parameters.push(Parameter::Text(record.litellm_changed_by.clone()));
+    [
+        Parameter::Text(record.id.clone()),
+        Parameter::Text(hashed),
+        Parameter::Text(token.key_name.clone()),
+        Parameter::Text(token.key_alias.clone()),
+        Parameter::Text(token.user_id.clone()),
+        Parameter::Text(token.team_id.clone()),
+        Parameter::Text(token.agent_id.clone()),
+        Parameter::Text(token.project_id.clone()),
+        Parameter::Text(token.budget_duration.clone()),
+        Parameter::Text(token.key_type.clone()),
+        Parameter::Text(token.budget_id.clone()),
+        Parameter::Text(record.organization_id.clone()),
+        Parameter::Text(token.object_permission_id.clone()),
+        Parameter::Text(token.created_by.clone()),
+        Parameter::Text(token.updated_by.clone()),
+        Parameter::Text(token.rotation_interval.clone()),
+        Parameter::Text(record.deleted_by.clone()),
+        Parameter::Text(actor),
+        Parameter::Text(record.litellm_changed_by.clone()),
+    ]
+}
+
+fn boolean_parameters(record: &DeletedVerificationToken) -> [Parameter; 3] {
+    [
+        Parameter::Boolean(record.token.soft_budget_cooldown.0),
+        Parameter::OptionalBoolean(record.token.blocked.map(|flag| flag.0)),
+        Parameter::OptionalBoolean(record.token.auto_rotate.0.map(|flag| flag.0)),
+    ]
+}
+
+fn integer_parameters(record: &DeletedVerificationToken) -> [Parameter; 5] {
+    [
+        Parameter::Integer(record.token.max_parallel_requests),
+        Parameter::Integer(record.token.tpm_limit),
+        Parameter::Integer(record.token.rpm_limit),
+        Parameter::Integer(record.token.tpd_limit),
+        Parameter::Integer(record.token.rotation_count.0),
+    ]
+}
+
+fn number_parameters(record: &DeletedVerificationToken) -> [Parameter; 3] {
+    [
+        Parameter::Number(Some(record.token.spend)),
+        Parameter::Number(Some(record.token.total_spend)),
+        Parameter::Number(record.token.max_budget),
+    ]
+}
+
+fn timestamp_parameters(
+    record: &DeletedVerificationToken,
+) -> Result<[Parameter; 9], KeyArchiveError> {
+    let token = &record.token;
+    let instants = [
+        expiry_instant(token.expires.as_ref())?,
+        timestamp_instant(token.budget_reset_at),
+        timestamp_instant(token.created_at),
+        timestamp_instant(token.updated_at),
+        timestamp_instant(token.settings_updated_at),
+        timestamp_instant(token.last_active),
+        timestamp_instant(token.last_rotation_at),
+        timestamp_instant(token.key_rotation_at),
+        timestamp_instant(record.deleted_at),
+    ];
+    Ok(instants.map(Parameter::Timestamp))
+}
+
+fn array_parameters(record: &DeletedVerificationToken) -> Result<[Parameter; 4], KeyArchiveError> {
+    let token = &record.token;
+    let cache_controls = token.allowed_cache_controls.0.as_deref();
+    let routes = token.allowed_routes.0.as_deref();
+    let models = text_values(Some(token.models.as_slice()), "models")?;
+    let controls = text_values(cache_controls, "allowed_cache_controls")?;
+    let allowed = text_values(routes, "allowed_routes")?;
+    let groups = token.access_group_ids.clone();
+    Ok([
+        Parameter::TextArray(models),
+        Parameter::TextArray(controls),
+        Parameter::TextArray(allowed),
+        Parameter::TextArray(groups),
+    ])
+}
+
+fn json_parameters(record: &DeletedVerificationToken) -> [Parameter; 8] {
+    let token = &record.token;
+    [
+        Parameter::JsonPayload(Json(token.aliases.clone())),
+        Parameter::JsonPayload(Json(token.config.clone())),
+        Parameter::JsonPayload(Json(token.permissions.clone())),
+        Parameter::JsonPayload(Json(token.metadata.clone())),
+        Parameter::JsonPayload(Json(token.model_spend.clone())),
+        Parameter::JsonPayload(Json(token.model_max_budget.clone())),
+        Parameter::JsonFallbacks(Json(token.budget_fallbacks.clone())),
+        Parameter::OptionalJsonPayload(token.router_settings.clone().map(Json)),
+    ]
 }
 
 fn timestamp_instant(timestamp: Option<Timestamp>) -> Option<NaiveDateTime> {
