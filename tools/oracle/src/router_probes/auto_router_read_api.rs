@@ -1,21 +1,6 @@
 use std::fmt::Display;
-use std::sync::{Mutex, PoisonError};
 
-use async_trait::async_trait;
-use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
-use betterlite_server::auto_router_read_api::VIEW_ACTION;
-use betterlite_server::auto_router_read_api::error::ReadApiError;
-use betterlite_server::auto_router_read_api::query::{BenchmarksQuery, SessionQuery};
-use betterlite_server::auto_router_read_api::service::{benchmarks_for, session_for};
-use betterlite_server::auto_router_read_api::store::AutoRouterReadStore;
-use betterlite_server::benchmark_aggregates::decode::decode_session_agg_rows;
-use betterlite_server::benchmark_aggregates::row::SessionAggRow;
-use betterlite_server::benchmark_aggregates::window::BenchmarkWindow;
-use betterlite_server::plugin_routes::routes::Identity;
-use betterlite_server::routing::auto_router_read_api::ConfiguredRouter;
-use betterlite_server::shadow_eval_lifecycle::access::require_admin;
-use betterlite_server::shadow_eval_validation::access::AdminRole;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::runtime::Builder;
@@ -23,6 +8,11 @@ use tokio::runtime::Builder;
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
+
+mod steps;
+mod store;
+
+use self::steps::{StepOutcome, benchmarks_step, session_step};
 
 // the enums in mod.rs would otherwise carry every field of this payload inline in their largest variant
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,37 +79,6 @@ struct SessionSeed {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct QueryBounds {
-    start: String,
-    end: String,
-    api_key: Option<String>,
-    user_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct SessionLookup {
-    api_key: String,
-    session_id: String,
-    matched: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum StepOutcome {
-    Benchmarks {
-        response: Value,
-        query: QueryBounds,
-    },
-    Session {
-        response: Value,
-        lookup: SessionLookup,
-    },
-    Failed {
-        status: u16,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
@@ -131,170 +90,6 @@ struct Fields {
 fn invalid<T: Display + ?Sized>(error: &T) -> OperationError {
     OperationError::InvalidRequest {
         message: error.to_string(),
-    }
-}
-
-// the store the reads open, fed the payload's rows and recording what each read asked for
-#[derive(Default)]
-struct ProbeStore {
-    rows: Vec<SessionAggRow>,
-    sessions: Vec<(String, AutoRouterSession)>,
-    query_bounds: Mutex<Option<QueryBounds>>,
-    lookup: Mutex<Option<SessionLookup>>,
-}
-
-impl ProbeStore {
-    fn take_query_bounds(&self) -> Option<QueryBounds> {
-        self.query_bounds
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-    }
-
-    fn take_lookup(&self) -> Option<SessionLookup> {
-        self.lookup
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-    }
-}
-
-#[async_trait]
-impl AutoRouterReadStore for ProbeStore {
-    async fn agg_rows(
-        &self,
-        window: &BenchmarkWindow,
-        api_key: Option<&str>,
-        user_id: Option<&str>,
-    ) -> Result<Vec<SessionAggRow>, ReadApiError> {
-        *self
-            .query_bounds
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(QueryBounds {
-            start: window.query_start.clone(),
-            end: window.query_end.clone(),
-            api_key: api_key.map(str::to_owned),
-            user_id: user_id.map(str::to_owned),
-        });
-        Ok(self.rows.clone())
-    }
-
-    async fn latest_session(
-        &self,
-        api_key: &str,
-        session_id: &str,
-    ) -> Result<Option<AutoRouterSession>, ReadApiError> {
-        let newest = self
-            .sessions
-            .iter()
-            .filter(|(_, row)| row.hashed_api_key == api_key && row.session_id == session_id)
-            .max_by(|(left, _), (right, _)| left.cmp(right))
-            .map(|(_, row)| row.clone());
-        *self.lookup.lock().unwrap_or_else(PoisonError::into_inner) = Some(SessionLookup {
-            api_key: api_key.to_owned(),
-            session_id: session_id.to_owned(),
-            matched: newest.is_some(),
-        });
-        Ok(newest)
-    }
-}
-
-fn decode_sessions(
-    seeds: &[SessionSeed],
-) -> Result<Vec<(String, AutoRouterSession)>, OperationError> {
-    let mut sessions = Vec::with_capacity(seeds.len());
-    for seed in seeds {
-        let bytes = serde_json::to_vec(&seed.row).map_err(|error| invalid(&error))?;
-        let row: AutoRouterSession =
-            serde_json::from_slice(&bytes).map_err(|error| invalid(&error))?;
-        sessions.push((seed.last_turn_at.clone(), row));
-    }
-    Ok(sessions)
-}
-
-fn deployments(payload: &Payload) -> Vec<ConfiguredRouter> {
-    payload
-        .deployments
-        .iter()
-        .map(|deployment| ConfiguredRouter {
-            model_name: deployment.model_name.clone().unwrap_or_default(),
-            model: deployment.model.clone(),
-        })
-        .collect()
-}
-
-fn identity(role: Option<&str>) -> Identity {
-    Identity {
-        user_id: Some("probe".to_owned()),
-        user_role: role.map(str::to_owned),
-    }
-}
-
-fn probe_store(step: &BenchmarksStep) -> Result<ProbeStore, OperationError> {
-    let row_bytes = serde_json::to_vec(&step.rows).map_err(|error| invalid(&error))?;
-    Ok(ProbeStore {
-        rows: decode_session_agg_rows(&row_bytes).map_err(|error| invalid(&error))?,
-        ..ProbeStore::default()
-    })
-}
-
-// FastAPI checks the role first, then the database, then the dates and the rollup read
-async fn benchmarks_step(
-    payload: &Payload,
-    step: &BenchmarksStep,
-    today: NaiveDate,
-) -> Result<StepOutcome, OperationError> {
-    if let Err(error) = require_admin(
-        &identity(step.role.as_deref()),
-        VIEW_ACTION,
-        AdminRole::Viewer,
-    ) {
-        return Ok(StepOutcome::Failed {
-            status: error.status_code(),
-        });
-    }
-    if !step.database {
-        return Ok(StepOutcome::Failed { status: 500 });
-    }
-    let store = probe_store(step)?;
-    let query = BenchmarksQuery {
-        start_date: step.start_date.clone(),
-        end_date: step.end_date.clone(),
-        api_key: step.api_key.clone(),
-        user_id: step.user_id.clone(),
-    };
-    match benchmarks_for(&store, &query, &deployments(payload), today).await {
-        Ok(response) => Ok(StepOutcome::Benchmarks {
-            response: serde_json::to_value(response).map_err(|error| invalid(&error))?,
-            query: store
-                .take_query_bounds()
-                .ok_or_else(|| invalid("the benchmarks read never reached the store"))?,
-        }),
-        Err(error) => Ok(StepOutcome::Failed {
-            status: error.status_code(),
-        }),
-    }
-}
-
-// the session read needs no role: the key in the input is the caller's partition
-async fn session_step(step: &SessionStep) -> Result<StepOutcome, OperationError> {
-    let store = ProbeStore {
-        sessions: decode_sessions(&step.sessions)?,
-        ..ProbeStore::default()
-    };
-    let query = SessionQuery {
-        session_id: step.session_id.clone(),
-    };
-    match session_for(&store, Some(step.api_key.as_str()), &query).await {
-        Ok(response) => Ok(StepOutcome::Session {
-            response: serde_json::to_value(response).map_err(|error| invalid(&error))?,
-            lookup: store
-                .take_lookup()
-                .ok_or_else(|| invalid("the session read never reached the store"))?,
-        }),
-        Err(error) => Ok(StepOutcome::Failed {
-            status: error.status_code(),
-        }),
     }
 }
 
