@@ -50,7 +50,7 @@ impl BedrockBatchRecord {
 }
 
 impl OpenAiBatchRecord {
-    // `custom_id or f"CALL{str(idx).zfill(7)}"`: a present null stays null.
+    // `.get("custom_id", f"CALL{str(idx).zfill(7)}")`: a present null stays null.
     #[must_use]
     pub fn record_id(&self, index: usize) -> Json {
         match &self.custom_id {
