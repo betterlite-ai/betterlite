@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 mod tests;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CliSsoTeamDetail {
     pub team_id: Option<String>,
     pub team_alias: Option<String>,
@@ -22,7 +22,7 @@ pub const TEAMLESS_CLI_SSO_TEAM_DETAIL: CliSsoTeamDetail = CliSsoTeamDetail {
 };
 
 // _TeamRowGrants: the alias table's single column arrives next to the team's own
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TeamGrantRow {
     pub team_id: String,
     pub team_alias: Option<String>,
