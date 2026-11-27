@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-oauth-routing-override
+call:
+  b10161:
+    operation: override
+    override: {iss: "https://idp.example", scope: [openid, profile]}
+    claims: {iss: "https://idp.example", scope: "openid profile", aud: [api]}
+env: {}
+compare: {ignore: []}
