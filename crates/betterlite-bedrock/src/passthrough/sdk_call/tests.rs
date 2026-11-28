@@ -350,6 +350,16 @@ fn mantle_url_takes_the_region_from_the_base_host_or_the_environment() {
         url_of(&config, AwsFlavor::Mantle, &request),
         "http://127.0.0.1:9/chat/completions"
     );
+    let mut wrong = Object::new();
+    wrong.insert(String::from("aws_region_name"), JsonValue::Bool(true));
+    let request = url_request("openai.gpt-oss-120b", "chat/completions", &wrong, None);
+    let error = config
+        .complete_url(AwsFlavor::Mantle, &request)
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the field aws_region_name is not a string"
+    );
 }
 
 // the runtime URL the Mantle arm builds keeps BasePassthroughConfig's streaming check over the endpoint text
@@ -496,6 +506,21 @@ fn mantle_sigv4_signs_at_the_mantle_region() {
     let calls = config.source.recorded();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].region, "eu-central-1");
+}
+
+#[test]
+fn a_non_string_aws_key_is_a_value_error() {
+    let config = build(&[]);
+    let mut params = Object::new();
+    params.insert(String::from("aws_access_key_id"), JsonValue::Bool(true));
+    let error = config
+        .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&params))
+        .unwrap_err();
+    assert!(matches!(&error, ConfigError::ValueError { .. }));
+    assert_eq!(
+        error.to_string(),
+        "invalid AWS authentication field aws_access_key_id"
+    );
 }
 
 #[test]
