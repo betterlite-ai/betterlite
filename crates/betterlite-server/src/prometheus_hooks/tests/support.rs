@@ -41,6 +41,7 @@ pub(crate) const PROXY_FAILED: &str = "litellm_proxy_failed_requests_metric";
 pub(crate) const PROXY_TOTAL: &str = "litellm_proxy_total_requests_metric";
 pub(crate) const VIRTUAL_KEY_REQUESTS: &str = "litellm_remaining_api_key_requests_for_model";
 pub(crate) const ORG_BUDGET: &str = "litellm_remaining_org_budget_metric";
+pub(crate) const KEY_BUDGET: &str = "litellm_remaining_api_key_budget_metric";
 pub(crate) const LATENCY: &str = "litellm_llm_api_latency_metric";
 pub(crate) const DEPLOYMENT_FAILURES: &str = "litellm_deployment_failure_responses";
 pub(crate) const DEPLOYMENT_SUCCESSES: &str = "litellm_deployment_success_responses";
@@ -82,7 +83,10 @@ pub(crate) struct RecordingLookups {
     org_record: Mutex<Option<OrgRecord>>,
     org_errors: AtomicBool,
     keys: Mutex<Vec<String>>,
+    teams: Mutex<Vec<String>>,
+    users: Mutex<Vec<String>>,
     orgs: Mutex<Vec<String>>,
+    customers: Mutex<Vec<String>>,
 }
 
 impl RecordingLookups {
@@ -91,22 +95,38 @@ impl RecordingLookups {
             org_record: Mutex::new(None),
             org_errors: AtomicBool::new(false),
             keys: Mutex::new(Vec::new()),
+            teams: Mutex::new(Vec::new()),
+            users: Mutex::new(Vec::new()),
             orgs: Mutex::new(Vec::new()),
+            customers: Mutex::new(Vec::new()),
         }
     }
 
-    pub(crate) fn keys(&self) -> Vec<String> {
-        self.keys
+    fn recorded(entries: &Mutex<Vec<String>>) -> Vec<String> {
+        entries
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
+    pub(crate) fn keys(&self) -> Vec<String> {
+        Self::recorded(&self.keys)
+    }
+
+    pub(crate) fn teams(&self) -> Vec<String> {
+        Self::recorded(&self.teams)
+    }
+
+    pub(crate) fn users(&self) -> Vec<String> {
+        Self::recorded(&self.users)
+    }
+
     pub(crate) fn orgs(&self) -> Vec<String> {
-        self.orgs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        Self::recorded(&self.orgs)
+    }
+
+    pub(crate) fn customers(&self) -> Vec<String> {
+        Self::recorded(&self.customers)
     }
 
     pub(crate) fn fail_org_info(&self) {
@@ -127,7 +147,11 @@ impl BudgetLookups for RecordingLookups {
         true
     }
 
-    async fn team_info(&self, _team_id: &str) -> Result<TeamRecord, BudgetLookupError> {
+    async fn team_info(&self, team_id: &str) -> Result<TeamRecord, BudgetLookupError> {
+        self.teams
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(team_id.to_owned());
         Err(BudgetLookupError {
             message: "no team store in the fixture".to_owned(),
         })
@@ -171,16 +195,24 @@ impl BudgetLookups for RecordingLookups {
 
     async fn user_info(
         &self,
-        _user_id: &str,
+        user_id: &str,
         _options: UserLookupOptions,
     ) -> Result<Option<UserRecord>, BudgetLookupError> {
+        self.users
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(user_id.to_owned());
         Ok(None)
     }
 
     async fn cached_customer(
         &self,
-        _end_user_id: &str,
+        end_user_id: &str,
     ) -> Result<Option<CachedEndUser>, BudgetLookupError> {
+        self.customers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(end_user_id.to_owned());
         Ok(None)
     }
 
@@ -192,17 +224,33 @@ impl BudgetLookups for RecordingLookups {
     }
 }
 
-// the requested-model bound: every name in the set is vouched for, and anything else falls to "other"
+// the requested-model bound: each method vouches for its own names, and anything else falls to "other"
 pub(crate) struct RecordingCatalog {
     recognized: BTreeSet<String>,
+    team_public: BTreeSet<String>,
+    pattern_routes: BTreeSet<String>,
 }
 
 impl RecordingCatalog {
     pub(crate) fn new(names: &[&str]) -> Self {
+        Self::from_sets(names, names, names)
+    }
+
+    pub(crate) fn from_sets(
+        recognized: &[&str],
+        team_public: &[&str],
+        pattern_routes: &[&str],
+    ) -> Self {
         Self {
-            recognized: names.iter().map(|name| (*name).to_owned()).collect(),
+            recognized: name_set(recognized),
+            team_public: name_set(team_public),
+            pattern_routes: name_set(pattern_routes),
         }
     }
+}
+
+fn name_set(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
 }
 
 impl RequestedModelCatalog for RecordingCatalog {
@@ -211,11 +259,11 @@ impl RequestedModelCatalog for RecordingCatalog {
     }
 
     fn is_team_public_model(&self, model: &str) -> bool {
-        self.recognized.contains(model)
+        self.team_public.contains(model)
     }
 
     fn matches_pattern_route(&self, model: &str) -> bool {
-        self.recognized.contains(model)
+        self.pattern_routes.contains(model)
     }
 }
 

@@ -4,17 +4,22 @@ use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::callback_logger::error::LoggerError;
+use betterlite_logging::prometheus_deployment::metrics::DeploymentMetrics;
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
+use betterlite_logging::prometheus_latency::input_sequence_length::UsageMapping;
+use betterlite_logging::prometheus_rate_limits::gauge::RateLimitGauges;
+use betterlite_logging::prometheus_usage::counters::UsageCounters;
 use betterlite_models::decisions::Json;
 use betterlite_models::key_digest::hashing::hash_token;
+use betterlite_models::zero_cost::{TEXT_INPUT_RATE, ZeroCostReason};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::super::tests::support::{
     API_KEY_ALLOWED, API_KEY_USED, CACHE_HITS, CACHED_TOKENS, DEPLOYMENT_PER_OUTPUT_TOKEN,
     DEPLOYMENT_STATE, DEPLOYMENT_SUCCESSES, DEPLOYMENT_TOTAL, IMAGES_GENERATED, INPUT_AUDIO_TOKENS,
-    INPUT_CACHE_CREATION_TOKENS, INPUT_CACHED_TOKENS, INPUT_TOKENS, LATENCY, MCP_CALLS, MCP_SPEND,
-    OUTPUT_AUDIO_TOKENS, OUTPUT_REASONING_TOKENS, OUTPUT_TOKENS, OVERHEAD_LATENCY,
+    INPUT_CACHE_CREATION_TOKENS, INPUT_CACHED_TOKENS, INPUT_TOKENS, KEY_BUDGET, LATENCY, MCP_CALLS,
+    MCP_SPEND, OUTPUT_AUDIO_TOKENS, OUTPUT_REASONING_TOKENS, OUTPUT_TOKENS, OVERHEAD_LATENCY,
     PROVIDER_CACHE_CREATION, PROVIDER_CACHE_READ, PROXY_TOTAL, QUEUE_TIME, REMAINING_REQUESTS,
     REMAINING_TOKENS, REQUESTS, SPEND, TEAM_ALLOWED, TEAM_USED, TOTAL_LATENCY, TOTAL_TOKENS, TTFT,
     VIDEO_DURATION, VIRTUAL_KEY_REQUESTS, VIRTUAL_KEY_TOKENS, ZERO_COST, dec, error_information,
@@ -23,6 +28,10 @@ use super::super::tests::support::{
     rich_payload, router_hooks, series_label, success_metadata, totals,
 };
 use crate::prometheus_hooks::error::PrometheusHookError;
+use crate::prometheus_hooks::event::HookCall;
+use crate::prometheus_hooks::json::{as_object, input_length_inputs};
+use crate::prometheus_hooks::labels::{hashed_key, zero_cost_diagnostic};
+use crate::prometheus_hooks::latency::now_seconds;
 
 #[tokio::test]
 async fn missing_payload_is_an_error() {
@@ -117,16 +126,20 @@ async fn success_emits_latency_and_deployment_metrics() {
         .await
         .unwrap();
     let registry = &fixture.registry;
-    // latency: first token, api latency, total latency and queue time, then the overhead histogram
+    // latency: first token and api latency, then the total with the queue time added and the queue histogram
     assert_eq!(observations(registry, TTFT), vec![1]);
     assert_eq!(observations(registry, LATENCY), vec![1]);
-    assert_eq!(observations(registry, TOTAL_LATENCY), vec![1]);
-    assert_eq!(observations(registry, QUEUE_TIME), vec![1]);
+    assert_eq!(totals(registry, TOTAL_LATENCY), vec![dec("4")]);
+    assert_eq!(totals(registry, QUEUE_TIME), vec![dec("1")]);
     assert_eq!(observations(registry, OVERHEAD_LATENCY), vec![1]);
     // deployment success and its state, then the router's remaining usage
     assert_eq!(totals(registry, DEPLOYMENT_SUCCESSES), vec![Decimal::ONE]);
     assert_eq!(totals(registry, DEPLOYMENT_TOTAL), vec![Decimal::ONE]);
-    assert_eq!(observations(registry, DEPLOYMENT_PER_OUTPUT_TOKEN), vec![1]);
+    // a streaming success measures from the completion start: one second over four output tokens
+    assert_eq!(
+        totals(registry, DEPLOYMENT_PER_OUTPUT_TOKEN),
+        vec![dec("0.25")]
+    );
     assert_eq!(totals(registry, DEPLOYMENT_STATE), vec![Decimal::ZERO]);
     assert_eq!(totals(registry, REMAINING_REQUESTS), vec![dec("9")]);
     assert_eq!(totals(registry, REMAINING_TOKENS), vec![dec("5")]);
@@ -485,5 +498,185 @@ async fn the_input_sequence_length_label_reads_the_metadata_usage() {
     assert_eq!(
         series_label(&fixture.registry, LATENCY, "input_sequence_length"),
         "1k-4k"
+    );
+}
+
+#[tokio::test]
+async fn the_budget_fan_out_reads_the_request_metadata() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let metadata = IndexMap::from([
+        ("user_api_key_spend".to_owned(), number("4")),
+        ("user_api_key_max_budget".to_owned(), number("10")),
+    ]);
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event_with_metadata(
+            rich_payload(dec("2.5")),
+            metadata,
+        )))
+        .await
+        .unwrap();
+    // the fan-out sees the carried spend and the max budget, so the key gauge keeps 10 - (4 + 2.5)
+    assert_eq!(totals(&fixture.registry, KEY_BUDGET), vec![dec("3.5")]);
+}
+
+#[tokio::test]
+async fn success_fans_out_every_budget_entity() {
+    let fixture = fixture_with_settings(labelled_settings());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(rich_payload(dec("2.5")))))
+        .await
+        .unwrap();
+    // one lookup per entity, each with the id the label values carry
+    assert_eq!(fixture.lookups.keys(), vec![hash_token("sk-live")]);
+    assert_eq!(fixture.lookups.teams(), vec!["team-1".to_owned()]);
+    assert_eq!(fixture.lookups.users(), vec!["user-1".to_owned()]);
+    assert_eq!(fixture.lookups.orgs(), vec!["org-1".to_owned()]);
+    assert_eq!(fixture.lookups.customers(), vec!["end-user-1".to_owned()]);
+}
+
+#[test]
+fn the_metrics_adapter_forwards_the_configured_ports() {
+    let fixture = fixture_with_limits(SeriesLimits {
+        max_series: Some(2),
+        ttl: None,
+        cleanup_interval: None,
+    });
+    let metrics = fixture.hooks.metrics();
+    assert_eq!(
+        UsageCounters::limits(&metrics),
+        &fixture.hooks.settings.limits
+    );
+    assert_eq!(
+        DeploymentMetrics::limits(&metrics),
+        &fixture.hooks.settings.limits
+    );
+    assert!(std::ptr::eq(
+        UsageCounters::tracker(&metrics),
+        &fixture.hooks.collectors.bounded_series_tracker
+    ));
+    assert!(std::ptr::eq(
+        RateLimitGauges::tracker(&metrics),
+        &fixture.hooks.collectors.bounded_series_tracker
+    ));
+    assert_eq!(
+        DeploymentMetrics::settings(&metrics),
+        &fixture.hooks.settings.labels
+    );
+    assert_eq!(
+        DeploymentMetrics::end_user_settings(&metrics),
+        fixture.hooks.settings.end_user
+    );
+}
+
+#[test]
+fn the_rebuilt_kwargs_carry_the_payload_identity() {
+    let call = HookCall::from_event(&event(rich_payload(dec("2.5"))));
+    assert_eq!(call.model, "gpt-4o");
+    assert_eq!(
+        call.metadata.get("user_api_key_user_id"),
+        Some(&Json::Text("user-1".to_owned()))
+    );
+    assert_eq!(
+        call.metadata.get("model_group"),
+        Some(&Json::Text("gpt-4-group".to_owned()))
+    );
+    let model_info = call
+        .metadata
+        .get("model_info")
+        .and_then(as_object)
+        .expect("the payload model id becomes model_info.id");
+    assert_eq!(
+        model_info.get("id"),
+        Some(&Json::Text("deployment-1".to_owned()))
+    );
+}
+
+#[test]
+fn the_zero_cost_diagnostic_keeps_only_the_known_rate_keys() {
+    let mut record = payload(Decimal::ZERO);
+    record.zero_cost_diagnostic = Some(Json::Object(IndexMap::from([
+        (
+            "reason".to_owned(),
+            Json::Text("missing_pricing_key".to_owned()),
+        ),
+        (
+            "missing_pricing_keys".to_owned(),
+            Json::List(vec![
+                Json::Text("not_a_rate_key".to_owned()),
+                Json::Text(TEXT_INPUT_RATE.to_owned()),
+            ]),
+        ),
+    ])));
+    let diagnostic = zero_cost_diagnostic(&record).expect("the diagnostic parses");
+    assert_eq!(diagnostic.reason, ZeroCostReason::MissingPricingKey);
+    assert_eq!(diagnostic.missing_pricing_keys, vec![TEXT_INPUT_RATE]);
+}
+
+#[test]
+fn the_input_length_inputs_read_the_usage_object() {
+    let mut record = payload(Decimal::ZERO);
+    record.response = Some(Json::Object(IndexMap::from([(
+        "usage".to_owned(),
+        Json::Object(IndexMap::new()),
+    )])));
+    record.metadata.usage_object = Some(Json::Object(IndexMap::from([(
+        "prompt_tokens".to_owned(),
+        number("2500"),
+    )])));
+    let inputs = input_length_inputs(&record);
+    assert!(inputs.response_has_usage);
+    assert_eq!(
+        inputs.metadata_usage,
+        UsageMapping::Mapping {
+            prompt_tokens: Some(2500_i64)
+        }
+    );
+}
+
+#[test]
+fn a_key_without_the_sk_prefix_keeps_its_text() {
+    assert_eq!(hashed_key(Some("plain-key")), Some("plain-key".to_owned()));
+    assert_eq!(hashed_key(None), None);
+}
+
+#[test]
+fn now_seconds_reads_the_current_epoch() {
+    assert!(now_seconds() > Decimal::from(1_700_000_000_i64));
+}
+
+#[tokio::test]
+async fn the_response_service_tier_wins_over_the_usage_object() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.response = Some(Json::Object(IndexMap::from([(
+        "service_tier".to_owned(),
+        Json::Text("economy".to_owned()),
+    )])));
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    assert_eq!(
+        series_label(&fixture.registry, SPEND, "service_tier"),
+        "economy"
+    );
+}
+
+#[tokio::test]
+async fn a_configured_custom_metadata_label_reaches_the_series() {
+    let mut settings = labelled_settings();
+    settings.labels.custom_metadata_labels = vec!["user_api_key_user_id".to_owned()];
+    let fixture = fixture_with_settings(settings);
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(rich_payload(dec("2.5")))))
+        .await
+        .unwrap();
+    assert_eq!(
+        series_label(&fixture.registry, REQUESTS, "user_api_key_user_id"),
+        "user-1"
     );
 }

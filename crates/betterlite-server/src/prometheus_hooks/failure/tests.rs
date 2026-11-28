@@ -8,7 +8,7 @@ use betterlite_logging::prometheus::budget_lookups::records::OrgRecord;
 use rust_decimal::Decimal;
 
 use super::super::tests::support::{
-    DEPLOYMENT_FAILURES, FAILED, ORG_BUDGET, dec, error_information, event, fixture,
+    DEPLOYMENT_FAILURES, FAILED, ORG_BUDGET, ZERO_COST, dec, error_information, event, fixture,
     fixture_with_settings, labelled_settings, payload, rich_payload, series_label, totals,
 };
 
@@ -235,6 +235,20 @@ async fn a_bedrock_failure_is_labelled_without_the_provider_prefix() {
         series_label(registry, DEPLOYMENT_FAILURES, "litellm_model_name"),
         "claude-3"
     );
+}
+
+#[tokio::test]
+async fn the_failure_event_writes_the_zero_cost_counter() {
+    let fixture = fixture();
+    let mut record = rich_payload(Decimal::ZERO);
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    // the failure event runs the zero-cost emitter with the payload's diagnostic
+    assert_eq!(totals(&fixture.registry, ZERO_COST), vec![Decimal::ONE]);
 }
 
 #[tokio::test]
