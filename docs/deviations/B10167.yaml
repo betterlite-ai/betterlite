@@ -1,0 +1,9 @@
+task: B10167
+deviations:
+  - what: A retry-after number past the i64 range saturates at i64::MAX or i64::MIN, and so does a numeric zone offset that big, where Python's int() and mktime_tz keep the full value; a date whose day, hour, minute or second field is that large overflows the calendar arithmetic and answers -1.
+    why: betterlite reads header numbers into i64. A wait of that size is far outside the 1 to 60 second window LiteLLM obeys, so every retry decision is the same; only a Duration built from the raw value (the Azure Content Safety delay) shows the clamp.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
+  - what: A date whose day and clock rollover lands outside the years 1 to 9999 that a jiff Timestamp covers answers -1 where LiteLLM computes the huge or far-past number.
+    why: calendar.timegm keeps counting past that year, while the timestamp betterlite turns the seconds into has to exist; the header is outside the 1 to 60 second window either way, so the retry falls back to backoff in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
+kept_bugs: []

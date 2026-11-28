@@ -1,0 +1,73 @@
+kind: helper
+name: vector-file-resolution-model-hint-precedence
+call:
+  vector_file_resolution:
+    calls:
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, m1]]}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1, api_base: "http://m1"}}
+      - function: model_hint_precedence
+        data: {model: m1}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: model_hint_precedence
+        data: {model: missing}
+        caller: {}
+        catalog: {}
+      - function: model_hint_precedence
+        data: {model: m-body}
+        request: {headers: [[x-litellm-model, m-header]]}
+        caller: {}
+        catalog: {m-body: {api_key: sk-body}, m-header: {api_key: sk-header}}
+      - function: model_hint_precedence
+        data: {model: m1}
+        request: {query: "model=m1", headers: [[x-litellm-model, m-header]]}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: model_hint_precedence
+        data: {api_key: ""}
+        request: {headers: [[x-litellm-model, m1]]}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: model_hint_precedence
+        data: {api_base: "http://x"}
+        request: {headers: [[x-litellm-model, m1]]}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, "team/*"]]}
+        caller: {team_id: team-1}
+        catalog: {"team/*": {api_key: sk-team, api_base: "http://team"}}
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, "team/*"]]}
+        caller: {team_id: team-1}
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, "team/*"]]}
+        caller: {team_id: team-1, team_models: []}
+        catalog: {}
+      - function: model_hint_precedence
+        data: {}
+        request: {query: "model=&x=1", headers: [[x-litellm-model, m1]]}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, m1]]}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, m1]]}
+        caller: {}
+      - function: model_hint_precedence
+        data: {}
+        request: {headers: [[x-litellm-model, m1]]}
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+        deny: [m1]
+env: {}
+compare: {ignore: []}

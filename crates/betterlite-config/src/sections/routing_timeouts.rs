@@ -1,14 +1,12 @@
 use serde::Deserialize;
 
+use crate::env_integer::timeout::RequestTimeout;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
 mod tests;
-
-// LiteLLM's package default: request_timeout is 6000 unless a config value or the REQUEST_TIMEOUT environment replaces it
-const DEFAULT_TIMEOUT_SECONDS: f64 = 6000.0;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -52,12 +50,6 @@ struct RawLiteLlm {
     request_timeout: Option<RawNumber>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GlobalTimeout {
-    pub seconds: f64,
-    pub explicitly_set: bool,
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RouterTimeouts {
     pub timeout: Option<f64>,
@@ -76,7 +68,7 @@ pub struct DeploymentTimeouts {
 // deployments stay index-aligned with model_list, which the router keeps in config order
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
-    pub global: GlobalTimeout,
+    pub global: RequestTimeout,
     pub router: RouterTimeouts,
     pub deployments: Vec<DeploymentTimeouts>,
 }
@@ -84,8 +76,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            global: GlobalTimeout {
-                seconds: DEFAULT_TIMEOUT_SECONDS,
+            global: RequestTimeout {
+                seconds: RequestTimeout::DEFAULT_SECONDS,
                 explicitly_set: false,
             },
             router: RouterTimeouts::default(),
@@ -101,24 +93,11 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let configured = resolve_number(
-            self.litellm_settings.request_timeout,
-            "litellm_settings.request_timeout",
-            lookup,
-            parse_float,
-        )?;
-        let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
-        let environment = betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?;
-        let (seconds, explicitly_set) = configured
-            .map(|seconds| (seconds, true))
-            .or_else(|| environment.map(|seconds| (seconds, true)))
-            .unwrap_or((DEFAULT_TIMEOUT_SECONDS, false));
-        let global = GlobalTimeout {
-            seconds,
-            explicitly_set,
-        };
         Ok(Settings {
-            global,
+            global: RequestTimeout::resolve_configured(
+                self.litellm_settings.request_timeout,
+                lookup,
+            )?,
             router: router_settings(self.router_settings, lookup)?,
             deployments: deployment_settings(self.model_list, lookup)?,
         })

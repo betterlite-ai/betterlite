@@ -1,0 +1,338 @@
+id: B10220
+title: Core's ClientKind and SuppliedClient move onto the betterlite-http home and the oracle's sdk_http Mode copies go
+description: >-
+  After B10216 and B10217 every core, provider, bedrock and vertex family takes `ClientKind` and `SuppliedClient<'client, Client>` from crates/betterlite-core/src/api/vector_store_http_write/service.rs, while B10221 puts the same pair, for the crates below core, in crates/betterlite-http/src/client_kind.rs. Two homes for one type is still a copy. This task deletes core's pair, moves the hand-written `impl<Client> Clone for SuppliedClient<'_, Client>` and `impl<Client> Copy for SuppliedClient<'_, Client> {}` that B10216 adds to core onto the betterlite-http home, and points every user at `betterlite_http::client_kind`. Every crate involved and every oracle helper group already depends on betterlite-http, so no Cargo.toml changes and no new crate edge. It is a refactor: what each family sends, logs, raises and reports stays the same.
+
+
+  The users. On main, 149 files import core's ClientKind or SuppliedClient: core's vector_store, vector_file, file, decisions_send, eval_http, genai, genai_http, search_http and video families, provider's transcription_http and watsonx_transcription, and the oracle's sdk_http transports. B10216 adds about 90 more (its twelve families and their users) and B10217 64 (bedrock, vertex, soniox, bfl and their oracle helpers), so about 300 files, half of them tests. Each one swaps its `crate::api::vector_store_http_write::service::` or `betterlite_core::api::vector_store_http_write::service::` import of ClientKind and SuppliedClient for `betterlite_http::client_kind::`, and keeps importing the rest (WriteRequest, WriteTransport, ClientSource, Operation) from core. Inside vector_store_http_write itself, service.rs and error.rs import the pair from betterlite_http too. vertex's gemini_http/call.rs keeps its own `SuppliedClient` (an owned `Arc<dyn GeminiPost>`), so it imports only ClientKind. The variant is already Asynchronous everywhere, so no rename. The scope lists each file and B10216's and B10217's module globs, since their workers decide the exact files that end up importing core's pair.
+
+
+  The oracle's wire copies. Seventeen enums read the case's "sync" or "async" only to turn it into one of these classes, and the home's serde names now read the same strings. `Mode { Sync, #[serde(rename = "async")] Asynchronous }` with a `client_kind` converter: tools/oracle/src/sdk_http/file_create_list_transport.rs L26-L39, file_http_metadata.rs L27-L40, image_generation_http.rs L20-L33, responses_compact_transport.rs L19-L32 (responses_create_transport.rs L78-L85 converts it again in `Call::client_kind`), responses_read_transport.rs L27-L40, responses_write_transport.rs L25-L38, speech_http.rs L19-L32, store_create_read_transport.rs L30-L43, vector_file_read_transport.rs L43-L56, vector_file_write_transport.rs L26-L39, vector_search_transport.rs L18-L31 and vector_store_transport.rs L26-L39. The same enum converted in a submodule: file_http_upload.rs `RunMode` L18-L22, image_edit_call.rs `Client` L61-L65 and image_edit_http.rs `Mode` L18-L22, each matched in its native.rs. And two helpers: bedrock's other_rerank/input.rs `Supplied` L28-L31, matched in other_rerank/driver.rs L180-L183, and core_ops' soniox_pipeline/perform.rs `Mode` L31-L34 with its `client_kind` fn L102-L107. Each field that holds one takes `ClientKind` itself, every converter and match goes, and soniox's `atranscription: matches!(mode, Mode::Async)` reads `mode == ClientKind::Asynchronous`. The line numbers are main's; B10216 and B10217 rewrite these converters' right-hand sides to the core pair first, so find each by name.
+
+
+  Not merged. The other sdk_http `Mode` enums (assistant_messages, assistant_threads, responses_compact, responses_chat_call, responses_lifecycle_write, rerank_http, transcription_call, transcription_http, vector_file_create_list, vector_file_read, vector_file_write, vector_store_read, vector_store_write, chat_response_stream's ChatRunMode, image_generation_plan's SyncMode and assistant_create's Entry) pick which LiteLLM call the case drives or set an `is_async` flag; they never become a client class, so they are the entry point concept and stay.
+
+
+  Tests. No new test: the families' tests already pick a supplied client by class and rebuild the other class, and they pass with only the import changed.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/tests/cases.rs
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/tests/secrets.rs
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/transport.rs
+    - crates/betterlite-bedrock/src/converse_call/buffered.rs
+    - crates/betterlite-bedrock/src/converse_call.rs
+    - crates/betterlite-bedrock/src/converse_call/streaming.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/input.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/run.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/transport.rs
+    - crates/betterlite-bedrock/src/converse_call/tests.rs
+    - crates/betterlite-bedrock/src/converse_call/transport.rs
+    - crates/betterlite-bedrock/src/embedding_call/execute/bridge.rs
+    - crates/betterlite-bedrock/src/embedding_call/execute.rs
+    - crates/betterlite-bedrock/src/embedding_call.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/cases/cohere.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/cases/order.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/fixture.rs
+    - crates/betterlite-bedrock/src/image_call/execute.rs
+    - crates/betterlite-bedrock/src/image_call/tests/cases.rs
+    - crates/betterlite-bedrock/src/image_call/tests/identity.rs
+    - crates/betterlite-bedrock/src/image_call/transport.rs
+    - crates/betterlite-bedrock/src/image_edits/execute.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/cases.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/identity.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/signing.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/transport.rs
+    - crates/betterlite-bedrock/src/rerank/execute.rs
+    - crates/betterlite-bedrock/src/rerank/tests/cases.rs
+    - crates/betterlite-bedrock/src/rerank/tests/identity.rs
+    - crates/betterlite-bedrock/src/rerank/transport.rs
+    - crates/betterlite-core/src/api/bfl/edit_call.rs
+    - crates/betterlite-core/src/api/bfl/edit_call/tests.rs
+    - crates/betterlite-core/src/api/bfl/generation_call.rs
+    - crates/betterlite-core/src/api/bfl/generation_call/submit.rs
+    - crates/betterlite-core/src/api/bfl/generation_call/tests.rs
+    - crates/betterlite-core/src/api/decisions_send/asend.rs
+    - crates/betterlite-core/src/api/decisions_send/error.rs
+    - crates/betterlite-core/src/api/decisions_send/send.rs
+    - crates/betterlite-core/src/api/decisions_send/tests/error_mapping.rs
+    - crates/betterlite-core/src/api/eval_http/convert.rs
+    - crates/betterlite-core/src/api/fal/video_results/**
+    - crates/betterlite-core/src/api/fal/video_results.rs
+    - crates/betterlite-core/src/api/file_content_stream/service.rs
+    - crates/betterlite-core/src/api/file_content_stream/streaming.rs
+    - crates/betterlite-core/src/api/file_content_stream/target.rs
+    - crates/betterlite-core/src/api/file_content_stream/tests.rs
+    - crates/betterlite-core/src/api/file_http_metadata/**
+    - crates/betterlite-core/src/api/file_http_metadata.rs
+    - crates/betterlite-core/src/api/file_http_upload/**
+    - crates/betterlite-core/src/api/file_http_upload.rs
+    - crates/betterlite-core/src/api/file_provider_read.rs
+    - crates/betterlite-core/src/api/file_provider_read/target.rs
+    - crates/betterlite-core/src/api/file_provider_read/tests.rs
+    - crates/betterlite-core/src/api/file_provider_write/**
+    - crates/betterlite-core/src/api/file_provider_write.rs
+    - crates/betterlite-core/src/api/genai/generate_content/native.rs
+    - crates/betterlite-core/src/api/genai/generate_content.rs
+    - crates/betterlite-core/src/api/genai/generate_content/tests/support.rs
+    - crates/betterlite-core/src/api/genai_http/service/facts.rs
+    - crates/betterlite-core/src/api/genai_http/service/prepare.rs
+    - crates/betterlite-core/src/api/genai_http/service.rs
+    - crates/betterlite-core/src/api/genai_http/tests.rs
+    - crates/betterlite-core/src/api/image_edit_call/**
+    - crates/betterlite-core/src/api/image_edit_call.rs
+    - crates/betterlite-core/src/api/image_generation_call/**
+    - crates/betterlite-core/src/api/image_generation_call.rs
+    - crates/betterlite-core/src/api/realtime_http_calls/**
+    - crates/betterlite-core/src/api/realtime_http_calls.rs
+    - crates/betterlite-core/src/api/responses_compact_call/**
+    - crates/betterlite-core/src/api/responses_compact_call.rs
+    - crates/betterlite-core/src/api/responses_compact_http/**
+    - crates/betterlite-core/src/api/responses_compact_http.rs
+    - crates/betterlite-core/src/api/responses_create/**
+    - crates/betterlite-core/src/api/responses_create_http/**
+    - crates/betterlite-core/src/api/responses_create_http.rs
+    - crates/betterlite-core/src/api/responses_create.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_call/**
+    - crates/betterlite-core/src/api/responses_lifecycle_call.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_write/**
+    - crates/betterlite-core/src/api/responses_lifecycle_write.rs
+    - crates/betterlite-core/src/api/responses_read_http/**
+    - crates/betterlite-core/src/api/responses_read_http.rs
+    - crates/betterlite-core/src/api/responses_write_http/**
+    - crates/betterlite-core/src/api/responses_write_http.rs
+    - crates/betterlite-core/src/api/search_http/transport.rs
+    - crates/betterlite-core/src/api/soniox/pipeline/client.rs
+    - crates/betterlite-core/src/api/soniox/pipeline.rs
+    - crates/betterlite-core/src/api/soniox/pipeline/tests/selection.rs
+    - crates/betterlite-core/src/api/vector_file_create/service.rs
+    - crates/betterlite-core/src/api/vector_file_create/tests/attach_file_projection.rs
+    - crates/betterlite-core/src/api/vector_file_create/tests/attachment_registry_precedence.rs
+    - crates/betterlite-core/src/api/vector_file_create/tests/attachment_timeout_context.rs
+    - crates/betterlite-core/src/api/vector_file_create/tests/list_attachment_query.rs
+    - crates/betterlite-core/src/api/vector_file_create/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_http_create_list/**
+    - crates/betterlite-core/src/api/vector_file_http_create_list.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/service/request.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/tests/clients.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/tests/errors.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/tests/headers.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/tests/paths.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/**
+    - crates/betterlite-core/src/api/vector_file_http_write.rs
+    - crates/betterlite-core/src/api/vector_file_read.rs
+    - crates/betterlite-core/src/api/vector_file_read/service.rs
+    - crates/betterlite-core/src/api/vector_file_read/tests.rs
+    - crates/betterlite-core/src/api/vector_file_write/error.rs
+    - crates/betterlite-core/src/api/vector_file_write.rs
+    - crates/betterlite-core/src/api/vector_file_write/service.rs
+    - crates/betterlite-core/src/api/vector_file_write/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_write/tests/timeout_logging.rs
+    - crates/betterlite-core/src/api/vector_file_write/tests/update_calls.rs
+    - crates/betterlite-core/src/api/vector_search_execution/**
+    - crates/betterlite-core/src/api/vector_search_execution.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/**
+    - crates/betterlite-core/src/api/vector_store_http_create_read.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/**
+    - crates/betterlite-core/src/api/vector_store_http_write.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service/proxied.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_store_read.rs
+    - crates/betterlite-core/src/api/vector_store_read/service.rs
+    - crates/betterlite-core/src/api/vector_store_read/tests/list_calls.rs
+    - crates/betterlite-core/src/api/vector_store_read/tests/native_calls.rs
+    - crates/betterlite-core/src/api/vector_store_read/tests/provider_calls.rs
+    - crates/betterlite-core/src/api/vector_store_read/tests/support.rs
+    - crates/betterlite-core/src/api/vector_store_search/service.rs
+    - crates/betterlite-core/src/api/vector_store_search/tests.rs
+    - crates/betterlite-core/src/api/vector_store_write/service.rs
+    - crates/betterlite-core/src/api/vector_store_write/tests/support.rs
+    - crates/betterlite-core/src/api/vector_store_write/tests/timeout_logging.rs
+    - crates/betterlite-core/src/api/vector_store_write/tests/update_calls.rs
+    - crates/betterlite-core/src/api/video_character_transport/service.rs
+    - crates/betterlite-core/src/api/video_character_transport/service/send.rs
+    - crates/betterlite-core/src/api/video_content_call/**
+    - crates/betterlite-core/src/api/video_content_call.rs
+    - crates/betterlite-core/src/api/video_edit_call/prepare.rs
+    - crates/betterlite-core/src/api/video_edit_call/request.rs
+    - crates/betterlite-core/src/api/video_edit_call.rs
+    - crates/betterlite-core/src/api/video_edit_call/tests/edit_cases.rs
+    - crates/betterlite-core/src/api/video_edit_call/tests/support.rs
+    - crates/betterlite-core/src/api/video_edit_transport/**
+    - crates/betterlite-core/src/api/video_edit_transport.rs
+    - crates/betterlite-core/src/api/video_extension_call/prepare.rs
+    - crates/betterlite-core/src/api/video_extension_call/request.rs
+    - crates/betterlite-core/src/api/video_extension_call.rs
+    - crates/betterlite-core/src/api/video_extension_call/tests/extension_cases.rs
+    - crates/betterlite-core/src/api/video_extension_call/tests/support.rs
+    - crates/betterlite-core/src/api/video_generation_call/**
+    - crates/betterlite-core/src/api/video_generation_call.rs
+    - crates/betterlite-core/src/api/video_remix_call/**
+    - crates/betterlite-core/src/api/video_remix_call.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/**
+    - crates/betterlite-core/src/api/video_remix_list_transport.rs
+    - crates/betterlite-core/src/api/videos_http_transport/**
+    - crates/betterlite-core/src/api/videos_http_transport.rs
+    - crates/betterlite-http/src/client_kind/**
+    - crates/betterlite-http/src/client_kind.rs
+    - crates/betterlite-provider/src/api/image_edit_http/**
+    - crates/betterlite-provider/src/api/image_edit_http.rs
+    - crates/betterlite-provider/src/api/image_generation_http/**
+    - crates/betterlite-provider/src/api/image_generation_http.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/**
+    - crates/betterlite-provider/src/api/realtime_http_transport.rs
+    - crates/betterlite-provider/src/api/rerank_http/**
+    - crates/betterlite-provider/src/api/rerank_http.rs
+    - crates/betterlite-provider/src/api/speech_http/**
+    - crates/betterlite-provider/src/api/speech_http.rs
+    - crates/betterlite-provider/src/api/transcription_http/error.rs
+    - crates/betterlite-provider/src/api/transcription_http.rs
+    - crates/betterlite-provider/src/api/transcription_http/tests/client_policy.rs
+    - crates/betterlite-provider/src/api/transcription_http/wire.rs
+    - crates/betterlite-provider/src/azure_media_dispatch/speech/native.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/call.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/edit_fixture.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/editing.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/fixture.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/generation.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/test_support.rs
+    - crates/betterlite-provider/src/watsonx_transcription.rs
+    - crates/betterlite-provider/src/watsonx_transcription/tests/support.rs
+    - crates/betterlite-python/src/file_calls/convert.rs
+    - crates/betterlite-python/src/file_calls/convert/tests.rs
+    - crates/betterlite-python/src/file_calls/dispatch/clients.rs
+    - crates/betterlite-python/src/file_calls/session/core.rs
+    - crates/betterlite-python/src/file_calls/session.rs
+    - crates/betterlite-python/src/video_calls/clients.rs
+    - crates/betterlite-server/src/health_native_backend/video_generation/tests.rs
+    - crates/betterlite-vertex/src/gemini_call/sync_call.rs
+    - crates/betterlite-vertex/src/gemini_call/tests/ordered_effects.rs
+    - crates/betterlite-vertex/src/gemini_call/tests/support.rs
+    - crates/betterlite-vertex/src/gemini_http/call.rs
+    - crates/betterlite-vertex/src/gemini_http/tests/execution.rs
+    - crates/betterlite-vertex/src/gemini_http/tests/execution/streaming.rs
+    - crates/betterlite-vertex/src/gemini_http/tests/support.rs
+    - tools/oracle/src/helpers/bedrock/embedding_io/http.rs
+    - tools/oracle/src/helpers/bedrock/embedding_io/transport.rs
+    - tools/oracle/src/helpers/bedrock/other_embedding_call/fixtures/harness.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call/fixtures.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call/handlers.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/driver.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/fixtures/harness.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/fixtures/support.rs
+    - tools/oracle/src/helpers/bedrock/other_rerank/driver.rs
+    - tools/oracle/src/helpers/bedrock/other_rerank/input.rs
+    - tools/oracle/src/helpers/core_ops/b3340/client.rs
+    - tools/oracle/src/helpers/core_ops/b3340/project.rs
+    - tools/oracle/src/helpers/core_ops/bfl_edit_call/job.rs
+    - tools/oracle/src/helpers/core_ops/bfl_jobs/job.rs
+    - tools/oracle/src/helpers/core_ops/fal_video_results/outcome.rs
+    - tools/oracle/src/helpers/core_ops/responses_ws_managed/fixtures/ports.rs
+    - tools/oracle/src/helpers/core_ops/soniox_pipeline/perform.rs
+    - tools/oracle/src/sdk_http/file_content_stream/fixtures/wire.rs
+    - tools/oracle/src/sdk_http/file_content_stream.rs
+    - tools/oracle/src/sdk_http/file_create_list_transport/**
+    - tools/oracle/src/sdk_http/file_create_list_transport.rs
+    - tools/oracle/src/sdk_http/file_http_metadata/**
+    - tools/oracle/src/sdk_http/file_http_metadata.rs
+    - tools/oracle/src/sdk_http/file_http_upload/**
+    - tools/oracle/src/sdk_http/file_http_upload.rs
+    - tools/oracle/src/sdk_http/file_provider_read.rs
+    - tools/oracle/src/sdk_http/file_provider_read/wire.rs
+    - tools/oracle/src/sdk_http/file_provider_write/**
+    - tools/oracle/src/sdk_http/image_edit_call/**
+    - tools/oracle/src/sdk_http/image_edit_call.rs
+    - tools/oracle/src/sdk_http/image_edit_http/**
+    - tools/oracle/src/sdk_http/image_edit_http.rs
+    - tools/oracle/src/sdk_http/image_generation_http/**
+    - tools/oracle/src/sdk_http/image_generation_http.rs
+    - tools/oracle/src/sdk_http/realtime_http_calls/**
+    - tools/oracle/src/sdk_http/response_chat_dispatch/**
+    - tools/oracle/src/sdk_http/responses_async_create/**
+    - tools/oracle/src/sdk_http/responses_compact/**
+    - tools/oracle/src/sdk_http/responses_compact_transport/**
+    - tools/oracle/src/sdk_http/responses_compact_transport.rs
+    - tools/oracle/src/sdk_http/responses_create/**
+    - tools/oracle/src/sdk_http/responses_create_transport/**
+    - tools/oracle/src/sdk_http/responses_create_transport.rs
+    - tools/oracle/src/sdk_http/responses_read_transport/**
+    - tools/oracle/src/sdk_http/responses_read_transport.rs
+    - tools/oracle/src/sdk_http/responses_write_transport/**
+    - tools/oracle/src/sdk_http/responses_write_transport.rs
+    - tools/oracle/src/sdk_http/speech_http/**
+    - tools/oracle/src/sdk_http/speech_http.rs
+    - tools/oracle/src/sdk_http/store_create_read_transport/**
+    - tools/oracle/src/sdk_http/store_create_read_transport.rs
+    - tools/oracle/src/sdk_http/vector_file_create_list/**
+    - tools/oracle/src/sdk_http/vector_file_read_transport/**
+    - tools/oracle/src/sdk_http/vector_file_read_transport.rs
+    - tools/oracle/src/sdk_http/vector_file_write/**
+    - tools/oracle/src/sdk_http/vector_file_write_transport/**
+    - tools/oracle/src/sdk_http/vector_file_write_transport.rs
+    - tools/oracle/src/sdk_http/vector_search_transport/**
+    - tools/oracle/src/sdk_http/vector_search_transport.rs
+    - tools/oracle/src/sdk_http/vector_store_read/native.rs
+    - tools/oracle/src/sdk_http/vector_store_transport/**
+    - tools/oracle/src/sdk_http/vector_store_transport.rs
+  lint_tables: false
+references: []
+dod:
+  - text: betterlite-core declares no ClientKind or SuppliedClient of its own, nothing imports them from vector_store_http_write::service, and betterlite-http's SuppliedClient carries the Clone and Copy impls core's had.
+    proof: [core-kind-moved]
+  - text: The oracle's sdk_http transports and the bedrock rerank and soniox helpers read the supplied client's class straight into the home ClientKind, with no Mode enum or converter of their own.
+    proof: [core-kind-wire-copies]
+  - text: The families' tests in core, provider, bedrock, vertex and python pass with only the import changed.
+    proof: [core-http-kind-tests, provider-http-kind-tests, bedrock-http-kind-tests, vertex-http-kind-tests, python-http-kind-tests]
+checks:
+  optional: []
+  commands:
+    - id: core-kind-moved
+      why: core still declares or exports its own client class, or the home lost the Copy a borrowed supplied client needs
+      run: |-
+        test -z "$(grep -nE '^pub (enum ClientKind|struct SuppliedClient)\b' crates/betterlite-core/src/api/vector_store_http_write/service.rs)" &&
+        test -z "$(grep -rnE 'vector_store_http_write::service::(ClientKind|SuppliedClient)\b' crates tools --include=*.rs)" &&
+        grep -qF "impl<Client> Clone for SuppliedClient<'_, Client> {" crates/betterlite-http/src/client_kind.rs &&
+        grep -qxF "impl<Client> Copy for SuppliedClient<'_, Client> {}" crates/betterlite-http/src/client_kind.rs
+    - id: core-kind-wire-copies
+      why: an oracle helper still reads the class into a Mode enum of its own and converts it
+      run: |-
+        test -z "$(grep -nE '^(pub(\([a-z]+\))? )?enum (Mode|RunMode|Client)\b' tools/oracle/src/sdk_http/file_create_list_transport.rs tools/oracle/src/sdk_http/file_http_metadata.rs tools/oracle/src/sdk_http/file_http_upload.rs tools/oracle/src/sdk_http/image_edit_call.rs tools/oracle/src/sdk_http/image_edit_http.rs tools/oracle/src/sdk_http/image_generation_http.rs tools/oracle/src/sdk_http/responses_compact_transport.rs tools/oracle/src/sdk_http/responses_read_transport.rs tools/oracle/src/sdk_http/responses_write_transport.rs tools/oracle/src/sdk_http/speech_http.rs tools/oracle/src/sdk_http/store_create_read_transport.rs tools/oracle/src/sdk_http/vector_file_read_transport.rs tools/oracle/src/sdk_http/vector_file_write_transport.rs tools/oracle/src/sdk_http/vector_search_transport.rs tools/oracle/src/sdk_http/vector_store_transport.rs)" &&
+        test -z "$(grep -nE '^(pub(\([a-z]+\))? )?enum (Supplied|Mode)\b' tools/oracle/src/helpers/bedrock/other_rerank/input.rs tools/oracle/src/helpers/core_ops/soniox_pipeline/perform.rs)" &&
+        test -z "$(grep -rnE 'const fn client_kind\((self|&self|mode: Mode)\)' tools/oracle/src/sdk_http tools/oracle/src/helpers/core_ops/soniox_pipeline --include=*.rs)"
+    - id: core-http-kind-tests
+      why: a core family lost its client selection after the import moved
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(bfl|decisions_send|eval_http|fal|file_content_stream|file_http_metadata|file_http_upload|file_provider_read|file_provider_write|genai|genai_http|image_edit_call|image_generation_call|realtime_http_calls|responses_compact_call|responses_compact_http|responses_create|responses_create_http|responses_lifecycle_call|responses_lifecycle_write|responses_read_http|responses_write_http|search_http|soniox|vector_file_create|vector_file_http_create_list|vector_file_http_read|vector_file_http_write|vector_file_read|vector_file_write|vector_search_execution|vector_store_http_create_read|vector_store_http_write|vector_store_read|vector_store_search|vector_store_write|video_character_transport|video_content_call|video_edit_call|video_edit_transport|video_extension_call|video_generation_call|video_remix_call|video_remix_list_transport|videos_http_transport)::/) - test(/replays_/)'
+    - id: provider-http-kind-tests
+      why: a provider transport no longer picks or sends through the supplied client of its class
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^(api::(image_edit_http|image_generation_http|realtime_http_transport|rerank_http|speech_http|transcription_http)|azure_media_dispatch|bedrock_image_dispatch|watsonx_transcription)::/) - test(/replays_/)'
+    - id: bedrock-http-kind-tests
+      why: a bedrock family no longer reuses a supplied client of the matching class
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^(bedrock_embedding_io|converse_call|embedding_call|image_call|image_edits|rerank)::/) - test(/replays_/)'
+    - id: vertex-http-kind-tests
+      why: the Gemini HTTP call no longer picks the supplied poster by class
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^(gemini_http|gemini_call)::/) - test(/replays_/)'
+    - id: python-http-kind-tests
+      why: the Python file or video calls no longer reach the upload class through the home
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^(file_calls|video_calls)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10221: the betterlite-http home itself, its serde names and label, and the openai, anthropic and foundry copies below core."
+  - "The sdk_http Mode enums that pick a LiteLLM entry point or an `is_async` flag rather than a client class (assistant_messages, assistant_threads, responses_compact, responses_chat_call, responses_lifecycle_write, rerank_http, transcription_call, transcription_http, vector_file_create_list, vector_file_read, vector_file_write, vector_store_read, vector_store_write, ChatRunMode, SyncMode, Entry)."
+  - "vertex gemini_http's own SuppliedClient with an owned `Arc<dyn GeminiPost>`, and gemma_call's four-way SuppliedClientKind."
+  - "WriteRequest, WriteTransport, ClientSource, Operation and the ProxiedClient adapter, which stay in core's vector_store_http_write::service."
+pitfalls:
+  - "Core's service.rs keeps WriteRequest, WriteTransport, ClientSource and Operation, so an import like `use crate::api::vector_store_http_write::service::{ClientKind, ClientSource, WriteRequest};` splits in two: the pair from betterlite_http, the rest from core. Do not move the rest."
+  - "B10216's realtime_http_calls copies a SuppliedClient out of a borrow, so the Clone and Copy impls must land on the home in the same change that deletes core's struct, or that call stops compiling with E0507."
+  - "vertex gemini_http/call.rs declares a struct named SuppliedClient, so it imports only ClientKind from the home."
+  - "The sdk_http Mode enums derive Serialize too; the home's serde names are the same \"sync\" and \"async\", so anything that writes the mode back writes the same text. Keep `#[serde(deny_unknown_fields)]` on the structs that hold the field."
+  - "Do not leave a `pub use betterlite_http::client_kind::...` in core for old paths; every user imports betterlite_http directly."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
