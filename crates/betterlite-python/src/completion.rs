@@ -4,7 +4,7 @@ mod deployments;
 pub(crate) mod error;
 mod facts;
 mod native;
-mod ports;
+pub(crate) mod ports;
 mod session;
 pub(crate) mod setup;
 mod stream;
