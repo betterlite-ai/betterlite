@@ -50,8 +50,7 @@ pub(super) async fn used_prefixes(
     let mut used = BTreeMap::new();
     {
         let held = registry.read().await;
-        let servers = held.config_servers.values().chain(held.db_servers.values());
-        for server in servers {
+        for server in held.config_servers.values().chain(held.db_servers.values()) {
             if server.fields.server_id == server_id {
                 continue;
             }

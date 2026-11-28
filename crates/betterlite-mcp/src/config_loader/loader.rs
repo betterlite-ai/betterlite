@@ -284,7 +284,7 @@ where
         Ok(())
     }
 
-    fn openapi_registration(&self) -> OpenApiRegistrar<'_, T, U> {
+    const fn openapi_registration(&self) -> OpenApiRegistrar<'_, T, U> {
         OpenApiRegistrar {
             tools: self.tools,
             spec_fetcher: self.spec_fetcher,
