@@ -1,6 +1,5 @@
 use betterlite_azure::assistants::error::AssistantsRunError;
 use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use serde_json::{Value, json};
 
@@ -34,12 +33,5 @@ pub(super) fn failure(error: &AssistantsRunError) -> Result<Value, Box<HelperErr
         other @ (AssistantsRunError::Client(_)
         | AssistantsRunError::Runs(_)
         | AssistantsRunError::Encode(_)) => Err(invalid_input(other.to_string())),
-    }
-}
-
-pub(super) const fn kind_name(kind: ClientKind) -> &'static str {
-    match kind {
-        ClientKind::Sync => "sync",
-        ClientKind::Async => "async",
     }
 }
