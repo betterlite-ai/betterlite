@@ -78,31 +78,35 @@ where
     Factory: EmbeddingClientFactory + RerankClientFactory + ImageClientFactory + Sync,
     <Factory as EmbeddingClientFactory>::Client: LegacyEmbeddingTransport + StatusTransport,
     Transport: LegacyEmbeddingTransport + CountTokensTransport + TranscriptionTransport,
-    Files: AuthorizedAudioFiles,
+    Files: AuthorizedAudioFiles + Sync,
     H: CountTokensHandler,
-    B: TranscriptionBinding + Sync,
+    B: TranscriptionBinding + Send + Sync,
 {
     let OperationRequest::BedrockOther(BedrockOtherRequest) = request else {
         return Err(BedrockOtherError::UnsupportedOperation);
     };
     let result = match operation {
-        BedrockOtherOperation::Embedding(operation) => {
-            BedrockOtherResult::Embedding(Box::new(embedding(operation, services, log).await?))
-        }
-        BedrockOtherOperation::EmbeddingStatus(operation) => BedrockOtherResult::EmbeddingStatus(
-            Box::new(embedding_status(operation, services).await?),
+        BedrockOtherOperation::Embedding(embedding_operation) => BedrockOtherResult::Embedding(
+            Box::new(embedding(embedding_operation, services, log).await?),
         ),
-        BedrockOtherOperation::Rerank(operation) => {
-            BedrockOtherResult::Rerank(Box::new(rerank(operation, services, log).await?))
+        BedrockOtherOperation::EmbeddingStatus(status_operation) => {
+            BedrockOtherResult::EmbeddingStatus(Box::new(
+                embedding_status(status_operation, services).await?,
+            ))
         }
-        BedrockOtherOperation::Count(operation) => {
-            BedrockOtherResult::Count(count(operation).await.map(Box::new))
+        BedrockOtherOperation::Rerank(rerank_operation) => {
+            BedrockOtherResult::Rerank(Box::new(rerank(rerank_operation, services, log).await?))
         }
-        BedrockOtherOperation::Transcription(operation) => BedrockOtherResult::Transcription(
-            Box::new(transcription(operation, services.files).await?),
-        ),
-        BedrockOtherOperation::Image(operation) => {
-            let dispatched = image(operation, services, log).await?;
+        BedrockOtherOperation::Count(count_operation) => {
+            BedrockOtherResult::Count(count(count_operation).await.map(Box::new))
+        }
+        BedrockOtherOperation::Transcription(transcription_operation) => {
+            BedrockOtherResult::Transcription(Box::new(
+                transcription(transcription_operation, services.files).await?,
+            ))
+        }
+        BedrockOtherOperation::Image(image_operation) => {
+            let dispatched = image(image_operation, services, log).await?;
             let OperationResult::BedrockImage(result) = dispatched else {
                 return Err(BedrockOtherError::UnexpectedVariant);
             };

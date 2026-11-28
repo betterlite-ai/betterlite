@@ -6,8 +6,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
 use betterlite_bedrock::embedding_call::Clock;
+use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_bedrock::transcription::call::NativeTranscription;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -20,7 +22,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateE
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_redact::error::RedactionError;
-use betterlite_redact::secret::Redactor;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
@@ -133,6 +135,7 @@ impl OidcClock for NoOidc {
     }
 }
 
+#[must_use]
 pub fn secret_lookup() -> SecretLookup {
     SecretLookup {
         manager: None,
@@ -173,6 +176,35 @@ pub fn native_binding(
         clock: SharedTimeSource::from(StaticTimeSource::from_secs(
             u64::try_from(NOW_SECONDS).unwrap_or_default(),
         )),
+    }
+}
+
+// The dependencies one dispatch reads that do not come from its transport, built once per exchange
+pub struct Prepared {
+    pub redactor: Redactor,
+    pub state: LoggingState,
+    pub secrets: SecretLookup,
+    pub workers: ManagedRegionWorker,
+    pub signing: AwsSigningExecutor,
+    pub encoding: Counting,
+    pub files: Files,
+    pub clock: Arc<dyn Clock>,
+}
+
+impl Prepared {
+    pub fn new() -> Result<Self, FixtureError> {
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
+        let state = logging_state(&redactor)?;
+        Ok(Self {
+            redactor,
+            state,
+            secrets: secret_lookup(),
+            workers: ManagedRegionWorker::new()?,
+            signing: AwsSigningExecutor::default(),
+            encoding: Counting,
+            files: Files,
+            clock: Arc::new(FixedClock(instant(NOW_SECONDS)?)),
+        })
     }
 }
 

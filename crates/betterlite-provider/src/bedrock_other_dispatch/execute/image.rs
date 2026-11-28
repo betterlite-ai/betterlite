@@ -20,6 +20,8 @@ pub(super) async fn image<Source, Factory, Transport, Files>(
 where
     Source: ImageCredentials + Sync,
     Factory: ImageClientFactory + Sync,
+    Transport: Sync,
+    Files: Sync,
 {
     let mut family_log = ImageLogContext {
         state: &mut *log.state,

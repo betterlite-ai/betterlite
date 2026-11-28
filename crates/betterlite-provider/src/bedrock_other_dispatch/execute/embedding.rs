@@ -24,6 +24,7 @@ where
     Factory: EmbeddingClientFactory + Sync,
     <Factory as EmbeddingClientFactory>::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,
+    Files: Sync,
 {
     let input: Cow<'_, [String]> = operation.input.list();
     let mut call = EmbeddingCall {

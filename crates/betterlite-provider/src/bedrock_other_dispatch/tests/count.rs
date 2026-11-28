@@ -6,7 +6,7 @@ use betterlite_bedrock::count_call::counter::{
 use betterlite_bedrock::count_call::handler::{BedrockCountTokensHandler, CountTokensEnvironment};
 use betterlite_models::decisions::Json;
 
-use super::fixture::{Fixture, Handler, object, params, run_count, value};
+use super::fixture::{Fixture, Handler, object, params, run, value};
 use crate::bedrock_other_dispatch::call::{BedrockOtherOperation, CountOperation};
 use crate::bedrock_other_dispatch::test_support::client::Reply;
 use crate::bedrock_other_dispatch::test_support::{NOW_SECONDS, credentials, instant};
@@ -72,7 +72,7 @@ async fn counted_tokens() {
     let fixture = scripted(&[Reply::status(200, r#"{"inputTokens": 42}"#)]);
     let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
     let deployment = deployment();
-    let outcome = run_count(
+    let outcome = run(
         &fixture,
         operation(Some(&messages), Some(&deployment), Some(handler(&fixture))),
     )
@@ -101,7 +101,7 @@ async fn absent_calls() {
     let fixture = scripted(&[]);
     let deployment = deployment();
     for messages in [None, Some(value("[]")), Some(value("null"))] {
-        let outcome = run_count(
+        let outcome = run(
             &fixture,
             operation(
                 messages.as_ref(),
@@ -114,7 +114,7 @@ async fn absent_calls() {
         assert!(outcome.requests.is_empty());
     }
     let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
-    let outcome = run_count(
+    let outcome = run(
         &fixture,
         operation(Some(&messages), Some(&deployment), None),
     )
@@ -128,7 +128,7 @@ async fn provider_refusal() {
     let fixture = scripted(&[Reply::status(400, "bad request")]);
     let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
     let count_deployment = deployment();
-    let outcome = run_count(
+    let outcome = run(
         &fixture,
         operation(
             Some(&messages),
@@ -154,7 +154,7 @@ async fn unreadable_replies() {
         let fixture = scripted(&[reply]);
         let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
         let count_deployment = deployment();
-        let outcome = run_count(
+        let outcome = run(
             &fixture,
             operation(
                 Some(&messages),

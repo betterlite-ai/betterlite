@@ -5,7 +5,7 @@ use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankRe
 use indexmap::IndexMap;
 
 use super::fixture::{
-    Binding, Fixture, Outcome, Unavailable, array, number, object, params, run, value,
+    Binding, Fixture, Handler, Outcome, array, number, object, params, run, value,
 };
 use crate::bedrock_other_dispatch::call::{BedrockOtherOperation, RerankOperation};
 use crate::bedrock_other_dispatch::error::BedrockOtherError;
@@ -51,7 +51,7 @@ fn operation<'call>(
     request: RerankRequest,
     optional: &'call str,
     api_base: Option<&'call str>,
-) -> BedrockOtherOperation<'call, 'call, 'call, Unavailable, Binding> {
+) -> BedrockOtherOperation<'call, 'call, 'call, Handler, Binding> {
     BedrockOtherOperation::Rerank(RerankOperation {
         request,
         optional_params: params(optional),

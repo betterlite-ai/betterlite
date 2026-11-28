@@ -1,19 +1,12 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
-use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::count_call::counter::TokenCountResponse;
-use betterlite_bedrock::count_call::handler::{
-    BedrockCountTokensHandler, CountTokensHandler, CountTokensHandlerError,
-    CountTokensHandlerRequest,
-};
-use betterlite_bedrock::count_call::reply::CountResponse;
+use betterlite_bedrock::count_call::handler::{BedrockCountTokensHandler, CountTokensHandler};
+use betterlite_bedrock::embedding_call::EmbeddingCallResponse;
 use betterlite_bedrock::embedding_call::ParamMap;
-use betterlite_bedrock::embedding_call::{Clock, EmbeddingCallResponse};
-use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_bedrock::transcription::binding::{TranscriptionBinding, TranscriptionResponse};
 use betterlite_bedrock::transcription::call::NativeTranscription;
 use betterlite_bedrock::transcription::error::CallError;
@@ -22,8 +15,6 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_secret_managers::secret_lookup::SecretLookup;
 use indexmap::IndexMap;
 use serde_json::Number;
 
@@ -37,24 +28,8 @@ use crate::bedrock_other_dispatch::test_support::client::{FixtureClient, Replies
 use crate::bedrock_other_dispatch::test_support::factory::{ClientCall, Factory};
 use crate::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
 use crate::bedrock_other_dispatch::test_support::source::Source;
-use crate::bedrock_other_dispatch::test_support::{
-    Counting, DiscardingSink, Files, FixedClock, NOW_SECONDS, instant, logging_state, prepost_env,
-    secret_lookup,
-};
+use crate::bedrock_other_dispatch::test_support::{DiscardingSink, Prepared, prepost_env};
 use crate::operation::{OperationRequest, OperationResult};
-
-// The handler a family that never counts tokens is handed; it answers no count at all
-pub(crate) struct Unavailable;
-
-impl CountTokensHandler for Unavailable {
-    async fn handle_count_tokens_request(
-        &self,
-        _request: &CountTokensHandlerRequest<'_>,
-        _now: SystemTime,
-    ) -> Result<Option<CountResponse>, CountTokensHandlerError> {
-        Ok(None)
-    }
-}
 
 pub(crate) type Handler = BedrockCountTokensHandler<FixtureClient, Source>;
 pub(crate) type Binding = NativeTranscription<FixtureClient, Source>;
@@ -205,21 +180,27 @@ pub(crate) fn params(source: &str) -> ParamMap {
 pub(crate) fn object(value: &Json) -> &IndexMap<String, Json> {
     match value {
         Json::Object(fields) => fields,
-        _other => panic!("the value is a JSON object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the value is a JSON object");
+        }
     }
 }
 
 pub(crate) fn array(value: &Json) -> &[Json] {
     match value {
         Json::List(items) => items,
-        _other => panic!("the value is a JSON array"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            panic!("the value is a JSON array");
+        }
     }
 }
 
 pub(crate) fn number(value: &Json) -> &Number {
     match value {
         Json::Number(number) => number,
-        _other => panic!("the value is a JSON number"),
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            panic!("the value is a JSON number");
+        }
     }
 }
 
@@ -237,13 +218,6 @@ pub(crate) fn environment(source: &str) -> BTreeMap<String, String> {
 
 pub(crate) async fn run(
     fixture: &Fixture,
-    operation: BedrockOtherOperation<'_, '_, '_, Unavailable, Binding>,
-) -> Outcome<CallError> {
-    exchange(fixture, operation).await
-}
-
-pub(crate) async fn run_count(
-    fixture: &Fixture,
     operation: BedrockOtherOperation<'_, '_, '_, Handler, Binding>,
 ) -> Outcome<CallError> {
     exchange(fixture, operation).await
@@ -251,44 +225,12 @@ pub(crate) async fn run_count(
 
 pub(crate) async fn run_transcription<B>(
     fixture: &Fixture,
-    operation: BedrockOtherOperation<'_, '_, '_, Unavailable, B>,
+    operation: BedrockOtherOperation<'_, '_, '_, Handler, B>,
 ) -> Outcome<B::Error>
 where
-    B: TranscriptionBinding + Sync,
+    B: TranscriptionBinding + Send + Sync,
 {
     exchange(fixture, operation).await
-}
-
-// The dependencies one dispatch reads that do not come from the fixture, built once per exchange
-struct Prepared {
-    redactor: Redactor,
-    state: LoggingState,
-    secrets: SecretLookup,
-    workers: ManagedRegionWorker,
-    signing: AwsSigningExecutor,
-    encoding: Counting,
-    files: Files,
-    clock: Arc<dyn Clock>,
-}
-
-impl Prepared {
-    fn new() -> Self {
-        let redactor =
-            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the fixture redactor builds");
-        let state = logging_state(&redactor).expect("the fixture logging state builds");
-        Self {
-            redactor,
-            state,
-            secrets: secret_lookup(),
-            workers: ManagedRegionWorker::new().expect("the fixture region worker builds"),
-            signing: AwsSigningExecutor::default(),
-            encoding: Counting,
-            files: Files,
-            clock: Arc::new(FixedClock(
-                instant(NOW_SECONDS).expect("the fixture instant builds"),
-            )),
-        }
-    }
 }
 
 async fn exchange<H, B>(
@@ -297,9 +239,9 @@ async fn exchange<H, B>(
 ) -> Outcome<B::Error>
 where
     H: CountTokensHandler,
-    B: TranscriptionBinding + Sync,
+    B: TranscriptionBinding + Send + Sync,
 {
-    let mut prepared = Prepared::new();
+    let mut prepared = Prepared::new().expect("the fixture dependencies build");
     let sink = DiscardingSink;
     let env = prepost_env(&prepared.state, &prepared.redactor, &sink);
     let services = Services {
@@ -317,34 +259,24 @@ where
         state: &mut prepared.state,
         env: &env,
     };
-    let result = outcome(
-        dispatch(
-            OperationRequest::BedrockOther(BedrockOtherRequest),
-            operation,
-            &services,
-            &mut log,
-        )
-        .await,
-    );
+    // A dispatcher that answered another operation result would be a bug, and the fixture reports it as one
+    let result = match dispatch(
+        OperationRequest::BedrockOther(BedrockOtherRequest),
+        operation,
+        &services,
+        &mut log,
+    )
+    .await
+    {
+        Ok(OperationResult::BedrockOther(result)) => Ok(result),
+        Ok(_other) => panic!("the non-chat dispatcher returns a non-chat result"),
+        Err(error) => Err(error),
+    };
     Outcome {
         result,
         requests: fixture.factory.seen.requests(),
         calls: fixture.factory.calls(),
         regions: fixture.source.regions(),
         state: prepared.state,
-    }
-}
-
-// A dispatcher that answered another operation result would be a bug, and the fixture reports it as one
-fn outcome<E>(
-    dispatched: Result<OperationResult, BedrockOtherError<E>>,
-) -> Result<BedrockOtherResult, BedrockOtherError<E>>
-where
-    E: StdError + 'static,
-{
-    match dispatched {
-        Ok(OperationResult::BedrockOther(result)) => Ok(result),
-        Ok(_other) => panic!("the non-chat dispatcher returns a non-chat result"),
-        Err(error) => Err(error),
     }
 }

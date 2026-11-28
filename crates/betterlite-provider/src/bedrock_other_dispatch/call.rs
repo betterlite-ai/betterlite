@@ -7,7 +7,6 @@ use betterlite_bedrock::count_call::counter::CountTokensCall;
 use betterlite_bedrock::embedding_call::{EmbeddingEnvironment, ParamMap};
 use betterlite_bedrock::rerank::plan::RerankEnvironment;
 use betterlite_bedrock::transcription::binding::TranscriptionCall;
-use betterlite_openai::api::audio_file_input::AudioFile;
 use betterlite_openai::api::rerank_contracts::records::RerankRequest;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
@@ -84,10 +83,19 @@ pub struct CountOperation<'call, H> {
     pub handler: Option<H>,
 }
 
-// The transcription arm's call plus the binding it reached: the native binding or the caller's stand-in
+// The typed file a transcription caller carries: the bytes of an upload, or those bytes under the filename that names their format
+pub enum TranscriptionFile<'call> {
+    Bytes(&'call [u8]),
+    Multipart {
+        filename: &'call str,
+        content: &'call [u8],
+    },
+}
+
+// The transcription arm's call, its typed file and the binding it reached: the native binding or the caller's stand-in
 pub struct TranscriptionOperation<'call, B> {
     pub call: TranscriptionCall<'call>,
-    pub audio: AudioFile<'call>,
+    pub file: TranscriptionFile<'call>,
     pub asynchronous: bool,
     pub binding: B,
 }

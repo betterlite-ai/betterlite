@@ -5,7 +5,7 @@ use betterlite_bedrock::embedding_jobs::error::EmbeddingJobsError;
 use betterlite_bedrock::transcription::binding::TranscriptionCall;
 use secrecy::SecretString;
 
-use super::fixture::{Binding, Fixture, Unavailable, params, run, transcription_params};
+use super::fixture::{Binding, Fixture, Handler, params, run, transcription_params};
 use crate::bedrock_other_dispatch::call::{
     BedrockOtherOperation, EmbeddingInput, EmbeddingOperation, EmbeddingStatusOperation,
 };
@@ -26,7 +26,7 @@ fn embedding_operation<'call>(
     input: &'call [String],
     optional: &'call str,
     environment: &'call BTreeMap<String, String>,
-) -> BedrockOtherOperation<'call, 'call, 'call, Unavailable, Binding> {
+) -> BedrockOtherOperation<'call, 'call, 'call, Handler, Binding> {
     BedrockOtherOperation::Embedding(EmbeddingOperation {
         model: TITAN,
         input: EmbeddingInput::Multiple(input),

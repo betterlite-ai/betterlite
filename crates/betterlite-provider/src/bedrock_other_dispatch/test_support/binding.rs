@@ -6,7 +6,7 @@ use betterlite_bedrock::transcription::error::{CallError, TranscriptionError};
 use betterlite_bedrock::transcription::params::Params;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 // The native binding's keyword arguments, captured at the seam LiteLLM reaches with NO_PYTHON
@@ -59,16 +59,20 @@ impl Recording {
 
     fn record(&self, arguments: &BindingArguments<'_>) -> Result<Params, CallError> {
         self.seen.push(arguments_value(arguments)?);
-        match self.failure {
-            Some(status) => Err(CallError::Status {
-                status,
-                body: String::from("the fixture binding failed"),
-            }),
-            None => Ok(Params::from_iter([(
-                "text".to_owned(),
-                Json::Text(self.text.clone()),
-            )])),
-        }
+        self.failure.map_or_else(
+            || {
+                Ok(Params::from_iter([(
+                    "text".to_owned(),
+                    Json::Text(self.text.clone()),
+                )]))
+            },
+            |status| {
+                Err(CallError::Status {
+                    status,
+                    body: String::from("the fixture binding failed"),
+                })
+            },
+        )
     }
 }
 
@@ -86,7 +90,6 @@ impl TranscriptionBinding for Recording {
 }
 
 // A JSON value that fails here would be a fixture bug, and the encoding error names it
-#[must_use]
 pub fn arguments_value(arguments: &BindingArguments<'_>) -> Result<Json, CallError> {
     let call = arguments.call;
     let audio = encode(&arguments.audio)?;

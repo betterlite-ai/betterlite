@@ -47,11 +47,14 @@ where
         match self {
             Self::Embedding(error) => error.status(),
             Self::EmbeddingStatus(EmbeddingJobsError::HttpFailure { status, .. }) => Some(*status),
-            Self::EmbeddingStatus(_) => None,
             Self::Rerank(error) => error.status(),
-            Self::Transcription(_) | Self::Binding(_) => None,
             Self::Image(error) => error.status(),
-            Self::UnsupportedOperation | Self::Unsupported { .. } | Self::UnexpectedVariant => None,
+            Self::EmbeddingStatus(_)
+            | Self::Transcription(_)
+            | Self::Binding(_)
+            | Self::UnsupportedOperation
+            | Self::Unsupported { .. }
+            | Self::UnexpectedVariant => None,
         }
     }
 }

@@ -3,11 +3,12 @@ use std::time::Duration;
 
 use betterlite_bedrock::transcription::binding::TranscriptionCall;
 use betterlite_bedrock::transcription::params::Params;
-use betterlite_openai::api::audio_file_input::{AudioFile, AudioTuple, TupleContent};
 use betterlite_openai::batches::sdk::{Timeout, TimeoutPhases};
 
-use super::fixture::{Fixture, Unavailable, run_transcription, transcription_params, value};
-use crate::bedrock_other_dispatch::call::{BedrockOtherOperation, TranscriptionOperation};
+use super::fixture::{Fixture, Handler, run_transcription, transcription_params, value};
+use crate::bedrock_other_dispatch::call::{
+    BedrockOtherOperation, TranscriptionFile, TranscriptionOperation,
+};
 use crate::bedrock_other_dispatch::error::BedrockOtherError;
 use crate::bedrock_other_dispatch::test_support::binding::Recording;
 use crate::bedrock_other_dispatch::test_support::client::Reply;
@@ -22,25 +23,16 @@ fn scripted(replies: &[Reply]) -> Fixture {
     Fixture::new(replies, credentials(ACCESS_KEY, SECRET_KEY))
 }
 
-// The audio a seam case hands the operation: bare bytes, or a tuple that names its file
-enum AudioCase {
-    Bytes(&'static [u8]),
-    Tuple(&'static str, &'static [u8]),
-}
-
 // The arguments one transcription case hands the dispatcher
 struct Call<'call> {
     model: &'call str,
-    audio: AudioFile<'call>,
+    file: TranscriptionFile<'call>,
     optional: &'call Params,
     timeout: Option<&'call Timeout>,
     asynchronous: bool,
 }
 
-fn operation<'call, B>(
-    call: Call<'call>,
-    binding: B,
-) -> BedrockOtherOperation<'call, 'call, 'call, Unavailable, B> {
+fn operation<B>(call: Call<'_>, binding: B) -> BedrockOtherOperation<'_, '_, '_, Handler, B> {
     BedrockOtherOperation::Transcription(TranscriptionOperation {
         call: TranscriptionCall {
             model: call.model,
@@ -51,7 +43,7 @@ fn operation<'call, B>(
             optional_params: call.optional,
             timeout: call.timeout,
         },
-        audio: call.audio,
+        file: call.file,
         asynchronous: call.asynchronous,
         binding,
     })
@@ -61,62 +53,74 @@ fn native(fixture: &Fixture, environment: BTreeMap<String, String>) -> super::fi
     native_binding(fixture.client(), fixture.source().clone(), environment)
 }
 
-// Both seams: bytes reach the NO_PYTHON binding as wav, a typed tuple keeps its filename, and a phased timeout keeps its read phase
-async fn file_seams() {
-    let cases = [
-        (
-            AudioCase::Bytes(AUDIO),
-            Some(Timeout::Seconds(2.5)),
-            false,
-            "transcribed",
-            r#"{"language": "en"}"#,
-            r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "aGk=", "format": "wav", "filename": "audio.wav"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {"language": "en"}, "timeout_seconds": 2.5}"#,
-        ),
-        (
-            AudioCase::Tuple("voice.mp3", b"ID3".as_slice()),
-            Some(Timeout::Phases(TimeoutPhases {
-                connect: Some(1.0),
-                read: Some(600.0),
-                write: Some(30.0),
-                pool: Some(5.0),
+// One seam row: the typed file, its timeout, the seam, the answer text, the optional params and the expected arguments
+struct Seam {
+    file: TranscriptionFile<'static>,
+    timeout: Option<Timeout>,
+    asynchronous: bool,
+    text: &'static str,
+    optional: &'static str,
+    expected: &'static str,
+}
+
+fn seam_cases() -> [Seam; 2] {
+    [
+        Seam {
+            file: TranscriptionFile::Bytes(AUDIO),
+            timeout: Some(Timeout::Seconds(2.5)),
+            asynchronous: false,
+            text: "transcribed",
+            optional: r#"{"language": "en"}"#,
+            expected: r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "aGk=", "format": "wav", "filename": "audio.wav"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {"language": "en"}, "timeout_seconds": 2.5}"#,
+        },
+        Seam {
+            file: TranscriptionFile::Multipart {
+                filename: "voice.mp3",
+                content: b"ID3".as_slice(),
+            },
+            timeout: Some(Timeout::Phases(TimeoutPhases {
+                connect: Some(1.0_f64),
+                read: Some(600.0_f64),
+                write: Some(30.0_f64),
+                pool: Some(5.0_f64),
             })),
-            true,
-            "tuple text",
-            "{}",
-            r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "SUQz", "format": "mp3", "filename": "voice.mp3"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {}, "timeout_seconds": 600.0}"#,
-        ),
-    ];
-    for (audio_case, timeout, asynchronous, text, optional, expected) in cases {
-        // AudioFile is invariant, so building it here ties it to the borrow, not the array's lifetime
-        let audio = match audio_case {
-            AudioCase::Bytes(bytes) => AudioFile::Bytes(bytes),
-            AudioCase::Tuple(filename, bytes) => AudioFile::Tuple(AudioTuple {
-                filename,
-                content: Some(TupleContent::Bytes(bytes)),
-            }),
-        };
-        let fixture = scripted(&[]);
-        let params = transcription_params(optional);
-        let recording = Recording::new(text);
-        let observer = recording.clone();
-        let outcome = run_transcription(
-            &fixture,
-            operation(
-                Call {
-                    model: "amazon.nova-2-sonic-v1:0",
-                    audio,
-                    optional: &params,
-                    timeout: timeout.as_ref(),
-                    asynchronous,
-                },
-                recording,
-            ),
-        )
-        .await;
-        assert_eq!(outcome.transcription().text.as_deref(), Some(text));
-        assert_eq!(observer.seen.values(), vec![value(expected)]);
-        assert!(outcome.requests.is_empty());
+            asynchronous: true,
+            text: "tuple text",
+            optional: "{}",
+            expected: r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "SUQz", "format": "mp3", "filename": "voice.mp3"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {}, "timeout_seconds": 600.0}"#,
+        },
+    ]
+}
+
+// Both seams: bytes reach the NO_PYTHON binding as wav, a typed multipart file keeps its filename, and a phased timeout keeps its read phase
+async fn file_seams() {
+    for seam in seam_cases() {
+        assert_file_seam(seam).await;
     }
+}
+
+async fn assert_file_seam(seam: Seam) {
+    let fixture = scripted(&[]);
+    let params = transcription_params(seam.optional);
+    let recording = Recording::new(seam.text);
+    let observer = recording.clone();
+    let outcome = run_transcription(
+        &fixture,
+        operation(
+            Call {
+                model: "amazon.nova-2-sonic-v1:0",
+                file: seam.file,
+                optional: &params,
+                timeout: seam.timeout.as_ref(),
+                asynchronous: seam.asynchronous,
+            },
+            recording,
+        ),
+    )
+    .await;
+    assert_eq!(outcome.transcription().text.as_deref(), Some(seam.text));
+    assert_eq!(observer.seen.values(), vec![value(seam.expected)]);
+    assert!(outcome.requests.is_empty());
 }
 
 // The native binding sends the request its own url and model policy name and decodes the reply
@@ -129,7 +133,7 @@ async fn native_signed_round_trip() {
         operation(
             Call {
                 model: "bedrock/converse/eu-west-1/nova/transcribe-model",
-                audio: AudioFile::Bytes(AUDIO),
+                file: TranscriptionFile::Bytes(AUDIO),
                 optional: &optional,
                 timeout: Some(&timeout),
                 asynchronous: true,
@@ -170,7 +174,7 @@ async fn native_region_override() {
         operation(
             Call {
                 model: "plain-model",
-                audio: AudioFile::Bytes(AUDIO),
+                file: TranscriptionFile::Bytes(AUDIO),
                 optional: &explicit,
                 timeout: None,
                 asynchronous: true,
@@ -201,7 +205,7 @@ async fn blocking_native_call() {
         operation(
             Call {
                 model: "plain-model",
-                audio: AudioFile::Bytes(AUDIO),
+                file: TranscriptionFile::Bytes(AUDIO),
                 optional: &empty,
                 timeout: None,
                 asynchronous: false,
@@ -218,16 +222,16 @@ async fn blocking_native_call() {
 async fn unsupported_file() {
     let fixture = scripted(&[]);
     let empty = transcription_params("{}");
-    let text_file = AudioFile::Tuple(AudioTuple {
+    let text_file = TranscriptionFile::Multipart {
         filename: "voice.txt",
-        content: Some(TupleContent::Bytes(AUDIO)),
-    });
+        content: AUDIO,
+    };
     let unsupported = run_transcription(
         &fixture,
         operation(
             Call {
                 model: "plain-model",
-                audio: text_file,
+                file: text_file,
                 optional: &empty,
                 timeout: None,
                 asynchronous: true,
@@ -253,7 +257,7 @@ async fn failed_binding() {
         operation(
             Call {
                 model: "plain-model",
-                audio: AudioFile::Bytes(AUDIO),
+                file: TranscriptionFile::Bytes(AUDIO),
                 optional: &empty,
                 timeout: None,
                 asynchronous: false,

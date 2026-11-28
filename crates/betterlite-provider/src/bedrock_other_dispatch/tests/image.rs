@@ -7,7 +7,7 @@ use betterlite_bedrock::transcription::error::CallError;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 
-use super::fixture::{Fixture, Outcome, Unavailable, image_params, run, value};
+use super::fixture::{Fixture, Handler, Outcome, image_params, run, value};
 use crate::bedrock_image_dispatch::BedrockImageResult;
 use crate::bedrock_image_dispatch::call::{
     BedrockImageOperation, EditOperation, GenerateOperation,
@@ -37,7 +37,7 @@ fn model_params(source: &str) -> Params {
 fn generation<'call>(
     prompt: &'call str,
     optional: &'call str,
-) -> BedrockOtherOperation<'call, 'call, 'call, Unavailable, super::fixture::Binding> {
+) -> BedrockOtherOperation<'call, 'call, 'call, Handler, super::fixture::Binding> {
     BedrockOtherOperation::Image(BedrockImageOperation::Generate(GenerateOperation {
         model: Some(CANVAS),
         prompt,
@@ -59,7 +59,7 @@ fn editing<'call, 'cost, 'context>(
     optional: ImageParams,
     model_cost: &'cost ParamMap,
     context: &'context ResolutionContext<'context>,
-) -> BedrockOtherOperation<'call, 'cost, 'context, Unavailable, super::fixture::Binding> {
+) -> BedrockOtherOperation<'call, 'cost, 'context, Handler, super::fixture::Binding> {
     BedrockOtherOperation::Image(BedrockImageOperation::Edit(EditOperation {
         model: Some(CANVAS),
         prompt: Some(prompt),

@@ -19,6 +19,8 @@ where
     Source: ImageCredentials + Sync,
     Factory: EmbeddingClientFactory + Sync,
     <Factory as EmbeddingClientFactory>::Client: StatusTransport,
+    Transport: Sync,
+    Files: Sync,
 {
     let call = AsyncInvokeStatusCall {
         invocation_arn: operation.invocation_arn,

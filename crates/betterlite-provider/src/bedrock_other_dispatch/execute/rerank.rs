@@ -19,6 +19,8 @@ pub(super) async fn rerank<Source, Factory, Transport, Files>(
 where
     Source: RerankCredentials + Sync,
     Factory: RerankClientFactory + Sync,
+    Transport: Sync,
+    Files: Sync,
 {
     let mut call = RerankCall {
         request: &operation.request,

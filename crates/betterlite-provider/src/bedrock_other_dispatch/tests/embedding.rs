@@ -8,7 +8,7 @@ use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 
-use super::fixture::{Fixture, Unavailable, environment, object, params, run, value};
+use super::fixture::{Fixture, Handler, environment, object, params, run, value};
 use crate::bedrock_other_dispatch::call::{
     BedrockOtherOperation, EmbeddingInput, EmbeddingOperation, EmbeddingStatusOperation,
 };
@@ -79,7 +79,7 @@ fn operation<'call>(
     input: EmbeddingInput<'call>,
     optional: &'call str,
     environment: &'call BTreeMap<String, String>,
-) -> BedrockOtherOperation<'call, 'call, 'call, Unavailable, super::fixture::Binding> {
+) -> BedrockOtherOperation<'call, 'call, 'call, Handler, super::fixture::Binding> {
     BedrockOtherOperation::Embedding(EmbeddingOperation {
         model,
         input,
