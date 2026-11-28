@@ -20,13 +20,14 @@ from .fakes import (
     Failure,
     Input,
     Issuer,
-    KeyTransport,
     PublicKey,
     Recorder,
     Scenario,
     ScenarioResult,
+    ScriptedKeys,
     Step,
     StepResult,
+    UserinfoTransport,
     proxy_failure,
 )
 
@@ -34,8 +35,6 @@ litellm.suppress_debug_info = True
 
 AUDIENCE_VARIABLE: Final = "JWT_AUDIENCE"
 ISSUER_VARIABLE: Final = "JWT_ISSUER"
-PUBLIC_KEY_URL_VARIABLE: Final = "JWT_PUBLIC_KEY_URL"
-PUBLIC_KEY_URL: Final = "https://idp.test/jwks"
 
 
 # the three handler methods a step runs, typed so the calls carry no bare LiteLLM dict
@@ -79,7 +78,7 @@ def issuer_config(entry: Issuer) -> JWTIssuerConfig:
     )
 
 
-def build_handler(settings: Scenario, cache: Cache, transport: KeyTransport) -> JWTHandler:
+def build_handler(settings: Scenario, cache: Cache, transport: UserinfoTransport) -> JWTHandler:
     issuers: list[JWTIssuerConfig] = [issuer_config(entry) for entry in settings["issuers"]]
     jwtauth = LiteLLM_JWTAuth(
         issuers=issuers,
@@ -92,6 +91,9 @@ def build_handler(settings: Scenario, cache: Cache, transport: KeyTransport) -> 
         user_api_key_cache=UserApiKeyCache(in_memory_cache=cache),
         litellm_jwtauth=jwtauth,
     )
+    keys = ScriptedKeys(settings["key"])
+    object.__setattr__(handler, "get_public_key", keys.get_public_key)
+    object.__setattr__(handler, "_get_public_key_from_jwks_url", keys.get_public_key_from_jwks_url)
     handler.http_handler.client = httpx.AsyncClient(
         transport=httpx.MockTransport(transport.handle)
     )
@@ -116,7 +118,7 @@ def userinfo_outcome(task: asyncio.Future[JsonValue]) -> tuple[JsonValue, Failur
 class Session:
     handler: JWTHandler
     key: PublicKey
-    transport: KeyTransport
+    transport: UserinfoTransport
     cache: Cache
     recorder: Recorder
     audience: str | None
@@ -175,10 +177,9 @@ async def scenario_answer(entry: Scenario, recorder: Recorder) -> ScenarioResult
     issuer = entry.get("issuer")
     set_variable(AUDIENCE_VARIABLE, audience)
     set_variable(ISSUER_VARIABLE, issuer)
-    os.environ[PUBLIC_KEY_URL_VARIABLE] = PUBLIC_KEY_URL
     JWTHandler._unscoped_jwt_warning_emitted = False  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1068
     cache = Cache(entry["now"])
-    transport = KeyTransport(entry["key"], entry.get("userinfo_endpoint"))
+    transport = UserinfoTransport(entry.get("userinfo_endpoint"))
     handler = build_handler(entry, cache, transport)
     session = Session(
         handler=handler,
@@ -204,7 +205,7 @@ async def answer(input_value: Input) -> Answer:
         object.__setattr__(
             handle_jwt, "verbose_proxy_logger", logging.getLogger("LiteLLM Proxy")
         )
-        for name in (AUDIENCE_VARIABLE, ISSUER_VARIABLE, PUBLIC_KEY_URL_VARIABLE):
+        for name in (AUDIENCE_VARIABLE, ISSUER_VARIABLE):
             os.environ.pop(name, None)
     return Answer(scenarios=scenarios)
 

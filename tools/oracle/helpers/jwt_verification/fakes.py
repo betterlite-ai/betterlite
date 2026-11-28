@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationEr
 from typing_extensions import override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+KEY_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 TTL: Final[TypeAdapter[float]] = TypeAdapter(float)
 LogArgument = str | int | float | BaseException
 PublicKey = str | dict[str, JsonValue]
@@ -136,30 +137,41 @@ class ProxyFailure(BaseModel):
     param: str | None
 
 
-# the identity provider: the scenario's JWK, its discovery document and the scripted replies
-class KeyTransport:
-    def __init__(self, key: PublicKey, userinfo_endpoint: str | None) -> None:
+# the key B761's helper fetches and compares, served at the same lookup
+class ScriptedKeys:
+    def __init__(self, key: PublicKey) -> None:
         self.key = key
+
+    async def get_public_key(self, kid: str | None) -> dict[str, JsonValue]:
+        del kid
+        return KEY_OBJECT.validate_python(self.key)
+
+    async def get_public_key_from_jwks_url(
+        self, jwks_url: str, kid: str | None
+    ) -> dict[str, JsonValue]:
+        del jwks_url, kid
+        return KEY_OBJECT.validate_python(self.key)
+
+
+# the identity provider's userinfo endpoint and the replies it serves
+class UserinfoTransport:
+    def __init__(self, userinfo_endpoint: str | None) -> None:
         self.userinfo_endpoint = userinfo_endpoint
         self.replies: list[Reply] = []
         self.requests: list[RequestView] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
-        if url == self.userinfo_endpoint:
-            self.requests.append(
-                RequestView(
-                    url=url,
-                    authorization=request.headers["authorization"],
-                    accept=request.headers["accept"],
-                )
+        if url != self.userinfo_endpoint:
+            raise httpx.ConnectError(f"unscripted request to {url}", request=request)
+        self.requests.append(
+            RequestView(
+                url=url,
+                authorization=request.headers["authorization"],
+                accept=request.headers["accept"],
             )
-            return self.userinfo_reply(request)
-        if ".well-known/openid-configuration" in url:
-            discovery: dict[str, str] = {"jwks_uri": f"https://{request.url.host}/jwks"}
-            return httpx.Response(200, json=discovery)
-        keys: dict[str, list[PublicKey]] = {"keys": [self.key]}
-        return httpx.Response(200, json=keys)
+        )
+        return self.userinfo_reply(request)
 
     def userinfo_reply(self, request: httpx.Request) -> httpx.Response:
         reply = self.replies.pop(0) if self.replies else Reply(kind="transport")
