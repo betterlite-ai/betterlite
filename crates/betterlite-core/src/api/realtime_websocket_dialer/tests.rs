@@ -111,13 +111,22 @@ const fn probe_connection(url: String) -> ProbeConnection {
     }
 }
 
-// a server that answers each upgrade attempt with the same status
-async fn serve_rejections(listener: TcpListener, attempts: Arc<AtomicUsize>, status: StatusCode) {
+// a server that answers each upgrade attempt with the rejection status, or holds it open without one
+async fn serve_upgrade_attempts(
+    listener: TcpListener,
+    attempts: Arc<AtomicUsize>,
+    rejection: Option<StatusCode>,
+) {
+    let mut held = Vec::new();
     loop {
         let Ok((stream, _peer)) = listener.accept().await else {
             return;
         };
         attempts.fetch_add(1, Ordering::SeqCst);
+        let Some(status) = rejection else {
+            held.push(stream);
+            continue;
+        };
         drop(
             tokio_tungstenite::accept_hdr_async(
                 stream,
@@ -128,19 +137,6 @@ async fn serve_rejections(listener: TcpListener, attempts: Arc<AtomicUsize>, sta
             )
             .await,
         );
-    }
-}
-
-// a server that holds every upgrade attempt open, so the dialer's open timeout fires
-async fn serve_hangs(listener: TcpListener, attempts: Arc<AtomicUsize>) {
-    let mut held = Vec::new();
-    loop {
-        let Ok((stream, _peer)) = listener.accept().await else {
-            return;
-        };
-        attempts.fetch_add(1, Ordering::SeqCst);
-        held.push(stream);
-        assert!(held.len() <= ATTEMPTS);
     }
 }
 
@@ -313,10 +309,10 @@ async fn dialer_answers_a_rejected_upgrade_with_the_status_after_one_attempt() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_rejections(
+    tasks.spawn(serve_upgrade_attempts(
         listener,
         Arc::clone(&attempts),
-        StatusCode::UNAUTHORIZED,
+        Some(StatusCode::UNAUTHORIZED),
     ));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
@@ -349,7 +345,11 @@ async fn dialer_retries_a_hung_upgrade_three_times() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_hangs(listener, Arc::clone(&attempts)));
+    tasks.spawn(serve_upgrade_attempts(
+        listener,
+        Arc::clone(&attempts),
+        None,
+    ));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
     let headers = HeaderMap::new();
@@ -848,10 +848,10 @@ async fn probe_reports_a_rejected_upgrade_as_invalid_status() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_rejections(
+    tasks.spawn(serve_upgrade_attempts(
         listener,
         Arc::clone(&attempts),
-        StatusCode::FORBIDDEN,
+        Some(StatusCode::FORBIDDEN),
     ));
     let dialer = web_dialer(no_proxy());
     let connection = probe_connection(format!("ws://{address}/realtime"));
