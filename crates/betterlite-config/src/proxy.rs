@@ -64,7 +64,13 @@ impl ProxyPolicy {
         let mut primary = BTreeMap::new();
         for (name, value) in &proxies {
             let prefix = if value.contains("://") { "" } else { "http://" };
-            let route = parse_route(name, &format!("{prefix}{value}"), None);
+            let mut route = parse_route(name, &format!("{prefix}{value}"), None);
+            // websockets rewrites an http:// SOCKS_PROXY value to socks5h://, which it cannot dial without python-socks
+            if name == "socks" && matches!(route, ProxyRoute::Forward(_)) {
+                route = ProxyRoute::Unsupported {
+                    scheme: "socks5h".to_owned(),
+                };
+            }
             primary.insert(name.clone(), route);
         }
         if trust.disable_aiohttp_trust_env || disable {
@@ -95,6 +101,26 @@ impl ProxyPolicy {
             .get(url.scheme())
             .or_else(|| self.primary.get("all"))
             .or_else(|| self.fallback.get(url.scheme()))
+    }
+
+    // websockets' get_proxy: NO_PROXY on "host:port", then one scheme order, and never ALL_PROXY or the netrc fallback
+    #[must_use]
+    pub fn websocket_route(&self, url: &Url) -> Option<&ProxyRoute> {
+        let host = url.host_str().unwrap_or_default();
+        if let Some(port) = url.port_or_known_default()
+            && bypasses(
+                &self.no_proxy,
+                &format!("{}:{port}", host.trim_matches(['[', ']'])),
+            )
+        {
+            return None;
+        }
+        let schemes: &[&str] = if url.scheme() == "wss" {
+            &["wss", "socks", "https"]
+        } else {
+            &["ws", "socks", "https", "http"]
+        };
+        schemes.iter().find_map(|scheme| self.primary.get(*scheme))
     }
 }
 
