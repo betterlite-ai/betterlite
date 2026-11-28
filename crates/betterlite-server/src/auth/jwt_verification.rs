@@ -28,7 +28,7 @@ pub struct JwtVerificationStageInput {
     pub verifier: Option<Arc<JwtVerifier>>,
     pub source: Option<Arc<dyn PublicKeySource>>,
     pub token: Option<SecretString>,
-    verified: Option<TypedValue>,
+    pub verified: Option<TypedValue>,
 }
 
 impl fmt::Debug for JwtVerificationStageInput {
@@ -52,7 +52,12 @@ pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
     let source = extensions
         .get::<Arc<dyn PublicKeySource>>()
         .cloned()
-        .or_else(|| state.and_then(|server| server.jwt_keys.resolver.clone()));
+        .or_else(|| {
+            state.and_then(|server| {
+                let resolver: Arc<dyn PublicKeySource> = server.jwt_keys.resolver.clone()?;
+                Some(resolver)
+            })
+        });
     StageInput::JwtVerification(Box::new(JwtVerificationStageInput {
         verifier,
         source,
@@ -83,8 +88,8 @@ pub(crate) async fn prefetched(
         ))));
     };
     match verifier.auth_jwt(token, source.as_ref()).await {
-        Ok(verified) => {
-            stage.verified = Some(verified);
+        Ok(payload) => {
+            stage.verified = Some(payload);
             Ok(StageInput::JwtVerification(Box::new(stage)))
         }
         Err(error) => Err(StageFailure::JwtVerification(Box::new(
