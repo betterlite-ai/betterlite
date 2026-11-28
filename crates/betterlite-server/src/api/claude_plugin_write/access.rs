@@ -45,9 +45,7 @@ pub(super) fn prepare(
 }
 
 pub(super) fn creator_id(context: &AuthContext) -> Option<String> {
-    let Some(user) = context.principal.user.as_ref() else {
-        return None;
-    };
+    let user = context.principal.user.as_ref()?;
     Some(user.id.clone())
 }
 

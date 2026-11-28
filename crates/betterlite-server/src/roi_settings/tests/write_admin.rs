@@ -32,7 +32,7 @@ fn write_admin_accepts_only_the_proxy_admin(
 #[test]
 fn write_admin_admits_the_master_key_record() {
     let context = master_caller();
-    assert!(require_admin(Some(&context), WRITE_ROLES, WRITE_FORBIDDEN).is_ok());
+    require_admin(Some(&context), WRITE_ROLES, WRITE_FORBIDDEN).unwrap();
 }
 
 #[test]

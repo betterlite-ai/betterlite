@@ -242,9 +242,7 @@ pub(crate) fn master_key_context(
     presented: Option<&SecretString>,
     master_key: &SecretString,
 ) -> Option<AuthContext> {
-    let Some(key) = presented else {
-        return None;
-    };
+    let key = presented?;
     auth_key_lookup::master_key_context(Some(key), master_key).unwrap_or_default()
 }
 

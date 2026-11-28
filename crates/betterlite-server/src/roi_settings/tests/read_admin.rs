@@ -34,7 +34,7 @@ fn read_admin_accepts_the_proxy_admin_roles(
 #[test]
 fn read_admin_admits_the_master_key_record() {
     let context = master_caller();
-    assert!(require_admin(Some(&context), READ_ROLES, READ_FORBIDDEN).is_ok());
+    require_admin(Some(&context), READ_ROLES, READ_FORBIDDEN).unwrap();
 }
 
 #[test]
