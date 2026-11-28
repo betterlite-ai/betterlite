@@ -116,10 +116,9 @@ where
         &self,
         compact: CompactCall<'_>,
     ) -> Result<EditorOutcome, EditorFailure<Hooks::Error>> {
-        let edit_spec: CompactEditSpec = serde_json::from_value(
-            serde_json::to_value(&compact.edit_spec).map_err(EditorFailure::Spec)?,
-        )
-        .map_err(EditorFailure::Spec)?;
+        let edit_spec: CompactEditSpec = serde_json::to_value(&compact.edit_spec)
+            .and_then(serde_json::from_value)
+            .map_err(EditorFailure::Spec)?;
         let messages: Vec<PromptJson> = compact.messages.iter().map(prompt_json).collect();
         let tools: Option<Vec<PromptJson>> = compact
             .tools
