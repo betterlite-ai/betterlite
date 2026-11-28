@@ -8,14 +8,13 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::responses_agentic_execution::executor::{
     AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
 };
-use betterlite_core::api::responses_compact_http::service::SharedSession;
+use betterlite_core::api::responses_compact_http::service::{ClientSource, SharedSession};
 use betterlite_core::api::responses_create::bridge::{BridgeCall, ChatBridge, Created};
 use betterlite_core::api::responses_create::error::BridgeError;
 use betterlite_core::api::responses_create::interception::{
     CreateInterception, DispatchArgs, FileSearchArgs, Interception, InterceptionResult,
 };
 use betterlite_core::api::responses_create_http::config::Params;
-use betterlite_core::api::responses_create_http::service::ClientSource;
 use betterlite_core::api::responses_hook_policy::callbacks::{
     DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
 };

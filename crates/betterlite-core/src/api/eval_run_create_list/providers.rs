@@ -3,13 +3,14 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::types::{ListRunsResponse, Run};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use indexmap::IndexMap;
 
 use super::error::EvalRunCallError;
-use crate::api::eval_http::exchange::{EvalConfig, EvalLogging};
+use crate::api::eval_http::exchange::EvalConfig;
 
 // the kwargs key LiteLLM's acreate_run writes and its create_run pops
 pub(crate) const CREATE_FLAG: &str = "acreate_run";
@@ -72,13 +73,13 @@ pub struct ListRunsCall<'call> {
 pub trait RunTransport: Send + Sync {
     fn create_run<'call>(
         &'call self,
-        log: EvalLogging<'call, '_>,
+        log: LogContext<'call, '_>,
         call: CreateRunCall<'call>,
     ) -> PendingCreateRun<'call>;
 
     fn list_runs<'call>(
         &'call self,
-        log: EvalLogging<'call, '_>,
+        log: LogContext<'call, '_>,
         call: ListRunsCall<'call>,
     ) -> PendingListRuns<'call>;
 }

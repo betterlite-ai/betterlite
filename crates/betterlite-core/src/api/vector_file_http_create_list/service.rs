@@ -22,8 +22,8 @@ use self::request::{call_timeout, endpoint, validated_headers, wire_headers, wir
 use super::config::{FilesConfig, FilesParams};
 use super::error::FileTransportError;
 use super::payload;
-use crate::api::vector_store_http_write::error::{ClientError, handle_error, status_facts};
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::error::{handle_error, status_facts};
+use crate::api::vector_store_http_write::service::{ClientKind, ClientSource, SuppliedClient};
 
 mod facts;
 mod proxied;
@@ -44,11 +44,6 @@ impl Operation {
     }
 }
 
-pub struct SuppliedClient<'client, Client> {
-    pub kind: ClientKind,
-    pub transport: &'client Client,
-}
-
 pub struct FileRequest {
     pub method: Method,
     pub url: Url,
@@ -64,12 +59,6 @@ pub trait FileTransport: Send + Sync {
         &self,
         request: FileRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: FileTransport;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
 
 pub struct FileDeps<'deps, C: FilesConfig, S: ClientSource> {
@@ -209,7 +198,7 @@ fn log_pre_call(
 pub async fn send<C, S>(prepared: PreparedFile<'_, C, S>) -> Result<Json, FileTransportError>
 where
     C: FilesConfig,
-    S: ClientSource,
+    S: ClientSource<Client: FileTransport>,
 {
     let PreparedFile {
         config,

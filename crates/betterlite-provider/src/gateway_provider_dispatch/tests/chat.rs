@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_prompts::arguments::json::Json;
@@ -12,7 +13,7 @@ use crate::gateway_provider_dispatch::call::CompletionCall;
 use crate::gateway_provider_dispatch::chat::{
     OPENROUTER_DEFAULT_API_BASE, OPENROUTER_PROVIDER, VERCEL_PROVIDER, dispatch,
 };
-use crate::gateway_provider_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
+use crate::gateway_provider_dispatch::context::{DispatchContext, DispatchSettings};
 use crate::gateway_provider_dispatch::error::DispatchError;
 use crate::gateway_provider_dispatch::handler::HandlerError;
 
@@ -41,7 +42,7 @@ fn run(
         settings: DispatchSettings::from(&fixture.settings),
     };
     let outcome = {
-        let mut log = CallLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &env,
         };

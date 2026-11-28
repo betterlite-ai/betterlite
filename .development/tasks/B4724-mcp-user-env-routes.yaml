@@ -45,6 +45,8 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-server/src/management_effects/**"
+    - "crates/betterlite-server/src/compliance_checks/router.rs"
     - crates/betterlite-server/src/mcp_user_env_routes.rs
     - crates/betterlite-server/src/mcp_user_env_routes/**
     - crates/betterlite-server/Cargo.toml

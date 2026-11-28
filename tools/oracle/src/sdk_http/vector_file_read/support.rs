@@ -8,9 +8,9 @@ use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_context::resource_config_selection::vector_stores::VectorStoreFilesConfigTag;
 use betterlite_core::api::vector_file_http_read::config::{OpenAiReadConfig, ReadConfig};
-use betterlite_core::api::vector_file_http_read::service::ClientSource;
 use betterlite_core::api::vector_file_read::service::VectorStoreFilesConfigs;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_core::api::vector_store_registry::store::{
     VectorStoreCredentials, VectorStoreRegistry,
 };

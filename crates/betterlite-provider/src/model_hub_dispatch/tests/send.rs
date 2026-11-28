@@ -6,12 +6,13 @@ use std::thread;
 use betterlite_context::chat_config_selection::tags::{
     ChatConfigTag, ConfigConstruction, ConfigSelection,
 };
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use tokio::runtime::Builder;
 
 use super::super::embedding::{EmbeddingCall, embed};
-use super::super::{CallLogging, dispatch, predibase, replicate};
+use super::super::{dispatch, predibase, replicate};
 use super::support::{
     NOW_SECONDS, Services, chat_context, empty_globals, environment, http_reply, object,
     replicate_reply, user_message,
@@ -57,7 +58,7 @@ fn dispatch_completes_on_a_second_thread() {
         tag: ChatConfigTag::OpenAiGpt,
         construction: ConfigConstruction::Shared,
     };
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &log_env,
     };
@@ -91,7 +92,7 @@ fn the_embedding_completes_on_a_second_thread() {
         api_base: Some("http://mock/embed"),
         headers: &headers,
     };
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &log_env,
     };
@@ -110,7 +111,7 @@ fn the_predibase_entry_completes_on_a_second_thread() {
     let mut messages = vec![user_message()];
     let mut options = object(&[("tenant_id", PromptJson::Text(String::from("tenant-1")))]);
     let mut call = chat_context(MODEL, &mut messages, &mut options, BASE);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &log_env,
     };
@@ -138,7 +139,7 @@ fn the_replicate_entry_completes_on_a_second_thread() {
     let mut messages = vec![user_message()];
     let mut options = Object::new();
     let mut call = chat_context(REPLICATE_MODEL, &mut messages, &mut options, None);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &log_env,
     };

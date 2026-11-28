@@ -1,8 +1,7 @@
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -20,12 +19,7 @@ pub trait RealtimeLogger {
     fn pre_call(&mut self, record: RealtimeLogRecord<'_>) -> Result<(), PrePostError>;
 }
 
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
-}
-
-impl RealtimeLogger for PrePostLogger<'_, '_> {
+impl RealtimeLogger for LogContext<'_, '_> {
     fn pre_call(&mut self, record: RealtimeLogRecord<'_>) -> Result<(), PrePostError> {
         let headers: IndexMap<String, Json> = record
             .headers

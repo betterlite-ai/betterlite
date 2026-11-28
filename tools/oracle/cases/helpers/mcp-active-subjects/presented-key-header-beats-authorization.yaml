@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-presented-key-header-beats-authorization
+call:
+  b4658:
+    operation: presented_key
+    headers:
+      - ["x-litellm-api-key", "Bearer sk-header"]
+      - ["authorization", "Bearer sk-authorization"]
+env: {}
+compare: {ignore: []}
