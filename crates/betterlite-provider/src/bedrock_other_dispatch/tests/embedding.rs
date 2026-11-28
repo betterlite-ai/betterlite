@@ -99,8 +99,8 @@ fn operation<'call>(
     })
 }
 
-// Titan G1 and V2 answer a float vector, and V2 also answers an encoded binary one
-async fn titan_vectors() {
+// Titan G1 answers a float vector, signed at the fixture instant through the sync client
+async fn titan_g1_vector() {
     let env = environment("{}");
     let single = vec![String::from("hello")];
     let g1 = scripted(&[Reply::status(
@@ -137,7 +137,12 @@ async fn titan_vectors() {
         }],
         "the non-async embedding leaf asks for the sync client"
     );
+}
 
+// Titan V2 answers an encoded binary vector when it is asked for one
+async fn titan_v2_binary_vector() {
+    let env = environment("{}");
+    let single = vec![String::from("hello")];
     let binary = scripted(&[Reply::status(
         200,
         r#"{"embeddingsByType": {"binary": "QUJD"}, "inputTextTokenCount": 2}"#,
@@ -414,7 +419,8 @@ async fn extra_headers_forwarded() {
 }
 
 pub(super) async fn case() {
-    titan_vectors().await;
+    titan_g1_vector().await;
+    titan_v2_binary_vector().await;
     sequential_successes().await;
     sequential_failure().await;
     cohere_input_type().await;
