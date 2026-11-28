@@ -1,0 +1,63 @@
+kind: helper
+name: jwt-team-selection-pass-through-grants
+call:
+  jwt_team_selection:
+    scenarios:
+      # an explicit path in team_allowed_routes grants the registered pass-through
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: ["/v1/registered"]}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-a
+        route: /v1/registered
+        request_method: post
+        registered_route: true
+      # the selected team's own metadata grants it instead
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a:
+            team_id: team-a
+            models: [model-a]
+            metadata: {allowed_passthrough_routes: ["/v1/chat/completions"]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: POST
+        registered_route: true
+      # a lowercase request method still matches the registered POST route
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: post
+        registered_route: true
+      # an unregistered route is not protected
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: POST
+        registered_route: false
+      # metadata granting a different route does not grant this one
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a:
+            team_id: team-a
+            models: [model-a]
+            metadata: {allowed_passthrough_routes: ["/v1/other"]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: POST
+        registered_route: true
+env: {}
+compare: {ignore: []}

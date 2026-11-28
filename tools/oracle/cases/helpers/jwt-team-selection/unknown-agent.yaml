@@ -1,0 +1,23 @@
+kind: helper
+name: jwt-team-selection-unknown-agent
+call:
+  jwt_team_selection:
+    scenarios:
+      # a claim that matches no registered agent id or name is a 403
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: ghost}
+        agents: []
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: ghost}
+        agents:
+          - {agent_id: a1, agent_name: agent-one, agent_card_params: {}}
+      # the field the refusal names is the configured claim field
+      - function: agent
+        fields: {agent_id_jwt_field: azp}
+        token: {azp: ghost}
+        agents:
+          - {agent_id: a1, agent_name: agent-one, agent_card_params: {}}
+env: {}
+compare: {ignore: []}

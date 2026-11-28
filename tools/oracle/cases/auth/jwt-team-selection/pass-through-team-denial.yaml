@@ -1,0 +1,38 @@
+kind: helper
+name: jwt-team-selection-pass-through-team-denial
+call:
+  jwt_team_selection:
+    scenarios:
+      # the openai_routes group admits the route, but no team grant names the pass-through path
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: POST
+        registered_route: true
+      # the pass-through denial wins over the model denial
+      - function: candidates
+        token: {team_ids: [team-a, team-b]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+          team-b: {team_id: team-b, models: [model-b]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: POST
+        registered_route: true
+      # an unregistered route is not protected, so the same team is selected
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_allowed_routes: [openai_routes]}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-a
+        route: /v1/chat/completions
+        request_method: POST
+        registered_route: false
+env: {}
+compare: {ignore: []}

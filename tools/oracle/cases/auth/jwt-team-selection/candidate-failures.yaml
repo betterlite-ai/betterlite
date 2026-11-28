@@ -1,0 +1,70 @@
+kind: helper
+name: jwt-team-selection-candidate-failures
+call:
+  jwt_team_selection:
+    scenarios:
+      # an unreadable candidate is swallowed and the next one is tried
+      - function: candidates
+        token: {team_ids: [broken, team-b]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          broken: {team_id: broken, models: null}
+          team-b: {team_id: team-b, models: [model-b]}
+        requested_model: model-b
+        route: /v1/chat/completions
+      # a resolved team without the model is a model denial naming the checked set
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-b
+        route: /v1/chat/completions
+      # an unresolved claim still denies unless the claim fallback is on
+      - function: candidates
+        token: {team_ids: [ghost]}
+        fields: {team_ids_jwt_field: team_ids}
+        requested_model: model-b
+        route: /v1/chat/completions
+      - function: candidates
+        token: {team_ids: [ghost]}
+        fields: {team_ids_jwt_field: team_ids, team_claim_fallback: true}
+        requested_model: model-b
+        route: /v1/chat/completions
+      # the fallback does not soften a denial after a team resolved
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids, team_claim_fallback: true}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+        requested_model: model-b
+        route: /v1/chat/completions
+      # with no requested model the route decides
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-a: {team_id: team-a, models: []}
+        route: /v1/chat/completions
+      - function: candidates
+        token: {team_ids: [team-a]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-a: {team_id: team-a, models: []}
+        route: /v1/unlisted
+      # the team's model aliases feed the grant
+      - function: candidates
+        token: {team_ids: [team-alias]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-alias:
+            team_id: team-alias
+            models: [real-model]
+            litellm_model_table:
+              model_aliases: {friendly: real-model}
+              created_by: oracle
+              updated_by: oracle
+        requested_model: friendly
+        route: /v1/chat/completions
+env: {}
+compare: {ignore: []}

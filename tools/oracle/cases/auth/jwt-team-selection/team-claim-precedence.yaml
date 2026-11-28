@@ -1,0 +1,42 @@
+kind: helper
+name: jwt-team-selection-team-claim-precedence
+call:
+  jwt_team_selection:
+    scenarios:
+      # the individual id claim wins over the alias, and the alias is never read
+      - function: specific_team
+        token: {team_id: team-a, team_alias: alias-a}
+        fields: {team_id_jwt_field: team_id, team_alias_jwt_field: team_alias}
+        teams:
+          team-a: {team_id: team-a, models: []}
+        aliases:
+          alias-a: [{team_id: team-a, models: []}]
+      # a default team substituted for a missing id claim must not mask the alias claim
+      - function: specific_team
+        token: {team_alias: alias-a}
+        fields:
+          team_id_jwt_field: team_id
+          team_alias_jwt_field: team_alias
+          team_ids_jwt_field: team_ids
+          team_id_default: default-team
+        teams:
+          default-team: {team_id: default-team, models: []}
+          team-a: {team_id: team-a, models: []}
+        aliases:
+          alias-a: [{team_id: team-a, models: []}]
+      # with no claim at all the configured default team is used
+      - function: specific_team
+        token: {}
+        fields: {team_id_jwt_field: team_id, team_id_default: default-team}
+        teams:
+          default-team: {team_id: default-team, models: []}
+      # an id claim that does not resolve is the answer; the alias is not tried
+      - function: specific_team
+        token: {team_id: missing-team, team_alias: alias-a}
+        fields: {team_id_jwt_field: team_id, team_alias_jwt_field: team_alias}
+        aliases:
+          alias-a: [{team_id: team-a, models: []}]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/scenarios/3/error/message, why: B737 renders the missing team as text where LiteLLM attaches the same text inside a detail object}

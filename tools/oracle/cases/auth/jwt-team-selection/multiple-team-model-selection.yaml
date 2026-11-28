@@ -1,0 +1,34 @@
+kind: helper
+name: jwt-team-selection-multiple-team-model-selection
+call:
+  jwt_team_selection:
+    scenarios:
+      # the claim order does not decide: the model grant does
+      - function: candidates
+        token: {team_ids: [team-b, team-a]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+          team-b: {team_id: team-b, models: [model-b]}
+        requested_model: model-a
+        route: /v1/chat/completions
+      - function: candidates
+        token: {team_ids: [team-a, team-b]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+          team-b: {team_id: team-b, models: [model-b]}
+        requested_model: model-b
+        route: /v1/chat/completions
+      # every candidate is read before the granting one is found
+      - function: candidates
+        token: {team_ids: [team-c, team-a, team-b]}
+        fields: {team_ids_jwt_field: team_ids}
+        teams:
+          team-a: {team_id: team-a, models: [model-a]}
+          team-b: {team_id: team-b, models: [model-b]}
+          team-c: {team_id: team-c, models: [model-c]}
+        requested_model: model-c
+        route: /v1/chat/completions
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: jwt-team-selection-required-team-hints
+call:
+  jwt_team_selection:
+    scenarios:
+      # both configured claim fields are named, and the refusal is a plain 401
+      - function: specific_team
+        token: {sub: someone}
+        fields: {team_id_jwt_field: team_id, team_alias_jwt_field: team_alias}
+      # dot-notation field paths get the first-element hint
+      - function: specific_team
+        token: {sub: someone}
+        fields: {team_id_jwt_field: roles.0}
+      # and bracket-notation paths get their own hint
+      - function: specific_team
+        token: {sub: someone}
+        fields: {team_id_jwt_field: "roles[0]"}
+      # an unset id field reads as None in the message
+      - function: specific_team
+        token: {sub: someone}
+        fields: {team_alias_jwt_field: team_alias}
+env: {}
+compare: {ignore: []}

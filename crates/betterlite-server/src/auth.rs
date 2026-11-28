@@ -72,10 +72,12 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_request_policy::stage_input as request_policy_stage_input;
 use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
 use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
+use crate::auth::request_body_safety::stage_input as body_safety_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -84,7 +86,7 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -163,13 +165,12 @@ fn stage_input(
         AuthBackend::AuthKeyLookup => Ok(identity_store::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
+        AuthBackend::JwtTeamSelection => jwt_team_selection::stage_input(request, authenticated),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
-        AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
-            auth_request_policy::stage_input(request, authenticated, body)?,
-        ))),
-        AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
-            request_body_safety::stage_input(request, authenticated, body)?,
-        ))),
+        AuthBackend::AuthRequestPolicy => request_policy_stage_input(request, authenticated, body)
+            .map(|stage| StageInput::AuthRequestPolicy(Box::new(stage))),
+        AuthBackend::RequestBodySafety => body_safety_stage_input(request, authenticated, body)
+            .map(|stage| StageInput::RequestBodySafety(Box::new(stage))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
@@ -248,6 +249,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
         StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
+        StageInput::JwtTeamSelection(stage) => Box::pin(jwt_team_selection::prefetched(stage)),
         StageInput::AuthTagBudgets(stage) => Box::pin(auth_tag_budgets::prefetched(stage)),
         StageInput::AuthKeyBudgets(stage) => Box::pin(auth_key_budgets::prefetched(stage)),
         StageInput::AuthModelBudgets(stage) => Box::pin(auth_model_budgets::prefetched(stage)),
@@ -279,23 +281,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthRoutePolicy(_)) => Box::pin(ready(Ok(other))),
     };
     stage_future.await
-}
-
-fn master_key_stage(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = auth_identity::master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
 }
 
 fn default_resolver() -> Arc<RequestModelResolver> {

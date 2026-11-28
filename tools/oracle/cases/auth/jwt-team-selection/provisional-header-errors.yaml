@@ -1,0 +1,55 @@
+kind: helper
+name: jwt-team-selection-provisional-header-errors
+call:
+  jwt_team_selection:
+    scenarios:
+      # under the DB fallback an id outside the claims is taken provisionally when the row exists
+      - function: header
+        headers: {x-litellm-team-id: team-x}
+        fields: {fallback_to_db_teams: true}
+        teams:
+          team-x: {team_id: team-x, models: []}
+      # an absent id falls through to the alias lookup
+      - function: header
+        headers: {x-litellm-team-id: alias-x}
+        fields: {fallback_to_db_teams: true}
+        aliases:
+          alias-x: [{team_id: team-a, models: []}]
+      # neither an id nor an alias: the membership denial names no resolved team
+      - function: header
+        headers: {x-litellm-team-id: ghost}
+        fields: {fallback_to_db_teams: true}
+      # no database is a plain 401 before any membership decision
+      - function: header
+        headers: {x-litellm-team-id: ghost}
+        fields: {fallback_to_db_teams: true}
+        database: false
+      # a row that exists but does not decode is a read failure, not an absent team
+      - function: header
+        headers: {x-litellm-team-id: broken}
+        fields: {fallback_to_db_teams: true}
+        teams:
+          broken: {team_id: broken, models: null}
+      # an alias several teams share is denied like an unknown value
+      - function: header
+        headers: {x-litellm-team-id: alias-c}
+        fields: {fallback_to_db_teams: true}
+        aliases:
+          alias-c:
+            - {team_id: team-a, models: []}
+            - {team_id: team-b, models: []}
+      # an allowed id still short-circuits the fallback
+      - function: header
+        headers: {x-litellm-team-id: team-a}
+        allowed_team_ids: [team-a]
+        fields: {fallback_to_db_teams: true}
+      # a 5xx from the alias lookup propagates instead of becoming a denial
+      - function: header
+        headers: {x-litellm-team-id: alias-broken}
+        fields: {fallback_to_db_teams: true}
+        aliases:
+          alias-broken: [{team_id: broken, models: null}]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/scenarios/7/error/message, why: B737 renders the alias read failure as text where LiteLLM attaches the same text inside a detail object}

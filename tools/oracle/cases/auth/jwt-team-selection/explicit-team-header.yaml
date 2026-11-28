@@ -1,0 +1,23 @@
+kind: helper
+name: jwt-team-selection-explicit-team-header
+call:
+  jwt_team_selection:
+    scenarios:
+      # an allowed team id never costs a lookup, even with a team row present
+      - function: header
+        headers: {x-litellm-team-id: team-a}
+        allowed_team_ids: [team-a, team-c]
+        teams:
+          team-a: {team_id: team-a, models: []}
+      # and it works with no database at all
+      - function: header
+        headers: {x-litellm-team-id: team-a}
+        allowed_team_ids: [team-a]
+        database: false
+      # a value outside the claims is denied with the sorted allowed ids
+      - function: header
+        headers: {x-litellm-team-id: team-a}
+        allowed_team_ids: [team-c]
+        database: false
+env: {}
+compare: {ignore: []}

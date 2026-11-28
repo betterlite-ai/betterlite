@@ -1,0 +1,24 @@
+task: B764
+deviations:
+  - what: The twelve auth-folder oracle cases run as helper cases against the production selection functions instead of B001 HTTP requests to a protected route.
+    why: betterlite has no JWT authentication chain yet. The server's jwt verification, key resolution, team authorization and provisioning stages are still stubs, so no route can hand this stage a verified claim document. The stage is registered with the real B732 auth constructor and covered by stage-wiring tests; the oracle compares the same production functions on both sides until the chain lands.
+    link: ""
+  - what: The helper adapter invokes find_team_with_model_access, which the task text routes through HTTP/Postgres only.
+    why: The same missing JWT chain leaves no route to reach it. LiteLLM reads proxy_server.llm_router inside the function; in the helper process that global is None, exactly like the injected model view betterlite passes, so both sides take the same no-router path and no case depends on router-only model resolution.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1666-L1750
+  - what: The model-denial text lists the checked claim teams sorted, where LiteLLM prints a Python set in hash order.
+    why: betterlite keeps the claim teams in a sorted set. Python's set iteration order changes between processes, so the order LiteLLM prints cannot be reproduced; the compared cases pin the sorted order on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1746
+  - what: The team-claim hint that follows "No team found in token" needs an ASCII index, where LiteLLM's str.isdigit and \d pattern also accept decimal digits from other scripts.
+    why: betterlite checks the index with char::is_ascii_digit, and Rust's standard library has no exact equivalent of Python's Unicode isdigit, since char::is_numeric also matches fractions that isdigit rejects. A field such as roles.٣ therefore gets the plain refusal without the hint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1599-L1608
+  - what: A claim team whose stored row has a NULL models column is treated as unresolved, so with team_claim_fallback on and no other claim team granting the model the scan defers, where LiteLLM reads models=None as a resolved team that is skipped and raises the model denial.
+    why: betterlite's shared team row decoder holds models as a list rather than an optional list, so a NULL row fails to decode before this stage sees it, and the row shape belongs to the DB team readers. A row that is provably the team still resolves in LiteLLM, but betterlite cannot tell it apart from a corrupt row; counting every decode failure as resolved would also change the swallowed-exception behavior the task keeps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1704-L1717
+kept_bugs:
+  - what: A candidate team whose read or grant check raises is skipped and the request ends in the team-model denial.
+    why: LiteLLM swallows every exception inside the candidate loop, so a degraded team read cannot fail the request; the task pins this behavior, so betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1736-L1737
+  - what: A claim team that answers with an unreadable row is treated as absent when team_claim_fallback is on, so the request defers to other teams instead of surfacing the read failure.
+    why: LiteLLM's claim path only tells the provably-absent row apart on the provisional header path, and a working setup relies on the fallback to keep serving when one claim team cannot be read. betterlite copies the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1563-L1568
