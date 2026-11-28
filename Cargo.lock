@@ -4865,6 +4865,7 @@ dependencies = [
 name = "betterlite-server-fuzz"
 version = "0.0.0"
 dependencies = [
+ "axum",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-core",
