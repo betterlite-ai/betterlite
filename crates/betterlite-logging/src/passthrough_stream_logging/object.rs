@@ -1,21 +1,17 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_config::sections::logging_privacy::Settings;
 use chrono::{DateTime, FixedOffset};
 
-use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::LoggingState;
 use crate::logging_state::correlation::CorrelationContext;
 use crate::logging_success::dispatch::dispatch_success_handlers;
 use crate::logging_success::handler::SuccessHandler;
+use crate::logging_success::owned::OwnedSuccessHandler;
 use crate::logging_success::payload_state::STANDARD_LOGGING_OBJECT;
-use crate::logging_success::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use crate::logging_success::types::{SuccessRequest, SuccessResult};
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
-use crate::registry::CallbackRegistry;
 
 pub struct StreamLoggingState {
     pub logging: LoggingState,
@@ -62,20 +58,8 @@ pub trait StreamSuccessDispatch: Send + Sync {
     async fn dispatch_success(&self, call: StreamSuccessCall<'_>);
 }
 
-pub struct StreamLoggingCallbacks {
-    pub registry: Arc<CallbackRegistry>,
-    pub payload_builder: Arc<dyn StandardPayloadBuilder>,
-    pub stream_assembler: Arc<dyn StreamAssembler>,
-    pub clock: Arc<dyn SuccessClock>,
-    pub failure_counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    pub excluded_fields: Vec<String>,
-    pub known_callback: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    pub stamp: ResponseStamp,
-    pub privacy: Settings,
-}
-
 pub struct SuccessHandlerDispatch {
-    pub callbacks: StreamLoggingCallbacks,
+    pub callbacks: Arc<OwnedSuccessHandler>,
 }
 
 #[async_trait]
@@ -99,17 +83,7 @@ impl StreamSuccessDispatch for SuccessHandlerDispatch {
             standard_logging_object: standard_logging_object_kwarg(kwargs),
             guardrail_snapshot: None,
         };
-        let handler = SuccessHandler {
-            registry: self.callbacks.registry.as_ref(),
-            payload_builder: self.callbacks.payload_builder.as_ref(),
-            stream_assembler: self.callbacks.stream_assembler.as_ref(),
-            clock: self.callbacks.clock.as_ref(),
-            failure_counters: &self.callbacks.failure_counters,
-            excluded_fields: &self.callbacks.excluded_fields,
-            known_callback: self.callbacks.known_callback.as_ref(),
-            stamp: &self.callbacks.stamp,
-            privacy: self.callbacks.privacy,
-        };
+        let handler = SuccessHandler::from(self.callbacks.as_ref());
         dispatch_success_handlers(&handler, state, correlation, &request).await;
     }
 }

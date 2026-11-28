@@ -15,10 +15,7 @@ pub fn handle_callback_failure(
         %error,
         "LiteLLM.LoggingError: [Non-Blocking] success logging failed"
     );
-    let mut counters: Vec<&dyn CallbackFailureCounter> =
-        Vec::with_capacity(handler.failure_counters.len());
-    for counter in handler.failure_counters {
-        counters.push(counter.as_ref());
-    }
+    let counters: Vec<&dyn CallbackFailureCounter> =
+        handler.registry.failure_counter().into_iter().collect();
     count_callback_failure(callback_name, &counters);
 }
