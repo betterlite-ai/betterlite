@@ -27,7 +27,7 @@ if ! grep -q -E '^FAIL ' <<< "${lines}"; then
     [[ -n "${reason}" ]] && runner+="The CI runner of job ${name} died after ${minutes} minutes in step \"${step}\" before any check failed: ${reason}"$'\n'
   done <<< "${jobs}"
 fi
-[[ -n "${runner}" ]] && lines="${runner}A test that uses up the runner's memory or never ends does this, so find the test in your task commands that runs away and fix the code, not the test."
+[[ -n "${runner}" ]] && lines="${runner}No test failed: the runner ran out of memory or was stopped. Heavy builds side by side cause this, and so does a test that grows without bound or never ends. Change code only if one of your task's tests can do that; otherwise report blocked and quote this line."
 missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
 missed=$(sort -u <<< "${missed}")
 missed=$(head -n 40 <<< "${missed}")
