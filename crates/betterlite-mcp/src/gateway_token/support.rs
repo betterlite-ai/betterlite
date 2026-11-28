@@ -71,28 +71,29 @@ pub fn unknown_client_error() -> OauthError {
 
 #[must_use]
 pub fn reload_failure_error(failure: ReloadUserFailure) -> OauthError {
-    match failure {
-        ReloadUserFailure::Unavailable => oauth_error(
+    let (status, code, description) = match failure {
+        ReloadUserFailure::Unavailable => (
             503,
             OauthErrorCode::TemporarilyUnavailable,
             DB_UNAVAILABLE_DESCRIPTION,
         ),
-        ReloadUserFailure::Faulted => oauth_error(
+        ReloadUserFailure::Faulted => (
             503,
             OauthErrorCode::TemporarilyUnavailable,
             DB_FAULTED_DESCRIPTION,
         ),
-        ReloadUserFailure::Unresolvable => oauth_error(
+        ReloadUserFailure::Unresolvable => (
             500,
             OauthErrorCode::ServerError,
             "the gateway is not configured to resolve users",
         ),
-        ReloadUserFailure::NoActiveKey => oauth_error(
+        ReloadUserFailure::NoActiveKey => (
             400,
             OauthErrorCode::InvalidGrant,
             "the user for this grant is no longer active",
         ),
-    }
+    };
+    oauth_error(status, code, description)
 }
 
 #[must_use]
@@ -116,27 +117,26 @@ pub fn subject_refusal_error(refusal: SubjectTokenRefusal) -> OauthError {
 
 #[must_use]
 pub fn mint_failure_error(failure: ProxyCredentialMintFailure) -> OauthError {
+    match mint_reload_failure(failure) {
+        Ok(reason) => reload_failure_error(reason),
+        Err(description) => oauth_error(400, OauthErrorCode::InvalidGrant, description),
+    }
+}
+
+const fn mint_reload_failure(
+    failure: ProxyCredentialMintFailure,
+) -> Result<ReloadUserFailure, &'static str> {
     match failure {
-        ProxyCredentialMintFailure::NotAMember => oauth_error(
-            400,
-            OauthErrorCode::InvalidGrant,
-            "the user is no longer a member of the team this grant was issued for",
-        ),
-        ProxyCredentialMintFailure::TeamRequired => oauth_error(
-            400,
-            OauthErrorCode::InvalidGrant,
-            "this user belongs to a team; sign in again and pick the team for this credential",
-        ),
-        ProxyCredentialMintFailure::Unresolvable => {
-            reload_failure_error(ReloadUserFailure::Unresolvable)
+        ProxyCredentialMintFailure::NotAMember => {
+            Err("the user is no longer a member of the team this grant was issued for")
         }
-        ProxyCredentialMintFailure::Unavailable => {
-            reload_failure_error(ReloadUserFailure::Unavailable)
+        ProxyCredentialMintFailure::TeamRequired => {
+            Err("this user belongs to a team; sign in again and pick the team for this credential")
         }
-        ProxyCredentialMintFailure::Faulted => reload_failure_error(ReloadUserFailure::Faulted),
-        ProxyCredentialMintFailure::NoActiveKey => {
-            reload_failure_error(ReloadUserFailure::NoActiveKey)
-        }
+        ProxyCredentialMintFailure::Unresolvable => Ok(ReloadUserFailure::Unresolvable),
+        ProxyCredentialMintFailure::Unavailable => Ok(ReloadUserFailure::Unavailable),
+        ProxyCredentialMintFailure::Faulted => Ok(ReloadUserFailure::Faulted),
+        ProxyCredentialMintFailure::NoActiveKey => Ok(ReloadUserFailure::NoActiveKey),
     }
 }
 

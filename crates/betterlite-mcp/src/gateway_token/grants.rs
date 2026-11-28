@@ -206,7 +206,7 @@ where
     B: ClaimBackend,
     S: ExchangeSubjectToken<Context>,
 {
-    let issuer = match request_issuer(setup, form, ports, now) {
+    let issuer = match ports.issuer(setup, form, now) {
         Ok(issuer) => issuer,
         Err(refusal) => return refusal,
     };
@@ -227,32 +227,34 @@ where
     }
 }
 
-fn request_issuer<'request, R, M, B, S, Context>(
-    setup: &'request SigningSetup,
-    form: &'request TokenForm<'request>,
-    ports: &'request TokenPorts<'request, R, M, B, S, Context>,
-    now: DateTime<Utc>,
-) -> Result<GrantIssuer<'request, R, M, B, S, Context>, TokenReply>
+impl<R, M, B, S, Context> TokenPorts<'_, R, M, B, S, Context>
 where
     R: ReloadUser,
     M: MintProxyCredential,
     B: ClaimBackend,
     S: ExchangeSubjectToken<Context>,
 {
-    let keys = match signing_refusal(setup) {
-        Ok(keys) => keys,
-        Err(refusal) => return Err(TokenReply::Error(refusal)),
-    };
-    Ok(GrantIssuer {
-        keys,
-        resource: form.resource,
-        base_url: ports.base_url,
-        now,
-        entropy: ports.entropy,
-        reload_user: ports.reload_user,
-        mint_proxy_credential: ports.mint_proxy_credential,
-        exchange_subject_token: ports.exchange_subject_token,
-        exchange_context: ports.exchange_context,
-        guard: ports.guard,
-    })
+    fn issuer<'request>(
+        &'request self,
+        setup: &'request SigningSetup,
+        form: &'request TokenForm<'request>,
+        now: DateTime<Utc>,
+    ) -> Result<GrantIssuer<'request, R, M, B, S, Context>, TokenReply> {
+        let keys = match signing_refusal(setup) {
+            Ok(keys) => keys,
+            Err(refusal) => return Err(TokenReply::Error(refusal)),
+        };
+        Ok(GrantIssuer {
+            keys,
+            resource: form.resource,
+            base_url: self.base_url,
+            now,
+            entropy: self.entropy,
+            reload_user: self.reload_user,
+            mint_proxy_credential: self.mint_proxy_credential,
+            exchange_subject_token: self.exchange_subject_token,
+            exchange_context: self.exchange_context,
+            guard: self.guard,
+        })
+    }
 }

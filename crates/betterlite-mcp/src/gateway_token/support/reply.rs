@@ -35,16 +35,31 @@ pub struct SessionPairBody {
     pub refresh_token: String,
 }
 
+const REDACTED: &str = "<redacted>";
+
 impl fmt::Debug for SessionPairBody {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SessionPairBody")
-            .field("access_token", &"<redacted>")
-            .field("token_type", &self.token_type)
-            .field("expires_in", &self.expires_in)
-            .field("refresh_token", &"<redacted>")
-            .finish()
+        let mut fields = formatter.debug_struct("SessionPairBody");
+        fields.field("access_token", &REDACTED);
+        fields.field("token_type", &self.token_type);
+        fields.field("expires_in", &self.expires_in);
+        fields.field("refresh_token", &REDACTED);
+        fields.finish()
     }
+}
+
+fn redacted_debug(
+    formatter: &mut fmt::Formatter<'_>,
+    name: &str,
+    extra: &[(&str, &dyn fmt::Debug)],
+) -> fmt::Result {
+    let mut fields = formatter.debug_struct(name);
+    fields.field("access_token", &REDACTED);
+    fields.field("refresh_token", &REDACTED);
+    for (field, value) in extra {
+        fields.field(field, value);
+    }
+    fields.finish()
 }
 
 #[derive(Serialize)]
@@ -61,16 +76,17 @@ pub struct ProxyCredentialBody {
 
 impl fmt::Debug for ProxyCredentialBody {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ProxyCredentialBody")
-            .field("access_token", &"<redacted>")
-            .field("token_type", &self.token_type)
-            .field("expires_in", &self.expires_in)
-            .field("refresh_token", &"<redacted>")
-            .field("user_id", &self.user_id)
-            .field("team_id", &self.team_id)
-            .field("issued_token_type", &self.issued_token_type)
-            .finish()
+        redacted_debug(
+            formatter,
+            "ProxyCredentialBody",
+            &[
+                ("token_type", &self.token_type),
+                ("expires_in", &self.expires_in),
+                ("user_id", &self.user_id),
+                ("team_id", &self.team_id),
+                ("issued_token_type", &self.issued_token_type),
+            ],
+        )
     }
 }
 
