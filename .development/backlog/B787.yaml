@@ -1,14 +1,14 @@
 id: B787
 milestone: M4 keys, spend and management
 title: Distributed login throttling and source grouping
-status: todo
+status: done
 depends_on: [B002, B003, B4290, B360, B393, B4326, B4328, B171, B732, B743, B856]
 file: tasks/B787-login-throttle.yaml
 covers:
   - "litellm/proxy/auth/login_throttle.py"
 parent: B056
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3465
