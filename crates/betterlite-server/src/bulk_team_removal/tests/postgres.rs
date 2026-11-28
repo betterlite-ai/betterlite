@@ -142,7 +142,7 @@ const SELECT_TEAM_EXISTS: &str =
     r#"SELECT EXISTS (SELECT 1 FROM "LiteLLM_TeamTable" WHERE "team_id" = $1)"#;
 const SELECT_MEMBERSHIP: &str = r#"SELECT EXISTS (SELECT 1 FROM "LiteLLM_TeamMembership" WHERE "team_id" = $1 AND "user_id" = $2)"#;
 const INSERT_FAILURE: &str = r#"INSERT INTO test_failures ("stage") VALUES ($1)"#;
-const CLEAR_FAILURES: &str = r#"DELETE FROM test_failures"#;
+const CLEAR_FAILURES: &str = "DELETE FROM test_failures";
 
 #[derive(Parser)]
 struct Environment {
@@ -186,7 +186,7 @@ impl Harness {
     }
 
     async fn close(self) {
-        self.pool.close().await;
+        self.pool.close();
         self.fixture.close_async().await.unwrap();
     }
 
@@ -313,10 +313,10 @@ async fn run(
         .await
 }
 
-struct Vanishing<'a> {
-    store: &'a PostgresStore,
-    clock: &'a dyn ArchiveClock,
-    pool: &'a Pool,
+struct Vanishing<'harness> {
+    store: &'harness PostgresStore,
+    clock: &'harness dyn ArchiveClock,
+    pool: &'harness Pool,
     timeout: Duration,
 }
 
@@ -401,12 +401,8 @@ async fn lock_before_fresh_read() {
         .execute(SET_ROSTER, &[&"team-1", &ROSTER_U1_U2_U3])
         .await
         .unwrap();
-    let mut pending = Box::pin(run(
-        &fixture,
-        &removal,
-        "team-1",
-        &[support::identity_id("u1")],
-    ));
+    let pending_members = [support::identity_id("u1")];
+    let mut pending = Box::pin(run(&fixture, &removal, "team-1", &pending_members));
     assert!(
         tokio::time::timeout(Duration::from_millis(150), &mut pending)
             .await
@@ -433,8 +429,10 @@ async fn two_removals_keep_each_others_members() {
         clock: &clock,
         timeout: BATCH_TX_TIMEOUT,
     };
-    let first = run(&fixture, &removal, "team-1", &[support::identity_id("u1")]);
-    let second = run(&fixture, &removal, "team-1", &[support::identity_id("u2")]);
+    let first_members = [support::identity_id("u1")];
+    let second_members = [support::identity_id("u2")];
+    let first = run(&fixture, &removal, "team-1", &first_members);
+    let second = run(&fixture, &removal, "team-1", &second_members);
     let (first, second) = tokio::join!(first, second);
     assert!(first.unwrap()[0].success);
     assert!(second.unwrap()[0].success);

@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use betterlite_auth::auth_invalidation::AuthInvalidation;
-use betterlite_auth::auth_invalidation::transport::InvalidationTransport as _;
 use betterlite_auth::auth_key_lookup::jwt::JwtMappingSource;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::member_removal_identity::duplicates::duplicate_member_indexes;

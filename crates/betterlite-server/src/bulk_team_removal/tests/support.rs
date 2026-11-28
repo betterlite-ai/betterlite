@@ -156,8 +156,7 @@ impl MemorySession {
         let token = key
             .token
             .as_ref()
-            .map(|token| token.expose_secret().clone())
-            .unwrap_or_default();
+            .map_or_else(String::new, |token| token.expose_secret().to_owned());
         lock(&self.state).keys.insert(token, key);
     }
 
@@ -195,7 +194,7 @@ fn token_list(keys: &[LiteLLMVerificationToken]) -> Vec<String> {
         .filter_map(|key| {
             key.token
                 .as_ref()
-                .map(|token| token.expose_secret().clone())
+                .map(|token| token.expose_secret().to_owned())
         })
         .collect()
 }
@@ -836,12 +835,12 @@ impl AuditClock for FixedClock {
 }
 
 pub(crate) fn key_event_audit(scheduler: Arc<RecordingScheduler>, enabled: bool) -> KeyEventAudit {
-    let scheduled: Arc<dyn KeyAuditScheduler> = scheduler;
+    let sink: Arc<dyn KeyAuditScheduler> = scheduler;
     KeyEventAudit {
         settings: Arc::new(TestSettings { enabled }),
         clock: Arc::new(FixedClock),
         new_id: Arc::new(|| "audit-1".to_owned()),
-        scheduler: scheduled,
+        scheduler: sink,
         litellm_proxy_admin_name: None,
     }
 }

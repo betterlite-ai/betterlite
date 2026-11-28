@@ -3,13 +3,14 @@
 mod postgres;
 mod support;
 
+use std::slice::from_ref;
 use std::sync::Arc;
 
 use betterlite_logging::prometheus_label_projection::prometheus_label_factory::LabelSource;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::audit_events::enums::{AuditAction, AuditTable};
-use crate::bulk_team_removal::audit::KeyEventDeletedAudit;
+use crate::bulk_team_removal::audit::{DeletedKeyAudit as _, KeyEventDeletedAudit};
 use crate::bulk_team_removal::error::BulkRemovalError;
 use crate::bulk_team_removal::service::BulkTeamRemoval;
 
@@ -395,7 +396,7 @@ fn deleted_key_audit_matches_the_hook() {
     let adapter = KeyEventDeletedAudit { audit: &audit };
     let key = support::key("k1", "team-1", "u1");
     adapter
-        .schedule_deleted(std::slice::from_ref(&key), &support::key_event_caller())
+        .schedule_deleted(from_ref(&key), &support::key_event_caller())
         .unwrap();
     let records = scheduler.records();
     assert_eq!(records.len(), 1);
@@ -408,8 +409,8 @@ fn deleted_key_audit_matches_the_hook() {
         record
             .changed_by_api_key
             .as_ref()
-            .map(|stored| stored.expose_secret().clone()),
-        Some("sk-admin".to_owned())
+            .map(ExposeSecret::expose_secret),
+        Some("sk-admin")
     );
     let before = record.before_value.as_ref().unwrap();
     assert!(before.get("token").is_some());
@@ -430,7 +431,7 @@ fn disabled_audit_schedules_nothing() {
     let adapter = KeyEventDeletedAudit { audit: &audit };
     let key = support::key("k1", "team-1", "u1");
     adapter
-        .schedule_deleted(std::slice::from_ref(&key), &support::key_event_caller())
+        .schedule_deleted(from_ref(&key), &support::key_event_caller())
         .unwrap();
     assert!(scheduler.records().is_empty());
 }

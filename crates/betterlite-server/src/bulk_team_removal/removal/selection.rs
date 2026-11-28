@@ -17,11 +17,18 @@ pub(super) async fn select_members(
     roster: Vec<Member>,
 ) -> Result<Selection, BulkRemovalError> {
     let (requests, requested_rows) = backfilled_requests(tables, team_id, members).await?;
-    let (removed, kept) = roster.into_iter().partition(|member| {
-        requests
+    let mut removed = Vec::new();
+    let mut kept = Vec::new();
+    for member in roster {
+        if requests
             .iter()
-            .any(|request| addresses_member(member, request))
-    });
+            .any(|request| addresses_member(&member, request))
+        {
+            removed.push(member);
+        } else {
+            kept.push(member);
+        }
+    }
     let removed_ids = member_ids(&removed);
     let removed_rows = unfetched_rows(tables, &removed_ids, &requested_rows).await?;
     let stale_rows: Vec<LiteLLMUserTable> = requested_rows

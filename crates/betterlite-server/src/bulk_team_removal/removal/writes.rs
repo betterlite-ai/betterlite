@@ -5,7 +5,6 @@ use secrecy::ExposeSecret as _;
 use serde::Serialize;
 
 use super::{DeletedKeys, RemovalTables, Selection};
-use crate::audit_events::identity::CallerIdentity;
 use crate::bulk_team_removal::error::BulkRemovalError;
 
 #[derive(Serialize)]
