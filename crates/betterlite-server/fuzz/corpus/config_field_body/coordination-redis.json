@@ -1,0 +1,1 @@
+{"field_name": "coordination_redis", "field_value": {"host": "redis.test", "port": 6379, "startup_nodes": [{"host": "node-a", "port": 7000}], "sentinel_nodes": [["sentinel-a", 26379]], "aws_iam_auth": "enabled", "unknown_key": true}, "config_type": "general_settings"}
