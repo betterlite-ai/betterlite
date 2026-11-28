@@ -4,7 +4,7 @@ description: >-
   Register GET /debug/report in betterlite-server. It returns the same LiteLLM-owned environment facts the bug report link puts in a GitHub issue (versions, deployment kind and the safe config lines) to a proxy admin, and answers HTTP 403 to every other authenticated principal.
 
 
-  B10058 builds the report: build_proxy_environment_report in betterlite-reporting's safe_proxy_config, over B4170's build_environment_report, with the safe_config_lines filter and its name tables. This task only serves it. The handler passes build_proxy_environment_report a ProxyConfigSnapshot of the running proxy (the loaded config and general_settings) and the host facts B4170's Host takes (the /.dockerenv path, no Python version), and returns the EnvironmentReport as JSON.
+  B10058 builds the report: build_proxy_environment_report in betterlite-reporting's safe_proxy_config, over B4170's build_environment_report, with the safe_config_lines filter and its name tables. This task only serves it. The handler passes build_proxy_environment_report the ProxyConfigSnapshot that B10218's state.proxy_diagnostics.notices holds (the running config and general_settings; B10218 leaves it empty until they reach the server) and the host facts B4170's Host takes (that value's dockerenv path, no Python version), so the report and the error notice share one snapshot, and returns the EnvironmentReport as JSON.
 
 
   Register the route as GET /debug/report, left out of the OpenAPI schema (include_in_schema=False).
