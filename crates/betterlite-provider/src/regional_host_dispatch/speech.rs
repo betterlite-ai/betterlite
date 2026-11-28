@@ -3,6 +3,7 @@ use std::future::Future;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
+use betterlite_config::sections::regional_host_keys::Settings as SectionSettings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::{SpeechVoice, TextToSpeechRequestData};
 use betterlite_openai::files::records::BinaryContent;
@@ -26,7 +27,7 @@ use crate::api::speech_provider_contract::{
     ClassAttribute, SpeechHeaders, SpeechMappingOptions, SpeechRequestInput, TextToSpeechConfig,
 };
 
-use super::context::{DispatchSettings, first_secret};
+use super::context::first_secret;
 use super::error::DispatchError;
 use super::logging;
 
@@ -44,7 +45,7 @@ pub struct SpeechContext<'request> {
     pub ssl_verify: Option<bool>,
     pub timeout: Option<Duration>,
     pub voice: Option<SpeechVoice>,
-    pub settings: DispatchSettings<'request>,
+    pub settings: &'request SectionSettings,
 }
 
 // the shared HTTP handler B2452 exposes, injected so the arm stays free of a transport
@@ -66,14 +67,14 @@ pub async fn minimax<H: SpeechHandler>(
 ) -> Result<H::Reply, DispatchError> {
     let key = first_secret([
         context.api_key,
-        context.settings.api_key,
-        context.settings.env_minimax_api_key,
+        context.settings.api_key.as_ref(),
+        context.settings.environment.minimax_api_key.as_ref(),
     ])
     .ok_or(DispatchError::MissingKey {
         message: MINIMAX_MISSING_KEY,
     })?;
     let selected = MinimaxSpeechConfig {
-        env_base: context.settings.env_minimax_api_base,
+        env_base: context.settings.environment.minimax_api_base.as_deref(),
     };
     // speech() maps voice and options before the arm when a config is selected; with none the arm uses B8174's and maps here
     let (voice, optional_params) = match provider_config {

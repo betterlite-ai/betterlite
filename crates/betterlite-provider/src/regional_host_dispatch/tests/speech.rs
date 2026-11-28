@@ -350,7 +350,8 @@ fn minimax_config_maps_the_voice_and_the_options() {
     let config = MinimaxSpeechConfig { env_base: None };
     let options = SpeechMappingOptions {
         voice: Some(voice_map(r#"{"id":"v-2"}"#)),
-        ..SpeechMappingOptions::default()
+        drop_params: false,
+        kwargs: SpeechObject::new(),
     };
     let optional_params = serde_json::from_str::<SpeechObject>(r#"{"speed":3.0}"#)
         .expect("the fixture options parse");

@@ -1,0 +1,78 @@
+use betterlite_models::identity::provider_id::ProviderId;
+use rstest::rstest;
+
+use crate::regional_host_dispatch::error::DispatchError;
+
+use super::embedding::call_for;
+use super::support::{EmbeddingFixture, headers, secret, secret_text};
+
+const VOLCENGINE_MESSAGE: &str = "Missing API key for Volcengine. Set ARK_API_KEY or VOLCENGINE_API_KEY environment variable or pass api_key parameter.";
+
+#[rstest]
+#[case::request_key(
+    Some("sk-request"),
+    Some("sk-global"),
+    Some("sk-ark"),
+    Some("sk-volcengine"),
+    Some("sk-request")
+)]
+#[case::global_key(
+    None,
+    Some("sk-global"),
+    Some("sk-ark"),
+    Some("sk-volcengine"),
+    Some("sk-global")
+)]
+#[case::ark_env(None, None, Some("sk-ark"), Some("sk-volcengine"), Some("sk-ark"))]
+#[case::volcengine_env(None, None, None, Some("sk-volcengine"), Some("sk-volcengine"))]
+fn volcengine_key_chain(
+    #[case] request_key: Option<&str>,
+    #[case] global_key: Option<&str>,
+    #[case] ark_key: Option<&str>,
+    #[case] volcengine_key: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let mut fixture = EmbeddingFixture::new();
+    fixture.api_key = request_key.map(secret);
+    fixture.settings.api_key = global_key.map(secret);
+    fixture.settings.environment.ark_api_key = ark_key.map(secret);
+    fixture.settings.environment.volcengine_api_key = volcengine_key.map(secret);
+    let call = call_for(ProviderId::Volcengine, &fixture).expect("the arm answers");
+    assert_eq!(
+        secret_text(call.api_key.as_ref()),
+        expected.map(str::to_owned)
+    );
+}
+
+#[test]
+fn volcengine_without_a_key_names_both_environment_variables() {
+    let fixture = EmbeddingFixture::new();
+    let outcome = call_for(ProviderId::Volcengine, &fixture);
+    assert!(matches!(
+        outcome,
+        Err(DispatchError::MissingKey {
+            message: VOLCENGINE_MESSAGE
+        })
+    ));
+}
+
+#[test]
+fn volcengine_passes_extra_headers_and_an_empty_litellm_params() {
+    let mut fixture = EmbeddingFixture::new();
+    fixture.extra_headers = Some(headers(&[("x-scope", "tenant")]));
+    fixture.api_base = Some(String::from("https://ark.example/v1"));
+    fixture.optional_params =
+        serde_json::from_str(r#"{"dimensions":2}"#).expect("the fixture parses");
+    let call = call_for(ProviderId::Volcengine, &fixture).expect("the arm answers");
+    assert_eq!(call.headers, Some(headers(&[("x-scope", "tenant")])));
+    assert_eq!(call.api_base, fixture.api_base);
+    assert!(call.litellm_params.is_empty());
+    assert_eq!(call.optional_params, fixture.optional_params);
+}
+
+#[test]
+fn volcengine_without_extra_headers_passes_an_empty_map() {
+    let fixture = EmbeddingFixture::new();
+    let call = call_for(ProviderId::Volcengine, &fixture).expect("the arm answers");
+    assert_eq!(call.headers, Some(headers(&[])));
+}

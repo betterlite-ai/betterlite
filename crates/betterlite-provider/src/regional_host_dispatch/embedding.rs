@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::dashscope_family::{self, DashscopeFamily};
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -7,11 +5,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::hosted_platform_dispatch::call::EmbeddingCall;
 
-use super::call::embedding_call;
 use super::context::{EmbeddingContext, first_secret};
+use super::embedding_volcengine::volcengine;
 use super::error::DispatchError;
-
-const VOLCENGINE_MISSING_KEY: &str = "Missing API key for Volcengine. Set ARK_API_KEY or VOLCENGINE_API_KEY environment variable or pass api_key parameter.";
 
 // main.py's embedding arms: volcengine, the three DashScope brands and gigachat resolve their key here; the skip keeps the exhaustive no-op arm within clippy's 40-line limit
 #[rustfmt::skip]
@@ -42,23 +38,19 @@ pub fn dispatch(
     }
 }
 
-// the volcengine arm: the passed key, litellm.api_key, ARK_API_KEY, VOLCENGINE_API_KEY; extra_headers or an empty map; empty litellm_params
-fn volcengine(context: &EmbeddingContext<'_>) -> Result<EmbeddingCall, DispatchError> {
-    let mut call = embedding_call(context);
-    call.api_key = Some(
-        first_secret([
-            context.api_key,
-            context.settings.api_key,
-            context.settings.env_ark_api_key,
-            context.settings.env_volcengine_api_key,
-        ])
-        .ok_or(DispatchError::MissingKey {
-            message: VOLCENGINE_MISSING_KEY,
-        })?,
-    );
-    call.headers = Some(wire_headers(context));
-    call.litellm_params = Object::new();
-    Ok(call)
+// the call every regional embedding arm starts from; each arm sets its own litellm_params and headers
+pub(super) fn embedding_call(context: &EmbeddingContext<'_>) -> EmbeddingCall {
+    EmbeddingCall {
+        model: context.model.to_owned(),
+        input: context.input.clone(),
+        optional_params: context.optional_params.clone(),
+        litellm_params: Object::new(),
+        api_key: context.api_key.cloned(),
+        api_base: context.api_base.map(str::to_owned),
+        headers: context.extra_headers.cloned(),
+        timeout: context.timeout,
+        aembedding: context.aembedding,
+    }
 }
 
 // the three DashScope brands read the passed key, litellm.api_key, their own env key and DASHSCOPE_API_KEY, and name the brand they were called as when none is set
@@ -66,19 +58,19 @@ fn family(
     brand: DashscopeFamily,
     context: &EmbeddingContext<'_>,
 ) -> Result<EmbeddingCall, DispatchError> {
-    let passed = first_secret([context.api_key, context.settings.api_key]);
+    let passed = first_secret([context.api_key, context.settings.api_key.as_ref()]);
     let key = dashscope_family::resolve_family_api_key(
         brand,
         passed.as_ref().map(|key| key.expose_secret().as_str()),
         brand_key(brand, context),
-        context.settings.env_dashscope_api_key,
+        context.settings.environment.dashscope_api_key.as_ref(),
     )
     .ok_or(DispatchError::MissingKey {
         message: dashscope_family::missing_family_key_message(brand),
     })?;
     let mut call = embedding_call(context);
     call.api_key = Some(key);
-    call.headers = Some(wire_headers(context));
+    call.headers = Some(context.extra_headers.cloned().unwrap_or_default());
     call.litellm_params = Object::new();
     Ok(call)
 }
@@ -89,8 +81,10 @@ const fn brand_key<'request>(
 ) -> Option<&'request SecretString> {
     match brand {
         DashscopeFamily::Dashscope => None,
-        DashscopeFamily::QwenCloud => context.settings.env_qwencloud_key,
-        DashscopeFamily::QwenAiPlatform => context.settings.env_qwen_ai_platform_key,
+        DashscopeFamily::QwenCloud => context.settings.environment.qwencloud_key.as_ref(),
+        DashscopeFamily::QwenAiPlatform => {
+            context.settings.environment.qwen_ai_platform_key.as_ref()
+        }
     }
 }
 
@@ -99,10 +93,10 @@ fn gigachat(context: &EmbeddingContext<'_>) -> EmbeddingCall {
     let mut call = embedding_call(context);
     call.api_key = first_secret([
         context.api_key,
-        context.settings.api_key,
-        context.settings.gigachat_key,
-        context.settings.env_gigachat_credentials,
-        context.settings.env_gigachat_api_key,
+        context.settings.api_key.as_ref(),
+        context.settings.gigachat_key.as_ref(),
+        context.settings.environment.gigachat_credentials.as_ref(),
+        context.settings.environment.gigachat_api_key.as_ref(),
     ]);
     call.headers = None;
     call.litellm_params = Object::from_iter([(
@@ -110,9 +104,4 @@ fn gigachat(context: &EmbeddingContext<'_>) -> EmbeddingCall {
         context.ssl_verify.map_or(Json::Null, Json::Bool),
     )]);
     call
-}
-
-// the request headers the two arms hand the handler: extra_headers when it is there, else an empty map
-fn wire_headers(context: &EmbeddingContext<'_>) -> BTreeMap<String, String> {
-    context.extra_headers.cloned().unwrap_or_default()
 }

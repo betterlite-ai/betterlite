@@ -1,7 +1,11 @@
 pub mod call;
 pub mod chat;
+mod chat_gigachat;
+mod chat_minimax;
+mod chat_nlp_cloud;
 pub mod context;
 pub mod embedding;
+mod embedding_volcengine;
 pub mod error;
 pub mod gigachat;
 pub mod logging;

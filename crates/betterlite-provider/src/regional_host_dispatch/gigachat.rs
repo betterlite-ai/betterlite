@@ -27,13 +27,7 @@ static UUID_IDS: UuidIds = UuidIds;
 
 // B8177's bearer over B7325's token service: the service swaps the credentials for a token and caches it
 pub struct GigachatTokenBearer {
-    tokens: Arc<dyn GigachatTokens>,
-}
-
-impl GigachatTokenBearer {
-    pub const fn new(tokens: Arc<dyn GigachatTokens>) -> Self {
-        Self { tokens }
-    }
+    pub(super) tokens: Arc<dyn GigachatTokens>,
 }
 
 #[async_trait]
@@ -43,8 +37,10 @@ impl GigachatBearer for GigachatTokenBearer {
         credentials: Option<&SecretString>,
     ) -> Result<SecretString, GigaChatError> {
         let request = GigachatTokenRequest {
+            access_token: None,
             credentials: credentials.cloned(),
-            ..GigachatTokenRequest::default()
+            scope: None,
+            auth_url: None,
         };
         self.tokens.access_token(&request).await.map_err(auth_error)
     }

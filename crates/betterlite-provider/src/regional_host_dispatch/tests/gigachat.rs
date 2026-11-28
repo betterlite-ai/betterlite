@@ -24,7 +24,9 @@ fn outbound_client() -> (ProxiedClient, UserUrlPolicy) {
 #[tokio::test]
 async fn gigachat_token_bearer_returns_the_service_token() {
     let tokens = Arc::new(FakeTokens::new());
-    let bearer = GigachatTokenBearer::new(Arc::clone(&tokens));
+    let bearer = GigachatTokenBearer {
+        tokens: Arc::clone(&tokens),
+    };
     let credentials = secret("client-id:client-secret");
     let token = bearer
         .access_token(Some(&credentials))
@@ -39,7 +41,9 @@ async fn gigachat_token_bearer_returns_the_service_token() {
 
 #[tokio::test]
 async fn gigachat_token_bearer_maps_a_missing_credentials_error() {
-    let bearer = GigachatTokenBearer::new(Arc::new(FailingTokens));
+    let bearer = GigachatTokenBearer {
+        tokens: Arc::new(FailingTokens),
+    };
     let error = bearer
         .access_token(None)
         .await
@@ -57,8 +61,9 @@ async fn the_uploader_reuses_its_cache_across_requests() {
     let (client, policy) = outbound_client();
     let transport = FakeTransport::new();
     let uploads = transport.counter();
-    let bearer: Arc<dyn GigachatBearer> =
-        Arc::new(GigachatTokenBearer::new(Arc::new(FakeTokens::new())));
+    let bearer: Arc<dyn GigachatBearer> = Arc::new(GigachatTokenBearer {
+        tokens: Arc::new(FakeTokens::new()),
+    });
     let config = GigachatFilesConfig {
         bearer,
         ids: Arc::new(UuidIds),
