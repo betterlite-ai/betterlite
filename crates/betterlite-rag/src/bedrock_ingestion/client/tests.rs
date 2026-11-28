@@ -330,17 +330,26 @@ async fn client_signs_other_services_in_the_default_mode() {
         .await
         .expect("the s3vectors request succeeds");
     let requests = transport.requests();
-    for (sent, request) in requests.iter().zip([&agent_request, &vectors_request]) {
-        let authorization = header(sent, "Authorization").expect("the request is signed");
-        assert_eq!(
-            authorization,
-            signed_authorization(request, SigningMode::SigV4Auth)
-        );
-        assert_ne!(
-            authorization,
-            signed_authorization(request, SigningMode::S3SigV4Auth)
-        );
-    }
+    let agent_authorization =
+        header(&requests[0], "Authorization").expect("the bedrock request is signed");
+    assert_eq!(
+        agent_authorization,
+        signed_authorization(&agent_request, SigningMode::SigV4Auth)
+    );
+    assert_ne!(
+        agent_authorization,
+        signed_authorization(&agent_request, SigningMode::S3SigV4Auth)
+    );
+    let vectors_authorization =
+        header(&requests[1], "Authorization").expect("the s3vectors request is signed");
+    assert_eq!(
+        vectors_authorization,
+        signed_authorization(&vectors_request, SigningMode::SigV4Auth)
+    );
+    assert_ne!(
+        vectors_authorization,
+        signed_authorization(&vectors_request, SigningMode::S3SigV4Auth)
+    );
 }
 
 #[tokio::test]

@@ -126,12 +126,16 @@ fn s3_sigv4_auth_sends_no_token_without_one() {
 #[test]
 fn s3_sigv4_auth_signs_the_payload_hash_header() {
     let signed = |content_sha256: &str| {
-        let mut headers = put_headers();
-        for (name, value) in &mut headers {
-            if name.eq_ignore_ascii_case("x-amz-content-sha256") {
-                *value = content_sha256.to_owned();
-            }
-        }
+        let headers: Vec<(String, String)> = put_headers()
+            .into_iter()
+            .map(|(name, value)| {
+                if name.eq_ignore_ascii_case("x-amz-content-sha256") {
+                    (name, content_sha256.to_owned())
+                } else {
+                    (name, value)
+                }
+            })
+            .collect();
         sign_request(&Signable {
             method: "PUT",
             url: PUT_URL,
