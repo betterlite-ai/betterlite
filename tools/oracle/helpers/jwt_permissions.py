@@ -1,13 +1,13 @@
 import asyncio
-from typing import Final, Literal, NotRequired, TypeAlias, TypeVar, TypedDict
+from typing import Final, Literal, NotRequired, TypeAlias, TypedDict, TypeVar
 
-from fastapi import HTTPException
-from litellm.proxy._types import LiteLLM_JWTAuth, RBAC_ROLES, ScopeMapping
+from litellm.proxy._types import RBAC_ROLES, LiteLLM_JWTAuth, ScopeMapping
 from litellm.proxy.auth import auth_exception_handler
 from litellm.proxy.auth.handle_jwt import JWTAuthManager, JWTHandler
 from litellm.proxy.auth.model_access_denied import ModelAccessDeniedHTTPException
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 DenialClass = Literal["model_access_denied", "http", "plain"]
 RoleName: TypeAlias = Literal["proxy_admin", "team", "internal_user"]
@@ -90,10 +90,6 @@ def required(value: T | None, function: str, name: str) -> T:
     return value
 
 
-def rbac_role(role: RoleName) -> RBAC_ROLES:
-    return ROLE.validate_python(role)
-
-
 def build_handler(settings: Settings) -> JWTHandler:
     handler = JWTHandler()
     handler.update_environment(
@@ -134,115 +130,71 @@ def request_data(model: str | None) -> dict[str, JsonValue]:
 
 def run(input_value: Input) -> Answer:
     function = input_value["function"]
-    if function == "can_call_route":
-        return can_call_route(input_value)
-    if function == "can_call_model":
-        return can_call_model(input_value)
-    if function == "check_rbac_role":
-        return check_role(input_value)
-    if function == "scope_access":
-        return scope_access(input_value)
-    return admin_access(input_value)
-
-
-def can_call_route(input_value: Input) -> Answer:
     try:
-        JWTAuthManager.can_rbac_role_call_route(
-            rbac_role=rbac_role(required(input_value.get("role"), "can_call_route", "role")),
-            general_settings=general_settings(input_value),
-            route=required(input_value.get("route"), "can_call_route", "route"),
-        )
-    except ModelAccessDeniedHTTPException as raised:
-        return refusal(raised, "model_access_denied")
-    except HTTPException as raised:
-        return refusal(raised, "http")
+        match function:
+            case "can_call_route":
+                role = ROLE.validate_python(required(input_value.get("role"), function, "role"))
+                JWTAuthManager.can_rbac_role_call_route(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1345-L1369
+                    rbac_role=role,
+                    general_settings=general_settings(input_value),
+                    route=required(input_value.get("route"), function, "route"),
+                )
+            case "can_call_model":
+                role = ROLE.validate_python(required(input_value.get("role"), function, "role"))
+                JWTAuthManager.can_rbac_role_call_model(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1372-L1394
+                    rbac_role=role,
+                    general_settings=general_settings(input_value),
+                    model=input_value.get("model"),
+                )
+            case "check_rbac_role":
+                jwt_role = input_value.get("role")
+                claims = input_value.get("claims")
+                token: dict[str, JsonValue] = {} if claims is None else claims
+                asyncio.run(
+                    JWTAuthManager.check_rbac_role(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1429-L1453
+                        jwt_handler=build_handler(jwt_settings(input_value)),
+                        jwt_valid_token=token,
+                        general_settings=general_settings(input_value),
+                        request_data=request_data(input_value.get("model")),
+                        route=required(input_value.get("route"), function, "route"),
+                        rbac_role=None if jwt_role is None else ROLE.validate_python(jwt_role),
+                    )
+                )
+            case "scope_access":
+                mappings = input_value.get("scope_mappings")
+                no_mappings: list[JsonValue] = []
+                validated = TypeAdapter(list[ScopeMapping]).validate_python(
+                    no_mappings if mappings is None else mappings
+                )
+                no_settings: dict[str, JsonValue] = {}
+                JWTAuthManager.check_scope_based_access(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1397-L1426
+                    scope_mappings=validated,
+                    scopes=required(input_value.get("scopes"), function, "scopes"),
+                    request_data=request_data(input_value.get("model")),
+                    general_settings=no_settings,
+                )
+            case "admin_access":
+                claims = input_value.get("claims")
+                scopes: list[str] = required(input_value.get("scopes"), function, "scopes")
+                result = asyncio.run(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1456-L1496
+                    JWTAuthManager.check_admin_access(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1456-L1496
+                        jwt_handler=build_handler(jwt_settings(input_value)),
+                        scopes=scopes,
+                        route=required(input_value.get("route"), function, "route"),
+                        user_id=input_value.get("user_id"),
+                        org_id=input_value.get("org_id"),
+                        api_key=required(input_value.get("token"), function, "token"),
+                        jwt_valid_token=claims,
+                        user_email=input_value.get("user_email"),
+                        agent_id=input_value.get("agent_id"),
+                    )
+                )
+                if result is None:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1456-L1496
+                    return plain("not_admin")
+                return granted(input_value, TypeAdapter(RawAdminResult).validate_python(result))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1456-L1496
     except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
-        return refusal(raised, "plain")
+        return failure_answer(raised)
     return plain("allowed")
-
-
-def can_call_model(input_value: Input) -> Answer:
-    try:
-        JWTAuthManager.can_rbac_role_call_model(
-            rbac_role=rbac_role(required(input_value.get("role"), "can_call_model", "role")),
-            general_settings=general_settings(input_value),
-            model=input_value.get("model"),
-        )
-    except ModelAccessDeniedHTTPException as raised:
-        return refusal(raised, "model_access_denied")
-    except HTTPException as raised:
-        return refusal(raised, "http")
-    except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
-        return refusal(raised, "plain")
-    return plain("allowed")
-
-
-def check_role(input_value: Input) -> Answer:
-    role = input_value.get("role")
-    claims = input_value.get("claims")
-    token: dict[str, JsonValue] = {} if claims is None else claims
-    try:
-        asyncio.run(
-            JWTAuthManager.check_rbac_role(
-                jwt_handler=build_handler(jwt_settings(input_value)),
-                jwt_valid_token=token,
-                general_settings=general_settings(input_value),
-                request_data=request_data(input_value.get("model")),
-                route=required(input_value.get("route"), "check_rbac_role", "route"),
-                rbac_role=None if role is None else rbac_role(role),
-            )
-        )
-    except ModelAccessDeniedHTTPException as raised:
-        return refusal(raised, "model_access_denied")
-    except HTTPException as raised:
-        return refusal(raised, "http")
-    except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
-        return refusal(raised, "plain")
-    return plain("allowed")
-
-
-def scope_access(input_value: Input) -> Answer:
-    mappings = input_value.get("scope_mappings")
-    validated = TypeAdapter(list[ScopeMapping]).validate_python(
-        [] if mappings is None else mappings
-    )
-    try:
-        JWTAuthManager.check_scope_based_access(
-            scope_mappings=validated,
-            scopes=required(input_value.get("scopes"), "scope_access", "scopes"),
-            request_data=request_data(input_value.get("model")),
-            general_settings={},
-        )
-    except ModelAccessDeniedHTTPException as raised:
-        return refusal(raised, "model_access_denied")
-    except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
-        return refusal(raised, "plain")
-    return plain("allowed")
-
-
-def admin_access(input_value: Input) -> Answer:
-    claims = input_value.get("claims")
-    try:
-        result = asyncio.run(
-            JWTAuthManager.check_admin_access(
-                jwt_handler=build_handler(jwt_settings(input_value)),
-                scopes=required(input_value.get("scopes"), "admin_access", "scopes"),
-                route=required(input_value.get("route"), "admin_access", "route"),
-                user_id=input_value.get("user_id"),
-                org_id=input_value.get("org_id"),
-                api_key=required(input_value.get("token"), "admin_access", "token"),
-                jwt_valid_token=claims,
-                user_email=input_value.get("user_email"),
-                agent_id=input_value.get("agent_id"),
-            )
-        )
-    except HTTPException as raised:
-        return refusal(raised, "http")
-    except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
-        return refusal(raised, "plain")
-    if result is None:
-        return plain("not_admin")
-    return granted(input_value, TypeAdapter(RawAdminResult).validate_python(result))
 
 
 def granted(input_value: Input, result: RawAdminResult) -> Answer:
@@ -293,3 +245,13 @@ def refusal(raised: Exception, error_class: DenialClass) -> Answer:
         "message": exception.message,
         "result": None,
     }
+
+
+def failure_answer(raised: Exception) -> Answer:
+    match raised:
+        case ModelAccessDeniedHTTPException():
+            return refusal(raised, "model_access_denied")
+        case HTTPException():
+            return refusal(raised, "http")
+        case Exception():
+            return refusal(raised, "plain")

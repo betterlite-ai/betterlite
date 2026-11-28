@@ -1,9 +1,8 @@
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
-use betterlite_auth::auth_user_lookup::roles::RolePermissions;
 use betterlite_auth::jwt_claims::TypedValue;
 use betterlite_auth::jwt_permissions::admin::{AdminAuthResult, AdminIdentity, check_admin_access};
 use betterlite_auth::jwt_permissions::role::{
-    can_rbac_role_call_model, can_rbac_role_call_route, check_rbac_role, role_permissions,
+    RoleCheck, can_rbac_role_call, check_rbac_role, role_permissions,
 };
 use betterlite_auth::jwt_permissions::scope::check_scope_based_access;
 use betterlite_config::sections::auth_user_lookup::{RbacRole, RoleBasedPermissions};
@@ -83,21 +82,28 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
             Function::CanCallRoute => {
-                let permissions = permissions(input)?;
+                let permissions =
+                    role_permissions(input.role_permissions.as_deref()).or_value_error()?;
                 let role = required_role(input, "can_call_route")?;
-                outcome(can_rbac_role_call_route(&permissions, role, &input.route))
-            }
-            Function::CanCallModel => {
-                let permissions = permissions(input)?;
-                let role = required_role(input, "can_call_model")?;
-                outcome(can_rbac_role_call_model(
+                outcome(can_rbac_role_call(
                     &permissions,
                     role,
-                    input.model.as_deref(),
+                    RoleCheck::Route(input.route.as_str()),
+                ))
+            }
+            Function::CanCallModel => {
+                let permissions =
+                    role_permissions(input.role_permissions.as_deref()).or_value_error()?;
+                let role = required_role(input, "can_call_model")?;
+                outcome(can_rbac_role_call(
+                    &permissions,
+                    role,
+                    RoleCheck::Model(input.model.as_deref()),
                 ))
             }
             Function::CheckRbacRole => {
-                let permissions = permissions(input)?;
+                let permissions =
+                    role_permissions(input.role_permissions.as_deref()).or_value_error()?;
                 outcome(check_rbac_role(
                     &settings(input),
                     &permissions,
@@ -111,13 +117,9 @@ impl Helper for Op {
                 &input.scopes,
                 input.model.as_deref(),
             )),
-            Function::AdminAccess => admin(input),
+            Function::AdminAccess => Ok(serde_json::to_value(admin(input))?),
         }
     }
-}
-
-fn permissions(input: &Input) -> Result<RolePermissions, Box<HelperError>> {
-    role_permissions(input.role_permissions.as_deref()).or_value_error()
 }
 
 fn required_role(input: &Input, function: &str) -> Result<RbacRole, Box<HelperError>> {
@@ -142,7 +144,7 @@ fn settings(input: &Input) -> Settings {
     settings
 }
 
-fn admin(input: &Input) -> HelperResult {
+fn admin(input: &Input) -> Answer {
     let identity = AdminIdentity {
         token: input.token.as_deref().unwrap_or_default(),
         user_id: input.user_id.as_deref(),
@@ -157,9 +159,9 @@ fn admin(input: &Input) -> HelperResult {
         &identity,
         input.claims.as_ref(),
     ) {
-        Ok(None) => emit(answer("not_admin", None)),
-        Ok(Some(result)) => emit(answer("granted", Some(granted(input, &result)))),
-        Err(failure) => emit(denial(&failure)),
+        Ok(None) => answer("not_admin", None),
+        Ok(Some(result)) => answer("granted", Some(granted(input, &result))),
+        Err(failure) => denial(&failure),
     }
 }
 
@@ -182,8 +184,8 @@ fn granted(input: &Input, result: &AdminAuthResult) -> Value {
 
 fn outcome(result: Result<(), AuthFailure>) -> HelperResult {
     match result {
-        Ok(()) => emit(answer("allowed", None)),
-        Err(failure) => emit(denial(&failure)),
+        Ok(()) => Ok(serde_json::to_value(answer("allowed", None))?),
+        Err(failure) => Ok(serde_json::to_value(denial(&failure))?),
     }
 }
 
@@ -223,8 +225,4 @@ const fn class(failure: &AuthFailure) -> &'static str {
         | AuthFailure::Database(_)
         | AuthFailure::Other { .. } => "plain",
     }
-}
-
-fn emit(answer: Answer) -> HelperResult {
-    Ok(serde_json::to_value(answer)?)
 }
