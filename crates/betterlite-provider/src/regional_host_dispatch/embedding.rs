@@ -61,7 +61,7 @@ fn family(
     let passed = first_secret([context.api_key, context.settings.api_key.as_ref()]);
     let key = dashscope_family::resolve_family_api_key(
         brand,
-        passed.as_ref().map(|key| key.expose_secret().as_str()),
+        passed.as_ref().map(|key| key.expose_secret()),
         brand_key(brand, context),
         context.settings.environment.dashscope_api_key.as_ref(),
     )

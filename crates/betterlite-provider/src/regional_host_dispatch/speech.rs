@@ -15,7 +15,6 @@ use betterlite_openai::minimax_speech::request::{
 use betterlite_openai::openai_base_config::Object as SpeechObject;
 use betterlite_openai::speech::result::SpeechResponse;
 use betterlite_prompts::arguments::json::{Json, Object};
-use futures_util::Stream as _;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
@@ -257,8 +256,8 @@ fn decoded_audio(response: SpeechResponse) -> Vec<u8> {
     let mut body = response.body;
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
-    match body.as_mut().poll_next(&mut context) {
-        Poll::Ready(Some(Ok(bytes))) => bytes,
-        Poll::Ready(Some(Err(_error)) | None) | Poll::Pending => Vec::new(),
+    if let Poll::Ready(Some(Ok(bytes))) = body.as_mut().poll_next(&mut context) {
+        return bytes;
     }
+    Vec::new()
 }
