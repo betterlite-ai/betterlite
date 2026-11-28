@@ -725,6 +725,7 @@ fn a_certificate_element_without_text_is_refused() {
 #[case::ftp("ftp://files.example.com/meta", true)]
 #[case::ftps("ftps://files.example.com/meta", true)]
 #[case::file_scheme("file:///etc/passwd", false)]
+#[case::bad_scheme("gopher://idp.example.com/sso", false)]
 #[case::two_letter_tld("https://idp.app/sso", true)]
 #[case::dotted_host("https://idp.example.com.", true)]
 #[case::long_tld("https://idp.example.corporate/sso", true)]

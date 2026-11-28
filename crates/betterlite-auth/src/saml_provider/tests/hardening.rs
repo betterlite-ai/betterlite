@@ -187,6 +187,47 @@ fn authn_request_values_are_escaped() {
     assert!(xml.contains("<saml:Issuer>urn:a&amp;b</saml:Issuer>"));
 }
 
+#[test]
+fn a_partially_filled_identity_provider_is_not_empty() {
+    let only_slo = IdpSettings {
+        entity_id: None,
+        sso_url: None,
+        slo_url: Some("https://idp.example.com/slo".to_owned()),
+        x509_cert: None,
+        x509_cert_multi: None,
+        name_id_format: None,
+        want_authn_requests_signed: None,
+    };
+    assert!(!only_slo.is_empty());
+    let only_certificates = IdpSettings {
+        entity_id: None,
+        sso_url: None,
+        slo_url: None,
+        x509_cert: None,
+        x509_cert_multi: Some(X509CertMulti {
+            signing: Some(vec!["AA".to_owned()]),
+            encryption: None,
+        }),
+        name_id_format: None,
+        want_authn_requests_signed: None,
+    };
+    assert!(!only_certificates.is_empty());
+}
+
+#[test]
+fn two_encryption_certificates_keep_the_multiple_certificate_shape() {
+    let xml = r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="urn:x"><md:IDPSSODescriptor><md:KeyDescriptor use="encryption"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>AA</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:KeyDescriptor use="encryption"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>BB</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor></md:IDPSSODescriptor></md:EntityDescriptor>"#;
+    let idp = decode_saml_metadata(xml.as_bytes()).unwrap().unwrap();
+    assert_eq!(idp.x509_cert, None);
+    assert_eq!(
+        idp.x509_cert_multi,
+        Some(X509CertMulti {
+            signing: None,
+            encryption: Some(vec!["AA".to_owned(), "BB".to_owned()]),
+        })
+    );
+}
+
 #[tokio::test]
 async fn a_cached_idp_settings_is_decoded_from_the_tier() {
     let recorded = Arc::new(Mutex::new(Recorded::default()));
