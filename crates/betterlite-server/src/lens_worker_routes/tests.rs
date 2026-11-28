@@ -17,9 +17,9 @@ fn replays_the_lens_worker_parsers_corpus(
     let bytes = fs::read(path).expect("a corpus seed is readable");
     let authorization = HeaderValue::from_bytes(&bytes).ok();
     if let Ok(version) = claim::protocol_version(&bytes) {
-        // an accepted version is an integer, so its decimal text parses back to it
+        // an accepted version is an integer, so its own protocol_version pair parses back to it
         assert_eq!(
-            claim::protocol_version(version.to_string().as_bytes()),
+            claim::protocol_version(format!("protocol_version={version}").as_bytes()),
             Ok(version)
         );
     }

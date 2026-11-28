@@ -7,9 +7,9 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|bytes: &[u8]| {
     let authorization = HeaderValue::from_bytes(bytes).ok();
     if let Ok(version) = claim::protocol_version(bytes) {
-        // an accepted version is an integer, so its decimal text parses back to it
+        // an accepted version is an integer, so its own protocol_version pair parses back to it
         assert_eq!(
-            claim::protocol_version(version.to_string().as_bytes()),
+            claim::protocol_version(format!("protocol_version={version}").as_bytes()),
             Ok(version)
         );
     }
