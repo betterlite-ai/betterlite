@@ -1,0 +1,263 @@
+kind: helper
+name: mcp-gateway-token-code-grant-scoped-resource
+call:
+  b4676:
+    base_url: 'https://proxy.test:8443'
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback']
+    servers:
+      - {server_id: 'srv-a', name: 'alpha', transport: 'sse', auth_type: 'oauth2'}
+      - {server_id: 'srv-b', name: 'beta', transport: 'sse', auth_type: 'oauth2'}
+    setup:
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-scope-1'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: 'srv-a'
+        audience: null
+        team_id: null
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-scope-2'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: 'srv-a'
+        audience: null
+        team_id: null
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-scope-3'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: 'srv-missing'
+        audience: null
+        team_id: null
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-unscoped'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: null
+        audience: null
+        team_id: null
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+    steps:
+      - name: 'match'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp/alpha'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'other-server'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp/beta'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'unknown-server'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp/gamma'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'aggregate-resource'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'foreign-host'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://other.test:8443/mcp/alpha'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'unparseable-resource'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'not a url'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'absent-resource'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'stale-scope'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 2
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp/alpha'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'unscoped-ignores-resource'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 3
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp/alpha'
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,117 @@
+kind: helper
+name: mcp-gateway-token-signing-setup-errors
+call:
+  b4676:
+    base_url: 'https://proxy.test:8443'
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback']
+    servers: []
+    setup: []
+    steps:
+      - name: 'token-no-master'
+        kind: 'token'
+        master: 'absent'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: ''
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'token-invalid-signing'
+        kind: 'token'
+        master: 'invalid'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: ''
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'revoke-no-master'
+        kind: 'revoke'
+        master: 'absent'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'revoke-invalid-signing'
+        kind: 'revoke'
+        master: 'invalid'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'introspect-no-master'
+        kind: 'introspect'
+        master: 'absent'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+env: {}
+compare: {ignore: []}

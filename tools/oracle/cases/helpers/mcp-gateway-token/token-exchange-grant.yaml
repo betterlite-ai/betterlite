@@ -1,0 +1,258 @@
+kind: helper
+name: mcp-gateway-token-token-exchange-grant
+call:
+  b4676:
+    base_url: 'https://proxy.test:8443'
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback']
+    servers: []
+    setup:
+      - kind: 'mint_token'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: ''
+        code_challenge: ''
+        jti: ''
+        iat: 0
+        exp: 0
+        resource_server_id: null
+        audience: null
+        team_id: null
+        at: 1699999900
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+    steps:
+      - name: 'missing-subject'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'missing-type'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'bad-type'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:saml2'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'bad-requested-type'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: 'urn:x'
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'unknown-client'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: -1
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'valid'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: {key: 'sk-b4676-exchanged', expires_in: 7200, user_id: 'bob', team_id: 'team-e'}
+        mint_failure: null
+        exchange: {user_id: 'bob', team_id: 'team-e'}
+        exchange_failure: null
+      - name: 'valid-id-token'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:id_token'
+        requested_token_type: 'urn:ietf:params:oauth:token-type:access_token'
+        token: -1
+        reload: null
+        mint: {key: 'sk-b4676-exchanged', expires_in: 7200, user_id: 'bob', team_id: 'team-e'}
+        mint_failure: null
+        exchange: {user_id: 'bob', team_id: 'team-e'}
+        exchange_failure: null
+      - name: 'refusal-unavailable'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: {error: 'temporarily_unavailable', description: 'the identity provider is down'}
+      - name: 'refusal-unsupported'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: {error: 'unsupported_grant_type', description: 'this gateway does not take that token'}
+      - name: 'refusal-invalid'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: {error: 'invalid_request', description: 'the subject token is missing a claim'}
+      - name: 'resource-mismatch'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: 'https://proxy.test:8443/mcp/alpha'
+        subject: 0
+        subject_token_type: 'urn:ietf:params:oauth:token-type:jwt'
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: {key: 'sk-b4676-exchanged', expires_in: 7200, user_id: 'bob', team_id: 'team-e'}
+        mint_failure: null
+        exchange: {user_id: 'bob', team_id: 'team-e'}
+        exchange_failure: null
+env: {}
+compare: {ignore: []}
