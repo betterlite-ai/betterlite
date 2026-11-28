@@ -58,11 +58,14 @@ async fn reload_master_key_mismatch_without_a_database_is_unresolvable() {
 async fn reload_without_a_database_is_unresolvable() {
     let store = FakeStore {
         has_database: false,
+        key: KeyAnswer::Found(key_row(r#"{"token":"sk-active","user_id":"user-1"}"#)),
         ..FakeStore::new()
     };
+    let calls = store.calls();
     let active = subjects(store);
     let outcome = active.reload_active_key("hashed-token").await;
     assert_eq!(outcome.unwrap_err(), ReloadUserFailure::Unresolvable);
+    assert!(calls.lock().unwrap().keys.is_empty());
 }
 
 #[rstest]
