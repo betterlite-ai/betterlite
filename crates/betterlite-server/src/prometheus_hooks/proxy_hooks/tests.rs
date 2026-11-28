@@ -163,7 +163,7 @@ async fn other_failures_keep_the_logged_key() {
 }
 
 #[tokio::test]
-async fn proxy_labels_match_litellm() {
+async fn proxy_principal_labels_match_litellm() {
     let fixture = catalog_fixture(&["gpt-4o"]);
     let auth = labelled_auth();
     let logged = logged_key(&auth);
@@ -199,6 +199,17 @@ async fn proxy_labels_match_litellm() {
         series_label(registry, PROXY_FAILED, "org_alias"),
         "org-alias"
     );
+}
+
+#[tokio::test]
+async fn proxy_failure_labels_match_litellm() {
+    let fixture = catalog_fixture(&["gpt-4o"]);
+    let auth = labelled_auth();
+    fixture
+        .hooks
+        .async_post_call_failure_hook(&rich_request_data(), &rate_limit_exception(), &auth)
+        .await;
+    let registry = &fixture.registry;
     assert_eq!(
         series_label(registry, PROXY_FAILED, "exception_status"),
         "429"
@@ -215,6 +226,17 @@ async fn proxy_labels_match_litellm() {
         series_label(registry, PROXY_FAILED, "rate_limit_type"),
         "requests"
     );
+}
+
+#[tokio::test]
+async fn proxy_request_labels_match_litellm() {
+    let fixture = catalog_fixture(&["gpt-4o"]);
+    let auth = labelled_auth();
+    fixture
+        .hooks
+        .async_post_call_failure_hook(&rich_request_data(), &rate_limit_exception(), &auth)
+        .await;
+    let registry = &fixture.registry;
     assert_eq!(
         series_label(registry, PROXY_FAILED, "requested_model"),
         "gpt-4o"
@@ -240,6 +262,17 @@ async fn proxy_labels_match_litellm() {
         "openai"
     );
     assert_eq!(series_label(registry, PROXY_FAILED, "tag_prod"), "true");
+}
+
+#[tokio::test]
+async fn proxy_total_labels_match_litellm() {
+    let fixture = catalog_fixture(&["gpt-4o"]);
+    let auth = labelled_auth();
+    fixture
+        .hooks
+        .async_post_call_failure_hook(&rich_request_data(), &rate_limit_exception(), &auth)
+        .await;
+    let registry = &fixture.registry;
     // the total requests counter carries the status and the opt-in stream label
     assert_eq!(series_label(registry, PROXY_TOTAL, "status_code"), "429");
     assert_eq!(series_label(registry, PROXY_TOTAL, "stream"), "True");

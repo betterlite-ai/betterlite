@@ -310,6 +310,35 @@ pub(crate) fn fixture_with_ports(
     build_fixture(settings, ports, &PrometheusExporterSettings::default())
 }
 
+// the remaining-usage gauges are opt-in, so the fixture that measures them carries the router port
+pub(crate) fn router_hooks() -> (Fixture, Arc<RecordingRouterUsage>) {
+    let router = Arc::new(RecordingRouterUsage::new(9, 5));
+    let usage: Arc<dyn RemainingModelGroupUsage> = Arc::<RecordingRouterUsage>::clone(&router);
+    let fixture = fixture_with_ports(
+        labelled_settings(),
+        PrometheusHookPorts {
+            router_usage: Some(usage),
+            requested_models: None,
+        },
+    );
+    (fixture, router)
+}
+
+// the budget, rate-limit and latency steps read these keys off litellm_metadata
+pub(crate) fn success_metadata() -> IndexMap<String, Json> {
+    IndexMap::from([
+        (
+            "litellm-key-remaining-requests-gpt-4-group".to_owned(),
+            number("7"),
+        ),
+        (
+            "litellm-key-remaining-tokens-gpt-4-group".to_owned(),
+            number("5"),
+        ),
+        ("queue_time_seconds".to_owned(), number("1")),
+    ])
+}
+
 // both switches must be on for the label: the collector computes the bucket and the schema registers the label
 pub(crate) fn fixture_with_input_sequence_length() -> Fixture {
     let mut labels = PrometheusLabelSettings::with_defaults();

@@ -5,7 +5,6 @@ use std::sync::Arc;
 use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
-use betterlite_logging::prometheus_rate_limits::RemainingModelGroupUsage;
 use betterlite_models::decisions::Json;
 use betterlite_models::key_digest::hashing::hash_token;
 use indexmap::IndexMap;
@@ -17,15 +16,13 @@ use super::super::tests::support::{
     INPUT_CACHE_CREATION_TOKENS, INPUT_CACHED_TOKENS, INPUT_TOKENS, LATENCY, MCP_CALLS, MCP_SPEND,
     OUTPUT_AUDIO_TOKENS, OUTPUT_REASONING_TOKENS, OUTPUT_TOKENS, OVERHEAD_LATENCY,
     PROVIDER_CACHE_CREATION, PROVIDER_CACHE_READ, PROXY_TOTAL, QUEUE_TIME, REMAINING_REQUESTS,
-    REMAINING_TOKENS, REQUESTS, RecordingRouterUsage, SPEND, TEAM_ALLOWED, TEAM_USED,
-    TOTAL_LATENCY, TOTAL_TOKENS, TTFT, VIDEO_DURATION, VIRTUAL_KEY_REQUESTS, VIRTUAL_KEY_TOKENS,
-    ZERO_COST, dec, error_information, event, event_with_metadata, fixture,
-    fixture_with_input_sequence_length, fixture_with_limits, fixture_with_ports,
+    REMAINING_TOKENS, REQUESTS, SPEND, TEAM_ALLOWED, TEAM_USED, TOTAL_LATENCY, TOTAL_TOKENS, TTFT,
+    VIDEO_DURATION, VIRTUAL_KEY_REQUESTS, VIRTUAL_KEY_TOKENS, ZERO_COST, dec, error_information,
+    event, event_with_metadata, fixture, fixture_with_input_sequence_length, fixture_with_limits,
     fixture_with_settings, labelled_settings, labels_seen, number, observations, payload,
-    rich_payload, series_label, totals,
+    rich_payload, router_hooks, series_label, success_metadata, totals,
 };
 use crate::prometheus_hooks::error::PrometheusHookError;
-use crate::prometheus_hooks::hooks::PrometheusHookPorts;
 
 #[tokio::test]
 async fn missing_payload_is_an_error() {
@@ -60,33 +57,11 @@ async fn invalid_key_is_skipped() {
 }
 
 #[tokio::test]
-async fn success_emits_every_step_and_ends_with_the_total() {
-    let router = Arc::new(RecordingRouterUsage::new(9, 5));
-    let usage: Arc<dyn RemainingModelGroupUsage> = Arc::<RecordingRouterUsage>::clone(&router);
-    let fixture = fixture_with_ports(
-        labelled_settings(),
-        PrometheusHookPorts {
-            router_usage: Some(usage),
-            requested_models: None,
-        },
-    );
-    let metadata = IndexMap::from([
-        (
-            "litellm-key-remaining-requests-gpt-4-group".to_owned(),
-            number("7"),
-        ),
-        (
-            "litellm-key-remaining-tokens-gpt-4-group".to_owned(),
-            number("5"),
-        ),
-        ("queue_time_seconds".to_owned(), number("1")),
-    ]);
+async fn success_emits_usage_and_token_metrics() {
+    let fixture = fixture_with_settings(labelled_settings());
     fixture
         .hooks
-        .async_log_success_event(Arc::new(event_with_metadata(
-            rich_payload(dec("2.5")),
-            metadata,
-        )))
+        .async_log_success_event(Arc::new(event(rich_payload(dec("2.5")))))
         .await
         .unwrap();
     let registry = &fixture.registry;
@@ -105,6 +80,20 @@ async fn success_emits_every_step_and_ends_with_the_total() {
     assert_eq!(totals(registry, INPUT_AUDIO_TOKENS), vec![Decimal::ONE]);
     assert_eq!(totals(registry, OUTPUT_REASONING_TOKENS), vec![dec("2")]);
     assert_eq!(totals(registry, OUTPUT_AUDIO_TOKENS), vec![Decimal::ONE]);
+}
+
+#[tokio::test]
+async fn success_emits_the_budget_and_rate_limit_gauges() {
+    let (fixture, _router) = router_hooks();
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event_with_metadata(
+            rich_payload(dec("2.5")),
+            success_metadata(),
+        )))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
     // the budget fan-out ran on the hashed key
     assert_eq!(fixture.lookups.keys(), vec![hash_token("sk-live")]);
     // rate limits: the virtual-key gauges, then the key and team allowed/used pairs
@@ -114,6 +103,20 @@ async fn success_emits_every_step_and_ends_with_the_total() {
     assert_eq!(totals(registry, API_KEY_USED), vec![dec("4")]);
     assert_eq!(totals(registry, TEAM_ALLOWED), vec![dec("100")]);
     assert_eq!(totals(registry, TEAM_USED), vec![dec("30")]);
+}
+
+#[tokio::test]
+async fn success_emits_latency_and_deployment_metrics() {
+    let (fixture, router) = router_hooks();
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event_with_metadata(
+            rich_payload(dec("2.5")),
+            success_metadata(),
+        )))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
     // latency: first token, api latency, total latency and queue time, then the overhead histogram
     assert_eq!(observations(registry, TTFT), vec![1]);
     assert_eq!(observations(registry, LATENCY), vec![1]);
@@ -123,12 +126,23 @@ async fn success_emits_every_step_and_ends_with_the_total() {
     // deployment success and its state, then the router's remaining usage
     assert_eq!(totals(registry, DEPLOYMENT_SUCCESSES), vec![Decimal::ONE]);
     assert_eq!(totals(registry, DEPLOYMENT_TOTAL), vec![Decimal::ONE]);
-    assert_eq!(totals(registry, DEPLOYMENT_STATE), vec![Decimal::ZERO]);
     assert_eq!(observations(registry, DEPLOYMENT_PER_OUTPUT_TOKEN), vec![1]);
+    assert_eq!(totals(registry, DEPLOYMENT_STATE), vec![Decimal::ZERO]);
     assert_eq!(totals(registry, REMAINING_REQUESTS), vec![dec("9")]);
     assert_eq!(totals(registry, REMAINING_TOKENS), vec![dec("5")]);
     assert_eq!(router.groups(), vec!["gpt-4-group".to_owned()]);
-    // and the tail: cache, media, MCP calls and finally the proxy total
+}
+
+#[tokio::test]
+async fn success_emits_the_cache_media_and_mcp_metrics_last() {
+    let fixture = fixture_with_settings(labelled_settings());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(rich_payload(dec("2.5")))))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    // the tail: cache, media, MCP calls and finally the proxy total
     assert_eq!(totals(registry, CACHE_HITS), vec![Decimal::ONE]);
     assert_eq!(totals(registry, CACHED_TOKENS), vec![dec("12")]);
     assert_eq!(totals(registry, PROVIDER_CACHE_READ), vec![dec("3")]);
@@ -144,7 +158,7 @@ async fn success_emits_every_step_and_ends_with_the_total() {
 }
 
 #[tokio::test]
-async fn success_labels_match_litellm() {
+async fn success_request_labels_match_litellm() {
     let fixture = fixture_with_settings(labelled_settings());
     fixture
         .hooks
@@ -177,7 +191,17 @@ async fn success_labels_match_litellm() {
     assert_eq!(series_label(registry, REQUESTS, "org_id"), "org-1");
     assert_eq!(series_label(registry, REQUESTS, "org_alias"), "org-alias");
     assert_eq!(series_label(registry, REQUESTS, "tag_prod"), "true");
-    assert_eq!(series_label(registry, SPEND, "service_tier"), "priority");
+}
+
+#[tokio::test]
+async fn success_deployment_and_total_labels_match_litellm() {
+    let fixture = fixture_with_settings(labelled_settings());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(rich_payload(dec("2.5")))))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
     // the proxy total carries the status, the route and the opt-in stream label
     assert_eq!(series_label(registry, PROXY_TOTAL, "status_code"), "200");
     assert_eq!(
@@ -185,7 +209,7 @@ async fn success_labels_match_litellm() {
         "/v1/chat/completions"
     );
     assert_eq!(series_label(registry, PROXY_TOTAL, "stream"), "True");
-    // the deployment counters name the deployment, its api base and its group, and latency carries the tier
+    // the deployment counters name the deployment, its api base and its group, and the tier reaches spend and latency
     assert_eq!(
         series_label(registry, DEPLOYMENT_TOTAL, "model_group"),
         "gpt-4-group"
@@ -204,8 +228,15 @@ async fn success_labels_match_litellm() {
     );
     assert_eq!(series_label(registry, LATENCY, "service_tier"), "priority");
     assert_eq!(series_label(registry, LATENCY, "model"), "gpt-4o");
+    assert_eq!(series_label(registry, SPEND, "service_tier"), "priority");
+}
+
+#[tokio::test]
+async fn the_success_schema_has_no_failure_only_labels() {
+    let fixture = fixture();
     // the failure-only labels are not part of the success schema
-    let request_labels = registry
+    let request_labels = fixture
+        .registry
         .get(REQUESTS)
         .expect("the requests metric is registered")
         .description
@@ -253,12 +284,12 @@ async fn an_openrouter_native_id_keeps_its_prefix() {
     );
 
     let routed = fixture();
-    let mut record = payload(Decimal::ZERO);
-    record.model = "openrouter/anthropic/claude-3.5-sonnet".to_owned();
-    record.custom_llm_provider = Some("openrouter".to_owned());
+    let mut routed_record = payload(Decimal::ZERO);
+    routed_record.model = "openrouter/anthropic/claude-3.5-sonnet".to_owned();
+    routed_record.custom_llm_provider = Some("openrouter".to_owned());
     routed
         .hooks
-        .async_log_success_event(Arc::new(event(record)))
+        .async_log_success_event(Arc::new(event(routed_record)))
         .await
         .unwrap();
     assert_eq!(

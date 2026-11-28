@@ -89,7 +89,19 @@ async fn failure_labels_match_litellm() {
     assert!(!failure_labels.contains(&"requested_model".to_owned()));
     assert!(!failure_labels.contains(&"client_ip".to_owned()));
     assert!(!failure_labels.contains(&"user_agent".to_owned()));
-    // the deployment failure names the deployment, the group, the provider and the exception
+}
+
+#[tokio::test]
+async fn deployment_failure_names_the_deployment() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(Decimal::ZERO);
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
     assert_eq!(
         series_label(registry, DEPLOYMENT_FAILURES, "model_group"),
         "gpt-4-group"
@@ -114,6 +126,19 @@ async fn failure_labels_match_litellm() {
         series_label(registry, DEPLOYMENT_FAILURES, "api_provider"),
         "openai"
     );
+}
+
+#[tokio::test]
+async fn deployment_failure_carries_the_exception_and_request_labels() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(Decimal::ZERO);
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
     assert_eq!(
         series_label(registry, DEPLOYMENT_FAILURES, "exception_status"),
         "None"
@@ -122,6 +147,27 @@ async fn failure_labels_match_litellm() {
         series_label(registry, DEPLOYMENT_FAILURES, "exception_class"),
         "BadRequestError"
     );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "client_ip"),
+        "10.0.0.7"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "user_agent"),
+        "test-agent"
+    );
+}
+
+#[tokio::test]
+async fn deployment_failure_carries_the_principal_labels() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(Decimal::ZERO);
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
     assert_eq!(
         series_label(registry, DEPLOYMENT_FAILURES, "hashed_api_key"),
         "sk-live"
@@ -137,14 +183,6 @@ async fn failure_labels_match_litellm() {
     assert_eq!(
         series_label(registry, DEPLOYMENT_FAILURES, "team_alias"),
         "team-alias"
-    );
-    assert_eq!(
-        series_label(registry, DEPLOYMENT_FAILURES, "client_ip"),
-        "10.0.0.7"
-    );
-    assert_eq!(
-        series_label(registry, DEPLOYMENT_FAILURES, "user_agent"),
-        "test-agent"
     );
 }
 
