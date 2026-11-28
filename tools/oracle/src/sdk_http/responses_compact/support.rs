@@ -8,7 +8,7 @@ use betterlite_core::api::responses_compact_call::deps::{
 use betterlite_core::api::responses_compact_call::error::CompactResponsesError;
 use betterlite_core::api::responses_compact_call::{acompact_responses, compact_responses};
 use betterlite_core::api::responses_compact_http::service::{
-    ClientSource, LogContext, SharedSession,
+    ClientSource, CompactTransport, LogContext, SharedSession,
 };
 use betterlite_core::api::responses_provider_selection::provider_config::{
     ConfigLookup, NativeConfig,
@@ -87,7 +87,7 @@ impl Fixture {
         mode: Mode,
     ) -> Result<ResponsesReply, CompactResponsesError>
     where
-        S: ClientSource,
+        S: ClientSource<Client: CompactTransport>,
         F: CompactConfigFactory,
     {
         let env = PrePostEnv {

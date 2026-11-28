@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -25,7 +26,6 @@ use crate::transcription::call::AzureTranscriptionError;
 use crate::transcription::call::client::{RequestAuth, request_auth};
 use crate::transcription::call::logging::{
     AzureTranscriptionLogger as _, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
-    PrePostLogger,
 };
 use crate::transcription::call::request::{OutboundTarget, outbound_request};
 
@@ -143,14 +143,14 @@ fn logging_env<'setup>(redactor: &'setup Redactor, sink: &'setup Sink) -> PrePos
     }
 }
 
-// PrePostLogger hands both records to B249's pre_call and post_call
+// LogContext hands both records to B249's pre_call and post_call
 #[test]
 fn pre_post_logger_records_the_azure_calls() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
     let mut state = logging_state(&redactor);
     let sink = Sink::default();
     let env = logging_env(&redactor, &sink);
-    let mut logger = PrePostLogger {
+    let mut logger = LogContext {
         state: &mut state,
         env: &env,
     };
@@ -176,7 +176,7 @@ fn pre_post_logger_records_the_azure_calls() {
     record_post_call(&mut logger);
 }
 
-fn record_post_call(logger: &mut PrePostLogger<'_, '_>) {
+fn record_post_call(logger: &mut LogContext<'_, '_>) {
     logger.post_call(AzureTranscriptionPostCall {
         input: "a.wav",
         authorization: None,

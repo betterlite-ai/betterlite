@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-active-subjects-presented-key-bearer-any-case
+call:
+  b4658:
+    operation: presented_key
+    headers:
+      - ["authorization", "bEaReR sk-any-case"]
+env: {}
+compare: {ignore: []}

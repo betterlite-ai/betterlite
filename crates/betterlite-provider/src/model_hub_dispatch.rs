@@ -22,9 +22,8 @@ use crate::replicate::reply::PostCallLogger;
 use crate::replicate::reply::TokenCounter as ReplicateTokenCounter;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_context::chat_config_selection::tags::{ChatConfigTag, ConfigSelection};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::huggingface_chat::error::HuggingfaceChatError;
 use betterlite_openai::huggingface_embedding::error::HuggingfaceEmbeddingError;
 use betterlite_openai::huggingface_embedding::response::OrdinaryEncoder;
@@ -151,10 +150,6 @@ pub struct DispatchDeps<'deps> {
     pub now: DateTime<Utc>,
     pub timeout: Duration,
 }
-pub struct CallLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
-}
 pub enum HubCompletion {
     HuggingFace(Box<PreparedRequest>),
     Replicate(Box<replicate::Completion>),
@@ -174,7 +169,7 @@ pub fn dispatch<'call>(
     selection: &ConfigSelection<ChatConfigTag>,
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> impl Future<Output = Result<Option<HubCompletion>, HubDispatchError>> + Send + 'call {
     let provider = select(selection.tag);
     async move {

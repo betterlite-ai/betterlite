@@ -4,7 +4,6 @@ use std::str::from_utf8;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aws_smithy_async::time::SharedTimeSource;
-use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -22,8 +21,7 @@ use uuid::Uuid;
 
 use crate::aws_settings::pop_aws_auth_params;
 use crate::aws_settings::sources::Credentials;
-use crate::credentials::AwsCredentialResolver;
-use crate::credentials::error::CredentialError;
+use crate::credentials::CredentialSource;
 use crate::signing::error::SigningError;
 use crate::signing::target::{RegionInputs, auth_settings};
 
@@ -81,24 +79,6 @@ impl SagemakerTransport for ProxiedClient {
         let response = self.send_following(request).await?;
         let status = response.response.status().as_u16();
         Ok((status, response.body_stream()))
-    }
-}
-
-pub trait SagemakerCredentials: Send + Sync {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
-}
-
-impl SagemakerCredentials for AwsCredentialResolver<'_> {
-    async fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> Result<Credentials, CredentialError> {
-        self.resolve_credentials(&settings, Some(&region)).await
     }
 }
 
@@ -160,7 +140,7 @@ impl<T, C> SagemakerRuntime<'_, T, C> {
 impl<T, C> SagemakerRuntime<'_, T, C>
 where
     T: Sync,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     pub(crate) async fn credentials_for(
         &self,

@@ -11,7 +11,7 @@ use betterlite_config::sections::openai_credentials::{
 };
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::container_collection_http::{
-    CollectionClientSource, CollectionReply, CollectionRequest, CollectionTransport,
+    CollectionReply, CollectionRequest, CollectionTransport,
 };
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -29,7 +29,7 @@ use betterlite_openai::containers::OpenAiContainerConfig;
 use betterlite_openai::containers::container_file_http::PreCallHook;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::containers::container_file_http::transport::{
-    ContainerHttpReply, TransferError,
+    ClientSource, ContainerHttpReply, TransferError,
 };
 use betterlite_openai::containers::costs::ContainerCosts;
 use betterlite_openai::credentials::LiteLlmGlobals;
@@ -167,7 +167,7 @@ impl CollectionTransport for Fake {
     }
 }
 
-impl CollectionClientSource for Fake {
+impl ClientSource for Fake {
     type Blocking = Self;
     type Asynchronous = Self;
 

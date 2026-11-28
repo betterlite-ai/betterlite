@@ -15,8 +15,9 @@ use self::support::{Events, Fixture};
 use crate::api::responses_read_http::config::{ReadConfig, ReadParams};
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
-    ClientKind, ClientSource, ReadCall, ReadDeps, ReadOutcome, ReadTarget, send,
+    ClientKind, ReadCall, ReadDeps, ReadOutcome, ReadTarget, ReadTransport, send,
 };
+use crate::api::vector_store_http_write::service::ClientSource;
 
 const fn target<'call>(
     response_id: &'call str,
@@ -41,7 +42,7 @@ async fn run<'deps, C, S>(
 ) -> Result<ReadOutcome, ReadError>
 where
     C: ReadConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     let prepared = fixture.prepare(deps, mode, call, events)?;
     send(prepared).await

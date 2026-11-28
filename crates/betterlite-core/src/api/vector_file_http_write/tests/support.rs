@@ -35,13 +35,13 @@ use crate::api::vector_file_http_write::config::{
 };
 use crate::api::vector_file_http_write::error::FileWriteError;
 use crate::api::vector_file_http_write::service::{
-    ClientSource, DeleteCall, LogContext, PreparedWrite, UpdateCall, WriteCall, WriteDeps,
-    WriteRequest, WriteTarget, WriteTransport, prepare,
+    DeleteCall, LogContext, PreparedWrite, UpdateCall, WriteCall, WriteDeps, WriteRequest,
+    WriteTarget, WriteTransport, prepare,
 };
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, ClientError, HeaderMap, UrlFailure, header_map,
 };
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::service::{ClientKind, ClientSource};
 
 #[derive(Clone, Default)]
 pub(crate) struct Events(Arc<Mutex<Vec<String>>>);

@@ -1,6 +1,7 @@
 use std::str::FromStr as _;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -14,7 +15,6 @@ use crate::speech::client::{
     SharedSession, SpeechConnection, SuppliedClient, normalize_base, select_client,
 };
 use crate::speech::error::SpeechError;
-use crate::speech::logging::PrePostLogger;
 use crate::speech::request::{SpeechFormat, SpeechOptions, SpeechRequest};
 use crate::speech::result::SpeechResponse;
 use betterlite_http::client_kind::ClientKind;
@@ -465,7 +465,7 @@ async fn wired_logging(options: &SpeechOptions) -> (Json, Json) {
                 connection: connection(),
                 aspeech: false,
             },
-            &mut PrePostLogger {
+            &mut LogContext {
                 state: &mut state,
                 env: &env,
             },

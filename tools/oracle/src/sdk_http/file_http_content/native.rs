@@ -8,7 +8,7 @@ use betterlite_core::api::file_http_content::error::ContentError;
 use betterlite_core::api::file_http_content::service::buffered::retrieve_file_content;
 use betterlite_core::api::file_http_content::service::streaming::retrieve_content_streaming;
 use betterlite_core::api::file_http_content::service::{
-    ClientSource, ContentDeps, PreparedContent, RetrieveCall,
+    ClientSource, ContentDeps, ContentTransport, PreparedContent, RetrieveCall,
 };
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -113,7 +113,7 @@ async fn streamed<C, S>(
 ) -> Result<Outcome, SdkHttpError>
 where
     C: FileContentConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ContentTransport>,
 {
     let result = match retrieve_content_streaming(prepared, size, state).await {
         Ok(result) => result,

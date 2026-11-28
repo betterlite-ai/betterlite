@@ -5,11 +5,11 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
-use betterlite_core::api::vector_file_http_create_list::service::ClientSource;
 use betterlite_core::api::vector_file_provider::{
     CredentialLookup, CredentialLookupError, OperationKwargs,
 };
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;

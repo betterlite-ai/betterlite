@@ -30,8 +30,9 @@ use crate::batch_call::transport::{
     ControlPlaneTransport,
 };
 use crate::bedrock_embedding_io::transport::TransferError;
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
-use crate::image_call::plan::{CredentialSource, LogContext};
+use crate::image_call::plan::LogContext;
 
 pub(super) const ACCESS_KEY: &str = "AKIDEXAMPLE";
 pub(super) const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";

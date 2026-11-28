@@ -23,8 +23,6 @@ use crate::callback_logger::event::LoggerEvent;
 use crate::dynamic_callbacks::DynamicCallback;
 use crate::dynamic_callbacks::DynamicCallbackLists;
 use crate::dynamic_callbacks::filters::get_combined_callback_list;
-use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_metadata::params::metadata_from_litellm_params;
 use crate::logging_state::LoggingState;
@@ -40,10 +38,8 @@ pub struct SuccessHandler<'handler> {
     pub payload_builder: &'handler dyn StandardPayloadBuilder,
     pub stream_assembler: &'handler dyn StreamAssembler,
     pub clock: &'handler dyn SuccessClock,
-    pub failure_counters: &'handler [Arc<dyn CallbackFailureCounter + Send + Sync>],
     pub excluded_fields: &'handler [String],
     pub known_callback: &'handler (dyn Fn(&str) -> bool + Send + Sync),
-    pub stamp: &'handler ResponseStamp,
     pub privacy: Settings,
 }
 
@@ -191,7 +187,7 @@ fn callback_event(
             &stored,
             logger.as_ref(),
             handler.excluded_fields,
-            handler.stamp,
+            handler.clock.now(),
         ) {
             Ok(redacted) => redacted,
             Err(error) => {

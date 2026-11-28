@@ -8,8 +8,8 @@ use super::support::{
     Events, Fixture, RecordingConfig, Reply, Source, Wire, delete_call, params, target,
     update_call, update_request,
 };
-use crate::api::vector_file_http_write::service::{SuppliedClient, WriteDeps};
-use crate::api::vector_store_http_write::service::{ClientKind, Operation};
+use crate::api::vector_file_http_write::service::WriteDeps;
+use crate::api::vector_store_http_write::service::{ClientKind, Operation, SuppliedClient};
 
 const FILE: &str = r#"{"id":"file_a","object":"vector_store.file"}"#;
 

@@ -5,6 +5,7 @@ use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::exporter_options::failure_counter::CallbackFailureCounter;
+use betterlite_logging::exporter_options::redaction::ResponseStamp;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_success::ports::{
@@ -30,15 +31,22 @@ pub(crate) struct RecordingLogger {
     name: String,
     flags: MessageFlagsSpec,
     fail: bool,
+    stamp: ResponseStamp,
     calls: Mutex<Vec<LoggedEvent>>,
 }
 
 impl RecordingLogger {
-    pub(crate) fn new(name: &str, flags: &MessageFlagsSpec, fail: bool) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        flags: &MessageFlagsSpec,
+        fail: bool,
+        stamp: &ResponseStamp,
+    ) -> Self {
         Self {
             name: name.to_owned(),
             flags: flags.clone(),
             fail,
+            stamp: stamp.clone(),
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -60,7 +68,11 @@ impl RecordingLogger {
                 stream: event.stream,
                 model: event.payload.model.clone(),
                 messages: event.payload.messages.clone(),
-                response: event.payload.response.clone(),
+                response: event
+                    .payload
+                    .response
+                    .as_ref()
+                    .map(|response| normalized(response, &self.stamp)),
             });
         if self.fail {
             return Err(LoggerError::Delivery {
@@ -105,6 +117,34 @@ impl CallbackLogger for RecordingLogger {
     async fn async_log_stream_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.record("async_log_stream_event", &event)
     }
+}
+
+// only the random id is rewritten, so the record's created still compares with the second LiteLLM pins
+fn normalized(response: &Json, stamp: &ResponseStamp) -> Json {
+    let Json::Object(fields) = response else {
+        return response.clone();
+    };
+    let Some(Json::Text(id)) = fields.get("id") else {
+        return response.clone();
+    };
+    let Some(rest) = id.strip_prefix("chatcmpl-") else {
+        return response.clone();
+    };
+    let bytes = rest.as_bytes();
+    let minted = bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        });
+    if !minted {
+        return response.clone();
+    }
+    let mut stamped = fields.clone();
+    stamped.insert("id".to_owned(), Json::Text(stamp.id.clone()));
+    Json::Object(stamped)
 }
 
 pub(crate) struct FixedBuilder {
@@ -176,5 +216,17 @@ impl CallbackFailureCounter for RecordingCounter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(callback_name.to_owned());
+    }
+}
+
+// logging_success.py keeps both counters in litellm.callbacks, so each one is a callback that answers a counter
+#[async_trait]
+impl CallbackLogger for RecordingCounter {
+    fn callback_name(&self) -> &'static str {
+        "_RecordingCounter"
+    }
+
+    fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter> {
+        Some(self)
     }
 }

@@ -13,22 +13,20 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::completion::{
-    BillingError, InteractionLoggingCallbacks, InteractionLoggingObject, InteractionLoggingState,
-};
+use super::completion::{BillingError, InteractionLoggingObject, InteractionLoggingState};
 use super::dedupe::reset_success_emission_dedupe;
 use super::recognition::is_billable_interaction;
 use super::reservation::{ReleaseFuture, ReservationRelease, reservation_from_params};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use crate::logging_state::types::{CallbackPolicy, DynamicCallbacks, RequestLoggingFlags};
 use crate::logging_state::{LoggingInit, LoggingState};
+use crate::logging_success::owned::OwnedSuccessHandler;
 use crate::logging_success::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use crate::logging_success::types::{SuccessMode, SuccessResult};
 use crate::registry::CallbackRegistry;
@@ -255,20 +253,15 @@ fn fixture(state: LoggingState) -> Fixture {
     });
     let builder_arc = Arc::clone(&builder);
     let payload_builder: Arc<dyn StandardPayloadBuilder> = builder_arc;
-    let callbacks = InteractionLoggingCallbacks {
+    let callbacks = Arc::new(OwnedSuccessHandler {
         registry: Arc::new(registry(&logger)),
         payload_builder,
         stream_assembler: Arc::new(NoStreams),
         clock: Arc::new(FixedClock(time())),
-        failure_counters: Vec::new(),
         excluded_fields: Vec::new(),
         known_callback: Arc::new(|_name: &str| false),
-        stamp: ResponseStamp {
-            id: "interaction-1".to_owned(),
-            created: 1,
-        },
         privacy: Settings::default(),
-    };
+    });
     Fixture {
         host: InteractionLoggingObject {
             state: Arc::new(Mutex::new(Some(InteractionLoggingState {

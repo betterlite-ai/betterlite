@@ -1,11 +1,12 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
 
 use crate::ragflow_chat::env::{CredentialsInput, Globals, PROVIDER, provider_info};
 
 use self::call::CompletionCall;
-use self::context::{CallLogging, DispatchContext};
+use self::context::DispatchContext;
 use self::error::DispatchError;
 use self::handler::{ChatCompletionHandler, HandlerError};
 
@@ -24,7 +25,7 @@ pub fn dispatch<R>(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Option<Result<R, DispatchError>> {
     match tag {
         ChatConfigTag::RagFlow => Some(complete_ragflow(context, handler, log)),
@@ -58,7 +59,7 @@ pub fn dispatch<R>(
 fn complete_ragflow<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<R, DispatchError> {
     let info = provider_info(&CredentialsInput {
         model: context.model,
@@ -96,7 +97,7 @@ fn complete_ragflow<R>(
 }
 
 fn log_failure(
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     messages: &[Message],
     call: &CompletionCall,
     error: &HandlerError,

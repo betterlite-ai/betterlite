@@ -1,6 +1,7 @@
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::image_call::execute::{dispatch_request, transform_response};
 use betterlite_bedrock::image_call::plan::{
-    CredentialSource, ImageCall, LogContext, prepare_request, resolve_target,
+    ImageCall, LogContext, prepare_request, resolve_target,
 };
 use betterlite_bedrock::image_call::transport::ClientFactory;
 use betterlite_bedrock::image_models::response::ModelResponse;
@@ -16,7 +17,7 @@ pub(super) async fn generate<Source, Factory>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<ModelResponse, BedrockImageError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
 {
     let Some(model) = operation.model else {
