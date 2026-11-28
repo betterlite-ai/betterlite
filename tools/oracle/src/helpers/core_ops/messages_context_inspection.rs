@@ -104,8 +104,10 @@ impl Helper for Op {
 
 fn inspect(input: &InspectionInput) -> Inspection {
     let handle = ProxyRouter;
-    let router =
-        matches!(input.router, RouterMode::Handle).then_some(&handle as &dyn SummaryCompletion);
+    let router: Option<&dyn SummaryCompletion> = match input.router {
+        RouterMode::Handle => Some(&handle),
+        RouterMode::Empty | RouterMode::Missing => None,
+    };
     // ast-grep-ignore: no-long-names
     let found = inspect_compaction_and_proxy_context(&input.messages, &input.kwargs, router);
     let (litellm_metadata, user_api_key_auth) = found.proxy.map_or((None, None), |proxy| {
@@ -115,7 +117,7 @@ fn inspect(input: &InspectionInput) -> Inspection {
         has_compaction_block: found.has_compaction_block,
         litellm_metadata,
         user_api_key_auth,
-        router: found.router.map(|_handle| ROUTER_AVAILABLE),
+        router: found.router.is_some().then_some(ROUTER_AVAILABLE),
     }
 }
 
