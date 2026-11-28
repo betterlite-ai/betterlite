@@ -1,12 +1,14 @@
 import asyncio
+import importlib
 import inspect
 import json
 import threading
 from collections.abc import Awaitable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
-from typing import ClassVar, Final, Self
+from typing import ClassVar, Final, Protocol, Self
 
+import httpx
 import pytest
 from pydantic import BaseModel, JsonValue
 from test_evals_calls import (
@@ -25,6 +27,7 @@ from test_evals_calls import (
 )
 from typing_extensions import override
 
+import betterlite
 import betterlite.evals
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.evals import main as evals_main
@@ -48,6 +51,7 @@ BAD_REQUEST: Final = 400
 NOT_FOUND: Final = 404
 SERVER_ERROR: Final = 500
 GOOD_KEY: Final = "sk-test"
+CLOSED_BASE: Final = "http://127.0.0.1:9"
 EVAL_ID: Final = "eval_1"
 RUN_ID: Final = "run_1"
 RUNS_PATH: Final = f"/v1/evals/{EVAL_ID}/runs"
@@ -56,12 +60,14 @@ CANCEL_SUFFIX: Final = "/cancel"
 CUSTOM_HEADER: Final = "x-eval-run-test"
 CUSTOM_VALUE: Final = "on"
 TIMEOUT: Final = 30.0
+STRUCTURED_TIMEOUT: Final = httpx.Timeout(connect=1.0, read=60.0, write=1.0, pool=1.0)
 ANTHROPIC: Final = "anthropic"
 OPENAI: Final = "openai"
 JSON_TYPE: Final = "application/json"
 BAD_MESSAGE: Final = "the run request is invalid"
 MISSING_MESSAGE: Final = "run not found"
 NAME: Final = "probe"
+CREDENTIAL_NAME: Final = "stored-openai"
 
 DATA_SOURCE: Final[dict[str, JsonValue]] = {
     "type": "jsonl",
@@ -108,6 +114,19 @@ EVAL_NAMES: Final[frozenset[str]] = frozenset({
     "acancel_eval", "acreate_eval", "adelete_eval", "aget_eval", "alist_evals", "aupdate_eval",
     "cancel_eval", "create_eval", "delete_eval", "get_eval", "list_evals", "update_eval",
 })
+
+
+class StoredCredential(BaseModel):
+    credential_name: str
+    credential_info: dict[str, JsonValue]
+    credential_values: dict[str, JsonValue]
+
+
+class CredentialsModule(Protocol):
+    credential_list: list[StoredCredential]
+
+
+LITELLM_CREDENTIALS: Final[CredentialsModule] = importlib.import_module("litellm")
 
 
 class RunsServer(ThreadingHTTPServer):
@@ -479,42 +498,72 @@ def test_calls_async_every_op() -> None:
     with RunsServer() as server:
         created = asyncio.run(
             acreate_run(
-                EVAL_ID, DATA_SOURCE, name=NAME, extra_body=EXTRA_BODY, api_base=server.url,
+                EVAL_ID, DATA_SOURCE, name=NAME, extra_body=EXTRA_BODY,
+                extra_headers=HEADERS, extra_query=QUERY, timeout=TIMEOUT,
+                custom_llm_provider=OPENAI, api_base=server.url, api_key=GOOD_KEY,
+            )
+        )
+        listed = asyncio.run(
+            alist_runs(
+                EVAL_ID, limit=5, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
                 api_key=GOOD_KEY,
             )
         )
-        listed = asyncio.run(alist_runs(EVAL_ID, limit=5, api_base=server.url, api_key=GOOD_KEY))
-        fetched = asyncio.run(aget_run(EVAL_ID, RUN_ID, api_base=server.url, api_key=GOOD_KEY))
+        fetched = asyncio.run(
+            aget_run(
+                EVAL_ID, RUN_ID, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        )
         cancelled = asyncio.run(
-            acancel_run(EVAL_ID, RUN_ID, api_base=server.url, api_key=GOOD_KEY)
+            acancel_run(
+                EVAL_ID, RUN_ID, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
+            )
         )
         deleted = asyncio.run(
-            adelete_run(EVAL_ID, RUN_ID, api_base=server.url, api_key=GOOD_KEY)
+            adelete_run(
+                EVAL_ID, RUN_ID, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
+            )
         )
         reference_created = asyncio.run(
             LITELLM_ASYNC.acreate_run(
                 eval_id=EVAL_ID, data_source=DATA_SOURCE, name=NAME, extra_body=EXTRA_BODY,
-                api_base=server.url, api_key=GOOD_KEY,
+                extra_headers=HEADERS, extra_query=QUERY, timeout=TIMEOUT,
+                custom_llm_provider=OPENAI, api_base=server.url, api_key=GOOD_KEY,
             )
         )
         reference_listed = asyncio.run(
             LITELLM_ASYNC.alist_runs(
-                eval_id=EVAL_ID, limit=5, api_base=server.url, api_key=GOOD_KEY
+                eval_id=EVAL_ID, limit=5, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
             )
         )
         reference_fetched = asyncio.run(
             LITELLM_ASYNC.aget_run(
-                eval_id=EVAL_ID, run_id=RUN_ID, api_base=server.url, api_key=GOOD_KEY
+                eval_id=EVAL_ID, run_id=RUN_ID, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
             )
         )
         reference_cancelled = asyncio.run(
             LITELLM_ASYNC.acancel_run(
-                eval_id=EVAL_ID, run_id=RUN_ID, api_base=server.url, api_key=GOOD_KEY
+                eval_id=EVAL_ID, run_id=RUN_ID, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
             )
         )
         reference_deleted = asyncio.run(
             LITELLM_ASYNC.adelete_run(
-                eval_id=EVAL_ID, run_id=RUN_ID, api_base=server.url, api_key=GOOD_KEY
+                eval_id=EVAL_ID, run_id=RUN_ID, extra_headers=HEADERS, extra_query=QUERY,
+                timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+                api_key=GOOD_KEY,
             )
         )
     assert dumped(created) == dumped(reference_created)
@@ -522,44 +571,60 @@ def test_calls_async_every_op() -> None:
     assert dumped(fetched) == dumped(reference_fetched)
     assert dumped(cancelled) == dumped(reference_cancelled)
     assert dumped(deleted) == dumped(reference_deleted)
-    seen = [(call["method"], call["path"]) for call in server.calls]
-    assert seen == [*OPERATIONS, *OPERATIONS]
+    ours_calls = server.calls[:5]
+    their_calls = server.calls[5:]
+    assert [request_shape(call) for call in ours_calls] == [
+        request_shape(call) for call in their_calls
+    ]
+    assert [header_of(call, CUSTOM_HEADER) for call in server.calls] == [CUSTOM_VALUE] * 10
+    assert query_of(ours_calls[1]) == {"limit": "9", "after": "run_x"}
 
 
 def test_calls_flag_coroutines() -> None:
     with RunsServer() as server:
         created = create_run(
-            EVAL_ID, DATA_SOURCE, name=NAME, api_base=server.url, api_key=GOOD_KEY,
-            acreate_run=True,
+            EVAL_ID, DATA_SOURCE, name=NAME, extra_headers=HEADERS, extra_query=QUERY,
+            timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+            api_key=GOOD_KEY, acreate_run=True,
         )
         assert inspect.isawaitable(created)
         listed = list_runs(
-            eval_id=EVAL_ID, limit=5, api_base=server.url, api_key=GOOD_KEY, alist_runs=True
+            eval_id=EVAL_ID, limit=5, extra_headers=HEADERS, extra_query=QUERY,
+            timeout=TIMEOUT, custom_llm_provider=OPENAI, api_base=server.url,
+            api_key=GOOD_KEY, alist_runs=True,
         )
         assert inspect.isawaitable(listed)
         fetched = get_run(
-            EVAL_ID, RUN_ID, api_base=server.url, api_key=GOOD_KEY, aget_run=True
+            EVAL_ID, RUN_ID, extra_headers=HEADERS, extra_query=QUERY, timeout=TIMEOUT,
+            custom_llm_provider=OPENAI, api_base=server.url, api_key=GOOD_KEY,
+            aget_run=True,
         )
         assert inspect.isawaitable(fetched)
         cancelled = cancel_run(
-            EVAL_ID, RUN_ID, api_base=server.url, api_key=GOOD_KEY, acancel_run=True
+            EVAL_ID, RUN_ID, extra_headers=HEADERS, extra_query=QUERY, timeout=TIMEOUT,
+            custom_llm_provider=OPENAI, api_base=server.url, api_key=GOOD_KEY,
+            acancel_run=True,
         )
         assert inspect.isawaitable(cancelled)
         deleted = delete_run(
-            EVAL_ID, RUN_ID, api_base=server.url, api_key=GOOD_KEY, adelete_run=True
+            EVAL_ID, RUN_ID, extra_headers=HEADERS, extra_query=QUERY, timeout=TIMEOUT,
+            custom_llm_provider=OPENAI, api_base=server.url, api_key=GOOD_KEY,
+            adelete_run=True,
         )
         assert inspect.isawaitable(deleted)
         pending: tuple[BaseModel | Awaitable[BaseModel], ...] = (
             created, listed, fetched, cancelled, deleted,
         )
         answers = [asyncio.run(awaited_answer(item)) for item in pending]
-        seen = [(call["method"], call["path"]) for call in server.calls]
+        seen = [(call["method"], call["path"].partition("?")[0]) for call in server.calls]
     assert dumped(answers[0])["name"] == "created"
     assert dumped(answers[1])["object"] == "list"
     assert dumped(answers[2])["name"] == "fetched"
     assert dumped(answers[3])["status"] == "cancelled"
     assert dumped(answers[4])["deleted"] is True
-    assert seen == [*OPERATIONS]
+    assert seen == [(method, path.partition("?")[0]) for method, path in OPERATIONS]
+    assert [header_of(call, CUSTOM_HEADER) for call in server.calls] == [CUSTOM_VALUE] * 5
+    assert query_of(server.calls[1]) == {"limit": "9", "after": "run_x"}
 
 
 def test_calls_drop_logging() -> None:
@@ -570,6 +635,52 @@ def test_calls_drop_logging() -> None:
         )
     assert dumped(made_answer(created))["name"] == "created"
     assert body_of(server.calls[0]) == {"data_source": DATA_SOURCE, "name": NAME}
+
+
+# LiteLLM's @client wrapper fills the call from a matching litellm_credential_name before the body runs
+def test_calls_credential_name() -> None:
+    with RunsServer() as server:
+        values: dict[str, JsonValue] = {"api_key": GOOD_KEY, "api_base": server.url}
+        stored: dict[str, JsonValue] = {
+            "credential_name": CREDENTIAL_NAME,
+            "credential_values": values,
+        }
+        theirs = StoredCredential(
+            credential_name=CREDENTIAL_NAME, credential_info={}, credential_values=values
+        )
+        betterlite.credential_list.append(stored)
+        LITELLM_CREDENTIALS.credential_list.append(theirs)
+        try:
+            ours = create_run(EVAL_ID, DATA_SOURCE, litellm_credential_name=CREDENTIAL_NAME)
+            reference = LITELLM.create_run(
+                eval_id=EVAL_ID, data_source=DATA_SOURCE,
+                litellm_credential_name=CREDENTIAL_NAME,
+            )
+        finally:
+            betterlite.credential_list.remove(stored)
+            LITELLM_CREDENTIALS.credential_list.remove(theirs)
+        our_call = server.calls[0]
+        their_call = server.calls[1]
+    assert dumped(made_answer(ours)) == dumped(reference)
+    assert our_call["path"] == their_call["path"] == RUNS_PATH
+    assert header_of(our_call, "authorization") == f"Bearer {GOOD_KEY}"
+    assert header_of(their_call, "authorization") == f"Bearer {GOOD_KEY}"
+
+
+# a structured httpx.Timeout is accepted and becomes one deadline; the deviation records the phase loss
+def test_calls_structured_timeout() -> None:
+    with RunsServer() as server:
+        ours = create_run(
+            EVAL_ID, DATA_SOURCE, timeout=STRUCTURED_TIMEOUT, api_base=server.url,
+            api_key=GOOD_KEY,
+        )
+        reference = LITELLM.create_run(
+            eval_id=EVAL_ID, data_source=DATA_SOURCE, timeout=STRUCTURED_TIMEOUT,
+            api_base=server.url, api_key=GOOD_KEY,
+        )
+        shapes = [request_shape(call) for call in server.calls]
+    assert dumped(made_answer(ours)) == dumped(reference)
+    assert shapes[0] == shapes[1]
 
 
 # betterlite.evals carries the names of the eval calls and the run calls the task adds
@@ -668,6 +779,43 @@ def test_error_unsupported() -> None:
         assert theirs.value.status_code == SERVER_ERROR
         assert f"{action} is not supported for {ANTHROPIC}" in str(ours.value)
         assert f"{action} is not supported for {ANTHROPIC}" in str(theirs.value)
+    with RunsServer() as server:
+        with pytest.raises(BadRequestError) as async_created:
+            asyncio.run(
+                acreate_run(
+                    EVAL_ID, DATA_SOURCE, custom_llm_provider=ANTHROPIC,
+                    api_base=server.url, api_key=GOOD_KEY,
+                )
+            )
+    assert async_created.value.status_code == BAD_REQUEST
+    assert f"CREATE run is not supported for {ANTHROPIC}" in str(async_created.value)
+
+
+# the async twins forward the caller's timeout, so a value the native request refuses fails each call
+def test_error_async_timeout() -> None:
+    with pytest.raises(BadRequestError) as created:
+        asyncio.run(
+            acreate_run(
+                EVAL_ID, DATA_SOURCE, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY
+            )
+        )
+    with pytest.raises(BadRequestError) as listed:
+        asyncio.run(alist_runs(EVAL_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY))
+    with pytest.raises(BadRequestError) as fetched:
+        asyncio.run(
+            aget_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
+        )
+    with pytest.raises(BadRequestError) as cancelled:
+        asyncio.run(
+            acancel_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
+        )
+    with pytest.raises(BadRequestError) as deleted:
+        asyncio.run(
+            adelete_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
+        )
+    for raised in (created, listed, fetched, cancelled, deleted):
+        assert raised.value.status_code == BAD_REQUEST
+        assert "timeout" in str(raised.value)
 
 
 def test_unsupported_object() -> None:
