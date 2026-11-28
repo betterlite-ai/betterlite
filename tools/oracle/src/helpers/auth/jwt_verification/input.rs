@@ -17,7 +17,7 @@ pub(super) struct Scenario {
     pub(super) userinfo_endpoint: Option<String>,
     pub(super) userinfo_ttl: Option<f64>,
     #[serde(default)]
-    pub(super) issuers: Vec<Issuer>,
+    pub(super) issuers: Vec<IssuerEntry>,
     pub(super) now: f64,
     pub(super) key: Json,
     pub(super) steps: Vec<Step>,
@@ -26,7 +26,7 @@ pub(super) struct Scenario {
 // The LiteLLM_JWTAuth.issuers entry; the fields this operation never reads stay at their defaults.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Issuer {
+pub(super) struct IssuerEntry {
     pub(super) issuer: String,
     pub(super) jwks_url: Option<String>,
     pub(super) audience: Option<Selector>,
@@ -40,7 +40,7 @@ pub(super) struct Issuer {
     pub(super) end_user_id_jwt_field: Option<String>,
 }
 
-impl Issuer {
+impl IssuerEntry {
     pub(super) fn config(&self) -> IssuerConfig {
         IssuerConfig {
             issuer: self.issuer.clone(),

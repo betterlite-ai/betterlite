@@ -115,7 +115,8 @@ impl UserinfoHttp for ScriptedUserinfo {
             authorization: authorization.to_owned(),
             accept: accept.to_owned(),
         });
-        match lock(&self.replies).pop_front() {
+        let answer = lock(&self.replies).pop_front();
+        match answer {
             Some(Reply {
                 kind: ReplyKind::Answer,
                 status,

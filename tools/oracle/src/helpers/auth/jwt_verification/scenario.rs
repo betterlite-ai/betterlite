@@ -24,7 +24,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::fakes::{Cache, FixedClock, ScriptedUserinfo, Source, lock, tail};
-use super::input::{Issuer, Op, Scenario, Step};
+use super::input::{IssuerEntry, Op, Scenario, Step};
 use super::output::{Answer, Failure, ScenarioAnswer, StepAnswer};
 
 pub(super) fn answer(scenarios: &[Scenario]) -> HelperResult {
@@ -80,7 +80,7 @@ async fn scenario_answer(scenario: &Scenario, levels: &Mutex<Vec<String>>) -> Sc
 }
 
 fn settings_for(scenario: &Scenario) -> JwtVerificationSettings {
-    let issuers: Vec<_> = scenario.issuers.iter().map(Issuer::config).collect();
+    let issuers: Vec<_> = scenario.issuers.iter().map(IssuerEntry::config).collect();
     let jwt = JwtAuthSettings {
         routes: RouteFields::default(),
         teams: TeamFields::default(),
@@ -93,7 +93,7 @@ fn settings_for(scenario: &Scenario) -> JwtVerificationSettings {
         userinfo: UserinfoFields {
             oidc_userinfo_endpoint: scenario.userinfo_endpoint.clone(),
             oidc_userinfo_enabled: false,
-            oidc_userinfo_cache_ttl: scenario.userinfo_ttl.unwrap_or(300.0),
+            oidc_userinfo_cache_ttl: scenario.userinfo_ttl.unwrap_or(300.0_f64),
         },
         virtual_keys: VirtualKeyFields::default(),
         routing: RoutingFields {
@@ -126,6 +126,10 @@ async fn step_answer(fixture: &Fixture<'_>, step: &Step) -> StepAnswer {
     let requests_from = lock(&fixture.http.requests).len();
     let writes_from = lock(&fixture.cache.writes).len();
     let token = step.token.as_deref().unwrap_or_default();
+    // the step's scripted GETs join the userinfo fake's queue, as LiteLLM's transport extends its replies
+    if let Op::Userinfo = step.op {
+        lock(&fixture.http.replies).extend(step.http.iter().cloned());
+    }
     let (value, error) = match step.op {
         Op::AuthJwt => auth_answer(fixture, token).await,
         Op::Decode => decode_answer(fixture, token),
