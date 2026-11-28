@@ -46,4 +46,11 @@ deviations:
       back to local backup.") and its subject, but the failure detail is a thiserror message; the blog_feed cases
       ignore that field, as their compare.ignore entries record.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L142-L148
+  - what: >-
+      A response with a 3xx status is a failed fetch that serves the bundled posts, where httpx's raise_for_status
+      accepts a 3xx and LiteLLM hands the redirector's body to the XML parser.
+    why: >-
+      The feed accepts only successful statuses, as the endpoint requires; httpx does not follow the redirect either, so
+      LiteLLM only ever sees the redirector's body, and betterlite reports the status instead of parsing that body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L64-L66
 kept_bugs: []
