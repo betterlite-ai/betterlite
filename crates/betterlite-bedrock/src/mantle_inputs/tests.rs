@@ -3,10 +3,10 @@
 use rstest::rstest;
 use secrecy::ExposeSecret;
 
+use crate::aws_settings::or_bearer_token;
 use crate::mantle_inputs::chat_endpoint::{
     ChatEndpointInputs, ChatEndpointParams, chat_endpoint_inputs,
 };
-use crate::mantle_inputs::credentials::resolve_bearer_token;
 use crate::mantle_inputs::error::MantleInputError;
 use crate::mantle_inputs::records::MantleGlobals;
 
@@ -86,11 +86,11 @@ fn mantle_inputs_credential_identity_isolation() {
     assert!(!second_inputs.api_base.contains("eu-west-1"));
     assert!(!first_inputs.api_base.contains("ap-south-1"));
     let shared = support::secret("shared-fixture-key");
-    let shared_token = resolve_bearer_token(
+    let shared_token = or_bearer_token(&[
         Some(&shared),
         first.mantle_api_key.as_ref(),
         first.aws_bearer_token.as_ref(),
-    )
+    ])
     .unwrap();
     assert_eq!(shared_token.expose_secret(), "shared-fixture-key");
     assert_ne!(first_key, second_key);

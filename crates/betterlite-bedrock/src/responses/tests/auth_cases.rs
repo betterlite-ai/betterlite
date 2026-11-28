@@ -5,16 +5,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde_json::value::RawValue;
 
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_settings::ErrorHeaders;
 use crate::credentials::error::CredentialError;
-use crate::responses::auth::{
-    SignInputs, SignedHeaders, resolve_bearer_token, sign_request, validate_environment,
-};
+use crate::responses::auth::{SignInputs, SignedHeaders, sign_request, validate_environment};
 use crate::responses::error::{ResponsesError, error_from_reply};
 use crate::responses::url::{CompleteUrlParams, complete_url};
 use crate::signing::target::RegionInputs;
@@ -111,33 +109,8 @@ fn signed_with(
 }
 
 pub(super) fn responses_bearer_auth() {
-    token_selection();
     header_override();
     bearer_signing();
-}
-
-fn token_selection() {
-    let explicit = secret("explicit-token");
-    let from_env = secret("env-token");
-    let empty = secret("");
-    let chosen = |key: Option<&SecretString>, env: Option<&SecretString>| {
-        resolve_bearer_token(key, env).map(|token| token.expose_secret().to_owned())
-    };
-    assert_eq!(
-        chosen(Some(&explicit), Some(&from_env)).as_deref(),
-        Some("explicit-token")
-    );
-    assert_eq!(chosen(None, Some(&from_env)).as_deref(), Some("env-token"));
-    assert_eq!(
-        chosen(Some(&empty), Some(&from_env)).as_deref(),
-        Some("env-token")
-    );
-    assert_eq!(
-        chosen(Some(&explicit), Some(&empty)).as_deref(),
-        Some("explicit-token")
-    );
-    assert_eq!(chosen(Some(&empty), Some(&empty)), None);
-    assert_eq!(chosen(None, None), None);
 }
 
 fn header_override() {
@@ -150,6 +123,10 @@ fn header_override() {
     let mut untouched = caller.clone();
     validate_environment(&mut untouched, Some(&secret("")), None);
     assert_eq!(untouched, caller);
+    let empty = secret("");
+    let mut untouched_pair = caller.clone();
+    validate_environment(&mut untouched_pair, Some(&empty), Some(&empty));
+    assert_eq!(untouched_pair, caller);
     let mut overridden = caller;
     validate_environment(&mut overridden, Some(&explicit), Some(&from_env));
     let pairs: Vec<(&str, &str)> = overridden
@@ -197,6 +174,16 @@ fn bearer_signing() {
         .expect("the environment token skips signing");
     assert_eq!(env_signed.headers, supplied);
     assert_eq!(env_signed.body, None);
+    let empty = secret("");
+    let all_empty = Request {
+        api_key: Some(&empty),
+        environment_token: Some(&empty),
+        ..request
+    };
+    let signed = signed_with(&all_empty, first_identity).expect("an all-empty pair signs SigV4");
+    assert!(header_value(&signed, "authorization").is_some());
+    assert_eq!(header_value(&signed, "x-other"), Some("kept"));
+    assert!(signed.body.is_some());
 }
 
 pub(super) fn responses_sigv4() {

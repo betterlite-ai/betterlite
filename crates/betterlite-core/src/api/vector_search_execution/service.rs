@@ -80,7 +80,7 @@ pub async fn prepare<'deps, S, G>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<PreparedSearch<'deps, S::Client>, SearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
     G: SigningSeam + ?Sized,
 {
     let client = select(deps, mode, ssl_verify(call.litellm_params)?)?;

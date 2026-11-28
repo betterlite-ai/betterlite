@@ -1,0 +1,15 @@
+task: B951
+deviations:
+  - what: Betterlite returns a typed pending follow-up call plan instead of recursively invoking the public Responses endpoint.
+    why: The native boundary owns one provider dispatch, so the consuming provider seam sends the same input, model, tools, previous_response_id and call parameters without re-entering route authentication.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1104-L1118
+  - what: Tool call arguments that are not a JSON string raise ArgumentsNotString instead of failing inside LiteLLM's string concatenation.
+    why: B10121's records declare a string result, and a named error names the unusable field where LiteLLM raises a bare TypeError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1259
+  - what: The resolved user_api_key_auth travels beside the request parameter map rather than inside it.
+    why: The auth object is a typed principal, not a JSON call parameter; LiteLLM's kwargs merge would also copy it into the provider request, and the streaming plan keeps it where MCPEnhancedStreamingIterator reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1185-L1186
+  - what: The tool results text lists its keys as name, result, tool_call_id, where LiteLLM's json.dumps keeps the tool_call_id, result, name order its producer builds.
+    why: The oracle serializes a case as serde_json without preserve_order, so the result objects reach both sides with sorted keys; betterlite's typed result fields carry no received order, and its writer emits name, result, tool_call_id. A JSON reader does not depend on object key order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L898-L904
+kept_bugs: []

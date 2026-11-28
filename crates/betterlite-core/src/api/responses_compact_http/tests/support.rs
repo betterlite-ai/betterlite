@@ -139,7 +139,7 @@ impl Fixture {
     ) -> Result<ResponsesReply, CompactError>
     where
         C: CompactConfig,
-        S: ClientSource,
+        S: ClientSource<Client: CompactTransport>,
     {
         let logger = |_details: &LoggedJson| -> Result<(), PrePostError> {
             events.push("log");

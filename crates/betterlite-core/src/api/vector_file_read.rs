@@ -7,8 +7,8 @@ use betterlite_models::decisions::Json;
 
 use self::error::VectorFileReadError;
 use self::service::{ReadSession, entry_from_flag, read_attachment};
-use crate::api::vector_file_http_read::service::{ClientSource, Operation};
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_file_http_read::service::{Operation, ReadTransport};
+use crate::api::vector_store_http_write::service::{ClientKind, ClientSource};
 
 // either the file object or content reply, or the failure B011 maps to the SDK exception it raises
 pub type ReadResult = Result<Json, VectorFileReadError>;
@@ -16,7 +16,7 @@ pub type ReadResult = Result<Json, VectorFileReadError>;
 // The read session's four operations, each picking the handler and the wrapper flag it pops
 impl<S> ReadSession<'_, '_, '_, '_, S>
 where
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     // retrieve: only a literal true selects the asynchronous handler
     pub async fn retrieve(&mut self) -> ReadResult {

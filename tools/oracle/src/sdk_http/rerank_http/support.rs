@@ -5,6 +5,8 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
+use betterlite_core::api::file_http_content::service::ClientSource;
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;
@@ -19,8 +21,6 @@ use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{
     BaseRerankConfig, EnvironmentRequest, Headers, MapCohereRerankParams, Params, ResponseTransform,
 };
-use betterlite_provider::api::rerank_http::client::ClientSource;
-use betterlite_provider::api::rerank_http::error::ClientError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use secrecy::ExposeSecret as _;

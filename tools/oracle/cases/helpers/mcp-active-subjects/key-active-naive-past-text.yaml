@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-key-active-naive-past-text
+call:
+  b4658:
+    operation: key_is_active
+    key:
+      token: sk-naive
+      expires: "2000-01-01T00:00:00"
+env: {}
+compare: {ignore: []}

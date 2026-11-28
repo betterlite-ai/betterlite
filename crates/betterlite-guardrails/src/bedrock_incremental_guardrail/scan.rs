@@ -1,4 +1,4 @@
-use betterlite_bedrock_guardrails::bedrock_credentials::CredentialSource;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock_guardrails::bedrock_post::GuardrailTransport;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 

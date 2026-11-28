@@ -1,9 +1,8 @@
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -42,12 +41,6 @@ pub trait EmbeddingLogger {
     fn post_call(&mut self, record: PostCallRecord);
 }
 
-// B249's pre-call and post-call dispatch over the handler's records
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
-}
-
 fn additional_args(
     headers: Option<IndexMap<String, Json>>,
     api_base: Option<String>,
@@ -63,7 +56,7 @@ fn additional_args(
     }
 }
 
-impl EmbeddingLogger for PrePostLogger<'_, '_> {
+impl EmbeddingLogger for LogContext<'_, '_> {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         let secret = |key: Option<&SecretString>| {
             key.map_or(Json::Null, |secret| {

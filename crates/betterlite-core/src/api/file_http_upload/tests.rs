@@ -38,6 +38,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError};
+use crate::api::vector_store_http_write::service::ClientSource;
 
 use super::config::{FileParams, FileResponse, FileUploadConfig, Headers, UploadParams};
 use super::decoder::decode_file_upload_location;
@@ -53,8 +54,8 @@ mod failures;
 mod media;
 mod service;
 use super::service::{
-    ClientSource, LogContext, Mode, SuppliedClient, UploadBody, UploadCall, UploadDeps,
-    UploadRequest, UploadTransport, prepare, send,
+    LogContext, Mode, SuppliedClient, UploadBody, UploadCall, UploadDeps, UploadRequest,
+    UploadTransport, prepare, send,
 };
 use media::media_plan;
 
@@ -394,7 +395,7 @@ impl Harness {
         run_call: RunCall<'_>,
     ) -> Result<Json, UploadError>
     where
-        S: ClientSource,
+        S: ClientSource<Client: UploadTransport>,
     {
         let RunCall { mode, call, params } = run_call;
         let upload_params = UploadParams {
