@@ -732,6 +732,7 @@ async fn failure_case(failure: Failure) -> (support::Fixture, Harness) {
     let harness = Harness::open().await;
     harness.seed_committed_removal().await;
     let fixture = support::fixture();
+    fixture.jwt.add_mapping("k1", "sub", "claim-k1", "iss");
     match failure {
         Failure::Cache => fixture.auth.fail_delete_sync.store(true, Relaxed),
         Failure::Mapping => fixture.auth.fail_delete_memory.store(true, Relaxed),
