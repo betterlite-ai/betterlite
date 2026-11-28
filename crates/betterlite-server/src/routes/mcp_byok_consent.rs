@@ -14,7 +14,7 @@ use betterlite_auth::auth_key_lookup::KeyAuthenticator;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_form::values::{FormParts, PartValue};
 use betterlite_mcp::byok_consent::ConsentError;
-use betterlite_mcp::byok_consent::get::{GetQuery, authorize_get};
+use betterlite_mcp::byok_consent::get::{DEFAULT_CODE_CHALLENGE_METHOD, GetQuery, authorize_get};
 use betterlite_mcp::byok_consent::post::{Accepted, PostForm, authorize_post};
 use betterlite_mcp::byok_consent::session::authenticate_session;
 use betterlite_mcp::byok_consent::store::AuthCodeStore;
@@ -38,13 +38,10 @@ const FORM_LIMITS: ApiLimits = ApiLimits {
 };
 // FastAPI's declaration order decides the order of the 422 entries.
 const REQUIRED_FIELDS: [&str; 3] = ["redirect_uri", "code_challenge", "api_key"];
-const DEFAULT_CODE_CHALLENGE_METHOD: &str = "S256";
-const UNREADABLE_BODY: &str = "There was an error parsing the body";
-const TOO_MANY_FIELDS: &str = "Too many fields. Maximum number of fields is 1000.";
 const INTERNAL_ERROR: &str = "Internal Server Error";
 
 struct ConsentState {
-    codes: Arc<AuthCodeStore>,
+    codes: AuthCodeStore,
     master_key: Option<SecretString>,
     authenticator: Option<Arc<dyn KeyAuthenticator>>,
 }
@@ -52,7 +49,7 @@ struct ConsentState {
 #[cfg_attr(test, mutants::skip)]
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
     router_with(Arc::new(ConsentState {
-        codes: Arc::new(AuthCodeStore::new()),
+        codes: AuthCodeStore::new(),
         master_key: state.config.general_settings.master_key.clone(),
         authenticator: state.auth_key_lookup.authenticator.clone(),
     }))
@@ -76,38 +73,48 @@ async fn authorize_page(request: Request) -> Response {
 
 async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -> Response {
     let cookie_header = cookie_header(request.headers());
-    let now = Utc::now();
-    let user_id = match authenticate_session(
-        cookie_header,
-        state.master_key.as_ref(),
-        state.authenticator.as_deref(),
-        now,
-    )
-    .await
-    {
+    let user_id = match session_user(&state, cookie_header).await {
         Ok(user_id) => user_id,
-        Err(SessionAuthError::LoginRequired) => {
-            let error = ConsentError::LoginRequired;
-            return (error.status(), Json(error.body())).into_response();
-        }
-        Err(error @ SessionAuthError::Construct(_)) => {
-            tracing::error!("mcp byok consent: the session principal did not construct: {error}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, INTERNAL_ERROR).into_response();
-        }
+        Err(response) => return response,
     };
     let form_parts = match read_form(request).await {
         Ok(form_parts) => form_parts,
         Err(error) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(DetailBody {
-                    detail: error.detail(),
-                }),
-            )
-                .into_response();
+            let body = DetailBody {
+                detail: error.to_string(),
+            };
+            return (StatusCode::BAD_REQUEST, Json(body)).into_response();
         }
     };
-    let form = match post_form(&form_parts) {
+    submit_accepted(&state, &user_id, &form_parts)
+}
+
+async fn session_user(
+    state: &ConsentState,
+    cookie_header: Option<&str>,
+) -> Result<String, Response> {
+    let authenticated = authenticate_session(
+        cookie_header,
+        state.master_key.as_ref(),
+        state.authenticator.as_deref(),
+        Utc::now(),
+    )
+    .await;
+    match authenticated {
+        Ok(user_id) => Ok(user_id),
+        Err(SessionAuthError::LoginRequired) => {
+            let error = ConsentError::LoginRequired;
+            Err((error.status(), Json(error.body())).into_response())
+        }
+        Err(error @ SessionAuthError::Construct(_)) => {
+            tracing::error!("mcp byok consent: the session principal did not construct: {error}");
+            Err((StatusCode::INTERNAL_SERVER_ERROR, INTERNAL_ERROR).into_response())
+        }
+    }
+}
+
+fn submit_accepted(state: &ConsentState, user_id: &str, form_parts: &FormParts) -> Response {
+    let form = match post_form(form_parts) {
         Ok(form) => form,
         Err(rejection) => {
             return (StatusCode::UNPROCESSABLE_ENTITY, Json(rejection)).into_response();
@@ -116,7 +123,7 @@ async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -
     let Ok(clock) = SystemTime::now().duration_since(UNIX_EPOCH) else {
         return (StatusCode::INTERNAL_SERVER_ERROR, INTERNAL_ERROR).into_response();
     };
-    match authorize_post(&form, &user_id, &state.codes, clock.as_secs_f64()) {
+    match authorize_post(&form, user_id, &state.codes, clock.as_secs_f64()) {
         Ok(Accepted { location, .. }) => {
             (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
         }
@@ -166,15 +173,6 @@ enum FormError {
     UnreadableBody,
     #[error("Too many fields. Maximum number of fields is 1000.")]
     TooManyFields,
-}
-
-impl FormError {
-    const fn detail(self) -> &'static str {
-        match self {
-            Self::UnreadableBody => UNREADABLE_BODY,
-            Self::TooManyFields => TOO_MANY_FIELDS,
-        }
-    }
 }
 
 fn form_content_type(headers: &HeaderMap) -> Option<&str> {
@@ -242,7 +240,7 @@ fn validation_body(missing: &[&'static str]) -> ValidationBody {
 
 #[derive(Debug, Serialize)]
 struct DetailBody {
-    detail: &'static str,
+    detail: String,
 }
 
 #[derive(Debug, Serialize)]

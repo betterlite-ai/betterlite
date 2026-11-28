@@ -87,7 +87,7 @@ fn app(
     authenticator: Option<Arc<dyn KeyAuthenticator>>,
 ) -> Router {
     router_with(Arc::new(ConsentState {
-        codes: Arc::new(codes),
+        codes,
         master_key: master_key.map(SecretString::from),
         authenticator,
     }))
