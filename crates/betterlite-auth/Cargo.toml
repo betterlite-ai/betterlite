@@ -24,6 +24,7 @@ betterlite-routes = { path = "../betterlite-routes" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 deadpool-postgres.workspace = true
+flate2 = "1.1.5"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
 http = "1.5.0"
@@ -32,6 +33,8 @@ ipnet = "2.12.2"
 lru = "0.18.4"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 pcre2 = "0.2.11"
+percent-encoding.workspace = true
+quick-xml.workspace = true
 regex.workspace = true
 regex-syntax = "0.8.11"
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
@@ -40,6 +43,7 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+sha1 = "0.11.0"
 sha2.workspace = true
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
