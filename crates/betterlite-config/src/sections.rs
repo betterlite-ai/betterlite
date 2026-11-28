@@ -100,6 +100,7 @@ pub mod budget_admission_handoff;
 pub mod budget_primitives;
 pub mod budget_reset;
 pub mod budget_windows;
+pub mod bug_report_link;
 pub mod cache_cost_routing;
 pub mod callback_settings;
 pub mod capability_classifier;
@@ -587,7 +588,8 @@ sections! {
     bedrock_services_batch_create, bedrock_services_batch_records, bedrock_services_invoke_agent,
     bedrock_services_s3_access, bedrock_services_s3_signing, bedrock_services_search,
     bedrock_services_vector_stores, bedrock_settings, bedrock_web_identity, billing_metrics,
-    budget_admission_handoff, budget_primitives, budget_reset, budget_windows, cache_cost_routing,
+    budget_admission_handoff, budget_primitives, budget_reset, budget_windows, bug_report_link,
+    cache_cost_routing,
     callback_settings, capability_classifier, capability_forecast, catalog_source, catalog_updates,
     cato_lifecycle, cato_projections, central_auth_checks, chatgpt_headers, chatgpt_token_store,
     cisco_verdict_contracts, classifier_context, classifier_message_text, claude_gateway_oauth,

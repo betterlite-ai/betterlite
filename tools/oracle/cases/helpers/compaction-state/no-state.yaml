@@ -1,0 +1,10 @@
+kind: helper
+name: no-state
+call:
+  b10153:
+    state: absent
+    payload:
+      model: openai/gpt-4o
+      input: hello
+env: {}
+compare: {ignore: []}

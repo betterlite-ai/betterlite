@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::model_routes::ParamValue;
-use crate::rerank::transport::ClientKind;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::controls::control_options::ControlOptions;
@@ -226,9 +226,9 @@ fn bedrock_converse_call_credential_identity_isolation() {
 #[case::default_sync(false, None, 1)]
 #[case::default_async(true, None, 1)]
 #[case::supplied_sync(false, Some(ClientKind::Sync), 0)]
-#[case::supplied_async(true, Some(ClientKind::Async), 0)]
+#[case::supplied_async(true, Some(ClientKind::Asynchronous), 0)]
 #[case::discard_sync(true, Some(ClientKind::Sync), 1)]
-#[case::discard_async(false, Some(ClientKind::Async), 1)]
+#[case::discard_async(false, Some(ClientKind::Asynchronous), 1)]
 fn client_selection(
     #[case] asynchronous: bool,
     #[case] supplied: Option<ClientKind>,

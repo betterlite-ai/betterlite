@@ -242,6 +242,7 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Lookup hashes on the substring sk, whereas cache deletion later hashes only the sk- prefix.
   - key_type is checked through a throwaway dict and does not populate allowed_routes in the patch.
 budget:

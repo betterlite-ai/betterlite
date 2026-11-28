@@ -1,0 +1,10 @@
+kind: helper
+name: auth-route-policy-viewer-read-only
+call:
+  auth_route_policy:
+    function: viewer_access
+    route: /team/info
+    method: GET
+    body: {}
+env: {}
+compare: {ignore: []}

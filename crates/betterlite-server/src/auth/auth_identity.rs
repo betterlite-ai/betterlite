@@ -13,14 +13,14 @@ use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_pricing::PricingStageInput;
-use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::RequestModelStageInput;
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
+use crate::auth::auth_route_policy::{self, RoutePolicyStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 pub(crate) use crate::auth::failures::StageFailure;
-use crate::auth::failures::request_model_failure;
 use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
 use crate::auth::master_key_stage;
@@ -53,6 +53,7 @@ pub enum AuthBackend {
     TeamBudgetAdmission,
     AuthTenantBudgets,
     OrganizationRoutePolicy,
+    AuthRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
     AuthPolicySupport,
@@ -83,6 +84,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
     AuthBackend::ModelGrantIntersection,
+    AuthBackend::AuthRoutePolicy,
     AuthBackend::AuthModelBudgets,
 ];
 
@@ -109,6 +111,7 @@ pub enum StageInput {
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthTenantBudgets(Box<TenantBudgetStageInput>),
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
+    AuthRoutePolicy(Box<RoutePolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
     AuthPolicySupport(Box<AuthPolicySupportStageInput>),
@@ -170,6 +173,7 @@ impl StageInput {
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
             Self::AuthTenantBudgets(_) => AuthBackend::AuthTenantBudgets,
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
+            Self::AuthRoutePolicy(_) => AuthBackend::AuthRoutePolicy,
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
             Self::AuthPolicySupport(_) => AuthBackend::AuthPolicySupport,
@@ -221,23 +225,17 @@ pub(crate) fn dispatch(
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
-        StageInput::AuthRequestModels(stage) => request_model_context(stage),
+        StageInput::AuthRequestModels(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
+        StageInput::AuthRoutePolicy(stage) => auth_route_policy::run_stage(stage),
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
-    }
-}
-
-fn request_model_context(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
-    match resolve(stage) {
-        Ok(_) => Ok(stage.context.clone()),
-        Err(error) => Err(request_model_failure(&error)),
     }
 }
 

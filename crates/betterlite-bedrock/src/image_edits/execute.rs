@@ -1,5 +1,6 @@
 use std::str;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 
 use super::error::ImageEditError;
@@ -8,8 +9,7 @@ use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
 };
 use crate::image_call::transport::{
-    ClientFactory, ClientKind, ImageReply, ImageRequest, ImageTransport as _, SuppliedClient,
-    TransferError,
+    ClientFactory, ImageReply, ImageRequest, ImageTransport as _, TransferError,
 };
 
 // The transport is chosen only after signing, so both paths send the one prepared request.
@@ -28,7 +28,7 @@ where
         body: prepared.signed.body.clone(),
     };
     let sent = match (call.aimage_edit, supplied) {
-        (true, Some(client)) if client.kind == ClientKind::Async => {
+        (true, Some(client)) if client.kind == ClientKind::Asynchronous => {
             client.transport.post(request).await
         }
         (true, _) => factory.async_client(call.timeout).post(request).await,

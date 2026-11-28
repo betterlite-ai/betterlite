@@ -1,0 +1,14 @@
+kind: helper
+name: encrypted-content-block
+call:
+  b10153:
+    state: armed
+    payload:
+      input:
+        - type: message
+          role: user
+          content:
+            - type: encrypted_content
+              encrypted_content: gAAAAABopaque
+env: {}
+compare: {ignore: []}

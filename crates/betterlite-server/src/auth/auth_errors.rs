@@ -186,6 +186,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)
+        | StageFailure::AuthRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
         | StageFailure::AuthPolicySupport(exception)

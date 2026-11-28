@@ -1,0 +1,12 @@
+name: auth-route-policy-non-admin-management-denied
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /not-served
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
