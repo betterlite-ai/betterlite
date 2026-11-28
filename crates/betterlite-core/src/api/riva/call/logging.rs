@@ -36,7 +36,7 @@ pub trait RivaLogger {
     fn record(&mut self, event: RivaEvent) -> Result<(), PrePostError>;
 }
 
-// LogContext belongs to betterlite-logging, so its record_pre helper rides a private trait instead of an inherent impl.
+// LogContext belongs to betterlite-logging, so betterlite-core cannot write an inherent impl for it; record_pre lives on this private trait instead.
 trait RivaPreCallLogging {
     fn record_pre(&mut self, record: RivaPreCall) -> Result<(), PrePostError>;
 }
