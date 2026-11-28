@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use super::{EndpointingMode, PipelineCall, ServiceKind, StreamResponse, helper_error};
 
-const FAKE: &str = r#"import json
+const FAKE: &str = "import json
 
 _state = {}
 _events = []
@@ -139,7 +139,7 @@ def snapshot():
         'chunk_sizes': _chunks,
         'timeout_seconds': _timeout,
     })
-"#;
+";
 
 // the modules each call scripts, so a fake from one call can never leak into the next
 const MANAGED: [&str; 3] = ["riva", "riva.client", "soundfile"];

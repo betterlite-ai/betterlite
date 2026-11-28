@@ -96,13 +96,19 @@ pub(super) fn answer(
     outcome: Result<&TranscriptionReply, &RivaCallError>,
 ) -> Result<Value, Box<HelperError>> {
     match outcome {
-        Ok(reply) => base(probe, logger, Value::Null, Value::Null, hidden_view(reply)),
+        Ok(reply) => base(
+            probe,
+            logger,
+            &Value::Null,
+            &Value::Null,
+            &hidden_view(reply),
+        ),
         Err(error) => base(
             probe,
             logger,
-            json!(error.status_code()),
-            json!(error.to_string()),
-            Value::Null,
+            &json!(error.status_code()),
+            &json!(error.to_string()),
+            &Value::Null,
         ),
     }
 }
@@ -118,9 +124,9 @@ fn hidden_view(reply: &TranscriptionReply) -> Value {
 fn base(
     probe: &Probe,
     logger: &RecordingLogger,
-    status: Value,
-    message: Value,
-    hidden: Value,
+    status: &Value,
+    message: &Value,
+    hidden: &Value,
 ) -> Result<Value, Box<HelperError>> {
     let pre = logger.pre.as_ref().map(pre_view).transpose()?;
     let post = logger.post.as_ref().map(post_view).transpose()?;
