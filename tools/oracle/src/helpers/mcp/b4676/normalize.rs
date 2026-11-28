@@ -78,7 +78,7 @@ fn body_value(body: &TokenBody, view: &Snapshot<'_>) -> Value {
         TokenBody::SessionPair(pair) => session_pair_value(pair, view),
         TokenBody::ProxyCredential(credential) => proxy_value(credential, view),
         TokenBody::Revoked(_revoked) => json!({}),
-        TokenBody::Introspection(body) => introspection_value(body, view.clients),
+        TokenBody::Introspection(introspection) => introspection_value(introspection, view.clients),
     }
 }
 
@@ -137,11 +137,8 @@ fn claims(token: &str, kind: SessionTokenKind, view: &Snapshot<'_>) -> Value {
 }
 
 fn client_label(client_id: &str, clients: &[String]) -> Value {
-    match clients
+    clients
         .iter()
         .position(|sealed| sealed.as_str() == client_id)
-    {
-        Some(index) => json!({"sealed_client": index}),
-        None => json!(client_id),
-    }
+        .map_or_else(|| json!(client_id), |index| json!({"sealed_client": index}))
 }
