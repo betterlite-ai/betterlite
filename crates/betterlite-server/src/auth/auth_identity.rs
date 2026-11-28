@@ -155,15 +155,15 @@ impl StageInput {
         Ok(Self::ModelGrantIntersection(stage))
     }
 
-    // the budget stages read their limits before dispatch; the closing match names every variant so a new stage cannot pass through
+    #[rustfmt::skip] // the budget stages read their limits before dispatch; the closing match names every variant so a new stage cannot pass through
     pub(crate) async fn prefetch_budget(self) -> Result<Self, StageFailure> {
+        if let Self::AuthTagBudgets(stage) = self { return auth_tag_budgets::prefetched(stage).await; }
+        if let Self::AuthKeyBudgets(stage) = self { return auth_key_budgets::prefetched(stage).await; }
+        if let Self::AuthModelBudgets(stage) = self { return auth_model_budgets::prefetched(stage).await; }
+        if let Self::TeamBudgetAdmission(stage) = self { return team_budget_admission::prefetched(stage).await; }
+        if let Self::AuthTenantBudgets(stage) = self { return auth_tenant_budgets::prefetched(stage).await; }
         match self {
-            Self::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
-            Self::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
-            Self::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
-            Self::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-            Self::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
-            #[rustfmt::skip]
+            budget @ (Self::AuthTagBudgets(_) | Self::AuthKeyBudgets(_) | Self::AuthModelBudgets(_) | Self::TeamBudgetAdmission(_) | Self::AuthTenantBudgets(_)) => Ok(budget),
             other @ (Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) | Self::JwtKeys(_) | Self::MasterKey(_)
             | Self::TrustedNetwork(_) | Self::AuthRequestPolicy(_) | Self::RequestBodySafety(_) | Self::AuthVirtualKeyRoutes(_)
             | Self::AuthRequestModels(_) | Self::AuthModelPatterns(_) | Self::AuthModelGrants(_) | Self::EntityModelAccess(_)
