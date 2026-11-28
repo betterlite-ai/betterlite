@@ -1,10 +1,19 @@
 import importlib.metadata
-
-import betterlite
+from importlib import import_module
+from types import ModuleType
 
 import smoke_wheel
 
 DISTRIBUTION = "betterlite"
+
+
+class RecordingImport:
+    def __init__(self) -> None:
+        self.names: list[str] = []
+
+    def __call__(self, name: str, package: str | None = None) -> ModuleType:
+        self.names.append(name)
+        return import_module(name, package)
 
 
 def distribution_modules() -> set[str]:
@@ -28,5 +37,11 @@ def test_module_list() -> None:
 
 
 def test_main_passes() -> None:
-    installed_version = betterlite.__version__
-    assert smoke_wheel.main([installed_version]) == 0
+    recorder = RecordingImport()
+    original = smoke_wheel.import_module
+    smoke_wheel.import_module = recorder
+    installed_version = importlib.metadata.version(DISTRIBUTION)
+    code = smoke_wheel.main([installed_version])
+    smoke_wheel.import_module = original
+    assert code == 0
+    assert set(smoke_wheel.installed_modules()) <= set(recorder.names)
