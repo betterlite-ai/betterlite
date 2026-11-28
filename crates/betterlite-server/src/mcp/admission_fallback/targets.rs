@@ -10,16 +10,16 @@ use betterlite_db::mcp_stored_contracts::MCPAuth;
 
 // The route is the request path with the root path already stripped, and header_servers is the x-mcp-servers list when the request sent one.
 #[derive(Clone, Copy)]
-pub struct TargetQuery<'a> {
-    pub registry: &'a ServerRegistry,
-    pub route: &'a str,
-    pub header_servers: Option<&'a [String]>,
-    pub client_ip: Option<&'a str>,
+pub struct TargetQuery<'request> {
+    pub registry: &'request ServerRegistry,
+    pub route: &'request str,
+    pub header_servers: Option<&'request [String]>,
+    pub client_ip: Option<&'request str>,
 }
 
-pub struct BridgeTarget<'a> {
+pub struct BridgeTarget<'request> {
     pub requested_name: String,
-    pub server: &'a MCPServer,
+    pub server: &'request MCPServer,
 }
 
 #[must_use]
@@ -32,7 +32,9 @@ pub fn is_true_passthrough(query: &TargetQuery<'_>) -> bool {
 }
 
 #[must_use]
-pub fn single_bridge_target<'a>(query: &TargetQuery<'a>) -> Option<BridgeTarget<'a>> {
+pub fn single_bridge_target<'request>(
+    query: &TargetQuery<'request>,
+) -> Option<BridgeTarget<'request>> {
     let target_names = resolve_target_server_names(query.route, query.header_servers);
     let [requested_name] = target_names.as_slice() else {
         return None;

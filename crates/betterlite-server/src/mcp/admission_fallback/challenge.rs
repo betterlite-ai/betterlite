@@ -25,20 +25,20 @@ pub type ChallengeResponse = McpHttpError;
 
 // What the URL builders need from the request; RequestOrigin carries the trusted-proxy decision.
 #[derive(Clone, Copy)]
-pub struct ChallengeContext<'a> {
-    pub proxy_base_url: Option<&'a str>,
-    pub origin: RequestOrigin<'a>,
-    pub server_root_path: &'a str,
-    pub original_path: Option<&'a str>,
-    pub path: &'a str,
-    pub app_root_path: Option<&'a str>,
-    pub root_path: Option<&'a str>,
+pub struct ChallengeContext<'request> {
+    pub proxy_base_url: Option<&'request str>,
+    pub origin: RequestOrigin<'request>,
+    pub server_root_path: &'request str,
+    pub original_path: Option<&'request str>,
+    pub path: &'request str,
+    pub app_root_path: Option<&'request str>,
+    pub root_path: Option<&'request str>,
 }
 
 #[derive(Clone, Copy)]
-pub struct McpAuthHeaders<'a> {
-    pub mcp_auth_header: Option<&'a str>,
-    pub server_headers: &'a BTreeMap<String, BTreeMap<String, String>>,
+pub struct McpAuthHeaders<'request> {
+    pub mcp_auth_header: Option<&'request str>,
+    pub server_headers: &'request BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Serialize)]

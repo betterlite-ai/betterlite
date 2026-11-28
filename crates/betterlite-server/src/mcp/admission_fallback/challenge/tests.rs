@@ -8,8 +8,8 @@ use betterlite_mcp::server_record::MCPServer;
 use serde_json::json;
 
 use super::{
-    ChallengeContext, McpAuthHeaders, bridge_invalid_token_challenge, challenge_target,
-    gateway_dcr_challenge, has_client_supplied_mcp_auth, is_dcr_challenge_scope,
+    ChallengeContext, GatewayChallengeDetail, McpAuthHeaders, bridge_invalid_token_challenge,
+    challenge_target, gateway_dcr_challenge, has_client_supplied_mcp_auth, is_dcr_challenge_scope,
 };
 use crate::mcp::admission_fallback::targets::TargetQuery;
 
@@ -36,7 +36,10 @@ fn registry(records: &[&str]) -> ServerRegistry {
     )
 }
 
-fn query<'a>(registry: &'a ServerRegistry, route: &'a str) -> TargetQuery<'a> {
+fn query<'request>(
+    registry: &'request ServerRegistry,
+    route: &'request str,
+) -> TargetQuery<'request> {
     TargetQuery {
         registry,
         route,
@@ -45,7 +48,7 @@ fn query<'a>(registry: &'a ServerRegistry, route: &'a str) -> TargetQuery<'a> {
     }
 }
 
-fn context<'a>(base_url: &'a str, path: &'a str) -> ChallengeContext<'a> {
+fn context<'request>(base_url: &'request str, path: &'request str) -> ChallengeContext<'request> {
     ChallengeContext {
         proxy_base_url: None,
         origin: RequestOrigin {
@@ -63,10 +66,10 @@ fn context<'a>(base_url: &'a str, path: &'a str) -> ChallengeContext<'a> {
     }
 }
 
-fn authenticate<'a>(
-    mcp_auth_header: Option<&'a str>,
-    server_headers: &'a BTreeMap<String, BTreeMap<String, String>>,
-) -> McpAuthHeaders<'a> {
+fn authenticate<'request>(
+    mcp_auth_header: Option<&'request str>,
+    server_headers: &'request BTreeMap<String, BTreeMap<String, String>>,
+) -> McpAuthHeaders<'request> {
     McpAuthHeaders {
         mcp_auth_header,
         server_headers,
@@ -169,10 +172,11 @@ fn gateway_challenge_aggregate_url() {
     assert_eq!(response.status, 401);
     assert_eq!(
         response.detail,
-        json!({
-            "error": "authentication_required",
-            "message": "Authenticate with the gateway to use the MCP endpoint.",
+        serde_json::to_value(GatewayChallengeDetail {
+            error: "authentication_required",
+            message: "Authenticate with the gateway to use the MCP endpoint.",
         })
+        .unwrap()
     );
     assert_eq!(
         response.headers,

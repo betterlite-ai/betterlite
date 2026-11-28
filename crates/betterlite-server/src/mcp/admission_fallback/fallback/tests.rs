@@ -12,8 +12,7 @@ use super::{FallbackError, FallbackFlags, admission_failure_fallback};
 use crate::mcp::admission_fallback::challenge::{ChallengeContext, McpAuthHeaders};
 use crate::mcp::admission_fallback::targets::TargetQuery;
 
-const PASSTHROUGH: &str =
-    r#"{"server_id":"srv-pt","name":"pt","transport":"http","auth_type":"true_passthrough"}"#;
+const PASSTHROUGH: &str = r#"{"server_id":"srv-pt","name":"pt","transport":"http","oauth_passthrough":true,"extra_headers":["authorization"]}"#;
 const PLAIN: &str = r#"{"server_id":"srv-plain","name":"plain","transport":"http","auth_type":"bearer_token","extra_headers":["authorization"]}"#;
 const LEGACY_DELEGATE: &str = r#"{"server_id":"srv-legacy","name":"legacy","transport":"http","auth_type":"oauth2","delegate_auth_to_upstream":true}"#;
 
@@ -34,11 +33,11 @@ fn registry(records: &[&str]) -> ServerRegistry {
     )
 }
 
-fn query<'a>(
-    registry: &'a ServerRegistry,
-    route: &'a str,
-    header_servers: Option<&'a [String]>,
-) -> TargetQuery<'a> {
+fn query<'request>(
+    registry: &'request ServerRegistry,
+    route: &'request str,
+    header_servers: Option<&'request [String]>,
+) -> TargetQuery<'request> {
     TargetQuery {
         registry,
         route,
@@ -47,7 +46,7 @@ fn query<'a>(
     }
 }
 
-fn context<'a>(base_url: &'a str, path: &'a str) -> ChallengeContext<'a> {
+fn context<'request>(base_url: &'request str, path: &'request str) -> ChallengeContext<'request> {
     ChallengeContext {
         proxy_base_url: None,
         origin: RequestOrigin {
@@ -65,10 +64,10 @@ fn context<'a>(base_url: &'a str, path: &'a str) -> ChallengeContext<'a> {
     }
 }
 
-fn authenticate<'a>(
-    mcp_auth_header: Option<&'a str>,
-    server_headers: &'a BTreeMap<String, BTreeMap<String, String>>,
-) -> McpAuthHeaders<'a> {
+fn authenticate<'request>(
+    mcp_auth_header: Option<&'request str>,
+    server_headers: &'request BTreeMap<String, BTreeMap<String, String>>,
+) -> McpAuthHeaders<'request> {
     McpAuthHeaders {
         mcp_auth_header,
         server_headers,

@@ -42,11 +42,11 @@ fn registry(records: &[&str]) -> ServerRegistry {
     )
 }
 
-fn query<'a>(
-    registry: &'a ServerRegistry,
-    route: &'a str,
-    header_servers: Option<&'a [String]>,
-) -> TargetQuery<'a> {
+fn query<'request>(
+    registry: &'request ServerRegistry,
+    route: &'request str,
+    header_servers: Option<&'request [String]>,
+) -> TargetQuery<'request> {
     TargetQuery {
         registry,
         route,
