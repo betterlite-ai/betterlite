@@ -4,7 +4,7 @@ use rstest::rstest;
 use crate::regional_host_dispatch::error::DispatchError;
 
 use super::embedding::call_for;
-use super::support::{EmbeddingFixture, secret, secret_text};
+use super::support::{EmbeddingFixture, headers, secret, secret_text};
 
 const DASHSCOPE_MESSAGE: &str = "Missing API key for DashScope. Set DASHSCOPE_API_KEY environment variable or pass api_key parameter.";
 
@@ -44,4 +44,23 @@ fn dashscope_without_a_key_names_only_dashscope() {
             message: DASHSCOPE_MESSAGE
         })
     ));
+}
+
+// the family arms read extra_headers rather than the request headers, and carry no litellm_params
+#[test]
+fn dashscope_passes_extra_headers_and_an_empty_litellm_params() {
+    let mut fixture = EmbeddingFixture::new();
+    fixture.api_key = Some(secret("sk-request"));
+    fixture.extra_headers = Some(headers(&[("x-scope", "tenant")]));
+    let call = call_for(ProviderId::Dashscope, &fixture).expect("the arm answers");
+    assert_eq!(call.headers, Some(headers(&[("x-scope", "tenant")])));
+    assert!(call.litellm_params.is_empty());
+}
+
+#[test]
+fn dashscope_without_extra_headers_passes_an_empty_map() {
+    let mut fixture = EmbeddingFixture::new();
+    fixture.api_key = Some(secret("sk-request"));
+    let call = call_for(ProviderId::Dashscope, &fixture).expect("the arm answers");
+    assert_eq!(call.headers, Some(headers(&[])));
 }
