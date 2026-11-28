@@ -3,7 +3,7 @@ use std::error::Error;
 use betterlite_anthropic::option_primitives::context_management::ContextManagementError;
 use thiserror::Error;
 
-// B2201 refuses a compact threshold Python's int() cannot convert either
+// B2201 refuses a compact threshold whose int() truncation does not fit betterlite's bounded i64 JSON number
 #[derive(Debug, Error)]
 pub enum SpecError {
     #[error(transparent)]
