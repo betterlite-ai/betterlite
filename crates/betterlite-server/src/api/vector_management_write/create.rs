@@ -1,11 +1,12 @@
 use betterlite_auth::virtual_key_routes::caller::RouteCaller;
 use betterlite_logging::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
+use betterlite_models::call_helpers::generic_params::normalize_generic_params;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
 use super::error::ManagementWriteError;
-use super::params::generic_params_dump;
+use super::params::ParamsError;
 use super::response::{VectorStoreWriteResponse, decode_json};
 use super::rows::VectorStoreWrites;
 use super::state::VectorManagementWriteState;
@@ -111,6 +112,6 @@ pub(super) fn params_text(field: Option<&JsonObject>) -> Result<String, Manageme
         return safe_dumps(&empty, DEFAULT_MAX_RECURSE_DEPTH, None)
             .map_err(ManagementWriteError::PrivateJson);
     };
-    let dumped = generic_params_dump(params)?;
+    let dumped = normalize_generic_params(params).map_err(ParamsError::from)?;
     safe_dumps(&dumped, DEFAULT_MAX_RECURSE_DEPTH, None).map_err(ManagementWriteError::PrivateJson)
 }
