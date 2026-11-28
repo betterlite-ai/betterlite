@@ -61,7 +61,7 @@ fn unknown_agent() {
 }
 
 #[test]
-fn agent_managed_is_forbidden() {
+fn agent_managed() {
     let fields = agent_settings();
     let document = token_with("a2");
     let jwt = claims(document, &fields);
