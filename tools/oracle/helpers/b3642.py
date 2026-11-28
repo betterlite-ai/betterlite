@@ -78,11 +78,8 @@ INPUT: Final = TypeAdapter(Input)
 
 def branch_for(url_route: str) -> str | None:
     handler_class = handler_module.VertexPassthroughLoggingHandler
-    probe_class = type(
-        "ProbePassthroughHandler",
-        (handler_class,),
-        {"interactions_passthrough_handler": Leaf("interactions")},
-    )
+    members = {"interactions_passthrough_handler": Leaf("interactions")}
+    probe_class = type("ProbePassthroughHandler", (handler_class,), members)
     object.__setattr__(handler_module, "VertexPassthroughLoggingHandler", probe_class)
     handler = HANDLER.validate_python(handler_class)
     object.__setattr__(handler_module, "VertexAIVideoConfig", Leaf("video"))
