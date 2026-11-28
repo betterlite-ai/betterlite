@@ -13,11 +13,12 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::saml_provider::cache::SamlCache;
 use betterlite_auth::saml_provider::error::{
-    NO_USABLE_IDP_DETAIL, UNAVAILABLE_DETAIL, UNCONFIGURED_DETAIL,
+    NO_USABLE_IDP_DETAIL, SamlProviderError, UNAVAILABLE_DETAIL, UNCONFIGURED_DETAIL,
 };
 use betterlite_auth::saml_provider::fetch::{MetadataFetchError, MetadataFetcher};
 use betterlite_auth::saml_provider::idp_metadata::IdpSettings;
 use betterlite_auth::saml_provider::provider::SamlProvider;
+use betterlite_auth::saml_provider::sp_metadata::SpMetadataErrors;
 use betterlite_auth::saml_provider::verify::UnavailableSamlVerifier;
 use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
 use betterlite_config::proxy::ProxyPolicy;
@@ -30,7 +31,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tower::ServiceExt as _;
 
-use super::{ProxiedMetadataFetcher, routes};
+use super::{ProxiedMetadataFetcher, provider_error_response, routes};
 use crate::custom_url::CustomUrls;
 use crate::middleware::request_root_paths::RequestRootPath;
 
@@ -500,6 +501,19 @@ async fn metadata_without_a_usable_idp_answers_502() {
     let (status, _headers, body) = call(router, get("/sso/saml/metadata")).await;
     assert_eq!(status, StatusCode::BAD_GATEWAY);
     assert_eq!(text_of(&body), detail_body(NO_USABLE_IDP_DETAIL));
+}
+
+#[tokio::test]
+async fn invalid_sp_metadata_answers_the_metadata_detail() {
+    let response = provider_error_response(&SamlProviderError::InvalidMetadata(SpMetadataErrors {
+        codes: vec!["expired_xml"],
+    }));
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        text_of(&body),
+        detail_body("Invalid SP metadata: expired_xml")
+    );
 }
 
 #[tokio::test]
