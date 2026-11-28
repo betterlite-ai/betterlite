@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use pyo3::exceptions::{PyAttributeError, PyTypeError, PyValueError};
 use pyo3::types::{PyAnyMethods as _, PyBytes, PyDict, PyDictMethods as _, PyList};
-use pyo3::{Bound, PyAny, Python};
+use pyo3::{Bound, PyAny, PyResult, Python};
 
 use super::error::RivaCallError;
 use super::sdk::{Prepared, provider_call, provider_failure};
@@ -23,6 +23,9 @@ const GENERATOR: &str = "streaming_response_generator";
 const AUDIO_CHUNKS: &str = "audio_chunks";
 const STREAMING_CONFIG: &str = "streaming_config";
 const TIMEOUT: &str = "timeout";
+
+// One protobuf field read as the source's getattr with a default does
+type Found<'py> = Result<Option<Bound<'py, PyAny>>, RivaCallError>;
 
 // Everything the source's try block wraps: the service, the generator, its deadline and the stream
 pub fn stream_attached(
@@ -112,7 +115,7 @@ fn collect_response(
         return Ok(());
     };
     for result in items(py, &results)? {
-        if !truthy(py, optional_attr(py, &result, IS_FINAL)?)? {
+        if present(py, &result, IS_FINAL)?.is_none() {
             continue;
         }
         let Some(alternatives) = present(py, &result, ALTERNATIVES)? else {
@@ -126,13 +129,9 @@ fn collect_response(
     Ok(())
 }
 
-// getattr(object, name, None): only a missing attribute yields None, as in Python
-fn optional_attr<'py>(
-    py: Python<'py>,
-    object: &Bound<'py, PyAny>,
-    name: &str,
-) -> Result<Option<Bound<'py, PyAny>>, RivaCallError> {
-    match object.getattr(name) {
+// getattr(object, name, None): an absent attribute reads as None, any other error is the provider's
+fn skip_missing<'py>(py: Python<'py>, result: PyResult<Bound<'py, PyAny>>) -> Found<'py> {
+    match result {
         Ok(value) => Ok(Some(value)),
         Err(error) if error.is_instance_of::<PyAttributeError>(py) => Ok(None),
         Err(error) => Err(provider_failure(py, &error)),
@@ -140,25 +139,12 @@ fn optional_attr<'py>(
 }
 
 // getattr(object, name, None) or []: a missing, None or falsey value yields no items
-fn present<'py>(
-    py: Python<'py>,
-    object: &Bound<'py, PyAny>,
-    name: &str,
-) -> Result<Option<Bound<'py, PyAny>>, RivaCallError> {
-    let Some(value) = optional_attr(py, object, name)? else {
+fn present<'py>(py: Python<'py>, object: &Bound<'py, PyAny>, name: &str) -> Found<'py> {
+    let Some(value) = skip_missing(py, object.getattr(name))? else {
         return Ok(None);
     };
-    if !provider_call(py, value.is_truthy())? {
-        return Ok(None);
-    }
-    Ok(Some(value))
-}
-
-fn truthy(py: Python<'_>, value: Option<Bound<'_, PyAny>>) -> Result<bool, RivaCallError> {
-    match value {
-        Some(value) => provider_call(py, value.is_truthy()),
-        None => Ok(false),
-    }
+    let truthy = provider_call(py, value.is_truthy())?;
+    Ok(truthy.then_some(value))
 }
 
 fn items<'py>(
@@ -174,13 +160,10 @@ fn items<'py>(
 }
 
 fn transcript(py: Python<'_>, top: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
-    let Some(value) = optional_attr(py, top, TRANSCRIPT)? else {
-        return Ok(String::new());
-    };
-    if !provider_call(py, value.is_truthy())? {
-        return Ok(String::new());
+    match present(py, top, TRANSCRIPT)? {
+        Some(value) => text_value(&value),
+        None => Ok(String::new()),
     }
-    text_value(&value)
 }
 
 fn text_value(value: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
@@ -215,7 +198,7 @@ fn word_timing(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<WordTiming, Ri
 }
 
 fn word_text(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
-    match optional_attr(py, word, WORD)? {
+    match skip_missing(py, word.getattr(WORD))? {
         Some(value) => text_value(&value),
         None => Ok(String::new()),
     }
@@ -223,13 +206,10 @@ fn word_text(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<String, RivaCall
 
 // int(getattr(word, name, 0) or 0): a missing or falsey timing is zero, and int() truncates
 fn timing(py: Python<'_>, word: &Bound<'_, PyAny>, name: &str) -> Result<i64, RivaCallError> {
-    let Some(value) = optional_attr(py, word, name)? else {
-        return Ok(0);
-    };
-    if !provider_call(py, value.is_truthy())? {
-        return Ok(0);
+    match present(py, word, name)? {
+        Some(value) => integer_value(py, &value),
+        None => Ok(0),
     }
-    integer_value(py, &value)
 }
 
 fn integer_value(py: Python<'_>, value: &Bound<'_, PyAny>) -> Result<i64, RivaCallError> {

@@ -1,18 +1,17 @@
 mod config;
+mod grpc;
 
-use betterlite_models::decisions::Json;
 use betterlite_pyhost::call_error::PythonError;
 use pyo3::exceptions::{PyAttributeError, PyImportError, PyTypeError};
-use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyList, PyStringMethods as _};
+use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyList};
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use self::config::{apply_endpointing, recognition_keywords};
+use self::grpc::observe;
 use super::error::{INSTALL_HINT, RivaCallError};
 use super::options::Resolved;
-use crate::api::riva::records::grpc_status::{
-    CodeAttribute, DetailsAttribute, GrpcErrorObservation, grpc_error_to_exception,
-};
+use crate::api::riva::records::grpc_status::grpc_error_to_exception;
 use crate::api::riva::records::recognition::RecognitionOptions;
 
 pub const AUTH: &str = "riva.client.Auth";
@@ -22,6 +21,7 @@ pub const STREAMING: &str = "riva.client.StreamingRecognitionConfig";
 const CLIENT_MODULE: &str = "riva.client";
 const PROTO_MODULE: &str = "riva.client.proto.riva_asr_pb2";
 const RECOGNITION_ATTR: &str = "RecognitionConfig";
+const STREAMING_ATTR: &str = "StreamingRecognitionConfig";
 const FUNCTION_ID_FIELD: &str = "function-id";
 const AUTHORIZATION_FIELD: &str = "authorization";
 const ENCODING_FIELD: &str = "encoding";
@@ -68,8 +68,7 @@ pub fn prepare_attached(
         function_id: resolved.function_id.as_deref(),
     };
     let auth = sdk.auth(py, &spec)?.unbind();
-    let recognition = sdk.recognition_config(py, &resolved.request.recognition_config)?;
-    let streaming = sdk.streaming_config(py, &recognition)?;
+    let (recognition, streaming) = sdk.configs(py, &resolved.request.recognition_config)?;
     Ok(Prepared {
         sdk,
         auth,
@@ -142,38 +141,29 @@ impl RivaSdk {
         }
     }
 
-    pub fn recognition_config(
+    // The recognition config first, then the streaming wrapper that points the service at it
+    pub fn configs(
         &self,
         py: Python<'_>,
         options: &RecognitionOptions,
-    ) -> Result<Py<PyAny>, RivaCallError> {
+    ) -> Result<(Py<PyAny>, Py<PyAny>), RivaCallError> {
         let module = self.asr.bind(py);
         let keywords = recognition_keywords(py, module, options)?;
-        let factory = config_call(py, RECOGNITION, module.getattr(RECOGNITION_ATTR))?;
-        let config = config_call(py, RECOGNITION, factory.call((), Some(&keywords)))?;
-        apply_endpointing(py, module, &config, options)?;
-        Ok(config.unbind())
-    }
-
-    pub fn streaming_config(
-        &self,
-        py: Python<'_>,
-        recognition: &Py<PyAny>,
-    ) -> Result<Py<PyAny>, RivaCallError> {
-        let factory = config_call(
-            py,
-            STREAMING,
-            self.asr.bind(py).getattr("StreamingRecognitionConfig"),
-        )?;
-        let keywords = PyDict::new(py);
+        let recognition = construct(py, module, RECOGNITION, RECOGNITION_ATTR, &keywords)?;
+        apply_endpointing(py, module, &recognition, options)?;
+        let streaming_keywords = PyDict::new(py);
         config_call(
             py,
             STREAMING,
-            keywords.set_item("config", recognition.bind(py)),
+            streaming_keywords.set_item("config", &recognition),
         )?;
-        config_call(py, STREAMING, keywords.set_item("interim_results", false))?;
-        let config = config_call(py, STREAMING, factory.call((), Some(&keywords)))?;
-        Ok(config.unbind())
+        config_call(
+            py,
+            STREAMING,
+            streaming_keywords.set_item("interim_results", false),
+        )?;
+        let streaming = construct(py, module, STREAMING, STREAMING_ATTR, &streaming_keywords)?;
+        Ok((recognition.unbind(), streaming.unbind()))
     }
 
     // From here on a failure belongs to the SDK call, so it is observed and mapped as the source does
@@ -192,6 +182,18 @@ impl RivaSdk {
             .map_err(|error| provider_failure(py, &error))?;
         Ok(service.unbind())
     }
+}
+
+// Both config constructors take keywords on the class the SDK exposes through its module
+fn construct<'py>(
+    py: Python<'py>,
+    module: &Bound<'py, PyAny>,
+    operation: &'static str,
+    class: &str,
+    keywords: &Bound<'py, PyDict>,
+) -> Result<Bound<'py, PyAny>, RivaCallError> {
+    let factory = config_call(py, operation, module.getattr(class))?;
+    config_call(py, operation, factory.call((), Some(keywords)))
 }
 
 fn metadata(spec: &AuthSpec<'_>) -> Vec<(&'static str, String)> {
@@ -236,57 +238,4 @@ pub(super) fn provider_failure(py: Python<'_>, error: &PyErr) -> RivaCallError {
     let observation = observe(py, error);
     let exception = grpc_error_to_exception(&observation);
     RivaCallError::Provider(exception)
-}
-
-fn observe(py: Python<'_>, error: &PyErr) -> GrpcErrorObservation {
-    let code = code_attribute(py, error);
-    let details = details_attribute(py, error);
-    let text = error.value(py).str().map_or_else(
-        |_text| String::new(),
-        |text| text.to_string_lossy().into_owned(),
-    );
-    GrpcErrorObservation {
-        code,
-        details,
-        text,
-    }
-}
-
-fn code_attribute(py: Python<'_>, error: &PyErr) -> CodeAttribute {
-    let Ok(attribute) = error.value(py).getattr("code") else {
-        return CodeAttribute::Missing;
-    };
-    if !attribute.is_callable() {
-        return CodeAttribute::NotCallable;
-    }
-    let Ok(code) = attribute.call0() else {
-        return CodeAttribute::Raises;
-    };
-    match code
-        .getattr("name")
-        .and_then(|name| name.extract::<String>())
-    {
-        Ok(name) => CodeAttribute::Returns {
-            name: Json::Text(name),
-        },
-        Err(_error) => CodeAttribute::Returns { name: Json::Null },
-    }
-}
-
-fn details_attribute(py: Python<'_>, error: &PyErr) -> DetailsAttribute {
-    let Ok(attribute) = error.value(py).getattr("details") else {
-        return DetailsAttribute::Missing;
-    };
-    if !attribute.is_callable() {
-        return DetailsAttribute::NotCallable;
-    }
-    let Ok(details) = attribute.call0() else {
-        return DetailsAttribute::Raises;
-    };
-    match details.extract::<String>() {
-        Ok(text) => DetailsAttribute::Returns {
-            value: Json::Text(text),
-        },
-        Err(_error) => DetailsAttribute::Returns { value: Json::Null },
-    }
 }
