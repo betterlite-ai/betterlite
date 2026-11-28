@@ -68,7 +68,7 @@ checks:
     run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_class.py -k exports
   - id: python-lint
     why: Type drift against the mixins and stubs.
-    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
 oracle_cases: []
 deviations:
   - what: A constructor argument the native router does not read yet (for example `redis_host`, `plugins` or `fallback_access_check`) raises `ValueError` naming it when set to a non-default value.

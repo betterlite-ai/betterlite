@@ -55,7 +55,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^rag_calls::convert::tests::(request_|error_)/)'
   - id: python-lint
     why: Strict typing has to hold for these calls.
-    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
 oracle_cases: []
 deviations:
 - what: The two class getters return a provider name and not a Python class.

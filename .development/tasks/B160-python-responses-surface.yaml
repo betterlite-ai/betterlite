@@ -44,7 +44,7 @@ checks:
     run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_surface.py -k imports
   - id: python-lint
     why: The test file must pass the same gates as the parts.
-    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
 oracle_cases: []
 deviations: []
 out_of_scope:

@@ -93,7 +93,7 @@ checks:
     run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_catalog.py -k select
   - id: python-lint
     why: Type drift against the mixins, the stubs and B8584's models.
-    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
 oracle_cases: []
 deviations:
   - what: "`Router.set_custom_routing_strategy` raises `NotImplementedError` instead of installing the strategy."

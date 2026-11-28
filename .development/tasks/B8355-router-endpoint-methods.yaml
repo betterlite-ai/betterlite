@@ -52,7 +52,7 @@ checks:
     run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_endpoints.py -k calls
   - id: python-lint
     why: Stubs that drift from the native names break typed callers.
-    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
 oracle_cases: []
 deviations:
   - what: A file argument crosses into Rust as base64 bytes, so an open file object is read in full before the call.
