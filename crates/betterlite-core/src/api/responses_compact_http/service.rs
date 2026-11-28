@@ -57,7 +57,7 @@ pub trait CompactTransport: Send + Sync {
 }
 
 pub trait ClientSource: Send + Sync {
-    type Client: CompactTransport;
+    type Client;
 
     fn client(
         &self,
@@ -221,7 +221,7 @@ pub async fn send<C, S>(
 ) -> Result<ResponsesReply, CompactError>
 where
     C: CompactConfig,
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
 {
     let PreparedCompact {
         config,

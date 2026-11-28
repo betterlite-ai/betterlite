@@ -10,9 +10,10 @@ use indexmap::IndexMap;
 use crate::api::responses_read_http::config::{ReadConfig, ReadParams};
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
-    ClientKind, ClientSource, InputItemsCall, LogContext, ReadCall, ReadDeps, ReadOutcome,
-    ReadTarget, RetrieveCall, prepare, send,
+    ClientKind, InputItemsCall, LogContext, ReadCall, ReadDeps, ReadOutcome, ReadTarget,
+    ReadTransport, RetrieveCall, prepare, send,
 };
+use crate::api::vector_store_http_write::service::ClientSource;
 
 // the chosen config tag travels beside the B2416 arguments, so the selection is visible without a socket
 pub struct ReadRequest<'call, 'state, 'env> {
@@ -43,7 +44,7 @@ pub struct HttpReadExecutor<Config, Source> {
 impl<Config, Source> ResponsesReadExecutor for HttpReadExecutor<Config, Source>
 where
     Config: ReadConfig,
-    Source: ClientSource,
+    Source: ClientSource<Client: ReadTransport>,
 {
     async fn read(&self, request: ReadRequest<'_, '_, '_>) -> Result<ReadOutcome, ReadError> {
         let target = ReadTarget {

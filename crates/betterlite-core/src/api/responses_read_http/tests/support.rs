@@ -40,10 +40,11 @@ use crate::api::responses_read_http::config::{
 };
 use crate::api::responses_read_http::error::ReadError;
 use crate::api::responses_read_http::service::{
-    ClientKind, ClientSource, InputItemsCall, LogContext, PreparedRead, ReadCall, ReadDeps,
-    ReadRequest, ReadTransport, RetrieveCall, prepare,
+    ClientKind, InputItemsCall, LogContext, PreparedRead, ReadCall, ReadDeps, ReadRequest,
+    ReadTransport, RetrieveCall, prepare,
 };
 use crate::api::vector_store_http_write::error::ClientError;
+use crate::api::vector_store_http_write::service::ClientSource;
 
 pub(crate) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the expected JSON parses")

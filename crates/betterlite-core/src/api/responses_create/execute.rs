@@ -7,7 +7,8 @@ use super::native::{NativeCall, bridge, native};
 use super::preparation::{self, Prepared, Resolved};
 use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
-use crate::api::responses_create_http::service::{ClientSource, LogContext};
+use crate::api::responses_compact_http::service::ClientSource;
+use crate::api::responses_create_http::service::{CreateTransport, LogContext};
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
 use crate::api::responses_json::{decision_json, json_value};
 use crate::api::responses_parameters::requested::requested_optional_params;
@@ -32,7 +33,7 @@ pub async fn create<S, F, D, E, Context>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<Created<Context>, CreateError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     F: CreateConfigFactory,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,
