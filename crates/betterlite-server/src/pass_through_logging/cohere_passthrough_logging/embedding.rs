@@ -4,7 +4,7 @@ use betterlite_core::openai_pricing::CompletionCost;
 use betterlite_core::openai_pricing::embedding_cost::embedding_cost as priced_embedding_cost;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+    DebugSettings, GlobalFlags, PrePostEnv, TracingSink,
 };
 use betterlite_logging::logging_pre_post::post_call::{PostCall as LoggedPostCall, post_call};
 use betterlite_logging::logging_privacy::request::Decision;
@@ -153,21 +153,6 @@ fn embedding_input_texts(input: &[Json]) -> Result<Vec<String>, PassthroughLoggi
         }
     }
     Ok(texts)
-}
-
-// LiteLLM's debug logging writes the record and the client never sees it.
-struct TracingSink;
-
-impl LogSink for TracingSink {
-    #[cfg_attr(test, mutants::skip)]
-    fn emit(&self, record: LogRecord) {
-        tracing::debug!(
-            level = ?record.level,
-            fields = ?record.fields,
-            "{}",
-            record.message
-        );
-    }
 }
 
 #[derive(Default)]
