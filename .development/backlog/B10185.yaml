@@ -1,0 +1,13 @@
+id: B10185
+milestone: R2 bug fixes
+title: One owned success handler, built once at server start
+status: todo
+depends_on: [B250, B252, B190, B012, B4301, B3496, B3608, B8466]
+file: tasks/B10185-owned-success-handler.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,4 +1,5 @@
 mod cold_storage;
+pub mod failure;
 mod monitor;
 mod partition_switch;
 mod queue;

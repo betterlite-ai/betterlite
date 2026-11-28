@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-s3-listing-next-request-seed
+call:
+  bedrock_services_s3_listing:
+    operation: next_request
+    next:
+      - status: 200
+        body: '<ListBucketResult><NextContinuationToken>tok</NextContinuationToken></ListBucketResult>'
+        litellm_params: {aws_region_name: us-east-1, _s3_list_files_purpose: batch, _s3_list_files_location: batch}
+        trusted: [[s3_bucket_name, bucket]]
+env: {}
+compare: {ignore: []}

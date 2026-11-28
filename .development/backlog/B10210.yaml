@@ -1,0 +1,13 @@
+id: B10210
+milestone: R2 bug fixes
+title: LiteLLM's dashboard team id and proxy budget user are defined once, in special_proxy_strings
+status: todo
+depends_on: [B10207, B753, B3884, B1075, B4779, B888, B1223, B10070, B897, B3012, B070, B8373]
+file: tasks/B10210-ui-team-and-proxy-budget-home.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

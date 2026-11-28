@@ -2,7 +2,7 @@ id: B139
 title: Prove MCP server management and its storage across route families through the booted proxy
 description: >-
   This task closes the MCP management umbrella over mcp_management_endpoints.py. Every function in that file
-  already has a builder: B4711 the database handle, B4716 payload validation, B4717 redaction and access, B4718
+  already has a builder: B4711 the database handle, B4716 payload validation, B10134 and B4717 redaction, B10135 access, B4718
   temporary OAuth sessions, B4719 the OAuth browser legs, B4720 the catalog reads, B4721 server writes, B4722
   submission review and pins, B4723 per-user credentials, B4724 per-user env vars, B4725 toolsets and gateway
   sessions, and B4231 the OpenAPI registry loader. Every route already has a mount: B8625 the catalog and review
@@ -198,7 +198,9 @@ deviations: []
 out_of_scope:
   - "B4711 builds _get_prisma_client_or_none and get_prisma_client_or_throw."
   - "B4716 builds _HasServerId and does_mcp_server_exist (only tests call it at the pin), the validate_tool_name fallback, _validate_mcp_server_name_fields, _validate_upstream_token_header, validate_and_normalize_mcp_server_payload, mcp_identifier_conflict_message, raise_mcp_identifier_conflict, warn_if_id_jag_server_outruns_sso, stamp_omitted_oauth2_flow, _VALID_MCP_REQUIRED_FIELDS and _validate_mcp_required_fields."
-  - "B4717 builds _redact_mcp_credentials, _preserved_admin_config_credentials, _redact_mcp_credentials_list, _user_is_full_admin, _resolve_credential_target_user_id, _is_restricted_virtual_key_request, _sanitize_mcp_server_for_non_admin, _sanitize_mcp_server_list_for_non_admin, _sanitize_mcp_server_for_virtual_key, _sanitize_mcp_server_list_for_virtual_key, _INHERITED_CREDENTIAL_FIELDS, _has_non_admin_config_credentials, _inherit_credentials_from_existing_server, _get_user_mcp_management_mode, _resolve_accessible_mcp_servers and _authorize_and_fetch_mcp_server."
+  - "B10134 builds _redact_mcp_credentials and _preserved_admin_config_credentials."
+  - "B10135 builds _is_restricted_virtual_key_request, _get_user_mcp_management_mode, _resolve_accessible_mcp_servers and _authorize_and_fetch_mcp_server."
+  - "B4717 builds _redact_mcp_credentials_list, _user_is_full_admin, _resolve_credential_target_user_id, _sanitize_mcp_server_for_non_admin, _sanitize_mcp_server_list_for_non_admin, _sanitize_mcp_server_for_virtual_key, _sanitize_mcp_server_list_for_virtual_key, _INHERITED_CREDENTIAL_FIELDS, _has_non_admin_config_credentials and _inherit_credentials_from_existing_server."
   - "B4718 builds TEMPORARY_MCP_SERVER_TTL_SECONDS, TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX, _TemporaryMCPServerEntry, _prune_expired_temporary_mcp_servers, _cache_temporary_mcp_server, _cache_temporary_mcp_server_in_redis, _get_temporary_mcp_server_from_redis, _persist_draft_mcp_server, _get_draft_mcp_server_as_mcp_server, get_cached_temporary_mcp_server, _resolve_session_server_id, _build_temporary_mcp_server_record, add_session_mcp_server and _get_cached_temporary_mcp_server_or_404."
   - "B4719 builds _mcp_oauth_user_api_key_auth, mcp_authorize, mcp_token and mcp_register."
   - "B4720 builds DEFAULT_MCP_REGISTRY_VERSION, _is_public_registry_enabled, _build_registry_remote_url, _build_mcp_registry_server_name, _McpRegistryRemote, _McpRegistryEntry, _build_mcp_registry_entry_for_server, _build_builtin_registry_entry, get_mcp_tools, get_mcp_access_groups, get_client_ip, get_mcp_registry, _mcp_server_display_order, _get_team_scoped_mcp_server_list, _connected_app_reachable_server_ids, fetch_all_mcp_servers, _mcp_health_status_for_response, health_check_servers, fetch_mcp_server, _MCP_REGISTRY_PATH, _load_mcp_registry, discover_mcp_servers and get_openapi_registry. B4231 (done) built _OPENAPI_REGISTRY_PATH and _load_openapi_registry."

@@ -195,6 +195,14 @@ base:
         while read -r line; do [[ ${line} == -[^-]* && -e ${line:1} ]] && left+=("${line:1}"); done <<< "${changes}"
         if [[ ${#left[@]} -eq 0 ]]; then echo "no file left the list"; exit 0; fi
         bash .development/hooks/python.sh ruff "${left[@]}" && bash .development/hooks/python.sh rules "${left[@]}" && bash .development/hooks/python.sh mypy "${left[@]}" && bash .development/hooks/python.sh similarity
+    - id: wheel-package-tests
+      why: test_package.py passes against the built wheel whenever the change edits the package manifest, that test or LiteLLM's lock, since python-wheels is not a required check and B8082 (#3132) broke the test with a green gate (B10189, 11-28)
+      run: |-
+        if git diff --quiet "${GATE_BASE}" HEAD -- crates/betterlite-python/pyproject.toml crates/betterlite-python/tests/test_package.py tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock; then echo "the change touches neither the package manifest nor LiteLLM's lock"; exit 0; fi
+        rm -rf target/package-tests
+        uv build --wheel --out-dir target/package-tests crates/betterlite-python || exit 1
+        wheels=(target/package-tests/betterlite-*.whl)
+        LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "${wheels[0]}" pytest crates/betterlite-python/tests/test_package.py
     - id: similarity
       why: no two functions are near copies of each other, on this machine in the crates the change edits and in CI across crates and tools
       run: |-

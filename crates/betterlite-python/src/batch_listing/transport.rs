@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::time::Duration;
 
 use betterlite_config::sections::xai_identity;
 use betterlite_core::api::batch_provider_cancel::{
@@ -23,8 +22,6 @@ use betterlite_openai::xai_batches::transformation::OpenAiBatchListResponse;
 use serde::Serialize;
 
 use super::error::{DispatchFailure, ErrorBody};
-
-const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
 
 // the BatchesApi both OpenAI entry points build over the shared pooled client
 fn openai_batches(client: &ProxiedClient) -> BatchesApi<HttpConstructor> {
@@ -68,7 +65,7 @@ impl ListTransport {
             }
             // XAIBatchesHandler.list_batches
             BatchListProviderCall::Xai(inner) => {
-                let timeout = duration_of(&window.timeout)?;
+                let timeout = window.timeout.duration()?;
                 let batches = XaiBatches {
                     transport: self.client.clone(),
                     settings: self.xai.clone(),
@@ -191,7 +188,7 @@ async fn xai_cancel(
     limits: WireDecodeLimits,
     call: &XaiCancelCall<'_>,
 ) -> Result<BatchObject, DispatchFailure> {
-    let timeout = duration_of(&sdk_timeout(call.values.timeout))?;
+    let timeout = sdk_timeout(call.values.timeout).duration()?;
     let batches = XaiBatches {
         transport: client.clone(),
         settings: settings.clone(),
@@ -260,21 +257,6 @@ pub(crate) fn dispatch_failure(error: ProviderFailure<'_>) -> DispatchFailure {
             | XaiBatchesError::Encode { .. } => failure(None, sdk.to_string()),
         },
     }
-}
-
-#[derive(Debug, thiserror::Error, PartialEq)]
-pub(crate) enum DurationError {
-    #[error("the timeout must be a finite, non-negative number of seconds, not {seconds}")]
-    Invalid { seconds: f64 },
-}
-
-// a timeout as the executor's deadline: a phase object contributes its read phase, or the 10 minute default
-pub(crate) fn duration_of(timeout: &Timeout) -> Result<Duration, DurationError> {
-    let seconds = match timeout {
-        Timeout::Seconds(seconds) => *seconds,
-        Timeout::Phases(phases) => phases.read.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
-    };
-    Duration::try_from_secs_f64(seconds).map_err(|_source| DurationError::Invalid { seconds })
 }
 
 // the timeout an OpenAI SDK client takes: the seconds, or the phases it would apply per request

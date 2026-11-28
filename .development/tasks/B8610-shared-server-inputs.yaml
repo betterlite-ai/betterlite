@@ -38,7 +38,8 @@ description: >-
   its Slot::new in state/model_read_through.rs to clone this field. `credentials: Arc<CredentialRegistry>` (B1601's
   one registry, so B097, B7171 and B2306 share it and a credential added through POST /credentials is seen by all) and
   `pass_through: Arc<PassThroughState>` (B8614; the pass-through credential router, Vertex token state and route table
-  that startup, B8384 and B8640 share). Shared holds no MCP or vector store registry yet: those features are deferred
+  that startup, B8384 and B8640 share). `aws_credentials: AwsCredentialChain` (B10175's betterlite-bedrock chain, already in Shared on main, built in server/shared_state.rs): it stays one instance, now built over `secrets` instead of B10175's environment-only lookup, and vertex_embedding_calls, the AWS pass-through routes and the Bedrock port clone it.
+  Shared holds no MCP or vector store registry yet: those features are deferred
   until the core is done, and B9997 adds `mcp_registry: Arc<McpRegistry>` and B9998 `vector_stores:
   Arc<VectorStores>`, each with its StartupOutputs field, when they build them.
   `pass_through_logging: std::sync::OnceLock<Arc<PassThroughRuntime>>` (B8931), created empty here: B8640 fills it once
@@ -46,11 +47,12 @@ description: >-
   reusable handle while keeping its shutdown ownership, so B8931 starts no second worker.
   Shared has no semantic filter slot: B138 adds that field and its add_proxy_callbacks hand-off later, and until then
   B8374 refuses to start with an enabled mcp_semantic_tool_filter. `stream_assembler: Arc<dyn StreamAssembler>` (B250's port), built once in
-  application() as Arc::new(ChatStreamAssembler) (B252, the value main's server.rs passes today; B9840 later swaps in its
-  LoggedStreamAssembler on this one line). This is
+  server.rs's run as Arc::new(ChatStreamAssembler) (B252, the value main's server.rs passes today; B9840 later swaps in its
+  LoggedStreamAssembler on this one line) and handed to application(). application() hands it to B10185's start_logging and keeps it here. This is
   the swap: B012's chat and embeddings logging, B8931's pass-through runtime (RuntimeInputs, which B8640 fills from
-  this Arc) and the production builder of B4301's cache-hit OwnedSuccessHandler all take this one Arc, so none of them
+  this Arc) and B10185's success handler (LoggingWiring builds it over the assembler start_logging is given) all take this one Arc, so none of them
   builds an assembler of its own.
+  The success handler (B10185's OwnedSuccessHandler) is not a Shared field. Its registry must hold the configured loggers before LoggingWiring wraps it, those loggers come from the callback loggers slot, and that slot is built from Shared (state.rs L182), so a handler inside Shared would have to exist before itself. application() builds Shared, then `callback_loggers::Slot::new(config, &shared)` on its own line, then the two lines B10185 left in run: `CallbackRegistry::new(config.sections.callback_settings.max_callbacks)` (B8742 fills it there) and `start_logging(config, registry, Arc::clone(&stream_assembler))`. It passes the slot and the wiring to ServerState::new, and ServerState keeps them as `callback_loggers` and a new `logging: LoggingWiring` field; group ServerState::new's inputs in one `StateParts` struct in state.rs if they pass five. run reads `state.logging.pipeline` for the service events layer and for its stop at the end, so service events still drain before run returns. B8631's pass-through hop and every later route that logs a success clone `state.logging.success`, and nothing builds a second handler.
   `proxy_config: Arc<ProxyConfigState>` (B8380). `python_hooks: Arc<PythonHooks>` (B165): the one service B8375 built
   and B8613's Started carries. Server code that loads or calls a config-named Python hook at request time reads
   `shared.python_hooks` and never calls PythonHooks::new.
@@ -67,7 +69,7 @@ description: >-
   prompt routes. B8293's init_prompts and B4060's mutations take &mut, so it is an Arc of a RwLock: use the lock type
   the merged prompt route modules (B4061, B4062) take. `periodic_reloads: Arc<PeriodicReloads>` (B10055, a
   betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
-  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
+  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B10136's port; B8613 implements it over B8381's DeploymentSync, which
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
   AutoRouterCatalog>` (B10021's trait, backed by the same DeploymentSync) for B379's availability route. `config_overlay: Arc<dyn
   ConfigOverlayPort>` (B8379's port in betterlite-server's config_overlay_port; B8379's OverlayPortAdapter implements it
@@ -143,7 +145,7 @@ description: >-
   assert that http is the chat client clone, cache uses the usage Redis when one is given and memory only when not,
   router_views reads the same RouterHandle (installing a router makes current() answer), agents and
   general_settings use the given registry and database, config_overlay is Arc::ptr_eq with the ConfigOverlayPort passed
-  in StartupOutputs, python_hooks is Arc::ptr_eq with the PythonHooks passed in StartupOutputs, budget is built once (two reads give the same Arc), and
+  in StartupOutputs, python_hooks is Arc::ptr_eq with the PythonHooks passed in StartupOutputs, state.logging.success is the handler start_logging built over the Shared stream assembler (Arc::ptr_eq), budget is built once (two reads give the same Arc), and
   spend_producer is the slot passed in StartupOutputs and starts empty. Tests
   in server/tests.rs (names start with `inputs_`) boot application() and assert the health routes and the Not Found
   fallback still answer, start_shutdown on the ShutdownState passed in StartupOutputs turns the three health routes to

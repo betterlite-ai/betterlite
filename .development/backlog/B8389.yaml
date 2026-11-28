@@ -1,8 +1,8 @@
 id: B8389
 milestone: M8 platform
-title: Admin settings views, OTel span close and denial log
+title: Admin settings routes and model access denial log
 status: todo
-depends_on: [B725, B3842, B3854, B3858, B4020, B4140, B5364, B8380, B8399, B8410]
+depends_on: [B725, B4020, B4140, B5364, B8380, B8399, B8410]
 file: tasks/B8389-admin-settings-views.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

@@ -1,0 +1,9 @@
+kind: helper
+name: team-problems-constructors-seed
+call:
+  b10130:
+    calls:
+      - team_not_found: team-1
+      - forbidden: "Only PROXY_ADMIN or ORG_ADMIN users may delete users."
+env: {}
+compare: {ignore: []}

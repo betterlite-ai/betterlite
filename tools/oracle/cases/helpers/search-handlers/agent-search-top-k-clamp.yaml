@@ -1,0 +1,12 @@
+kind: helper
+name: agent-search-top-k-clamp
+call:
+  b4686:
+    handler: agent_search
+    query: alpha
+    top_k: 0
+    agents:
+      - {id: a1, name: Agent One}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

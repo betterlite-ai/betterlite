@@ -21,9 +21,9 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 
-use super::auth_identity::StageFailure;
 use super::auth_resource_grants::denial_response;
 use super::extract_key;
+use crate::auth::failures::StageFailure;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use crate::state::auth_errors::AuthFailureHook;
@@ -172,13 +172,16 @@ impl FailureContext {
 fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
         StageFailure::AuthModelGrants(exception)
+        | StageFailure::JwtKeys(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
+        | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
+        | StageFailure::ModelBudgets(exception)
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)

@@ -1,0 +1,106 @@
+id: B10122
+title: MCP auto-execution and tool call selection
+description: >-
+  Three static helpers on LiteLLM_Proxy_MCP_Handler decide whether the gateway runs a model's tool calls itself and read those calls: _should_auto_execute_tools (litellm_proxy_mcp_handler.py L540-L563), _extract_tool_calls_from_response (L566-L577) and _extract_tool_call_details (L604-L635). They used to be B950's, but most callers need nothing else from B950's executor: B953's stream round (mcp_streaming_iterator.py L417), B954's stream loop (L742, L760, L824), B955's Responses dispatch (responses/main.py L297, L324), B956's chat preparation (chat_completions_handler.py L153), B988's Messages loop (anthropic pass_through messages/mcp_handler.py L117) and B951's call events (L1256). B950 calls _extract_tool_call_details for every call it runs (L726). So the three live in their own task below all of them.
+
+
+  Code goes in betterlite-core, module api::responses_mcp_tool_selection (crates/betterlite-core/src/api/responses_mcp_tool_selection.rs), with its tests in responses_mcp_tool_selection/tests.rs. The file is an empty stub that api.rs already declares. Everything here is a pure function: no I/O, no setting, no clock. Json below is betterlite_models::decisions::Json, the JSON type responses_mcp_events already uses.
+
+
+  should_auto_execute_tools(references: &[Json]) -> bool takes the gateway MCP tool entries of the request (mcp_tools_with_litellm_proxy) as the caller received them. It is true only when the slice is not empty and every entry is an object whose require_approval is the string "never". An empty slice, a missing key, null, "always", "manual", the object form ({"never": {...}}) or an entry that is not an object makes it false for the whole request. This is a permission gate: one entry that asks for approval stops every call from running.
+
+
+  McpToolCall is the tool call the helpers read, an enum with two arms. Output(ResponseOutputItem) holds a Responses output item, B1138's betterlite_openai::api::responses_objects::ResponseOutputItem. Fields(BTreeMap<String, Json>) holds a call that reaches the gateway as a plain mapping: a dumped chat tool call from B950's _extract_tool_calls_from_chat_response ({"id", "type": "function", "function": {"name", "arguments"}}) or an Anthropic tool_use block from B988 ({"id", "name", "input"}).
+
+
+  extract_tool_calls_from_response(response: &ResponsesApiResponse) -> Vec<McpToolCall> returns the function calls of response.output as Output arms, in output order, and skips every other item. ResponsesApiResponse is B1138's record in the same module as ResponseOutputItem. A function call can sit in more than one ResponseOutputItem arm (the Sdk FunctionCall arm, the FunctionCall arm, a generic Message whose type is "function_call", an Unknown map whose type is "function_call"); keep every arm whose type is "function_call", the same arms B952's responses_mcp_events::function_call::function_call_id reads.
+
+
+  extract_tool_call_details(call: &McpToolCall) -> Result<McpToolCallDetails, ToolSelectionError> returns name: Option<String>, arguments: Option<Json> and call_id: Option<String>. call_id is the call's call_id when that is a non-empty string, otherwise its id; for an Output arm call B952's function_call_id, which already makes that choice, instead of writing it again. For a Fields arm whose "function" entry is an object, name and arguments come from that object only: a top-level name and input are ignored. Otherwise name is the top-level name, arguments the top-level arguments, and input is read only when arguments is missing or null. arguments stays the value found, text or object: B950's _parse_tool_arguments decodes it, so nothing is parsed here. A name, call_id or id that is present but not a string is outside LiteLLM's declared str | None and returns ToolSelectionError naming that field (docs/compatibility.md); ToolSelectionError is a thiserror enum in this module's files.
+
+
+  Tests in tests.rs, under api::responses_mcp_tool_selection::tests, each calling the production functions: auto_execute_requires_never (rstest, one named case per entry kind above, plus two entries where one says "always"), function_calls_in_output_order (a response with a message, a function call, a reasoning item and a second function call, and one case per ResponseOutputItem arm that carries a function call), tool_call_details_precedence (rstest: call_id before id, an empty call_id falling back to id, a nested function winning over a top-level name and input, arguments before input, input used when arguments is null, an object input kept as an object, an Output arm) and tool_call_detail_errors (a numeric name and a numeric call_id, each naming its field).
+
+
+  Oracle. The helper operation is b10122 in the core_ops group. Its input is a list of calls, each naming one of the three functions with its typed input: the reference list, a ResponsesAPIResponse body, or one tool call given either as an output item or as a mapping. The Python adapter calls the pinned static methods, building the response with ResponsesAPIResponse.model_validate, and returns the bool, the list of extracted calls and the (name, arguments, call_id) tuples. The Rust adapter calls this module and returns the same values. The cases are pure: no route reaches these helpers on their own, so the consuming routes keep the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/responses_mcp_tool_selection.rs
+    - crates/betterlite-core/src/api/responses_mcp_tool_selection/**
+    - tools/oracle/cases/helpers/mcp-tool-selection/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-tool-selection-*
+    - tools/oracle/helpers/b10122.py
+    - tools/oracle/helpers/b10122/**
+    - tools/oracle/src/helpers/core_ops/b10122.rs
+    - tools/oracle/src/helpers/core_ops/b10122/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L538-L577
+    why: Owned. The fail-closed approval predicate and the function_call filter over response.output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L603-L635
+    why: Owned. The mapping and attribute branches of the tool call reader, with call_id before id and arguments before input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L719-L732
+    why: B950's call site, which reads each call and hands its arguments to _parse_tool_arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/chat_completions_handler.py#L150-L155
+    why: B956's call site; the predicate runs on the chat request's gateway MCP entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L736-L765
+    why: B954's call sites, which extract the calls of a collected response and read each one.
+dod:
+  - text: should_auto_execute_tools is true only for a non-empty list whose every entry has require_approval "never"; empty, missing, null, "always", "manual", the object form and a non-object entry each make it false, and one "always" entry beside "never" ones makes it false.
+    proof: [case-auto-execute-requires-never, oracle, helper-python]
+  - text: extract_tool_calls_from_response returns every function_call item of response.output in output order, from each output item arm that carries one, and skips messages, reasoning and other items.
+    proof: [case-function-calls-in-output-order, oracle, helper-python]
+  - text: extract_tool_call_details takes call_id before id (an empty call_id falls back), reads a nested function before top-level fields, arguments before input, and keeps arguments as given, text or object.
+    proof: [case-tool-call-details-precedence, oracle, helper-python]
+  - text: A present non-string name, call_id or id returns ToolSelectionError naming the field instead of a quiet None.
+    proof: [case-tool-call-detail-errors]
+  - text: The b10122 adapters compare the pinned helpers with this module on new cases, and every new seed replays through the shared helper case parser.
+    proof: [new-oracle-cases, oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: case-auto-execute-requires-never
+      why: an entry that asks for approval, or an empty list, lets the gateway run tool calls
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_tool_selection::tests::auto_execute_requires_never($|::)/)'
+    - id: case-function-calls-in-output-order
+      why: a function call arm is missed, another item kind is kept, or the output order changes
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_tool_selection::tests::function_calls_in_output_order($|::)/)'
+    - id: case-tool-call-details-precedence
+      why: the id, name or arguments precedence differs from LiteLLM's reader
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_tool_selection::tests::tool_call_details_precedence($|::)/)'
+    - id: case-tool-call-detail-errors
+      why: a non-string name or id reads as None instead of failing on the field
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_tool_selection::tests::tool_call_detail_errors($|::)/)'
+    - id: helper-python
+      why: the b10122 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10122.py tools/oracle/helpers/b10122)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10122 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-tool-selection-*")" &&
+        grep -lE 'b10122"?:' tools/oracle/fuzz/corpus/helper_case/mcp-tool-selection-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new tool selection case was added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-tool-selection)"
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-tool-selection/auto-execute-requires-never.yaml
+  - tools/oracle/cases/helpers/mcp-tool-selection/function-calls-in-output-order.yaml
+  - tools/oracle/cases/helpers/mcp-tool-selection/tool-call-details-precedence.yaml
+deviations: []
+out_of_scope:
+  - "_extract_tool_calls_from_chat_response (L580-L601), which dumps chat tool calls into the mappings the Fields arm holds, and _parse_tool_arguments (L638-L648), which decodes the arguments this task returns: B950, with _execute_tool_calls and the rest of the executor."
+  - "McpToolResult, the record of what a call returned: B10121."
+  - "MCPEnhancedStreamingIterator._should_auto_execute_tools (mcp_streaming_iterator.py L411-L417), the one-line wrapper over this predicate: B953."
+  - "Selection, discovery and tool transforms before L540: B948 and B949. Chat and Responses follow-up builders: B10123 and B10124. Follow-up call, request params, events and output items: B951."
+pitfalls:
+  - "The predicate fails closed on approval forms betterlite's SDK literal cannot hold: B1138's McpRequireApprovalChoice only knows always and never, so reading require_approval through it would turn \"manual\" into a decode error instead of false; compare the raw value with \"never\"."
+  - "An empty call_id falls back to id, but an empty arguments string does not fall back to input: only a missing or null arguments does."
+  - "When a mapping has a function object, a top-level input is never read, even when function has no arguments; the call then has no arguments at all."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B10123
+milestone: M5 api families
+title: Chat MCP follow-up messages
+status: done
+depends_on: [B171, B10121, B004, B5366]
+file: tasks/B10123-chat-mcp-followup.yaml
+covers:
+  - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
+parent: B080
+split_from: B951
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3369

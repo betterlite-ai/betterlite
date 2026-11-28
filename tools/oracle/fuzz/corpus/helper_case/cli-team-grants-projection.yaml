@@ -1,0 +1,13 @@
+kind: helper
+name: cli-team-grants-projection-seed
+call:
+  b10114:
+    team_details: null
+    team_id: null
+    row:
+      team_id: team-2
+      team_alias: Team Two
+      models: [gpt-4, claude]
+      aliases: '{"gpt-4": "gpt-4o"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+id: B10122
+milestone: M5 api families
+title: MCP auto-execution and tool call selection
+status: done
+depends_on: [B171, B1138, B952]
+file: tasks/B10122-mcp-tool-selection.yaml
+covers:
+  - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
+parent: B080
+split_from: B950
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3346

@@ -1,0 +1,33 @@
+kind: helper
+name: original-input-first
+call:
+  b10124:
+    calls:
+      - function: follow_up
+        response: {id: resp_1, created_at: 1, output: []}
+        tool_results: []
+        original_input: hello
+        preserve_reasoning: false
+      - function: follow_up
+        response: {id: resp_2, created_at: 1, output: []}
+        tool_results: []
+        original_input:
+          - {type: message, role: user, content: hi}
+          - {type: function_call_output, call_id: call_1, output: "42"}
+        preserve_reasoning: false
+      - function: follow_up
+        response: {id: resp_3, created_at: 1, output: []}
+        tool_results: []
+        original_input: ""
+        preserve_reasoning: false
+      - function: follow_up
+        response: {id: resp_4, created_at: 1, output: []}
+        tool_results: []
+        original_input: []
+        preserve_reasoning: false
+      - function: follow_up
+        response: {id: resp_5, created_at: 1, output: []}
+        tool_results: []
+        preserve_reasoning: false
+env: {}
+compare: {ignore: []}

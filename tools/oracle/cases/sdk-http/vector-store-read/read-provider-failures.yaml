@@ -1,0 +1,75 @@
+kind: sdk_http
+name: vector-store-read-read-provider-failures
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_read:
+    runs:
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        options: {litellm_call_id: call-default-provider}
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        custom_llm_provider: ""
+        options: {api_key: sk-caller, litellm_call_id: call-empty-provider}
+      - operation: list
+        mode: sync
+        custom_llm_provider: bogus
+        options: {api_key: sk-caller, litellm_call_id: call-unknown-provider}
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        custom_llm_provider: anthropic
+        options: {api_key: sk-caller, litellm_call_id: call-anthropic-retrieve}
+      - operation: list
+        mode: async
+        custom_llm_provider: anthropic
+        options: {api_key: sk-caller, litellm_call_id: call-anthropic-list}
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        options: {api_key: sk-caller, litellm_call_id: call-missing-sync}
+      - operation: retrieve
+        mode: async
+        vector_store_id: vs_a
+        options: {api_key: sk-caller, litellm_call_id: call-missing-async}
+      - operation: list
+        mode: sync
+        options: {api_key: sk-caller, litellm_call_id: call-gone-sync}
+      - operation: list
+        mode: async
+        options: {api_key: sk-caller, litellm_call_id: call-gone-async}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: vs_a, object: vector_store, name: notes, status: completed, file_counts: {total: 2, completed: 2}}
+  - status: 404
+    headers: {content-type: application/json}
+    body: []
+  - status: 404
+    headers: {content-type: application/json}
+    body: []
+  - status: 404
+    headers: {content-type: application/json}
+    body: {error: gone}
+  - status: 404
+    headers: {content-type: application/json}
+    body: {error: gone}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore:
+    - pointer: /vector_store_read/value/runs/1/failure/message
+      why: Python's enum text and betterlite's provider-naming text differ
+    - pointer: /vector_store_read/value/runs/2/failure/message
+      why: Python's enum text and betterlite's provider-naming text differ
+    - pointer: /vector_store_read/value/runs/3/failure/message
+      why: Python appends a traceback to the unsupported-provider ValueError
+    - pointer: /vector_store_read/value/runs/4/failure/message
+      why: Python appends a traceback to the unsupported-provider ValueError
+    - pointer: /vector_store_read/value/runs/5/failure/message
+      why: Python's mapping and betterlite's mapping word the provider error differently
+    - pointer: /vector_store_read/value/runs/6/failure/message
+      why: Python's mapping and betterlite's mapping word the provider error differently

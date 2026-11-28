@@ -1,0 +1,27 @@
+kind: helper
+name: bedrock-services-batch-records-upload-signing-handoff
+call:
+  bedrock_services_batch_records:
+    function: create_file_request
+    # the explicit model is empty, so the target model comes from litellm_params.model
+    model: ""
+    file:
+      content: "{\"custom_id\":\"first\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"custom-model-v1\",\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}],\"max_tokens\":16,\"stop\":[\"END\"]}}\n{\"custom_id\":\"second\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"custom-model-v1\",\"messages\":[{\"content\":\"morning\",\"role\":\"user\"},{\"role\":\"developer\",\"content\":\"be brief\"}],\"max_tokens\":8}}"
+      filename: input.jsonl
+      content_type: application/jsonl
+    purpose: batch
+    optional_params: {}
+    litellm_params:
+      model: custom-model-v1
+      s3_bucket_name: litellm-batch
+      # s3_region_name replaces the aws_region_name in litellm_params and the environment region
+      s3_region_name: eu-west-1
+      aws_region_name: ap-southeast-2
+      s3_encryption_key_id: key-1
+    environment: {AWS_REGION_NAME: us-east-1}
+    model_alias_map: {}
+    model_cost: {}
+    uuid: "11111111-2222-4333-8444-555555555555"
+    now: 1704067200
+env: {}
+compare: {ignore: []}
