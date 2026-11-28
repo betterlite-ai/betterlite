@@ -15,9 +15,15 @@ deviations:
   - what: The rawPredict partner reply is logged without the partner transform's _hidden_params object, where LiteLLM logs the ModelResponse object itself and model_dump() drops it.
     why: The logged reply must be the dump a callback sees, and betterlite's result is already a JSON value rather than a model that can hide a private map.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2075-L2100
-  - what: A model_call_details["litellm_params"] that is absent or null is created as an empty object in the search branch, and a non-object value there or a non-object metadata in the batch branch is an error naming the field, where Python would raise a TypeError from subscripting.
-    why: docs/compatibility.md makes an absent or null config value take its default and a wrong-typed one an error that names it.
+  - what: The search branch creates model_call_details["litellm_params"] as an empty object when it is absent or null, and a non-object value there is an error naming the field, where LiteLLM's setdefault hands back the stored value and subscripting it raises TypeError.
+    why: docs/compatibility.md makes an absent or null value take its default and a wrong-typed one an error that names it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L307-L309
+  - what: The batch branch counts an absent or null kwargs["litellm_params"] or ["metadata"] as empty and an object at both levels as given, and any other type is an error naming the field, where LiteLLM's `(value or {})` also turns false, 0 and "" into {}.
+    why: docs/compatibility.md makes an absent or null value take its default and a wrong-typed one an error that names it, instead of following Python truthiness.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L990
+  - what: The generateContent decode does not pass LiteLLM's dummy user message, because B1326's CompleteRequest carries only the model, the time and the call mode; the rawPredict partner transform still gets the message.
+    why: B1326 owns the decode, the reply's token counts come from usageMetadata, and the message only reaches the transform's post_call logging, which B3638's payload factory rebuilds without messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L195
   - what: The oracle helper cases cover the branch order only; the adapter patches the leaf each branch reaches and reports which one was hit.
     why: A helper adapter cannot build the logging object and proxy state that the full Python handler reads, and the branch bodies are pinned by native tests against the leaf tasks' own oracle cases.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L123-L133
