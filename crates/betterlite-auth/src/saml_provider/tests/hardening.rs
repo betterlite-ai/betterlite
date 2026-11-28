@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_config::saml_provider::SamlFlag;
 use betterlite_models::decisions::Json;
 
-use super::{NOW, Recorded, TestMemory, TestTier, record};
+use super::{NOW, Recorded, TestMemory, TestTier};
 use crate::auth_cache::AuthCache;
 use crate::saml_provider::cache::SamlCache;
 use crate::saml_provider::idp_metadata::parse::decode_document;
