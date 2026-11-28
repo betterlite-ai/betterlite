@@ -34,7 +34,7 @@ fn gigachat_key_chain(#[case] sources: [Option<&str>; 5], #[case] expected: Opti
         api_key_env,
         credentials_env,
     ] = sources;
-    let mut fixture = ChatFixture::new();
+    let mut fixture = ChatFixture::default();
     fixture.provider = String::from("gigachat");
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
@@ -56,7 +56,7 @@ fn gigachat_key_chain(#[case] sources: [Option<&str>; 5], #[case] expected: Opti
 
 #[test]
 fn gigachat_request_headers_win_over_the_global_headers() {
-    let mut fixture = ChatFixture::new();
+    let mut fixture = ChatFixture::default();
     fixture.provider = String::from("gigachat");
     fixture.headers = Some(headers(&[("x-request", "1")]));
     fixture.settings.headers = Some(headers(&[("x-global", "2")]));
@@ -71,7 +71,7 @@ fn gigachat_request_headers_win_over_the_global_headers() {
 
 #[test]
 fn gigachat_global_headers_fill_in_for_an_empty_request_map() {
-    let mut fixture = ChatFixture::new();
+    let mut fixture = ChatFixture::default();
     fixture.provider = String::from("gigachat");
     fixture.headers = Some(headers(&[]));
     fixture.settings.headers = Some(headers(&[("x-global", "2")]));
@@ -83,7 +83,7 @@ fn gigachat_global_headers_fill_in_for_an_empty_request_map() {
 
 #[test]
 fn gigachat_without_any_headers_passes_an_empty_map() {
-    let fixture = ChatFixture::new();
+    let fixture = ChatFixture::default();
     let handler = ChatRecorder::succeeding();
     let (outcome, _state) = chat_dispatch(ChatConfigTag::GigaChat, &fixture, &handler);
     outcome.expect("the gigachat arm answers");
@@ -92,7 +92,7 @@ fn gigachat_without_any_headers_passes_an_empty_map() {
 
 #[test]
 fn gigachat_passes_the_base_and_provider_config_as_they_came() {
-    let mut fixture = ChatFixture::new();
+    let mut fixture = ChatFixture::default();
     fixture.provider = String::from("gigachat");
     fixture.model = String::from("GigaChat");
     fixture.api_base = Some(String::from("https://gigachat.example/v1"));
@@ -114,7 +114,7 @@ fn gigachat_passes_the_base_and_provider_config_as_they_came() {
 
 #[test]
 fn gigachat_logs_the_handler_error_with_the_resolved_headers() {
-    let mut fixture = ChatFixture::new();
+    let mut fixture = ChatFixture::default();
     fixture.provider = String::from("gigachat");
     fixture.headers = Some(headers(&[("x-scope", "tenant")]));
     let handler = ChatRecorder::failing(503);

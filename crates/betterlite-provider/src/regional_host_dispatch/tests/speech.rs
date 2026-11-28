@@ -40,7 +40,7 @@ async fn minimax_speech_reads_the_voice_map_in_litellm_order(
 ) {
     let selected = MinimaxSpeechConfig { env_base: None };
     let config: &dyn TextToSpeechConfig = &selected;
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(voice_map(voice));
     let handler = SpeechRecorder::new();
@@ -54,7 +54,7 @@ async fn minimax_speech_reads_the_voice_map_in_litellm_order(
 async fn minimax_speech_keeps_a_string_voice() {
     let selected = MinimaxSpeechConfig { env_base: None };
     let config: &dyn TextToSpeechConfig = &selected;
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(SpeechVoice::Name(String::from("female-shaonv")));
     let handler = SpeechRecorder::new();
@@ -67,7 +67,7 @@ async fn minimax_speech_keeps_a_string_voice() {
 // with no selected config the arm maps the voice and the options itself, as speech() would have
 #[tokio::test]
 async fn minimax_speech_maps_the_voice_without_a_selected_config() {
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(voice_map(r#"{"id":"v-2"}"#));
     fixture.optional_params = params(r#"{"speed":3.0}"#);
@@ -84,7 +84,7 @@ async fn minimax_speech_maps_the_voice_without_a_selected_config() {
 
 #[tokio::test]
 async fn minimax_speech_reads_the_voice_id_option_without_a_voice() {
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = Some(secret("sk-fixture"));
     fixture.optional_params = params(r#"{"voice_id":"v-9"}"#);
     let handler = SpeechRecorder::new();
@@ -98,7 +98,7 @@ async fn minimax_speech_reads_the_voice_id_option_without_a_voice() {
 
 #[tokio::test]
 async fn minimax_speech_without_a_voice_uses_the_minimax_default() {
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = Some(secret("sk-fixture"));
     let handler = SpeechRecorder::new();
     speech::minimax(None, &fixture.context(), &handler)
@@ -116,7 +116,7 @@ async fn minimax_speech_without_a_voice_uses_the_minimax_default() {
 async fn minimax_speech_with_a_selected_config_passes_the_options_unmapped() {
     let selected = MinimaxSpeechConfig { env_base: None };
     let config: &dyn TextToSpeechConfig = &selected;
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(SpeechVoice::Name(String::from("v-1")));
     fixture.optional_params = params(r#"{"response_format":"wav"}"#);
@@ -142,7 +142,7 @@ async fn minimax_speech_writes_the_base_and_key_into_litellm_params_only_when_se
     #[case] base_present: bool,
     #[case] key_present: bool,
 ) {
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.settings.api_key = Some(secret("sk-global"));
     fixture.api_base = api_base.map(str::to_owned);
     fixture.api_key = api_key.map(secret);
@@ -178,7 +178,7 @@ async fn minimax_speech_key_chain(
     #[case] env_key: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
     fixture.settings.environment.minimax_api_key = env_key.map(secret);
@@ -191,7 +191,7 @@ async fn minimax_speech_key_chain(
 
 #[tokio::test]
 async fn minimax_speech_without_a_key_raises_the_litellm_value_error() {
-    let fixture = SpeechFixture::new();
+    let fixture = SpeechFixture::default();
     let handler = SpeechRecorder::new();
     let outcome = speech::minimax(None, &fixture.context(), &handler).await;
     assert!(matches!(
@@ -203,7 +203,7 @@ async fn minimax_speech_without_a_key_raises_the_litellm_value_error() {
 
 #[tokio::test]
 async fn minimax_speech_passes_the_request_fields_to_the_handler() {
-    let mut fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::default();
     fixture.model = String::from("speech-02-hd");
     fixture.input = String::from("hello there");
     fixture.api_key = Some(secret("sk-request"));

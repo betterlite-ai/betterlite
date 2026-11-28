@@ -9,9 +9,6 @@ use secrecy::SecretString;
 
 use crate::regional_host_dispatch::context::DispatchContext;
 
-use super::user_message;
-
-#[derive(Default)]
 pub(crate) struct ChatFixture {
     pub(crate) model: String,
     pub(crate) messages: Vec<Message>,
@@ -29,15 +26,6 @@ pub(crate) struct ChatFixture {
 }
 
 impl ChatFixture {
-    pub(crate) fn new() -> Self {
-        Self {
-            model: String::from("model"),
-            messages: vec![user_message()],
-            provider: String::from("nlp_cloud"),
-            ..Self::default()
-        }
-    }
-
     pub(crate) fn context(&self) -> DispatchContext<'_> {
         DispatchContext {
             acompletion: self.acompletion,

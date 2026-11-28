@@ -13,7 +13,7 @@ fn providers_outside_the_regional_table_have_no_arm() {
         state: &mut state,
         env: &env,
     };
-    let fixture = ChatFixture::new();
+    let fixture = ChatFixture::default();
     let handler = ChatRecorder::succeeding();
     let context = fixture.context();
     assert!(dispatch(ChatConfigTag::DashScopeChat, &context, &handler, &mut log).is_none());

@@ -8,7 +8,6 @@ use secrecy::SecretString;
 
 use crate::regional_host_dispatch::context::EmbeddingContext;
 
-#[derive(Default)]
 pub(crate) struct EmbeddingFixture {
     pub(crate) input: Option<EmbeddingInput>,
     pub(crate) optional_params: Object,
@@ -20,13 +19,6 @@ pub(crate) struct EmbeddingFixture {
 }
 
 impl EmbeddingFixture {
-    pub(crate) fn new() -> Self {
-        Self {
-            input: Some(EmbeddingInput::Text(String::from("hello"))),
-            ..Self::default()
-        }
-    }
-
     pub(crate) fn context(&self) -> EmbeddingContext<'_> {
         EmbeddingContext {
             aembedding: false,

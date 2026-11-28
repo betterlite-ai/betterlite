@@ -15,7 +15,7 @@ pub(super) fn call_for(
 
 #[test]
 fn providers_outside_the_regional_embedding_table_have_no_arm() {
-    let fixture = EmbeddingFixture::new();
+    let fixture = EmbeddingFixture::default();
     let context = fixture.context();
     assert!(dispatch(ProviderId::NlpCloud, &context).is_none());
     assert!(dispatch(ProviderId::Minimax, &context).is_none());

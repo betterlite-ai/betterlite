@@ -8,7 +8,6 @@ use secrecy::SecretString;
 use crate::api::speech_provider_contract::SpeechHeaders;
 use crate::regional_host_dispatch::speech::SpeechContext;
 
-#[derive(Default)]
 pub(crate) struct SpeechFixture {
     pub(crate) input: String,
     pub(crate) model: String,
@@ -24,14 +23,6 @@ pub(crate) struct SpeechFixture {
 }
 
 impl SpeechFixture {
-    pub(crate) fn new() -> Self {
-        Self {
-            input: String::from("hello"),
-            model: String::from("speech-02-hd"),
-            ..Self::default()
-        }
-    }
-
     pub(crate) fn context(&self) -> SpeechContext<'_> {
         SpeechContext {
             api_base: self.api_base.as_deref(),

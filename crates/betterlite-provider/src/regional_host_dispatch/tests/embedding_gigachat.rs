@@ -34,7 +34,7 @@ fn gigachat_embedding_key_chain(
         credentials_env,
         api_key_env,
     ] = sources;
-    let mut fixture = EmbeddingFixture::new();
+    let mut fixture = EmbeddingFixture::default();
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
     fixture.settings.gigachat_key = section_key.map(secret);
@@ -51,7 +51,7 @@ fn gigachat_embedding_key_chain(
 
 #[test]
 fn gigachat_embedding_drops_the_headers_and_carries_only_ssl_verify() {
-    let mut fixture = EmbeddingFixture::new();
+    let mut fixture = EmbeddingFixture::default();
     fixture.extra_headers = Some(headers(&[("x-scope", "tenant")]));
     fixture.api_base = Some(String::from("https://gigachat.example/v1"));
     let call = call_for(ProviderId::Gigachat, &fixture).expect("the arm answers");
@@ -69,7 +69,7 @@ fn gigachat_embedding_carries_the_request_ssl_verify(
     #[case] ssl_verify: Option<bool>,
     #[case] expected: Json,
 ) {
-    let mut fixture = EmbeddingFixture::new();
+    let mut fixture = EmbeddingFixture::default();
     fixture.ssl_verify = ssl_verify;
     let call = call_for(ProviderId::Gigachat, &fixture).expect("the arm answers");
     assert_eq!(call.litellm_params.get("ssl_verify"), Some(&expected));

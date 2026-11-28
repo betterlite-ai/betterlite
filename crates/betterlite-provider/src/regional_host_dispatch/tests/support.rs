@@ -22,9 +22,12 @@ use crate::regional_host_dispatch::context::CallLogging;
 use crate::regional_host_dispatch::error::DispatchError;
 
 mod chat;
+mod chat_default;
 mod chat_recorder;
 mod embedding;
+mod embedding_default;
 mod speech;
+mod speech_default;
 mod speech_recorder;
 mod tokens;
 mod transport;
