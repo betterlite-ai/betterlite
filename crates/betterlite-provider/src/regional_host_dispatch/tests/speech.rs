@@ -1,11 +1,16 @@
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
+use betterlite_openai::minimax_speech::params::SUPPORTED_OPENAI_PARAMS;
+use betterlite_openai::minimax_speech::request::TTS_BASE_URL;
 use betterlite_openai::openai_base_config::Object as SpeechObject;
+use betterlite_prompts::arguments::json::Json;
 use http::HeaderMap;
 use rstest::rstest;
 use serde_json::{Value, json};
 
-use crate::api::speech_provider_contract::{SpeechHeaders, SpeechRequestInput, TextToSpeechConfig};
+use crate::api::speech_provider_contract::{
+    ClassAttribute, SpeechHeaders, SpeechMappingOptions, SpeechRequestInput, TextToSpeechConfig,
+};
 use crate::regional_host_dispatch::error::DispatchError;
 use crate::regional_host_dispatch::speech::{self, MinimaxSpeechConfig};
 
@@ -316,4 +321,44 @@ fn minimax_config_passes_a_reply_it_cannot_decode() {
     let content = config.speech_response("speech-02-hd", reply);
     assert_eq!(content.status, 502);
     assert_eq!(content.body, b"not json");
+}
+
+#[test]
+fn minimax_config_names_the_base_constant() {
+    let config = MinimaxSpeechConfig { env_base: None };
+    assert_eq!(
+        config.class_attributes().get("TTS_BASE_URL"),
+        Some(&ClassAttribute::Value(Json::Text(String::from(
+            TTS_BASE_URL
+        ))))
+    );
+}
+
+#[test]
+fn minimax_config_lists_the_supported_openai_params() {
+    let config = MinimaxSpeechConfig { env_base: None };
+    let expected: Vec<String> = SUPPORTED_OPENAI_PARAMS
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect();
+    assert_eq!(config.supported_openai_params("speech-02-hd"), expected);
+}
+
+// speech() maps a voice and the options through the selected config before the handler runs
+#[test]
+fn minimax_config_maps_the_voice_and_the_options() {
+    let config = MinimaxSpeechConfig { env_base: None };
+    let options = SpeechMappingOptions {
+        voice: Some(voice_map(r#"{"id":"v-2"}"#)),
+        ..SpeechMappingOptions::default()
+    };
+    let optional_params = serde_json::from_str::<SpeechObject>(r#"{"speed":3.0}"#)
+        .expect("the fixture options parse");
+    let (voice, mapped) = config.map_openai_params("speech-02-hd", optional_params, &options);
+    assert_eq!(voice.as_deref(), Some("v-2"));
+    assert_eq!(
+        mapped.get("voice_id"),
+        Some(&Value::String(String::from("v-2")))
+    );
+    assert_eq!(mapped.get("speed"), Some(&json!(2.0)));
 }
