@@ -17,12 +17,12 @@ pub(crate) struct SpeechRecorder {
 
 impl SpeechRecorder {
     pub(crate) fn take_view(&self) -> Result<Value, Box<HelperError>> {
-        match self
+        let taken = self
             .view
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        match taken {
             Some(Ok(view)) => Ok(view),
             Some(Err(error)) => Err(input_failure(error)),
             None => Err(input_failure(String::from(

@@ -12,7 +12,7 @@ use betterlite_openai::volcengine_embedding::request;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 
 use super::super::oracle::Case;
@@ -43,10 +43,10 @@ pub(super) fn wire_request(
     body: Option<Value>,
 ) -> Value {
     let request = request_view(url, &kept(headers.iter()));
-    match body {
-        Some(params) => json!({"request": request, "params": params}),
-        None => json!({"request": request}),
-    }
+    body.map_or_else(
+        || json!({"request": request}),
+        |params| json!({"request": request, "params": params}),
+    )
 }
 
 pub(crate) fn nlp_cloud_view(case: &Case) -> HelperResult {
@@ -77,14 +77,14 @@ pub(crate) fn dashscope_view(case: &Case) -> HelperResult {
     let call = embedding_call(case, ProviderId::Dashscope)?;
     let settings = section_settings(case);
     let env = FamilyEnv {
-        base: settings.environment.dashscope_base.clone(),
+        base: settings.environment.dashscope_base,
         brand_key: None,
-        fallback_key: settings.environment.dashscope_api_key.clone(),
+        fallback_key: settings.environment.dashscope_api_key,
         rerank_base: None,
         image_base: None,
     };
     let config = dashscope_family::embedding_config(DashscopeFamily::Dashscope, &env);
-    let key = call.api_key.as_ref().map(|key| key.expose_secret());
+    let key = call.api_key.as_ref().map(ExposeSecret::expose_secret);
     let caller = call.headers.clone().unwrap_or_default();
     let headers = config.validate_environment(key, &caller).or_value_error()?;
     let body = dashscope_embedding::transform_embedding_request(
