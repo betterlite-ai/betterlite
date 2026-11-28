@@ -260,14 +260,22 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
 
 // the budget stages read their limits and current spend before dispatch
 async fn prefetch_budget_stage(input: StageInput) -> Result<StageInput, StageFailure> {
-    match input {
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
-        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
-        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
-        other => Ok(other),
+    if let StageInput::AuthTagBudgets(stage) = input {
+        return auth_tag_budgets::prefetched(stage).await;
     }
+    if let StageInput::AuthKeyBudgets(stage) = input {
+        return auth_key_budgets::prefetched(stage).await;
+    }
+    if let StageInput::AuthModelBudgets(stage) = input {
+        return auth_model_budgets::prefetched(stage).await;
+    }
+    if let StageInput::TeamBudgetAdmission(stage) = input {
+        return team_budget_admission::prefetched(stage).await;
+    }
+    if let StageInput::AuthTenantBudgets(stage) = input {
+        return auth_tenant_budgets::prefetched(stage).await;
+    }
+    Ok(input)
 }
 
 fn master_key_stage(
