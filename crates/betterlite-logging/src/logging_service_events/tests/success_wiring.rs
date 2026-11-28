@@ -129,7 +129,8 @@ async fn wiring_builds_one_success_handler_over_its_parts() {
     assert_eq!(service[0].class_name, "datadog");
     assert_eq!(success.excluded_fields, ["messages".to_owned()]);
     assert_eq!(success.privacy, privacy);
-    assert!(success.known_callback("langfuse"));
-    assert!(!success.known_callback("custom_callback"));
+    let known = success.known_callback.as_ref();
+    assert!(known("langfuse"));
+    assert!(!known("custom_callback"));
     wiring.pipeline.stop().await;
 }

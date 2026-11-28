@@ -338,13 +338,13 @@ pub(super) fn new_state(
 
 pub(super) struct Fixture {
     handler: OwnedSuccessHandler,
-    pub builder: Arc<FakeBuilder>,
+    pub(super) builder: Arc<FakeBuilder>,
 }
 
 impl Fixture {
     pub(super) fn new() -> Self {
         let builder = Arc::new(FakeBuilder::returning(Some(payload())));
-        let payload_builder: Arc<dyn StandardPayloadBuilder> = Arc::clone(&builder);
+        let payload_builder: Arc<dyn StandardPayloadBuilder> = Arc::<FakeBuilder>::clone(&builder);
         let stream_assembler: Arc<dyn StreamAssembler> = Arc::new(FakeAssembler { complete: None });
         let clock: Arc<dyn SuccessClock> = Arc::new(FixedClock {
             now: time("2024-01-01T00:00:02+00:00"),

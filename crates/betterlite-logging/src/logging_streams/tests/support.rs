@@ -135,7 +135,8 @@ pub(super) struct HandlerFixture {
 impl HandlerFixture {
     pub(super) fn new(complete: Option<Json>) -> Self {
         let builder = Arc::new(RecordingBuilder::default());
-        let payload_builder: Arc<dyn StandardPayloadBuilder> = Arc::clone(&builder);
+        let payload_builder: Arc<dyn StandardPayloadBuilder> =
+            Arc::<RecordingBuilder>::clone(&builder);
         let stream_assembler: Arc<dyn StreamAssembler> = Arc::new(SwitchedAssembler { complete });
         let clock: Arc<dyn SuccessClock> = Arc::new(FixedClock {
             now: time("2024-01-01T00:00:02+00:00"),

@@ -38,7 +38,8 @@ async fn start_logging_reads_the_handler_settings_from_the_config() {
     );
     assert!(wiring.success.privacy.turn_off_message_logging);
     assert!(!wiring.success.privacy.redact_user_api_key_info);
-    assert!(wiring.success.known_callback("langfuse"));
-    assert!(!wiring.success.known_callback("my_custom_callback"));
+    let known = wiring.success.known_callback.as_ref();
+    assert!(known("langfuse"));
+    assert!(!known("my_custom_callback"));
     wiring.pipeline.stop().await;
 }
