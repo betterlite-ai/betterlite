@@ -80,34 +80,8 @@ impl Scenario {
         let now = timestamp(step.now)?;
         let reply = match step.kind {
             StepKind::Token => self.token(step, now)?,
-            StepKind::Revoke => {
-                let token = entry(&self.products, step.token, &step.token_text);
-                let client = entry(&self.clients, step.client, &step.client_id);
-                let request = RevokeRequest {
-                    token: &token,
-                    client_id: Some(&client),
-                };
-                let setup = self.setup(step.master);
-                self.runtime.block_on(revoke_refresh_token(
-                    &request,
-                    setup,
-                    &self.guard,
-                    &self.cipher,
-                    now,
-                ))
-            }
-            StepKind::Introspect => {
-                let token = entry(&self.products, step.token, &step.token_text);
-                let answers = Answers::new(step)?;
-                let setup = self.setup(step.master);
-                self.runtime.block_on(introspect_gateway_token(
-                    &token,
-                    setup,
-                    &answers,
-                    &self.guard,
-                    now,
-                ))
-            }
+            StepKind::Revoke => self.revoke(step, now),
+            StepKind::Introspect => self.introspect(step, now)?,
             StepKind::Pkce => {
                 let matched = pkce_verifier_matches(&step.code_verifier, &step.code_challenge);
                 return Ok(matches_report(step.name.as_str(), matched));
@@ -120,6 +94,36 @@ impl Scenario {
             now,
             &self.clients,
         ))
+    }
+
+    fn revoke(&self, step: &Step, now: DateTime<Utc>) -> TokenReply {
+        let token = entry(&self.products, step.token, &step.token_text);
+        let client = entry(&self.clients, step.client, &step.client_id);
+        let request = RevokeRequest {
+            token: &token,
+            client_id: Some(&client),
+        };
+        let setup = self.setup(step.master);
+        self.runtime.block_on(revoke_refresh_token(
+            &request,
+            setup,
+            &self.guard,
+            &self.cipher,
+            now,
+        ))
+    }
+
+    fn introspect(&self, step: &Step, now: DateTime<Utc>) -> Result<TokenReply, Box<HelperError>> {
+        let token = entry(&self.products, step.token, &step.token_text);
+        let answers = Answers::new(step)?;
+        let setup = self.setup(step.master);
+        Ok(self.runtime.block_on(introspect_gateway_token(
+            &token,
+            setup,
+            &answers,
+            &self.guard,
+            now,
+        )))
     }
 
     fn token(&self, step: &Step, now: DateTime<Utc>) -> Result<TokenReply, Box<HelperError>> {

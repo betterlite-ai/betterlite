@@ -9,10 +9,10 @@ use serde_json::{Value, json};
 
 const REPORT_HEADERS: [&str; 2] = ["cache-control", "pragma"];
 
-struct Snapshot<'a> {
-    keys: Option<&'a SessionSigningKeys>,
+struct Snapshot<'snapshot> {
+    keys: Option<&'snapshot SessionSigningKeys>,
     now: DateTime<Utc>,
-    clients: &'a [String],
+    clients: &'snapshot [String],
 }
 
 pub(super) fn token_report(

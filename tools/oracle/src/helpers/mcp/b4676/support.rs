@@ -118,7 +118,7 @@ pub(super) fn registry(servers: &[Value]) -> Result<ServerRegistry, Box<HelperEr
     ))
 }
 
-fn registry_settings() -> RegistrySettings {
+const fn registry_settings() -> RegistrySettings {
     RegistrySettings {
         public_mcp_servers: Vec::new(),
         public_hub_strict: false,
