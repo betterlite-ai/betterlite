@@ -119,7 +119,9 @@ fn proxy_request_entries(
     principal: &PrincipalFacts,
 ) -> Result<(), PrometheusHookError> {
     let tags = proxy_tags(hooks, fields)?;
-    let metadata = object_field(fields, "metadata");
+    let metadata = fields
+        .and_then(|request_fields| request_fields.get("metadata"))
+        .and_then(as_object);
     let requested = fields
         .and_then(|request_fields| request_fields.get("model"))
         .cloned()
@@ -158,8 +160,12 @@ fn proxy_api_provider(
     fields: Option<&IndexMap<String, Json>>,
     exception: &LabelException,
 ) -> Option<String> {
-    let litellm_params = object_field(fields, "litellm_params");
-    let standard_logging = object_field(fields, "standard_logging_object");
+    let litellm_params = fields
+        .and_then(|request_fields| request_fields.get("litellm_params"))
+        .and_then(as_object);
+    let standard_logging = fields
+        .and_then(|request_fields| request_fields.get("standard_logging_object"))
+        .and_then(as_object);
     let model = litellm_params
         .and_then(|params| params.get("model"))
         .and_then(as_text)
@@ -193,15 +199,23 @@ fn proxy_tags(
     fields: Option<&IndexMap<String, Json>>,
 ) -> Result<Vec<Json>, PrometheusHookError> {
     let params = LitellmParams {
-        metadata: object_field(fields, "metadata").cloned(),
-        litellm_metadata: object_field(fields, "litellm_metadata").cloned(),
+        metadata: fields
+            .and_then(|request_fields| request_fields.get("metadata"))
+            .and_then(as_object)
+            .cloned(),
+        litellm_metadata: fields
+            .and_then(|request_fields| request_fields.get("litellm_metadata"))
+            .and_then(as_object)
+            .cloned(),
         litellm_session_id: None,
         litellm_trace_id: None,
         prompt_id: None,
         prompt_variables: None,
         langfuse_masking_function: None,
     };
-    let headers = object_field(fields, "proxy_server_request")
+    let headers = fields
+        .and_then(|request_fields| request_fields.get("proxy_server_request"))
+        .and_then(as_object)
         .and_then(|request| request.get("headers"))
         .and_then(as_object)
         .map(proxy_headers);
@@ -212,14 +226,6 @@ fn proxy_tags(
     Ok(get_request_tags(&params, headers.as_ref(), &settings)?)
 }
 
-fn object_field<'fields>(
-    fields: Option<&'fields IndexMap<String, Json>>,
-    key: &str,
-) -> Option<&'fields IndexMap<String, Json>> {
-    // a missing key and a value that is not an object both read as absent, the way litellm's kwargs chain does
-    fields?.get(key).and_then(as_object)
-}
-
 fn push_value(entries: &mut Vec<(String, LabelDumpValue)>, name: &str, value: Option<String>) {
     if let Some(text) = value {
         entries.push((name.to_owned(), LabelDumpValue::String(text)));
@@ -227,7 +233,9 @@ fn push_value(entries: &mut Vec<(String, LabelDumpValue)>, name: &str, value: Op
 }
 
 fn model_info_id(fields: Option<&IndexMap<String, Json>>) -> Option<String> {
-    object_field(fields, "model_info")?
+    fields?
+        .get("model_info")
+        .and_then(as_object)?
         .get("id")
         .and_then(as_text)
         .map(str::to_owned)
