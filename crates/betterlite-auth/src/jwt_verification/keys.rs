@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::str::FromStr as _;
 
-use aws_lc_rs::signature::{ECDSA_P521_SHA512_FIXED, UnparsedPublicKey};
+use aws_lc_rs::signature::{ECDSA_P521_SHA512_FIXED, ParsedPublicKey};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::decisions::Json;
@@ -140,11 +140,12 @@ fn verify_with_p521(
     signing_input: &[u8],
     signature: &str,
 ) -> Result<(), VerificationError> {
+    let key = ParsedPublicKey::new(&ECDSA_P521_SHA512_FIXED, point)
+        .map_err(|error| unusable_key(&error))?;
     let signature_bytes =
         decode_segment(signature.as_bytes()).map_err(|error| unusable_key(&error))?;
-    UnparsedPublicKey::new(&ECDSA_P521_SHA512_FIXED, point)
-        .verify(signing_input, &signature_bytes)
-        .map_err(|error| unusable_key(&error))
+    key.verify_sig(signing_input, &signature_bytes)
+        .map_err(|_error| invalid_signature())
 }
 
 // x509.load_pem_x509_certificate: a CERTIFICATE PEM block, then the SPKI inside it.

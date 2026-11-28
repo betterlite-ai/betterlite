@@ -1,3 +1,6 @@
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+
 use crate::jwt_verification::algorithms::JwtAlgorithm;
 use crate::jwt_verification::errors::VerificationError;
 use crate::jwt_verification::keys::{PublicKey, unsigned, verify_signature};
@@ -17,12 +20,26 @@ fn tampered_ec_signature_is_rejected() {
 }
 
 #[test]
-fn tampered_p521_signature_cannot_be_parsed() {
+fn tampered_p521_signature_is_rejected() {
     let jwk = parse_json(fixtures::P521_JWK);
     let key = PublicKey::Jwk(&jwk);
     let error = verify_signature(&key, JwtAlgorithm::Es512, b"message", "AAAA").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Validation fails: Signature verification failed"
+    );
+}
+
+#[test]
+fn an_invalid_p521_point_is_an_unusable_key() {
+    let mut fields: IndexMap<String, Json> = serde_json::from_str(fixtures::P521_JWK).unwrap();
+    fields.insert("x".to_owned(), Json::Text("A".repeat(88)));
+    fields.insert("y".to_owned(), Json::Text("A".repeat(88)));
+    let jwk = Json::Object(fields);
+    let key = PublicKey::Jwk(&jwk);
+    let error = verify_signature(&key, JwtAlgorithm::Es512, b"message", "AAAA").unwrap_err();
     let VerificationError::Validation { detail } = error else {
-        panic!("a malformed P-521 signature is not usable");
+        panic!("an invalid P-521 point is not usable");
     };
     assert!(
         detail.starts_with("the configured key is not usable: "),
