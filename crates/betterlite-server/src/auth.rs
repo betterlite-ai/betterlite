@@ -175,9 +175,7 @@ fn stage_input(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
         AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
-        AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
-            model_grant_intersection::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::ModelGrantIntersection => model_grant_stage_input(request, authenticated),
     }
 }
 
@@ -194,6 +192,15 @@ fn resource_grant_stage_input(
         database: auth_resource_grants::database_for_request(request),
     };
     Ok(StageInput::AuthResourceGrants(Box::new(stage)))
+}
+
+fn model_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    Ok(StageInput::ModelGrantIntersection(Box::new(
+        model_grant_intersection::stage_input(request, authenticated)?,
+    )))
 }
 
 fn model_pattern_input(

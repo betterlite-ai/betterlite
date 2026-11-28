@@ -14,7 +14,6 @@ use betterlite_auth::jwt_permissions::role::{
 use betterlite_auth::jwt_permissions::scope::check_scope_based_access;
 use betterlite_config::sections::auth_user_lookup::{RbacRole, RoleBasedPermissions};
 use betterlite_config::sections::jwt_settings;
-use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -74,15 +73,16 @@ pub(crate) fn stage_input(
 }
 
 // check_rbac_role, then the enforced scope mappings, then the admin branch: LiteLLM's authorize_jwt order
-pub(crate) fn run_stage(
-    stage: &JwtPermissionStageInput,
-) -> Result<AuthContext, Box<ProxyException>> {
+pub(crate) fn run_stage(stage: &JwtPermissionStageInput) -> Result<AuthContext, StageFailure> {
     let Some(rule) = stage.rule.as_deref() else {
         return Ok(stage.context.clone());
     };
-    authorize(stage, rule)
-        .map_err(|failure| Box::new(as_proxy_exception(&failure).exception().clone()))?;
-    Ok(stage.context.clone())
+    match authorize(stage, rule) {
+        Ok(()) => Ok(stage.context.clone()),
+        Err(failure) => Err(StageFailure::JwtPermissions(Box::new(
+            as_proxy_exception(&failure).exception().clone(),
+        ))),
+    }
 }
 
 fn authorize(

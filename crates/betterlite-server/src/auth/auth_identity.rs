@@ -197,6 +197,10 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     require_backend(backend, input)?;
+    run_input(input, master_key)
+}
+
+fn run_input(input: &StageInput, master_key: &SecretString) -> Result<AuthContext, StageFailure> {
     match input {
         Authenticated(context) => Ok((**context).clone()),
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
@@ -221,9 +225,7 @@ pub(crate) fn dispatch(
         StageInput::RequestBodySafety(stage) => {
             request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
         }
-        StageInput::JwtPermissions(stage) => {
-            jwt_permissions::run_stage(stage).map_err(StageFailure::JwtPermissions)
-        }
+        StageInput::JwtPermissions(stage) => jwt_permissions::run_stage(stage),
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }

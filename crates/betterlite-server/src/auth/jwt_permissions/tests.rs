@@ -192,7 +192,7 @@ fn request_model_reads_only_a_string() {
     );
     let number = Bytes::from_static(br#"{"model":5}"#);
     assert!(request_model(&request, Some(&number)).is_none());
-    let absent = Bytes::from_static(br#"{}"#);
+    let absent = Bytes::from_static(b"{}");
     assert!(request_model(&request, Some(&absent)).is_none());
 }
 
@@ -260,16 +260,16 @@ async fn role_permissions_from_config() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(reached);
-    let (status, body, reached) = run_request(
+    let (denied_status, denied_body, denied_reached) = run_request(
         &configuration,
         rule(Some(RbacRole::InternalUser), Vec::new()),
         USER_ROUTE,
         r#"{"model":"gpt-4o-mini"}"#,
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert!(body.contains("gpt-4o-mini"), "{body}");
-    assert!(!reached);
+    assert_eq!(denied_status, StatusCode::FORBIDDEN, "{denied_body}");
+    assert!(denied_body.contains("gpt-4o-mini"), "{denied_body}");
+    assert!(!denied_reached);
 }
 
 // the configured scope mappings reach the stage's scope gate with the token's scopes and the request model
@@ -285,14 +285,14 @@ async fn scope_mappings_from_config() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(reached);
-    let (status, body, reached) = run_request(
+    let (denied_status, denied_body, denied_reached) = run_request(
         &configuration,
         rule(None, vec!["chat".to_owned()]),
         USER_ROUTE,
         r#"{"model":"gpt-4o-mini"}"#,
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert!(body.contains("gpt-4o-mini"), "{body}");
-    assert!(!reached);
+    assert_eq!(denied_status, StatusCode::FORBIDDEN, "{denied_body}");
+    assert!(denied_body.contains("gpt-4o-mini"), "{denied_body}");
+    assert!(!denied_reached);
 }
