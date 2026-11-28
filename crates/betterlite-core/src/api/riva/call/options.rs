@@ -9,19 +9,19 @@ use crate::api::riva::records::error::RecordsError;
 use crate::api::riva::records::options::{DEFAULT_ENCODING, map_openai_params};
 use crate::api::riva::records::recognition::{RecognitionOptions, RivaRequest, transform_request};
 
-pub const NVCF_FUNCTION_ID: &str = "nvcf_function_id";
-pub const USE_SSL: &str = "use_ssl";
+pub(super) const NVCF_FUNCTION_ID: &str = "nvcf_function_id";
+pub(super) const USE_SSL: &str = "use_ssl";
 
 // what the call reads off the optional params before any SDK object exists: the B1545 request with the wire format forced to the resampler's output, plus the auth inputs the handler reads raw
 #[derive(Clone)]
-pub struct Resolved {
+pub(super) struct Resolved {
     pub request: RivaRequest,
     pub function_id: Option<String>,
     pub use_ssl: bool,
     pub use_ssl_logged: Json,
 }
 
-pub fn resolve(params: &Params) -> Result<Resolved, RivaCallError> {
+pub(super) fn resolve(params: &Params) -> Result<Resolved, RivaCallError> {
     let optional = params_object(params)?;
     let mapped = map_openai_params(&optional)?;
     let mut request = transform_request(&mapped)?;
@@ -61,7 +61,7 @@ pub fn resolve(params: &Params) -> Result<Resolved, RivaCallError> {
 fn force_wire_format(recognition: &mut RecognitionOptions) {
     recognition.sample_rate_hertz = TARGET_SAMPLE_RATE_HZ;
     recognition.audio_channel_count = TARGET_CHANNEL_COUNT;
-    recognition.encoding = DEFAULT_ENCODING.to_owned();
+    DEFAULT_ENCODING.clone_into(&mut recognition.encoding);
 }
 
 // optional_params crosses into B1545 as the dict a LiteLLM caller passes
@@ -92,7 +92,7 @@ fn function_id(optional: &Object) -> Result<Option<String>, RivaCallError> {
 }
 
 // `if not api_base`: the handler refuses a missing or empty endpoint before it touches the audio
-pub fn endpoint(api_base: Option<&str>) -> Result<&str, RivaCallError> {
+pub(super) fn endpoint(api_base: Option<&str>) -> Result<&str, RivaCallError> {
     match api_base {
         Some(value) if !value.is_empty() => Ok(value),
         Some(_) | None => Err(RivaCallError::MissingEndpoint {

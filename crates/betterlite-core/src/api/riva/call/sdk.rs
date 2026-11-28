@@ -14,9 +14,9 @@ use super::options::Resolved;
 use crate::api::riva::records::grpc_status::grpc_error_to_exception;
 use crate::api::riva::records::recognition::RecognitionOptions;
 
-pub const AUTH: &str = "riva.client.Auth";
-pub const RECOGNITION: &str = "riva.client.RecognitionConfig";
-pub const STREAMING: &str = "riva.client.StreamingRecognitionConfig";
+pub(super) const AUTH: &str = "riva.client.Auth";
+pub(super) const RECOGNITION: &str = "riva.client.RecognitionConfig";
+pub(super) const STREAMING: &str = "riva.client.StreamingRecognitionConfig";
 
 const CLIENT_MODULE: &str = "riva.client";
 const PROTO_MODULE: &str = "riva.client.proto.riva_asr_pb2";
@@ -32,12 +32,12 @@ const ENDPOINTING_ATTR: &str = "EndpointingConfig";
 const COPY_FROM: &str = "CopyFrom";
 
 // The optional client's handles: the package for Auth and ASRService, and whichever module exposes the protobuf constructors; stateless, so one instance can cross a blocking job.
-pub struct RivaSdk {
+pub(super) struct RivaSdk {
     client: Py<PyAny>,
     asr: Py<PyAny>,
 }
 
-pub struct AuthSpec<'call> {
+pub(super) struct AuthSpec<'call> {
     pub uri: &'call str,
     pub use_ssl: bool,
     pub api_key: Option<&'call SecretString>,
@@ -45,15 +45,14 @@ pub struct AuthSpec<'call> {
 }
 
 // The SDK objects one call shares between its two blocking jobs
-pub struct Prepared {
+pub(super) struct Prepared {
     pub sdk: RivaSdk,
     pub auth: Py<PyAny>,
-    pub recognition: Py<PyAny>,
     pub streaming: Py<PyAny>,
 }
 
 // The source's step from a resolved endpoint to the configs the stream is opened with
-pub fn prepare_attached(
+pub(super) fn prepare_attached(
     py: Python<'_>,
     resolved: &Resolved,
     uri: &str,
@@ -67,17 +66,16 @@ pub fn prepare_attached(
         function_id: resolved.function_id.as_deref(),
     };
     let auth = sdk.auth(py, &spec)?.unbind();
-    let (recognition, streaming) = sdk.configs(py, &resolved.request.recognition_config)?;
+    let streaming = sdk.configs(py, &resolved.request.recognition_config)?;
     Ok(Prepared {
         sdk,
         auth,
-        recognition,
         streaming,
     })
 }
 
 impl RivaSdk {
-    pub fn import(py: Python<'_>) -> Result<Self, RivaCallError> {
+    pub(super) fn import(py: Python<'_>) -> Result<Self, RivaCallError> {
         let client = match py.import(CLIENT_MODULE) {
             Ok(module) => module.unbind().into_any(),
             Err(error) if error.is_instance_of::<PyImportError>(py) => {
@@ -118,7 +116,7 @@ impl RivaSdk {
     }
 
     // Keyword arguments first, and the old positional signature only when that raises TypeError
-    pub fn auth<'py>(
+    pub(super) fn auth<'py>(
         &self,
         py: Python<'py>,
         spec: &AuthSpec<'_>,
@@ -141,11 +139,11 @@ impl RivaSdk {
     }
 
     // The recognition config first, then the streaming wrapper that points the service at it
-    pub fn configs(
+    pub(super) fn configs(
         &self,
         py: Python<'_>,
         options: &RecognitionOptions,
-    ) -> Result<(Py<PyAny>, Py<PyAny>), RivaCallError> {
+    ) -> Result<Py<PyAny>, RivaCallError> {
         let module = self.asr.bind(py);
         let keywords = recognition_keywords(py, module, options)?;
         let recognition_factory = config_call(py, RECOGNITION, module.getattr(RECOGNITION_ATTR))?;
@@ -172,11 +170,11 @@ impl RivaSdk {
             STREAMING,
             streaming_factory.call((), Some(&streaming_keywords)),
         )?;
-        Ok((recognition.unbind(), streaming.unbind()))
+        Ok(streaming.unbind())
     }
 
     // From here on a failure belongs to the SDK call, so it is observed and mapped as the source does
-    pub fn asr_service(
+    pub(super) fn asr_service(
         &self,
         py: Python<'_>,
         auth: &Py<PyAny>,

@@ -9,7 +9,7 @@ use super::sdk::{Prepared, provider_call, provider_failure};
 use crate::api::riva::records::response::{FinalResult, WordTiming};
 
 // 1600 int16 samples, the source's streaming slice size; its 50 ms comment is really 100 ms
-pub const CHUNK_BYTES: usize = 3_200;
+pub(super) const CHUNK_BYTES: usize = 3_200;
 
 const RESULTS: &str = "results";
 const IS_FINAL: &str = "is_final";
@@ -28,7 +28,7 @@ const TIMEOUT: &str = "timeout";
 type Found<'py> = Result<Option<Bound<'py, PyAny>>, RivaCallError>;
 
 // Everything the source's try block wraps: the service, the generator, its deadline and the stream
-pub fn stream_attached(
+pub(super) fn stream_attached(
     py: Python<'_>,
     prepared: &Prepared,
     pcm: &[u8],
@@ -100,8 +100,8 @@ fn collect(py: Python<'_>, stream: &Bound<'_, PyAny>) -> Result<Vec<FinalResult>
     let mut finals = Vec::new();
     let responses = provider_call(py, stream.try_iter())?;
     for response in responses {
-        let response = response.map_err(|error| provider_failure(py, &error))?;
-        collect_response(py, &response, &mut finals)?;
+        let collected = response.map_err(|error| provider_failure(py, &error))?;
+        collect_response(py, &collected, &mut finals)?;
     }
     Ok(finals)
 }
@@ -121,7 +121,7 @@ fn collect_response(
         let Some(alternatives) = present(py, &result, ALTERNATIVES)? else {
             continue;
         };
-        let top = provider_call(py, alternatives.get_item(0))?;
+        let top = provider_call(py, alternatives.get_item(0_i32))?;
         let transcript = transcript(py, &top)?;
         let words = words(py, &top)?;
         finals.push(FinalResult { transcript, words });
@@ -160,10 +160,7 @@ fn items<'py>(
 }
 
 fn transcript(py: Python<'_>, top: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
-    match present(py, top, TRANSCRIPT)? {
-        Some(value) => text_value(&value),
-        None => Ok(String::new()),
-    }
+    present(py, top, TRANSCRIPT)?.map_or_else(|| Ok(String::new()), |value| text_value(&value))
 }
 
 fn text_value(value: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
@@ -198,18 +195,13 @@ fn word_timing(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<WordTiming, Ri
 }
 
 fn word_text(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
-    match skip_missing(py, word.getattr(WORD))? {
-        Some(value) => text_value(&value),
-        None => Ok(String::new()),
-    }
+    skip_missing(py, word.getattr(WORD))?
+        .map_or_else(|| Ok(String::new()), |value| text_value(&value))
 }
 
 // int(getattr(word, name, 0) or 0): a missing or falsey timing is zero, and int() truncates
 fn timing(py: Python<'_>, word: &Bound<'_, PyAny>, name: &str) -> Result<i64, RivaCallError> {
-    match present(py, word, name)? {
-        Some(value) => integer_value(py, &value),
-        None => Ok(0),
-    }
+    present(py, word, name)?.map_or_else(|| Ok(0_i64), |value| integer_value(py, &value))
 }
 
 fn integer_value(py: Python<'_>, value: &Bound<'_, PyAny>) -> Result<i64, RivaCallError> {

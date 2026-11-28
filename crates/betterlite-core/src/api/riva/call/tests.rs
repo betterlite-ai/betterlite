@@ -501,10 +501,11 @@ fn probe(host: &PythonHost) -> Probe {
 }
 
 fn value(probe: &Probe, name: &str) -> String {
-    match probe.values.get(name) {
-        Some(value) => value.clone(),
-        None => panic!("the probe never recorded {name}"),
-    }
+    probe
+        .values
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| panic!("the probe never recorded {name}"))
 }
 
 fn configure(host: &PythonHost, flags: &[&str]) {

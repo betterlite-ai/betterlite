@@ -5,6 +5,8 @@ use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply
 use betterlite_pyhost::blocking_work::{Stats, WorkTracker};
 use betterlite_pyhost::host::PythonHost;
 use pyo3::types::PyAnyMethods as _;
+use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::{
     PYTHON, RecordingLogger, Setup, audio_host, call, configure, decimal, probe, reset, stage,
@@ -18,25 +20,29 @@ const FINAL_SPEC: &str = r#"[{"results": [
 ]}]"#;
 
 async fn wait_for_event(host: &PythonHost, event: &str) -> bool {
-    for _attempt in 0..500 {
+    for _attempt in 0_i32..500_i32 {
         let recorded = probe(host);
         if recorded.events.iter().any(|name| name == event) {
             return true;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(10)).await;
     }
     false
 }
 
 async fn wait_for_jobs(tracker: &WorkTracker) -> bool {
-    for _attempt in 0..500 {
+    for _attempt in 0_i32..500_i32 {
         let stats = tracker.stats();
         if stats.running == 0 && stats.completed == 3 {
             return true;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(10)).await;
     }
     false
+}
+
+fn assert_each_used(ids: &[String], used: &[String]) {
+    assert!(ids.iter().all(|id| used.contains(id)));
 }
 
 fn release_gate(host: &PythonHost) {
@@ -51,12 +57,13 @@ fn release_gate(host: &PythonHost) {
 }
 
 fn spawn_call(
+    tasks: &mut JoinSet<Result<TranscriptionReply, RivaCallError>>,
     host: PythonHost,
     tracker: Arc<WorkTracker>,
     optional: String,
     api_base: String,
-) -> tokio::task::JoinHandle<Result<TranscriptionReply, RivaCallError>> {
-    tokio::spawn(async move {
+) {
+    tasks.spawn(async move {
         let setup = Setup::new(&optional);
         let pending = call(&setup, Some(api_base.as_str()), false);
         let mut logger = RecordingLogger::default();
@@ -68,7 +75,7 @@ fn spawn_call(
             &mut logger,
         )
         .await
-    })
+    });
 }
 
 #[tokio::test]
@@ -99,6 +106,7 @@ async fn async_entry_runs_the_same_pipeline_and_logs_atranscription() {
     let recorded = probe(&host);
     assert_eq!(recorded.chunk_sizes, vec![vec![3200_usize]]);
     assert_eq!(recorded.seen_languages, vec!["en-US"]);
+    assert_eq!(recorded.streaming_config_ids.len(), 1);
     assert_eq!(
         tracker.stats(),
         Stats {
@@ -119,16 +127,19 @@ async fn cancelling_the_call_leaves_no_tracked_job() {
     stage(&host, FINAL_SPEC);
     configure(&host, &["block_stream"]);
     let tracker = Arc::new(WorkTracker::new(2, Duration::from_secs(5)));
-    let handle = spawn_call(
+    let mut tasks = JoinSet::new();
+    spawn_call(
+        &mut tasks,
         host.clone(),
         Arc::clone(&tracker),
         String::from("{}"),
         String::from("grpc.example:443"),
     );
     assert!(wait_for_event(&host, "stream.blocked").await);
-    handle.abort();
-    let joined = handle.await;
-    assert!(joined.is_err());
+    tasks.abort_all();
+    let joined = tasks.join_next().await.unwrap();
+    let error = joined.unwrap_err();
+    assert!(error.is_cancelled());
     release_gate(&host);
     assert!(wait_for_jobs(&tracker).await, "{:?}", tracker.stats());
     let stats = tracker.stats();
@@ -146,40 +157,33 @@ async fn concurrent_calls_keep_their_own_sdk_objects() {
     reset(&host, 1600);
     stage(&host, FINAL_SPEC);
     let tracker = Arc::new(WorkTracker::new(2, Duration::from_secs(5)));
-    let first = spawn_call(
+    let mut tasks = JoinSet::new();
+    spawn_call(
+        &mut tasks,
         host.clone(),
         Arc::clone(&tracker),
         String::from(r#"{"language_code":"en-US","nvcf_function_id":"fn-a"}"#),
         String::from("grpc.nvcf.nvidia.com:443"),
     );
-    let second = spawn_call(
+    spawn_call(
+        &mut tasks,
         host.clone(),
         Arc::clone(&tracker),
         String::from(r#"{"language_code":"de-DE"}"#),
         String::from("localhost:50051"),
     );
-    let (first_outcome, second_outcome) = tokio::join!(first, second);
-    first_outcome.unwrap().unwrap();
-    second_outcome.unwrap().unwrap();
+    let first_outcome = tasks.join_next().await.unwrap().unwrap().unwrap();
+    let second_outcome = tasks.join_next().await.unwrap().unwrap().unwrap();
+    assert_eq!(first_outcome.response.text.as_deref(), Some("hello world"));
+    assert_eq!(second_outcome.response.text.as_deref(), Some("hello world"));
     let recorded = probe(&host);
     assert_eq!(recorded.auth_ids.len(), 2);
-    assert_eq!(recorded.auth_used_ids.len(), 2);
-    assert!(
-        recorded
-            .auth_ids
-            .iter()
-            .all(|id| recorded.auth_used_ids.contains(id))
-    );
+    assert_each_used(&recorded.auth_ids, &recorded.auth_used_ids);
     assert_ne!(recorded.auth_ids[0], recorded.auth_ids[1]);
     assert_eq!(recorded.recognition_ids.len(), 2);
     assert_ne!(recorded.recognition_ids[0], recorded.recognition_ids[1]);
     assert_eq!(recorded.generator_config_ids.len(), 2);
-    assert!(
-        recorded
-            .generator_config_ids
-            .iter()
-            .all(|id| recorded.recognition_ids.contains(id))
-    );
+    assert_each_used(&recorded.generator_config_ids, &recorded.recognition_ids);
     let mut languages = recorded.seen_languages;
     languages.sort();
     assert_eq!(languages, vec!["de-DE", "en-US"]);

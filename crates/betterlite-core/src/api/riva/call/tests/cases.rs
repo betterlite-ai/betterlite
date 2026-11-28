@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use betterlite_pyhost::host::PythonHost;
 use pyo3::types::PyAnyMethods as _;
@@ -31,6 +32,12 @@ const AUTH_NVCF_NO_KEY: &str = r#"{"metadata_args":[["function-id","fn-123"]],"u
 
 const AUTH_ARGS: &str = r#"[null,true,"grpc.nvcf.nvidia.com:443",[["function-id","fn-123"],["authorization","Bearer riva-key"]]]"#;
 
+const AUTH_TLS_ON: &str = r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":true}"#;
+
+const AUTH_TLS_OFF: &str = r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":false}"#;
+
+const AUTH_TLS_NVCF_OFF: &str = r#"{"metadata_args":[["function-id","fn-123"],["authorization","Bearer riva-key"]],"uri":"grpc.nvcf.nvidia.com:443","use_ssl":false}"#;
+
 fn run_sync(
     host: &PythonHost,
     setup: &Setup,
@@ -59,12 +66,17 @@ fn failure(host: &PythonHost, flags: &[&str], kind: Option<&str>, specs: &str) -
     reset(host, 1600);
     stage(host, specs);
     configure(host, flags);
-    if let Some(kind) = kind {
-        service(host, kind);
+    if let Some(selected) = kind {
+        service(host, selected);
     }
     let setup = Setup::new("{}");
     let (outcome, _logger) = run_sync(host, &setup, Some("grpc.example:443"), false);
     outcome.unwrap_err()
+}
+
+fn auth_logger(host: &PythonHost, optional: &str, api_base: &str) -> (String, RecordingLogger) {
+    let (_, logger) = complete(host, optional, api_base);
+    (value(&probe(host), "auth.kwargs"), logger)
 }
 
 #[rstest]
@@ -97,8 +109,8 @@ fn sdk_call_matches_the_source_protocol() {
     reset(&host, 3250);
     stage(&host, FINAL_SPEC);
     let setup = Setup::new("{}");
-    let (outcome, logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
-    let reply = outcome.unwrap();
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    outcome.unwrap();
     let recorded = probe(&host);
     assert_eq!(
         recorded.events,
@@ -114,6 +126,19 @@ fn sdk_call_matches_the_source_protocol() {
     );
     assert_eq!(value(&recorded, "stream.timeout"), "30.0");
     assert_eq!(recorded.chunk_sizes, vec![vec![3200_usize, 3200, 100]]);
+}
+
+#[test]
+fn sdk_call_builds_the_source_reply() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 3250);
+    stage(&host, FINAL_SPEC);
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    let reply = outcome.unwrap();
     assert_eq!(reply.response.text.as_deref(), Some("hello world"));
     assert_eq!(
         reply.response.extra.get("task"),
@@ -129,6 +154,19 @@ fn sdk_call_matches_the_source_protocol() {
         reply.original_response,
         json(r#"{"text":"hello world","task":"transcribe"}"#)
     );
+}
+
+#[test]
+fn sdk_call_logs_match_the_source() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 3250);
+    stage(&host, FINAL_SPEC);
+    let setup = Setup::new("{}");
+    let (outcome, logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    let reply = outcome.unwrap();
     assert_eq!(logger.pre.len(), 1);
     assert_eq!(logger.pre[0].api_base, "grpc.example:443");
     assert!(!logger.pre[0].atranscription);
@@ -178,51 +216,30 @@ fn self_hosted_tls_follows_the_override() {
     let Some(host) = audio_host() else {
         return;
     };
-    let (_, true_logger) = complete(&host, r#"{"use_ssl":true}"#, "localhost:50051");
-    let true_probe = probe(&host);
-    assert_eq!(
-        value(&true_probe, "auth.kwargs"),
-        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":true}"#
-    );
-    assert_eq!(true_logger.pre[0].use_ssl, json("true"));
-
-    reset(&host, 1600);
-    stage(&host, FINAL_SPEC);
-    let truthy_setup = Setup::new(r#"{"use_ssl":"yes"}"#);
-    let (truthy_outcome, truthy_logger) =
-        run_sync(&host, &truthy_setup, Some("localhost:50051"), false);
-    truthy_outcome.unwrap();
-    assert_eq!(
-        value(&probe(&host), "auth.kwargs"),
-        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":true}"#
-    );
-    assert_eq!(truthy_logger.pre[0].use_ssl, json(r#""yes""#));
-
-    let (_, array_logger) = complete(&host, r#"{"use_ssl":[]}"#, "localhost:50051");
-    assert_eq!(
-        value(&probe(&host), "auth.kwargs"),
-        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":false}"#
-    );
-    assert_eq!(array_logger.pre[0].use_ssl, json("[]"));
-
-    let (_, object_logger) = complete(&host, r#"{"use_ssl":{}}"#, "localhost:50051");
-    assert_eq!(
-        value(&probe(&host), "auth.kwargs"),
-        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":false}"#
-    );
-    assert_eq!(object_logger.pre[0].use_ssl, json("{}"));
-
-    let (_, zero_logger) = complete(
+    let (flag_true, flag_true_logger) =
+        auth_logger(&host, r#"{"use_ssl":true}"#, "localhost:50051");
+    assert_eq!(flag_true, AUTH_TLS_ON);
+    assert_eq!(flag_true_logger.pre[0].use_ssl, json("true"));
+    let (quoted_yes, quoted_yes_logger) =
+        auth_logger(&host, r#"{"use_ssl":"yes"}"#, "localhost:50051");
+    assert_eq!(quoted_yes, AUTH_TLS_ON);
+    assert_eq!(quoted_yes_logger.pre[0].use_ssl, json(r#""yes""#));
+    let (empty_list, empty_list_logger) =
+        auth_logger(&host, r#"{"use_ssl":[]}"#, "localhost:50051");
+    assert_eq!(empty_list, AUTH_TLS_OFF);
+    assert_eq!(empty_list_logger.pre[0].use_ssl, json("[]"));
+    let (empty_object, empty_object_logger) =
+        auth_logger(&host, r#"{"use_ssl":{}}"#, "localhost:50051");
+    assert_eq!(empty_object, AUTH_TLS_OFF);
+    assert_eq!(empty_object_logger.pre[0].use_ssl, json("{}"));
+    let (zero_number, zero_number_logger) = auth_logger(
         &host,
         r#"{"use_ssl":0,"nvcf_function_id":"fn-123"}"#,
         "grpc.nvcf.nvidia.com:443",
     );
-    assert_eq!(
-        value(&probe(&host), "auth.kwargs"),
-        r#"{"metadata_args":[["function-id","fn-123"],["authorization","Bearer riva-key"]],"uri":"grpc.nvcf.nvidia.com:443","use_ssl":false}"#
-    );
-    assert_eq!(zero_logger.pre[0].use_ssl, json("0"));
-    assert!(zero_logger.pre[0].nvcf_function_id_set);
+    assert_eq!(zero_number, AUTH_TLS_NVCF_OFF);
+    assert_eq!(zero_number_logger.pre[0].use_ssl, json("0"));
+    assert!(zero_number_logger.pre[0].nvcf_function_id_set);
 }
 
 #[test]
@@ -309,7 +326,7 @@ fn the_named_encoding_constant_is_read_from_the_sdk() {
         let sdk = py.import("riva_call_sdk").unwrap();
         sdk.getattr("AudioEncoding")
             .unwrap()
-            .setattr("LINEAR_PCM", 7)
+            .setattr("LINEAR_PCM", 7_i32)
             .unwrap();
     });
     let setup = Setup::new("{}");
@@ -523,8 +540,8 @@ fn timeout_is_sent_only_when_the_generator_takes_it(
     outcome.unwrap();
     let recorded = probe(&host);
     assert_eq!(value(&recorded, "stream.timeout"), expected, "{kind}");
-    if let Some(extra) = extra {
-        assert_eq!(value(&recorded, "stream.extra"), extra, "{kind}");
+    if let Some(sent) = extra {
+        assert_eq!(value(&recorded, "stream.extra"), sent, "{kind}");
     }
 }
 
@@ -534,43 +551,35 @@ fn provider_failures_map_through_the_grpc_table() {
     let Some(host) = audio_host() else {
         return;
     };
-    {
-        let error = failure(&host, &["asr_fails"], None, FINAL_SPEC);
-        assert!(matches!(error, RivaCallError::Provider(_)));
-        assert_eq!(error.to_string(), "NVIDIA Riva error: asr refused");
-        assert_eq!(error.status_code(), Some(500));
-    }
-    {
-        let error = failure(&host, &["grpc_failure"], None, FINAL_SPEC);
-        assert_eq!(
-            error.to_string(),
-            "NVIDIA Riva gRPC error (UNAVAILABLE): backend down"
-        );
-        assert_eq!(error.status_code(), Some(503));
-    }
-    {
-        let error = failure(&host, &[], Some("raises"), FINAL_SPEC);
-        assert_eq!(error.to_string(), "NVIDIA Riva error: generator refused");
-    }
-    {
-        let error = failure(&host, &[], Some("scalar"), FINAL_SPEC);
-        assert_eq!(error.status_code(), Some(500));
-    }
-    {
-        let error = failure(&host, &["entry_fails"], None, FINAL_SPEC);
-        assert_eq!(error.to_string(), "NVIDIA Riva error: stream refused");
-    }
-    {
-        let error = failure(&host, &[], None, r#"[{"raise":"iteration refused"}]"#);
-        assert_eq!(error.to_string(), "NVIDIA Riva error: iteration refused");
-    }
-    {
-        let error = failure(&host, &[], None, r#"[{"raises":["results"]}]"#);
-        assert_eq!(
-            error.to_string(),
-            "NVIDIA Riva error: attribute results failed"
-        );
-    }
+    let asr_error = failure(&host, &["asr_fails"], None, FINAL_SPEC);
+    assert!(matches!(asr_error, RivaCallError::Provider(_)));
+    assert_eq!(asr_error.to_string(), "NVIDIA Riva error: asr refused");
+    assert_eq!(asr_error.status_code(), Some(500));
+    let grpc_error = failure(&host, &["grpc_failure"], None, FINAL_SPEC);
+    assert_eq!(
+        grpc_error.to_string(),
+        "NVIDIA Riva gRPC error (UNAVAILABLE): backend down"
+    );
+    assert_eq!(grpc_error.status_code(), Some(503));
+    let generator_error = failure(&host, &[], Some("raises"), FINAL_SPEC);
+    assert_eq!(
+        generator_error.to_string(),
+        "NVIDIA Riva error: generator refused"
+    );
+    let scalar_error = failure(&host, &[], Some("scalar"), FINAL_SPEC);
+    assert_eq!(scalar_error.status_code(), Some(500));
+    let entry_error = failure(&host, &["entry_fails"], None, FINAL_SPEC);
+    assert_eq!(entry_error.to_string(), "NVIDIA Riva error: stream refused");
+    let iteration_error = failure(&host, &[], None, r#"[{"raise":"iteration refused"}]"#);
+    assert_eq!(
+        iteration_error.to_string(),
+        "NVIDIA Riva error: iteration refused"
+    );
+    let attribute_error = failure(&host, &[], None, r#"[{"raises":["results"]}]"#);
+    assert_eq!(
+        attribute_error.to_string(),
+        "NVIDIA Riva error: attribute results failed"
+    );
 }
 
 #[test]
@@ -626,19 +635,16 @@ fn word_timings_convert_integers_and_falsey_values() {
     let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
     let reply = outcome.unwrap();
     assert_eq!(reply.response.text.as_deref(), Some("hi"));
-    assert_eq!(
-        reply.response.extra.get("words"),
-        Some(&serde_json::json!([
-            {"word": "a", "start": 1.0, "end": 1.5},
-            {"word": "b", "start": 1.5, "end": -1.5},
-            {"word": "c", "start": 0.001, "end": 2.0},
-            {"word": "d", "start": 0.0, "end": 0.0},
-            {"word": "e", "start": 0.0, "end": 0.0}
-        ]))
-    );
+    let expected: Object = match serde_json::from_str(
+        r#"{"words":[{"word":"a","start":1.0,"end":1.5},{"word":"b","start":1.5,"end":-1.5},{"word":"c","start":0.001,"end":2.0},{"word":"d","start":0.0,"end":0.0},{"word":"e","start":0.0,"end":0.0}],"duration":0.1}"#,
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => panic!("the expected word timings are invalid: {error}"),
+    };
+    assert_eq!(reply.response.extra.get("words"), expected.get("words"));
     assert_eq!(
         reply.response.extra.get("duration"),
-        Some(&serde_json::json!(0.1))
+        expected.get("duration")
     );
 }
 
@@ -648,34 +654,28 @@ fn malformed_stream_values_are_rejected() {
     let Some(host) = audio_host() else {
         return;
     };
-    {
-        let error = failure(
-            &host,
-            &[],
-            None,
-            r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": 5}]}]}]"#,
-        );
-        assert!(matches!(error, RivaCallError::Malformed { .. }));
-        assert_eq!(error.status_code(), Some(500));
-    }
-    {
-        let error = failure(
-            &host,
-            &[],
-            None,
-            r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": 5}]}]}]}]"#,
-        );
-        assert!(matches!(error, RivaCallError::Malformed { .. }));
-    }
-    {
-        let error = failure(
-            &host,
-            &[],
-            None,
-            r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": "w", "start_time": "x"}]}]}]}]"#,
-        );
-        assert!(matches!(error, RivaCallError::Malformed { .. }));
-    }
+    let transcript_error = failure(
+        &host,
+        &[],
+        None,
+        r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": 5}]}]}]"#,
+    );
+    assert!(matches!(transcript_error, RivaCallError::Malformed { .. }));
+    assert_eq!(transcript_error.status_code(), Some(500));
+    let word_error = failure(
+        &host,
+        &[],
+        None,
+        r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": 5}]}]}]}]"#,
+    );
+    assert!(matches!(word_error, RivaCallError::Malformed { .. }));
+    let timing_error = failure(
+        &host,
+        &[],
+        None,
+        r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": "w", "start_time": "x"}]}]}]}]"#,
+    );
+    assert!(matches!(timing_error, RivaCallError::Malformed { .. }));
 }
 
 #[test]
@@ -700,32 +700,31 @@ fn a_missing_client_returns_the_install_hint() {
     let Some(host) = audio_host() else {
         return;
     };
-    {
-        install_fakes(&host, 1600, CLIENT_WITHOUT_CONFIGS, false);
-        stage(&host, FINAL_SPEC);
-        let setup = Setup::new("{}");
-        let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
-        let error = outcome.unwrap_err();
-        assert!(matches!(error, RivaCallError::Install { .. }));
-        assert_eq!(error.to_string(), INSTALL_HINT);
-        assert_eq!(error.status_code(), Some(500));
-    }
-    {
-        reset(&host, 1600);
-        stage(&host, FINAL_SPEC);
-        host.attach(|py| {
-            let registered = modules(py);
-            drop(registered.del_item("riva"));
-            drop(registered.del_item("riva.client"));
-            drop(registered.del_item("riva.client.proto"));
-            drop(registered.del_item("riva.client.proto.riva_asr_pb2"));
-        });
-        let setup = Setup::new("{}");
-        let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
-        let error = outcome.unwrap_err();
-        assert!(matches!(error, RivaCallError::Install { .. }));
-        assert_eq!(error.to_string(), INSTALL_HINT);
-    }
+    install_fakes(&host, 1600, CLIENT_WITHOUT_CONFIGS, false);
+    stage(&host, FINAL_SPEC);
+    let no_configs = Setup::new("{}");
+    let (configs_outcome, _configs_logger) =
+        run_sync(&host, &no_configs, Some("grpc.example:443"), false);
+    let missing_constructor = configs_outcome.unwrap_err();
+    assert!(matches!(missing_constructor, RivaCallError::Install { .. }));
+    assert_eq!(missing_constructor.to_string(), INSTALL_HINT);
+    assert_eq!(missing_constructor.status_code(), Some(500));
+
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    host.attach(|py| {
+        let registered = modules(py);
+        drop(registered.del_item("riva"));
+        drop(registered.del_item("riva.client"));
+        drop(registered.del_item("riva.client.proto"));
+        drop(registered.del_item("riva.client.proto.riva_asr_pb2"));
+    });
+    let absent_setup = Setup::new("{}");
+    let (absent_outcome, _absent_logger) =
+        run_sync(&host, &absent_setup, Some("grpc.example:443"), false);
+    let absent_client = absent_outcome.unwrap_err();
+    assert!(matches!(absent_client, RivaCallError::Install { .. }));
+    assert_eq!(absent_client.to_string(), INSTALL_HINT);
 }
 
 #[test]
