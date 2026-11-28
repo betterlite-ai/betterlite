@@ -627,9 +627,13 @@ pub(crate) fn fixture() -> Fixture {
     let jwt = static_jwt(&log);
     let audit = log_audit(&log);
     let gauge = team_gauge(&log);
+    let session = MemorySession {
+        log: log.clone(),
+        state: Arc::new(Mutex::new(MemoryState::default())),
+    };
     Fixture {
         log,
-        session: MemorySession::default(),
+        session,
         access: TeamAccess { org_roles },
         jwt,
         audit,
