@@ -230,9 +230,10 @@ pub fn org(
     spend: Option<Decimal>,
     budget: Option<BudgetTableSnapshot>,
 ) -> OrgBudgetGaugeRow {
+    let alias = format!("{org_id}-alias");
     OrgBudgetGaugeRow {
         organization_id: Some(org_id.to_owned()),
-        organization_alias: Some(format!("{org_id}-alias")),
+        organization_alias: Some(alias),
         spend,
         budget,
     }
@@ -431,14 +432,17 @@ pub fn deleted_entry(token: &str) -> KeyPageEntry {
     KeyPageEntry::Deleted(Box::new(stored))
 }
 
+type PageResult<Row> = Result<Page<Row>, BudgetPageError>;
+type Scripted<Row> = Mutex<VecDeque<PageResult<Row>>>;
+
 // A page source scripted per entity; an unscripted read is an empty page.
 #[derive(Default)]
 pub struct FakeSource {
-    teams: Mutex<VecDeque<Result<Page<TeamBudgetGaugeInput>, BudgetPageError>>>,
-    keys: Mutex<VecDeque<Result<Page<KeyPageEntry>, BudgetPageError>>>,
-    users: Mutex<VecDeque<Result<Page<UserBudgetGaugeInput>, BudgetPageError>>>,
-    orgs: Mutex<VecDeque<Result<Page<OrgBudgetGaugeRow>, BudgetPageError>>>,
-    customers: Mutex<VecDeque<Result<Page<CustomerBudgetGaugeRow>, BudgetPageError>>>,
+    teams: Scripted<TeamBudgetGaugeInput>,
+    keys: Scripted<KeyPageEntry>,
+    users: Scripted<UserBudgetGaugeInput>,
+    orgs: Scripted<OrgBudgetGaugeRow>,
+    customers: Scripted<CustomerBudgetGaugeRow>,
     counts: Mutex<VecDeque<Result<u64, BudgetPageError>>>,
     calls: Mutex<Vec<String>>,
 }
@@ -457,35 +461,35 @@ impl FakeSource {
             .clone()
     }
 
-    pub fn push_teams(&self, page: Result<Page<TeamBudgetGaugeInput>, BudgetPageError>) {
+    pub fn push_teams(&self, page: PageResult<TeamBudgetGaugeInput>) {
         self.teams
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_keys(&self, page: Result<Page<KeyPageEntry>, BudgetPageError>) {
+    pub fn push_keys(&self, page: PageResult<KeyPageEntry>) {
         self.keys
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_users(&self, page: Result<Page<UserBudgetGaugeInput>, BudgetPageError>) {
+    pub fn push_users(&self, page: PageResult<UserBudgetGaugeInput>) {
         self.users
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_orgs(&self, page: Result<Page<OrgBudgetGaugeRow>, BudgetPageError>) {
+    pub fn push_orgs(&self, page: PageResult<OrgBudgetGaugeRow>) {
         self.orgs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_customers(&self, page: Result<Page<CustomerBudgetGaugeRow>, BudgetPageError>) {
+    pub fn push_customers(&self, page: PageResult<CustomerBudgetGaugeRow>) {
         self.customers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -506,9 +510,12 @@ impl FakeSource {
             .push(call);
     }
 
-    fn next_page<Row>(
-        queue: &Mutex<VecDeque<Result<Page<Row>, BudgetPageError>>>,
-    ) -> Result<Page<Row>, BudgetPageError> {
+    fn page<Row>(&self, label: String, queue: &Scripted<Row>) -> PageResult<Row> {
+        self.record(label);
+        Self::next_page(queue)
+    }
+
+    fn next_page<Row>(queue: &Scripted<Row>) -> PageResult<Row> {
         match queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -537,40 +544,20 @@ impl FakeSource {
 
 #[async_trait]
 impl BudgetPageSource for FakeSource {
-    async fn teams_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<TeamBudgetGaugeInput>, BudgetPageError> {
-        self.record(format!("teams:{page_size}:{page}"));
-        Self::next_page(&self.teams)
+    async fn teams_page(&self, page_size: u64, page: u64) -> PageResult<TeamBudgetGaugeInput> {
+        self.page(format!("teams:{page_size}:{page}"), &self.teams)
     }
 
-    async fn keys_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<KeyPageEntry>, BudgetPageError> {
-        self.record(format!("keys:{page_size}:{page}"));
-        Self::next_page(&self.keys)
+    async fn keys_page(&self, page_size: u64, page: u64) -> PageResult<KeyPageEntry> {
+        self.page(format!("keys:{page_size}:{page}"), &self.keys)
     }
 
-    async fn users_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<UserBudgetGaugeInput>, BudgetPageError> {
-        self.record(format!("users:{page_size}:{page}"));
-        Self::next_page(&self.users)
+    async fn users_page(&self, page_size: u64, page: u64) -> PageResult<UserBudgetGaugeInput> {
+        self.page(format!("users:{page_size}:{page}"), &self.users)
     }
 
-    async fn orgs_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<OrgBudgetGaugeRow>, BudgetPageError> {
-        self.record(format!("orgs:{page_size}:{page}"));
-        Self::next_page(&self.orgs)
+    async fn orgs_page(&self, page_size: u64, page: u64) -> PageResult<OrgBudgetGaugeRow> {
+        self.page(format!("orgs:{page_size}:{page}"), &self.orgs)
     }
 
     async fn customers_page(
@@ -578,9 +565,9 @@ impl BudgetPageSource for FakeSource {
         page_size: u64,
         page: u64,
         budgeted_only: bool,
-    ) -> Result<Page<CustomerBudgetGaugeRow>, BudgetPageError> {
-        self.record(format!("customers:{page_size}:{page}:{budgeted_only}"));
-        Self::next_page(&self.customers)
+    ) -> PageResult<CustomerBudgetGaugeRow> {
+        let label = format!("customers:{page_size}:{page}:{budgeted_only}");
+        self.page(label, &self.customers)
     }
 
     async fn user_count(&self) -> Result<u64, BudgetPageError> {

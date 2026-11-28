@@ -10,5 +10,4 @@ pub mod source;
 pub mod teams;
 pub mod users;
 
-#[cfg(test)]
 mod tests;

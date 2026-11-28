@@ -31,6 +31,8 @@ use query::key_query;
 mod query;
 mod tests;
 
+type PageResult<Row> = Result<Page<Row>, BudgetPageError>;
+
 const USER_PAGE_SQL: &str = r#"SELECT row_to_json(t)::text FROM "LiteLLM_UserTable" t ORDER BY t."created_at" DESC OFFSET $1 LIMIT $2"#;
 const USER_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_UserTable""#;
 const TEAM_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_TeamTable""#;
@@ -41,6 +43,21 @@ const CUSTOMER_PAGE_BUDGETED_SQL: &str = r#"SELECT row_to_json(t)::text, row_to_
 const CUSTOMER_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_EndUserTable""#;
 const CUSTOMER_COUNT_BUDGETED_SQL: &str =
     r#"SELECT count(*)::bigint FROM "LiteLLM_EndUserTable" WHERE "budget_id" IS NOT NULL"#;
+
+#[derive(Clone, Copy)]
+struct TablePages {
+    page: &'static str,
+    count: Option<&'static str>,
+}
+
+const USER_PAGES: TablePages = TablePages {
+    page: USER_PAGE_SQL,
+    count: Some(USER_COUNT_SQL),
+};
+const ORG_PAGES: TablePages = TablePages {
+    page: ORG_PAGE_SQL,
+    count: Some(ORG_COUNT_SQL),
+};
 
 #[derive(Clone, Copy)]
 pub struct PostgresBudgetPageSource<'db> {
@@ -84,6 +101,61 @@ async fn count_rows(
     Ok(count)
 }
 
+// LiteLLM's find_many/count pair: the page every time and, when asked, a fresh count of the same table
+async fn page_rows(
+    client: PrismaClient<'_>,
+    page_size: u64,
+    page: u64,
+    pages: TablePages,
+) -> PageResult<Row> {
+    let (offset, limit) = page_window(page_size, page)?;
+    let session = read_store(client).session().await?;
+    let params: [&(dyn ToSql + Sync); 2] = [&offset, &limit];
+    let rows = session.query(pages.page, &params).await.map_err(backend)?;
+    let total_count = match pages.count {
+        Some(sql) => Some(count_rows(&session, sql, &[]).await?),
+        None => None,
+    };
+    Ok(Page { rows, total_count })
+}
+
+fn page_inputs<Row, Input>(
+    page: Page<Row>,
+    convert: fn(Row) -> Result<Input, BudgetPageError>,
+) -> Result<Page<Input>, BudgetPageError> {
+    let mut rows = Vec::with_capacity(page.rows.len());
+    for row in page.rows {
+        rows.push(convert(row)?);
+    }
+    Ok(Page {
+        rows,
+        total_count: page.total_count,
+    })
+}
+
+fn budgeted_inputs<Stored, Out>(
+    page: Page<Row>,
+    convert: fn(Stored, Option<BudgetTableSnapshot>) -> Out,
+) -> Result<Page<Out>, BudgetPageError>
+where
+    Stored: serde::de::DeserializeOwned,
+{
+    let mut rows = Vec::with_capacity(page.rows.len());
+    for row in page.rows {
+        let stored: Stored = stored_row(&row)?;
+        rows.push(convert(stored, budget_of(&row)?));
+    }
+    Ok(Page {
+        rows,
+        total_count: page.total_count,
+    })
+}
+
+fn stored_row<Stored: serde::de::DeserializeOwned>(row: &Row) -> Result<Stored, BudgetPageError> {
+    serde_json::from_str(&row.try_get::<_, String>(0).map_err(backend)?)
+        .map_err(BudgetPageError::Row)
+}
+
 fn team_input(team: LiteLLMTeamTable) -> TeamBudgetGaugeInput {
     TeamBudgetGaugeInput {
         team_id: team.fields.base.team_id,
@@ -94,15 +166,16 @@ fn team_input(team: LiteLLMTeamTable) -> TeamBudgetGaugeInput {
     }
 }
 
-fn user_input(stored: LiteLLMUserTable) -> UserBudgetGaugeInput {
-    UserBudgetGaugeInput {
+fn user_row(row: Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
+    let stored: LiteLLMUserTable = stored_row(&row)?;
+    Ok(UserBudgetGaugeInput {
         user_id: stored.user_id,
         user_email: stored.user_email,
         user_alias: stored.user_alias,
         spend: stored.spend,
         max_budget: stored.max_budget,
         budget_reset_at: stored.budget_reset_at.map(Timestamp::utc),
-    }
+    })
 }
 
 fn budget_of(row: &Row) -> Result<Option<BudgetTableSnapshot>, BudgetPageError> {
@@ -118,55 +191,49 @@ fn budget_of(row: &Row) -> Result<Option<BudgetTableSnapshot>, BudgetPageError> 
     }))
 }
 
-fn org_row(row: &Row) -> Result<OrgBudgetGaugeRow, BudgetPageError> {
-    let text: String = row.try_get(0).map_err(backend)?;
-    let stored: OrganizationTable = serde_json::from_str(&text).map_err(BudgetPageError::Row)?;
-    Ok(OrgBudgetGaugeRow {
+fn org_row(stored: OrganizationTable, budget: Option<BudgetTableSnapshot>) -> OrgBudgetGaugeRow {
+    OrgBudgetGaugeRow {
         organization_id: stored.organization_id,
         organization_alias: stored.organization_alias,
         spend: Some(stored.spend),
-        budget: budget_of(row)?,
-    })
+        budget,
+    }
 }
 
-fn customer_row(row: &Row) -> Result<CustomerBudgetGaugeRow, BudgetPageError> {
-    let text: String = row.try_get(0).map_err(backend)?;
-    let stored: LiteLLMEndUserTable = serde_json::from_str(&text).map_err(BudgetPageError::Row)?;
-    Ok(CustomerBudgetGaugeRow {
+fn customer_row(
+    stored: LiteLLMEndUserTable,
+    budget: Option<BudgetTableSnapshot>,
+) -> CustomerBudgetGaugeRow {
+    CustomerBudgetGaugeRow {
         user_id: stored.user_id,
         spend: stored.spend,
-        budget: budget_of(row)?,
-    })
+        budget,
+    }
 }
 
-fn customer_sql(budgeted_only: bool) -> (&'static str, &'static str) {
-    if budgeted_only {
+fn customer_pages(budgeted_only: bool, page: u64) -> TablePages {
+    let (page_sql, count_sql) = if budgeted_only {
         (CUSTOMER_PAGE_BUDGETED_SQL, CUSTOMER_COUNT_BUDGETED_SQL)
     } else {
         (CUSTOMER_PAGE_SQL, CUSTOMER_COUNT_SQL)
+    };
+    TablePages {
+        page: page_sql,
+        count: (page == 1).then_some(count_sql),
     }
 }
 
 #[async_trait]
 impl BudgetPageSource for PostgresBudgetPageSource<'_> {
-    async fn teams_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<TeamBudgetGaugeInput>, BudgetPageError> {
+    async fn teams_page(&self, page_size: u64, page: u64) -> PageResult<TeamBudgetGaugeInput> {
         let (teams, total) = get_paginated_teams(self.client, page_size, page).await;
-        let rows = teams.into_iter().map(team_input).collect();
         Ok(Page {
-            rows,
+            rows: teams.into_iter().map(team_input).collect(),
             total_count: Some(total),
         })
     }
 
-    async fn keys_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<KeyListEntry>, BudgetPageError> {
+    async fn keys_page(&self, page_size: u64, page: u64) -> PageResult<KeyListEntry> {
         let query = key_query(page_size, page)?;
         let response = list_keys(Some(self.client), &query).await?;
         let total_count = response
@@ -178,53 +245,14 @@ impl BudgetPageSource for PostgresBudgetPageSource<'_> {
         })
     }
 
-    async fn users_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<UserBudgetGaugeInput>, BudgetPageError> {
-        let (offset, limit) = page_window(page_size, page)?;
-        let session = read_store(self.client).session().await?;
-        let params: [&(dyn ToSql + Sync); 2] = [&offset, &limit];
-        let rows = session
-            .query(USER_PAGE_SQL, &params)
-            .await
-            .map_err(backend)?;
-        let total = count_rows(&session, USER_COUNT_SQL, &[]).await?;
-        let mut users = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let text: String = row.try_get(0).map_err(backend)?;
-            let stored: LiteLLMUserTable =
-                serde_json::from_str(&text).map_err(BudgetPageError::Row)?;
-            users.push(user_input(stored));
-        }
-        Ok(Page {
-            rows: users,
-            total_count: Some(total),
-        })
+    async fn users_page(&self, page_size: u64, page: u64) -> PageResult<UserBudgetGaugeInput> {
+        let page = page_rows(self.client, page_size, page, USER_PAGES).await?;
+        page_inputs(page, user_row)
     }
 
-    async fn orgs_page(
-        &self,
-        page_size: u64,
-        page: u64,
-    ) -> Result<Page<OrgBudgetGaugeRow>, BudgetPageError> {
-        let (offset, limit) = page_window(page_size, page)?;
-        let session = read_store(self.client).session().await?;
-        let params: [&(dyn ToSql + Sync); 2] = [&offset, &limit];
-        let rows = session
-            .query(ORG_PAGE_SQL, &params)
-            .await
-            .map_err(backend)?;
-        let total = count_rows(&session, ORG_COUNT_SQL, &[]).await?;
-        let mut orgs = Vec::with_capacity(rows.len());
-        for row in &rows {
-            orgs.push(org_row(row)?);
-        }
-        Ok(Page {
-            rows: orgs,
-            total_count: Some(total),
-        })
+    async fn orgs_page(&self, page_size: u64, page: u64) -> PageResult<OrgBudgetGaugeRow> {
+        let page = page_rows(self.client, page_size, page, ORG_PAGES).await?;
+        budgeted_inputs(page, org_row)
     }
 
     async fn customers_page(
@@ -232,25 +260,10 @@ impl BudgetPageSource for PostgresBudgetPageSource<'_> {
         page_size: u64,
         page: u64,
         budgeted_only: bool,
-    ) -> Result<Page<CustomerBudgetGaugeRow>, BudgetPageError> {
-        let (offset, limit) = page_window(page_size, page)?;
-        let (page_sql, count_sql) = customer_sql(budgeted_only);
-        let session = read_store(self.client).session().await?;
-        let params: [&(dyn ToSql + Sync); 2] = [&offset, &limit];
-        let rows = session.query(page_sql, &params).await.map_err(backend)?;
-        let mut customers = Vec::with_capacity(rows.len());
-        for row in &rows {
-            customers.push(customer_row(row)?);
-        }
-        let total_count = if page == 1 {
-            Some(count_rows(&session, count_sql, &[]).await?)
-        } else {
-            None
-        };
-        Ok(Page {
-            rows: customers,
-            total_count,
-        })
+    ) -> PageResult<CustomerBudgetGaugeRow> {
+        let pages = customer_pages(budgeted_only, page);
+        let page = page_rows(self.client, page_size, page, pages).await?;
+        budgeted_inputs(page, customer_row)
     }
 
     async fn user_count(&self) -> Result<u64, BudgetPageError> {
