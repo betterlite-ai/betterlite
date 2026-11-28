@@ -8,6 +8,7 @@ use betterlite_context::chat_config_selection::tags::{
 };
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{StreamResponse, UpstreamResponse};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -34,8 +35,7 @@ use super::super::credentials::Globals;
 use super::super::embedding::{EmbeddingCall, embed};
 use super::super::transport::{HubGetAsync, PostTransport, WireRequest};
 use super::super::{
-    CallLogging, ChatContext, DispatchDeps, HubCompletion, HubDispatchError, ReplicateServices,
-    dispatch,
+    ChatContext, DispatchDeps, HubCompletion, HubDispatchError, ReplicateServices, dispatch,
 };
 use crate::oci_common::Clock;
 use crate::operation::OperationError;
@@ -393,7 +393,7 @@ impl Services {
 }
 
 type Deps<'call> = &'call DispatchDeps<'call>;
-type Log<'call, 'state, 'env> = &'call mut CallLogging<'state, 'env>;
+type Log<'call, 'state, 'env> = &'call mut LogContext<'state, 'env>;
 type Ran<'call, T> = BoxFuture<'call, Result<T, HubDispatchError>>;
 
 // one entry point of the module under test
@@ -445,7 +445,7 @@ where
     Box::pin(async move {
         let deps = services.deps(globals, env);
         let (mut state, log_env) = services.logging();
-        let mut log = CallLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &log_env,
         };

@@ -12,8 +12,8 @@ use betterlite_core::api::eval_get_update::call::{
     EvalRetrieval, EvalUpdate, GetEvalCall, UpdateEvalCall,
 };
 use betterlite_core::api::eval_get_update::service::EvalsGetUpdateService;
-use betterlite_core::api::eval_http::exchange::EvalLogging;
 use betterlite_core::api::eval_lifecycle::{EvalLifecycleCall, EvalLifecycleDeps, EvalLifecycles};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -171,7 +171,7 @@ impl EvalCore {
             redactor: &self.redactor,
             request_timeout: self.request_timeout,
         };
-        let mut log = EvalLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &env,
         };

@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -17,7 +18,7 @@ use secrecy::SecretString;
 
 use crate::speech::binary::{AudioSpeechCall, finish_audio_speech};
 use crate::speech::dispatch::SpeechGlobals;
-use crate::speech::logging::{PrePostLogger, SpeechLogger as _, SpeechPreCall};
+use crate::speech::logging::{SpeechLogger as _, SpeechPreCall};
 
 use super::support::{self, API_BASE, Inputs, Recorder, SECRET, json};
 
@@ -121,7 +122,7 @@ fn logging_init() -> LoggingInit {
 }
 
 fn record_speech_pre_call(state: &mut LoggingState, env: &PrePostEnv<'_>) {
-    let mut logger = PrePostLogger { state, env };
+    let mut logger = LogContext { state, env };
     let record = SpeechPreCall {
         input: "hello",
         api_base: API_BASE,
@@ -154,7 +155,7 @@ fn assert_pre_call_details(state: &LoggingState) {
     );
 }
 
-// PrePostLogger hands the speech pre-call to B249's pre_call, which fills the call details from it
+// LogContext hands the speech pre-call to B249's pre_call, which fills the call details from it
 #[test]
 fn speech_pre_post_logger_records_the_pre_call() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");

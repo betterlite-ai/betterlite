@@ -3,6 +3,7 @@ use std::future::{Future, ready};
 use std::time::Duration;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_openai::cloudflare_chat::error::CloudflareChatError;
 use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
@@ -12,7 +13,7 @@ use rstest::rstest;
 use serde_json::json;
 
 use crate::hosted_platform_dispatch::chat::dispatch;
-use crate::hosted_platform_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
+use crate::hosted_platform_dispatch::context::{DispatchContext, DispatchSettings};
 use crate::hosted_platform_dispatch::error::DispatchError;
 use crate::hosted_platform_dispatch::handler::HandlerError;
 
@@ -70,7 +71,7 @@ async fn dispatch_chat(
     tag: ChatConfigTag,
     fixture: &Fixture,
     handler: &Recorder,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<String, DispatchError> {
     let context = chat_context(fixture);
     let mut capabilities = Capabilities { reasoning: true };
@@ -83,7 +84,7 @@ async fn dispatch_chat(
 async fn groq_and_cloudflare_return_the_handler_error_without_logging_it() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -129,7 +130,7 @@ fn handler_errors_report_their_status_code() {
 async fn fireworks_maps_extra_body_params_only_for_its_chat_config() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -155,7 +156,7 @@ async fn fireworks_maps_extra_body_params_only_for_its_chat_config() {
 async fn fireworks_keeps_optional_params_for_another_provider_config() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -177,7 +178,7 @@ async fn fireworks_keeps_optional_params_for_another_provider_config() {
 async fn fireworks_logs_the_error_text_and_headers_on_failure() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -215,7 +216,7 @@ async fn fireworks_logs_the_error_text_and_headers_on_failure() {
 async fn together_passes_every_context_field_with_the_provider_config() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -257,7 +258,7 @@ async fn together_passes_every_context_field_with_the_provider_config() {
 async fn together_logs_the_error_text_and_headers_on_failure() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -310,7 +311,7 @@ async fn groq_resolves_the_base_chain_in_order(
 ) {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -355,7 +356,7 @@ async fn groq_resolves_the_key_chain_in_order(
 ) {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -386,7 +387,7 @@ async fn groq_falls_back_from_the_request_headers_to_the_global_ones(
 ) {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -408,7 +409,7 @@ async fn groq_falls_back_from_the_request_headers_to_the_global_ones(
 async fn groq_adds_config_keys_only_where_the_request_lacks_them() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -430,7 +431,7 @@ async fn groq_adds_config_keys_only_where_the_request_lacks_them() {
 async fn groq_and_cloudflare_send_no_provider_config() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -487,7 +488,7 @@ async fn cloudflare_resolves_the_key_chain_in_order(
 ) {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -540,7 +541,7 @@ async fn cloudflare_resolves_the_base_chain_in_order(
 ) {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -566,7 +567,7 @@ fn cloudflare_fixture() -> Fixture {
 async fn cloudflare_answers_a_missing_account_id() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -587,7 +588,7 @@ async fn cloudflare_answers_a_missing_account_id() {
 async fn cloudflare_passes_headers_as_they_came_without_a_global_fallback() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -618,7 +619,7 @@ async fn cloudflare_passes_headers_as_they_came_without_a_global_fallback() {
 async fn cloudflare_sends_its_own_provider_name() {
     let redactor = redactor();
     let (mut state, prepost) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
