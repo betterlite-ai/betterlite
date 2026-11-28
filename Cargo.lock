@@ -3830,6 +3830,7 @@ dependencies = [
  "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-lens",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
