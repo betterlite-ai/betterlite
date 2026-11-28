@@ -154,5 +154,5 @@ pitfalls:
   - "team_id in the proxy credential body is JSON null when the credential has no team, while resource_server_id and audience are left out of the introspection body when unset."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2500
   max_new_expects: 0
