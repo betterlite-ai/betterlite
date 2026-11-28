@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-active-subjects-presented-key-latin1-bytes
+call:
+  b4658:
+    operation: presented_key
+    headers:
+      - ["authorization", "Bearer sk-café"]
+env: {}
+compare: {ignore: []}
