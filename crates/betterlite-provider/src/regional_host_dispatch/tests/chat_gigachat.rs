@@ -9,32 +9,35 @@ use crate::regional_host_dispatch::error::DispatchError;
 
 use super::support::{ChatFixture, ChatRecorder, chat_dispatch, headers, params, secret};
 
-// LiteLLM's five-step GigaChat chain: the request key, the global, the section key, then the API key env and the credentials env
+// LiteLLM's five-step GigaChat chain, once get_llm_provider has put a GIGACHAT_API_KEY env into the passed key: request key, API key env, litellm.api_key, litellm.gigachat_key, credentials env
 #[rstest]
 #[case::request_key(
-    [Some("sk-request"), Some("sk-global"), Some("sk-section"), Some("sk-env"), Some("sk-cred")],
+    [Some("sk-request"), Some("sk-env"), Some("sk-global"), Some("sk-section"), Some("sk-cred")],
     Some("sk-request")
 )]
+#[case::api_key_env_beats_the_globals(
+    [None, Some("sk-env"), Some("sk-global"), Some("sk-section"), Some("sk-cred")],
+    Some("sk-env")
+)]
 #[case::global_key(
-    [None, Some("sk-global"), Some("sk-section"), Some("sk-env"), Some("sk-cred")],
+    [None, None, Some("sk-global"), Some("sk-section"), Some("sk-cred")],
     Some("sk-global")
 )]
 #[case::section_key(
-    [None, None, Some("sk-section"), Some("sk-env"), Some("sk-cred")],
+    [None, None, None, Some("sk-section"), Some("sk-cred")],
     Some("sk-section")
 )]
-#[case::api_key_env([None, None, None, Some("sk-env"), Some("sk-cred")], Some("sk-env"))]
 #[case::credentials_env([None, None, None, None, Some("sk-cred")], Some("sk-cred"))]
 #[case::no_key([None, None, None, None, None], None)]
 fn gigachat_key_chain(#[case] sources: [Option<&str>; 5], #[case] expected: Option<&str>) {
     let [
         request_key,
+        api_key_env,
         global_key,
         section_key,
-        api_key_env,
         credentials_env,
     ] = sources;
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("gigachat");
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
@@ -56,7 +59,7 @@ fn gigachat_key_chain(#[case] sources: [Option<&str>; 5], #[case] expected: Opti
 
 #[test]
 fn gigachat_request_headers_win_over_the_global_headers() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("gigachat");
     fixture.headers = Some(headers(&[("x-request", "1")]));
     fixture.settings.headers = Some(headers(&[("x-global", "2")]));
@@ -71,7 +74,7 @@ fn gigachat_request_headers_win_over_the_global_headers() {
 
 #[test]
 fn gigachat_global_headers_fill_in_for_an_empty_request_map() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("gigachat");
     fixture.headers = Some(headers(&[]));
     fixture.settings.headers = Some(headers(&[("x-global", "2")]));
@@ -83,7 +86,7 @@ fn gigachat_global_headers_fill_in_for_an_empty_request_map() {
 
 #[test]
 fn gigachat_without_any_headers_passes_an_empty_map() {
-    let fixture = ChatFixture::default();
+    let fixture = ChatFixture::baseline();
     let handler = ChatRecorder::succeeding();
     let (outcome, _state) = chat_dispatch(ChatConfigTag::GigaChat, &fixture, &handler);
     outcome.expect("the gigachat arm answers");
@@ -92,7 +95,7 @@ fn gigachat_without_any_headers_passes_an_empty_map() {
 
 #[test]
 fn gigachat_passes_the_base_and_provider_config_as_they_came() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("gigachat");
     fixture.model = String::from("GigaChat");
     fixture.api_base = Some(String::from("https://gigachat.example/v1"));
@@ -114,7 +117,7 @@ fn gigachat_passes_the_base_and_provider_config_as_they_came() {
 
 #[test]
 fn gigachat_logs_the_handler_error_with_the_resolved_headers() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("gigachat");
     fixture.headers = Some(headers(&[("x-scope", "tenant")]));
     let handler = ChatRecorder::failing(503);

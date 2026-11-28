@@ -88,15 +88,15 @@ const fn brand_key<'request>(
     }
 }
 
-// the gigachat arm: the passed key, litellm.api_key, gigachat_key, GIGACHAT_CREDENTIALS, GIGACHAT_API_KEY; litellm_params holds only ssl_verify
+// the gigachat arm, with get_llm_provider's GIGACHAT_API_KEY env already in the passed key: litellm.api_key, gigachat_key and GIGACHAT_CREDENTIALS follow; litellm_params holds only ssl_verify
 fn gigachat(context: &EmbeddingContext<'_>) -> EmbeddingCall {
     let mut call = embedding_call(context);
     call.api_key = first_secret([
         context.api_key,
+        context.settings.environment.gigachat_api_key.as_ref(),
         context.settings.api_key.as_ref(),
         context.settings.gigachat_key.as_ref(),
         context.settings.environment.gigachat_credentials.as_ref(),
-        context.settings.environment.gigachat_api_key.as_ref(),
     ]);
     call.headers = None;
     call.litellm_params = Object::from_iter([(

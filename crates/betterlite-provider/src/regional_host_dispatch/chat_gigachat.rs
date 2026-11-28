@@ -8,7 +8,7 @@ use super::context::{CallLogging, DispatchContext, first_secret};
 use super::error::DispatchError;
 use super::logging;
 
-// _complete_gigachat: the passed key, litellm.api_key, litellm.gigachat_key, GIGACHAT_API_KEY and GIGACHAT_CREDENTIALS; the passed headers, litellm.headers, then an empty map; the base as it came
+// _complete_gigachat, with get_llm_provider's GIGACHAT_API_KEY env already in the passed key: litellm.api_key, litellm.gigachat_key and GIGACHAT_CREDENTIALS follow; the passed headers, litellm.headers, then an empty map; the base as it came
 pub(super) fn gigachat<R>(
     context: &DispatchContext<'_>,
     handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
@@ -17,9 +17,9 @@ pub(super) fn gigachat<R>(
     let mut call = completion_call(context);
     call.api_key = first_secret([
         context.api_key,
+        context.settings.environment.gigachat_api_key.as_ref(),
         context.settings.api_key.as_ref(),
         context.settings.gigachat_key.as_ref(),
-        context.settings.environment.gigachat_api_key.as_ref(),
         context.settings.environment.gigachat_credentials.as_ref(),
     ]);
     let headers = headers_or_global(context.headers.cloned(), context.settings.headers.as_ref())
