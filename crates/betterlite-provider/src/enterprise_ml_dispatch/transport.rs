@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::sagemaker_runtime::runtime::{
-    ChunkStream, SagemakerCredentials, SagemakerTransport,
-};
+use betterlite_bedrock::sagemaker_runtime::runtime::{ChunkStream, SagemakerTransport};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -74,7 +73,7 @@ impl WatsonxTransport for SharedTransport<'_> {
     }
 }
 
-// SagemakerCredentials resolves through a seam, so a resolver owned by the caller can sit behind it
+// CredentialSource resolves through a seam, so a resolver owned by the caller can sit behind it
 #[async_trait]
 pub trait AwsCredentials: Send + Sync {
     async fn resolve(
@@ -88,7 +87,7 @@ pub struct SharedCredentials<'deps> {
     pub inner: &'deps dyn AwsCredentials,
 }
 
-impl SagemakerCredentials for SharedCredentials<'_> {
+impl CredentialSource for SharedCredentials<'_> {
     async fn resolve(
         &self,
         settings: AwsSettings,

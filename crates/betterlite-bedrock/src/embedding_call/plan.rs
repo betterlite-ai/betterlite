@@ -3,7 +3,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 
 use super::error::EmbeddingCallError;
-use super::{CredentialSource, EmbeddingCall, ParamMap};
+use super::{EmbeddingCall, ParamMap};
 use crate::aws_endpoints::provider::{BedrockEmbeddingProvider, embedding_provider};
 use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
@@ -12,6 +12,7 @@ use crate::aws_settings::{AUTHENTICATION_PARAMS, bedrock_bearer_token};
 use crate::bedrock_embedding_io::credentials::{
     CredentialRequest, LoadedCredentials, ManagedRegionWorker, load_credentials,
 };
+use crate::credentials::CredentialSource;
 use crate::image_models::params::Params;
 use crate::marengo_embeddings::request::{TransformRequest, transform_request as marengo_request};
 use crate::nova_embeddings::request::transform_request as nova_request;
@@ -45,7 +46,7 @@ pub async fn plan<Source>(
     source: &Source,
 ) -> Result<EmbeddingPlan, EmbeddingCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     let loaded = credentials(call, secrets, region_worker, source).await?;
     let selected = select(call, &loaded)?;
@@ -85,7 +86,7 @@ async fn credentials<Source>(
     source: &Source,
 ) -> Result<LoadedCredentials, EmbeddingCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     let bearer = bedrock_bearer_token(call.api_key, call.environment.bearer_token);
     Ok(load_credentials(

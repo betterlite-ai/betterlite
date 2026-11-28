@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 
-use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
@@ -15,12 +14,10 @@ use serde_json::value::RawValue;
 use url::Url;
 
 use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
-use crate::aws_settings::sources::Credentials;
 use crate::bedrock_settings::{BedrockError, HeaderError};
 use crate::count_tokens::endpoint::{CountTokensEndpoint, count_tokens_endpoint};
 use crate::count_tokens::validate::validate_count_tokens_request;
-use crate::credentials::AwsCredentialResolver;
-use crate::credentials::error::CredentialError;
+use crate::credentials::CredentialSource;
 use crate::signing::service::{ServiceName, ServiceRequest, sign_service_request};
 use crate::signing::target::RegionInputs;
 
@@ -70,24 +67,6 @@ impl CountTokensTransport for ProxiedClient {
     }
 }
 
-pub trait CountTokensCredentials: Send + Sync {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
-}
-
-impl CountTokensCredentials for AwsCredentialResolver<'_> {
-    async fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> Result<Credentials, CredentialError> {
-        self.resolve_credentials(&settings, Some(&region)).await
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum CountTokensHandlerError {
     #[error("the CountTokens endpoint answered {status}")]
@@ -116,7 +95,7 @@ pub struct BedrockCountTokensHandler<T, C> {
 impl<T, C> CountTokensHandler for BedrockCountTokensHandler<T, C>
 where
     T: CountTokensTransport,
-    C: CountTokensCredentials,
+    C: CredentialSource,
 {
     async fn handle_count_tokens_request(
         &self,
@@ -144,7 +123,7 @@ where
 impl<T, C> BedrockCountTokensHandler<T, C>
 where
     T: CountTokensTransport,
-    C: CountTokensCredentials,
+    C: CredentialSource,
 {
     async fn count(
         &self,
