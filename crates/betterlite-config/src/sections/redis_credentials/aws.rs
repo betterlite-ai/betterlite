@@ -67,14 +67,14 @@ impl ElastiCacheIamProvider {
         now: SystemTime,
     ) -> Result<(String, SecretString), ElastiCacheSigningError> {
         let credentials = resolver.resolve()?;
-        let signed = presign_connect_url(&self.settings, credentials, now)?;
+        let signed = presign_connect_url(&self.settings, &credentials, now)?;
         Ok((self.settings.user_name.clone(), signed))
     }
 }
 
 fn presign_connect_url(
     settings: &AwsSettings,
-    credentials: Credentials,
+    credentials: &Credentials,
     now: SystemTime,
 ) -> Result<SecretString, ElastiCacheSigningError> {
     let uri = format!(
@@ -82,7 +82,7 @@ fn presign_connect_url(
         settings.cache_name,
         settings.connect_query()
     );
-    let signing = SigningCredentials::from(&credentials);
+    let signing = SigningCredentials::from(credentials);
     let parameters = presign_request(
         &Signable {
             method: "GET",
