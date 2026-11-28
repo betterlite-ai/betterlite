@@ -89,6 +89,7 @@ out_of_scope:
   - B830 owns customer row adapters and response projection; B831 owns updates; B829 owns budgets.
   - B3091 owns activity date validation, aggregation and pagination; B700 owns find_many_in.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Info/list locally map exceptions, but activity does not. Their missing-database statuses differ.
   - Activity's admin-only check forbids an end user reading its own activity.
 budget:

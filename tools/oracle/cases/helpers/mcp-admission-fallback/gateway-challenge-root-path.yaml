@@ -1,0 +1,5 @@
+kind: helper
+name: "gateway-challenge-root-path"
+call: {"b7490":{"function":"gateway_challenge","route":"/mcp","base_url":"http://testserver/litellm/","path":"/litellm/mcp","root_path":"/litellm","server_root_path":"/litellm","invalid_token":false}}
+env: {"SERVER_ROOT_PATH":"/litellm"}
+compare: {"ignore":[]}

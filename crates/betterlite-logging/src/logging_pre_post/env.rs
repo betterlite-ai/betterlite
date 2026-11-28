@@ -26,6 +26,21 @@ pub trait LogSink: Send + Sync {
     fn emit(&self, record: LogRecord);
 }
 
+// The production sink: LiteLLM's debug logging writes the record and the client never sees it
+pub struct TracingSink;
+
+impl LogSink for TracingSink {
+    #[cfg_attr(test, mutants::skip)]
+    fn emit(&self, record: LogRecord) {
+        tracing::debug!(
+            level = ?record.level,
+            fields = ?record.fields,
+            "{}",
+            record.message
+        );
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DebugSettings {
     pub verbose: bool,

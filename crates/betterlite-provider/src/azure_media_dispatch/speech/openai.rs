@@ -3,7 +3,7 @@ use betterlite_azure::native_speech::response::HttpxBinaryResponseContent;
 use betterlite_azure::speech::binary::{AudioSpeechCall, audio_speech, finish_audio_speech};
 use betterlite_azure::speech::client::ClientWiring;
 use betterlite_azure::speech::error::AzureSpeechError;
-use betterlite_azure::speech::logging::PrePostLogger;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 
 use super::super::call::OpenAiSpeechOperation;
@@ -46,7 +46,7 @@ where
             cache: &mut *runtime.cache,
             refresh: &mut refresh,
         };
-        let mut logger = PrePostLogger {
+        let mut logger = LogContext {
             state: &mut *runtime.speech_state,
             env: runtime.speech_env,
         };

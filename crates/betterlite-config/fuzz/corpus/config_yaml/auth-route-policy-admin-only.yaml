@@ -1,0 +1,9 @@
+general_settings:
+  master_key: sk-test
+  admin_only_routes:
+    - /user/new
+    - /team/permissions_bulk_update
+model_list:
+  - model_name: gpt
+    litellm_params:
+      model: openai/gpt-4o-mini

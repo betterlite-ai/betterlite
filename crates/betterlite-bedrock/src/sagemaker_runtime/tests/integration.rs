@@ -32,6 +32,7 @@ use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::Hub;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::{HeaderMap, Method};
@@ -43,6 +44,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::aws_settings::sources::{Credentials, SourceError};
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
 use crate::sagemaker_runtime::chat::{self, ChatCall, ChatVariant};
 use crate::sagemaker_runtime::completion::{self, CompletionCall};
@@ -50,11 +52,10 @@ use crate::sagemaker_runtime::embedding::{self, EmbeddingCall, EmbeddingReply};
 use crate::sagemaker_runtime::endpoint::ParamMap;
 use crate::sagemaker_runtime::error::RuntimeFailure;
 use crate::sagemaker_runtime::runtime::{
-    ChunkStream, SagemakerCredentials, SagemakerEnvironment, SagemakerRuntime, SagemakerTransport,
+    ChunkStream, SagemakerEnvironment, SagemakerRuntime, SagemakerTransport,
 };
 use crate::sagemaker_stream::SagemakerChunk;
 use crate::signing::headers::{filter_for_signature, without_computed};
-use crate::signing::sigv4::{Signable, sign_request};
 
 const IDENTIFIER: u128 = 7;
 
@@ -103,7 +104,7 @@ impl TestCredentials {
     }
 }
 
-impl SagemakerCredentials for TestCredentials {
+impl CredentialSource for TestCredentials {
     fn resolve(
         &self,
         _settings: AwsSettings,
@@ -197,7 +198,7 @@ fn fixed_identifier() -> Uuid {
 fn runtime<T, C>(transport: T, credentials: C, counter: &Counter) -> SagemakerRuntime<'_, T, C>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     SagemakerRuntime {
         transport,
@@ -849,6 +850,7 @@ fn assert_transmitted_signature(sent: &OutboundRequest) {
         service: "sagemaker",
         region: "us-west-2",
         credentials: &credentials,
+        mode: SigningMode::SigV4Auth,
         now: UNIX_EPOCH,
     })
     .expect("the transmitted request signs");

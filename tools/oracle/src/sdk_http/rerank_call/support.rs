@@ -2,10 +2,12 @@ use super::super::error::SdkHttpError;
 use super::{MOCK, Run};
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_core::api::file_http_content::service::ClientSource;
 use betterlite_core::api::rerank_call::AsyncRerankArgs;
 use betterlite_core::api::rerank_provider_plan::dispatch::{
     Params, provider_failure, value_failure,
 };
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::{
@@ -22,8 +24,7 @@ use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{
     BaseRerankConfig, OptionalRerankParams, get_optional_rerank_params,
 };
-use betterlite_provider::api::rerank_http::client::ClientSource;
-use betterlite_provider::api::rerank_http::error::{ClientError, RerankHttpError};
+use betterlite_provider::api::rerank_http::error::RerankHttpError;
 use betterlite_provider::api::rerank_http::rerank as rerank_http;
 use betterlite_provider::api::rerank_http::{RerankCall as HttpCall, RerankDeps, RerankLogContext};
 use betterlite_redact::secret::Redactor;

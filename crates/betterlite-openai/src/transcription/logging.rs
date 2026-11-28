@@ -1,9 +1,8 @@
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -28,12 +27,7 @@ pub trait TranscriptionLogger {
     fn post_call(&mut self, record: TranscriptionPostCall<'_>);
 }
 
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
-}
-
-impl TranscriptionLogger for PrePostLogger<'_, '_> {
+impl TranscriptionLogger for LogContext<'_, '_> {
     fn pre_call(&mut self, record: TranscriptionPreCall<'_>) -> Result<(), PrePostError> {
         pre_call(
             self.state,

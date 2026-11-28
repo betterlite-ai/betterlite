@@ -124,7 +124,9 @@ macro_rules! endpoints {
         }
     )+ };
 }
-impl<Source: ClientSource, Hook: PreCallHook> ContainerResourceHandler<Source, Hook> {
+impl<Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>, Hook: PreCallHook>
+    ContainerResourceHandler<Source, Hook>
+{
     endpoints! {
         container_retrieve_handler, acontainer_retrieve_handler, Retrieve, ContainerObject, RetrieveResult;
         container_delete_handler, acontainer_delete_handler, Delete, DeleteContainerResult, DeleteResult;

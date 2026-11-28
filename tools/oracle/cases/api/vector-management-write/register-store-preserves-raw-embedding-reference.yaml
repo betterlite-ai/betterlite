@@ -1,0 +1,48 @@
+kind: helper
+name: register-store-preserves-raw-embedding-reference
+call:
+  b1069:
+    calls:
+      # the caller's identity wins over the body's, and the raw embedding reference is stored
+      - route: new
+        body:
+          vector_store_id: vs_a
+          custom_llm_provider: openai
+          litellm_params: {litellm_embedding_model: embed, api_key: secret}
+          team_id: forged
+          user_id: forged
+        database: []
+        registry: []
+        caller: &user {user_id: u, user_role: internal_user, team_id: t}
+        disabled: false
+      # a falsey id or provider is refused before the database is consulted
+      - route: new
+        body: {custom_llm_provider: openai}
+        database: null
+        registry: null
+        caller: *user
+        disabled: false
+      - route: new
+        body: {vector_store_id: "", custom_llm_provider: openai}
+        database: null
+        registry: null
+        caller: *user
+        disabled: false
+      # a config-owned id is refused before the database is consulted
+      - route: new
+        body: {vector_store_id: vs_owned, custom_llm_provider: openai}
+        database: []
+        registry:
+          - {vector_store_id: vs_owned, custom_llm_provider: openai, is_config: true}
+        caller: *user
+        disabled: false
+      # a second row with the same id is refused
+      - route: new
+        body: {vector_store_id: vs_a, custom_llm_provider: openai}
+        database:
+          - {vector_store_id: vs_a, custom_llm_provider: openai}
+        registry: null
+        caller: *user
+        disabled: false
+env: {}
+compare: {ignore: []}

@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::rerank::plan::CredentialSource;
 use betterlite_bedrock::rerank::transport::{
     ClientFactory, RerankHttpReply, RerankHttpRequest, RerankTransport, TransferError,
 };

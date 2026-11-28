@@ -10,7 +10,7 @@ use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient
 use betterlite_azure::azure_assistant_definitions::operations::ClientRequest;
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints::Settings;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::thread_runs::records::RunReply;
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
 use secrecy::SecretString;
@@ -21,7 +21,7 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{NoSources, Recorder, RecordingHandler};
 use super::reports;
-use super::{Input, KindName, Step};
+use super::{Input, Step};
 
 const DEFAULT_TIMEOUT: f64 = 600.0;
 const SUPPLIED_BASE_URL: &str = "https://supplied.test/openai";
@@ -92,7 +92,7 @@ fn polled(harness: &Harness, kind: ClientKind, reply: &RunReply) -> Value {
     json!({
         "requests": mem::take(&mut *harness.recorder.seen.lock().unwrap_or_else(PoisonError::into_inner)),
         "calls": Vec::<String>::new(),
-        "kind": reports::kind_name(kind),
+        "kind": kind.label(),
         "result": reply,
     })
 }
@@ -173,11 +173,11 @@ impl Harness {
 
 // A client the caller supplied, matching the one the Python adapter builds for the same step.
 fn supplied_client(
-    kind: KindName,
+    kind: ClientKind,
     recorder: &Arc<Recorder>,
 ) -> AzureAssistantsClient<'static, Recorder> {
     AzureAssistantsClient {
-        kind: client_kind(kind),
+        kind,
         inputs: None,
         transport: Arc::clone(recorder),
         base_url: String::from(SUPPLIED_BASE_URL),
@@ -194,12 +194,5 @@ const fn flag(value: Option<&Value>) -> Option<bool> {
         Some(Value::Bool(state)) => Some(*state),
         Some(_) => Some(false),
         None => None,
-    }
-}
-
-const fn client_kind(kind: KindName) -> ClientKind {
-    match kind {
-        KindName::Sync => ClientKind::Sync,
-        KindName::Async => ClientKind::Async,
     }
 }

@@ -1,0 +1,166 @@
+id: B10225
+title: One LogContext in betterlite-logging for the CallLogging, PrePostLogger and EvalLogging copies
+description: >-
+  Eighteen structs in betterlite-provider, betterlite-openai, betterlite-azure and betterlite-core hold the same two fields under three names, `state: &mut LoggingState` and `env: &PrePostEnv<'env>`, both from betterlite-logging. Each is the logging object of one provider call and the pre and post call environment its records go through, which is what betterlite-logging's `pre_call` (logging_pre_post/pre_call.rs L118-L122) and `post_call` (post_call.rs L34) take beside the record. This task gives the pair one home in betterlite-logging and points every user of these eighteen at it. B10224 then folds the eighteen `LogContext` copies in core, bedrock and provider into the same home. It is a refactor: no record, log line, header or error changes, and nothing a user sees changes.
+
+
+  The home. crates/betterlite-logging/src/logging_pre_post/context.rs, already declared by `pub mod context;` in logging_pre_post.rs, holds `pub struct LogContext<'borrow, 'env>` with `pub state: &'borrow mut LoggingState,` and `pub env: &'borrow PrePostEnv<'env>,`, one comment line saying what it carries, and the imports `crate::logging_state::LoggingState` and `super::env::PrePostEnv`. No derive and no impl: none of the copies has one. Every crate below already depends on betterlite-logging, so no crate gains a dependency and no cycle can form. The name, the field names and the lifetimes are those of the eighteen LogContext copies, so B10224 only rewrites their imports.
+
+
+  CallLogging. Seven betterlite-provider dispatch families declare `pub struct CallLogging<'state, 'env>` with the two fields: anthropic_dispatch.rs L122-L125, model_hub_dispatch.rs L154-L157, gateway_provider_dispatch/context.rs L104-L107, ragflow_chat/dispatch/context.rs L20-L23, self_hosted_dispatch/context.rs L70-L73, data_cloud_dispatch/context.rs L61-L64 and hosted_platform_dispatch/context.rs L66-L69. All seven go. Every `CallLogging` in those families reads `LogContext` and imports the home: each family's chat.rs and logging.rs and its tests/chat.rs (ragflow's dispatch.rs, dispatch/logging.rs and dispatch/tests.rs), model_hub_dispatch's embedding.rs, json.rs, predibase.rs, replicate.rs and tests (pooled.rs, send.rs, support.rs), anthropic_dispatch's completion.rs, gateway/call.rs, native.rs, native/messages.rs, native/tests/support/execution.rs and fixtures (calls.rs, recording.rs), and the oracle's helpers/provider b8157/chat.rs, b8310/chat.rs, b8311/chat.rs, b8330/chat.rs and b8332.rs.
+
+
+  PrePostLogger. Ten modules declare `pub struct PrePostLogger<'call, 'env>` with the two fields only to implement their own logger trait over pre_call and post_call: betterlite-openai's image_generation/logging.rs L30-L33 (ImageGenerationLogger at L35), text_completion_transport/logging.rs L111-L115 (CompletionLogger at L178), image_variations/logging.rs L66-L69 (ImageVariationLogger at L71), transcription/logging.rs L31-L34 (TranscriptionLogger at L36), speech/logging.rs L20-L23 (SpeechLogger at L25) and realtime/logging.rs L23-L26 (RealtimeLogger at L28); betterlite-azure's embeddings/logging.rs L45-L49 (EmbeddingLogger at L66), speech/logging.rs L20-L23 (azure's own SpeechLogger at L25) and transcription/call/logging.rs L34-L37 (AzureTranscriptionLogger at L39); and core's api/soniox/prepare/logging.rs L38-L41 (SonioxLogger at L43). Each struct goes and its `impl <Trait> for PrePostLogger<'_, '_> {` header reads `impl <Trait> for LogContext<'_, '_> {` in the same file with the same body. Each trait is local to its crate, so the orphan rule allows the impl on the logging crate's type, and the ten traits are distinct, so no two impls clash. The users outside the defining files name the home: provider openai_dispatch/logging.rs L4 and the `completion` field of B249Logger at L36 with its test tests/call_failure_logging.rs L13 and L232, provider azure_media_dispatch/speech/openai.rs L6 and L49, and the modules' own tests (openai image_generation/tests.rs, text_completion_transport/tests.rs, image_variations/tests/support.rs, transcription/tests/logging.rs, speech/tests/cases.rs, realtime/tests/logging.rs, azure embeddings/tests/logging_cases.rs, speech/tests/invariants.rs, transcription/tests/wiring.rs and core soniox/prepare/tests/logging.rs).
+
+
+  EvalLogging. Core's api/eval_http/exchange.rs L51-L55 declares `pub struct EvalLogging<'state, 'env>` with the two fields and its comment; it goes. Its users read `LogContext` and import the home: eval_http (handlers.rs, logging.rs, tests/support.rs), eval_create_list (handler.rs L14, service.rs), eval_get_update (handler.rs L15 and L22, service.rs), eval_lifecycle.rs and its tests/support.rs, eval_run_create_list (eval_run_create_list.rs, providers.rs, tests/async_calls.rs, tests/support.rs L406), eval_run_http.rs and its tests/support.rs, eval_run_lifecycle/handlers.rs, and betterlite-python's eval_calls/session/operations.rs.
+
+
+  Imports. A defining file drops the LoggingState and PrePostEnv imports that only the struct used, and clippy's unused import lint names any left. No `pub use` and no `as` alias keeps an old name: an old name at the old path is the copy this removes. `rg -nw 'CallLogging|PrePostLogger|EvalLogging' crates tools -g '!crates/betterlite-sdk/**' -g '!tools/oracle/src/helpers/sdk/**'` lists every site on main.
+
+
+  Tests. No new test: the owners' tests already drive each logger through pre_call and post_call and pin the records, and they must pass with only the type name and the imports changed. The home is a plain struct with no behavior of its own. The oracle helpers change only names and imports, and CI's clippy lane builds them.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - "crates/betterlite-python/src/eval_runs/transport.rs"
+    - "crates/betterlite-python/src/eval_runs/session/operations.rs"
+    - "crates/betterlite-core/src/api/riva/call/logging.rs"
+    - crates/betterlite-azure/src/embeddings/logging.rs
+    - crates/betterlite-azure/src/embeddings/tests/logging_cases.rs
+    - crates/betterlite-azure/src/speech/logging.rs
+    - crates/betterlite-azure/src/speech/tests/invariants.rs
+    - crates/betterlite-azure/src/transcription/call/logging.rs
+    - crates/betterlite-azure/src/transcription/tests/wiring.rs
+    - crates/betterlite-core/src/api/eval_create_list/handler.rs
+    - crates/betterlite-core/src/api/eval_create_list/service.rs
+    - crates/betterlite-core/src/api/eval_get_update/handler.rs
+    - crates/betterlite-core/src/api/eval_get_update/service.rs
+    - crates/betterlite-core/src/api/eval_http/exchange.rs
+    - crates/betterlite-core/src/api/eval_http/handlers.rs
+    - crates/betterlite-core/src/api/eval_http/logging.rs
+    - crates/betterlite-core/src/api/eval_http/tests/support.rs
+    - crates/betterlite-core/src/api/eval_lifecycle.rs
+    - crates/betterlite-core/src/api/eval_lifecycle/tests/support.rs
+    - crates/betterlite-core/src/api/eval_run_create_list/providers.rs
+    - crates/betterlite-core/src/api/eval_run_create_list.rs
+    - crates/betterlite-core/src/api/eval_run_create_list/tests/async_calls.rs
+    - crates/betterlite-core/src/api/eval_run_create_list/tests/support.rs
+    - crates/betterlite-core/src/api/eval_run_http.rs
+    - crates/betterlite-core/src/api/eval_run_http/tests/support.rs
+    - crates/betterlite-core/src/api/eval_run_lifecycle/handlers.rs
+    - crates/betterlite-core/src/api/soniox/prepare/logging.rs
+    - crates/betterlite-core/src/api/soniox/prepare/tests/logging.rs
+    - crates/betterlite-logging/src/logging_pre_post/context.rs
+    - crates/betterlite-openai/src/image_generation/logging.rs
+    - crates/betterlite-openai/src/image_generation/tests.rs
+    - crates/betterlite-openai/src/image_variations/logging.rs
+    - crates/betterlite-openai/src/image_variations/tests/support.rs
+    - crates/betterlite-openai/src/realtime/logging.rs
+    - crates/betterlite-openai/src/realtime/tests/logging.rs
+    - crates/betterlite-openai/src/speech/logging.rs
+    - crates/betterlite-openai/src/speech/tests/cases.rs
+    - crates/betterlite-openai/src/text_completion_transport/logging.rs
+    - crates/betterlite-openai/src/text_completion_transport/tests.rs
+    - crates/betterlite-openai/src/transcription/logging.rs
+    - crates/betterlite-openai/src/transcription/tests/logging.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/completion.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/fixtures/calls.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/fixtures/recording.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/gateway/call.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/native/messages.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/native.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/native/tests/support/execution.rs
+    - crates/betterlite-provider/src/anthropic_dispatch.rs
+    - crates/betterlite-provider/src/azure_media_dispatch/speech/openai.rs
+    - crates/betterlite-provider/src/data_cloud_dispatch/chat.rs
+    - crates/betterlite-provider/src/data_cloud_dispatch/context.rs
+    - crates/betterlite-provider/src/data_cloud_dispatch/logging.rs
+    - crates/betterlite-provider/src/data_cloud_dispatch/tests/chat.rs
+    - crates/betterlite-provider/src/gateway_provider_dispatch/chat.rs
+    - crates/betterlite-provider/src/gateway_provider_dispatch/context.rs
+    - crates/betterlite-provider/src/gateway_provider_dispatch/logging.rs
+    - crates/betterlite-provider/src/gateway_provider_dispatch/tests/chat.rs
+    - crates/betterlite-provider/src/hosted_platform_dispatch/chat.rs
+    - crates/betterlite-provider/src/hosted_platform_dispatch/context.rs
+    - crates/betterlite-provider/src/hosted_platform_dispatch/logging.rs
+    - crates/betterlite-provider/src/hosted_platform_dispatch/tests/chat.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/embedding.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/json.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/predibase.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/replicate.rs
+    - crates/betterlite-provider/src/model_hub_dispatch.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/tests/pooled.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/tests/send.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/tests/support.rs
+    - crates/betterlite-provider/src/openai_dispatch/logging.rs
+    - crates/betterlite-provider/src/openai_dispatch/tests/call_failure_logging.rs
+    - crates/betterlite-provider/src/ragflow_chat/dispatch/context.rs
+    - crates/betterlite-provider/src/ragflow_chat/dispatch/logging.rs
+    - crates/betterlite-provider/src/ragflow_chat/dispatch.rs
+    - crates/betterlite-provider/src/ragflow_chat/dispatch/tests.rs
+    - crates/betterlite-provider/src/self_hosted_dispatch/chat.rs
+    - crates/betterlite-provider/src/self_hosted_dispatch/context.rs
+    - crates/betterlite-provider/src/self_hosted_dispatch/logging.rs
+    - crates/betterlite-provider/src/self_hosted_dispatch/tests/chat.rs
+    - crates/betterlite-python/src/eval_calls/session/operations.rs
+    - tools/oracle/src/helpers/provider/b8157/chat.rs
+    - tools/oracle/src/helpers/provider/b8310/chat.rs
+    - tools/oracle/src/helpers/provider/b8311/chat.rs
+    - tools/oracle/src/helpers/provider/b8330/chat.rs
+    - tools/oracle/src/helpers/provider/b8332.rs
+  lint_tables: false
+references: []
+dod:
+  - text: LogContext lives in betterlite-logging's logging_pre_post::context with the state and env borrows, and none of the seven CallLogging, the ten PrePostLogger or the EvalLogging copies is left.
+    proof: [log-context-home, named-log-copies]
+  - text: Every user names the home, each logger trait is implemented for it, and the owners' tests in provider, openai, azure, core and python pass with only names and imports changed.
+    proof: [provider-dispatch-log-tests, openai-logger-tests, azure-logger-tests, core-eval-log-tests, python-eval-log-tests]
+checks:
+  optional: []
+  commands:
+    - id: log-context-home
+      why: the home LogContext is missing or does not borrow the logging state mutably beside the pre and post call environment
+      run: |-
+        grep -qxF "pub struct LogContext<'borrow, 'env> {" crates/betterlite-logging/src/logging_pre_post/context.rs &&
+        grep -qxF "    pub state: &'borrow mut LoggingState," crates/betterlite-logging/src/logging_pre_post/context.rs &&
+        grep -qxF "    pub env: &'borrow PrePostEnv<'env>," crates/betterlite-logging/src/logging_pre_post/context.rs
+    - id: named-log-copies
+      why: a CallLogging, PrePostLogger or EvalLogging copy is still declared, or a user still names one instead of the home
+      run: |-
+        test -z "$(grep -lE '^pub struct (CallLogging|PrePostLogger|EvalLogging)<' crates/betterlite-provider/src/anthropic_dispatch.rs crates/betterlite-provider/src/model_hub_dispatch.rs crates/betterlite-provider/src/gateway_provider_dispatch/context.rs crates/betterlite-provider/src/ragflow_chat/dispatch/context.rs crates/betterlite-provider/src/self_hosted_dispatch/context.rs crates/betterlite-provider/src/data_cloud_dispatch/context.rs crates/betterlite-provider/src/hosted_platform_dispatch/context.rs crates/betterlite-openai/src/image_generation/logging.rs crates/betterlite-openai/src/text_completion_transport/logging.rs crates/betterlite-openai/src/image_variations/logging.rs crates/betterlite-openai/src/transcription/logging.rs crates/betterlite-openai/src/speech/logging.rs crates/betterlite-openai/src/realtime/logging.rs crates/betterlite-azure/src/embeddings/logging.rs crates/betterlite-azure/src/speech/logging.rs crates/betterlite-azure/src/transcription/call/logging.rs crates/betterlite-core/src/api/soniox/prepare/logging.rs crates/betterlite-core/src/api/eval_http/exchange.rs)" &&
+        test -z "$(grep -rnwE 'CallLogging|PrePostLogger|EvalLogging' crates tools --include=*.rs | grep -v -e '^crates/betterlite-sdk/' -e '^tools/oracle/src/helpers/sdk/')"
+    - id: provider-dispatch-log-tests
+      why: a provider dispatch family no longer hands its logging state and environment to pre_call and post_call, or openai's completion logger lost its B249Logger seat
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^(anthropic_dispatch|azure_media_dispatch|data_cloud_dispatch|gateway_provider_dispatch|hosted_platform_dispatch|model_hub_dispatch|openai_dispatch|ragflow_chat|self_hosted_dispatch)::/) - test(/replays_/)'
+    - id: openai-logger-tests
+      why: an openai logger trait is no longer implemented for the type its handler is handed, so a pre-call or post-call record is lost
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(image_generation|image_variations|realtime|speech|text_completion_transport|transcription)::/) - test(/replays_/)'
+    - id: azure-logger-tests
+      why: an azure logger trait is no longer implemented for the type its handler is handed
+      run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/^(embeddings|speech|transcription)::/) - test(/replays_/)'
+    - id: core-eval-log-tests
+      why: an eval handler or soniox's logger no longer writes its pre-call through the home
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(eval_create_list|eval_get_update|eval_http|eval_lifecycle|eval_run_create_list|eval_run_http|eval_run_lifecycle|soniox::prepare)::/) - test(/replays_/)'
+    - id: python-eval-log-tests
+      why: the Python eval calls no longer build the logging pair their core handler takes
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^eval_calls::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10224's copies: the eighteen `LogContext` structs in core, bedrock and provider, provider rerank_http's `RerankLogContext`, core video_generation_call's `GenerationCallEnvironment` and anthropic's `Logging`. Their files sit in B10200's, B10216's and B10217's scopes, so they wait for those tasks and take this home."
+  - "Not copies: core responses_lifecycle_call's `LifecycleLog` (service.rs L27-L30) owns its PrePostEnv instead of borrowing it, and the structs that carry the pair beside call data (openai edenai_responses.rs `ReplyRequest` L43, core video_remix_call/shared.rs `VideoCallDeps` L17, the provider dispatch contexts) have other fields. betterlite-sdk's `CallLogging` (call_wrapper/logging.rs L67) is a trait that shares the name and stays."
+  - "The logger traits and their records repeat across crates in places, for one openai's and azure's speech/logging.rs hold the same SpeechLogger and pre-call record with one field renamed (`body` and `data`): a later plan."
+pitfalls:
+  - "Keep the home's name, field names and lifetimes exactly as the description writes them: B10224 relies on 150 files that already spell `LogContext<'_, '_>` with `state` and `env` changing only their import."
+  - "All ten logger traits are now implemented for one type, so a method call such as `logger.pre_call(record)` on a concrete LogContext is ambiguous (E0034) in a file with two of the traits in scope. On main each concrete call site imports one trait (the tests write `CompletionLogger as _` and the like) and provider openai_media_dispatch/execute.rs L53 calls through its generic bound, so import no second trait into those files."
+  - "anthropic_dispatch.rs is `#[rustfmt::skip]` from L145, and L165 builds anthropic's `Logging { state: log.state, env: log.env }` out of the CallLogging; leave that line as it is, since anthropic's Logging is B10224's."
+  - "betterlite-sdk declares a `CallLogging` trait that the oracle's helpers/sdk/b5368/ports.rs implements; it is a different item, so a rename across the whole workspace breaks the SDK call wrapper."
+  - "tools/oracle/src/helpers/provider/b8330/chat.rs has 295 of its 300 counted lines; keep the home import on the line the old import held."
+  - "A dispatched run builds nothing, so walk every hit of the rg line in the description before committing; each missed site costs a CI round."
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

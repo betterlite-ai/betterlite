@@ -34,6 +34,7 @@ pub mod vault_http;
 
 mod tests;
 
+#[derive(Clone)]
 pub enum SecretManagerClient {
     AzureKeyVault(Arc<dyn AzureKeyVaultClient>),
     GoogleKms(Arc<dyn GoogleKmsClient>),

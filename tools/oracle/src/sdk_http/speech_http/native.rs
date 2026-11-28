@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::api::vector_store_http_write::service::ClientSource as _;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::TextToSpeechRequestData;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_provider::api::speech_http as production;
-use betterlite_provider::api::speech_http::ClientSource as _;
 use betterlite_provider::api::speech_http::error::{SpeechError, SpeechProviderError};
 use betterlite_provider::api::speech_provider_contract::{
     ClassAttribute, SpeechHeaders, SpeechMappingOptions, SpeechRequestInput, TextToSpeechConfig,

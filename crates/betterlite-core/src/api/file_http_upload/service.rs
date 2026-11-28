@@ -15,7 +15,8 @@ use tokio_util::task::TaskTracker;
 use url::Url;
 
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::vector_store_http_write::error::{ClientError, header_text};
+use crate::api::vector_store_http_write::error::header_text;
+use crate::api::vector_store_http_write::service::ClientSource;
 
 use super::config::{FileParams, FileResponse, FileUploadConfig, Headers, UploadParams};
 use super::error::UploadError;
@@ -67,12 +68,6 @@ pub trait UploadTransport: Send + Sync {
         &self,
         request: UploadRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: UploadTransport;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
 
 pub struct UploadDeps<'deps, C: FileUploadConfig, S: ClientSource> {
@@ -172,7 +167,7 @@ where
 pub async fn send<C, S>(prepared: PreparedUpload<'_, '_, C, S>) -> Result<Json, UploadError>
 where
     C: FileUploadConfig,
-    S: ClientSource,
+    S: ClientSource<Client: UploadTransport>,
 {
     let PreparedUpload {
         config,

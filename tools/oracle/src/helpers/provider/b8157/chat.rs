@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_defaults_b::special::{
@@ -17,9 +18,7 @@ use betterlite_provider::ollama_chat::config as ollama_chat_config;
 use betterlite_provider::ollama_generate::config as ollama_generate_config;
 use betterlite_provider::self_hosted_dispatch::call::CompletionCall;
 use betterlite_provider::self_hosted_dispatch::chat::{complete_lemonade, dispatch};
-use betterlite_provider::self_hosted_dispatch::context::{
-    CallLogging, DispatchContext, DispatchSettings,
-};
+use betterlite_provider::self_hosted_dispatch::context::{DispatchContext, DispatchSettings};
 use betterlite_provider::self_hosted_dispatch::error::DispatchError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -77,7 +76,7 @@ fn dispatched(
         timeout: None,
         settings: DispatchSettings::from(&settings),
     };
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -89,7 +88,7 @@ fn dispatched_arm(
     provider: Provider,
     context: &DispatchContext<'_>,
     handler: &Recorder,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<Result<String, DispatchError>, Box<HelperError>> {
     if matches!(provider, Provider::Lemonade) {
         return Ok(complete_lemonade(context, handler));

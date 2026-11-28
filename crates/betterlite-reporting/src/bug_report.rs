@@ -1,5 +1,4 @@
 mod description;
-pub mod eligibility;
 pub mod environment;
 pub mod frames;
 pub mod issue_url;

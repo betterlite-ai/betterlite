@@ -1,4 +1,5 @@
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -9,7 +10,6 @@ use serde::de::DeserializeOwned;
 
 use crate::model_hub_dispatch::json;
 
-use super::context::CallLogging;
 use super::error::DispatchError;
 
 pub(super) fn convert<T, U>(value: &T) -> Result<U, DispatchError>
@@ -33,7 +33,7 @@ fn args(headers: Option<&Headers>) -> AdditionalArgs {
 
 // LiteLLM logs the handler error's text, or the opened stream, as the original response and keeps the headers as given
 pub fn post(
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     messages: &[Message],
     original_response: Json,
     headers: Option<&Headers>,

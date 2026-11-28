@@ -1,0 +1,13 @@
+id: B10225
+milestone: R2 bug fixes
+title: One LogContext in betterlite-logging for the CallLogging, PrePostLogger and EvalLogging copies
+status: done
+depends_on: []
+file: tasks/B10225-named-log-pair-copies.yaml
+covers: []
+parent: null
+split_from: B10224
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3453

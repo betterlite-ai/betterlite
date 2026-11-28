@@ -8,6 +8,7 @@ use betterlite_secret_managers::secret_contracts::BaseSecretManager;
 use secrecy::ExposeSecret as _;
 
 use crate::audit_events::enums::AuditAction;
+use crate::audit_events::record::AuditRecordError;
 use crate::key_event_sinks::team_params::TeamSecretSettings;
 
 use super::audit::{KeyAuditEntry, KeyEventAudit};
@@ -15,6 +16,62 @@ use super::effects::KeyEventEffects;
 use super::encode;
 use super::error::KeyEventError;
 use super::types::{DeletedEvent, KeyEventCaller};
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum DeletedAuditError {
+    #[error("the key row cannot be encoded")]
+    Row(#[source] serde_json::Error),
+    #[error("the key audit record cannot be built")]
+    Audit(#[source] AuditRecordError),
+}
+
+impl<Manager> From<DeletedAuditError> for KeyEventError<Manager>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
+    fn from(source: DeletedAuditError) -> Self {
+        match source {
+            DeletedAuditError::Row(failure) => Self::Row(failure),
+            DeletedAuditError::Audit(failure) => Self::Audit(failure),
+        }
+    }
+}
+
+// KeyManagementEventHooks.create_key_deleted_audit_logs: one scheduled deleted row per key, over whichever row source the caller has
+pub(crate) fn create_key_deleted_audit_logs<Rows>(
+    audit: &KeyEventAudit,
+    keys: Rows,
+    caller: &KeyEventCaller,
+    litellm_changed_by: Option<&str>,
+) -> Result<(), DeletedAuditError>
+where
+    Rows: IntoIterator<Item = Result<LiteLLMVerificationToken, serde_json::Error>>,
+{
+    if !audit.settings.is_audit_logging_enabled(None) {
+        return Ok(());
+    }
+    for key in keys {
+        let decoded = key.map_err(DeletedAuditError::Row)?;
+        let Some(token) = decoded.token.as_ref() else {
+            continue;
+        };
+        let before_value = encode::row_dump(&decoded).map_err(DeletedAuditError::Row)?;
+        let record = audit
+            .record(KeyAuditEntry {
+                action: AuditAction::Deleted,
+                object_id: token.expose_secret(),
+                changed_by_api_key: caller.token.as_ref(),
+                before_value: Some(JsonValue::String(before_value)),
+                updated_values: Some(JsonValue::String("{}".to_owned())),
+                litellm_changed_by,
+                caller: &caller.identity,
+            })
+            .map_err(DeletedAuditError::Audit)?;
+        audit.scheduler.schedule(record);
+    }
+    Ok(())
+}
 
 // async_key_deleted_hook: every audit row is scheduled before the secret-manager delete, which is awaited without a catch because LiteLLM deliberately lets its failure reach the route
 pub(super) async fn run<Manager>(
@@ -29,9 +86,14 @@ where
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
     <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
 {
-    if audit.settings.is_audit_logging_enabled(None) {
-        audit_rows::<Manager>(audit, event, caller, litellm_changed_by)?;
-    }
+    create_key_deleted_audit_logs(
+        audit,
+        event.rows.iter().map(|row| {
+            serde_json::from_value::<LiteLLMVerificationToken>(serde_json::to_value(row)?)
+        }),
+        caller,
+        litellm_changed_by,
+    )?;
     let rows = event
         .rows
         .iter()
@@ -42,40 +104,6 @@ where
         .delete(&rows)
         .await
         .map_err(|source| KeyEventError::Sink { source })?;
-    Ok(())
-}
-
-fn audit_rows<Manager>(
-    audit: &KeyEventAudit,
-    event: &DeletedEvent,
-    caller: &KeyEventCaller,
-    litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError<Manager>>
-where
-    Manager: BaseSecretManager,
-    Manager::Params: TryFrom<TeamSecretSettings>,
-{
-    for row in &event.rows {
-        let value = serde_json::to_value(row).map_err(KeyEventError::Row)?;
-        let key: LiteLLMVerificationToken =
-            serde_json::from_value(value).map_err(KeyEventError::Row)?;
-        let Some(token) = key.token.as_ref() else {
-            continue;
-        };
-        let before_value = encode::row_dump(&key).map_err(KeyEventError::Row)?;
-        let record = audit
-            .record(KeyAuditEntry {
-                action: AuditAction::Deleted,
-                object_id: token.expose_secret(),
-                changed_by_api_key: caller.token.as_ref(),
-                before_value: Some(JsonValue::String(before_value)),
-                updated_values: Some(JsonValue::String("{}".to_owned())),
-                litellm_changed_by,
-                caller: &caller.identity,
-            })
-            .map_err(KeyEventError::Audit)?;
-        audit.scheduler.schedule(record);
-    }
     Ok(())
 }
 

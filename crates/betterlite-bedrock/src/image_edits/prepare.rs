@@ -15,7 +15,8 @@ use crate::aws_endpoints::model_id::bedrock_model_id;
 use crate::aws_endpoints::provider::invoke_provider;
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
 use crate::aws_settings::{AUTHENTICATION_PARAMS, bedrock_bearer_token};
-use crate::image_call::plan::{CredentialSource, LogContext};
+use crate::credentials::CredentialSource;
+use crate::image_call::plan::LogContext;
 use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
 use crate::signing::headers::set_exact;
@@ -28,7 +29,7 @@ pub async fn resolve_target<Source>(
     source: &Source,
 ) -> Result<RequestTarget, ImageEditError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     let mut raw = BTreeMap::new();
     for (key, value) in &call.optional_params {

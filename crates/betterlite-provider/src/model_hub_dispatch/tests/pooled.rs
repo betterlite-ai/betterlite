@@ -6,6 +6,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -16,7 +17,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 
 use super::super::transport::{HubGetAsync as _, Pooled, WireRequest};
-use super::super::{CallLogging, DispatchDeps, HubCompletion, HubDispatchError, predibase};
+use super::super::{DispatchDeps, HubCompletion, HubDispatchError, predibase};
 use super::support::{
     Arm as _, Services, chat_context, empty_globals, environment, object, user_message,
 };
@@ -77,7 +78,7 @@ async fn predibase_stream(status: &str, acompletion: bool) -> Exchange {
         ..services.deps(&globals, &env)
     };
     let (mut state, log_env) = services.logging();
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &log_env,
     };

@@ -27,6 +27,7 @@ betterlite-error = { path = "../../../../../crates/betterlite-error" }
 betterlite-gateway = { path = "../../../../../crates/betterlite-gateway" }
 betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-lens = { path = "../../../../../crates/betterlite-lens" }
 betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
@@ -57,7 +58,6 @@ indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
-quick-xml.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
 rust_decimal.workspace = true
@@ -73,6 +73,7 @@ tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

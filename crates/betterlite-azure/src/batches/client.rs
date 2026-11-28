@@ -1,8 +1,9 @@
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::BatchPage;
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind};
+use betterlite_openai::batches::sdk::BatchesSdk;
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -84,7 +85,7 @@ impl<'data, M: ClientMaterializer> Connection<'_, 'data, M> {
             .materializer
             .materialize(&outcome)?
             .ok_or(AzureBatchesError::ClientMissing)?;
-        if self.is_async && client.kind() != ClientKind::Async {
+        if self.is_async && client.kind() != ClientKind::Asynchronous {
             return Err(match check {
                 ClientCheck::Cancel => AzureBatchesError::CancelNotAsync,
                 ClientCheck::Lifecycle => AzureBatchesError::NotAsync,

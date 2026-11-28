@@ -10,7 +10,7 @@ pub(super) async fn run_create<S>(
     call: &CreateCall<'_>,
 ) -> Result<Json, VectorStoreSearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let env = pre_post_env(&logs.redactor, &logs.sink, logs.now);
     create(

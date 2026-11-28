@@ -1,0 +1,5 @@
+kind: helper
+name: "bridge-challenge-alias"
+call: {"b7490":{"function":"bridge_challenge","requested_name":"gateway","base_url":"http://testserver/","path":"/gateway/mcp"}}
+env: {}
+compare: {"ignore":[]}

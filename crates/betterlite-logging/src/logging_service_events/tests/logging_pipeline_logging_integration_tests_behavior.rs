@@ -22,13 +22,17 @@ use tower::ServiceExt as _;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_config::sections::service_callback::{
     DEFAULT_CONCURRENCY as SETTINGS_CONCURRENCY, DEFAULT_EVENT_TIMEOUT as SETTINGS_EVENT_TIMEOUT,
     DEFAULT_LOG_LEVEL, DEFAULT_MAX_QUEUE_SIZE as SETTINGS_QUEUE_SIZE, LogLevelError,
     SettingsValues as ServiceCallbackValues,
 };
 use betterlite_db::database_diagnostics::level::LogLevel;
+use betterlite_error::normalize::Normalizer;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
+use crate::logging_metadata::base64::Base64Truncator;
 use crate::logging_service_events::clock::SystemClock;
 use crate::logging_service_events::middleware::{ServiceEventState, service_events};
 use crate::logging_service_events::pipeline::{PipelineConfig, PipelineError, ServicePipeline};
@@ -38,10 +42,12 @@ use crate::logging_service_events::types::{
     CANCELLED_ERROR, ServiceEvent, ServiceEventMetadata, ServiceKind, ServiceLoggerPayload,
     ServiceMetric, ServiceType, wire_names,
 };
-use crate::logging_service_events::wiring::LoggingWiring;
+use crate::logging_service_events::wiring::{LoggingInputs, LoggingWiring, SuccessInputs};
 use crate::logging_service_events::worker_link::Delivery;
 use crate::logging_streams::assembler::ChatStreamAssembler;
 use crate::logging_success::ports::SuccessClock;
+use crate::payload::builder::PayloadBuilderConfig;
+use crate::payload::deps::{PayloadSettings, PayloadSources, TagConfig};
 use crate::registry::identity::CallbackIdentity;
 use crate::registry::phases::{CallbackList, CallbackPhase};
 use crate::registry::sink::CallbackSink;
@@ -557,6 +563,25 @@ async fn a_zero_queue_size_keeps_the_pipeline_from_starting() {
     ));
 }
 
+fn success_inputs() -> SuccessInputs {
+    SuccessInputs {
+        payload: PayloadBuilderConfig {
+            sources: Arc::new(PayloadSources::default()),
+            settings: PayloadSettings {
+                tag_config: TagConfig::default(),
+                request_correlation_in_logs: false,
+                log_client_error_tracebacks: false,
+            },
+            redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()),
+            normalizer: Arc::new(Normalizer::new().unwrap()),
+            truncator: Base64Truncator::new(4_096).unwrap(),
+            privacy: Settings::default(),
+        },
+        excluded_fields: Vec::new(),
+        known_callback: Arc::new(|_name: &str| false),
+    }
+}
+
 #[tokio::test]
 async fn wiring_worker_rejects_a_zero_concurrency() {
     let settings = Box::new(ServiceCallbackValues {
@@ -567,13 +592,14 @@ async fn wiring_worker_rejects_a_zero_concurrency() {
         concurrency: 0,
         event_timeout: SETTINGS_EVENT_TIMEOUT,
     });
-    let error = LoggingWiring::start(
-        &settings,
-        SteppingClock::new(),
-        Arc::new(RecordingSink::default()),
-        CallbackRegistry::new(16),
-        Arc::new(ChatStreamAssembler),
-    )
+    let error = LoggingWiring::start(LoggingInputs {
+        settings: &settings,
+        clock: SteppingClock::new(),
+        sink: Arc::new(RecordingSink::default()),
+        registry: CallbackRegistry::new(16),
+        stream_assembler: Arc::new(ChatStreamAssembler),
+        success: success_inputs(),
+    })
     .err()
     .unwrap();
     assert!(matches!(
@@ -592,13 +618,14 @@ async fn wiring_rejects_an_unknown_log_level() {
         concurrency: SETTINGS_CONCURRENCY,
         event_timeout: SETTINGS_EVENT_TIMEOUT,
     });
-    let error = LoggingWiring::start(
-        &settings,
-        SteppingClock::new(),
-        Arc::new(RecordingSink::default()),
-        CallbackRegistry::new(16),
-        Arc::new(ChatStreamAssembler),
-    )
+    let error = LoggingWiring::start(LoggingInputs {
+        settings: &settings,
+        clock: SteppingClock::new(),
+        sink: Arc::new(RecordingSink::default()),
+        registry: CallbackRegistry::new(16),
+        stream_assembler: Arc::new(ChatStreamAssembler),
+        success: success_inputs(),
+    })
     .err()
     .unwrap();
     assert!(matches!(
@@ -655,13 +682,14 @@ async fn wiring_applies_the_resolved_queue_limit() {
     });
     let sink = Arc::new(RecordingSink::default());
     let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
-    let wiring = LoggingWiring::start(
-        &settings,
-        SteppingClock::new(),
-        sink_source,
-        CallbackRegistry::new(16),
-        Arc::new(ChatStreamAssembler),
-    )
+    let wiring = LoggingWiring::start(LoggingInputs {
+        settings: &settings,
+        clock: SteppingClock::new(),
+        sink: sink_source,
+        registry: CallbackRegistry::new(16),
+        stream_assembler: Arc::new(ChatStreamAssembler),
+        success: success_inputs(),
+    })
     .unwrap();
     let call = wiring.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(None);
@@ -688,13 +716,14 @@ async fn wiring_reports_callbacks_that_are_not_installed() {
         event_timeout: SETTINGS_EVENT_TIMEOUT,
     });
     let wiring = with_default(subscriber, || {
-        LoggingWiring::start(
-            &settings,
-            SteppingClock::new(),
-            Arc::new(RecordingSink::default()),
-            CallbackRegistry::new(16),
-            Arc::new(ChatStreamAssembler),
-        )
+        LoggingWiring::start(LoggingInputs {
+            settings: &settings,
+            clock: SteppingClock::new(),
+            sink: Arc::new(RecordingSink::default()),
+            registry: CallbackRegistry::new(16),
+            stream_assembler: Arc::new(ChatStreamAssembler),
+            success: success_inputs(),
+        })
     })
     .unwrap();
     let reported = captured.text();
@@ -717,13 +746,14 @@ async fn wiring_starts_the_worker_from_the_resolved_settings() {
     });
     let sink = Arc::new(RecordingSink::default());
     let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
-    let wiring = LoggingWiring::start(
-        &settings,
-        SteppingClock::new(),
-        sink_source,
-        CallbackRegistry::new(16),
-        Arc::new(ChatStreamAssembler),
-    )
+    let wiring = LoggingWiring::start(LoggingInputs {
+        settings: &settings,
+        clock: SteppingClock::new(),
+        sink: sink_source,
+        registry: CallbackRegistry::new(16),
+        stream_assembler: Arc::new(ChatStreamAssembler),
+        success: success_inputs(),
+    })
     .unwrap();
     assert_eq!(wiring.log_level, LogLevel::Info);
     assert!(wiring.json_logs);

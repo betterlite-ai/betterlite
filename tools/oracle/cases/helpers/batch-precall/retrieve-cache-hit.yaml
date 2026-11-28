@@ -1,0 +1,79 @@
+kind: helper
+name: batch-precall-retrieve-cache-hit
+call:
+  batch_precall:
+    call:
+      op: retrieve
+      call_type: aretrieve_batch
+      principal:
+        api_key: caller-key
+      data:
+        metadata: {}
+      cache_key: 'litellm:caller-key:aretrieve_batch:abc'
+    stages:
+      skip: false
+      usage:
+        total_tokens: 25
+        request_count: 2
+        output_tokens: 0
+        per_model_usage: {}
+      reject: false
+      rejection: ""
+      backend: memory
+      owner: worker-a
+    stash:
+      reservation: null
+      operations: []
+      refund_failure: null
+    memory:
+      entries:
+        'litellm:caller-key:aretrieve_batch:abc':
+          id: batch-1
+          status: completed
+      faults: []
+    remote:
+      scan_keys: []
+      batch_entries: {}
+      get_value: null
+      faults: []
+    verbose_stdout: false
+calls:
+  - batch_precall:
+      call:
+        op: retrieve
+        call_type: aretrieve_batch
+        principal:
+          api_key: caller-key
+        data:
+          metadata: {}
+        cache_key: 'litellm:caller-key:aretrieve_batch:abc'
+      stages:
+        skip: false
+        usage:
+          total_tokens: 25
+          request_count: 2
+          output_tokens: 0
+          per_model_usage: {}
+        reject: false
+        rejection: ""
+        backend: memory
+        owner: worker-a
+      stash:
+        reservation: null
+        operations: []
+        refund_failure: null
+      memory:
+        entries: {}
+        faults: []
+      remote:
+        scan_keys:
+          - 'litellm:caller-key:aretrieve_batch:abc'
+        batch_entries:
+          'litellm:caller-key:aretrieve_batch:abc':
+            id: batch-2
+            status: in_progress
+        get_value: null
+        faults: []
+      verbose_stdout: false
+env: {}
+compare: {ignore: []}

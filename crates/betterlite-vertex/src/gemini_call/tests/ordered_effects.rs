@@ -17,12 +17,12 @@ use tracing::subscriber::with_default;
 use crate::cache_lookup::target::CacheProvider;
 use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
-use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
 use crate::gemini_request::error::RequestError;
 use crate::gemini_stream::error::StreamError;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 use super::support::{
     ANSWER, BODY, REMOTE_TOOL_MEDIA, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN,
@@ -173,7 +173,7 @@ fn ordered_effects_async_stream_defers_the_open() {
 
 #[rstest]
 #[case::supplied_async_client_is_replaced(
-    ClientKind::Async,
+    ClientKind::Asynchronous,
     ClientTimeout::Explicit(Timeout {
         total: THIRTY_SECONDS,
         connect: THIRTY_SECONDS
@@ -211,7 +211,7 @@ fn ordered_effects_supplied_client_matches_the_sync_branch(
 
 #[rstest]
 #[case::supplied_sync_client_opens_on_its_own_transport(ClientKind::Sync)]
-#[case::supplied_async_client_opens_on_the_pooled_transport(ClientKind::Async)]
+#[case::supplied_async_client_opens_on_the_pooled_transport(ClientKind::Asynchronous)]
 fn ordered_effects_supplied_client_matches_the_stream_branch(#[case] kind: ClientKind) {
     let fixture = supplied_fixture(
         kind,

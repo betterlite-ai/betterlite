@@ -9,6 +9,7 @@ use betterlite_openai::voyage_embedding::project_response;
 use betterlite_prompts::arguments::json::{Json, Object as Body};
 use serde::Serialize;
 
+use crate::credentials::CredentialSource;
 use crate::sagemaker_embedding::hf::{self, HfEmbeddingResponse};
 use crate::sagemaker_embedding::{self, EmbeddingConfig, cohere};
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
@@ -16,9 +17,7 @@ use crate::signing::json_post::{JsonPost, sign_aws_json_post};
 use super::convert;
 use super::endpoint::{self, EndpointRequest, ParamMap};
 use super::error::{RuntimeError, RuntimeFailure};
-use super::runtime::{
-    PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport, wire_error,
-};
+use super::runtime::{PreparedCall, SagemakerRuntime, SagemakerTransport, wire_error};
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
 const CUSTOM_ATTRIBUTES: &str = "X-Amzn-SageMaker-Custom-Attributes";
@@ -50,7 +49,7 @@ pub async fn prepare_embedding<T, C>(
 ) -> Result<PreparedEmbedding, RuntimeError>
 where
     T: Sync,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
     let credentials = runtime.credentials_for(call.signing, &region).await?;
@@ -93,7 +92,7 @@ pub async fn embedding<T, C>(
 ) -> Result<EmbeddingReply, RuntimeFailure>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let prepared = prepare_embedding(runtime, call).await?;
     let response = runtime

@@ -1,0 +1,30 @@
+kind: helper
+name: byok-consent-get-with-server-id
+call:
+  b4677:
+    route: get
+    query:
+      response_type: code
+      client_id: client-1
+      redirect_uri: "http://127.0.0.1:1456/callback"
+      code_challenge: challenge
+      state: state-1
+      server_id: srv-1
+    servers:
+      - server_id: srv-1
+        name: github
+        server_name: GitHub
+        transport: sse
+        byok_description:
+          - Read repositories
+          - Open pull requests
+        byok_api_key_help_url: "https://github.com/settings/tokens"
+    form: null
+    cookie_header: null
+    master_key: null
+    now: 1700000000
+    prefill_live: 0
+    prefill_expired: 0
+env: {}
+compare:
+  ignore: []

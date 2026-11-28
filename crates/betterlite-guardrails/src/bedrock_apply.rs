@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
-use betterlite_bedrock_guardrails::bedrock_credentials::CredentialSource;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock_guardrails::bedrock_post::GuardrailTransport;
 use betterlite_bedrock_guardrails::bedrock_transport::BedrockGuardrail;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;

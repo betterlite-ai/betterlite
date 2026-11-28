@@ -15,7 +15,7 @@ use betterlite_core::api::vector_search_execution::service::{
 };
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, LogContext,
+    ClientKind, ClientSource, LogContext, WriteTransport,
 };
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
@@ -126,7 +126,7 @@ impl Fixture {
         call: &SearchCall<'_>,
     ) -> Result<PreparedSearch<'deps, S::Client>, SdkHttpError>
     where
-        S: ClientSource,
+        S: ClientSource<Client: WriteTransport>,
     {
         let env = PrePostEnv {
             debug: DebugSettings::default(),
