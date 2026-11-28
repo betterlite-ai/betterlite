@@ -461,6 +461,16 @@ async fn row_spec_path_result_keeps_the_table_view() {
     ", \"url\": \"https://user:secret@up.example/mcp\"",
     "Server reachability requires an HTTP URL without embedded credentials"
 )]
+#[case::user_without_password(
+    "http",
+    ", \"url\": \"https://user@up.example/mcp\"",
+    "Server reachability requires an HTTP URL without embedded credentials"
+)]
+#[case::password_without_user(
+    "http",
+    ", \"url\": \"https://:secret@up.example/mcp\"",
+    "Server reachability requires an HTTP URL without embedded credentials"
+)]
 #[tokio::test]
 async fn reach_refuses_a_url_it_cannot_probe(
     #[case] transport: &str,
