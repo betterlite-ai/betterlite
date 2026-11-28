@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import ClassVar, Final, Literal, Self
+from typing import ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue, field_validator, model_validator
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from betterlite.types.mcp.enums import (
     DEFAULT_SUBJECT_TOKEN_TYPE,

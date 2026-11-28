@@ -1,6 +1,4 @@
-from typing import Required
-
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.bedrock.converse.citations import CitationsContentBlock
 from betterlite.types.llms.bedrock.converse.content import (

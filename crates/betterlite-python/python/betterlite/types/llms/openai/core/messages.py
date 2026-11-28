@@ -1,7 +1,8 @@
 from collections.abc import Iterable
-from typing import Final, Literal, Required, TypeAlias, TypedDict
+from typing import Final, Literal, TypeAlias
 
 from pydantic import JsonValue
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.openai.core.aliases import AllPromptValues
 from betterlite.types.llms.openai.core.chat_blocks import (

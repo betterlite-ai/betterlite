@@ -1,15 +1,6 @@
 task: B7940
 deviations:
   - what: >-
-      AlertType derives from enum.StrEnum, where LiteLLM declares class AlertType(str, Enum).
-    why: >-
-      The repository's ruff rules require StrEnum over a str mixin, and this task's
-      max_new_expects is 0, so the str, Enum form cannot carry the suppression ruff
-      wants. Every member, its name, its value and compare-by-value behavior are
-      identical; str() and format() return the value rather than Class.MEMBER, and
-      Python runtime formatting is outside the compatibility policy.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L162
-  - what: >-
       ChatCompletionCachedContent is declared in anthropic_cache_control_hook.py,
       where LiteLLM imports it from litellm.types.llms.openai.
     why: >-

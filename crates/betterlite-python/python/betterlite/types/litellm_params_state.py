@@ -1,9 +1,10 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import Field as DataclassField
 from dataclasses import dataclass, field
-from typing import ClassVar, Final, Literal, Protocol, TypedDict
+from typing import ClassVar, Final, Literal, Protocol
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 from betterlite.types.router_weights import RouterWeights
 from betterlite.types.utils.response import ModelResponse

@@ -5,9 +5,10 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._model_info.catalog import catalog_state

@@ -1,7 +1,7 @@
-from typing import Final, Literal, Self
+from typing import Final, Literal
 
 from pydantic import BaseModel, JsonValue, field_validator, model_validator
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from betterlite.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
 from betterlite.types.utils.base import Dumpable, ResponseObject

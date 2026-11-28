@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel
@@ -11,7 +11,7 @@ class WeaveOtelConfig(BaseModel):
     protocol: Literal["otlp_grpc", "otlp_http"] = "otlp_http"
 
 
-class WeaveSpanAttributes(StrEnum):
+class WeaveSpanAttributes(str, Enum):
     DISPLAY_NAME = "wandb.display_name"
     THREAD_ID = "wandb.thread_id"
     IS_TURN = "wandb.is_turn"

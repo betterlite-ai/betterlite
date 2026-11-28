@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from types import MappingProxyType
 from typing import ClassVar, Final, Literal, TypeAlias
 
@@ -250,8 +250,8 @@ class ShadowEvalJobResponse(BaseModel):
     def status(self) -> ShadowEvalStatus:
         if self.stopped_by is not None:
             return "stopped"
-        ends_at = self.ends_at if self.ends_at.tzinfo else self.ends_at.replace(tzinfo=UTC)
-        if datetime.now(UTC) >= ends_at:
+        ends_at = self.ends_at if self.ends_at.tzinfo else self.ends_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) >= ends_at:
             return "completed"
         if all(target.budget_spent for target in self.targets):
             return "completed"

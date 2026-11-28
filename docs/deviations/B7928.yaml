@@ -27,12 +27,6 @@ deviations:
       API response carries is JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L19
   - what: >-
-      WatsonXAIEndpoint and WatsonXModelPattern derive from enum.StrEnum instead of (str, Enum).
-    why: >-
-      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
-      JSON serialization are unchanged; str() and repr text is not part of parity.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/watsonx.py#L51
-  - what: >-
       The four Cohere message subclasses declare role as str with a default, a pattern and a
       JSON-schema const, instead of LiteLLM's role: Literal["USER"], Literal["CHATBOT"],
       Literal["SYSTEM"] and Literal["TOOL"] overrides of the base role: str.

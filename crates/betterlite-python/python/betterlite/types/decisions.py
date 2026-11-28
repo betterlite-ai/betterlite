@@ -1,8 +1,8 @@
 from collections.abc import Mapping, Sequence
-from typing import Annotated, ClassVar, Final, Literal, Required, Self, TypeAlias
+from typing import Annotated, ClassVar, Final, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field, JsonValue, PrivateAttr, model_validator, with_config
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import ReadOnly, Required, Self, TypedDict
 
 from betterlite.types.llms.base import LiteLLMPydanticObjectBase
 

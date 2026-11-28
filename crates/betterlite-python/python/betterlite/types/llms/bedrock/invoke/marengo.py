@@ -1,7 +1,7 @@
 from collections.abc import Sequence
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import ReadOnly, Required, TypedDict
 
 # ast-grep-ignore: no-long-names
 TWELVELABS_EMBEDDING_INPUT_TYPES = Literal["text", "image", "video", "audio"]

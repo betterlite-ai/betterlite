@@ -1,6 +1,7 @@
 import json
-import typing
 from typing import Final, TypeGuard
+
+from typing_extensions import Self
 
 from betterlite.types.utils import JsonValue
 
@@ -121,7 +122,7 @@ class AnthropicErrorSseFrame(str):
         cls,
         status_code: int,
         error_response: AnthropicErrorResponse,
-    ) -> "typing.Self":
+    ) -> Self:
         frame = super().__new__(cls, f"event: error\ndata: {json.dumps(error_response)}\n\n")
         frame.status_code = status_code
         frame.error_response = error_response

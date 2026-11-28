@@ -1,9 +1,9 @@
 import builtins
 from collections.abc import Iterable, Mapping
 from http.client import HTTPException
-from typing import TypedDict, Unpack
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict, Unpack
 
 from ._bridge import redact_string
 from ._transport import (

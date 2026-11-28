@@ -1,7 +1,7 @@
-from typing import Annotated, ClassVar, Final, Literal, Self
+from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import ConfigDict, Field, JsonValue, model_validator
-from typing_extensions import TypedDict
+from typing_extensions import Self, TypedDict
 
 from betterlite.types.completion import CompletionRequest
 from betterlite.types.embedding import EmbeddingRequest

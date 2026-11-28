@@ -818,7 +818,7 @@ def test_enum_names() -> None:
     applicable = [member.value for member in dynamoai.PolicyApplicableTo]
     assert applicable == ["INPUT", "OUTPUT", "ALL"]
     assert dynamoai.DynamoTextType("MODEL_INPUT") is dynamoai.DynamoTextType.MODEL_INPUT
-    assert str(dynamoai.DynamoTextType.MODEL_INPUT) == "MODEL_INPUT"
+    assert str(dynamoai.DynamoTextType.MODEL_INPUT) == "DynamoTextType.MODEL_INPUT"
 
 
 def test_tool_param_names() -> None:

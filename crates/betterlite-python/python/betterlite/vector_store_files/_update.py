@@ -40,7 +40,7 @@ async def aupdate(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d
     attributes: JsonValue,
     extra_headers: JsonValue = None,
     extra_body: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L531
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L531
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileObject:

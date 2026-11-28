@@ -1,8 +1,8 @@
 from enum import Enum
-from typing import ClassVar, Literal, Required
+from typing import ClassVar, Literal
 
 from pydantic import ConfigDict, Field, JsonValue, model_validator
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite._router_types_config import CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS
 from betterlite._router_types_litellm_params import LiteLLMParamsTypedDict

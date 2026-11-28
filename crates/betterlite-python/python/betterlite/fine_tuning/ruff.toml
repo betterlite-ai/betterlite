@@ -1,4 +1,4 @@
-extend = "../../../../../ruff.toml"
+extend = "../../../ruff.toml"
 
 [lint.per-file-ignores]
 "main.py" = ["PLR0913", "PLR0917"] # LiteLLM's fine-tuning calls keep their parameter lists

@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import ClassVar
 
 from pydantic import ConfigDict, Field, JsonValue
@@ -6,7 +6,7 @@ from pydantic import ConfigDict, Field, JsonValue
 from betterlite.types.utils.base import ResponseObject
 
 
-class PolicyValidationErrorType(StrEnum):
+class PolicyValidationErrorType(str, Enum):
     INVALID_GUARDRAIL = "invalid_guardrail"
     INVALID_TEAM = "invalid_team"
     INVALID_KEY = "invalid_key"

@@ -1,8 +1,8 @@
 from collections.abc import Sequence
-from typing import Literal, NotRequired, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 from betterlite.types.llms.anthropic.messages import CompactionBlock
 from betterlite.types.llms.anthropic.responses import (

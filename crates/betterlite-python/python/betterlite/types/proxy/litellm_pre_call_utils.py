@@ -1,7 +1,5 @@
-from typing import TypedDict
-
 from pydantic import JsonValue
-from typing_extensions import override
+from typing_extensions import TypedDict, override
 
 
 class RedactedDict(dict[str, JsonValue]):

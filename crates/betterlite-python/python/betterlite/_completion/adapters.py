@@ -1,8 +1,9 @@
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 import betterlite
 from betterlite._completion import arguments

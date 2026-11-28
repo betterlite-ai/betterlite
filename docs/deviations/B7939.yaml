@@ -23,14 +23,6 @@ deviations:
       subclass stays.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/cloudzero.py#L4
   - what: >-
-      DataDogStatus, LangfuseSpanAttributes and WeaveSpanAttributes derive from enum.StrEnum instead
-      of (str, Enum).
-    why: >-
-      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
-      JSON serialization are unchanged; the span attribute strings sent to the backend are the same,
-      and str() and repr text is not part of parity.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/weave_otel.py#L18
-  - what: >-
       Protocol is always the declared Literal["otlp_grpc", "otlp_http"] in arize.py, arize_phoenix.py
       and langfuse_otel.py. LiteLLM assigns that Literal only under TYPE_CHECKING and assigns Any at
       runtime, so its ArizeConfig.protocol, ArizePhoenixConfig.protocol and

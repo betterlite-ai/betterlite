@@ -1,4 +1,4 @@
-from typing import ClassVar, Final, Unpack
+from typing import ClassVar, Final
 
 from pydantic import (
     BaseModel,
@@ -9,7 +9,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from typing_extensions import override
+from typing_extensions import Unpack, override
 
 from betterlite.types.utils.base import Dumpable, DumpOptions
 

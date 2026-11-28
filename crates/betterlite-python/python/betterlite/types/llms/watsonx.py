@@ -1,5 +1,6 @@
-from enum import StrEnum
-from typing import NotRequired, TypedDict
+from enum import Enum
+
+from typing_extensions import NotRequired, TypedDict
 
 
 class WatsonXAPIParams(TypedDict):
@@ -25,7 +26,7 @@ class WatsonXAudioTranscriptionRequestBody(TypedDict):  # ast-grep-ignore: no-lo
     timestamp_granularities: NotRequired[list[str]]
 
 
-class WatsonXAIEndpoint(StrEnum):
+class WatsonXAIEndpoint(str, Enum):
     TEXT_GENERATION = "/ml/v1/text/generation"
     TEXT_GENERATION_STREAM = "/ml/v1/text/generation_stream"
     CHAT = "/ml/v1/text/chat"
@@ -41,7 +42,7 @@ class WatsonXAIEndpoint(StrEnum):
     RERANK = "/ml/v1/text/rerank"
 
 
-class WatsonXModelPattern(StrEnum):
+class WatsonXModelPattern(str, Enum):
     GRANITE_CHAT = "granite-chat"
     IBM_MISTRAL = "ibm-mistral"
     IBM_MISTRALAI = "ibm-mistralai"

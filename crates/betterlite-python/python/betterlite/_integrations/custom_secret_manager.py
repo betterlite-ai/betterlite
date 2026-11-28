@@ -73,7 +73,7 @@ class CustomSecretManager(BaseSecretManager):
 
     async def async_health_check(
         self,
-        timeout: RequestTimeout = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_secret_manager.py#L228
+        timeout: RequestTimeout = None,
     ) -> bool:
         _ = timeout
         LOGGER.debug("Health check not implemented for %s", self.secret_manager_name)

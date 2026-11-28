@@ -2,7 +2,7 @@ import asyncio
 import importlib
 import itertools
 from collections.abc import Callable, Mapping
-from enum import Enum, StrEnum
+from enum import Enum
 from typing import Final, Protocol
 
 import httpx
@@ -174,7 +174,7 @@ their_flags: ServerFlagsClasses = importlib.import_module(
     "litellm.types.mcp_server.mcp_server_manager"
 )
 
-ENUM_PAIRS: Final[list[tuple[type[StrEnum], type[Enum]]]] = [
+ENUM_PAIRS: Final[list[tuple[type[Enum], type[Enum]]]] = [
     (betterlite_enums.MCPTransport, litellm_mcp.MCPTransport),
     (betterlite_enums.MCPSpecVersion, litellm_mcp.MCPSpecVersion),
     (betterlite_enums.MCPAuth, litellm_mcp.MCPAuth),
@@ -532,7 +532,7 @@ def test_names_constants() -> None:
 
 
 @pytest.mark.parametrize(("ours", "theirs"), ENUM_PAIRS)
-def test_names_enum_members(ours: type[StrEnum], theirs: type[Enum]) -> None:
+def test_names_enum_members(ours: type[Enum], theirs: type[Enum]) -> None:
     assert [member.name for member in ours] == [member.name for member in theirs]
     for member in theirs:
         assert ours[member.name] == member

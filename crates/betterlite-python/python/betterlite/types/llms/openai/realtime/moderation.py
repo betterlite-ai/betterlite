@@ -1,11 +1,11 @@
-from enum import StrEnum
+from enum import Enum
 
 from pydantic import JsonValue, PrivateAttr
 
 from betterlite.types.llms.base import BaseLiteLLMOpenAIResponseObject
 
 
-class ImageGenerationRequestQuality(StrEnum):
+class ImageGenerationRequestQuality(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"

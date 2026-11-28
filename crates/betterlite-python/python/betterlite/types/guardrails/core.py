@@ -1,8 +1,8 @@
-from enum import Enum, StrEnum
-from typing import ClassVar, Final, Required, TypedDict
+from enum import Enum
+from typing import ClassVar, Final
 
 from pydantic import ConfigDict, JsonValue
-from typing_extensions import override
+from typing_extensions import Required, TypedDict, override
 
 from betterlite.types.utils.base import ResponseObject
 
@@ -70,7 +70,7 @@ class SupportedGuardrailIntegrations(Enum):
     DECISION_MODEL = "decision_model"
 
 
-class Role(StrEnum):
+class Role(str, Enum):
     SYSTEM = "system"
     ASSISTANT = "assistant"
     USER = "user"

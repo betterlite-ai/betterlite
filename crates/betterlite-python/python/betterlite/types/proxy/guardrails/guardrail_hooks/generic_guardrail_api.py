@@ -1,9 +1,9 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import ClassVar, Final, Literal, Required, Self
+from typing import ClassVar, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
-from typing_extensions import TypedDict, override
+from typing_extensions import Required, Self, TypedDict, override
 
 from betterlite.types.llms.openai.core.chat_blocks import ChatCompletionToolCallChunk
 from betterlite.types.llms.openai.core.messages import AllMessageValues

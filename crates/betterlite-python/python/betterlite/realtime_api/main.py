@@ -1,8 +1,9 @@
 import json
 from collections.abc import Mapping
-from typing import Final, NoReturn, NotRequired, TypedDict
+from typing import Final, NoReturn
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import NotRequired, TypedDict
 
 from betterlite._completion.errors import raise_native_error
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
@@ -112,7 +113,7 @@ async def acreate_realtime_client_secret(
     model: str | None = None,
     session: Mapping[str, CallValue] | None = None,
     expires_after: Mapping[str, CallValue] | None = None,
-    timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L128-L183
+    timeout: float | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L128-L183
     **kwargs: CallValue,
 ) -> RealtimeClientSecretResponse:
     values: dict[str, CallValue] = {"model": model, "timeout": timeout, **kwargs}
@@ -130,7 +131,7 @@ async def acreate_realtime_client_secret(
 async def acreate_realtime_transcription_session(
     model: str | None = None,
     transcription_session: Mapping[str, CallValue] | None = None,
-    timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L189-L264
+    timeout: float | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L189-L264
     **kwargs: CallValue,
 ) -> TranscriptionResponse:
     values: dict[str, CallValue] = {
@@ -153,7 +154,7 @@ async def arealtime_calls(
     sdp_body: bytes,
     model: str | None = None,
     session: Mapping[str, CallValue] | None = None,
-    timeout: float | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L270-L328
+    timeout: float | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L270-L328
     **kwargs: CallValue,
 ) -> str:
     payload = realtime_payload(

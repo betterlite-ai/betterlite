@@ -19,8 +19,3 @@ deviations:
       betterlite types Any as JSON, so a default or example that is not JSON is rejected where LiteLLM accepts
       it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L130
-  - what: VertexToolName and VertexPartnerProvider derive from enum.StrEnum instead of (str, Enum).
-    why: >-
-      Ruff UP042 rejects the two-base form, and the member names and values stay the same. str() of a member
-      returns its value, where (str, Enum) returns the class and member name.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L257

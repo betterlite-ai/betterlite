@@ -1,7 +1,8 @@
 from collections.abc import Mapping
-from typing import Literal, Self
+from typing import Literal
 
 from pydantic import JsonValue, PrivateAttr
+from typing_extensions import Self
 
 from betterlite.types.utils.base import ResponseObject
 

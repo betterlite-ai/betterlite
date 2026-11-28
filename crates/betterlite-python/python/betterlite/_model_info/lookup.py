@@ -1,8 +1,8 @@
 import json
-from typing import Final, NamedTuple, Protocol, TypeAlias, TypedDict
+from typing import Final, NamedTuple, Protocol, TypeAlias
 
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
+from typing_extensions import TypedDict, override
 
 from betterlite import _native
 from betterlite._model_info.catalog import catalog_state

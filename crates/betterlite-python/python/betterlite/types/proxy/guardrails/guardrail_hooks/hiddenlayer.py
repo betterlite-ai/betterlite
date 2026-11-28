@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 
 from pydantic import BaseModel
 from typing_extensions import override
@@ -6,12 +6,12 @@ from typing_extensions import override
 from betterlite.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
 
 
-class HiddenlayerAction(StrEnum):
+class HiddenlayerAction(str, Enum):
     BLOCK = "Block"
     REDACT = "Redact"
 
 
-class HiddenlayerMessages(StrEnum):
+class HiddenlayerMessages(str, Enum):
     BLOCK_MESSAGE = "Blocked by Hiddenlayer."
 
 

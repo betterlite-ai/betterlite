@@ -134,7 +134,7 @@ async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     extra_headers: CallValue = None,
     extra_query: CallValue = None,
     extra_body: CallValue = None,
-    timeout: CallValue = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
+    timeout: CallValue = None,
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:

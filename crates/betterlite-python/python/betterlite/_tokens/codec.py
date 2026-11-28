@@ -1,9 +1,10 @@
 import contextlib
 from collections.abc import Sequence
 from json import dumps
-from typing import Final, TypedDict
+from typing import Final
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 from betterlite import _native
 

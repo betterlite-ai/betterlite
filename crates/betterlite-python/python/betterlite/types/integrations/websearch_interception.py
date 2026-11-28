@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, TypedDict
 
 
 class AnthropicSearchQuery(BaseModel):

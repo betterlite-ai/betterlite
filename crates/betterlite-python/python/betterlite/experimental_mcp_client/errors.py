@@ -1,9 +1,10 @@
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Final, NoReturn, TypedDict, TypeVar
+from typing import Final, NoReturn, TypeVar
 
 import httpx2
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._completion.errors import UnknownNativeError
 from betterlite._native import NativeMcpError

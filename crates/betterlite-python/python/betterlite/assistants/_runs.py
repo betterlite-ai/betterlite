@@ -1,9 +1,10 @@
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator, Mapping
 from types import TracebackType
-from typing import Final, Protocol, Self, TypeAlias, TypeVar, runtime_checkable
+from typing import Final, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from pydantic import JsonValue
+from typing_extensions import Self
 
 from betterlite._completion.errors import UnsupportedCallArgument, raise_native_error
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload

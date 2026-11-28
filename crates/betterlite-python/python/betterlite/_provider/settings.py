@@ -1,6 +1,7 @@
-from typing import Final, TypedDict
+from typing import Final
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 import betterlite
 

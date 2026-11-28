@@ -1,8 +1,9 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Literal, Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 from betterlite.types.litellm_params_state import ForeignObject
 

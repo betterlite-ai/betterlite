@@ -1,11 +1,11 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Literal
 
 from pydantic import JsonValue
 from typing_extensions import TypedDict
 
 
-class VectorStoreFileStatus(StrEnum):
+class VectorStoreFileStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -13,7 +13,7 @@ class VectorStoreFileStatus(StrEnum):
 
 
 # ast-grep-ignore: no-long-names
-class VectorStoreFileChunkingStrategyType(StrEnum):
+class VectorStoreFileChunkingStrategyType(str, Enum):
     AUTO = "auto"
     STATIC = "static"
 

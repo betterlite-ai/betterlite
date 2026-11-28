@@ -56,7 +56,7 @@ class GuardrailRecording(GuardrailSelection, GuardrailRecorder):
             duration=duration,
             masked_entity_count=masked_entity_count,
             guardrail_provider=guardrail_provider,
-            event_type=None if event_type is None else str(event_type),
+            event_type=None if event_type is None else event_type.value,
             tracing_detail=detail,
         )
         logging_obj = request_data.get("litellm_logging_obj")

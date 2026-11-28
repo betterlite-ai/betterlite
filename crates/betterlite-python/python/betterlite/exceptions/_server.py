@@ -64,8 +64,18 @@ class RateLimitError(RetryText, base.RateLimitError):
     def __post_init__(self) -> None:
         self.status_code = 429
         self.message = f"litellm.RateLimitError: {self.message}"
-        self.category = str(self.category)
-        self.rate_limit_type = None if self.rate_limit_type is None else str(self.rate_limit_type)
+        category = self.category
+        match category:
+            case RateLimitErrorCategory():
+                self.category = category.value
+            case str():
+                self.category = category
+        rate_limit_type = self.rate_limit_type
+        match rate_limit_type:
+            case RateLimitType():
+                self.rate_limit_type = rate_limit_type.value
+            case str() | None:
+                self.rate_limit_type = rate_limit_type
         if self.headers is not None:
             self.headers = {name: str(value) for name, value in self.headers.items()}
         self.detail = self.message if self.detail is None else self.detail
