@@ -115,9 +115,7 @@ where
     match error {
         request @ (AwsRequestError::Credentials(_)
         | AwsRequestError::Body(_)
-        | AwsRequestError::SigningParams(_)
         | AwsRequestError::Signing(_)
-        | AwsRequestError::HeaderName(_)
         | AwsRequestError::HeaderValue(_)) => Err(AwsReadError::Request(request)),
         AwsRequestError::Http { .. } => Ok(failed_secret_read(secret_name, "http")),
         AwsRequestError::Timeout => Ok(failed_secret_read(secret_name, "timeout")),

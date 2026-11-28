@@ -19,7 +19,7 @@ use crate::transcription::call::{
     TranscriptionCall, TranscriptionRequest, async_audio_transcriptions, audio_transcriptions,
     finish_transcription,
 };
-use crate::transcription::client::{ClientKind, TranscriptionConnection, select_client};
+use crate::transcription::client::{TranscriptionConnection, select_client};
 use crate::transcription::config::{
     TranscriptionFamily, complete_url, map_openai_params, supported_openai_params,
     transform_response, validate_environment,
@@ -29,6 +29,7 @@ use crate::transcription::error::TranscriptionError;
 use crate::transcription::reply::{StoredDuration, TranscriptionReply};
 use crate::transcription::request::{TranscriptionData, prepare_data};
 use crate::transcription::transport::TranscriptionTransport as _;
+use betterlite_http::client_kind::ClientKind;
 
 #[derive(Debug, Clone, Copy)]
 enum Case {
@@ -928,9 +929,9 @@ fn assert_shared_sessions() {
     assert!(sync.shared_session.is_none());
     assert_eq!(sync.kind, ClientKind::Sync);
     let async_client =
-        select_client(&shared_connection(), ClientKind::Async).expect("the client builds");
+        select_client(&shared_connection(), ClientKind::Asynchronous).expect("the client builds");
     assert!(async_client.shared_session.is_some());
-    assert_eq!(async_client.kind, ClientKind::Async);
+    assert_eq!(async_client.kind, ClientKind::Asynchronous);
 }
 
 fn shared_connection() -> TranscriptionConnection {

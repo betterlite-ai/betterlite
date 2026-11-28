@@ -6,8 +6,8 @@ use std::thread;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 
-use crate::chat_call::transport::SuppliedChatClient;
 use crate::chat_call::{ChatClients, chat_call};
+use betterlite_http::client_kind::SuppliedClient;
 
 use super::fixture::{
     CALLER_KEY, FixtureTransport, RecordingLogger, Silent, logging_env, logging_state, redactor,
@@ -49,7 +49,7 @@ fn chat_call_completes_on_a_second_thread() {
     let key = SecretString::from(CALLER_KEY.to_owned());
     let call = call_of(&setup, Some(&key), &settings);
     let clients = ChatClients {
-        supplied: setup.supplied.then_some(SuppliedChatClient {
+        supplied: setup.supplied.then_some(SuppliedClient {
             kind: setup.supplied_kind,
             transport: &supplied,
         }),

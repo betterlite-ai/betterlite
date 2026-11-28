@@ -1,0 +1,39 @@
+task: B7876
+deviations:
+  - what: aretrieve, alist, aupdate and adelete are async functions, where LiteLLM wraps the same async signatures in the plain function its @client decorator returns, so inspect.iscoroutinefunction is true on betterlite's four and false on LiteLLM's while both return the same coroutine to await.
+    why: betterlite's a-twin awaits the native method itself instead of going through LiteLLM's sync wrapper, so a caller awaiting the result sees the same value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
+  - what: "update ignores file_ids and chunking_strategy passed through **kwargs, which LiteLLM copies from the caller's kwargs into the request body."
+    why: B1066's write core carries only name, expires_after and metadata, and an update endpoint does not accept the other create fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L890
+  - what: "retrieve, list, update and delete serve only the openai tag; a tag LiteLLM has a vector store config for is refused locally, retrieve and list as APIConnectionError and update and delete as a synthesized BadRequestError \"Vector store <operation> is not supported for <provider>\", without a request leaving."
+    why: B010's read config and B1066's write config are the OpenAI vector store config, while LiteLLM's Azure vector store config subclasses the OpenAI one and serves all four calls, so an azure caller loses a call this build does not serve yet; a provider with no vector store config at all still fails as APIConnectionError, as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/vector_stores/transformation.py#L7
+  - what: "client and shared_session raise UnsupportedCallArgument instead of being handed to the HTTP handler."
+    why: A Python HTTP client cannot drive the Rust transport (B158).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L612
+  - what: "retrieve, list, update, delete and their `a` twins run their body directly instead of through the `@client` wrapper, so the wrapper's logging-object setup, `litellm_credential_name` credential loading, the `litellm.max_budget` check, cache lookup, success and failure handlers, post-call rules and cost tracking do not run."
+    why: betterlite-sdk has no vector store call target for CallWrapper; the native session builds its own pre and post-call logging (B1731), and adding the target is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
+  - what: "litellm_logging_obj is dropped and logger_fn is never called; betterlite logs that the logger function was dropped."
+    why: The @client decorator that builds the logging object and calls both does not exist on the Rust path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1729
+  - what: "A sync retrieve, list, update or delete honors a nonzero caller timeout, which LiteLLM's sync handlers ignore because they post without a timeout argument; its async handlers use it as betterlite's both modes do."
+    why: B010's and B2402's cores thread the caller's timeout into the request for either mode, and ignoring one is not behavior a working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10632
+  - what: "list and delete are annotated to return dict[str, JsonValue], where LiteLLM annotates Mapping[str, object] and VectorStoreDeleteResponse."
+    why: B167's VectorStoreListResponse and VectorStoreDeleteResponse do not exist in betterlite's Python types yet; the JSON is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L685
+  - what: "vector_stores/__init__.py exports the twelve call names of B7875 and this task with an explicit __all__, where LiteLLM exports four call names and VectorStoreRegistry and vector_stores/main.py has no __all__."
+    why: The registry is Rust (B1062), and this project builds the two call families as separate tasks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/__init__.py#L1
+  - what: "a reply to retrieve or update that carries keys outside VectorStoreCreateResponse, an error body included, reads without them, so a 401 body reads as {} where LiteLLM returns it verbatim; list returns the body verbatim in both."
+    why: "The declared TypedDict is the reply contract and pydantic drops the keys outside it; keeping them would need extra=\"allow\" on that shared type, which is outside this task's scope."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L150
+kept_bugs:
+  - what: retrieve, list, update and delete accept extra_query and never send it to the provider.
+    why: LiteLLM's signatures carry the argument and no handler forwards it, so a working setup may pass it and get no error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L547
+  - what: retrieve and list return the reply body for a provider error status instead of raising, because LiteLLM's GET handlers never call raise_for_status, while update and delete raise the mapped exception.
+    why: A working LiteLLM setup can observe the returned body, so betterlite copies the GET handlers instead of raising where the reference does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10344

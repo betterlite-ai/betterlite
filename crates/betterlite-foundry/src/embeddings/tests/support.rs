@@ -11,14 +11,16 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::{Builder, Runtime};
 
 use crate::embeddings::call::{
-    EmbeddingClientFactory, EmbeddingMode, FoundryEmbeddingRequest, SuppliedClient, TextEmbedding,
-    TextEmbeddingCall, embedding, projected_headers,
+    EmbeddingClientFactory, FoundryEmbeddingRequest, TextEmbedding, TextEmbeddingCall, embedding,
+    projected_headers,
 };
 use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::reply::{
     EmbeddingReply, FoundryEmbeddingResponse, decode_foundry_embedding,
 };
 use crate::embeddings::request::FoundryEmbeddingOptions;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 
 pub(super) const BASE: &str = "https://acct.services.ai.azure.com";
 pub(super) const MODEL: &str = "offer-cohere-embed-english-paygo";
@@ -181,7 +183,7 @@ impl EmbeddingClientFactory for Factory {
 
 #[derive(Clone)]
 pub(super) struct TextSeen {
-    pub(super) mode: EmbeddingMode,
+    pub(super) mode: ClientKind,
     pub(super) model: String,
     pub(super) input: Vec<String>,
     pub(super) api_base: Option<String>,
@@ -249,7 +251,7 @@ pub(super) fn request<'call>(
         api_base: Some(BASE),
         api_key: None,
         timeout: Duration::from_secs(5),
-        mode: EmbeddingMode::Sync,
+        mode: ClientKind::Sync,
     }
 }
 

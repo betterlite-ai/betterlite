@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use axum::Router;
 
+use crate::routes::mcp_byok_consent;
 use crate::state::ServerState;
 
 #[cfg_attr(test, mutants::skip)]
@@ -30,9 +31,9 @@ pub fn mount(router: Router, _state: &Arc<ServerState>) -> Router {
 }
 
 #[cfg_attr(test, mutants::skip)]
-pub fn mount_public(router: Router, _state: &Arc<ServerState>) -> Router {
-    // the area owner adds its public routes
-    router.merge(Router::new())
+pub fn mount_public(router: Router, state: &Arc<ServerState>) -> Router {
+    // the consent page is unauthenticated on the GET and checks the UI cookie itself on the POST, so it sits outside the auth layers
+    router.merge(mcp_byok_consent::routes(state))
 }
 
 #[cfg_attr(test, mutants::skip)]
