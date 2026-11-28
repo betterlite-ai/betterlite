@@ -8,7 +8,7 @@ use betterlite_http::error::HttpError;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use crate::gemini_http::call::{ClientKind, async_streaming};
+use crate::gemini_http::call::async_streaming;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
 use crate::gemini_http::stream::{StreamCall, make_sync_call};
 use crate::gemini_http::tests::support::{
@@ -18,6 +18,7 @@ use crate::gemini_http::tests::support::{
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::post::ClientTimeout;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 use super::{VERTEX_URL, fixed_id};
 
@@ -228,7 +229,7 @@ async fn execution_streaming_uses_the_supplied_async_client() {
         vec![stream_reply(200, vec![line(STREAM_CHUNK)])],
     ));
     let pooled_recorder = Arc::new(Recorder::scripted(Vec::new(), Vec::new()));
-    let clients = supplied(&caller, ClientKind::Async, &pooled_recorder);
+    let clients = supplied(&caller, ClientKind::Asynchronous, &pooled_recorder);
     let mut stream = async_streaming(
         &call,
         &catalog(),

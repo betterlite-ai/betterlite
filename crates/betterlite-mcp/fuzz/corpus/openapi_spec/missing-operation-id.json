@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Anon", "version": "1.0.0"},
+  "servers": [{"url": "https://anon.test/v1"}],
+  "paths": {
+    "/items": {
+      "get": {"summary": "List items"},
+      "post": {}
+    },
+    "/items/{itemId}": {
+      "delete": {"description": "Remove an item"}
+    }
+  }
+}

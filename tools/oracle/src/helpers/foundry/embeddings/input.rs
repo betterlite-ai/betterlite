@@ -1,5 +1,5 @@
-use betterlite_foundry::embeddings::call::EmbeddingMode;
 use betterlite_foundry::embeddings::request::FoundryEmbeddingOptions;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 
@@ -12,7 +12,7 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct FlowCall {
-    pub(super) mode: ModeName,
+    pub(super) mode: ClientKind,
     pub(super) model: String,
     pub(super) input: Vec<String>,
     #[serde(default)]
@@ -25,22 +25,6 @@ pub(super) struct FlowCall {
     pub(super) text_reply: ReplyCall,
     #[serde(default)]
     pub(super) client: ClientName,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum ModeName {
-    Sync,
-    Async,
-}
-
-impl ModeName {
-    pub(super) const fn mode(self) -> EmbeddingMode {
-        match self {
-            Self::Sync => EmbeddingMode::Sync,
-            Self::Async => EmbeddingMode::Async,
-        }
-    }
 }
 
 // which client the caller hands the route: none, an OpenAI SDK client, or the handler the route reuses

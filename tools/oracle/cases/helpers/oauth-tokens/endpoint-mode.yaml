@@ -1,0 +1,11 @@
+kind: helper
+name: oauth-tokens-endpoint-mode
+call:
+  oauth_tokens:
+    token: opaque-token-4
+    endpoint: https://idp.example/introspect
+    response:
+      status: 200
+      body: '{"active": false, "sub": "user-4"}'
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,6 @@
 pub mod client;
 pub mod projection;
 pub mod settings;
-pub mod signing;
 
 mod tests;
 

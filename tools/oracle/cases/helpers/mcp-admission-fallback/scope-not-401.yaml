@@ -1,0 +1,5 @@
+kind: helper
+name: "scope-not-401"
+call: {"b7490":{"function":"challenge_scope","route":"/mcp","error_status":403}}
+env: {}
+compare: {"ignore":[]}

@@ -263,6 +263,7 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Admin V1 without an ID omits directory redaction; explicit-ID V1 and V2 apply it.
   - V2 denies unrelated org admins with 404 and has no pagination; V1 other-user denial is 403.
 budget:
