@@ -113,6 +113,8 @@ description: >-
   that for every leaf, so those branches are native tests.
 scope:
   paths:
+    - "crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging.rs"
+    - "crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging/reply.rs"
     - crates/betterlite-server/src/pass_through_logging/vertex_passthrough_handler.rs
     - crates/betterlite-server/src/pass_through_logging/vertex_passthrough_handler/**
     - tools/oracle/cases/helpers/vertex-passthrough-handler/**
