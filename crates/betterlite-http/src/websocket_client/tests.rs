@@ -3,7 +3,7 @@
 use std::future::pending;
 use std::io::Write as _;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
@@ -46,6 +46,9 @@ const OVERSIZED_MESSAGE: usize = 17;
 const PING_INTERVAL: Duration = Duration::from_millis(50);
 const PING_TIMEOUT: Duration = Duration::from_millis(50);
 const SERVER_SILENCE: Duration = Duration::from_millis(250);
+const PONG_INTERVAL: Duration = Duration::from_millis(300);
+const PONG_TIMEOUT: Duration = Duration::from_millis(300);
+const PONG_WINDOW: Duration = Duration::from_millis(700);
 
 // the recorder keeps what the client asked with, and answers with a rejection when the test asks for one
 struct Recorder<'headers> {
@@ -172,6 +175,19 @@ async fn serve_silent(listener: TcpListener) -> (u16, String) {
     };
     let code = close.expect("close code");
     (u16::from(code.code), code.reason.as_str().to_owned())
+}
+
+// a server that answers every ping the way tungstenite does, recording when each one arrived
+async fn serve_ponging(listener: TcpListener, pings: Arc<Mutex<Vec<Duration>>>) {
+    let (stream, _peer) = listener.accept().await.expect("accept");
+    let started = Instant::now();
+    let mut socket = accept_async(stream).await.expect("handshake");
+    loop {
+        let ping = socket.next().await.expect("ping").expect("frame");
+        if matches!(ping, Message::Ping(_)) {
+            pings.lock().expect("pings").push(started.elapsed());
+        }
+    }
 }
 
 async fn read_head(stream: &mut TcpStream) -> String {
@@ -510,6 +526,51 @@ async fn websocket_client_tests_fail_the_socket_when_a_pong_misses() {
         .expect("server task");
     assert_eq!(code, 1011);
     assert_eq!(reason, "keepalive ping timeout");
+}
+
+#[tokio::test]
+async fn websocket_client_tests_answer_pongs_without_closing() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let pings = Arc::new(Mutex::new(Vec::new()));
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_ponging(listener, Arc::clone(&pings)));
+    let url = Url::parse(&format!("ws://{address}/realtime")).expect("url");
+    let mut connection = timeout(
+        TEST_TIMEOUT,
+        connect(WebSocketRequest {
+            url,
+            headers: &[],
+            tls: None,
+            max_message_size: 1024,
+            open_timeout: TEST_TIMEOUT,
+            keepalive: Some(Keepalive {
+                interval: PONG_INTERVAL,
+                timeout: PONG_TIMEOUT,
+            }),
+            proxy: None,
+        }),
+    )
+    .await
+    .expect("deadline")
+    .expect("connect");
+    let outcome = timeout(PONG_WINDOW, connection.receiver.recv()).await;
+    assert!(
+        matches!(outcome, Err(_elapsed)),
+        "the pongs kept recv waiting"
+    );
+    let recorded = pings.lock().expect("pings");
+    let first = recorded.first().copied().expect("a ping");
+    assert!(
+        first >= PONG_INTERVAL / 2,
+        "the first ping came after {first:?}"
+    );
+    assert!(
+        recorded.len() <= 20,
+        "the client sent {} pings",
+        recorded.len()
+    );
+    tasks.abort_all();
 }
 
 #[tokio::test]
