@@ -3,10 +3,11 @@ use std::mem::take;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_anthropic::chat_call::transport::{ClientKind, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{ChatClients, ChatDeps, ChatOutcome};
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::python_json::dumps;
@@ -188,7 +189,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
     let (credentials, keys) = signing_material(setup);
     let request = request_of(setup, &credentials, &keys);
     let clients = ChatClients {
-        supplied: setup.supplied.then_some(SuppliedChatClient {
+        supplied: setup.supplied.then_some(SuppliedClient {
             kind: setup.supplied_kind,
             transport: &supplied,
         }),

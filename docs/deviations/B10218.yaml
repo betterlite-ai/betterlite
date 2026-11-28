@@ -1,0 +1,22 @@
+task: B10218
+deviations:
+  - what: >-
+      The notice carries no Config block for now: the slot's ProxyConfigSnapshot is empty, where LiteLLM lists the
+      safe lines of the running config in every proxy bug report.
+    why: >-
+      No code on main keeps the loaded config as a map. B8380's ProxyConfigState.snapshot has no startup writer, and a
+      config section that read general_settings, litellm_settings and router_settings as open maps would count every
+      key as read, so an unsupported key would no longer stop startup. Slot::new is the one place to fill it; B4171
+      fills it at startup and deletes this row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L201-L207
+  - what: >-
+      known_proxy_routes() holds 473 routes: the 471 of LiteLLM's KNOWN_PROXY_ROUTES plus
+      "/claude-code/plugins/{plugin_name}/enable" and "/claude-code/plugins/{plugin_name}/disable", so an error on one
+      of those two routes carries that route as its call_type where LiteLLM reports none.
+    why: >-
+      betterlite-auth's anthropic route table lists both routes, because LiteLLM's proxy serves them in
+      claude_code_marketplace.py, but LiteLLM's own LiteLLMRoutes.anthropic_routes leaves them out, so its
+      KNOWN_PROXY_ROUTES omits them. known_proxy_routes() is built over the member lists betterlite-auth already ports
+      and copies no route, so the two stay; the oracle case keeps them out of the comparison on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L551-L563
+kept_bugs: []

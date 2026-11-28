@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::text_completion_policy::transform_completion_request;
 use betterlite_openai::text_completion_transport::TextCompletionConfigs;
@@ -9,7 +10,7 @@ use betterlite_openai::text_completion_transport::logging::{
     CompletionLogger, PostCallRecord, PreCallRecord, ResponseKind, StreamDefaults,
 };
 use betterlite_openai::text_completion_transport::sdk::{
-    ByteStream, ClientConstructor, ClientKind, RawCompletion, SdkArguments, SdkError, StatusError,
+    ByteStream, ClientConstructor, RawCompletion, SdkArguments, SdkError, StatusError,
     TextCompletionSdk,
 };
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;

@@ -6,7 +6,7 @@ use betterlite_http::proxy::outbound::RequestBody;
 use serde_json::{Map, Value};
 use tokio::time::sleep;
 
-use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use crate::assistants::client::{ClientOptions, SdkClient};
 use crate::assistants::operations::AssistantsApi;
 use crate::assistants::transport::AssistantsTransport;
 use crate::thread_runs::client::{CallKind, DEFAULT_TIMEOUT, outbound, send};
@@ -14,6 +14,7 @@ use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::records::reply;
 use crate::thread_runs::records::{RunReply, RunRequest};
 use crate::thread_runs::stream::{RunEventHandler, RunStream};
+use betterlite_http::client_kind::ClientKind;
 
 const TERMINAL: &str = "requires_action cancelled completed failed expired incomplete";
 pub struct RunsApi<T> {
@@ -90,7 +91,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
         request: &RunRequest,
     ) -> Result<RunInvocation<T>, ThreadRunsError> {
         let kind = if call.dispatch.arun_thread {
-            ClientKind::Async
+            ClientKind::Asynchronous
         } else {
             ClientKind::Sync
         };

@@ -15,7 +15,8 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_error::proxy_exception::ProxyException;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
+use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
 mod tests;
@@ -75,6 +76,22 @@ pub(crate) fn database_for_request(request: &Request<Body>) -> bool {
         .extensions()
         .get::<Arc<ServerState>>()
         .is_some_and(|state| state.auth_resource_grants.database)
+}
+
+pub(crate) fn stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    Ok(StageInput::AuthResourceGrants(Box::new(
+        ResourceGrantStageInput {
+            context,
+            rule: rule_for_request(request),
+            database: database_for_request(request),
+        },
+    )))
 }
 
 // ProxyException's response fields, with the code deciding the HTTP status as LiteLLM's handler does

@@ -10,13 +10,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::ClientKind::Asynchronous;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_prompts::message_content::{Content, Message};
@@ -261,9 +262,9 @@ async fn opened(chunks: Chunks) -> VertexAgentStream {
     let data = body();
     let messages = prompt();
     let logger = RecordingLogger::default();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, chunks));
+    let transport = Arc::new(FakeTransport::new(Asynchronous, 200, chunks));
     open(
-        &stream_request(&data, &messages, ClientKind::Async),
+        &stream_request(&data, &messages, Asynchronous),
         &stream_deps(&logger, None, transport),
     )
     .await
@@ -316,10 +317,10 @@ fn the_default_id_source_generates_a_fresh_uuid() {
 async fn posts_the_serialized_request_with_the_headers_and_the_deadline() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, frames("")));
+    let transport = Arc::new(FakeTransport::new(Asynchronous, 200, frames("")));
     let logger = RecordingLogger::default();
     let stream = open(
-        &stream_request(&data, &messages, ClientKind::Async),
+        &stream_request(&data, &messages, Asynchronous),
         &stream_deps(&logger, None, Arc::clone(&transport)),
     )
     .await
@@ -337,9 +338,9 @@ async fn posts_the_serialized_request_with_the_headers_and_the_deadline() {
 
 #[rstest]
 #[case::sync_keeps_sync(ClientKind::Sync, ClientKind::Sync, true)]
-#[case::async_keeps_async(ClientKind::Async, ClientKind::Async, true)]
-#[case::sync_replaces_async(ClientKind::Sync, ClientKind::Async, false)]
-#[case::async_replaces_sync(ClientKind::Async, ClientKind::Sync, false)]
+#[case::async_keeps_async(Asynchronous, Asynchronous, true)]
+#[case::sync_replaces_async(ClientKind::Sync, Asynchronous, false)]
+#[case::async_replaces_sync(Asynchronous, ClientKind::Sync, false)]
 #[tokio::test]
 async fn sync_async_selection(
     #[case] call_kind: ClientKind,
@@ -388,15 +389,11 @@ async fn a_missing_supplied_client_reads_through_the_default() {
 async fn non_200_body(#[case] status: u16) {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
-        status,
-        frames("refused"),
-    ));
+    let transport = Arc::new(FakeTransport::new(Asynchronous, status, frames("refused")));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &stream_request(&data, &messages, ClientKind::Async),
+            &stream_request(&data, &messages, Asynchronous),
             &stream_deps(&logger, None, Arc::clone(&transport)),
         )
         .await,
@@ -418,14 +415,14 @@ async fn the_error_message_is_the_lossy_body_text() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        Asynchronous,
         502,
         reads(vec![Ok(vec![0xff, b'a'])]),
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &stream_request(&data, &messages, ClientKind::Async),
+            &stream_request(&data, &messages, Asynchronous),
             &stream_deps(&logger, None, Arc::clone(&transport)),
         )
         .await,
@@ -447,14 +444,14 @@ async fn an_error_body_over_the_byte_limit_is_refused() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        Asynchronous,
         500,
         reads(vec![Ok(vec![b'x'; MAX_BODY_BYTES + 1])]),
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &stream_request(&data, &messages, ClientKind::Async),
+            &stream_request(&data, &messages, Asynchronous),
             &stream_deps(&logger, None, Arc::clone(&transport)),
         )
         .await,
@@ -471,14 +468,14 @@ async fn an_error_body_of_exactly_the_limit_is_read() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        Asynchronous,
         500,
         reads(vec![Ok(vec![b'x'; MAX_BODY_BYTES])]),
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &stream_request(&data, &messages, ClientKind::Async),
+            &stream_request(&data, &messages, Asynchronous),
             &stream_deps(&logger, None, Arc::clone(&transport)),
         )
         .await,
@@ -494,10 +491,10 @@ async fn an_error_body_of_exactly_the_limit_is_read() {
 async fn first_response_log() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, frames("")));
+    let transport = Arc::new(FakeTransport::new(Asynchronous, 200, frames("")));
     let logger = RecordingLogger::default();
     let stream = open(
-        &stream_request(&data, &messages, ClientKind::Async),
+        &stream_request(&data, &messages, Asynchronous),
         &stream_deps(&logger, None, Arc::clone(&transport)),
     )
     .await
@@ -515,14 +512,10 @@ async fn first_response_log() {
 async fn no_post_call_is_logged_when_the_status_is_not_200() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
-        500,
-        frames("refused"),
-    ));
+    let transport = Arc::new(FakeTransport::new(Asynchronous, 500, frames("refused")));
     let logger = RecordingLogger::default();
     let result = open(
-        &stream_request(&data, &messages, ClientKind::Async),
+        &stream_request(&data, &messages, Asynchronous),
         &stream_deps(&logger, None, Arc::clone(&transport)),
     )
     .await;
@@ -904,7 +897,7 @@ async fn a_transport_error_surfaces() {
         logger: &logger,
     };
     let error = expect_error(
-        open(&stream_request(&data, &messages, ClientKind::Async), &deps).await,
+        open(&stream_request(&data, &messages, Asynchronous), &deps).await,
         "the closed transport answered",
     );
     assert!(matches!(
@@ -920,7 +913,7 @@ struct ClosedTransport;
 #[async_trait]
 impl StreamTransport for ClosedTransport {
     fn kind(&self) -> ClientKind {
-        ClientKind::Async
+        Asynchronous
     }
 
     async fn post(&self, _request: OutboundRequest) -> Result<StreamHead, TransportError> {
@@ -933,8 +926,8 @@ async fn an_invalid_url_is_refused() {
     let data = body();
     let messages = prompt();
     let logger = RecordingLogger::default();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, frames("")));
-    let mut request = stream_request(&data, &messages, ClientKind::Async);
+    let transport = Arc::new(FakeTransport::new(Asynchronous, 200, frames("")));
+    let mut request = stream_request(&data, &messages, Asynchronous);
     request.url = "::not a url::";
     let error = expect_error(
         open(&request, &stream_deps(&logger, None, transport)).await,
@@ -971,7 +964,7 @@ async fn the_proxied_client_posts_and_streams_the_reply_body() {
     );
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::outbound(&policy).unwrap();
-    assert!(matches!(client.kind(), ClientKind::Async));
+    assert!(matches!(client.kind(), Asynchronous));
     let request = OutboundRequest {
         method: http::Method::POST,
         url: url::Url::parse(&format!("http://{address}/stream")).unwrap(),
