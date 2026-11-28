@@ -101,6 +101,31 @@ async fn a_hosted_callback_is_refused_for_a_proxy_grant() {
 }
 
 #[tokio::test]
+async fn an_unreadable_redirect_is_not_a_loopback() {
+    let client = client_id(&["http://[::1"]);
+    let teams = Teams(Ok(Vec::new()));
+    let authorize_request = request(&client, "http://[::1");
+    let request_view = view("/authorize", None, &[]);
+    let reply = native_client_authorize(
+        &call(&authorize_request, &request_view, Some("alice")),
+        &teams,
+        &Page,
+        &cipher(SALT),
+        &ScriptedTokens::new(&[]),
+    )
+    .await;
+    let GatewayReply::Error(error) = reply else {
+        panic!("expected an error");
+    };
+    assert_eq!(error.status, 400);
+    assert_eq!(error.error, OauthErrorCode::InvalidRequest);
+    assert_eq!(
+        error.description,
+        "a proxy-API grant may only redirect to a loopback address"
+    );
+}
+
+#[tokio::test]
 async fn a_signed_out_native_request_goes_to_the_login_page() {
     let client = client_id(&[CALLBACK]);
     let teams = Teams(Ok(Vec::new()));
