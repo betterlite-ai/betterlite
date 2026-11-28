@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use betterlite_pyhost::host::PythonHost;
+use rstest::rstest;
 
 use super::{
     CLIENT_BROKEN, CLIENT_WITHOUT_CONFIGS, PYTHON, RecordingLogger, Setup, audio_host, call,
@@ -65,23 +66,23 @@ fn failure(host: &PythonHost, flags: &[&str], kind: Option<&str>, specs: &str) -
     outcome.unwrap_err()
 }
 
-#[test]
-fn missing_endpoint_is_rejected_before_any_sdk_work() {
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
+fn missing_endpoint_is_rejected_before_any_sdk_work(#[case] endpoint: Option<&str>) {
     let _guard = PYTHON.blocking_lock();
     let Some(host) = audio_host() else {
         return;
     };
     reset(&host, 1600);
     let setup = Setup::new("{}");
-    for endpoint in [None, Some("")] {
-        let mut logger = RecordingLogger::default();
-        let pending = call(&setup, endpoint, false);
-        let error = host
-            .attach(|py| transcribe_attached(py, &pending, &mut logger))
-            .unwrap_err();
-        assert_eq!(error.to_string(), MISSING_ENDPOINT);
-        assert_eq!(error.status_code(), Some(400));
-    }
+    let mut logger = RecordingLogger::default();
+    let pending = call(&setup, endpoint, false);
+    let error = host
+        .attach(|py| transcribe_attached(py, &pending, &mut logger))
+        .unwrap_err();
+    assert_eq!(error.to_string(), MISSING_ENDPOINT);
+    assert_eq!(error.status_code(), Some(400));
     let recorded = probe(&host);
     assert!(recorded.events.is_empty());
 }
@@ -171,7 +172,7 @@ fn nvcf_function_id_defaults_to_tls_and_adds_metadata() {
 }
 
 #[test]
-fn self_hosted_tls_follows_the_override_truthiness() {
+fn self_hosted_tls_follows_the_override() {
     let _guard = PYTHON.blocking_lock();
     let Some(host) = audio_host() else {
         return;
@@ -186,27 +187,27 @@ fn self_hosted_tls_follows_the_override_truthiness() {
 
     reset(&host, 1600);
     stage(&host, FINAL_SPEC);
-    let truthy_setup = Setup::new(r#"{"use_ssl":"yes"}"#);
-    let (truthy_outcome, truthy_logger) =
-        run_sync(&host, &truthy_setup, Some("localhost:50051"), false);
-    truthy_outcome.unwrap();
-    assert_eq!(
-        value(&probe(&host), "auth.kwargs"),
-        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":true}"#
-    );
-    assert_eq!(truthy_logger.pre[0].use_ssl, json(r#""yes""#));
+    let typed_setup = Setup::new(r#"{"use_ssl":"yes"}"#);
+    let (typed_outcome, _typed_logger) =
+        run_sync(&host, &typed_setup, Some("localhost:50051"), false);
+    let error = typed_outcome.unwrap_err();
+    assert!(matches!(error, RivaCallError::Records(_)));
+    assert_eq!(error.to_string(), "the use_ssl option must be a boolean");
+    assert_eq!(error.status_code(), Some(400));
 
-    let (_, zero_logger) = complete(
-        &host,
-        r#"{"use_ssl":0,"nvcf_function_id":"fn-123"}"#,
-        "grpc.nvcf.nvidia.com:443",
-    );
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    let zero_setup = Setup::new(r#"{"use_ssl":0,"nvcf_function_id":"fn-123"}"#);
+    let (zero_outcome, _zero_logger) =
+        run_sync(&host, &zero_setup, Some("grpc.nvcf.nvidia.com:443"), false);
+    let zero_error = zero_outcome.unwrap_err();
     assert_eq!(
-        value(&probe(&host), "auth.kwargs"),
-        r#"{"metadata_args":[["function-id","fn-123"],["authorization","Bearer riva-key"]],"uri":"grpc.nvcf.nvidia.com:443","use_ssl":false}"#
+        zero_error.to_string(),
+        "the use_ssl option must be a boolean"
     );
-    assert_eq!(zero_logger.pre[0].use_ssl, json("0"));
-    assert!(zero_logger.pre[0].nvcf_function_id_set);
+    assert_eq!(zero_error.status_code(), Some(400));
+    let recorded = probe(&host);
+    assert!(recorded.events.is_empty());
 }
 
 #[test]
@@ -415,25 +416,22 @@ fn endpointing_is_copied_into_the_config() {
     );
 }
 
-#[test]
-fn endpointing_failures_leave_the_riva_defaults() {
+#[rstest]
+#[case::init_fails(&["endpointing_init_fails"][..])]
+#[case::copy_fails(&["endpointing_copy_fails"][..])]
+#[case::field_missing(&["endpointing_field_missing"][..])]
+fn endpointing_failures_leave_the_riva_defaults(#[case] flags: &[&str]) {
     let _guard = PYTHON.blocking_lock();
     let Some(host) = audio_host() else {
         return;
     };
     let endpointing = r#"{"endpointing_config":{"start_history":10}}"#;
-    for flags in [
-        &["endpointing_init_fails"][..],
-        &["endpointing_copy_fails"][..],
-        &["endpointing_field_missing"][..],
-    ] {
-        reset(&host, 1600);
-        stage(&host, FINAL_SPEC);
-        configure(&host, flags);
-        let setup = Setup::new(endpointing);
-        let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
-        outcome.unwrap();
-    }
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    configure(&host, flags);
+    let setup = Setup::new(endpointing);
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    outcome.unwrap();
 
     let (_, _empty_logger) = complete(&host, r#"{"endpointing_config":{}}"#, "grpc.example:443");
     let empty_probe = probe(&host);
@@ -465,55 +463,51 @@ fn endpointing_failures_leave_the_riva_defaults() {
     );
 }
 
-#[test]
-fn audio_is_streamed_in_3200_byte_slices() {
+#[rstest]
+#[case::no_samples(0, Vec::new())]
+#[case::one_sample(1, vec![2])]
+#[case::one_chunk(1600, vec![3200])]
+#[case::chunk_plus_one(1601, vec![3200, 2])]
+#[case::two_chunks(3200, vec![3200, 3200])]
+#[case::three_chunks(4800, vec![3200, 3200, 3200])]
+fn audio_is_streamed_in_3200_byte_slices(#[case] samples: usize, #[case] expected: Vec<usize>) {
     let _guard = PYTHON.blocking_lock();
     let Some(host) = audio_host() else {
         return;
     };
-    let cases: [(usize, Vec<usize>); 6] = [
-        (0, vec![]),
-        (1, vec![2]),
-        (1600, vec![3200]),
-        (1601, vec![3200, 2]),
-        (3200, vec![3200, 3200]),
-        (4800, vec![3200, 3200, 3200]),
-    ];
-    for (samples, expected) in cases {
-        reset(&host, samples);
-        stage(&host, FINAL_SPEC);
-        let setup = Setup::new("{}");
-        let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
-        outcome.unwrap();
-        let recorded = probe(&host);
-        assert_eq!(recorded.chunk_sizes, vec![expected], "{samples} samples");
-    }
+    reset(&host, samples);
+    stage(&host, FINAL_SPEC);
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    outcome.unwrap();
+    let recorded = probe(&host);
+    assert_eq!(recorded.chunk_sizes, vec![expected], "{samples} samples");
 }
 
-#[test]
-fn timeout_is_sent_only_when_the_generator_takes_it() {
+#[rstest]
+#[case::timeout_kwarg("timeout", "30.0", None)]
+#[case::variadic("variadic", "30.0", Some(r#"["timeout"]"#))]
+#[case::plain("plain", "absent", None)]
+#[case::broken("broken", "absent", None)]
+fn timeout_is_sent_only_when_the_generator_takes_it(
+    #[case] kind: &str,
+    #[case] expected: &str,
+    #[case] extra: Option<&str>,
+) {
     let _guard = PYTHON.blocking_lock();
     let Some(host) = audio_host() else {
         return;
     };
-    let cases: [(&str, &str, Option<&str>); 4] = [
-        ("timeout", "30.0", None),
-        ("variadic", "30.0", Some(r#"["timeout"]"#)),
-        ("plain", "absent", None),
-        ("broken", "absent", None),
-    ];
-    for (kind, expected, extra) in cases {
-        reset(&host, 1600);
-        stage(&host, FINAL_SPEC);
-        service(&host, kind);
-        let setup = Setup::new("{}");
-        let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
-        outcome.unwrap();
-        let recorded = probe(&host);
-        assert_eq!(value(&recorded, "stream.timeout"), expected, "{kind}");
-        if let Some(extra) = extra {
-            assert_eq!(value(&recorded, "stream.extra"), extra, "{kind}");
-        }
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    service(&host, kind);
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    outcome.unwrap();
+    let recorded = probe(&host);
+    assert_eq!(value(&recorded, "stream.timeout"), expected, "{kind}");
+    if let Some(extra) = extra {
+        assert_eq!(value(&recorded, "stream.extra"), extra, "{kind}");
     }
 }
 
@@ -704,14 +698,10 @@ fn a_missing_client_returns_the_install_hint() {
         stage(&host, FINAL_SPEC);
         host.attach(|py| {
             let registered = modules(py);
-            for name in [
-                "riva",
-                "riva.client",
-                "riva.client.proto",
-                "riva.client.proto.riva_asr_pb2",
-            ] {
-                drop(registered.del_item(name));
-            }
+            drop(registered.del_item("riva"));
+            drop(registered.del_item("riva.client"));
+            drop(registered.del_item("riva.client.proto"));
+            drop(registered.del_item("riva.client.proto.riva_asr_pb2"));
         });
         let setup = Setup::new("{}");
         let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);

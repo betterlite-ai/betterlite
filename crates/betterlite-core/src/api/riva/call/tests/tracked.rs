@@ -173,9 +173,12 @@ async fn concurrent_calls_keep_their_own_sdk_objects() {
     assert_eq!(recorded.recognition_ids.len(), 2);
     assert_ne!(recorded.recognition_ids[0], recorded.recognition_ids[1]);
     assert_eq!(recorded.generator_config_ids.len(), 2);
-    for id in &recorded.generator_config_ids {
-        assert!(recorded.recognition_ids.contains(id));
-    }
+    assert!(
+        recorded
+            .generator_config_ids
+            .iter()
+            .all(|id| recorded.recognition_ids.contains(id))
+    );
     let mut languages = recorded.seen_languages;
     languages.sort();
     assert_eq!(languages, vec!["de-DE", "en-US"]);
