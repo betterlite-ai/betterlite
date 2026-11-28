@@ -44,7 +44,7 @@ fn resolves_entity_and_numeric_references() {
 
 #[test]
 fn empty_self_closing_fields_are_present_but_blank() {
-    let xml = "<rss><channel><item><title/><link/></item></channel></rss>";
+    let xml = "<rss><channel><item><title/><link/><description/><pubDate/></item></channel></rss>";
     let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
     assert_eq!(posts, vec![post("", "", "", "")]);
 }
