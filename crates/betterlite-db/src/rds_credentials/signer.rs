@@ -1,12 +1,7 @@
-use std::borrow::Cow;
-use std::iter::once;
 use std::time::Duration;
 
-use aws_sigv4::http_request::{
-    SignableBody, SignableRequest, SignatureLocation, SigningParams, SigningSettings, sign,
-};
-use aws_sigv4::sign::v4;
-use aws_smithy_runtime_api::client::identity::Identity;
+use betterlite_sigv4::credentials::Credentials as SigningCredentials;
+use betterlite_sigv4::sign::{Signable, SigningMode, presign_request};
 use percent_encoding::utf8_percent_encode;
 use secrecy::SecretString;
 
@@ -16,8 +11,6 @@ use super::{
     RDS_ESCAPE, RDS_SERVICE_NAME, RDS_TOKEN_LIFETIME_SECONDS, RdsCredentialInputs, RdsEndpoint,
     RdsSession, RdsSigner, RdsSources, rds_timeout_config,
 };
-
-type SignedParameter = (&'static str, Cow<'static, str>);
 
 impl RdsSigner {
     pub async fn init(
@@ -47,27 +40,24 @@ impl RdsSigner {
         );
         let uri = format!("https://{}:{}/?{operation}", endpoint.host, endpoint.port);
         // botocore signs urlsplit().hostname, which is lowercase, and leaves out the https default port
-        let host = signed_host(endpoint.host, endpoint.port);
-        let identity = Identity::from(self.session.credentials.clone());
-        let mut settings = SigningSettings::default();
-        settings.signature_location = SignatureLocation::QueryParams;
-        settings.expires_in = Some(Duration::from_secs(RDS_TOKEN_LIFETIME_SECONDS));
-        let params = v4::SigningParams::builder()
-            .identity(&identity)
-            .region(&self.session.region)
-            .name(RDS_SERVICE_NAME)
-            .time(self.session.clock.now())
-            .settings(settings)
-            .build()
-            .map_err(|source| RdsCredentialsError::SigningParams { source })?;
-        let headers = once(("host", host.as_str()));
-        let signable = SignableRequest::new("GET", uri.as_str(), headers, SignableBody::Bytes(&[]))
-            .map_err(|source| RdsCredentialsError::SignableRequest { source })?;
-        let output = sign(signable, &SigningParams::from(params))
-            .map_err(|source| RdsCredentialsError::Sign { source })?;
-        let (instructions, signature) = output.into_parts();
-        let (_, parameters) = instructions.into_parts();
-        let query = token_query(operation, parameters, &signature);
+        let headers = [("host".to_owned(), signed_host(endpoint.host, endpoint.port))];
+        let signing = SigningCredentials::from(&self.session.credentials);
+        let parameters = presign_request(
+            &Signable {
+                method: "GET",
+                url: &uri,
+                headers: &headers,
+                body: &[],
+                service: RDS_SERVICE_NAME,
+                region: &self.session.region,
+                credentials: &signing,
+                mode: SigningMode::SigV4Auth,
+                now: self.session.clock.now(),
+            },
+            Duration::from_secs(RDS_TOKEN_LIFETIME_SECONDS),
+        )
+        .map_err(|source| RdsCredentialsError::Sign { source })?;
+        let query = token_query(operation, parameters);
         Ok(SecretString::from(format!(
             "{}:{}/?{query}",
             endpoint.host, endpoint.port
@@ -83,19 +73,13 @@ fn signed_host(host: &str, port: &str) -> String {
     }
 }
 
-// botocore appends the security token after the signed headers and the signature last
-fn token_query(operation: String, parameters: Vec<SignedParameter>, signature: &str) -> String {
+fn token_query(operation: String, parameters: Vec<(String, String)>) -> String {
     let mut query = operation;
     for (name, value) in parameters {
-        if name == "X-Amz-Signature" {
-            continue;
-        }
         query.push('&');
-        query.push_str(name);
+        query.push_str(&name);
         query.push('=');
-        query.push_str(&utf8_percent_encode(value.as_ref(), RDS_ESCAPE).to_string());
+        query.push_str(&utf8_percent_encode(&value, RDS_ESCAPE).to_string());
     }
-    query.push_str("&X-Amz-Signature=");
-    query.push_str(signature);
     query
 }
