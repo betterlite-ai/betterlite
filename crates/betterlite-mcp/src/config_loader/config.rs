@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use betterlite_db::mcp_stored_contracts::{
     MCPAuth, MCPTokenEndpointAuthMethod, MCPTransport, MCPUpstreamProtocol,
 };
@@ -9,7 +10,7 @@ use serde::Deserialize;
 
 use crate::server_record::MCPOAuthIdentityBinding;
 
-#[derive(Clone, Default, Deserialize, PartialEq)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct McpServerConfig {
     pub server_id: Option<Json>,
@@ -21,14 +22,14 @@ pub struct McpServerConfig {
     pub spec_path: Option<String>,
     pub transport: Option<MCPTransport>,
     pub auth_type: Option<MCPAuth>,
-    pub authentication_token: Option<String>,
-    pub auth_value: Option<String>,
+    pub authentication_token: Option<StoredSecret>,
+    pub auth_value: Option<StoredSecret>,
     pub instructions: Option<String>,
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub env: Option<BTreeMap<String, String>>,
     pub client_id: Option<String>,
-    pub client_secret: Option<String>,
+    pub client_secret: Option<StoredSecret>,
     pub oauth2_flow: Option<String>,
     pub issuer: Option<String>,
     pub authorization_url: Option<String>,
@@ -52,9 +53,9 @@ pub struct McpServerConfig {
     pub oauth_passthrough: Option<bool>,
     pub allow_sampling: Option<bool>,
     pub allow_elicitation: Option<bool>,
-    pub aws_access_key_id: Option<String>,
-    pub aws_secret_access_key: Option<String>,
-    pub aws_session_token: Option<String>,
+    pub aws_access_key_id: Option<StoredSecret>,
+    pub aws_secret_access_key: Option<StoredSecret>,
+    pub aws_session_token: Option<StoredSecret>,
     pub aws_region_name: Option<String>,
     pub aws_service_name: Option<String>,
     pub aws_role_name: Option<String>,
@@ -67,7 +68,7 @@ pub struct McpServerConfig {
     pub upstream_token_header: Option<String>,
     pub id_jag_resource_token_endpoint: Option<String>,
     pub id_jag_resource: Option<String>,
-    pub client_private_key: Option<String>,
+    pub client_private_key: Option<StoredSecret>,
     pub client_private_key_id: Option<String>,
     pub client_assertion_signing_alg: Option<String>,
     pub timeout: Option<f64>,

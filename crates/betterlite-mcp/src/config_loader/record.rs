@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::pinned::{MCPInfo, parse_pinned_tools};
-use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use betterlite_db::mcp_stored_contracts::{JsonValue, MCPTransport, PinnedMCPTool};
 use betterlite_models::decisions::Json;
-use secrecy::SecretString;
 
 use super::config::{McpServerConfig, ScopesConfig};
 use super::error::ConfigError;
@@ -83,10 +81,7 @@ fn apply_identity(fields: &mut ServerFields, inputs: &RecordInputs<'_>) {
     fields.auth_type = config.auth_type;
     fields.instructions.clone_from(&config.instructions);
     fields.client_id.clone_from(&config.client_id);
-    fields.client_secret = config
-        .client_secret
-        .as_deref()
-        .map(|text| SecretCredential(StoredSecret(SecretString::from(text))));
+    fields.client_secret = config.client_secret.clone().map(SecretCredential);
     fields.token_endpoint_auth_method = config.token_endpoint_auth_method;
     fields.timeout = config.timeout;
     fields.max_concurrent_requests = config.max_concurrent_requests;
@@ -148,10 +143,7 @@ fn apply_exchange(fields: &mut ServerFields, config: &McpServerConfig) {
         .id_jag_resource_token_endpoint
         .clone_from(&config.id_jag_resource_token_endpoint);
     fields.id_jag_resource.clone_from(&config.id_jag_resource);
-    fields.client_private_key = config
-        .client_private_key
-        .as_deref()
-        .map(|text| SecretCredential(StoredSecret(SecretString::from(text))));
+    fields.client_private_key = config.client_private_key.clone().map(SecretCredential);
     fields
         .client_private_key_id
         .clone_from(&config.client_private_key_id);
@@ -167,18 +159,9 @@ fn apply_exchange(fields: &mut ServerFields, config: &McpServerConfig) {
 }
 
 fn apply_aws(fields: &mut ServerFields, config: &McpServerConfig) {
-    fields.aws_access_key_id = config
-        .aws_access_key_id
-        .as_deref()
-        .map(|text| SecretCredential(StoredSecret(SecretString::from(text))));
-    fields.aws_secret_access_key = config
-        .aws_secret_access_key
-        .as_deref()
-        .map(|text| SecretCredential(StoredSecret(SecretString::from(text))));
-    fields.aws_session_token = config
-        .aws_session_token
-        .as_deref()
-        .map(|text| SecretCredential(StoredSecret(SecretString::from(text))));
+    fields.aws_access_key_id = config.aws_access_key_id.clone().map(SecretCredential);
+    fields.aws_secret_access_key = config.aws_secret_access_key.clone().map(SecretCredential);
+    fields.aws_session_token = config.aws_session_token.clone().map(SecretCredential);
     fields.aws_region_name.clone_from(&config.aws_region_name);
     fields.aws_service_name.clone_from(&config.aws_service_name);
     fields.aws_role_name.clone_from(&config.aws_role_name);
@@ -194,9 +177,10 @@ fn apply_switches(
 ) -> Result<(), ConfigError> {
     fields.authentication_token = config
         .authentication_token
-        .as_deref()
-        .or(config.auth_value.as_deref())
-        .map(|text| SecretCredential(StoredSecret(SecretString::from(text))));
+        .as_ref()
+        .or(config.auth_value.as_ref())
+        .cloned()
+        .map(SecretCredential);
     fields.allow_all_keys = config.allow_all_keys.unwrap_or(false);
     fields.available_on_public_internet = config.available_on_public_internet.unwrap_or(true);
     fields.delegate_auth_to_upstream = config.delegate_auth_to_upstream.unwrap_or(false);
