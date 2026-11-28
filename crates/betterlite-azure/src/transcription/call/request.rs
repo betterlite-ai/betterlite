@@ -1,10 +1,11 @@
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
-use betterlite_openai::transcription::client::{ClientKind, TranscriptionClient};
+use betterlite_openai::transcription::client::TranscriptionClient;
 use betterlite_openai::transcription::request::{
     TranscriptionData, outbound_request as openai_request,
 };

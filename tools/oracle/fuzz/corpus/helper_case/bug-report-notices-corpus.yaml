@@ -1,0 +1,9 @@
+kind: helper
+name: bug-report-notices-corpus
+call:
+  b10218:
+    env: {}
+    calls:
+      - {function: failure, status_code: null}
+env: {}
+compare: {ignore: []}

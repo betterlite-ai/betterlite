@@ -1,10 +1,10 @@
 use betterlite_anthropic::chat_call::error::ChatCallError;
-use betterlite_anthropic::chat_call::transport::ClientKind;
 use betterlite_anthropic::feature_flags::beta::{
     FILE_CODE_EXECUTION_BETA, FILES_API_BETA, MCP_CLIENT_BETA,
 };
 use betterlite_anthropic::request::BillingHeader;
 use betterlite_anthropic::request::beta_headers::CONTEXT_MANAGEMENT_BETA;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -70,7 +70,7 @@ fn option(key: &str, value: Json) -> IndexMap<String, Json> {
 fn foundry_anthropic_url() {
     let direct = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         ..Setup::chat()
     });
     assert_eq!(direct.posts_supplied, 1);
@@ -92,7 +92,7 @@ fn foundry_anthropic_url() {
     let unusable = execute(&Setup {
         api_base: "not a url",
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         ..Setup::chat()
     });
     assert_eq!(unusable.status(), Some(500));
@@ -543,7 +543,7 @@ fn reverse_map() -> IndexMap<String, Json> {
 fn chat_stream_native_events() {
     let asynchronous = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         optional_params: stream_options(),
         litellm_params: reverse_map(),
         reply: stream_reply(),
@@ -639,7 +639,7 @@ fn client_kinds() {
     assert_eq!(wrong_kind.posts_pooled, 1);
 
     let sync_any = execute(&Setup {
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         optional_params: stream_options(),
         ..Setup::chat()
     });
@@ -654,7 +654,7 @@ fn client_kinds() {
     });
     assert_eq!(async_any.posts_supplied, 1);
     let sync_wrong = execute(&Setup {
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         ..Setup::chat()
     });
     assert_eq!(sync_wrong.posts_supplied, 0);
@@ -771,7 +771,7 @@ fn status_failures() {
     // a masked httpx status error has no exception.headers, so the response headers are the fallback
     let masked = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         trip: Trip::Status {
             status_code: 429,
             headers: failure_headers(),
@@ -828,7 +828,7 @@ fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
 fn transport_failures() {
     let asynchronous = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         trip: Trip::Unknown("boom"),
         ..Setup::chat()
     });
@@ -868,7 +868,7 @@ fn rejected_timeout() {
     // a deadline with no response is a bare transport error here, so it takes the 500 path
     let timed = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         trip: Trip::Unknown("timed out after 1.5 seconds"),
         ..Setup::chat()
     });

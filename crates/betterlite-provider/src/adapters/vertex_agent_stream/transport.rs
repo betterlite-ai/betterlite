@@ -1,9 +1,9 @@
 use async_trait::async_trait;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::assistants::client::ClientKind;
 use futures_util::stream::BoxStream;
 
 pub type Chunks = BoxStream<'static, Result<Vec<u8>, HttpError>>;
@@ -24,7 +24,7 @@ pub trait StreamTransport: Send + Sync {
 #[async_trait]
 impl StreamTransport for ProxiedClient {
     fn kind(&self) -> ClientKind {
-        ClientKind::Async
+        ClientKind::Asynchronous
     }
 
     async fn post(&self, request: OutboundRequest) -> Result<StreamHead, TransportError> {

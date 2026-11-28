@@ -7,12 +7,13 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::assistants::client::{ClientKind, SdkClient};
+use crate::assistants::client::SdkClient;
 use crate::threads::error::{ReplyFault, ThreadsError};
 use crate::threads::operations::{ClientSetup, ThreadCall, ThreadReply};
 use crate::threads::records::{
     ThreadCreate, ThreadMessage, ThreadMessageData, ThreadMessagePage, ThreadRecord,
 };
+use betterlite_http::client_kind::ClientKind;
 
 use super::support::{
     BASE, KEY, MESSAGE, MESSAGE_COMPLETED, MESSAGE_EMPTY_STATUS, MESSAGE_EXTRAS,
@@ -416,13 +417,13 @@ async fn thread_async_dispatch() {
 fn client_kinds() {
     let (api, _transport) = api_with(200, THREAD);
     assert_eq!(api.client(setup(KEY)).kind, ClientKind::Sync);
-    assert_eq!(api.client(async_setup(KEY)).kind, ClientKind::Async);
+    assert_eq!(api.client(async_setup(KEY)).kind, ClientKind::Asynchronous);
 }
 
 async fn supplied_client_wins() {
     let (api, transport) = api_with(200, THREAD);
     let supplied = SdkClient {
-        kind: ClientKind::Async,
+        kind: ClientKind::Asynchronous,
         api_key: Some(SecretString::from("sk-supplied")),
         base_url: Some(String::from("https://supplied.test/v1")),
         timeout: None,

@@ -1,7 +1,8 @@
 use crate::batches::decode::decode_batch_object;
 use crate::batches::error::{BatchesError, SdkError};
 use crate::batches::records::{BatchCreate, BatchObject, BatchQuery};
-use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, Connection, SdkArguments};
+use crate::batches::sdk::{BatchesSdk, ClientConstructor, Connection, SdkArguments};
+use betterlite_http::client_kind::ClientKind;
 
 pub mod decode;
 pub mod error;
@@ -45,7 +46,7 @@ impl<Constructor: ClientConstructor> BatchesApi<Constructor> {
             organization: settings.organization,
         };
         let kind = if is_async {
-            ClientKind::Async
+            ClientKind::Asynchronous
         } else {
             ClientKind::Sync
         };
@@ -62,7 +63,7 @@ impl<Constructor: ClientConstructor> BatchesApi<Constructor> {
         let client = self
             .get_openai_client(connection)?
             .ok_or(BatchesError::NotInitialized)?;
-        if is_async && client.kind() != ClientKind::Async {
+        if is_async && client.kind() != ClientKind::Asynchronous {
             return Err(BatchesError::NotAsync);
         }
         if !is_async && check_sync && client.kind() != ClientKind::Sync {
