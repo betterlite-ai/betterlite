@@ -11,6 +11,7 @@ use crate::regional_host_dispatch::context::DispatchContext;
 
 use super::user_message;
 
+#[derive(Default)]
 pub(crate) struct ChatFixture {
     pub(crate) model: String,
     pub(crate) messages: Vec<Message>,
@@ -32,17 +33,8 @@ impl ChatFixture {
         Self {
             model: String::from("model"),
             messages: vec![user_message()],
-            optional_params: Object::new(),
-            litellm_params: Object::new(),
             provider: String::from("nlp_cloud"),
-            api_base: None,
-            api_key: None,
-            headers: None,
-            stream: None,
-            acompletion: false,
-            timeout: None,
-            provider_config: None,
-            settings: SectionSettings::default(),
+            ..Self::default()
         }
     }
 

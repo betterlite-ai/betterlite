@@ -8,6 +8,7 @@ use secrecy::SecretString;
 use crate::api::speech_provider_contract::SpeechHeaders;
 use crate::regional_host_dispatch::speech::SpeechContext;
 
+#[derive(Default)]
 pub(crate) struct SpeechFixture {
     pub(crate) input: String,
     pub(crate) model: String,
@@ -27,15 +28,7 @@ impl SpeechFixture {
         Self {
             input: String::from("hello"),
             model: String::from("speech-02-hd"),
-            voice: None,
-            optional_params: Object::new(),
-            litellm_params: Object::new(),
-            api_base: None,
-            api_key: None,
-            extra_headers: None,
-            ssl_verify: None,
-            timeout: None,
-            settings: SectionSettings::default(),
+            ..Self::default()
         }
     }
 

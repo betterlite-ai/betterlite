@@ -8,8 +8,9 @@ use secrecy::SecretString;
 
 use crate::regional_host_dispatch::context::EmbeddingContext;
 
+#[derive(Default)]
 pub(crate) struct EmbeddingFixture {
-    pub(crate) input: EmbeddingInput,
+    pub(crate) input: Option<EmbeddingInput>,
     pub(crate) optional_params: Object,
     pub(crate) api_base: Option<String>,
     pub(crate) api_key: Option<SecretString>,
@@ -21,13 +22,8 @@ pub(crate) struct EmbeddingFixture {
 impl EmbeddingFixture {
     pub(crate) fn new() -> Self {
         Self {
-            input: EmbeddingInput::Text(String::from("hello")),
-            optional_params: Object::new(),
-            api_base: None,
-            api_key: None,
-            extra_headers: None,
-            ssl_verify: None,
-            settings: SectionSettings::default(),
+            input: Some(EmbeddingInput::Text(String::from("hello"))),
+            ..Self::default()
         }
     }
 
@@ -37,7 +33,10 @@ impl EmbeddingFixture {
             api_base: self.api_base.as_deref(),
             api_key: self.api_key.as_ref(),
             extra_headers: self.extra_headers.as_ref(),
-            input: &self.input,
+            input: self
+                .input
+                .as_ref()
+                .expect("the embedding fixture carries an input"),
             model: "embed-model",
             optional_params: &self.optional_params,
             ssl_verify: self.ssl_verify,
