@@ -86,7 +86,7 @@ if ! pgrep -x sccache > /dev/null; then
 fi
 # the clippy check holds a build slot while lint-lane.sh waits up to 20 minutes for one of the 4 lanes; with 8 slots, 30 of 37 flows waited up to 3 h for a slot on 11-28, so 48 slots leave the lane timeout as the only wait and the rest goes to CI clippy (Max, 11-28)
 UV_CACHE_DIR="${HOME}/.cache/uv" TMPDIR=${tmp} PATH=${P}/bin:${HOME}/.local/bin:${tools}/bin:${PATH} \
-  NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=48GATE_LOWEST_BUILD_SLOT=${lowest_slot} GATE_SHARED_BUILDS=${gates} GATE_LINT_ROOT=${worktrees}/tmp/lint-lanes GATE_LINT_LANES=4 \
+  NEXTEST_TEST_THREADS=2 GATE_BUILD_SLOTS=48 GATE_LOWEST_BUILD_SLOT=${lowest_slot} GATE_SHARED_BUILDS=${gates} GATE_LINT_ROOT=${worktrees}/tmp/lint-lanes GATE_LINT_LANES=4 \
   systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- bash "${P}/build-env.sh" nice -n 10 cargo gate dispatch "${id}" ${3:+--note "$3"} ${GRANT:+--grant "${GRANT}"} > "${log}" 2>&1 9>&- &
 child=$!
 while kill -0 "${child}" 2> /dev/null && ! pgrep -f "^([^ ]*/)?gate dispatch ${id}( |$)" > /dev/null; do
