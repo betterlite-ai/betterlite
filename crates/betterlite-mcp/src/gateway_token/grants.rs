@@ -10,26 +10,21 @@ use crate::gateway_dcr::contracts::{
     REFRESH_CLAIM_KEY_PREFIX, SUBJECT_TOKEN_TYPES, TOKEN_EXCHANGE_GRANT_TYPE,
 };
 use crate::gateway_dcr::models::is_gateway_dcr_client_id;
-use crate::gateway_dcr::oauth_error::OauthErrorCode::{
-    InvalidGrant, InvalidRequest, InvalidTarget, UnsupportedGrantType,
-};
+use crate::gateway_dcr::oauth_error::OauthErrorCode::{InvalidRequest, UnsupportedGrantType};
 use crate::gateway_dcr::ports::{MintProxyCredential, ReloadUser};
 use crate::gateway_dcr::sealed::open_gateway_dcr_client;
 use crate::gateway_dcr::single_use::{ClaimBackend, SingleUseGuard};
 use crate::gateway_dcr::subject_token::ExchangeSubjectToken;
 use crate::registry::servers::ServerRegistry;
-use crate::session_credentials::{SessionRefreshResult, open_session_refresh_bearer};
 use crate::session_tokens::SESSION_REFRESH_TTL_SECONDS;
 
 use self::codes::{
-    check_code_binding, code_principal, code_proof, present, resource_conflicts_with_scope,
-    sealed_code,
+    check_code_binding, check_code_grant, check_token_scope, code_principal, code_proof,
+    open_refresh, present, sealed_code,
 };
 use super::issuer::GrantIssuer;
 use super::support::reply::TokenReply;
-use super::support::{
-    SessionEntropy, SigningSetup, pkce_verifier_matches, signing_refusal, unknown_client_error,
-};
+use super::support::{SessionEntropy, SigningSetup, signing_refusal, unknown_client_error};
 
 pub struct TokenForm<'form> {
     pub grant_type: Option<&'form str>,
@@ -66,7 +61,8 @@ where
     R: ReloadUser,
     M: MintProxyCredential,
     B: ClaimBackend,
-    S: ExchangeSubjectToken<Context>,
+    S: ExchangeSubjectToken<Context> + Sync,
+    Context: Sync,
 {
     async fn authorization_code(&self, form: &TokenForm<'_>) -> TokenReply {
         let proof = match code_proof(form) {
@@ -80,21 +76,14 @@ where
         if let Err(refusal) = check_code_binding(&auth_code, &proof, form, self.issuer.now) {
             return TokenReply::Error(refusal);
         }
-        let sealed_server = auth_code.resource_server_id.as_deref();
-        if resource_conflicts_with_scope(
+        if let Err(refusal) = check_code_grant(
+            &auth_code,
+            &proof,
+            form,
             self.issuer.base_url,
             self.ports.registry,
-            form.resource,
-            sealed_server,
         ) {
-            return TokenReply::Error(oauth_error(
-                400,
-                InvalidTarget,
-                "resource does not match the scope this code was issued for",
-            ));
-        }
-        if !pkce_verifier_matches(proof.code_verifier, &auth_code.code_challenge) {
-            return TokenReply::Error(oauth_error(400, InvalidGrant, "PKCE verification failed"));
+            return TokenReply::Error(refusal);
         }
         let claim_key = format!("{CODE_CLAIM_KEY_PREFIX}{}", auth_code.jti);
         let claim_ttl = auth_code
@@ -112,45 +101,23 @@ where
     }
 
     async fn refresh_token(&self, form: &TokenForm<'_>) -> TokenReply {
-        let Some(refresh_token) = present(form.refresh_token) else {
-            return TokenReply::Error(oauth_error(
-                400,
-                InvalidRequest,
-                "refresh_token is required",
-            ));
+        let proof = match open_refresh(form, self.issuer.keys, self.issuer.now) {
+            Ok(proof) => proof,
+            Err(refusal) => return TokenReply::Error(refusal),
         };
-        let client_id = form.client_id.unwrap_or_default();
-        let opened = open_session_refresh_bearer(
-            refresh_token,
-            self.issuer.keys,
-            self.issuer.now,
-            client_id,
-        );
-        let SessionRefreshResult::SessionRefreshOpened { principal, jti } = opened else {
-            return TokenReply::Error(oauth_error(
-                400,
-                InvalidGrant,
-                "the refresh token is invalid for this client",
-            ));
-        };
-        let sealed_server = principal.resource_server_id.as_deref();
-        if resource_conflicts_with_scope(
+        if let Err(refusal) = check_token_scope(
+            proof.principal.resource_server_id.as_deref(),
+            form.resource,
             self.issuer.base_url,
             self.ports.registry,
-            form.resource,
-            sealed_server,
         ) {
-            return TokenReply::Error(oauth_error(
-                400,
-                InvalidTarget,
-                "resource does not match the scope this token was issued for",
-            ));
+            return TokenReply::Error(refusal);
         }
-        let claim_key = format!("{REFRESH_CLAIM_KEY_PREFIX}{jti}");
+        let claim_key = format!("{REFRESH_CLAIM_KEY_PREFIX}{}", proof.jti);
         let claim_ttl = SESSION_REFRESH_TTL_SECONDS.saturating_add(CLAIM_TTL_BUFFER_SECONDS);
         self.issuer
             .issue(
-                principal,
+                proof.principal,
                 &claim_key,
                 claim_ttl,
                 "the refresh token was already used",
@@ -204,7 +171,8 @@ where
     R: ReloadUser,
     M: MintProxyCredential,
     B: ClaimBackend,
-    S: ExchangeSubjectToken<Context>,
+    S: ExchangeSubjectToken<Context> + Sync,
+    Context: Sync,
 {
     let issuer = match ports.issuer(setup, form, now) {
         Ok(issuer) => issuer,

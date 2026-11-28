@@ -13,8 +13,10 @@ use crate::gateway_dcr::oauth_error::OauthErrorCode::{
     InvalidGrant, InvalidRequest, InvalidTarget,
 };
 use crate::gateway_dcr::sealed::open_sealed;
+use crate::gateway_token::support::pkce_verifier_matches;
 use crate::registry::servers::ServerRegistry;
-use crate::types::SessionPrincipal;
+use crate::session_credentials::{SessionRefreshResult, open_session_refresh_bearer};
+use crate::types::{SessionPrincipal, SessionSigningKeys};
 
 use super::TokenForm;
 
@@ -122,17 +124,82 @@ pub(super) fn code_principal(auth_code: GatewayAuthCode, form: &TokenForm<'_>) -
     }
 }
 
-pub(super) fn resource_conflicts_with_scope(
+pub(super) struct RefreshProof {
+    pub(super) principal: SessionPrincipal,
+    pub(super) jti: String,
+}
+
+pub(super) fn open_refresh(
+    form: &TokenForm<'_>,
+    keys: &SessionSigningKeys,
+    now: DateTime<Utc>,
+) -> Result<RefreshProof, OauthError> {
+    let Some(refresh_token) = present(form.refresh_token) else {
+        return Err(oauth_error(
+            400,
+            InvalidRequest,
+            "refresh_token is required",
+        ));
+    };
+    let client_id = form.client_id.unwrap_or_default();
+    let SessionRefreshResult::SessionRefreshOpened { principal, jti } =
+        open_session_refresh_bearer(refresh_token, keys, now, client_id)
+    else {
+        return Err(oauth_error(
+            400,
+            InvalidGrant,
+            "the refresh token is invalid for this client",
+        ));
+    };
+    Ok(RefreshProof { principal, jti })
+}
+
+pub(super) fn check_code_grant(
+    auth_code: &GatewayAuthCode,
+    proof: &CodeProof<'_>,
+    form: &TokenForm<'_>,
+    base_url: &str,
+    registry: &ServerRegistry,
+) -> Result<(), OauthError> {
+    let sealed_server = auth_code.resource_server_id.as_deref();
+    if resource_conflicts_with_scope(base_url, registry, form.resource, sealed_server) {
+        return Err(oauth_error(
+            400,
+            InvalidTarget,
+            "resource does not match the scope this code was issued for",
+        ));
+    }
+    if !pkce_verifier_matches(proof.code_verifier, &auth_code.code_challenge) {
+        return Err(oauth_error(400, InvalidGrant, "PKCE verification failed"));
+    }
+    Ok(())
+}
+
+pub(super) fn check_token_scope(
+    sealed_resource_server_id: Option<&str>,
+    resource: Option<&str>,
+    base_url: &str,
+    registry: &ServerRegistry,
+) -> Result<(), OauthError> {
+    if resource_conflicts_with_scope(base_url, registry, resource, sealed_resource_server_id) {
+        return Err(oauth_error(
+            400,
+            InvalidTarget,
+            "resource does not match the scope this token was issued for",
+        ));
+    }
+    Ok(())
+}
+
+fn resource_conflicts_with_scope(
     base_url: &str,
     registry: &ServerRegistry,
     resource: Option<&str>,
     sealed_resource_server_id: Option<&str>,
 ) -> bool {
-    let (Some(resource), Some(sealed)) = (resource, sealed_resource_server_id) else {
+    let (Some(requested), Some(sealed)) = (resource, sealed_resource_server_id) else {
         return false;
     };
-    match resolve_scoped_resource_server(registry, base_url, Some(resource)) {
-        Some(server) => server.fields.server_id.as_str() != sealed,
-        None => true,
-    }
+    resolve_scoped_resource_server(registry, base_url, Some(requested))
+        .is_none_or(|server| server.fields.server_id.as_str() != sealed)
 }

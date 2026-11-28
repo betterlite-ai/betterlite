@@ -215,7 +215,7 @@ fn subject_refusals_keep_the_idp_text(
         error,
         description: "the IdP said no".to_owned(),
     };
-    let mapped = subject_refusal_error(refusal);
+    let mapped = subject_refusal_error(&refusal);
     assert_eq!(mapped.status, status);
     assert_eq!(mapped.error, code);
     assert_eq!(mapped.description, "the IdP said no");

@@ -45,7 +45,8 @@ where
     R: ReloadUser,
     M: MintProxyCredential,
     B: ClaimBackend,
-    S: ExchangeSubjectToken<Context>,
+    S: ExchangeSubjectToken<Context> + Sync,
+    Context: Sync,
 {
     #[must_use]
     pub async fn issue(
@@ -79,7 +80,7 @@ where
             .await
         {
             Ok(identity) => identity,
-            Err(refusal) => return TokenReply::Error(subject_refusal_error(refusal)),
+            Err(refusal) => return TokenReply::Error(subject_refusal_error(&refusal)),
         };
         let principal = SessionPrincipal {
             user_id: identity.user_id,
@@ -110,24 +111,27 @@ where
         if let Some(refusal) = self.claim(claim).await {
             return TokenReply::Error(refusal);
         }
-        let access = mint_session_token(
+        let minted_access = mint_session_token(
             principal,
             SessionTokenKind::Session,
             self.keys,
             self.now,
             || self.entropy.jti(),
         );
-        let refresh = mint_session_token(
+        let minted_refresh = mint_session_token(
             principal,
             SessionTokenKind::Refresh,
             self.keys,
             self.now,
             || self.entropy.jti(),
         );
-        let (Ok(access), Ok(refresh)) = (access, refresh) else {
+        let (Ok(access), Ok(refresh)) = (minted_access, minted_refresh) else {
             return TokenReply::Error(failed_to_mint_error());
         };
-        let expires_in = (access.expires_at - self.now).num_seconds();
+        let expires_in = access
+            .expires_at
+            .signed_duration_since(self.now)
+            .num_seconds();
         json_reply(
             200,
             TokenBody::SessionPair(SessionPairBody {

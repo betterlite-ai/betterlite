@@ -47,7 +47,7 @@ where
     if let SessionRefreshResult::SessionRefreshOpened { jti, .. } = opened {
         let claim_key = format!("{REFRESH_CLAIM_KEY_PREFIX}{jti}");
         let claim_ttl = SESSION_REFRESH_TTL_SECONDS.saturating_add(CLAIM_TTL_BUFFER_SECONDS);
-        if let ClaimOutcome::Unavailable = guard.claim(&claim_key, claim_ttl).await {
+        if guard.claim(&claim_key, claim_ttl).await == ClaimOutcome::Unavailable {
             return TokenReply::Error(oauth_error(
                 503,
                 TemporarilyUnavailable,

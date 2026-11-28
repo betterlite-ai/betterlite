@@ -16,8 +16,8 @@ use crate::gateway_dcr::single_use::{
 use crate::gateway_token::support::reply::{TokenBody, TokenReply};
 use crate::gateway_token::support::{SigningSetup, signing_refusal};
 use crate::session_credentials::SessionSigningConfigError;
-use crate::session_tokens::{SessionTokenKind, mint_session_token};
-use crate::types::{SessionKeys, SessionPrincipal, SessionSigningKeys};
+use crate::session_tokens::mint_session_token;
+use crate::types::{SessionKeys, SessionPrincipal, SessionSigningKeys, SessionTokenKind};
 
 use super::{RevokeRequest, revoke_refresh_token};
 

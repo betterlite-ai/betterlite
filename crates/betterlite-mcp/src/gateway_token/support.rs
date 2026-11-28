@@ -97,7 +97,7 @@ pub fn reload_failure_error(failure: ReloadUserFailure) -> OauthError {
 }
 
 #[must_use]
-pub fn subject_refusal_error(refusal: SubjectTokenRefusal) -> OauthError {
+pub fn subject_refusal_error(refusal: &SubjectTokenRefusal) -> OauthError {
     match refusal.error {
         RefusalCode::TemporarilyUnavailable => oauth_error(
             503,

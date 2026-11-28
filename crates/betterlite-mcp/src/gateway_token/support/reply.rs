@@ -38,8 +38,8 @@ pub struct SessionPairBody {
 const REDACTED: &str = "<redacted>";
 
 impl fmt::Debug for SessionPairBody {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut fields = formatter.debug_struct("SessionPairBody");
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut fields = f.debug_struct("SessionPairBody");
         fields.field("access_token", &REDACTED);
         fields.field("token_type", &self.token_type);
         fields.field("expires_in", &self.expires_in);
@@ -75,9 +75,9 @@ pub struct ProxyCredentialBody {
 }
 
 impl fmt::Debug for ProxyCredentialBody {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         redacted_debug(
-            formatter,
+            f,
             "ProxyCredentialBody",
             &[
                 ("token_type", &self.token_type),
