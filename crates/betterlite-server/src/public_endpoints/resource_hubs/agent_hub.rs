@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 
 use axum::Json;
 use axum::extract::{Request, State};
-use axum::http::header;
-use axum::http::uri::Authority;
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::agent_registry::AgentRegistryApi;
 use betterlite_core::agents::AgentCard;
@@ -12,7 +10,7 @@ use serde_json::value::RawValue;
 use super::ResourceHubsState;
 use super::error::ResourceHubsError;
 use crate::custom_url::CustomUrls;
-use crate::middleware::request_root_paths::get_request_root_path;
+use crate::middleware::request_root_paths::{get_request_root_path, request_base_url};
 
 // Every field AgentCard declares, so a key pydantic would drop never reaches its deny_unknown_fields parser.
 const AGENT_CARD_KEYS: [&str; 18] = [
@@ -93,21 +91,4 @@ fn public_agent_card(
     );
     let body = serde_json::to_string(&params).map_err(ResourceHubsError::AgentCard)?;
     serde_json::from_str(&body).map_err(ResourceHubsError::AgentCard)
-}
-
-// Starlette's request.base_url is the scheme, the host and the root path, and it always ends in a slash
-fn request_base_url(request: &Request, root_path: &str) -> String {
-    let uri = request.uri();
-    let scheme = uri.scheme_str().unwrap_or("http");
-    let host = uri
-        .authority()
-        .map(Authority::as_str)
-        .or_else(|| {
-            request
-                .headers()
-                .get(header::HOST)
-                .and_then(|value| value.to_str().ok())
-        })
-        .unwrap_or_default();
-    format!("{scheme}://{host}{root_path}/")
 }

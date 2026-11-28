@@ -1,7 +1,5 @@
 use axum::Json;
 use axum::extract::{Request, State};
-use axum::http::header;
-use axum::http::uri::Authority;
 use betterlite_core::api::stored_skill_reads::stored_skill::StoredSkill;
 use betterlite_http::skill_archive::SkillArchive;
 use serde::Serialize;
@@ -10,7 +8,7 @@ use super::AgentSkillsState;
 use super::archive_for;
 use super::error::AgentSkillsError;
 use super::names::{base_name, deduplicate, entry_description};
-use crate::middleware::request_root_paths::get_request_root_path;
+use crate::middleware::request_root_paths::{get_request_root_path, request_base_url};
 
 const AGENT_SKILLS_DISCOVERY_SCHEMA: &str =
     "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
@@ -95,21 +93,4 @@ fn archive_url(
         root_path,
         &format!("v1/skills/{skill_id}/archive"),
     )
-}
-
-// Starlette's request.base_url is the scheme, the host and the root path, and it always ends in a slash
-fn request_base_url(request: &Request, root_path: &str) -> String {
-    let uri = request.uri();
-    let scheme = uri.scheme_str().unwrap_or("http");
-    let host = uri
-        .authority()
-        .map(Authority::as_str)
-        .or_else(|| {
-            request
-                .headers()
-                .get(header::HOST)
-                .and_then(|value| value.to_str().ok())
-        })
-        .unwrap_or_default();
-    format!("{scheme}://{host}{root_path}/")
 }

@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 
 use axum::Router;
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::uri::Authority;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
@@ -16,7 +15,7 @@ use super::state::SamlEntrypointsState;
 use crate::admin_setup::admin_ui_disabled;
 use crate::custom_url::CustomUrls;
 use crate::docs_routes::redirect_location;
-use crate::middleware::request_root_paths::get_request_root_path;
+use crate::middleware::request_root_paths::{get_request_root_path, request_base_url};
 
 pub const SAML_LOGIN_PATH: &str = "/sso/saml/login";
 pub const SAML_METADATA_PATH: &str = "/sso/saml/metadata";
@@ -72,18 +71,6 @@ fn provider_urls(custom_urls: &CustomUrls, request: &Request) -> (ProviderUrls, 
         acs_url: format!("{base}{SAML_CALLBACK_ROUTE}"),
     };
     (urls, base)
-}
-
-// Starlette's request.base_url: the scheme, the host and the root path, ending in a slash
-fn request_base_url(request: &Request, root_path: &str) -> String {
-    let authority = request.uri().authority().map(Authority::as_str);
-    let host_header = request
-        .headers()
-        .get(header::HOST)
-        .and_then(|value| value.to_str().ok());
-    let host = authority.or(host_header).unwrap_or_default();
-    let scheme = request.uri().scheme_str().unwrap_or("http");
-    format!("{scheme}://{host}{root_path}/")
 }
 
 fn default_relay_state(base_url: &str) -> String {
