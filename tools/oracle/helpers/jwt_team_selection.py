@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Iterator, Mapping
 from typing import Final, Literal, NotRequired, TypedDict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from litellm.proxy._types import LiteLLM_JWTAuth
 from litellm.proxy.auth.handle_jwt import AgentLookup, JWTAuthManager, JWTHandler
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
@@ -13,6 +13,7 @@ from litellm.proxy.pass_through_endpoints.pass_through_endpoints import (
 from litellm.proxy.utils import PrismaClient, ProxyLogging
 from litellm.types.agents import AgentResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 from typing_extensions import override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -142,6 +143,21 @@ def fields_of(scenario: Scenario) -> JsonRow:
     return {} if given is None else given
 
 
+def agents_of(scenario: Scenario) -> list[JsonRow]:
+    given = scenario.get("agents")
+    return [] if given is None else given
+
+
+def route_of(scenario: Scenario) -> str:
+    given = scenario.get("route")
+    return "" if given is None else given
+
+
+def allowed_teams_of(scenario: Scenario) -> set[str]:
+    given = scenario.get("allowed_team_ids")
+    return set[str]() if given is None else set(given)
+
+
 def handler_of(
     scenario: Scenario, events: list[str], cache: UserApiKeyCache
 ) -> tuple[Client | None, JWTHandler]:
@@ -207,7 +223,7 @@ async def answered(scenario: Scenario) -> JsonValue:
             agent_id = JWTAuthManager.resolve_agent_id(
                 handler,
                 token,
-                Registry([] if scenario.get("agents") is None else scenario["agents"]),
+                Registry(agents_of(scenario)),
             )
             row = {"agent_id": agent_id}
             value = JSON.validate_python(row)
@@ -227,7 +243,7 @@ async def answered(scenario: Scenario) -> JsonValue:
             selected, _team = await JWTAuthManager.find_team_with_model_access(
                 team_ids=team_ids,
                 requested_model=scenario.get("requested_model"),
-                route="" if scenario.get("route") is None else scenario["route"],
+                route=route_of(scenario),
                 jwt_handler=handler,
                 prisma_client=client,
                 user_api_key_cache=cache,
@@ -240,11 +256,7 @@ async def answered(scenario: Scenario) -> JsonValue:
         elif function == "header":
             header = await JWTAuthManager.resolve_team_from_header(
                 request_headers=scenario.get("headers"),
-                allowed_team_ids=(
-                    set[str]()
-                    if scenario.get("allowed_team_ids") is None
-                    else set(scenario["allowed_team_ids"])
-                ),
+                allowed_team_ids=allowed_teams_of(scenario),
                 fallback_to_db_teams=fields_of(scenario).get("fallback_to_db_teams") is True,
                 prisma_client=client,
                 user_api_key_cache=cache,
@@ -270,10 +282,8 @@ async def answered(scenario: Scenario) -> JsonValue:
         if not str(error).startswith(("No DB Connected", "No team found in token")):
             raise
         return failure(UNAUTHORIZED, f"Authentication Error, {error}", events)
-    row = {
-        "events": JSON.validate_python(sorted(events) if function == "candidates" else events),
-        "value": value,
-    }
+    events = sorted(events) if function == "candidates" else events
+    row = {"events": JSON.validate_python(events), "value": value}
     return JSON.validate_python(row)
 
 
