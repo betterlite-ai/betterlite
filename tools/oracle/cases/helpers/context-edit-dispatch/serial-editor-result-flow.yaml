@@ -1,0 +1,75 @@
+kind: helper
+name: serial-editor-result-flow
+call:
+  context_edit_dispatch:
+    scenarios:
+      - model: main-model
+        messages:
+          - role: user
+            content: start
+        system: BASE
+        tools:
+          - name: lookup
+        litellm_metadata:
+          user_api_key: k
+        router: true
+        principal: true
+        context_management:
+          edits:
+            - type: clear_tool_uses_20250919
+            - type: compact_20260112
+            - type: clear_tool_uses_20250919
+        clear:
+          - kind: legacy
+            messages:
+              - role: user
+                content: one
+          - kind: legacy
+            messages:
+              - role: user
+                content: three
+            applied:
+              type: clear_tool_uses_20250919
+              cleared_tool_uses: 2
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: two
+            system: S2
+            applied_edits:
+              - type: compact_20260112
+            compaction_block:
+              type: compaction
+              content: A
+            iterations_usage:
+              - type: compaction
+                input_tokens: 3
+                output_tokens: 4
+      - messages:
+          - role: user
+            content: start
+        system: BASE
+        context_management:
+          edits:
+            - type: clear_tool_uses_20250919
+        clear:
+          - kind: legacy
+            messages:
+              - role: user
+                content: kept
+            applied: {}
+      - messages:
+          - role: user
+            content: start
+        system: BASE
+        context_management:
+          edits:
+            - type: compact_20260112
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: two
+env: {}
+compare: {ignore: []}

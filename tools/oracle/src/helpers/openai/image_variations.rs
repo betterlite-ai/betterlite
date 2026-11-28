@@ -8,9 +8,7 @@ use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::api::image_contracts::records::ImageFile;
-use betterlite_openai::image_variations::client::{
-    ClientKind, ImageVariationClient, SharedSession,
-};
+use betterlite_openai::image_variations::client::{ImageVariationClient, SharedSession};
 use betterlite_openai::image_variations::error::OpenAiImageVariationError;
 use betterlite_openai::image_variations::logging::{
     ImageVariationLogger, PostCallRecord, PreCallRecord,
@@ -76,21 +74,15 @@ pub(super) fn call_for(probe: &Probe) -> ImageVariationRequest {
         params: ImageVariationParams {
             async_call: probe.async_call,
         },
-        client: probe
-            .client
-            .map(|kind| match kind {
-                input::Kind::Sync => ClientKind::Sync,
-                input::Kind::Async => ClientKind::Async,
-            })
-            .map(|kind| ImageVariationClient {
-                kind,
-                api_key: Some(SecretString::from("sk-supplied")),
-                base_url: String::from("https://supplied.test/v1/"),
-                timeout: Some(Duration::from_secs(45)),
-                max_retries: 1,
-                organization: Some(String::from("org-supplied")),
-                shared_session: false,
-            }),
+        client: probe.client.map(|kind| ImageVariationClient {
+            kind,
+            api_key: Some(SecretString::from("sk-supplied")),
+            base_url: String::from("https://supplied.test/v1/"),
+            timeout: Some(Duration::from_secs(45)),
+            max_retries: 1,
+            organization: Some(String::from("org-supplied")),
+            shared_session: false,
+        }),
         shared_session: Some(SharedSession),
         config: (!probe.missing_config).then_some(OpenAiImageVariationConfig),
         boundary: String::from("oracle-boundary"),

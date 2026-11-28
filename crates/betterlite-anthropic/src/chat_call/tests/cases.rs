@@ -10,8 +10,8 @@ use rstest::rstest;
 
 use crate::chat_call::CallStyle;
 use crate::chat_call::error::{ChatCallError, ClassifiedConfigError};
-use crate::chat_call::transport::ClientKind;
 use crate::headers::request::{SKILLS_BETA, TOOL_SEARCH_BETA};
+use betterlite_http::client_kind::ClientKind;
 
 use super::fixture::{API_BASE, CALLER_KEY, FixtureReply, MODEL, Trip, messages, text_body};
 use super::harness::{Run, Setup, execute};

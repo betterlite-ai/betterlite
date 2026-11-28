@@ -2,6 +2,7 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 
+use betterlite_http::client_kind::ClientKind;
 use futures_util::Stream;
 use http::HeaderMap;
 use secrecy::SecretString;
@@ -9,14 +10,6 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use crate::stream::SseError;
-
-// The OpenAI SDK's two client classes; only construction differs for these endpoint calls
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
 
 // Which httpx client the handler hands the SDK constructor
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]

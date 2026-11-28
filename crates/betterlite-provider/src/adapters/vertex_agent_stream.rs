@@ -7,13 +7,13 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::aleph_alpha::error::AlephAlphaError;
 use betterlite_openai::aleph_alpha::lines::{LineDecoder, decode_text};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_prompts::message_content::Message;
 use betterlite_vertex::vertex_agent_engine::error::{AgentEngineError, get_error_class};

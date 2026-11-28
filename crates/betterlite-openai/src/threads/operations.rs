@@ -1,4 +1,4 @@
-use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use crate::assistants::client::{ClientOptions, SdkClient};
 use crate::assistants::operations::AssistantsApi;
 use crate::assistants::transport::AssistantsTransport;
 use crate::threads::client;
@@ -6,6 +6,7 @@ use crate::threads::error::ThreadsError;
 use crate::threads::records::{
     ThreadCreate, ThreadMessage, ThreadMessageData, ThreadMessagePage, ThreadRecord,
 };
+use betterlite_http::client_kind::ClientKind;
 
 pub struct ClientSetup<T> {
     pub options: ClientOptions,
@@ -38,7 +39,7 @@ pub struct ThreadsApi<T> {
 // LiteLLM selects the async branch only for the literal True flag, and every other value stays on the sync path.
 const fn dispatch_kind(async_requested: bool) -> ClientKind {
     if async_requested {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     }

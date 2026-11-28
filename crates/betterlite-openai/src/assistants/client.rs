@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::DEFAULT_API_BASE;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
@@ -47,12 +48,6 @@ pub struct ClientOptions {
     pub timeout: Option<Duration>,
     pub max_retries: Option<u32>,
     pub organization: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
 }
 
 // The fields are the keyword arguments the OpenAI constructor received: None means the argument was left out.
