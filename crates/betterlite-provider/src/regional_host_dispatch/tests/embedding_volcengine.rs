@@ -1,10 +1,11 @@
 use betterlite_models::identity::provider_id::ProviderId;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use crate::regional_host_dispatch::error::DispatchError;
 
 use super::embedding::call_for;
-use super::support::{EmbeddingFixture, headers, secret, secret_text};
+use super::support::{EmbeddingFixture, headers, secret};
 
 const VOLCENGINE_MESSAGE: &str = "Missing API key for Volcengine. Set ARK_API_KEY or VOLCENGINE_API_KEY environment variable or pass api_key parameter.";
 
@@ -39,7 +40,9 @@ fn volcengine_key_chain(
     fixture.settings.environment.volcengine_api_key = volcengine_key.map(secret);
     let call = call_for(ProviderId::Volcengine, &fixture).expect("the arm answers");
     assert_eq!(
-        secret_text(call.api_key.as_ref()),
+        call.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         expected.map(str::to_owned)
     );
 }

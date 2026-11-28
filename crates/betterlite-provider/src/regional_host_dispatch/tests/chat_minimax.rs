@@ -1,11 +1,12 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json as LogJson;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use crate::hosted_platform_dispatch::handler::HandlerError;
 use crate::regional_host_dispatch::error::DispatchError;
 
-use super::support::{ChatFixture, ChatRecorder, chat_dispatch, headers, secret, secret_text};
+use super::support::{ChatFixture, ChatRecorder, chat_dispatch, headers, secret};
 
 struct Sources {
     request_key: Option<&'static str>,
@@ -96,7 +97,9 @@ fn minimax_chain(
     outcome.expect("the minimax arm answers");
     let call = handler.first();
     assert_eq!(
-        secret_text(call.api_key.as_ref()),
+        call.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         expected_key.map(str::to_owned)
     );
     assert_eq!(call.api_base.as_deref(), Some(expected_base));
@@ -116,7 +119,9 @@ fn minimax_skips_an_empty_request_key_and_base() {
     outcome.expect("the minimax arm answers");
     let call = handler.first();
     assert_eq!(
-        secret_text(call.api_key.as_ref()),
+        call.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("sk-global"))
     );
     assert_eq!(call.api_base.as_deref(), Some("http://global.example/v1"));
