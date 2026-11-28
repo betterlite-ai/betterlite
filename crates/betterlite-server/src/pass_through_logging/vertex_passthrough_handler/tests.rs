@@ -5,18 +5,26 @@ use std::sync::Arc;
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
+use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails, Usage};
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
+use betterlite_vertex::vertex_discovery_search::error::VertexDiscoverySearchError;
 use betterlite_vertex::vertex_relay_metadata::types::CustomLlmProvider;
+use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use super::raw_predict::{completion_response, dummy_messages};
+use super::response_body::usage_json;
 use super::{VertexBranch, VertexPassthroughError, select_vertex_branch};
 use crate::pass_through_logging::anthropic_batch::unified_object_id;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
     FakeCost, as_text, detail, field, integer, json, kwarg, kwargs, logged_model, logged_provider,
     number_text, optional_param, result_json, text,
 };
-use support::{fixture, handler, handler_with_predict, input, items, with_request_body};
+use support::{
+    METADATA_LISTS, RecordingRegistry, capture_logs, fixture, handler, handler_with_batch,
+    handler_with_predict, input, items, with_request_body,
+};
 
 mod support;
 
@@ -335,6 +343,9 @@ fn generate_decodes_the_reply_and_prices_it(#[case] route: &str, #[case] provide
     assert_eq!(integer(usage, "prompt_tokens"), 3);
     assert_eq!(integer(usage, "completion_tokens"), 2);
     assert_eq!(integer(usage, "total_tokens"), 5);
+    for name in METADATA_LISTS {
+        assert_eq!(field(&result, name), &Json::List(Vec::new()));
+    }
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "0.025");
     assert_eq!(as_text(kwarg(&outcome, "model")), "gemini-2.0-flash");
     assert_eq!(logged_model(&fixture.logging_obj), "gemini-2.0-flash");
@@ -840,10 +851,21 @@ fn error_raw_predict_partner_transform_fails() {
 fn error_search_body_is_not_an_object() {
     let (passthrough, _) = handler(FakeCost::priced(Decimal::new(3, 3)));
     let mut fixture = fixture(SEARCH_ROUTE, "[]");
+    let mut headers = HeaderMap::new();
+    headers.insert("x-search-id", HeaderValue::from_static("req-1"));
+    fixture.headers = headers;
     let error = passthrough
         .vertex_passthrough_handler(input(&mut fixture))
         .expect_err("a list is not a search page");
-    assert!(matches!(error, VertexPassthroughError::Search(_)));
+    let VertexPassthroughError::Search(VertexDiscoverySearchError::Provider(provider)) = error
+    else {
+        panic!("a body that does not decode is a provider error");
+    };
+    assert_eq!(provider.status_code, 200);
+    assert_eq!(
+        provider.headers.get("x-search-id"),
+        Some(&Json::Text("req-1".to_owned()))
+    );
 }
 
 #[test]
@@ -870,4 +892,102 @@ fn error_search_cost_failure_rises() {
         &error,
         VertexPassthroughError::Cost { model, .. } if model == "vertex_ai/search_api"
     ));
+}
+
+#[test]
+fn raw_predict_dummy_message_is_the_litellm_message() {
+    let messages = dummy_messages();
+    assert_eq!(messages.len(), 1);
+    let Json::Object(message) = &messages[0] else {
+        panic!("the dummy message is an object");
+    };
+    assert_eq!(message.len(), 2);
+    assert_eq!(message.get("role"), Some(&Json::Text("user".to_owned())));
+    assert_eq!(
+        message.get("content"),
+        Some(&Json::Text("no-message-pass-through-endpoint".to_owned()))
+    );
+}
+
+#[test]
+fn raw_predict_completion_reads_the_body_model_and_usage() {
+    let body = json(
+        r#"{"model":"claude-3-sonnet-20240229","usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}"#,
+    );
+    let completion = completion_response(&body);
+    let expected = Some("claude-3-sonnet-20240229");
+    assert_eq!(completion.model.as_deref(), expected);
+    let usage = completion.usage.expect("the usage is read");
+    assert_eq!(usage.prompt_tokens, 3);
+    assert_eq!(usage.completion_tokens, 1);
+    assert_eq!(usage.total_tokens, 4);
+    let empty = completion_response(&json(r#"{"model":""}"#));
+    assert_eq!(empty.model, None);
+    assert_eq!(empty.usage, None);
+}
+
+#[test]
+fn raw_predict_writes_the_partner_debug_log() {
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(125, 2)));
+    let mut fixture = fixture(RAW_PREDICT_ROUTE, CLAUDE_BODY);
+    let (logs, _guard) = capture_logs();
+    let outcome = passthrough.vertex_passthrough_handler(input(&mut fixture));
+    outcome.expect("the reply is logged");
+    let captured = logs.text();
+    assert!(
+        captured.contains("RAW RESPONSE"),
+        "the partner transform's debug log is captured: {captured}"
+    );
+}
+
+#[test]
+fn generate_usage_details_use_the_litellm_names() {
+    let usage = Usage {
+        prompt_tokens: 7,
+        completion_tokens: 2,
+        total_tokens: 9,
+        prompt_tokens_details: Some(PromptTokensDetails {
+            text_tokens: Some(4),
+            image_tokens: Some(1),
+            web_search_requests: Some(2),
+            google_maps_grounding_requests: Some(3),
+            cached_tokens: Some(5),
+            ..PromptTokensDetails::default()
+        }),
+        completion_tokens_details: Some(CompletionTokensDetails {
+            text_tokens: Some(2),
+            reasoning_tokens: Some(1),
+            ..CompletionTokensDetails::default()
+        }),
+        ..Usage::default()
+    };
+    let body = usage_json(&usage);
+    assert_eq!(integer(&body, "prompt_tokens"), 7);
+    let prompt = field(&body, "prompt_tokens_details");
+    assert_eq!(integer(prompt, "text_tokens"), 4);
+    assert_eq!(integer(prompt, "image_tokens"), 1);
+    assert_eq!(integer(prompt, "web_search_requests"), 2);
+    assert_eq!(integer(prompt, "google_maps_grounding_requests"), 3);
+    assert_eq!(integer(prompt, "cached_tokens"), 5);
+    assert_eq!(integer(&body, "cache_read_input_tokens"), 5);
+    let completion = field(&body, "completion_tokens_details");
+    assert_eq!(integer(completion, "text_tokens"), 2);
+    assert_eq!(integer(completion, "reasoning_tokens"), 1);
+}
+
+#[tokio::test]
+async fn batch_request_metadata_reaches_the_managed_registry() {
+    let registry = Arc::new(RecordingRegistry::default());
+    let passthrough = handler_with_batch(FakeCost::priced(Decimal::new(125, 2)), &registry);
+    let mut fixture = fixture(BATCH_ROUTE, BATCH_BODY);
+    fixture.kwargs = kwargs(&[(
+        "litellm_params",
+        json(r#"{"metadata":{"user_api_key_user_id":"user-1"}}"#),
+    )]);
+    let outcome = passthrough.vertex_passthrough_handler(input(&mut fixture));
+    outcome.expect("the batch handler never fails");
+    let registrations = registry.registrations();
+    assert_eq!(registrations.len(), 1);
+    let user_id = registrations[0].registrant.user_id.as_deref();
+    assert_eq!(user_id, Some("user-1"));
 }

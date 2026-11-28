@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::logging_state::LoggingState;
@@ -8,9 +9,15 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_vertex::vertex_relay_metadata::types::{
     CompletionCost, CompletionCostRequest, CustomLlmProvider,
 };
+use futures_util::future::BoxFuture;
 use http::{HeaderMap, StatusCode};
 use rust_decimal::Decimal;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 
+use crate::pass_through_logging::anthropic_batch::{
+    BatchRegistration, ManagedBatchRegistry, RegistryError,
+};
 use crate::pass_through_logging::background_tasks::BackgroundTasks;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
     FakeCost, logging_object, timestamp,
@@ -21,6 +28,13 @@ use crate::pass_through_logging::vertex_passthrough_handler::{
     VertexPassthroughHandler, VertexPassthroughInput,
 };
 use crate::pass_through_logging::vertex_predict_logging::VertexPredictLogger;
+
+pub(crate) const METADATA_LISTS: [&str; 4] = [
+    "vertex_ai_grounding_metadata",
+    "vertex_ai_url_context_metadata",
+    "vertex_ai_safety_results",
+    "vertex_ai_citation_metadata",
+];
 
 pub(crate) struct Fixture {
     pub(crate) logging_obj: StreamLoggingObject,
@@ -151,4 +165,98 @@ pub(crate) fn handler_with_predict(
     );
     let passthrough = VertexPassthroughHandler::new(predict, batch, cost);
     (passthrough, predict_cost)
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingRegistry {
+    registrations: Mutex<Vec<BatchRegistration>>,
+}
+
+impl RecordingRegistry {
+    pub(crate) fn registrations(&self) -> Vec<BatchRegistration> {
+        self.registrations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ManagedBatchRegistry for RecordingRegistry {
+    fn store_unified_object_id(
+        &self,
+        request: BatchRegistration,
+    ) -> BoxFuture<'static, Result<(), RegistryError>> {
+        self.registrations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
+        Box::pin(async { Ok(()) })
+    }
+}
+
+pub(crate) fn handler_with_batch(
+    cost: Arc<FakeCost>,
+    registry: &Arc<RecordingRegistry>,
+) -> VertexPassthroughHandler {
+    let predict_cost = PredictCost::new(Some(Decimal::ONE));
+    let relay: Arc<dyn CompletionCost> = predict_cost;
+    let predict = VertexPredictLogger::new(relay);
+    let shared: Arc<dyn ManagedBatchRegistry> = Arc::<RecordingRegistry>::clone(registry);
+    let batch = VertexBatchLogging::new(
+        None,
+        Some(shared),
+        Arc::new(FixedResponseId),
+        BackgroundTasks::default(),
+    );
+    VertexPassthroughHandler::new(predict, batch, cost)
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl LogBuffer {
+    pub(crate) fn text(&self) -> String {
+        String::from_utf8(
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        )
+        .expect("the captured tracing output is UTF-8")
+    }
+}
+
+impl io::Write for LogBuffer {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+// tracing's default dispatcher is thread-scoped, so the guard keeps the captured events in this test.
+pub(crate) fn capture_logs() -> (LogBuffer, DefaultGuard) {
+    let buffer = LogBuffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    (buffer, set_default(subscriber))
 }

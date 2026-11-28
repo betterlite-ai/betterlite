@@ -181,7 +181,7 @@ fn log_reply(
     ))
 }
 
-fn dummy_messages() -> Vec<Json> {
+pub(super) fn dummy_messages() -> Vec<Json> {
     let mut message = IndexMap::new();
     message.insert("role".to_owned(), Json::Text("user".to_owned()));
     message.insert(
@@ -199,7 +199,7 @@ fn strip_hidden_params(body: &mut Json) {
 }
 
 // The fields of the logged reply the cost service reads back, as ModelResponse.model_dump() writes them.
-fn completion_response(body: &Json) -> CompletionResponse {
+pub(super) fn completion_response(body: &Json) -> CompletionResponse {
     let Json::Object(fields) = body else {
         return CompletionResponse::default();
     };
