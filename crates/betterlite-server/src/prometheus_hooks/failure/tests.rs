@@ -8,8 +8,8 @@ use betterlite_logging::prometheus::budget_lookups::records::OrgRecord;
 use rust_decimal::Decimal;
 
 use super::super::tests::support::{
-    DEPLOYMENT_FAILURES, FAILED, ORG_BUDGET, dec, error_information, event, fixture, payload,
-    totals,
+    DEPLOYMENT_FAILURES, FAILED, ORG_BUDGET, dec, error_information, event, fixture,
+    fixture_with_settings, labelled_settings, payload, rich_payload, series_label, totals,
 };
 
 #[tokio::test]
@@ -54,6 +54,149 @@ async fn failed_counter_deployment_and_org_budget_run() {
     assert_eq!(fixture.lookups.orgs(), vec!["org-1".to_owned()]);
     // the failure event asks for the org gauge with a zero cost, so the stored spend alone comes off the budget
     assert_eq!(totals(&fixture.registry, ORG_BUDGET), vec![dec("90")]);
+}
+
+#[tokio::test]
+async fn failure_labels_match_litellm() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(Decimal::ZERO);
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(series_label(registry, FAILED, "model"), "gpt-4o");
+    assert_eq!(series_label(registry, FAILED, "model_id"), "deployment-1");
+    assert_eq!(series_label(registry, FAILED, "end_user"), "end-user-1");
+    assert_eq!(series_label(registry, FAILED, "user"), "user-1");
+    assert_eq!(series_label(registry, FAILED, "hashed_api_key"), "sk-live");
+    assert_eq!(series_label(registry, FAILED, "api_key_alias"), "alias-1");
+    assert_eq!(series_label(registry, FAILED, "team"), "team-1");
+    assert_eq!(series_label(registry, FAILED, "team_alias"), "team-alias");
+    // the failure counter carries only LiteLLM's LLM_API_FAILED schema
+    let failure_labels = registry
+        .get(FAILED)
+        .expect("the failed metric is registered")
+        .description
+        .label_names
+        .clone();
+    assert!(!failure_labels.contains(&"status_code".to_owned()));
+    assert!(!failure_labels.contains(&"litellm_model_name".to_owned()));
+    assert!(!failure_labels.contains(&"route".to_owned()));
+    assert!(!failure_labels.contains(&"user_email".to_owned()));
+    assert!(!failure_labels.contains(&"requested_model".to_owned()));
+    assert!(!failure_labels.contains(&"client_ip".to_owned()));
+    assert!(!failure_labels.contains(&"user_agent".to_owned()));
+    // the deployment failure names the deployment, the group, the provider and the exception
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "model_group"),
+        "gpt-4-group"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "requested_model"),
+        "gpt-4-group"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "litellm_model_name"),
+        "gpt-4o"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "model_id"),
+        "deployment-1"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "api_base"),
+        "https://api.example/v1"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "api_provider"),
+        "openai"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "exception_status"),
+        "None"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "exception_class"),
+        "BadRequestError"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "hashed_api_key"),
+        "sk-live"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "api_key_alias"),
+        "alias-1"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "team"),
+        "team-1"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "team_alias"),
+        "team-alias"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "client_ip"),
+        "10.0.0.7"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "user_agent"),
+        "test-agent"
+    );
+}
+
+#[tokio::test]
+async fn a_failure_without_a_model_id_labels_the_empty_text() {
+    let fixture = fixture();
+    let mut record = payload(Decimal::ZERO);
+    record.model_group = Some("gpt-4-group".to_owned());
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(series_label(registry, FAILED, "model_id"), "");
+    assert_eq!(series_label(registry, FAILED, "model"), "gpt-4o");
+    // without a model id the deployment step labels no deployment and writes the same empty text
+    assert_eq!(series_label(registry, DEPLOYMENT_FAILURES, "model_id"), "");
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "litellm_model_name"),
+        ""
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "requested_model"),
+        "gpt-4o"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "model_group"),
+        "gpt-4-group"
+    );
+}
+
+#[tokio::test]
+async fn a_bedrock_failure_is_labelled_without_the_provider_prefix() {
+    let fixture = fixture();
+    let mut record = payload(Decimal::ZERO);
+    record.model = "bedrock/claude-3".to_owned();
+    record.custom_llm_provider = Some("bedrock".to_owned());
+    record.model_id = Some("deployment-1".to_owned());
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(series_label(registry, FAILED, "model"), "claude-3");
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "litellm_model_name"),
+        "claude-3"
+    );
 }
 
 #[tokio::test]
