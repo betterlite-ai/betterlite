@@ -1,0 +1,27 @@
+task: B1625
+deviations:
+  - what: 'Signatures are not verified in this build: samael''s xmlsec backend needs libxml2, xmlsec and OpenSSL, which betterlite does not link, so the verifier seam answers Unavailable and B1626''s ACS route answers 501. Login and metadata work, and no path accepts an unsigned response.'
+    why: 'The task forbids implementing XML signatures or canonicalization and forbids silently disabling the check; LiteLLM''s saml extra always verifies process_response before it reads identity data.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L309-L330
+  - what: 'Values interpolated into the AuthnRequest and SP metadata are XML-escaped. python3-saml''s templates use raw %s, so a value holding & < > or a quote yields an escaped document where LiteLLM yields malformed XML.'
+    why: 'An unescaped & makes the document invalid, and an injected < or quote could add elements to a request the IdP trusts; no working setup relies on malformed XML.'
+    link: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/authn_request.py#L78-L110
+  - what: 'SP metadata is checked structurally (EntityDescriptor root, exactly one SPSSODescriptor descendant, the validUntil/cacheDuration expiry) instead of against python3-saml''s XSD schemas, so a schema-only violation that keeps those properties is published where LiteLLM raises "Invalid SP metadata".'
+    why: 'The document comes from validated SP settings and a fixed template, so only those properties can vary, and the XSD bundle and schema validator are outside this task''s reference code.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L269-L283
+  - what: 'Metadata XML is read as UTF-8, and a DOCTYPE, an external or undeclared entity, an unbound prefix, more than 256 nested elements or more than 100000 elements is refused; lxml accepts other encodings and deeper documents.'
+    why: 'Refusing DTDs and entity references removes external-entity and expansion attacks, and the caps bound the memory one unauthenticated metadata URL can cost; a working IdP publishes plain UTF-8 metadata.'
+    link: ''
+  - what: 'A remote metadata document that parses but holds no md:IDPSSODescriptor answers 502, where LiteLLM answers the unhandled 500 because python3-saml''s parse_remote refuses that document before parsing it.'
+    why: 'The task pins no usable IdP settings to 502, and a document without an identity provider offers none; both statuses are errors and no working setup publishes such metadata.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L165-L177
+kept_bugs:
+  - what: 'SAML_AUTHN_REQUESTS_SIGNED=true always fails the toolkit''s sp_cert_not_found_and_required check, because LiteLLM configures no SP key or certificate for python3-saml to sign AuthnRequests with.'
+    why: 'No working setup can turn the flag on successfully, and betterlite keeps the configuration failure instead of minting a key LiteLLM never had.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L203
+  - what: 'SAML_IDP_METADATA_URL set to an empty string still takes the remote fetch branch, so login and metadata answer 500 even when SAML_IDP_METADATA_XML is set; only the cache source falls back to the XML.'
+    why: 'LiteLLM tests the URL with "is not None" for fetching and with truthiness for the cache source, and an empty metadata URL is not a working configuration.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L165-L177
+  - what: 'DISABLE_ADMIN_UI disables only /sso/saml/login, and only a trimmed "true" disables it; "1", "yes" and "on" leave login available while the SAML flags accept them.'
+    why: 'LiteLLM''s route calls str_to_bool, which knows true and false alone, unlike the _bool_env it uses for the SAML flags; a setup that meant to disable the UI with "1" is not a working one.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2154-L2158
