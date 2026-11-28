@@ -11,13 +11,18 @@ use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recordin
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange};
-use super::super::model::{Failed, Probe, Unavailable, extra_pairs, param_map};
+use super::super::harness::{Handler, Harness, Outcome, exchange};
+use super::super::model::{Failed, Probe, extra_pairs, param_map};
 use super::row;
 
 pub(super) async fn embedding_row(probe: &Probe) -> Result<Value, Failed> {
     let extra = extra_pairs(probe);
     let key = probe.api_key.clone().map(SecretString::from);
+    let bearer = probe
+        .environment
+        .get("AWS_BEARER_TOKEN_BEDROCK")
+        .cloned()
+        .map(SecretString::from);
     let operation = BedrockOtherOperation::Embedding(EmbeddingOperation {
         model: &probe.model,
         input: EmbeddingInput::Multiple(&probe.input),
@@ -34,15 +39,11 @@ pub(super) async fn embedding_row(probe: &Probe) -> Result<Value, Failed> {
                 .environment
                 .get("AWS_BEDROCK_RUNTIME_ENDPOINT")
                 .map(String::as_str),
-            bearer_token: probe
-                .environment
-                .get("AWS_BEARER_TOKEN_BEDROCK")
-                .map(SecretString::from),
+            bearer_token: bearer.as_ref(),
         },
     });
     let harness = Harness::new(probe)?;
-    let outcome: Outcome<CallError> =
-        exchange::<Unavailable, Recording>(&harness, operation).await?;
+    let outcome: Outcome<CallError> = exchange::<Handler, Recording>(&harness, operation).await?;
     let value = match &outcome.result {
         Ok(BedrockOtherResult::Embedding(response)) => embedding_value(response),
         Ok(_other) => Value::Null,

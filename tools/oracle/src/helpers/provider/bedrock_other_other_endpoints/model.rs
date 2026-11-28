@@ -1,11 +1,6 @@
 use std::collections::BTreeMap;
-use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
-use betterlite_bedrock::count_call::handler::{
-    CountTokensHandler, CountTokensHandlerError, CountTokensHandlerRequest,
-};
-use betterlite_bedrock::count_call::reply::CountResponse;
 use betterlite_bedrock::embedding_call::ParamMap;
 use betterlite_bedrock::model_routes::ParamMap as ModelCost;
 use betterlite_models::decisions::Json;
@@ -142,19 +137,6 @@ impl ProbeReply {
             .map(|(name, value)| (name.as_str(), value.as_str()))
             .collect();
         Reply::with_headers(self.status, &pairs, &self.body)
-    }
-}
-
-// The handler a family that never counts tokens is handed; it answers no count at all
-pub(super) struct Unavailable;
-
-impl CountTokensHandler for Unavailable {
-    async fn handle_count_tokens_request(
-        &self,
-        _request: &CountTokensHandlerRequest<'_>,
-        _now: SystemTime,
-    ) -> Result<Option<CountResponse>, CountTokensHandlerError> {
-        Ok(None)
     }
 }
 

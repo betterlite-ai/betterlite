@@ -1,12 +1,8 @@
 use std::collections::VecDeque;
 use std::error::Error as StdError;
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
 
-use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
-use betterlite_bedrock::count_call::handler::CountTokensHandler;
-use betterlite_bedrock::embedding_call::Clock;
-use betterlite_bedrock::signing::executor::AwsSigningExecutor;
+use betterlite_bedrock::count_call::handler::{BedrockCountTokensHandler, CountTokensHandler};
 use betterlite_bedrock::transcription::binding::TranscriptionBinding;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherRequest;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
@@ -20,14 +16,14 @@ use betterlite_provider::bedrock_other_dispatch::test_support::factory::Factory;
 use betterlite_provider::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
 use betterlite_provider::bedrock_other_dispatch::test_support::source::Source;
 use betterlite_provider::bedrock_other_dispatch::test_support::{
-    Counting, DiscardingSink, Files, FixedClock, NOW_SECONDS, instant, logging_state, prepost_env,
-    secret_lookup,
+    DiscardingSink, Prepared, prepost_env,
 };
 use betterlite_provider::operation::{OperationRequest, OperationResult};
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::model::{Failed, Probe, credentials, replies};
 use crate::openai_media_dispatch::{OTHER_OUTCOME, failure};
+
+pub(super) type Handler = BedrockCountTokensHandler<FixtureClient, Source>;
 
 // The scripted transport, factory and identity one probe runs the production dispatcher against
 pub(super) struct Harness {
@@ -41,29 +37,32 @@ pub(super) struct Harness {
 impl Harness {
     pub(super) fn new(probe: &Probe) -> Result<Self, Failed> {
         let answers = replies(probe);
-        let replies = Replies(Arc::new(Mutex::new(
+        let queue = Replies(Arc::new(Mutex::new(
             answers.iter().cloned().collect::<VecDeque<Reply>>(),
         )));
         let seen = Seen::default();
         let mut factory = Factory::queued(&answers);
-        factory.replies = replies.clone();
+        factory.replies = queue.clone();
         factory.seen = seen.clone();
         let transport = FixtureClient {
-            replies: replies.clone(),
+            replies: queue.clone(),
             seen: seen.clone(),
         };
         Ok(Self {
             factory,
             transport,
             source: Source::new(credentials(probe)?),
-            replies,
+            replies: queue,
             seen,
         })
     }
 }
 
 // What one dispatch observed: its outcome, every posted request, and the regions it resolved
-pub(super) struct Outcome<E> {
+pub(super) struct Outcome<E>
+where
+    E: StdError + 'static,
+{
     pub(super) result: Result<BedrockOtherResult, BedrockOtherError<E>>,
     pub(super) requests: Vec<Recorded>,
     pub(super) regions: Vec<String>,
@@ -75,34 +74,24 @@ pub(super) async fn exchange<H, B>(
 ) -> Result<Outcome<B::Error>, Failed>
 where
     H: CountTokensHandler,
-    B: TranscriptionBinding + Sync,
+    B: TranscriptionBinding + Send + Sync,
 {
-    let redactor =
-        Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure("Redactor", error))?;
-    let mut state = logging_state(&redactor).map_err(|error| failure("Logging", error))?;
+    let mut prepared = Prepared::new().map_err(|error| failure("Prepared", error))?;
     let sink = DiscardingSink;
-    let env = prepost_env(&state, &redactor, &sink);
-    let secrets = secret_lookup();
-    let workers = ManagedRegionWorker::new().map_err(|error| failure("RegionWorker", error))?;
-    let signing = AwsSigningExecutor::default();
-    let encoding = Counting;
-    let files = Files;
-    let clock: Arc<dyn Clock> = Arc::new(FixedClock(
-        instant(NOW_SECONDS).map_err(|error| failure("Instant", error))?,
-    ));
+    let env = prepost_env(&prepared.state, &prepared.redactor, &sink);
     let services = Services {
-        secrets: &secrets,
-        region_worker: &workers,
+        secrets: &prepared.secrets,
+        region_worker: &prepared.workers,
         source: &harness.source,
         factory: &harness.factory,
         transport: &harness.transport,
-        encoding: &encoding,
-        signing: &signing,
-        clock,
-        files: &files,
+        encoding: &prepared.encoding,
+        signing: &prepared.signing,
+        clock: Arc::clone(&prepared.clock),
+        files: &prepared.files,
     };
     let mut log = LogContext {
-        state: &mut state,
+        state: &mut prepared.state,
         env: &env,
     };
     let dispatched = dispatch(

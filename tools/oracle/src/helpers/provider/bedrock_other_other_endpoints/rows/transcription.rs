@@ -4,18 +4,17 @@ use betterlite_bedrock::transcription::binding::TranscriptionCall;
 use betterlite_bedrock::transcription::error::CallError;
 use betterlite_bedrock::transcription::params::Params;
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::audio_file_input::{AudioFile, AudioTuple, TupleContent};
 use betterlite_openai::batches::sdk::Timeout as OpenAiTimeout;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::{
-    BedrockOtherOperation, TranscriptionOperation,
+    BedrockOtherOperation, TranscriptionFile, TranscriptionOperation,
 };
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange};
-use super::super::model::{Failed, File, Probe, Unavailable, from_params};
+use super::super::harness::{Handler, Harness, Outcome, exchange};
+use super::super::model::{Failed, File, Probe, from_params};
 use super::row;
 use crate::openai_media_dispatch::failure;
 
@@ -44,13 +43,12 @@ pub(super) async fn transcription_row(probe: &Probe) -> Result<Value, Failed> {
     };
     let operation = BedrockOtherOperation::Transcription(TranscriptionOperation {
         call,
-        audio: audio_file(file),
+        file: transcription_file(file),
         asynchronous: probe.asynchronous,
         binding: recording,
     });
     let harness = Harness::new(probe)?;
-    let outcome: Outcome<CallError> =
-        exchange::<Unavailable, Recording>(&harness, operation).await?;
+    let outcome: Outcome<CallError> = exchange::<Handler, Recording>(&harness, operation).await?;
     let value = match &outcome.result {
         Ok(BedrockOtherResult::Transcription(response)) => json!({
             "text": &response.text,
@@ -72,15 +70,12 @@ fn extra_headers(probe: &Probe) -> Option<Params> {
 }
 
 // The native call receives the typed file; the leaf names its format from the filename
-fn audio_file<'call>(file: &'call File) -> AudioFile<'call> {
-    let bytes = file.content.as_bytes();
-    match &file.filename {
-        Some(filename) => AudioFile::Tuple(AudioTuple {
-            filename,
-            content: Some(TupleContent::Bytes(bytes)),
-        }),
-        None => AudioFile::Bytes(bytes),
-    }
+fn transcription_file(file: &File) -> TranscriptionFile<'_> {
+    let content = file.content.as_bytes();
+    file.filename.as_ref().map_or_else(
+        || TranscriptionFile::Bytes(content),
+        |filename| TranscriptionFile::Multipart { filename, content },
+    )
 }
 
 // An unsupported container is refused by name before the binding runs; any other failure is the binding's

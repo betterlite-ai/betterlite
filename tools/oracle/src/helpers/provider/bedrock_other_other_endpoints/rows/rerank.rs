@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::time::Duration;
 
 use betterlite_bedrock::rerank::plan::RerankEnvironment;
@@ -11,8 +11,8 @@ use betterlite_provider::bedrock_other_dispatch::test_support::{NOW_SECONDS, ins
 use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange};
-use super::super::model::{Failed, Probe, Unavailable, extra_pairs, param_map};
+use super::super::harness::{Handler, Harness, Outcome, exchange};
+use super::super::model::{Failed, Probe, extra_pairs, param_map};
 use super::row;
 use crate::openai_media_dispatch::failure;
 
@@ -34,8 +34,7 @@ pub(super) async fn rerank_row(probe: &Probe) -> Result<Value, Failed> {
         generated_id: GENERATED_ID,
     });
     let harness = Harness::new(probe)?;
-    let outcome: Outcome<CallError> =
-        exchange::<Unavailable, Recording>(&harness, operation).await?;
+    let outcome: Outcome<CallError> = exchange::<Handler, Recording>(&harness, operation).await?;
     let value = match &outcome.result {
         Ok(BedrockOtherResult::Rerank(response)) => rerank_value(response)?,
         Ok(_other) => Value::Null,

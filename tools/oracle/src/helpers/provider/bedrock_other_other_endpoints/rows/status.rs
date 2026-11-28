@@ -7,8 +7,8 @@ use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recordin
 use betterlite_provider::bedrock_other_dispatch::test_support::{NOW_SECONDS, instant};
 use serde_json::{Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange};
-use super::super::model::{Failed, Probe, Unavailable, param_map};
+use super::super::harness::{Handler, Harness, Outcome, exchange};
+use super::super::model::{Failed, Probe, param_map};
 use super::row;
 use crate::openai_media_dispatch::failure;
 
@@ -27,8 +27,7 @@ pub(super) async fn status_row(probe: &Probe) -> Result<Value, Failed> {
         now: instant(NOW_SECONDS).map_err(|error| failure("Instant", error))?,
     });
     let harness = Harness::new(probe)?;
-    let outcome: Outcome<CallError> =
-        exchange::<Unavailable, Recording>(&harness, operation).await?;
+    let outcome: Outcome<CallError> = exchange::<Handler, Recording>(&harness, operation).await?;
     let value = match &outcome.result {
         Ok(BedrockOtherResult::EmbeddingStatus(body)) => json!({
             "body": body.as_ref(),
