@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::{self, Read};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
@@ -12,13 +12,15 @@ use betterlite_bedrock::embedding_call::Clock;
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_bedrock::transcription::call::NativeTranscription;
 use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+    DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
+use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateError};
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_redact::error::RedactionError;
@@ -227,5 +229,61 @@ pub fn prepost_env<'env>(
         sentry: None,
         logger_fn: None,
         now: state.start_time,
+    }
+}
+
+// The same environment with a logger callback, so a row can compare the phases a family logged
+#[must_use]
+pub fn capturing_env<'env>(
+    state: &LoggingState,
+    redactor: &'env Redactor,
+    sink: &'env DiscardingSink,
+    logger_fn: LoggerFn<'env>,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: Some(logger_fn),
+        now: state.start_time,
+    }
+}
+
+// Every snapshot the logger callback received, kept so a row can name the phase each one recorded
+#[derive(Clone, Default)]
+pub struct Capture(Arc<Mutex<Vec<Json>>>);
+
+impl Capture {
+    pub fn record(&self, details: &Json) -> Result<(), PrePostError> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(details.clone());
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn phases(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter_map(|snapshot| match snapshot {
+                Json::Object(fields) => match fields.get("log_event_type") {
+                    Some(Json::Text(phase)) => Some(phase.clone()),
+                    Some(_) | None => None,
+                },
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    None
+                }
+            })
+            .collect()
     }
 }

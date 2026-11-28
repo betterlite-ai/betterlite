@@ -162,6 +162,12 @@ where
         self.header("authorization")
     }
 
+    pub(crate) fn pre_call(&self) -> bool {
+        self.state
+            .model_call_details
+            .contains_key("api_call_start_time")
+    }
+
     pub(crate) fn post_call(&self) -> bool {
         self.state
             .model_call_details

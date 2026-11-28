@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use betterlite_bedrock::rerank::plan::RerankEnvironment;
 use betterlite_bedrock::transcription::error::CallError;
 use betterlite_models::decisions::Json;
@@ -10,6 +12,7 @@ use super::fixture::{
 use crate::bedrock_other_dispatch::call::{BedrockOtherOperation, RerankOperation};
 use crate::bedrock_other_dispatch::error::BedrockOtherError;
 use crate::bedrock_other_dispatch::test_support::client::Reply;
+use crate::bedrock_other_dispatch::test_support::factory::{ClientCall, Kind};
 use crate::bedrock_other_dispatch::test_support::{NOW_SECONDS, credentials, instant};
 
 const ACCESS_KEY: &str = "AKIAIOSFODNN7EXAMPLE";
@@ -64,6 +67,21 @@ fn operation<'call>(
         now: instant(NOW_SECONDS).expect("the fixture instant"),
         generated_id: GENERATED_ID,
     })
+}
+
+fn rerank_call<'call>(request: RerankRequest, optional: &'call str) -> RerankOperation<'call> {
+    RerankOperation {
+        request,
+        optional_params: params(optional),
+        api_base: None,
+        extra_headers: None,
+        api_key: None,
+        timeout: None,
+        is_async: false,
+        environment: RerankEnvironment::default(),
+        now: instant(NOW_SECONDS).expect("the fixture instant"),
+        generated_id: GENERATED_ID,
+    }
 }
 
 fn field<'json>(body: &'json Json, name: &str) -> &'json Json {
@@ -251,10 +269,68 @@ async fn extra_headers_forwarded() {
     assert_eq!(outcome.header("x-trace"), Some("t1"));
 }
 
+// api_base replaces the agent-runtime host the prepared request is posted to
+async fn api_base_endpoint() {
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
+    let mut call = rerank_call(request(MODEL_ARN, None, documents(1)), CREDENTIALS);
+    call.api_base = Some("https://proxy.example/base");
+    let outcome = run(&fixture, BedrockOtherOperation::Rerank(call)).await;
+    assert_eq!(outcome.posted().url, "https://proxy.example/base/rerank");
+}
+
+// the caller timeout reaches the posted request as its deadline
+async fn timeout_deadline() {
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
+    let mut call = rerank_call(request(MODEL_ARN, None, documents(1)), CREDENTIALS);
+    call.timeout = Some(Duration::from_millis(250));
+    let outcome = run(&fixture, BedrockOtherOperation::Rerank(call)).await;
+    assert_eq!(outcome.posted().deadline, Some(Duration::from_millis(250)));
+}
+
+// is_async posts through the async client and skips the sync-only reply log
+async fn async_rerank() {
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
+    let mut call = rerank_call(request(MODEL_ARN, None, documents(1)), CREDENTIALS);
+    call.is_async = true;
+    let outcome = run(&fixture, BedrockOtherOperation::Rerank(call)).await;
+    assert_eq!(
+        outcome.calls,
+        [ClientCall {
+            kind: Kind::Async,
+            provider: None,
+            timeout: None,
+        }],
+        "the async rerank asks for the async client"
+    );
+    assert!(
+        !outcome.post_call(),
+        "the async rerank does not log the raw reply"
+    );
+    let results = outcome
+        .rerank()
+        .results
+        .as_ref()
+        .expect("the reply carries results");
+    assert_eq!(results.len(), 2);
+}
+
+// a non-default environment runtime endpoint replaces the regional agent-runtime host
+async fn environment_endpoint() {
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
+    let mut call = rerank_call(request(MODEL_ARN, None, documents(1)), CREDENTIALS);
+    call.environment.runtime_endpoint = Some("https://environment.example");
+    let outcome = run(&fixture, BedrockOtherOperation::Rerank(call)).await;
+    assert_eq!(outcome.posted().url, "https://environment.example/rerank");
+}
+
 pub(super) async fn case() {
     agent_runtime_and_documents().await;
     top_n_and_region().await;
     reply_shape().await;
     provider_failure().await;
     extra_headers_forwarded().await;
+    api_base_endpoint().await;
+    timeout_deadline().await;
+    async_rerank().await;
+    environment_endpoint().await;
 }

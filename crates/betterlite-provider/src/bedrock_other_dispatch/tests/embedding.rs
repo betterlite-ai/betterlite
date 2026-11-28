@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 use std::time::SystemTime;
 
 use betterlite_bedrock::bedrock_embedding_io::response::EmbeddingReply;
+use betterlite_bedrock::bedrock_embedding_io::transport::{ASYNC_CLIENT_PROVIDER, Timeout};
 use betterlite_bedrock::embedding_call::{EmbeddingCallResponse, EmbeddingEnvironment};
 use betterlite_models::decisions::Json;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_prompts::arguments::json::Json as PromptJson;
+use secrecy::SecretString;
 
 use super::fixture::{Fixture, Handler, environment, object, params, run, value};
 use crate::bedrock_other_dispatch::call::{
@@ -28,6 +30,9 @@ const MARENGO3: &str = "twelvelabs.marengo-embed-3-0-v1:0";
 const IDENTITY: &str = r#"{"aws_access_key_id": "AKIAIOSFODNN7EXAMPLE", "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "aws_region_name": "us-east-1"}"#;
 const COHERE_QUERY: &str = r#"{"aws_access_key_id": "AKIAIOSFODNN7EXAMPLE", "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "aws_region_name": "us-east-1", "input_type": "search_query"}"#;
 const MARENGO_IMAGE: &str = r#"{"aws_access_key_id": "AKIAIOSFODNN7EXAMPLE", "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "aws_region_name": "us-east-1", "input_type": "image"}"#;
+const MARENGO_TRUNCATE: &str = r#"{"aws_access_key_id": "AKIAIOSFODNN7EXAMPLE", "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "aws_region_name": "us-east-1", "textTruncate": "END"}"#;
+const KEYS: &str = r#"{"aws_access_key_id": "AKIAIOSFODNN7EXAMPLE", "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}"#;
+const VECTOR: &str = r#"{"embedding": [0.5], "inputTextTokenCount": 1}"#;
 
 fn scripted(replies: &[Reply]) -> Fixture {
     Fixture::new(replies, credentials(ACCESS_KEY, SECRET_KEY))
@@ -99,6 +104,29 @@ fn operation<'call>(
     })
 }
 
+fn embedding_call<'call>(
+    text: &'call str,
+    optional: &'call str,
+    environment: &'call BTreeMap<String, String>,
+) -> EmbeddingOperation<'call> {
+    EmbeddingOperation {
+        model: TITAN,
+        input: EmbeddingInput::Text(text),
+        optional_params: params(optional),
+        api_base: None,
+        extra_headers: None,
+        api_key: None,
+        timeout: None,
+        aembedding: false,
+        drop_params: false,
+        environment: EmbeddingEnvironment {
+            variables: environment,
+            runtime_endpoint: None,
+            bearer_token: None,
+        },
+    }
+}
+
 // Titan G1 answers a float vector, signed at the fixture instant through the sync client
 async fn titan_g1_vector() {
     let env = environment("{}");
@@ -134,9 +162,11 @@ async fn titan_g1_vector() {
         [ClientCall {
             kind: Kind::Sync,
             provider: None,
+            timeout: None,
         }],
         "the non-async embedding leaf asks for the sync client"
     );
+    assert!(g1_outcome.post_call(), "the leaf logs its reply");
 }
 
 // Titan V2 answers an encoded binary vector when it is asked for one
@@ -384,6 +414,8 @@ async fn async_status() {
     );
     assert_eq!(outcome.regions, [String::from("us-east-1")]);
     assert!(optional.is_empty());
+    assert!(outcome.pre_call(), "the status lookup logs its request");
+    assert!(outcome.post_call(), "the status lookup logs its reply");
 }
 
 // The caller's extra headers reach the signed embedding request
@@ -418,6 +450,117 @@ async fn extra_headers_forwarded() {
     assert_eq!(outcome.header("x-trace"), Some("t1"));
 }
 
+// api_base replaces the runtime endpoint the signed embedding request is posted to
+async fn api_base_endpoint() {
+    let env = environment("{}");
+    let text = String::from("hello");
+    let fixture = scripted(&[Reply::status(200, VECTOR)]);
+    let mut call = embedding_call(&text, IDENTITY, &env);
+    call.api_base = Some("https://proxy.example/bedrock");
+    let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
+    assert_eq!(
+        outcome.posted().url,
+        "https://proxy.example/bedrock/model/amazon.titan-embed-text-v1/invoke"
+    );
+}
+
+// aembedding asks for the async bedrock client and hands it the caller's timeout
+async fn async_client_timeout() {
+    let env = environment("{}");
+    let text = String::from("hello");
+    let fixture = scripted(&[Reply::status(200, VECTOR)]);
+    let mut call = embedding_call(&text, IDENTITY, &env);
+    call.aembedding = true;
+    call.timeout = Some(Timeout::Seconds(2.5));
+    let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
+    assert_eq!(
+        outcome.calls,
+        [ClientCall {
+            kind: Kind::Async,
+            provider: Some(String::from(ASYNC_CLIENT_PROVIDER)),
+            timeout: Some(Timeout::Seconds(2.5)),
+        }],
+        "the async branch builds its client with the caller timeout"
+    );
+    assert_eq!(
+        floats(&batch(outcome.embedding()).data[0].embedding),
+        [0.5_f64]
+    );
+}
+
+// a bearer api_key replaces the signature with the token it carries
+async fn bearer_api_key() {
+    let env = environment("{}");
+    let text = String::from("hello");
+    let key = SecretString::from(String::from("bedrock-token"));
+    let fixture = scripted(&[Reply::status(200, VECTOR)]);
+    let mut call = embedding_call(&text, IDENTITY, &env);
+    call.api_key = Some(&key);
+    let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
+    assert_eq!(outcome.authorization(), Some("Bearer bedrock-token"));
+    assert!(
+        outcome.header("x-amz-date").is_none(),
+        "the bearer path does not sign the request"
+    );
+}
+
+// a Marengo 2.7-only parameter is refused unless drop_params removes it
+async fn drop_params_forwarded() {
+    let reply = r#"{"data": [{"embedding": [0.5]}]}"#;
+    let env = environment("{}");
+    let text = String::from("hello");
+    let refused_fixture = scripted(&[Reply::status(200, reply)]);
+    let mut refused = embedding_call(&text, MARENGO_TRUNCATE, &env);
+    refused.model = MARENGO3;
+    let failure = run(&refused_fixture, BedrockOtherOperation::Embedding(refused)).await;
+    assert!(matches!(failure.error(), BedrockOtherError::Embedding(_)));
+    assert!(
+        failure.requests.is_empty(),
+        "the refused body is never posted"
+    );
+    let dropped_fixture = scripted(&[Reply::status(200, reply)]);
+    let mut dropped = embedding_call(&text, MARENGO_TRUNCATE, &env);
+    dropped.model = MARENGO3;
+    dropped.drop_params = true;
+    let outcome = run(&dropped_fixture, BedrockOtherOperation::Embedding(dropped)).await;
+    assert_eq!(outcome.requests.len(), 1);
+    assert_eq!(
+        floats(&batch(outcome.embedding()).data[0].embedding),
+        [0.5_f64]
+    );
+}
+
+// the environment's runtime endpoint replaces the regional host
+async fn environment_endpoint() {
+    let variables = environment("{}");
+    let text = String::from("hello");
+    let fixture = scripted(&[Reply::status(200, VECTOR)]);
+    let mut call = embedding_call(&text, IDENTITY, &variables);
+    call.environment.runtime_endpoint = Some("https://environment.example");
+    let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
+    assert_eq!(
+        outcome.posted().url,
+        "https://environment.example/model/amazon.titan-embed-text-v1/invoke"
+    );
+}
+
+// an environment region signs against that region when no optional param names one
+async fn environment_region() {
+    let variables = environment(r#"{"AWS_REGION": "eu-west-1"}"#);
+    let text = String::from("hello");
+    let fixture = scripted(&[Reply::status(200, VECTOR)]);
+    let outcome = run(
+        &fixture,
+        BedrockOtherOperation::Embedding(embedding_call(&text, KEYS, &variables)),
+    )
+    .await;
+    assert_eq!(
+        outcome.posted().url,
+        "https://bedrock-runtime.eu-west-1.amazonaws.com/model/amazon.titan-embed-text-v1/invoke"
+    );
+    assert_eq!(outcome.regions, [String::from("eu-west-1")]);
+}
+
 pub(super) async fn case() {
     titan_g1_vector().await;
     titan_v2_binary_vector().await;
@@ -429,4 +572,10 @@ pub(super) async fn case() {
     marengo_payloads().await;
     async_status().await;
     extra_headers_forwarded().await;
+    api_base_endpoint().await;
+    async_client_timeout().await;
+    bearer_api_key().await;
+    drop_params_forwarded().await;
+    environment_endpoint().await;
+    environment_region().await;
 }

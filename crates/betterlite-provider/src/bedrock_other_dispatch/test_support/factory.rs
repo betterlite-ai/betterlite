@@ -17,10 +17,11 @@ pub enum Kind {
     Async,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClientCall {
     pub kind: Kind,
     pub provider: Option<String>,
+    pub timeout: Option<Timeout>,
 }
 
 // B173 builds the client each leaf asks for; the fixture hands back its scripted transport and records the ask
@@ -57,13 +58,14 @@ impl Factory {
         }
     }
 
-    fn add(&self, kind: Kind, provider: Option<&str>) {
+    fn add(&self, kind: Kind, provider: Option<&str>, timeout: Option<Timeout>) {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(ClientCall {
                 kind,
                 provider: provider.map(str::to_owned),
+                timeout,
             });
     }
 }
@@ -71,13 +73,13 @@ impl Factory {
 impl EmbeddingClientFactory for Factory {
     type Client = FixtureClient;
 
-    fn sync_client(&self, _timeout: Option<Timeout>) -> Self::Client {
-        self.add(Kind::Sync, None);
+    fn sync_client(&self, timeout: Option<Timeout>) -> Self::Client {
+        self.add(Kind::Sync, None, timeout);
         self.client()
     }
 
-    fn async_client(&self, provider: &str, _timeout: Option<Timeout>) -> Self::Client {
-        self.add(Kind::Async, Some(provider));
+    fn async_client(&self, provider: &str, timeout: Option<Timeout>) -> Self::Client {
+        self.add(Kind::Async, Some(provider), timeout);
         self.client()
     }
 }
@@ -86,12 +88,12 @@ impl RerankClientFactory for Factory {
     type Client = FixtureClient;
 
     fn sync_client(&self) -> Self::Client {
-        self.add(Kind::Sync, None);
+        self.add(Kind::Sync, None, None);
         self.client()
     }
 
     fn async_client(&self) -> Self::Client {
-        self.add(Kind::Async, None);
+        self.add(Kind::Async, None, None);
         self.client()
     }
 }
@@ -100,12 +102,12 @@ impl ImageClientFactory for Factory {
     type Client = FixtureClient;
 
     fn sync_client(&self) -> Self::Client {
-        self.add(Kind::Sync, None);
+        self.add(Kind::Sync, None, None);
         self.client()
     }
 
     fn async_client(&self, _timeout: Option<Duration>) -> Self::Client {
-        self.add(Kind::Async, None);
+        self.add(Kind::Async, None, None);
         self.client()
     }
 }

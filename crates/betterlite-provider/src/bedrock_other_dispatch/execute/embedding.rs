@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use betterlite_bedrock::bedrock_embedding_io::transport::ClientFactory as EmbeddingClientFactory;
@@ -26,7 +25,7 @@ where
     Transport: LegacyEmbeddingTransport,
     Files: Sync,
 {
-    let input: Cow<'_, [String]> = operation.input.list();
+    let input = operation.input.list();
     let mut call = EmbeddingCall {
         model: operation.model,
         input: input.as_ref(),
