@@ -1,0 +1,33 @@
+task: B6764
+deviations:
+  - what: Config entries parse into a typed McpServerConfig serde struct with every TypedDict key as a field, and the keys the loader inspects raw (server_id, dcr_bridge, per_server_oauth_discovery, pinned_tools, token_validation, mcp_info values) are betterlite's decisions::Json rather than Python dicts.
+    why: the workspace bans serde_json::Value and Map, and the config crate parses YAML into typed structs; the key set is the TypedDict's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L352-L416
+  - what: Every config failure is a ConfigError variant naming the field. The text follows the LiteLLM ValueError, but the "(got <repr>)" tail is left out because it renders Python's repr of the value.
+    why: docs/compatibility.md forbids porting repr and str text, and betterlite reports a wrong-typed value by field name with no pydantic layer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2553-L2585
+  - what: An explicit per_server_oauth_discovery null loads as the default false. LiteLLM reads the key with .get(key, False) and then rejects None as "must be a boolean"; serde maps an explicit null to None here, and docs/compatibility.md makes null take the default.
+    why: the compatibility rule for null wins, and the workspace bans the custom deserializer that would keep presence information.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L453-L466
+  - what: The collaborators come in through the ConfigLoader constructor (the ServerBuilder pieces, DiscoverySlots, MetadataFetcher, DcrHydrator, OpenApiToolSink, InstructionsCache, ServerDefinitionCaches, StdioPolicy) instead of being methods and attributes of one global MCPServerManager singleton.
+    why: betterlite keeps no module-level state and passes dependencies through constructors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2391-L2405
+  - what: name_for_prefix is computed inline as the alias when non-empty else the server name, where LiteLLM builds a temporary TempServer object and calls get_server_prefix on it.
+    why: betterlite's get_server_prefix takes a real MCPServer and a PrefixPolicy, so reading the one string by constructing a throwaway record would be a class shape port; a temp server has no cached short_prefix and no server_id, so both modes give the same string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2440-L2446
+  - what: The redacted dump is standard JSON with real JSON values. The same five fields are masked with "**REDACTED**" unless they are null, and non-secret values keep their JSON types where LiteLLM's str(value) turns every value into text and json.dumps formats the dump.
+    why: docs/compatibility.md fixes output as standard JSON and this is a debug log; the masked field list and the mask text match LiteLLM exactly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1404-L1419
+  - what: DcrHydrator::hydrate returns bool, so the loader logs the success line only; the per-server failure line ("failed to hydrate DCR client for server_id=...") cannot be emitted from the load and belongs to the DcrHydration implementation that holds the error.
+    why: the trait the task declares returns bool and B6595 implements it by delegating to hydrate_config_server_dcr_client; the load still never fails because of hydration, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2709-L2729
+  - what: OpenApiToolConfig.auth_type is Option<McpAuthType> with eight variants, so the four MCPAuth modes it cannot name (aws_sigv4, oauth2_id_jag, true_passthrough, oauth_delegate) are recorded as None; relays_upstream_auth and upstream_token_header carry those modes' routing.
+    why: B4683's OpenApiToolConfig declares McpAuthType and narrowing is the only way to fill a merged type without changing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2838-L2848
+  - what: config_ids_taken_by_db is a tested public helper with no caller in this load path.
+    why: LiteLLM calls it from the registry reload that has both the config and the database halves, not from load_servers_from_config, whose database registry is not loaded yet; B6765's reload is its caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L568-L590
+  - what: Servers are inserted into ServerRegistry::config_servers behind a shared async RwLock and OpenAPI tools are written through the OpenApiToolSink, where LiteLLM writes self.config_mcp_servers and the global_mcp_tool_registry module singleton.
+    why: B4731 keeps config and database servers in separate maps with no manager singleton, and B4680's tool registry is injected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2852-L2862
+kept_bugs: []

@@ -10,6 +10,7 @@ use super::setup::{Quiet, call, remote, state};
 use super::transport::{Signer, Source, Transport};
 use betterlite_context::anthropic_catalog_lookup::error::CatalogLookupError;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_http::error::HttpError;
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
@@ -159,12 +160,15 @@ fn send_request<'run>(
     FixtureError,
 > {
     let betas = BetaMatrix(IndexMap::default());
-    let supplied_buffered = session.transport.input.native.supplied.map(|kind| {
-        super::bedrock::rerank::transport::SuppliedClient {
+    let supplied_buffered = session
+        .transport
+        .input
+        .native
+        .supplied
+        .map(|kind| SuppliedClient {
             kind,
             transport: &session.transport,
-        }
-    });
+        });
     let supplied_stream = session.transport.input.native.supplied.map(|kind| {
         super::bedrock::converse_call::transport::SuppliedStream {
             kind,

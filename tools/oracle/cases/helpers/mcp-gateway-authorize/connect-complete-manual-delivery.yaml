@@ -1,0 +1,60 @@
+kind: helper
+name: mcp-gateway-authorize-connect-complete-manual-delivery
+call:
+  b4675:
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback', 'https://claude.ai/api/mcp/auth_callback']
+    servers: []
+    steps:
+      - name: mints-flow
+        kind: aggregate
+        now: 1700000000
+        path: /authorize
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: null
+        tokens: [handle-1, jti-1]
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: manual
+        kind: complete
+        now: 1700000000
+        path: /authorize/complete
+        query: null
+        cookie_from: 0
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: null
+        tokens: [code-jti-1]
+        handle: handle-1
+        delivery: manual
+        team_id: null
+        decision: approve
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+env: {}
+compare: {ignore: []}

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::azure_assistant_definitions::error::DefinitionsError;
@@ -105,9 +105,9 @@ fn async_client_inputs() {
     let (api, _transport) = harness(200, MESSAGE);
     let client = api
         .assistants
-        .azure_client(&request, None, ClientKind::Async)
+        .azure_client(&request, None, ClientKind::Asynchronous)
         .unwrap();
-    assert_eq!(client.kind, ClientKind::Async);
+    assert_eq!(client.kind, ClientKind::Asynchronous);
     assert!(client.inputs.as_ref().unwrap().http_client.is_async);
 }
 

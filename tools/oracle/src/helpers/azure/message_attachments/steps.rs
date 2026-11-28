@@ -6,7 +6,7 @@ use betterlite_azure::azure_assistant_definitions::operations::{AssistantsApi, C
 use betterlite_azure::azure_message_attachments::operations::{MessageCall, MessagesApi};
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints::Settings;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
@@ -15,7 +15,7 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{MESSAGE, NoSources, PAGE, Wire};
 use super::reports;
-use super::{Input, KindName, Step};
+use super::{Input, Step};
 
 const DEFAULT_TIMEOUT: f64 = 600.0;
 const THREAD_ID: &str = "thread_1";
@@ -123,9 +123,9 @@ fn message_step(runtime: &Runtime, step: &Step, requested: Requested) -> HelperR
     reports::operation(&harness.wire, outcome)
 }
 
-fn supplied_client(kind: KindName, wire: &Arc<Wire>) -> AzureAssistantsClient<'static, Wire> {
+fn supplied_client(kind: ClientKind, wire: &Arc<Wire>) -> AzureAssistantsClient<'static, Wire> {
     AzureAssistantsClient {
-        kind: client_kind(kind),
+        kind,
         inputs: None,
         transport: Arc::clone(wire),
         base_url: String::from(SUPPLIED_BASE_URL),
@@ -142,12 +142,5 @@ const fn flag(value: Option<&Value>) -> Option<bool> {
         Some(Value::Bool(state)) => Some(*state),
         Some(_) => Some(false),
         None => None,
-    }
-}
-
-const fn client_kind(kind: KindName) -> ClientKind {
-    match kind {
-        KindName::Sync => ClientKind::Sync,
-        KindName::Async => ClientKind::Async,
     }
 }

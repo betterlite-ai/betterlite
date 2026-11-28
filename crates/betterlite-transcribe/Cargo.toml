@@ -17,6 +17,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-sigv4 = { path = "../betterlite-sigv4" }
 chrono.workspace = true
 claxon = "0.4.3"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }

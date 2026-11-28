@@ -4,8 +4,9 @@ mod tests;
 
 use std::fmt::Display;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::speech::call::{SpeechCall, audio_speech};
-use betterlite_openai::speech::client::{ClientKind, select_client};
+use betterlite_openai::speech::client::select_client;
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::SpeechRequest;
 use betterlite_openai::speech::result::SpeechResponse;
@@ -80,7 +81,7 @@ async fn result_view(response: SpeechResponse, limit: usize) -> Result<Value, Sp
 fn client_view(input: &Input) -> Result<Value, SpeechError> {
     let connection = input::connection(&input.client)?;
     let kind = if input.client.aspeech {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };

@@ -1,19 +1,13 @@
 use std::future::Future;
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::batches::error::SdkError;
 use crate::batches::records::{BatchCreate, BatchQuery};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
 
 // httpx.Timeout: one number for every phase, or one per phase
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]

@@ -4,7 +4,7 @@ use std::sync::PoisonError;
 use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient;
 use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
 use betterlite_azure::azure_assistant_definitions::operations::AssistantsReply;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 use serde_json::{Value, json};
 
@@ -44,13 +44,6 @@ pub(super) fn failure(error: &DefinitionsError) -> Result<Value, Box<HelperError
     }
 }
 
-const fn kind_name(kind: ClientKind) -> &'static str {
-    match kind {
-        ClientKind::Sync => "sync",
-        ClientKind::Async => "async",
-    }
-}
-
 // The facade's own reply and kind, plus everything the wire saw before answering.
 pub(super) fn operation(
     wire: &Wire,
@@ -60,7 +53,7 @@ pub(super) fn operation(
     match outcome {
         Ok(reply) => Ok(json!({
             "requests": requests,
-            "kind": kind_name(reply.kind),
+            "kind": reply.kind.label(),
             "result": serde_json::to_value(&reply.reply).unwrap_or(Value::Null),
         })),
         Err(error) => Ok(json!({"requests": requests, "error": failure(&error)?})),
@@ -78,7 +71,7 @@ pub(super) fn client_report<T>(client: &AzureAssistantsClient<'_, T>) -> Value {
         .as_ref()
         .map_or(Value::Null, |inputs| json!(inputs.max_retries));
     json!({
-        "kind": kind_name(client.kind),
+        "kind": client.kind.label(),
         "source": source,
         "base_url": client.base_url.trim_end_matches('/'),
         "max_retries": max_retries,
@@ -88,7 +81,7 @@ pub(super) fn client_report<T>(client: &AzureAssistantsClient<'_, T>) -> Value {
 
 pub(super) fn client_failure(kind: ClientKind, error: &DefinitionsError) -> HelperResult {
     Ok(json!({
-        "kind": kind_name(kind),
+        "kind": kind.label(),
         "source": "constructed",
         "error": failure(error)?,
     }))

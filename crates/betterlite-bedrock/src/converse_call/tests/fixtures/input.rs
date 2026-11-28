@@ -1,3 +1,4 @@
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use std::collections::BTreeMap;
@@ -59,7 +60,7 @@ pub(crate) enum Failure {
 #[derive(Clone, Default)]
 pub(crate) struct Native {
     pub(crate) failure: Failure,
-    pub(crate) supplied: Option<super::bedrock::rerank::transport::ClientKind>,
+    pub(crate) supplied: Option<ClientKind>,
     pub(crate) skip_log: bool,
     pub(crate) chunk_size: Option<u64>,
 }

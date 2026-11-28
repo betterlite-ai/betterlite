@@ -23,7 +23,7 @@ where
 }
 
 // mapped by hand: serde hands an arbitrary_precision float to CacheValue::Object, and an integer past i64 would round as a float
-pub(crate) fn cache_from_json(value: &Json) -> Result<CacheValue, DualCacheError> {
+pub fn cache_from_json(value: &Json) -> Result<CacheValue, DualCacheError> {
     Ok(match value {
         Json::Null => CacheValue::Null,
         Json::Bool(flag) => CacheValue::Boolean(*flag),

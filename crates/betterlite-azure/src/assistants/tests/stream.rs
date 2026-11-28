@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::thread_runs::records::RunEvent;
 
 use super::support::{self, CREATE_URL, KEY, Recorder, STREAM_BODY, run_body, run_request};

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::studio_identity::Settings;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::agents::collection::{AgentCollection, AgentCollectionFailure};
@@ -20,12 +21,13 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_vertex::studio_agents::config::GeminiAgentsConfig;
+use betterlite_vertex::studio_agents::config::error::GeminiAgentError;
 use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::gemini::{AgentError, GeminiConfig};
 use betterlite_oracle_helper_api::error::HelperError;
 
 use server::Server;
@@ -38,7 +40,7 @@ pub(crate) struct Reply {
 }
 
 pub(crate) struct Fixture {
-    pub(crate) config: GeminiConfig,
+    pub(crate) config: GeminiAgentsConfig,
     pub(crate) clients: HttpClients,
     pub(crate) logging: LoggingState,
     pub(crate) records: Recorder,
@@ -46,9 +48,9 @@ pub(crate) struct Fixture {
 }
 
 impl Fixture {
-    pub(crate) fn new() -> Result<Self, Box<HelperError>> {
+    pub(crate) fn new(settings: Settings) -> Result<Self, Box<HelperError>> {
         Ok(Self {
-            config: GeminiConfig::default(),
+            config: GeminiAgentsConfig { settings },
             clients: HttpClients::new(policy(), proxy_policy()?),
             logging: logging_state()?,
             records: Recorder,
@@ -56,7 +58,7 @@ impl Fixture {
         })
     }
 
-    pub(crate) fn collection(&mut self) -> AgentCollection<'_, GeminiConfig> {
+    pub(crate) fn collection(&mut self) -> AgentCollection<'_, GeminiAgentsConfig> {
         AgentCollection {
             config: &self.config,
             clients: &mut self.clients,
@@ -141,7 +143,7 @@ where
 }
 
 // the class carries the status LiteLLM's raised exception reports, and the compared type, param and code stay null
-pub(crate) fn raised(error: &AgentCollectionFailure<AgentError>) -> Box<HelperError> {
+pub(crate) fn raised(error: &AgentCollectionFailure<GeminiAgentError>) -> Box<HelperError> {
     Box::new(HelperError {
         class: "AgentCollectionError".to_owned(),
         status: Some(error.class.metadata().status_code),

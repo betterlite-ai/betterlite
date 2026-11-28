@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use crate::assistants::client::{ClientOptions, SdkClient};
 use crate::assistants::records::{AssistantCreate, ListParams};
+use betterlite_http::client_kind::ClientKind;
 
 use crate::assistants::operations::AssistantsApi;
 
@@ -33,8 +34,8 @@ fn forwarded_options(api: &AssistantsApi<Recorder>) {
         max_retries: Some(3),
         organization: Some(String::from("o")),
     };
-    let client = api.get_openai_client(ClientKind::Async, full, None);
-    assert_eq!(client.kind, ClientKind::Async);
+    let client = api.get_openai_client(ClientKind::Asynchronous, full, None);
+    assert_eq!(client.kind, ClientKind::Asynchronous);
     let seen = (
         client.api_key.as_ref().map(ExposeSecret::expose_secret),
         client.base_url.as_deref(),
@@ -73,7 +74,7 @@ fn empty_options_are_kept(api: &AssistantsApi<Recorder>) {
 
 fn supplied_client_wins(api: &AssistantsApi<Recorder>) {
     let supplied = SdkClient {
-        kind: ClientKind::Async,
+        kind: ClientKind::Asynchronous,
         api_key: None,
         base_url: None,
         timeout: None,
@@ -82,7 +83,7 @@ fn supplied_client_wins(api: &AssistantsApi<Recorder>) {
         transport: Arc::clone(&api.transport),
     };
     let chosen = api.get_openai_client(ClientKind::Sync, options("other"), Some(supplied));
-    assert_eq!(chosen.kind, ClientKind::Async);
+    assert_eq!(chosen.kind, ClientKind::Asynchronous);
     assert_eq!(chosen.organization.as_deref(), Some("mine"));
     assert!(chosen.api_key.is_none() && chosen.base_url.is_none());
 }

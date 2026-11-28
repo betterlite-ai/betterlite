@@ -1,0 +1,87 @@
+id: B10212
+title: Python _arealtime runs a realtime session over the production dialer
+description: >-
+  B7889 ports the three realtime HTTP calls of litellm/realtime_api/main.py into the native family `realtime_calls` (crates/betterlite-python/src/realtime_calls.rs with convert.rs, error.rs, http.rs, native.rs and session.rs) and leaves `_arealtime` (main.py L348-L589) out, because nothing could dial a provider socket. B10211 now gives the dialer, B10213 the relay, B1011's production dispatch and the executor of every branch, B10214 the provider configs and the Vertex token port, and B10215 the logging, so this task adds `_arealtime` on top of B7889's family: Python hands Rust a websocket's three methods, and Rust runs B1011's `arealtime` and B10213's `run_realtime_session` with them. Read B7889's merged files first; this task extends them and adds no new family.
+
+
+  Python side (python/betterlite/realtime_api/main.py and realtime_api/__init__.py). `async def _arealtime(model, websocket, api_base=None, api_key=None, api_version=None, azure_ad_token=None, client=None, timeout=None, query_params=None, **kwargs) -> None` keeps LiteLLM's signature, so the def line carries `# noqa: PLR0913, PLR0917` and the timeout line `# noqa: ASYNC109`, each followed by the pinned LiteLLM link to main.py L349. The websocket is checked once against a runtime_checkable Protocol with async `receive_text()`, `send_text(data)` and `close(code, reason)` (the FastAPI and Starlette shape); any other object raises B158's UnsupportedCallArgument, and so does a `client` that is not None, since a Python websockets module cannot cross to Rust. The scope headers come from `websocket.scope["headers"]` when the object has a scope, decoded as latin-1 pairs, and are empty otherwise. The call builds its payload with to_call_payload like the HTTP calls, awaits `NativeRealtimeSession.arealtime(payload, receive_text, send_text, close, scope_headers)` and returns None. `_arealtime` joins the imports and `__all__` of realtime_api/__init__.py, and the .pyi gets the native method.
+
+
+  Native side (realtime_calls/native.rs, convert.rs, session.rs and a new realtime_calls/socket.rs, all under B7889's paths). convert.rs builds B1011's RealtimeConnectParams from the named arguments and the kwargs keys it declares (headers, extra_headers, user, metadata, litellm_metadata, guardrails, user_api_key_dict, realtime_protocol, the vertex_* and aws_* keys, tenant_id, client_id, client_secret, azure_username, azure_password, azure_scope) and ignores every other key, as GenericLiteLLMParams(**kwargs) does; RealtimeConnectParams denies unknown fields, so never deserialize the raw kwargs into it. The RealtimeConnectCall gets the model, those params, query_params, `client: None`, `client_sent_beta` from B2457's client_wants_beta over the scope headers, and the get_litellm_params projection the HTTP calls already build. session.rs keeps one `Arc<ProxyPolicy>` resolved from the session's environment and builds both its ProxiedClient (`ProxiedClient::outbound`) and B10211's `WebSocketDialer { proxy }` from it, and resolves the Verification with `TlsPolicy::resolve(&runtime_config(), &environment, None)` as search_ocr/session.rs does. session.rs also builds, once per session, B10214's ProviderRealtimeConfigs from the session's catalog, limits, Studio and Vertex settings, and B10214's Vertex token source over B10183's lookup parts: the session's VertexSettings, a GoogleAuth over its ProxiedClient, the clock, and an AwsCredentialChain built the way B10176's GenaiCore::build builds one. It builds one LoggingLifecycle from an empty CallbackRegistry (the package registers no Python callbacks, as B251's deviation records) and the production parts B10215 lists, and starts one LoggingWorker for B10215's RealtimeLogQueue. native.rs `arealtime` takes `session.logging("_arealtime")`, runs `arealtime(&ProviderRealtimeDispatch::new(configs, tokens, ..), &settings, &mut logging, &resolution, &call)` with B1011's settings loaded from the session's environment, moves the logging state into B10215's RealtimeLoggingObject, and then runs `run_realtime_session(connection, &configs, deps)` with a ClientHandle over the socket adapter, the session's Redactor and Verification, REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES through B2457's setting, RealtimeLoggingPorts over that object, the queue and the object's failure dispatch, and an SdkRuntime and AwsCredentialResolver built the way crates/betterlite-python/src/mcp/setup.rs L28-L43 builds them.
+
+
+  Socket adapter (realtime_calls/socket.rs). `PythonClientSocket` implements B2457's RealtimeClientSocket over the three Python callables and the TaskLocals captured when arealtime is called, turning each coroutine into a Rust future with pyo3-async-runtimes. send_text and receive_text map a raised exception to WebSocketError with its text, so B1009 treats it as a disconnect. close maps a RuntimeError to `ClientCloseError::Runtime` and any other exception to `ClientCloseError::Other`, so B2457's ignore rule for "already completed" and "websocket.close" holds. receive_text keeps its pending Python future inside the adapter and returns to it on the next call, because B10213's relay drops a receive whenever a backend frame wins.
+
+
+  Cancellation. Cancelling the asyncio task that awaits `_arealtime` must end the session the way LiteLLM's CancelledError does: the backend relay flushes usage and logs, the provider socket closes, and the task raises CancelledError. future_into_py drops the Rust future on a cancel and would skip both, so spawn the session on the tokio runtime and let the awaited future hold a `CancellationToken::drop_guard`: the drop fires the session's token, B10213's relay ends through its cancelled path, the backend closes, and the adapter cancels its pending Python receive when it is dropped.
+
+
+  Tests. crates/betterlite-python/tests/test_realtime.py adds `test_realtime_websocket_*` cases that build the wheel's `_arealtime` against a local `websockets.serve` server standing in for OpenAI (api_base http://127.0.0.1:<port>, api_key sk-test), with a fake client websocket over asyncio queues: text relays both ways in one session and the server saw `Authorization: Bearer sk-test`; a server close 1000 closes the fake client with B1008's close; a 401 handshake sends the fake client B1004's server_error event "Upstream realtime handshake rejected with HTTP 401" and close 1008 after one attempt; cancelling the task closes the server's connection and raises CancelledError; a websocket without close and a non-None client raise UnsupportedCallArgument; `gemini/gemini-2.0-flash-live-001` with api_key sk-gemini and api_base at a second local server reaches the Live path with `key=sk-gemini` and B1378's setup frame, and after the server answers setupComplete the fake client receives session.created. realtime_calls::convert::tests add `arealtime_*` tests: the named kwargs reach RealtimeConnectParams, an unknown key is ignored, and an OpenAI-Beta realtime=v1 scope header sets client_sent_beta.
+scope:
+  paths:
+    - crates/betterlite-python/src/realtime_calls.rs
+    - crates/betterlite-python/src/realtime_calls/**
+    - crates/betterlite-python/python/betterlite/_native_realtime_calls.pyi
+    - crates/betterlite-python/python/betterlite/realtime_api/main.py
+    - crates/betterlite-python/python/betterlite/realtime_api/__init__.py
+    - crates/betterlite-python/tests/test_realtime.py
+    - docs/deviations/B10212.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L348-L589
+    why: _arealtime with its wrapper_client decorator, the signature, the kwargs each branch reads and the branch order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1479-L1484
+    why: litellm exports _arealtime beside the three HTTP calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1121-L1140
+    why: The backend task flushes usage and logs in its CancelledError branch when the session is cancelled.
+  - url: https://docs.rs/pyo3-async-runtimes/0.30.0/pyo3_async_runtimes/tokio/fn.future_into_py.html
+    why: future_into_py drops the Rust future when the Python future is cancelled.
+  - url: https://www.starlette.io/websockets/
+    why: The receive_text, send_text, close and scope shape the adapter accepts.
+dod:
+  - text: _arealtime relays a session between a Python websocket and a provider socket through B10213's executor, with LiteLLM's signature and export.
+    proof: [python-sessions, python-lint]
+  - text: The kwargs reach B1011's params the way GenericLiteLLMParams reads them, and unknown keys are ignored.
+    proof: [convert-tests]
+  - text: Cancelling the Python task ends the relay through its cancelled path and closes the provider socket.
+    proof: [python-sessions]
+  - text: Objects that cannot cross to Rust raise UnsupportedCallArgument.
+    proof: [python-sessions]
+  - text: docs/deviations/B10212.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+    - id: python-sessions
+      why: a session does not relay, a close or a refusal answers wrong, a cancel leaves the socket open, or an unsupported argument passes
+      run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_realtime.py -k realtime_websocket
+    - id: convert-tests
+      why: a kwarg is dropped or misread, an unknown key fails the call, or the beta header is missed
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^realtime_calls::convert::tests::arealtime_/)'
+    - id: python-lint
+      why: the Python side fails ruff or basedpyright
+      run: grep -q 'def _arealtime' crates/betterlite-python/python/betterlite/realtime_api/main.py && uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10212.yaml && grep -q 'receive_text' docs/deviations/B10212.yaml
+oracle_cases: []
+deviations:
+  - what: The websocket argument must have async receive_text, send_text and close; any other object raises UnsupportedCallArgument, where LiteLLM duck-types whatever the handlers call.
+    why: Rust holds the three bound methods rather than the Python object, so the shape is checked once up front.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L349-L360
+out_of_scope:
+  - "The three HTTP calls and the family itself: B7889. The dialer: B10211. The relay, dispatch and executor: B10213."
+  - "The top-level betterlite._arealtime export in betterlite/__init__.py: the package export tasks, B158 to B161."
+  - "_realtime_health_check (main.py L631-L742): B1127."
+  - "The Gemini, Vertex and Meta configs and the Vertex token sources: B10214. The logging object, queue and failure dispatch: B10215."
+pitfalls:
+  - "pyo3-async-runtimes needs the TaskLocals of the loop that called _arealtime to run the socket's coroutines from a tokio task; capture them with get_current_locals before spawning, never inside the spawned task."
+  - "A dropped receive must not lose a client message, so the adapter stores the pending future and the next receive_text awaits that same future instead of calling the Python method again."
+  - "Starlette's close after the response finished raises RuntimeError with \"websocket.close\" in its text; map it to ClientCloseError::Runtime with the exception's text unchanged, or B2457's ignore rule stops matching."
+  - "Ruff flags LiteLLM's own signature (PLR0913 and PLR0917 on the def line, ASYNC109 on the timeout parameter line); put each noqa on its flagged line with the pinned link and add no per-file ignore."
+  - "query_params arrives as a dict of strings; pass it as B1011's query map in key order, since the OpenAI URL keeps that order."
+  - "LoggingWorker::start needs a running tokio runtime (Handle::try_current); start the session's worker inside its SdkRuntime once, when the session is built, never per call."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

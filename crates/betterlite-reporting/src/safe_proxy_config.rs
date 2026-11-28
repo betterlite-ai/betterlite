@@ -7,7 +7,6 @@ mod tables;
 mod tests;
 
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::panic::Location;
 
 use serde::Deserialize;
@@ -36,7 +35,7 @@ pub enum ConfigValue {
     Object(ConfigObject),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct ProxyConfigSnapshot {
     pub config: ConfigObject,
     pub general_settings: ConfigObject,
@@ -92,18 +91,15 @@ pub fn build_proxy_environment_report(
 }
 
 #[must_use]
-pub fn build_proxy_bug_report<E>(
-    exception: &E,
+pub fn build_proxy_bug_report(
+    exception_type: &str,
     location: &Location<'_>,
     call: ProxyCall,
     snapshot: &ProxyConfigSnapshot,
     host: Host<'_>,
-) -> BugReport
-where
-    E: Error,
-{
+) -> BugReport {
     build_bug_report(
-        exception,
+        exception_type,
         location,
         CallContext {
             surface: Surface::Proxy,

@@ -1,0 +1,149 @@
+id: B10211
+title: A production realtime WebSocket dialer over one shared tokio-tungstenite client
+description: >-
+  Nothing in production dials a provider's realtime WebSocket. B2457 declared `RealtimeWebSocketDialer` (crates/betterlite-core/src/api/realtime_backend_transport/dial.rs L56) and B1127 declared `RealtimeProbeDialer` (crates/betterlite-core/src/api/realtime_connection_plan.rs L98), and every impl of them, and of `RealtimeBackend` and `RealtimeBackendSource` apart from SizeLimitedSource, is a test or oracle fake. The Aim and Cato guardrails meanwhile open their own tokio-tungstenite sockets (crates/betterlite-guardrails/src/aim/transport.rs L102, crates/betterlite-guardrails/src/cato/transport/websocket.rs L64) with the same request, cap, TLS, timeout and split reader code. This task builds one WebSocket client in betterlite-http, the proxy choice websockets makes in betterlite-config and the dialer over both in betterlite-core, and moves Aim and Cato onto the client. B10213 runs realtime sessions over the dialer, B1125 and B10212 reach it through B10213, and B8642's pass-through connector opens its socket through the same client.
+
+
+  Shared client (crates/betterlite-http/src/websocket_client.rs and websocket_client/). Main declares `pub mod websocket_client;` over a one-line file. `connect(request: WebSocketRequest<'_>) -> Result<WebSocketConnection, WebSocketClientError>` opens one socket the way websockets 15.0.1's `connect` does, with no retry. WebSocketRequest holds the url; the headers as ordered (name, value) pairs, added to the handshake in their order after the ones tungstenite writes; `tls: Option<Arc<rustls::ClientConfig>>`, where None keeps tokio-tungstenite's own rustls with the platform roots (what Aim and Cato use today) and a ws:// URL is always plain TCP; `max_message_size: usize`, set as tungstenite's max_message_size and max_frame_size; `open_timeout: Duration`, one deadline over the TCP connect, the proxy tunnel, TLS and the upgrade; `keepalive: Option<Keepalive>` with `interval` and `timeout`; and `proxy: Option<&ProxyServer>` from betterlite_config::proxy. Through a proxy, open the tunnel with hyper-util's `client::legacy::connect::proxy::Tunnel` (features client-legacy, client-proxy and tokio; hyper-util 0.1.21 is already in Cargo.lock) over its HttpConnector, with `Proxy-Authorization: Basic` built from the server's credentials, then run TLS and the upgrade over the tunneled stream with tokio-tungstenite 0.30.0's `client_async_tls_with_config` (features connect, handshake and rustls-tls-native-roots, as betterlite-guardrails has them). Write no CONNECT parser.
+
+
+  WebSocketConnection holds `sender: WebSocketSender` and `receiver: WebSocketReceiver` over the split stream, with the sink behind one tokio Mutex both halves share. The sender has send_text, send_binary and close(code, reason). The receiver's recv answers the next Text or Binary message, a peer close with its code and reason, or the end of the stream without a close frame, and skips Ping, Pong and bare frames, since tungstenite answers pings itself. With keepalive set, recv sends a ping every interval and, when no pong arrives within timeout, closes the socket with 1011 and reason `keepalive ping timeout` and answers `WebSocketClientError::KeepaliveTimeout`. WebSocketClientError (in websocket_client/error.rs) tells apart Timeout, Io (DNS, TCP and the TLS handshake), Tls (building the config), `Status { status: u16 }` for an upgrade answered with anything but 101, `ProxyStatus { status: u16 }` for a CONNECT answered with anything but 2xx, `Capacity { size, max_size }` for an oversized message, Url, KeepaliveTimeout and Protocol for every other tungstenite error. No variant's message names the URL or a header value.
+
+
+  Proxy choice (crates/betterlite-config/src/proxy.rs). `ProxyPolicy::websocket_route(&self, url: &Url) -> Option<&ProxyRoute>` is websockets' get_proxy (uri.py L192-L225): no route when the private `bypasses(no_proxy, ..)` matches "host:port", with the URL's port or its scheme default; otherwise the first of `wss`, `socks`, `https` for a wss:// URL, or of `ws`, `socks`, `https`, `http` for a ws:// URL, found in `primary`. It never reads `all` or the netrc `fallback`. A route found under `socks` answers `ProxyRoute::Unsupported { scheme: "socks5h" }` even when its value parsed as an http:// proxy, because websockets rewrites such a value to socks5h://. `route` and its callers stay as they are.
+
+
+  Dialer (crates/betterlite-core/src/api/realtime_websocket_dialer.rs and realtime_websocket_dialer/). Main declares `pub mod realtime_websocket_dialer;` in api.rs. `WebSocketDialer { proxy: Arc<ProxyPolicy> }` implements RealtimeWebSocketDialer, and connect(request) runs these steps.
+
+  1. Parse the URL. A scheme other than ws or wss is `DialError::WebSocket` (websockets' InvalidURI).
+
+  2. `RealtimeSsl::Shared` or `Insecure` with a ws:// URL is `DialError::Other` with the message "ssl argument is incompatible with a ws:// URI", the ValueError websockets raises before any I/O and the case B2457's deviation row leaves to the dialer. Insecure passes `websocket_client_config(&Verification::Disabled)` as tls, Shared(verification) passes `websocket_client_config(&verification)`, and Disabled passes None for the plain ws:// socket. A config error is `DialError::Other`.
+
+  3. The proxy is `self.proxy.websocket_route(url)`. Forward(server) tunnels through it. Unsupported with a scheme that starts with socks is `DialError::Other` with "python-socks is required to use a SOCKS proxy", the ImportError LiteLLM raises because its lock has no python-socks. Any other Unsupported scheme is `DialError::Other` naming the scheme (see deviations), and Invalid is `DialError::WebSocket` (websockets' InvalidProxy).
+
+  4. Connect with `max_message_size: request.max_size + 1`, so SizeLimitedSource still decides the exact boundary, `request.open_timeout`, keepalive every 20 seconds with a 20 second timeout (websockets' ping_interval and ping_timeout), and request.headers in their order.
+
+  5. Map the errors so open_realtime_backend_ws retries exactly what LiteLLM retries: Timeout is `DialError::Timeout` "timed out during opening handshake"; Io is `DialError::Os` with the io error's text; Status is `DialError::InvalidStatus { status_code, message: "server rejected WebSocket connection: HTTP <status>" }`; ProxyStatus is `DialError::WebSocket` "proxy rejected connection: HTTP <status>"; Url and Protocol are `DialError::WebSocket`.
+
+  6. Answer `ConnectedBackend { sender, source: Some(source) }`. The sender implements RealtimeBackend over WebSocketSender: send writes Text or Binary, close sends 1000 with an empty reason, and recv answers a WebSocketError saying the receiving half is the relay's source. The source implements RealtimeBackendSource over WebSocketReceiver: recv(None) answers text as Text and binary as Binary, recv(Some(true)) decodes binary as UTF-8 text, recv(Some(false)) answers text as its bytes. A peer close is `RelayReceiveError::Closed(ConnectionClosed { received: Some(CloseFrame { code, reason }), .. })`, an end without a close frame is Closed with `received: None` and message "no close frame received or sent", a keepalive timeout is Closed with `received: None` and message "sent 1011 (internal error) keepalive ping timeout; no close frame received", a Capacity error first closes the backend with 1009 and then answers the same Closed value SizeLimitedSource builds from `betterlite_openai::realtime::message_cap::oversized_message_close`, and any other error is `RelayReceiveError::Failed`.
+
+
+  Probe. WebSocketDialer also implements RealtimeProbeDialer: probe(connection) runs steps 1 to 4 with the connection's url, headers, ssl and max_size, websockets' default open timeout of 10 seconds and no keepalive, closes with 1000 once the upgrade succeeds and answers Ok, as `async with websockets.connect(...): return True` does (realtime_api/main.py L720-L742). A failure is a ProbeDialError whose class is the websockets or Python class LiteLLM would raise (InvalidStatus with `status: Some(status)`, TimeoutError, OSError, InvalidProxyStatus, InvalidURI, ValueError, ImportError) and whose message is the DialError text from step 5.
+
+
+  Aim and Cato (crates/betterlite-guardrails/src/aim/ and cato/). AimWebSocketConnector::connect and Cato's WebSocketConnector::connect call the shared client with their own caps (MAX_STREAM_FRAME_BYTES, MAX_FRAME_BYTES), their open timeout, no keepalive and no proxy, so what they send and accept does not change. Aim passes tls None. Cato passes None for no ssl or SystemRoots and `websocket_client_config` of its verification otherwise, keeping rustls_connector's error mapping. Their TungsteniteReader and TungsteniteWriter become adapters over WebSocketReceiver and WebSocketSender that keep their read and write timeouts and their frame shapes (Aim answers text or UTF-8 binary as a String, Cato answers bytes). `AimError::WebSocket` and `CatoError::WebSocket` carry WebSocketClientError in place of tungstenite::Error, and a connect timeout stays AimError::ConnectTimeout and CatoError::ConnectTimeout. When nothing outside tests in betterlite-guardrails uses tokio-tungstenite any more, move it to its dev-dependencies.
+
+
+  Tests. websocket_client::tests run a local tokio-tungstenite server, a TLS one with an rcgen certificate over tokio-rustls (both already dev-dependencies of betterlite-http) and a local CONNECT proxy, and check: headers arrive in order; a 403 upgrade is Status 403; a proxy 407 is ProxyStatus 407 and the proxy saw `Proxy-Authorization: Basic` for user:secret; a hung upgrade is Timeout after open_timeout; a message one byte over max_message_size is Capacity; a server that never answers pings ends recv with KeepaliveTimeout and the server sees close 1011 `keepalive ping timeout`; a server close 4000 "bye" reaches recv with its code and reason. proxy::tests add websocket_route tests for the scheme order of both URL kinds, NO_PROXY with and without a port, ALL_PROXY ignored, the socks rewrite and DISABLE_AIOHTTP_TRUST_ENV. api::realtime_websocket_dialer::tests drive WebSocketDialer through open_realtime_backend_ws against local servers: a 401 upgrade is InvalidStatus 401 after one attempt, a hung upgrade is retried three times, Shared with a ws:// URL is the ValueError message with no connection made, a SOCKS_PROXY is the ImportError message, a frame of max_size + 1 bytes and one far over it both close the session with 1009 "message too big", a missed pong reaches the relay as the keepalive Closed value, and the probe answers Ok on a 101 and InvalidStatus on a 403.
+scope:
+  paths:
+    - crates/betterlite-http/src/websocket_client.rs
+    - crates/betterlite-http/src/websocket_client/**
+    - crates/betterlite-config/src/proxy.rs
+    - crates/betterlite-config/src/proxy/**
+    - crates/betterlite-core/src/api/realtime_websocket_dialer.rs
+    - crates/betterlite-core/src/api/realtime_websocket_dialer/**
+    - crates/betterlite-guardrails/src/aim/transport.rs
+    - crates/betterlite-guardrails/src/aim/error.rs
+    - crates/betterlite-guardrails/src/aim/tests/**
+    - crates/betterlite-guardrails/src/cato/transport/websocket.rs
+    - crates/betterlite-guardrails/src/cato/error.rs
+    - crates/betterlite-guardrails/src/cato/tests/**
+    - Cargo.lock
+    - docs/deviations/B10211.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6128-L6178
+    why: _open_realtime_backend_ws, the websockets.connect arguments the dialer receives and the exception classes LiteLLM retries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L370-L447
+    why: get_ssl_configuration and get_shared_realtime_ssl_context, the TLS every realtime socket uses (ssl_verify, SSL_CERT_FILE, SSL_ECDH_CURVE).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L631-L742
+    why: _realtime_health_check, the single handshake the probe dialer makes with websockets' default open timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L420-L428
+    why: Aim's websockets.connect call that AimWebSocketConnector ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L626-L635
+    why: Cato's websockets.connect call with its ssl arguments.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L296-L325
+    why: connect's defaults at the version uv.lock pins (compression, user agent, proxy=True, open_timeout 10, ping 20 and 20, max_size).
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L386-L398
+    why: The ssl and URI checks that raise ValueError before any I/O.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/uri.py#L192-L225
+    why: get_proxy, the bypass check and the proxy order websocket_route follows.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L670-L740
+    why: The SOCKS ImportError without python-socks and the CONNECT request with Proxy-Authorization.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/connection.py#L803-L845
+    why: The keepalive loop and its 1011 "keepalive ping timeout" failure.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/exceptions.py#L225-L260
+    why: The texts of InvalidProxyStatus and InvalidStatus the dialer's messages copy.
+  - url: https://docs.rs/hyper-util/0.1.21/hyper_util/client/legacy/connect/proxy/struct.Tunnel.html
+    why: The CONNECT tunnel the client uses instead of a hand-written proxy handshake.
+  - url: https://docs.rs/tokio-tungstenite/0.30.0/tokio_tungstenite/fn.client_async_tls_with_config.html
+    why: The upgrade over an already open stream with an optional rustls connector.
+dod:
+  - text: The shared client opens plain, TLS and tunneled sockets with ordered headers, one open deadline, a message cap, a keepalive and typed errors, and its halves send and receive independently.
+    proof: [client-tests]
+  - text: websocket_route chooses the proxy websockets would, and every other proxy caller is unchanged.
+    proof: [proxy-tests]
+  - text: WebSocketDialer implements RealtimeWebSocketDialer and RealtimeProbeDialer with the error classes and texts LiteLLM's retry and close paths read, and its halves implement RealtimeBackend and RealtimeBackendSource with the 1009 and keepalive closes.
+    proof: [dialer-tests, production-impl]
+  - text: Aim and Cato open their sockets through the shared client, and their tests still pass.
+    proof: [guardrail-tests, no-copies]
+  - text: docs/deviations/B10211.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: client-tests
+      why: a socket opens wrong, a header is lost or reordered, the proxy or TLS path fails, or a limit or the keepalive is missing
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^websocket_client::/)'
+    - id: proxy-tests
+      why: websocket_route picks the wrong proxy, or the HTTP routes changed
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^proxy::tests::websocket_route/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^proxy::/)'
+    - id: dialer-tests
+      why: the dialer retries the wrong failures, sends the wrong texts, misses the 1009 or keepalive close, or the probe answers wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_websocket_dialer::/)'
+    - id: production-impl
+      why: a transport trait still has no production impl
+      run: for name in RealtimeWebSocketDialer RealtimeProbeDialer RealtimeBackend RealtimeBackendSource; do test -n "$(grep -rl --exclude-dir=tests "impl $name for" crates/betterlite-core/src/api/realtime_websocket_dialer.rs crates/betterlite-core/src/api/realtime_websocket_dialer)" || exit 1; done
+    - id: guardrail-tests
+      why: Aim or Cato still connect on their own, or their behavior changed
+      run: grep -q 'websocket_client' crates/betterlite-guardrails/src/aim/transport.rs && grep -q 'websocket_client' crates/betterlite-guardrails/src/cato/transport/websocket.rs && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^aim::/) | test(/^cato::/)'
+    - id: no-copies
+      why: a crate outside the shared client still builds its own tungstenite handshake
+      run: test -z "$(grep -rnE --exclude-dir=tests 'connect_async|client_async|into_client_request' crates/betterlite-guardrails/src crates/betterlite-core/src/api/realtime_websocket_dialer.rs crates/betterlite-core/src/api/realtime_websocket_dialer)"
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10211.yaml && grep -q 'permessage-deflate' docs/deviations/B10211.yaml && grep -q 'SSL_ECDH_CURVE' docs/deviations/B10211.yaml && grep -q 'DISABLE_AIOHTTP_TRUST_ENV' docs/deviations/B10211.yaml
+oracle_cases: []
+deviations:
+  - what: Realtime, Aim and Cato sockets offer no permessage-deflate extension, where websockets 15.0.1 offers it by default.
+    why: tungstenite has no deflate support; a provider that requires compression answers the upgrade as it would to any client without it.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L304
+  - what: The upgrade and the proxy CONNECT carry no `User-Agent` header, where websockets sends `Python/3.x websockets/15.0.1`.
+    why: The text names Python's runtime version, and no provider at the pin reads it.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L307
+  - what: SSL_ECDH_CURVE and litellm.ssl_ecdh_curve are not applied to realtime sockets; ssl_verify, SSL_CERT_FILE and the CA bundle are.
+    why: RealtimeSsl carries only a Verification, and websocket_client_config builds the shared config without a curve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L406
+  - what: An https:// proxy URL in WSS_PROXY, WS_PROXY, HTTPS_PROXY or HTTP_PROXY fails the realtime connection with an error naming the scheme, where websockets opens TLS to the proxy.
+    why: betterlite-config parses only http:// proxies; the realtime client sees the same close as any other connection error.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L800-L812
+  - what: DISABLE_AIOHTTP_TRUST_ENV (or general_settings.disable_aiohttp_trust_env) also turns off environment proxies for realtime sockets, where websockets reads them regardless.
+    why: websocket_route reads the same primary routes the HTTP clients use, and ProxyPolicy::resolve clears them under that flag.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/uri.py#L192-L225
+out_of_scope:
+  - "The production RealtimeSessionRelay, the OpenAI, xAI and Azure direct sessions and the executor of B1011's connection plans: B10213."
+  - "Python _arealtime: B10212. The proxy's realtime route: B1125. The pass-through socket adapters: B8642, and it opens its socket through this client."
+  - "Building a production RealtimeProbe with this dialer in the server's health backend: B8540."
+pitfalls:
+  - "tungstenite never sends pings, so the 20 second keepalive is the receiver's job, and it only runs while something polls recv; the relay always polls the backend source, so do not spawn a ping task."
+  - "B1008 turns a backend close without a received frame into code 1006 with the error text as the client's close reason, so the source's messages must be websockets' exact `sent 1011 (internal error) keepalive ping timeout; no close frame received` and `no close frame received or sent`."
+  - "Gemini puts its key in the URL query (`?key=`) and OpenAI and Azure send it in the Authorization and api-key headers; B2457 logs a DialError message and sends it to the client, so no message may carry the URL or a header value."
+  - "Build the Basic value from ProxyCredentials' username and exposed password and mark the HeaderValue sensitive, since hyper-util's Tunnel sends Proxy-Authorization only through with_auth."
+  - "ProxyPolicy::route falls back to `all` for httpx, but websockets ignores ALL_PROXY; websocket_route must not read it."
+  - "The bypass check gets \"host:port\" the way websockets calls urllib's proxy_bypass; bypasses already splits a numeric port off, so a NO_PROXY entry example.com still matches example.com:443."
+  - "A std Mutex guard must never live across an await; the shared sink sits behind a tokio Mutex."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

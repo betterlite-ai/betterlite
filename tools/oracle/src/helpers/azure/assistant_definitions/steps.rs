@@ -7,7 +7,7 @@ use betterlite_azure::azure_assistant_definitions::operations::{
 };
 use betterlite_azure::endpoints::projection::SessionKind;
 use betterlite_config::sections::azure_endpoints::Settings;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
@@ -15,7 +15,7 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{ASSISTANT, DELETED, NoSources, PAGE, Wire};
 use super::reports;
-use super::{Input, KindName, Step};
+use super::{Input, Step};
 
 const DEFAULT_TIMEOUT: f64 = 600.0;
 const SUPPLIED_BASE_URL: &str = "https://supplied.test/openai";
@@ -133,18 +133,15 @@ fn client_step(step: &Step) -> HelperResult {
         .supplied
         .as_ref()
         .map(|supplied| supplied_client(supplied.kind, &harness.wire));
-    match harness
-        .api()
-        .azure_client(&request, supplied, client_kind(kind))
-    {
+    match harness.api().azure_client(&request, supplied, kind) {
         Ok(client) => Ok(reports::client_report(&client)),
-        Err(error) => reports::client_failure(client_kind(kind), &error),
+        Err(error) => reports::client_failure(kind, &error),
     }
 }
 
-fn supplied_client(kind: KindName, wire: &Arc<Wire>) -> AzureAssistantsClient<'static, Wire> {
+fn supplied_client(kind: ClientKind, wire: &Arc<Wire>) -> AzureAssistantsClient<'static, Wire> {
     AzureAssistantsClient {
-        kind: client_kind(kind),
+        kind,
         inputs: None,
         transport: Arc::clone(wire),
         base_url: String::from(SUPPLIED_BASE_URL),
@@ -161,12 +158,5 @@ const fn flag(value: Option<&Value>) -> Option<bool> {
         Some(Value::Bool(state)) => Some(*state),
         Some(_) => Some(false),
         None => None,
-    }
-}
-
-const fn client_kind(kind: KindName) -> ClientKind {
-    match kind {
-        KindName::Sync => ClientKind::Sync,
-        KindName::Async => ClientKind::Async,
     }
 }

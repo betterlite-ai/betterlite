@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::endpoints::projection::LiteLlmParams;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::thread_runs::records::RunRequest;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -23,16 +24,9 @@ pub(crate) struct Reply {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum KindName {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SuppliedStep {
-    pub(crate) kind: KindName,
+    pub(crate) kind: ClientKind,
 }
 
 // The run keywords the caller hands the facade, keyed as LiteLLM's signature names them.

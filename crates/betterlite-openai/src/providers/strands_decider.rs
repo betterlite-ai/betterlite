@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use betterlite_models::decisions::ir;
+use betterlite_sigv4::credentials::Credentials;
 
 use crate::decisions::transformation::provider_config::{
     DecisionsProviderConfig, ParseResponseError, SigningContext,
@@ -36,7 +37,7 @@ mod strands_url;
 pub type ConfigClock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
 
 pub struct StrandsDeciderDecisionsConfig {
-    pub credentials: Option<signing::AwsCredentials>,
+    pub credentials: Option<Credentials>,
     pub clock: ConfigClock,
 }
 

@@ -1,0 +1,8 @@
+kind: helper
+name: compaction-state-armed-seed
+call:
+  b10153:
+    state: armed
+    payload: {model: openai/gpt-4o, input: hello}
+env: {}
+compare: {ignore: []}

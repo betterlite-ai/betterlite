@@ -56,18 +56,6 @@ pub trait RerankTransport: Send + Sync {
     ) -> impl Future<Output = Result<RerankHttpReply, TransferError>> + Send;
 }
 
-// the supplied client's kind decides whether LiteLLM accepts it for the sync or the async path
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-
-pub struct SuppliedClient<'client, Client> {
-    pub kind: ClientKind,
-    pub transport: &'client Client,
-}
-
 // B173 owns client construction; the factory answers the sync default or the async BEDROCK client
 pub trait ClientFactory {
     type Client: RerankTransport;
