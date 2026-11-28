@@ -9,7 +9,15 @@ const COMPACTION: &str = r#"{"type":"compaction","content":"S"}"#;
 
 #[test]
 fn inspect_compaction_and_proxy_context() {
-    // a compaction dict block inside a list content is the only shape that counts, on any role
+    assert_block_shapes();
+    assert_block_rejections();
+    assert_proxy_context();
+    assert_proxy_absences();
+    assert_inspection_router();
+}
+
+// a compaction dict block inside a list content is the only shape that counts, on any role
+fn assert_block_shapes() {
     let assistant = decided(&format!(
         r#"[{{"role":"assistant","content":[{{"type":"text","text":"done"}},{COMPACTION}]}}]"#
     ));
@@ -24,8 +32,10 @@ fn inspect_compaction_and_proxy_context() {
         r#"[{{"role":"user","content":"hello"}},{{"role":"assistant","content":[{COMPACTION}]}}]"#
     ));
     assert!(has_compaction_block(&later));
+}
 
-    // scalar text that names compaction, dict content, other block types and non-text types are all false
+// scalar text that names compaction, dict content, other block types and non-text types are all false
+fn assert_block_rejections() {
     assert!(!has_compaction_block(&decided(
         r#"[{"role":"assistant","content":"a compaction happened"}]"#
     )));
@@ -43,8 +53,10 @@ fn inspect_compaction_and_proxy_context() {
     )));
     assert!(!has_compaction_block(&decided(r#"[{"role":"assistant"}]"#)));
     assert!(!has_compaction_block(&[]));
+}
 
-    // the proxy map yields its exact fields and the raw auth entry it carries
+// the proxy map yields its exact fields and the raw auth entry it carries
+fn assert_proxy_context() {
     let kwargs = extra(
         r#"{"litellm_metadata":{"user_id":"u-1","user_api_key_auth":{"api_key":"sk-1"},"litellm_call_id":"c-1"},"temperature":0.5}"#,
     );
@@ -68,14 +80,22 @@ fn inspect_compaction_and_proxy_context() {
         .expect("a context");
     assert_eq!(anthropic.litellm_metadata, object(r#"{"user_id":"u-1"}"#));
     assert!(anthropic.user_api_key_auth.is_none());
+}
 
-    // a missing, null or non-dict litellm_metadata is no proxy context, even with other kwargs
+// a missing, null or non-dict litellm_metadata is no proxy context, even with other kwargs
+fn assert_proxy_absences() {
     assert!(extract_proxy_metadata(&extra(r#"{"temperature":0.5}"#)).is_none());
     assert!(extract_proxy_metadata(&extra(r#"{"litellm_metadata":null}"#)).is_none());
     assert!(extract_proxy_metadata(&extra(r#"{"litellm_metadata":"text"}"#)).is_none());
     assert!(extract_proxy_metadata(&extra(r#"{"litellm_metadata":[1,2]}"#)).is_none());
+}
 
-    // the router handle comes back as the caller passed it, and nothing answers when it is absent
+// the router handle comes back as the caller passed it, and nothing answers when it is absent
+fn assert_inspection_router() {
+    let kwargs = extra(r#"{"litellm_metadata":{"user_id":"u-1"}}"#);
+    let assistant = decided(&format!(
+        r#"[{{"role":"assistant","content":[{{"type":"text","text":"done"}},{COMPACTION}]}}]"#
+    ));
     let router = NeverCalled;
     let inspection = inspect_context(&assistant, &kwargs, Some(&router));
     assert!(inspection.has_compaction_block);
