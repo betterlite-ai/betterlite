@@ -238,6 +238,15 @@ async fn index_hint_needs_a_real_index() {
             .await
             .contains("Hint: array indexing (e.g. 'team_roles[0]')")
     );
+    // a bracket needs a real index too: a non-numeric index and an empty one stay plain
+    assert_eq!(
+        hint_message("team_roles[x]").await,
+        "Authentication Error, No team found in token. Checked team_id field 'team_roles[x]' and team_alias field 'None'."
+    );
+    assert_eq!(
+        hint_message("team_roles[]").await,
+        "Authentication Error, No team found in token. Checked team_id field 'team_roles[]' and team_alias field 'None'."
+    );
 }
 
 // the deviation: an index must be ASCII, where Python's isdigit also accepts digits from other scripts
