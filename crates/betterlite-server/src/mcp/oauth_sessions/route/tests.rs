@@ -7,9 +7,7 @@ use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use rstest::rstest;
 use tower::ServiceExt as _;
 
-use super::{
-    FORBIDDEN_MESSAGE, SESSION_PATH, add_session_server, authenticate, management_failure,
-};
+use super::{FORBIDDEN_MESSAGE, SESSION_PATH, authenticate, management_failure};
 use crate::auth::auth_identity::AuthContext;
 use crate::mcp::oauth_sessions::SessionError;
 use crate::mcp::oauth_sessions::tests::testing::{
@@ -36,7 +34,7 @@ async fn an_admin_creates_a_redacted_session() {
     let harness = harness(HarnessConfig::new());
     let route = session_route(&harness);
     let auth = auth_with(Some("admin-1"), "proxy_admin");
-    let Ok(record) = add_session_server(&route, SESSION_BODY.as_bytes(), &auth).await else {
+    let Ok(record) = route.create_session(SESSION_BODY.as_bytes(), &auth).await else {
         panic!("the admin creates the session");
     };
     assert_eq!(record.server_id, "test-session-1");
@@ -115,7 +113,7 @@ async fn a_request_without_an_id_gets_a_fresh_session_id() {
     let route = session_route(&harness);
     let auth = auth_with(Some("admin-1"), "proxy_admin");
     let body = r#"{"url":"https://mcp.example.test/sse","transport":"sse"}"#;
-    let Ok(record) = add_session_server(&route, body.as_bytes(), &auth).await else {
+    let Ok(record) = route.create_session(body.as_bytes(), &auth).await else {
         panic!("the admin creates the session");
     };
     assert_eq!(record.server_id, "fresh-session-1");
@@ -128,7 +126,7 @@ async fn a_supplied_id_that_the_registry_knows_is_kept() {
     let route = session_route(&harness);
     let auth = auth_with(Some("admin-1"), "proxy_admin");
     let body = r#"{"server_id":"saved-1","url":"https://mcp.example.test/sse","transport":"sse"}"#;
-    let Ok(record) = add_session_server(&route, body.as_bytes(), &auth).await else {
+    let Ok(record) = route.create_session(body.as_bytes(), &auth).await else {
         panic!("the admin creates the session");
     };
     assert_eq!(record.server_id, "saved-1");
@@ -141,7 +139,7 @@ async fn a_bad_server_name_answers_400_before_the_role_check() {
     let auth = auth_with(Some("user-1"), "internal_user");
     let body =
         r#"{"url":"https://mcp.example.test/sse","transport":"sse","server_name":"bad-name"}"#;
-    let Err(error) = add_session_server(&route, body.as_bytes(), &auth).await else {
+    let Err(error) = route.create_session(body.as_bytes(), &auth).await else {
         panic!("a separator in the name is rejected");
     };
     assert_eq!(error.status(), StatusCode::BAD_REQUEST);
@@ -156,7 +154,7 @@ async fn a_role_other_than_proxy_admin_is_forbidden(#[case] role: &str) {
     let harness = harness(HarnessConfig::new());
     let route = session_route(&harness);
     let auth = auth_with(Some("user-1"), role);
-    let Err(error) = add_session_server(&route, SESSION_BODY.as_bytes(), &auth).await else {
+    let Err(error) = route.create_session(SESSION_BODY.as_bytes(), &auth).await else {
         panic!("only PROXY_ADMIN creates temporary sessions");
     };
     assert_eq!(error.status(), StatusCode::FORBIDDEN);
@@ -174,7 +172,7 @@ async fn a_caller_without_a_user_id_is_created_by_the_default_name() {
     let harness = harness(HarnessConfig::new());
     let route = session_route(&harness);
     let auth = auth_with(None, "proxy_admin");
-    let Ok(record) = add_session_server(&route, SESSION_BODY.as_bytes(), &auth).await else {
+    let Ok(record) = route.create_session(SESSION_BODY.as_bytes(), &auth).await else {
         panic!("the admin creates the session");
     };
     assert_eq!(record.created_by.as_deref(), Some("default_user_id"));
@@ -189,7 +187,7 @@ async fn a_draft_write_failure_answers_500_and_keeps_the_local_copy() {
     let auth = auth_with(Some("admin-1"), "proxy_admin");
     let body =
         r#"{"server_id":"test-session-1","url":"https://mcp.example.test/sse","transport":"sse"}"#;
-    let Err(error) = add_session_server(&route, body.as_bytes(), &auth).await else {
+    let Err(error) = route.create_session(body.as_bytes(), &auth).await else {
         panic!("the draft write fails");
     };
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -211,7 +209,7 @@ async fn a_database_error_before_the_caching_scope_is_not_wrapped() {
     let harness = harness(HarnessConfig::new().with_database(DatabaseFault::ServerRead));
     let route = session_route(&harness);
     let auth = auth_with(Some("admin-1"), "proxy_admin");
-    let Err(error) = add_session_server(&route, SESSION_BODY.as_bytes(), &auth).await else {
+    let Err(error) = route.create_session(SESSION_BODY.as_bytes(), &auth).await else {
         panic!("the id lookup fails");
     };
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -228,7 +226,7 @@ async fn a_body_that_is_not_json_answers_422() {
     let harness = harness(HarnessConfig::new());
     let route = session_route(&harness);
     let auth = auth_with(Some("admin-1"), "proxy_admin");
-    let Err(error) = add_session_server(&route, b"{not json", &auth).await else {
+    let Err(error) = route.create_session(b"{not json", &auth).await else {
         panic!("an undecodable body is rejected");
     };
     assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY);

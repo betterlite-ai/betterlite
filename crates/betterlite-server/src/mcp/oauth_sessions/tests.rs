@@ -3,8 +3,6 @@
 pub(crate) mod testing;
 
 use std::collections::BTreeMap;
-use std::error::Error as StdError;
-use std::fmt::{self, Display, Formatter};
 
 use axum::body::to_bytes;
 use axum::http::StatusCode;
@@ -14,6 +12,7 @@ use betterlite_mcp::registry::resolution::{AuthorizeError, ResolveError};
 use betterlite_mcp::server_build::BuildError;
 use betterlite_mcp::server_payload::{PayloadError, RequestError};
 use serde::Deserialize;
+use thiserror::Error;
 
 use super::{
     DEFAULT_CREATED_BY, SessionError, TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX,
@@ -23,16 +22,9 @@ use crate::mcp::admin_credential_view::CredentialViewError;
 use crate::mcp::oauth_sessions::record::RecordError;
 use crate::mcp::server_writes::ServerWriteError;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("the access check is unavailable")]
 struct AccessGone;
-
-impl Display for AccessGone {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the access check is unavailable")
-    }
-}
-
-impl StdError for AccessGone {}
 
 fn shape_error() -> serde_json::Error {
     serde_json::from_str::<u8>("not a number").expect_err("the fixture is not a number")

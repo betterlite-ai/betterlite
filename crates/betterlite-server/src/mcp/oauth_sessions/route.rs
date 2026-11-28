@@ -84,6 +84,25 @@ where
             .route(SESSION_PATH, post(session_endpoint::<Access>))
             .with_state(Arc::new(self))
     }
+
+    // LiteLLM's add_session_mcp_server: the steps its handler runs, in the order it runs them
+    async fn create_session(
+        &self,
+        body: &[u8],
+        auth: &UserAPIKeyAuth,
+    ) -> Result<McpServerTable, SessionError<Access::Error>> {
+        let (payload, created_by) = session_payload(self, body, auth).await?;
+        let server_id = {
+            let registry = self.registry.read().await;
+            self.store.resolve_session_id(&payload, &registry).await?
+        };
+        let now = self.store.clock.now().with_timezone(&Utc);
+        let record = build_temporary_record(&payload, Some(created_by.as_str()), &server_id, now)?;
+        cache_session(self, &record, &payload, &server_id, &created_by).await?;
+        let registry = self.registry.read().await;
+        let redacted = redact_mcp_credentials(&record, &registry, registry.public_mcp_servers())?;
+        Ok(redacted)
+    }
 }
 
 async fn session_endpoint<Access>(
@@ -108,7 +127,7 @@ async fn run_session<Access>(
     body: &[u8],
 ) -> Result<McpServerTable, SessionError<Access::Error>>
 where
-    Access: ServerAccessCheck,
+    Access: ServerAccessCheck + 'static,
 {
     let effects = SessionEffects::default();
     let cache = NoManagementEffects;
@@ -125,7 +144,8 @@ where
         clock: Arc::clone(&route.store.clock),
     };
     let handler = async move {
-        add_session_server(route, body, auth)
+        route
+            .create_session(body, auth)
             .await
             .map_err(management_failure)
     };
@@ -162,23 +182,6 @@ where
         .ok_or(SessionError::Unauthenticated)
 }
 
-// LiteLLM's add_session_mcp_server: the steps its handler runs, in the order it runs them
-async fn add_session_server<Access>(
-    route: &SessionRoute<Access>,
-    body: &[u8],
-    auth: &UserAPIKeyAuth,
-) -> Result<McpServerTable, SessionError<Access::Error>>
-where
-    Access: ServerAccessCheck,
-{
-    let (payload, created_by) = session_payload(route, body, auth).await?;
-    let record = temporary_record(route, &payload, &created_by).await?;
-    cache_session(route, &record, &payload, &record.server_id, &created_by).await?;
-    let registry = route.registry.read().await;
-    let redacted = redact_mcp_credentials(&record, &registry, registry.public_mcp_servers())?;
-    Ok(redacted)
-}
-
 // steps (a)-(e): validate, stamp, the PROXY_ADMIN gate, created_by and the credential inheritance
 async fn session_payload<Access>(
     route: &SessionRoute<Access>,
@@ -207,24 +210,6 @@ where
     let registry = route.registry.read().await;
     let payload = inherit_credentials(&payload, &registry);
     Ok((payload, created_by))
-}
-
-// step (f): the session id and the row the session runs on; its errors stay out of the caching scope
-async fn temporary_record<Access>(
-    route: &SessionRoute<Access>,
-    payload: &NewMCPServerRequest,
-    created_by: &str,
-) -> Result<McpServerTable, SessionError<Access::Error>>
-where
-    Access: ServerAccessCheck,
-{
-    let server_id = {
-        let registry = route.registry.read().await;
-        route.store.resolve_session_id(payload, &registry).await?
-    };
-    let now = route.store.clock.now().with_timezone(&Utc);
-    let record = build_temporary_record(payload, Some(created_by), &server_id, now)?;
-    Ok(record)
 }
 
 // step (g): every failure in this scope becomes the 500 whose text names the caching step

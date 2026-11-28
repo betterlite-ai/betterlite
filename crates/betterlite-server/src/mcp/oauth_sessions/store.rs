@@ -108,18 +108,19 @@ where
         server
     }
 
-    fn local_server(&self, server_id: &str) -> Option<MCPServer> {
-        let local = self.local.lock().unwrap_or_else(PoisonError::into_inner);
-        local.get(server_id).map(|entry| entry.server.clone())
-    }
-
     // LiteLLM's get_cached_temporary_mcp_server: local table, then the shared draft row, then Redis
     pub async fn get_cached_temporary_server(
         &self,
         server_id: &str,
     ) -> Result<Option<MCPServer>, ResolveError> {
         self.prune_expired();
-        if let Some(server) = self.local_server(server_id) {
+        let cached = self
+            .local
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(server_id)
+            .map(|entry| entry.server.clone());
+        if let Some(server) = cached {
             return Ok(Some(server));
         }
         // a draft or Redis hit is returned as is, so a shared entry cannot outlive its own TTL

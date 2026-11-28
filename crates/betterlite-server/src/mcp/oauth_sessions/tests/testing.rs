@@ -48,14 +48,9 @@ pub(crate) fn test_cipher() -> DbCipher {
 }
 
 pub(crate) fn keyless_cipher() -> DbCipher {
-    StoredCipher {
-        settings: CipherSettings {
-            signing_key: None,
-            algorithm: Algorithm::XSalsa20Poly1305,
-        },
-        nonces: OsNonces,
-        diagnostics: TracingDiagnostics,
-    }
+    let mut cipher = keyed_cipher("unused");
+    cipher.settings.signing_key = None;
+    cipher
 }
 
 pub(crate) fn seal(cipher: &DbCipher, plaintext: &str) -> String {
@@ -270,6 +265,14 @@ impl FakeDatabase {
     }
 }
 
+fn read_row(
+    rows: &Mutex<BTreeMap<String, McpServerTable>>,
+    server_id: &str,
+) -> Option<McpServerTable> {
+    let rows = rows.lock().unwrap_or_else(PoisonError::into_inner);
+    rows.get(server_id).cloned()
+}
+
 impl SessionDatabase for FakeDatabase {
     fn get_server<'db>(
         &'db self,
@@ -277,10 +280,7 @@ impl SessionDatabase for FakeDatabase {
     ) -> Pin<Box<dyn Future<Output = Result<Option<McpServerTable>, McpTableError>> + Send + 'db>>
     {
         let fault = self.fault;
-        let row = {
-            let servers = self.servers.lock().unwrap_or_else(PoisonError::into_inner);
-            servers.get(server_id).cloned()
-        };
+        let row = read_row(&self.servers, server_id);
         Box::pin(async move {
             if fault == DatabaseFault::ServerRead {
                 return Err(McpTableError::MissingServerId);
@@ -294,17 +294,13 @@ impl SessionDatabase for FakeDatabase {
         server_id: &'db str,
     ) -> Pin<Box<dyn Future<Output = Result<Option<McpServerTable>, ServerWriteError>> + Send + 'db>>
     {
-        let fault = self.fault;
-        let row = {
-            let drafts = self.drafts.lock().unwrap_or_else(PoisonError::into_inner);
-            drafts.get(server_id).cloned()
-        };
-        Box::pin(async move {
-            if fault == DatabaseFault::DraftRead {
-                return Err(ServerWriteError::MissingServerId);
+        let outcome = match self.fault {
+            DatabaseFault::DraftRead => Err(ServerWriteError::MissingServerId),
+            DatabaseFault::None | DatabaseFault::ServerRead | DatabaseFault::DraftWrite => {
+                Ok(read_row(&self.drafts, server_id))
             }
-            Ok(row)
-        })
+        };
+        Box::pin(ready(outcome))
     }
 
     fn create_draft<'db>(
