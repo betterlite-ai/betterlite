@@ -3,9 +3,8 @@
 use std::collections::BTreeMap;
 use std::future::pending;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -36,10 +35,10 @@ use crate::api::realtime_backend_transport::dial::{
     ConnectedBackend, DialRequest, RealtimeSsl, SizeLimitedSource, open_realtime_backend_ws,
 };
 use crate::api::realtime_backend_transport::error::DialError;
-use crate::api::realtime_connection_plan::{ProbeConnection, RealtimeProbeDialer};
+use crate::api::realtime_connection_plan::{ProbeConnection, RealtimeProbeDialer as _};
 use crate::api::realtime_contracts::close::{CloseFrame, ConnectionClosed, backend_close_from};
 use crate::api::realtime_contracts::error::HeaderMap;
-use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
+use crate::api::realtime_contracts::transport::RealtimeMessage;
 
 use super::WebSocketDialer;
 
@@ -51,30 +50,32 @@ const AT_LIMIT_FRAME: usize = 9;
 const OVER_LIMIT_FRAME: usize = 64;
 const ATTEMPTS: usize = 3;
 
+type SeenHeaders = Arc<Mutex<Vec<(String, String)>>>;
+
 // the upgrade callback: it records the request's headers when the test asks and rejects when it asks
 struct UpgradeRecorder {
-    seen: Option<Arc<Mutex<Vec<(String, String)>>>>,
+    seen: Option<SeenHeaders>,
     rejection: Option<StatusCode>,
 }
 
 impl Callback for UpgradeRecorder {
     fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
         if let Some(seen) = &self.seen {
-            let mut recorded = seen.lock().expect("recorded headers");
+            let mut recorded = seen.lock().unwrap_or_else(PoisonError::into_inner);
             for (name, value) in request.headers() {
-                recorded.push((
-                    name.as_str().to_owned(),
-                    value.to_str().expect("header text").to_owned(),
-                ));
+                if let Ok(text) = value.to_str() {
+                    recorded.push((name.as_str().to_owned(), text.to_owned()));
+                }
             }
         }
-        match self.rejection {
-            Some(status) => Err(Response::builder()
-                .status(status)
-                .body(Some("rejected".to_owned()))
-                .expect("rejection")),
-            None => Ok(response),
-        }
+        self.rejection.map_or_else(
+            || Ok(response),
+            |status| {
+                let mut rejected = ErrorResponse::new(Some("rejected".to_owned()));
+                *rejected.status_mut() = status;
+                Err(rejected)
+            },
+        )
     }
 }
 
@@ -110,36 +111,36 @@ const fn probe_connection(url: String) -> ProbeConnection {
     }
 }
 
-// a server that answers each upgrade attempt with the same status, or holds it open until the open timeout fires
-async fn serve_attempts(
-    listener: TcpListener,
-    attempts: Arc<AtomicUsize>,
-    rejection: Option<StatusCode>,
-) {
+// a server that answers each upgrade attempt with the same status
+async fn serve_rejections(listener: TcpListener, attempts: Arc<AtomicUsize>, status: StatusCode) {
+    loop {
+        let Ok((stream, _peer)) = listener.accept().await else {
+            return;
+        };
+        attempts.fetch_add(1, Ordering::SeqCst);
+        drop(
+            tokio_tungstenite::accept_hdr_async(
+                stream,
+                UpgradeRecorder {
+                    seen: None,
+                    rejection: Some(status),
+                },
+            )
+            .await,
+        );
+    }
+}
+
+// a server that holds every upgrade attempt open, so the dialer's open timeout fires
+async fn serve_hangs(listener: TcpListener, attempts: Arc<AtomicUsize>) {
     let mut held = Vec::new();
     loop {
         let Ok((stream, _peer)) = listener.accept().await else {
             return;
         };
         attempts.fetch_add(1, Ordering::SeqCst);
-        match rejection {
-            Some(status) => {
-                drop(
-                    tokio_tungstenite::accept_hdr_async(
-                        stream,
-                        UpgradeRecorder {
-                            seen: None,
-                            rejection: Some(status),
-                        },
-                    )
-                    .await,
-                );
-            }
-            None => {
-                held.push(stream);
-                assert!(held.len() <= ATTEMPTS);
-            }
-        }
+        held.push(stream);
+        assert!(held.len() <= ATTEMPTS);
     }
 }
 
@@ -186,7 +187,9 @@ async fn serve_end(listener: TcpListener) {
 // a server that reads the first byte of each attempt and drops the socket, so a TLS ClientHello shows itself
 async fn record_first_byte(listener: TcpListener, seen: Arc<Mutex<Vec<u8>>>) {
     loop {
-        let (mut stream, _peer) = listener.accept().await.expect("accept");
+        let Ok((mut stream, _peer)) = listener.accept().await else {
+            return;
+        };
         let mut byte = [0_u8; 1];
         if let Ok(read) = stream.read(&mut byte).await {
             seen.lock().expect("seen").extend_from_slice(&byte[..read]);
@@ -266,7 +269,7 @@ fn expect_closed(
 ) -> ConnectionClosed {
     match outcome {
         Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_error) => panic!("{failure}"),
+        Err(_) => panic!("{failure}"),
         Ok(_message) => panic!("{arrival}"),
     }
 }
@@ -297,7 +300,7 @@ fn custom_headers(recorded: &[(String, String)]) -> Vec<(&str, &str)> {
 fn assert_sent_frames(text: &Message, binary: &Message, close: &Message) {
     assert_eq!(text, &Message::Text(Utf8Bytes::from("hello")));
     assert_eq!(binary, &Message::Binary(Bytes::from_static(b"raw")));
-    let Message::Close(Some(ref frame)) = *close else {
+    let Message::Close(Some(frame)) = close else {
         panic!("expected a close frame");
     };
     assert_eq!(u16::from(frame.code), 1000);
@@ -310,10 +313,10 @@ async fn dialer_answers_a_rejected_upgrade_with_the_status_after_one_attempt() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_attempts(
+    tasks.spawn(serve_rejections(
         listener,
         Arc::clone(&attempts),
-        Some(StatusCode::UNAUTHORIZED),
+        StatusCode::UNAUTHORIZED,
     ));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
@@ -346,7 +349,7 @@ async fn dialer_retries_a_hung_upgrade_three_times() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_attempts(listener, Arc::clone(&attempts), None));
+    tasks.spawn(serve_hangs(listener, Arc::clone(&attempts)));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
     let headers = HeaderMap::new();
@@ -646,7 +649,7 @@ async fn keepalive_source(address: SocketAddr) -> super::halves::DialedSource {
     .expect("connect");
     super::halves::DialedSource {
         receiver: connection.receiver,
-        sender: connection.sender.clone(),
+        sender: connection.sender,
         max_size: 1024,
     }
 }
@@ -663,7 +666,7 @@ async fn source_reports_a_missed_pong_as_the_keepalive_close() {
         .expect("deadline");
     let closed = match outcome {
         Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_error) => panic!("the keepalive timeout failed instead of closing"),
+        Err(_) => panic!("the keepalive timeout failed instead of closing"),
         Ok(_message) => panic!("the silent server sent a frame"),
     };
     assert_eq!(closed.received, None);
@@ -727,7 +730,7 @@ async fn source_applies_the_decode_flag_to_frames() {
         .expect("deadline");
     let failed = match outcome {
         Err(RelayReceiveError::Failed(failed)) => failed,
-        Err(_error) => panic!("invalid UTF-8 closed the socket"),
+        Err(_) => panic!("invalid UTF-8 closed the socket"),
         Ok(_message) => panic!("invalid UTF-8 decoded"),
     };
     assert_eq!(
@@ -845,10 +848,10 @@ async fn probe_reports_a_rejected_upgrade_as_invalid_status() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_attempts(
+    tasks.spawn(serve_rejections(
         listener,
         Arc::clone(&attempts),
-        Some(StatusCode::FORBIDDEN),
+        StatusCode::FORBIDDEN,
     ));
     let dialer = web_dialer(no_proxy());
     let connection = probe_connection(format!("ws://{address}/realtime"));

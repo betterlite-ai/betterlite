@@ -62,18 +62,19 @@ impl Callback for Recorder<'_> {
     fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
         *self.target = request.uri().to_string();
         for (name, value) in request.headers() {
-            self.headers.push((
-                name.as_str().to_owned(),
-                value.to_str().expect("header text").to_owned(),
-            ));
+            if let Ok(text) = value.to_str() {
+                self.headers
+                    .push((name.as_str().to_owned(), text.to_owned()));
+            }
         }
-        match self.rejection {
-            Some(status) => Err(Response::builder()
-                .status(status)
-                .body(Some("forbidden".to_owned()))
-                .expect("rejection")),
-            None => Ok(response),
-        }
+        self.rejection.map_or_else(
+            || Ok(response),
+            |status| {
+                let mut rejected = ErrorResponse::new(Some("forbidden".to_owned()));
+                *rejected.status_mut() = status;
+                Err(rejected)
+            },
+        )
     }
 }
 
@@ -101,7 +102,11 @@ where
         .expect("close");
     match read {
         Message::Text(text) => text.as_str().to_owned(),
-        other => panic!("client frame: {other:?}"),
+        other @ (Message::Binary(_)
+        | Message::Ping(_)
+        | Message::Pong(_)
+        | Message::Close(_)
+        | Message::Frame(_)) => panic!("client frame: {other:?}"),
     }
 }
 
@@ -185,7 +190,11 @@ async fn serve_binary_frame(listener: TcpListener) -> Vec<u8> {
     let frame = socket.next().await.expect("frame").expect("frame");
     match frame {
         Message::Binary(bytes) => bytes.to_vec(),
-        other => panic!("frame: {other:?}"),
+        other @ (Message::Text(_)
+        | Message::Ping(_)
+        | Message::Pong(_)
+        | Message::Close(_)
+        | Message::Frame(_)) => panic!("frame: {other:?}"),
     }
 }
 
@@ -616,17 +625,15 @@ async fn websocket_client_tests_answer_pongs_without_closing() {
         matches!(outcome, Err(_elapsed)),
         "the pongs kept recv waiting"
     );
-    let recorded = pings.lock().expect("pings");
-    let first = recorded.first().copied().expect("a ping");
+    let pinged = pings.lock().expect("pings");
+    let first = pinged.first().copied().expect("a ping");
+    let count = pinged.len();
+    drop(pinged);
     assert!(
         first >= PONG_HALF_INTERVAL,
         "the first ping came after {first:?}"
     );
-    assert!(
-        recorded.len() <= 20,
-        "the client sent {} pings",
-        recorded.len()
-    );
+    assert!(count <= 20, "the client sent {count} pings");
     tasks.abort_all();
 }
 

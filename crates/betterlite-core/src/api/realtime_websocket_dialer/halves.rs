@@ -77,7 +77,7 @@ impl RealtimeBackendSource for DialedSource {
 
 impl DialedSource {
     async fn close_oversized(
-        &mut self,
+        &self,
         size: usize,
         max_size: usize,
     ) -> Result<RealtimeMessage, RelayReceiveError> {
