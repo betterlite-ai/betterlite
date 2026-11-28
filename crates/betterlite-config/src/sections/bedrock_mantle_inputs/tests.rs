@@ -14,10 +14,16 @@ enum Field {
     ApiBase,
     ApiKey,
     Region,
+    AwsBearerToken,
     Unrelated,
 }
 
-const FIELDS: [Field; 3] = [Field::ApiBase, Field::ApiKey, Field::Region];
+const FIELDS: [Field; 4] = [
+    Field::ApiBase,
+    Field::ApiKey,
+    Field::Region,
+    Field::AwsBearerToken,
+];
 
 fn load(environment: &[(&str, &str)]) -> Settings {
     let lookup = environment
@@ -33,10 +39,15 @@ fn load(environment: &[(&str, &str)]) -> Settings {
 
 fn read(settings: &Settings, field: Field) -> Option<String> {
     let secret = settings.api_key.as_ref().map(ExposeSecret::expose_secret);
+    let bearer = settings
+        .aws_bearer_token
+        .as_ref()
+        .map(ExposeSecret::expose_secret);
     match field {
         Field::ApiBase => settings.api_base.clone(),
         Field::ApiKey => secret.map(str::to_owned),
         Field::Region => settings.region.clone(),
+        Field::AwsBearerToken => bearer.map(str::to_owned),
         Field::Unrelated => None,
     }
 }
@@ -52,11 +63,14 @@ fn set_fields(settings: &Settings) -> Vec<Field> {
 #[case::loads_bedrock_mantle_api_base(Field::ApiBase)]
 #[case::loads_bedrock_mantle_api_key(Field::ApiKey)]
 #[case::loads_bedrock_mantle_region(Field::Region)]
+#[case::loads_aws_bearer_token_bedrock(Field::AwsBearerToken)]
 #[case::rejects_unrelated_key(Field::Unrelated)]
 fn bedrock_mantle_inputs_config_cases(#[case] field: Field) {
     match field {
         Field::Unrelated => rejects_unrelated_keys(),
-        Field::ApiBase | Field::ApiKey | Field::Region => loads_field(field),
+        Field::ApiBase | Field::ApiKey | Field::Region | Field::AwsBearerToken => {
+            loads_field(field);
+        }
     }
 }
 
@@ -65,6 +79,7 @@ fn loads_field(field: Field) {
         Field::ApiBase => "BEDROCK_MANTLE_API_BASE",
         Field::ApiKey => "BEDROCK_MANTLE_API_KEY",
         Field::Region => "BEDROCK_MANTLE_REGION",
+        Field::AwsBearerToken => "AWS_BEARER_TOKEN_BEDROCK",
         Field::Unrelated => return,
     };
     let default = load(&[]);
@@ -112,11 +127,22 @@ fn rejects_unrelated_keys() {
 
 #[test]
 fn bedrock_mantle_inputs_keep_the_key_secret() {
-    let configured = load(&[("BEDROCK_MANTLE_API_KEY", "fixture-mantle-key")]);
+    let configured = load(&[
+        ("BEDROCK_MANTLE_API_KEY", "fixture-mantle-key"),
+        ("AWS_BEARER_TOKEN_BEDROCK", "fixture-bearer-token"),
+    ]);
     let rendered = format!("{configured:?}");
     assert!(!rendered.contains("fixture-mantle-key"));
+    assert!(!rendered.contains("fixture-bearer-token"));
     assert_eq!(
         configured.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("fixture-mantle-key")
+    );
+    assert_eq!(
+        configured
+            .aws_bearer_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("fixture-bearer-token")
     );
 }
