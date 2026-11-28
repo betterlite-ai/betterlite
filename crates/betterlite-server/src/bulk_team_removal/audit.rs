@@ -16,8 +16,8 @@ pub trait DeletedKeyAudit: Send + Sync {
 impl From<DeletedAuditError> for BulkRemovalError {
     fn from(source: DeletedAuditError) -> Self {
         match source {
-            DeletedAuditError::Row(source) => Self::Encode(source),
-            DeletedAuditError::Audit(source) => Self::Audit(source),
+            DeletedAuditError::Row(failure) => Self::Encode(failure),
+            DeletedAuditError::Audit(failure) => Self::Audit(failure),
         }
     }
 }

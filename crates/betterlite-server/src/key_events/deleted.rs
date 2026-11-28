@@ -32,8 +32,8 @@ where
 {
     fn from(source: DeletedAuditError) -> Self {
         match source {
-            DeletedAuditError::Row(source) => Self::Row(source),
-            DeletedAuditError::Audit(source) => Self::Audit(source),
+            DeletedAuditError::Row(failure) => Self::Row(failure),
+            DeletedAuditError::Audit(failure) => Self::Audit(failure),
         }
     }
 }
