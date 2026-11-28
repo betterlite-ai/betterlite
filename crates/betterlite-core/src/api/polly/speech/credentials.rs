@@ -1,5 +1,6 @@
+use async_trait::async_trait;
 use betterlite_openai::openai_base_config::Object;
-use secrecy::SecretString;
+use betterlite_sigv4::credentials::Credentials;
 
 use super::endpoint::DEFAULT_REGION;
 use super::error::SpeechError;
@@ -20,16 +21,10 @@ pub struct CredentialSources<'text> {
     pub aws_external_id: Option<&'text str>,
 }
 
-#[derive(Clone)]
-pub struct ResolvedCredentials {
-    pub access_key_id: SecretString,
-    pub secret_access_key: SecretString,
-    pub session_token: Option<SecretString>,
-}
-
 // B594's identity acquisition sits behind this seam: betterlite-bedrock owns the resolver and depends on this crate
-pub trait CredentialResolver: Sync {
-    fn resolve(&self, sources: &CredentialSources<'_>) -> Result<ResolvedCredentials, SpeechError>;
+#[async_trait]
+pub trait CredentialResolver: Send + Sync {
+    async fn resolve(&self, sources: &CredentialSources<'_>) -> Result<Credentials, SpeechError>;
 }
 
 // the signing region reaches get_credentials already defaulted, so an absent key reads us-east-1 and a null one stays null

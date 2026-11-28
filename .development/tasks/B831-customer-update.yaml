@@ -134,6 +134,7 @@ out_of_scope:
   - B830 owns customer_endpoints.py L98-L492 helpers/create/block/unblock and the response types, including shared permission/cache behavior.
   - B059 owns resolve_customer_daily_activity_scope L500-L512, customer_daily_activity_is_admin L515-L519, end_user_info L521-L577, list_end_user L837-L891 and get_customer_daily_activity L894-L958 in customer_endpoints.py.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - The numeric-zero filter prevents max_budget=0 from clearing or replacing a customer's existing cap.
   - Updating max_budget and budget_id together can change the old shared budget before the customer is relinked.
 budget:

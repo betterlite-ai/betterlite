@@ -1,0 +1,15 @@
+task: B742
+deviations:
+  - what: general_settings.admin_only_routes is enforced on every deployment; LiteLLM returns before the check unless premium_user is true.
+    why: The route list is a plain config key in betterlite and carries no license check, so a community deployment that sets it gets the admin-only refusal instead of a logged warning and an open route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L365-L382
+  - what: A non-string entry in a key's allowed_routes is skipped; LiteLLM calls route_matches_wildcard_pattern on it and answers 500 with an AttributeError.
+    why: config of the declared type is a list of strings, and an unreadable entry must not turn an authentication answer into an unhandled exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1350-L1368
+  - what: The 401 and 403 refusals use betterlite's own wording; status, error type, param and code are LiteLLM's.
+    why: The messages name the route, the role and the masked user id in one sentence each, and no client parses them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L234-L258
+kept_bugs:
+  - what: The early viewer write table names /management/v1/teams/{team_id}/members/bulk_delete and bulk_update, but those routes are only in self_managed_routes, so the early table never fires for them; a write is refused later by the backstop table and a GET is allowed.
+    why: A working setup relies on the later table refusing the write, and copying the tables verbatim keeps every earlier check in the same order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L23-L65
