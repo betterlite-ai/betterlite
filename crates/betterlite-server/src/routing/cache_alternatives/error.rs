@@ -38,6 +38,4 @@ pub enum CacheAlternativesError {
     CapacityUnavailable { model: String },
     #[error("the request metadata under {field} is not a mapping")]
     Metadata { field: &'static str },
-    #[error("the caller's per-key config is not a mapping")]
-    CallerConfig,
 }

@@ -76,12 +76,14 @@ pub(crate) fn caller(
     let Some(token) = token_in_metadata(&JsonData::Object(decoded)) else {
         return Ok(None);
     };
-    // _CallerSettings.config: an empty mapping passes, a non-empty one refuses, and another type fails validation
+    // _CallerSettings.config: a missing or empty mapping passes and every other config refuses the caller,
+    // the non-mapping types having already failed to decode into the UserAPIKeyAuth LiteLLM requires
     match caller_fields.get(CONFIG_FIELD) {
         None | Some(Json::Null) => Ok(Some(token)),
         Some(Json::Object(config)) if config.is_empty() => Ok(Some(token)),
-        Some(Json::Object(_)) => Ok(None),
-        Some(_) => Err(CacheAlternativesError::CallerConfig),
+        Some(Json::Object(_) | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Ok(None)
+        }
     }
 }
 

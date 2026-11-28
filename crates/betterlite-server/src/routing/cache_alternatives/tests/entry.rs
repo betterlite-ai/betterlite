@@ -260,7 +260,7 @@ async fn a_non_empty_per_key_config_is_refused() {
 }
 
 #[tokio::test]
-async fn a_per_key_config_of_another_type_logs_once() {
+async fn a_per_key_config_of_another_type_is_not_a_caller() {
     let fixture = Fixture::new();
     let request_body = body(CONTEXT);
     let mut case = entry_case(&request_body);
@@ -277,7 +277,7 @@ async fn a_per_key_config_of_another_type_logs_once() {
     let (logs, _guard) = capture_logs(Level::DEBUG);
     assert!(case.run(&host).await.is_none());
     assert_eq!(host.requests(), 0);
-    assert_eq!(logs.contents().matches(UNAVAILABLE_LOG).count(), 1);
+    assert!(!logs.contents().contains(UNAVAILABLE_LOG));
 }
 
 #[tokio::test]
