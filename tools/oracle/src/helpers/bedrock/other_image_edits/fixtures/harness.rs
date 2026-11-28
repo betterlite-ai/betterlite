@@ -1,7 +1,8 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use betterlite_bedrock::image_call::transport::{ClientKind, ImageRequest, SuppliedClient};
+use betterlite_bedrock::image_call::transport::ImageRequest;
 use betterlite_bedrock::image_edits::plan::{EditCall, EditEnvironment, EditImage};
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use secrecy::SecretString;
 
@@ -96,7 +97,7 @@ impl<'probe> Harness<'probe> {
     pub(crate) fn supplied(&self) -> Option<SuppliedClient<'_, Client>> {
         let client = self.supplied.as_ref()?;
         let kind = match self.probe.supplied {
-            Supplied::Async => ClientKind::Async,
+            Supplied::Async => ClientKind::Asynchronous,
             Supplied::None | Supplied::Sync => ClientKind::Sync,
         };
         Some(SuppliedClient {

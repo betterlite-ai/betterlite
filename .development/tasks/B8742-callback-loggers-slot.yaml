@@ -16,7 +16,8 @@ description: >-
   `Slot::new(config: &Config, shared: &Shared)` builds `server: CallbackLoggers::new(config, shared)` (B8655) and
   `catalog: Arc<LoggerCatalog>` from B8741's `LoggerCatalog::new(CatalogInputs { .. })`, filled from the config
   (an Arc of it), `shared.http`, the process environment lookup the config loader uses, `config.sections.callback_settings.callback_settings`, and the
-  same TaskTracker and shutdown signal B8655 uses for its flush timers. Both are built once per process.
+  same TaskTracker and shutdown signal B8655 uses for its flush timers, and `aws: Arc::new(shared.aws_credentials.clone())`, the
+  AWS credential port B10194 adds to CatalogInputs over B10175's chain. Both are built once per process.
 
 
   The slot implements `LoggerResolver`. resolve(name, params): first ask `self.server.resolve(name, params)`. A

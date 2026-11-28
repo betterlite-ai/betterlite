@@ -1,5 +1,4 @@
 pub mod audio;
-pub mod client;
 pub mod error;
 pub mod exchange;
 pub mod hidden;
@@ -15,12 +14,12 @@ use std::time::Duration;
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
 use betterlite_openai::openai_base_config::{Headers, Object};
 
-use self::client::{ClientKind, SuppliedClient};
 use self::error::PipelineError;
 use self::job::{PipelineTarget, begin, finish};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::soniox::prepare::{PrepareInput, Prepared, prepare};
 use crate::api::soniox::remote::transport::{RemoteTransport, Sleeper};
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 pub struct PipelineCall<'call> {
     pub model: &'call str,
@@ -72,7 +71,7 @@ where
             Err(error) => return Box::pin(ready(Err(PipelineError::from(error)))),
         };
         let expected = if call.atranscription {
-            ClientKind::Async
+            ClientKind::Asynchronous
         } else {
             ClientKind::Sync
         };

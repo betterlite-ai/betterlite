@@ -1,5 +1,6 @@
 use std::str;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
@@ -11,8 +12,7 @@ use super::error::ImageCallError;
 use super::plan::{ImageCall, LogContext, PreparedRequest};
 use super::transform::apply_reply;
 use super::transport::{
-    ClientFactory, ClientKind, ImageReply, ImageRequest, ImageTransport as _, SuppliedClient,
-    TransferError,
+    ClientFactory, ImageReply, ImageRequest, ImageTransport as _, TransferError,
 };
 use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
@@ -36,7 +36,7 @@ where
         body: prepared.signed.body.clone(),
     };
     let sent = match (call.aimg_generation, supplied) {
-        (true, Some(client)) if client.kind == ClientKind::Async => {
+        (true, Some(client)) if client.kind == ClientKind::Asynchronous => {
             client.transport.post(request).await
         }
         (true, _) => factory.async_client(call.timeout).post(request).await,

@@ -45,6 +45,7 @@ pub mod ocr_request;
 pub mod ocr_routes;
 pub mod ocr_wiring;
 pub mod provider_hints;
+pub mod proxy_diagnostics;
 pub mod proxy_endpoint_support;
 pub mod rag_routes;
 pub mod realtime_routes;

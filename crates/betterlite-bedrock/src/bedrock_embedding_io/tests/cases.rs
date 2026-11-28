@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_error::error::ErrorClass;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -20,8 +21,8 @@ use crate::bedrock_embedding_io::error::EmbeddingIoError;
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
-    ClientKind, EmbeddingCall, EmbeddingReply as TransportReply, EmbeddingRequest, ReplyRequest,
-    SuppliedClient, Timeout, TimeoutRecord, TransferError, post_embedding,
+    EmbeddingCall, EmbeddingReply as TransportReply, EmbeddingRequest, ReplyRequest, Timeout,
+    TimeoutRecord, TransferError, post_embedding,
 };
 use crate::bedrock_settings::{ErrorHeaders, ResponseBody};
 use crate::signing::request::AwsSignedRequest;
@@ -241,7 +242,7 @@ fn supplied_client_of_the_other_kind_is_not_used() {
     let reply = run_with_supplied(&factory, &client, ClientKind::Sync, true, &data)
         .expect("a fresh async client replies");
     assert_eq!(reply, object(r#"{"factory":true}"#));
-    let second_reply = run_with_supplied(&factory, &client, ClientKind::Async, false, &data)
+    let second_reply = run_with_supplied(&factory, &client, ClientKind::Asynchronous, false, &data)
         .expect("a fresh sync client replies");
     assert_eq!(second_reply, object(r#"{"factory":true}"#));
     assert!(client.requests().is_empty());
@@ -254,7 +255,7 @@ fn provider_json_response() {
     built_async_client_gets_the_provider_and_timeout();
     timeout_record_is_passed_whole();
     supplied_client_is_reused(ClientKind::Sync, false);
-    supplied_client_is_reused(ClientKind::Async, true);
+    supplied_client_is_reused(ClientKind::Asynchronous, true);
     supplied_client_of_the_other_kind_is_not_used();
 }
 

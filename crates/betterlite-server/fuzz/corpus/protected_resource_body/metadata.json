@@ -1,0 +1,1 @@
+{"resource":"https://mcp.example.test/mcp","authorization_servers":["https://idp.example.test"],"scopes_supported":["read","write"]}

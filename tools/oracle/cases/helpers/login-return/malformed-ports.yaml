@@ -1,0 +1,13 @@
+kind: helper
+name: login-return-malformed-ports
+call:
+  login_return: {function: validate, return_to: "https://cp.example:abc/ui", control_plane_url: "https://cp.example"}
+calls:
+  - login_return: {function: validate, return_to: "https://cp.example:65536/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example:+80/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example:8_0/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example:00443/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example/ui", control_plane_url: "https://cp.example:abc"}
+  - login_return: {function: validate, return_to: "https://cp.example/ui", control_plane_url: "https://cp.example:65536"}
+env: {}
+compare: {ignore: []}

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_models::decisions::Json as Decisions;
 use betterlite_openai::cohere_embedding::usage::BilledUnits;
 use betterlite_openai::cohere_legacy_embedding::SYNC_CLIENT_TIMEOUT;
@@ -9,7 +10,7 @@ use betterlite_prompts::arguments::json::Json;
 
 use super::super::fixture::{ClientCall, RawRequest, Reply, fixture_probe, object, run};
 use super::super::support::{argument_fields, decisions_value, legacy, logged_response, phases};
-use crate::bedrock_embedding_io::transport::{ClientKind, Timeout, TimeoutRecord, TransferError};
+use crate::bedrock_embedding_io::transport::{Timeout, TimeoutRecord, TransferError};
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::execute::cohere_timeout;
 use crate::embedding_call::{EmbeddingCall, EmbeddingEnvironment, ParamMap};
@@ -122,7 +123,7 @@ fn async_logging_carries_the_prepared_request() {
     assert_eq!(
         outcome.calls,
         [ClientCall {
-            kind: ClientKind::Async,
+            kind: ClientKind::Asynchronous,
             provider: Some(String::from("cohere")),
             timeout: Some(Timeout::Seconds(2.5)),
         }]
@@ -166,7 +167,7 @@ fn the_async_timeout_record_reaches_the_client_factory() {
     assert_eq!(
         outcome.calls,
         [ClientCall {
-            kind: ClientKind::Async,
+            kind: ClientKind::Asynchronous,
             provider: Some(String::from("cohere")),
             timeout: Some(Timeout::Record(Box::new(record))),
         }]
@@ -344,7 +345,7 @@ fn only_a_matching_client_replaces_the_handler() {
     assert!(supplied.cohere_requests.is_empty());
     let mut other_kind_probe = fixture_probe();
     other_kind_probe.model = String::from(COHERE_MODEL);
-    other_kind_probe.supplied = Some(ClientKind::Async);
+    other_kind_probe.supplied = Some(ClientKind::Asynchronous);
     other_kind_probe.replies = vec![Reply::ok(REPLY)];
     let other_kind = run(&other_kind_probe);
     assert!(other_kind.supplied_requests.is_empty());
@@ -352,7 +353,7 @@ fn only_a_matching_client_replaces_the_handler() {
     let mut async_matching_probe = fixture_probe();
     async_matching_probe.model = String::from(COHERE_MODEL);
     async_matching_probe.aembedding = true;
-    async_matching_probe.supplied = Some(ClientKind::Async);
+    async_matching_probe.supplied = Some(ClientKind::Asynchronous);
     async_matching_probe.replies = vec![Reply::ok(REPLY)];
     let async_matching = run(&async_matching_probe);
     assert_eq!(async_matching.supplied_requests.len(), 1);

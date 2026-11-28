@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 
 const DEFAULT_MAX_BYTES: usize = 0x0400_0000;
 const DEFAULT_MAX_FRAMES: u64 = 33_177_600_000;
-const DEFAULT_MAX_SAMPLE_RATE: u32 = 384_000;
+pub const DEFAULT_MAX_SAMPLE_RATE: u32 = 384_000;
 const RIFF_HEADER_LEN: usize = 12;
 const CHUNK_ID_LEN: usize = 4;
 const CHUNK_LENGTH_LEN: usize = 4;

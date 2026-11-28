@@ -1,0 +1,13 @@
+id: B10195
+milestone: R2 bug fixes
+title: The aws_secret_manager and aws_kms clients sign through the credential chain, with an async credential resolver
+status: todo
+depends_on: [B10175, B10193, B10191]
+file: tasks/B10195-aws-secrets-manager-client.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
