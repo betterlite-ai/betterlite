@@ -43,20 +43,14 @@ impl GenaiCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
         let wire: SessionWire = parse(text)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
-        let mut studio = StudioRaw::default()
-            .convert(&environment)
-            .map_err(|source| SessionError::Settings { source })?;
+        let mut studio = StudioRaw::default().convert(&environment)?;
         // litellm.api_key: the last studio key LiteLLM reads, after the GOOGLE_API_KEY and GEMINI_API_KEY environment keys
         studio.generic_api_key = wire
             .api_key
             .map(SecretString::from)
             .or(studio.generic_api_key);
-        let vertex = VertexRaw::default()
-            .convert(&environment)
-            .map_err(|source| SessionError::Settings { source })?;
-        let schema = SchemaRaw::default()
-            .convert(&environment)
-            .map_err(|source| SessionError::Settings { source })?;
+        let vertex = VertexRaw::default().convert(&environment)?;
+        let schema = SchemaRaw::default().convert(&environment)?;
         let request_timeout = RequestTimeout::resolve(&environment)
             .map_err(|source| SessionError::Timeout { source })?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)

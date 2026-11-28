@@ -911,7 +911,7 @@ fn a_call_failure_keeps_its_status_and_a_context_keeps_its_own() {
         timeout: None,
         cooldown: None,
     };
-    let error = MessagesCallError::Call(failure);
+    let error = MessagesCallError::Call(Box::new(failure));
     assert_eq!(error.status(), 429);
     assert_eq!(error.to_string(), "slow down");
     assert_eq!(error.http_detail(), None);
@@ -924,7 +924,7 @@ fn a_call_failure_keeps_its_status_and_a_context_keeps_its_own() {
         timeout: None,
         cooldown: None,
     };
-    assert_eq!(MessagesCallError::Call(stateless).status(), 500);
+    assert_eq!(MessagesCallError::Call(Box::new(stateless)).status(), 500);
     let context = Context {
         status: 503,
         message: "polyfill failed".to_owned(),

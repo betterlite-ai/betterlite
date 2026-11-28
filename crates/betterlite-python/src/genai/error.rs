@@ -27,7 +27,7 @@ pub(crate) enum SessionError {
     },
     #[error("the google settings could not be read: {source}")]
     Settings {
-        #[source]
+        #[from]
         source: ConfigError,
     },
     #[error("the request timeout could not be read: {source}")]

@@ -196,7 +196,7 @@ fn merge_overrides(data: &mut JsonMap) {
 }
 
 fn routing_missing() -> MessagesCallError {
-    MessagesCallError::Call(CallFailure {
+    MessagesCallError::Call(Box::new(CallFailure {
         status: None,
         message: "the route chose the router, but the request carries no routing port".to_owned(),
         error_type: None,
@@ -204,7 +204,7 @@ fn routing_missing() -> MessagesCallError {
         headers: BTreeMap::new(),
         timeout: None,
         cooldown: None,
-    })
+    }))
 }
 
 // What B081's generic error answer reads off LiteLLM's exception
@@ -231,8 +231,9 @@ pub struct Context {
 pub enum MessagesCallError {
     #[error(transparent)]
     Steps(#[from] CallStepError),
+    // boxed to keep the error under result_large_err's 128-byte limit
     #[error("{}", .0.message)]
-    Call(CallFailure),
+    Call(Box<CallFailure>),
     #[error(transparent)]
     Context(#[from] Context),
     #[error("litellm.PermissionDeniedError: Model is blocked")]
