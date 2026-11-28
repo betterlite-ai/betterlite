@@ -4,7 +4,6 @@ use std::sync::Mutex;
 use betterlite_anthropic::anthropic_http_stream::completion::WrappedStream;
 use betterlite_anthropic::anthropic_http_stream::transport::StreamPost;
 use betterlite_anthropic::chat_call::ChatOutcome;
-use betterlite_anthropic::chat_call::transport::{ClientKind, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{ChatClients, ChatDeps};
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::stream_decode::DecodedChunk;
@@ -14,6 +13,8 @@ use betterlite_foundry::anthropic::handler::completion as provider_completion;
 use betterlite_foundry::anthropic::request::{ChatRequest, Style};
 use betterlite_foundry::anthropic_messages::environment::{ParamsKey, TokenSource};
 use betterlite_foundry::chat::sources::NoSources;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use futures_util::StreamExt as _;
@@ -67,7 +68,7 @@ pub(crate) fn completion(input: &Input) -> HelperResult {
     let deps = ChatDeps {
         config: &config,
         clients: ChatClients {
-            supplied: Some(SuppliedChatClient {
+            supplied: Some(SuppliedClient {
                 kind: ClientKind::Sync,
                 transport: &wire,
             }),

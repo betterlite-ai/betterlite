@@ -1,8 +1,8 @@
 use std::time::{Duration, SystemTime};
 
-use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_bedrock::image_edits::plan::{EditEnvironment, EditImage, EditPlan};
 use betterlite_bedrock::model_routes::ParamMap;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use secrecy::SecretString;
 

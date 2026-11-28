@@ -1,12 +1,23 @@
-use crate::state::shared::Shared;
+use std::sync::Arc;
+
+use betterlite_auth::oauth_tokens::transport::TokenInfoTransport;
+use betterlite_config::sections::oauth_tokens::Settings;
 use betterlite_config::types::Config;
 
-pub struct Slot;
+use crate::state::shared::Shared;
+
+// Pinned once at startup: the section already resolved every os.environ/ reference into typed values.
+pub struct Slot {
+    pub settings: Arc<Settings>,
+    pub transport: Arc<dyn TokenInfoTransport>,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub fn new(config: &Config, shared: &Shared) -> Self {
+        Self {
+            settings: Arc::new(config.sections.oauth_tokens.clone()),
+            transport: Arc::new(shared.client.clone()),
+        }
     }
 }

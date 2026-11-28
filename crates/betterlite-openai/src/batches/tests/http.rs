@@ -18,10 +18,11 @@ use crate::batches::error::{BatchesError, SdkError};
 use crate::batches::http::{HttpBatchesClient, HttpConstructor};
 use crate::batches::records::BatchObject;
 use crate::batches::sdk::{
-    BatchesSdk as _, ClientConstructor as _, ClientKind, ClientSettings, Connection, SdkArguments,
-    Timeout, TimeoutPhases,
+    BatchesSdk as _, ClientConstructor as _, ClientSettings, Connection, SdkArguments, Timeout,
+    TimeoutPhases,
 };
 use crate::batches::{BatchOperation, BatchesApi};
+use betterlite_http::client_kind::ClientKind;
 
 const SECRET: &str = "sk-fixture-secret-7731";
 
@@ -154,7 +155,7 @@ async fn http_client_speaks_the_batch_endpoints() {
     let client = build(
         &constructor(None),
         &arguments(Some("k"), &base, None),
-        ClientKind::Async,
+        ClientKind::Asynchronous,
     );
     let mut request = create_request();
     request.extra_body = Some(pair("vendor", "x"));
@@ -181,7 +182,7 @@ async fn http_client_reports_status_errors_with_their_fields() {
     let client = build(
         &constructor(None),
         &arguments(Some("k"), &base, None),
-        ClientKind::Async,
+        ClientKind::Asynchronous,
     );
     let (_requests, failure) = tokio::join!(
         serve(listener, vec![(400, error)]),
@@ -213,7 +214,7 @@ async fn http_client_reads_top_level_error_fields() {
     let client = build(
         &constructor(None),
         &arguments(Some("k"), &base, None),
-        ClientKind::Async,
+        ClientKind::Asynchronous,
     );
     let (_requests, failure) = tokio::join!(
         serve(listener, vec![(400, error)]),

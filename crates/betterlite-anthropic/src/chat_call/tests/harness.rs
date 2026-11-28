@@ -11,10 +11,11 @@ use secrecy::SecretString;
 use serde_json::Number;
 use tokio::runtime::Builder;
 
-use crate::chat_call::transport::{ClientKind, SuppliedChatClient};
 use crate::chat_call::{CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call};
 use crate::credentials::AnthropicSettings;
 use crate::response::wire::ResponseEnvelope;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 
 use super::fixture::{
     API_BASE, CALLER_KEY, CallError, FixtureConfig, FixtureCounter, FixtureFailure, FixtureIds,
@@ -46,7 +47,7 @@ impl Setup {
     pub(super) fn chat() -> Self {
         Self {
             style: CallStyle::Sync,
-            supplied_kind: ClientKind::Async,
+            supplied_kind: ClientKind::Asynchronous,
             supplied: true,
             body: body(),
             optional_params: IndexMap::new(),
@@ -182,7 +183,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
         .map(|key| SecretString::from(key.to_owned()));
     let call = call_of(setup, caller_key.as_ref(), &settings);
     let clients = ChatClients {
-        supplied: setup.supplied.then_some(SuppliedChatClient {
+        supplied: setup.supplied.then_some(SuppliedClient {
             kind: setup.supplied_kind,
             transport: &supplied,
         }),

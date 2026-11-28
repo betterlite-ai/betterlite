@@ -1,9 +1,9 @@
 use async_trait::async_trait;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::assistants::client::ClientKind;
 use futures_util::stream::BoxStream;
 use thiserror::Error;
 
@@ -36,7 +36,7 @@ pub trait BytezStreamTransport: Send + Sync {
 #[async_trait]
 impl BytezStreamTransport for ProxiedClient {
     fn kind(&self) -> ClientKind {
-        ClientKind::Async
+        ClientKind::Asynchronous
     }
 
     async fn open(&self, request: OutboundRequest) -> Result<StreamHead, ClientError> {

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_bedrock::image_edits::plan::EditImage;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use secrecy::SecretString;
 
 use super::edit_fixture::{EditFixture, EditSetup};
@@ -138,7 +138,7 @@ async fn canvas_asynchronous() {
     assert_eq!(run.calls().len(), 1);
     assert_eq!(
         run.calls()[0],
-        (ClientKind::Async, Some(Duration::from_millis(2500)))
+        (ClientKind::Asynchronous, Some(Duration::from_millis(2500)))
     );
     assert_eq!(
         run.edit_body(),

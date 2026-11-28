@@ -12,7 +12,7 @@ use crate::bug_report::issue_url::{MAX_URL_LENGTH, bug_report_issue_url};
 use crate::bug_report::notice::{NOTICE_PREFIX, bug_report_notice, strip_bug_report_notice};
 use crate::bug_report::providers::KNOWN_PROVIDERS;
 use crate::bug_report::record::{BugReport, Deployment, EnvironmentReport, Surface};
-use crate::bug_report::report::{CallContext, build_bug_report};
+use crate::bug_report::report::{CallContext, build_bug_report, exception_type_name};
 
 fn no_docker() -> Host<'static> {
     Host {
@@ -38,25 +38,11 @@ fn failing_parse() -> (&'static Location<'static>, ParseIntError) {
     (Location::caller(), "x".parse::<u32>().unwrap_err())
 }
 
-#[rstest]
-#[case::unset(None, None, true, true)]
-#[case::lowercase_true(Some("true"), None, false, false)]
-#[case::capitalized_true(Some("True"), None, false, false)]
-#[case::other_value(Some("1"), None, true, true)]
-#[case::http_error(None, Some(500), true, false)]
-fn bug_report_eligibility_reads_flag_and_status(
-    #[case] flag: Option<&str>,
-    #[case] status: Option<u16>,
-    #[case] enabled: bool,
-    #[case] eligible: bool,
-) {
-    assert_eq!(
-        (
-            flag.is_none_or(|value| value.to_lowercase() != "true"),
-            flag.is_none_or(|value| value.to_lowercase() != "true") && status.is_none()
-        ),
-        (enabled, eligible)
-    );
+#[test]
+fn exception_type_name_keeps_the_class_name_alone() {
+    assert_eq!(exception_type_name(&failing_parse().1), "ParseIntError");
+    let boxed = Box::new(failing_parse().1);
+    assert_eq!(exception_type_name(&boxed), "Box");
 }
 
 #[rstest]
@@ -99,7 +85,7 @@ fn bug_report_frames_come_from_the_creation_site() {
         stream: Some(false),
         config_lines: Vec::new(),
     };
-    let built = build_bug_report(&error, location, context, no_docker());
+    let built = build_bug_report(exception_type_name(&error), location, context, no_docker());
     assert_eq!(built.litellm_frames, [format!("{}:{call_line}", file!())]);
 }
 
@@ -146,7 +132,12 @@ fn bug_report_build_keeps_type_and_allowlisted_provider() {
         stream: Some(true),
         config_lines: Vec::new(),
     };
-    let built = build_bug_report(&error, location, context.clone(), no_docker());
+    let built = build_bug_report(
+        exception_type_name(&error),
+        location,
+        context.clone(),
+        no_docker(),
+    );
     assert_eq!(built.exception_type, "ParseIntError");
     assert_eq!(
         (built.call_type, built.custom_llm_provider, built.stream),
@@ -161,7 +152,8 @@ fn bug_report_build_keeps_type_and_allowlisted_provider() {
         ..context
     };
     assert_eq!(
-        build_bug_report(&error, location, unknown, no_docker()).custom_llm_provider,
+        build_bug_report(exception_type_name(&error), location, unknown, no_docker())
+            .custom_llm_provider,
         None
     );
     assert_eq!(KNOWN_PROVIDERS.split_ascii_whitespace().count(), 165);

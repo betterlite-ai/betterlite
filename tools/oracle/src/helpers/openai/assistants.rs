@@ -1,13 +1,13 @@
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use betterlite_openai::assistants::client::{ClientOptions, SdkClient};
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use input::{AssistantsCall, ClientFields, KindName, OptionFields, Reply};
+use input::{AssistantsCall, ClientFields, OptionFields, Reply};
 use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
@@ -105,13 +105,6 @@ fn client_options(fields: &OptionFields) -> Result<ClientOptions, Box<HelperErro
     })
 }
 
-const fn kind_of(name: KindName) -> ClientKind {
-    match name {
-        KindName::Sync => ClientKind::Sync,
-        KindName::Async => ClientKind::Async,
-    }
-}
-
 // What the Python helper reports for the errors the OpenAI SDK raises.
 fn failure(error: &AssistantsError) -> Result<Value, Box<HelperError>> {
     match error {
@@ -165,10 +158,7 @@ where
 }
 
 fn shown(client: &SdkClient<Wire>) -> Value {
-    let kind = match client.kind {
-        ClientKind::Sync => "sync",
-        ClientKind::Async => "async",
-    };
+    let kind = client.kind.label();
     let mut fields = serde_json::Map::new();
     fields.insert(String::from("kind"), json!(kind));
     let given = [
@@ -207,7 +197,7 @@ fn client_arguments(fields: &ClientFields) -> HelperResult {
         transport: Arc::clone(&wire),
     };
     let supplied = fields.supplied.as_ref().map(|supplied| SdkClient {
-        kind: kind_of(supplied.kind),
+        kind: supplied.kind,
         api_key: None,
         base_url: None,
         timeout: None,
@@ -215,11 +205,7 @@ fn client_arguments(fields: &ClientFields) -> HelperResult {
         organization: supplied.organization.clone(),
         transport: Arc::clone(&wire),
     });
-    let client = api.get_openai_client(
-        kind_of(fields.kind),
-        client_options(&fields.options)?,
-        supplied,
-    );
+    let client = api.get_openai_client(fields.kind, client_options(&fields.options)?, supplied);
     Ok(json!({ "client": shown(&client) }))
 }
 

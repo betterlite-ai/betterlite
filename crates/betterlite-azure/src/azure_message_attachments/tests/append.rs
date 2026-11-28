@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::threads::error::{ReplyFault, ThreadsError};
 use betterlite_openai::threads::records::{MessageStatus, ThreadMessage};
 

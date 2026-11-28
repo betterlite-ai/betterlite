@@ -1,0 +1,10 @@
+kind: helper
+name: quote-multibyte-prompt
+call:
+  b4504:
+    operation: quote
+    prompt: 日本
+    deployments:
+      - litellm_params: {model: lens-model, input_cost_per_token: 0.25, output_cost_per_token: 0.5}
+env: {}
+compare: {ignore: []}

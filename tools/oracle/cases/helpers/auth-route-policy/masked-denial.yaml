@@ -1,0 +1,18 @@
+kind: helper
+name: auth-route-policy-masked-denial
+call:
+  auth_route_policy:
+    function: masked_user_id
+    masked: user-123456
+calls:
+  - auth_route_policy:
+      function: masked_user_id
+      masked: abcd
+  - auth_route_policy:
+      function: masked_user_id
+      masked: abcdefgh
+  - auth_route_policy:
+      function: masked_user_id
+      masked: someone-unknown
+env: {}
+compare: {ignore: []}

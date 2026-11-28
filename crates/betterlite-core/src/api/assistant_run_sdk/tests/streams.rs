@@ -105,7 +105,7 @@ async fn arun_thread_stream_returns_an_async_manager_synchronously() {
         transport: Arc::clone(&recorder),
     });
     let stream = sdk.arun_thread_stream(call("openai")).unwrap();
-    assert_eq!(stream.kind, ClientKind::Async);
+    assert_eq!(stream.kind, ClientKind::Asynchronous);
     assert!(recorder.requests().is_empty());
 }
 
@@ -118,7 +118,7 @@ async fn arun_thread_with_stream_true_returns_a_manager() {
     let mut input = call("openai");
     input.stream = Some(Some(RunFlag::Bool(true)));
     let stream = manager(sdk.arun_thread(input).await.unwrap());
-    assert_eq!(stream.kind, ClientKind::Async);
+    assert_eq!(stream.kind, ClientKind::Asynchronous);
     assert!(recorder.requests().is_empty());
 }
 
@@ -141,6 +141,27 @@ async fn a_supplied_client_class_decides_the_manager_kind() {
     });
     let stream = sdk.arun_thread_stream(input).unwrap();
     assert_eq!(stream.kind, ClientKind::Sync);
+}
+
+#[tokio::test]
+async fn a_supplied_async_client_class_keeps_the_async_manager_kind() {
+    let (recorder, fixture) = openai_recorder();
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut input = call("openai");
+    input.client = Some(RunClient {
+        class: RunClientClass::AsyncOpenAi,
+        api_key: Some(secret("client-key")),
+        base_url: None,
+        api_version: None,
+        azure_ad_token: None,
+        timeout: None,
+        max_retries: None,
+        organization: None,
+    });
+    let stream = sdk.run_thread_stream(input).unwrap();
+    assert_eq!(stream.kind, ClientKind::Asynchronous);
 }
 
 #[tokio::test]
@@ -220,7 +241,7 @@ async fn arun_thread_stream_forces_the_async_flag() {
     sdk.arun_thread_stream(input).unwrap();
     match sdk.operations.targets().remove(0) {
         CapturedTarget::OpenAi { kind, handler, .. } => {
-            assert_eq!(kind, ClientKind::Async);
+            assert_eq!(kind, ClientKind::Asynchronous);
             assert!(!handler);
         }
         CapturedTarget::Azure { .. } => panic!("the openai provider built an azure target"),

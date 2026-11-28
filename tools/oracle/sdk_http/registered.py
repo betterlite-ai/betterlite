@@ -7,7 +7,7 @@ from assistant_read_delete import AssistantReadDeleteRequest
 from assistant_run import AssistantRunRequest
 from assistant_threads import AssistantThreadsRequest
 from compression_interception import CompressionInterceptionRequest
-from context_edit_dispatch import ContextEditDispatchRequest
+from context_edit_dispatch_call import ContextEditDispatchRequest
 from decisions_send import DecisionsSendRequest
 from file_content_stream import FileContentStreamRequest
 from file_http_content import FileHttpContentRequest

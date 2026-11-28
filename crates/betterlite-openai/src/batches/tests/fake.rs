@@ -9,8 +9,9 @@ use crate::batches::records::{
     BatchCreate, BatchEndpoint, BatchPage, BatchQuery, CompletionWindow,
 };
 use crate::batches::sdk::{
-    BatchesSdk, ClientConstructor, ClientKind, ClientSettings, Connection, SdkArguments,
+    BatchesSdk, ClientConstructor, ClientSettings, Connection, SdkArguments,
 };
+use betterlite_http::client_kind::ClientKind;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Recorded {

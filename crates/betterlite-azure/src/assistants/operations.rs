@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::records::{RunReply, RunRequest};
@@ -115,7 +115,7 @@ where
 
 const fn client_kind(arun_thread: Option<bool>) -> ClientKind {
     match arun_thread {
-        Some(true) => ClientKind::Async,
+        Some(true) => ClientKind::Asynchronous,
         Some(false) | None => ClientKind::Sync,
     }
 }

@@ -19,7 +19,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_util::task::TaskTracker;
 
 use crate::credential_sources::sdk::CredentialClock;
-use crate::gemini_http::call::{ClientKind, Clients, GeminiCall, SuppliedClient, VertexLlm};
+use crate::gemini_http::call::{Clients, GeminiCall, SuppliedClient, VertexLlm};
 use crate::gemini_http::post::{
     Chunks, GeminiPost, OpenFuture, OpenedReply, PostFuture, PostReply, PostRequest,
 };
@@ -32,6 +32,7 @@ use crate::token_cache::record::CredentialSnapshot;
 use crate::token_cache::state::TokenState;
 use crate::token_refresh::CredentialRefresh;
 use crate::vertex_embedding_call::post::{ClientTimeout, PostError};
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 pub(super) const TOKEN: &str = "ya29.vertex-test-token";
 pub(super) const GEMINI_KEY: &str = "gemini-test-key";

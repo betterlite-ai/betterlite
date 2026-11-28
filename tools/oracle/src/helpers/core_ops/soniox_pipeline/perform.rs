@@ -5,10 +5,10 @@ use std::time::Duration;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::soniox::pipeline::PipelineCall;
 use betterlite_core::api::soniox::pipeline::SonioxPipeline;
-use betterlite_core::api::soniox::pipeline::client::{ClientKind, SuppliedClient};
 use betterlite_core::api::soniox::pipeline::error::PipelineError;
 use betterlite_core::api::soniox::pipeline::job::PipelineTarget;
 use betterlite_core::api::soniox::records::response::SonioxTranscriptionResponse;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_openai::api::audio_file_input::{AudioFile, AudioStream, AuthorizedAudioFiles};
 use betterlite_openai::openai_base_config::Object;
 use serde_json::{Value, json};
@@ -102,7 +102,7 @@ fn pipeline_call(case: &Case, mode: Mode) -> PipelineCall<'_> {
 const fn client_kind(mode: Mode) -> ClientKind {
     match mode {
         Mode::Sync => ClientKind::Sync,
-        Mode::Async => ClientKind::Async,
+        Mode::Async => ClientKind::Asynchronous,
     }
 }
 

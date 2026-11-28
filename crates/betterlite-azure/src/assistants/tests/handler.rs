@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::thread_runs::stream::RunEventHandler;
 
 use super::support::{self, Fixture, Recorder, RecordingHandler, STREAM_BODY, run_request};
@@ -78,7 +78,7 @@ async fn builds_streams_from_a_supplied_client() {
     let mut fixture = Fixture::new();
     fixture.params.timeout = Some(f64::NAN);
     let run = run_request();
-    let supplied = support::supplied_client(ClientKind::Async, &recorder);
+    let supplied = support::supplied_client(ClientKind::Asynchronous, &recorder);
     let call = RunCall {
         dispatch: streaming(),
         run: &run,
@@ -91,7 +91,7 @@ async fn builds_streams_from_a_supplied_client() {
     let RunInvocation::Streaming(manager) = invocation else {
         panic!("expected a stream");
     };
-    assert_eq!(manager.kind, ClientKind::Async);
+    assert_eq!(manager.kind, ClientKind::Asynchronous);
     assert_eq!(manager.read_timeout, Duration::from_secs(42));
     assert_eq!(
         manager.request.url.as_str(),

@@ -1,0 +1,18 @@
+task: B4675
+deviations:
+  - what: Every verb returns a GatewayReply enum (Redirect, Html, Json, Error) instead of a starlette Response, with the set-cookie fields boxed and the flow description typed as ConnectFlowDescription rather than a dict. LiteLLM builds RedirectResponse, HTMLResponse and JSONResponse directly.
+    why: The crate and the workspace lints forbid serde_json::Value outside passthrough fields, deny clippy's variant-size-differences, and the task keeps axum and the framework out of these modules so the umbrella B7971/B8702 owns the wire. The reply carries exactly what the route must write, and the oracle cases compare status, location, cache headers, body and cookie attributes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L550-L553
+  - what: The request view (base URL, path, query, cookies), the cipher, the clock instant, the flow token source and the consent-page renderer are handed in, where LiteLLM reads request.cookies, datetime.now, secrets.token_urlsafe and the module-level render_native_client_consent_page.
+    why: The task makes the module testable without a server, a wall clock or a random source, and keeps no global state; the same instant drives the flow expiry the guard and the sealed flow share. The oracle cases script the same values on the LiteLLM side by freezing its clock and token source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L700-L733
+  - what: The Html reply carries a delete_cookie alongside its set_cookie, because the manual-delivery page clears the per-flow cookie on the same response it renders. LiteLLM calls response.delete_cookie on that page.
+    why: The reply is the whole response; a route that only got a body from these modules could not clear the flow cookie B4674's guard depends on. The cookie attributes (Max-Age 0, 1970 expiry, same path and secure flag, HttpOnly, SameSite=Lax) are carried so the umbrella can write them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L901
+  - what: A base URL or redirect URI that the URL parser cannot read answers 500 server_error "the gateway could not read the redirect URI", and a redirect URI that cannot be parsed is treated as a non-loopback redirect (400) at the native verb. LiteLLM lets urlparse's error escape into the framework's plain 500.
+    why: The typed refusal keeps the no-panic contract and the OAuth body, and a malformed request URL is a server fault while a malformed client redirect is a client fault. Proven by an_unreadable_base_url_becomes_a_typed_server_error, an_unreadable_redirect_uri_is_a_server_error and an_unreadable_redirect_is_not_a_loopback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L449-L451
+  - what: The consent-team lookup returns Result<Vec<ConsentTeam>, ReloadUserFailure>; LiteLLM's native verb tells a successful lookup from a refusal with isinstance(teams, tuple), so a list of teams is treated as a failure there.
+    why: docs/compatibility.md keeps declared types over Python's runtime duck typing; the Vec is the declared shape of a successful lookup and the refusal enum is the declared failure. The oracle cases answer the same values through LiteLLM's own callback contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L584-L586
+kept_bugs: []

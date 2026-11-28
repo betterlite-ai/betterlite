@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
+use betterlite_http::client_kind::ClientKind;
+use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::operations::{RunCall, RunDispatch, RunInvocation, RunsApi};
 use betterlite_openai::thread_runs::records::RunRequest;
@@ -43,9 +44,9 @@ fn client_options(fields: &Fields) -> Result<ClientOptions, Box<HelperError>> {
 const fn selected(kind: ClientKind, streaming: bool) -> &'static str {
     match (kind, streaming) {
         (ClientKind::Sync, false) => "sync_run",
-        (ClientKind::Async, false) => "async_run",
+        (ClientKind::Asynchronous, false) => "async_run",
         (ClientKind::Sync, true) => "sync_stream",
-        (ClientKind::Async, true) => "async_stream",
+        (ClientKind::Asynchronous, true) => "async_stream",
     }
 }
 fn failure(error: &ThreadRunsError) -> Result<Value, Box<HelperError>> {
