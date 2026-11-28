@@ -61,7 +61,6 @@ use std::{
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use self::model_pattern_input as model_stage;
 use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
@@ -133,6 +132,7 @@ fn rewritten_body(request: &mut Request<Body>, body: Option<Bytes>) -> Option<By
     rewritten
 }
 
+#[rustfmt::skip] // the model stages share one arm, kept on one line to stay within clippy's line limit
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -152,8 +152,7 @@ fn stage_input(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
-        AuthBackend::AuthRequestModels => model_stage(backend, request, authenticated, resolver),
-        AuthBackend::AuthModelPatterns => model_stage(backend, request, authenticated, resolver),
+        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => model_pattern_input(backend, request, authenticated, resolver),
         AuthBackend::AuthModelGrants => auth_model_grants::stage_input(request, authenticated),
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
