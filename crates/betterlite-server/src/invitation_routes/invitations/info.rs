@@ -4,13 +4,12 @@ use axum::Json;
 use axum::extract::{Extension, Query, State};
 use axum::response::IntoResponse as _;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
-use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
 use serde::Deserialize;
 
 use super::super::state::InvitationRouteState;
 use super::super::{Caller, InvitationRouteError};
-use super::{MASTER_KEY_SUBJECT, RouteResult, role_text};
+use super::{RouteResult, role_text};
+use crate::management_guards::caller::caller_has_admin_view;
 use crate::user_invitation::InvitationRecord;
 
 #[derive(Deserialize)]
@@ -41,15 +40,7 @@ async fn read_invitation(
 ) -> Result<InvitationRecord, InvitationRouteError> {
     // LiteLLM checks prisma_client (L17799) before the admin view (L17805)
     let database = state.database()?;
-    let admin_view = principal.subject == MASTER_KEY_SUBJECT
-        || principal
-            .source_key
-            .0
-            .as_ref()
-            .is_some_and(user_api_key_has_admin_view)
-        || principal.roles.contains(&Role::PlatformAdmin)
-        || principal.roles.contains(&Role::PlatformViewer);
-    if !admin_view {
+    if !caller_has_admin_view(principal) {
         return Err(InvitationRouteError::NotAllowed {
             role: role_text(principal),
         });

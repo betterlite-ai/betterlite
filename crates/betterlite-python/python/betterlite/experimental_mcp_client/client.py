@@ -1,8 +1,9 @@
 import json
 from collections.abc import Awaitable, Callable
-from typing import Final, Literal, Protocol, Required, TypedDict, TypeVar, runtime_checkable
+from typing import Final, Literal, Protocol, TypeVar, runtime_checkable
 
 from pydantic import AnyUrl, JsonValue, TypeAdapter
+from typing_extensions import Required, TypedDict
 
 from betterlite._native import NativeMcpClient, NativeMcpError, NativeMcpSession
 from betterlite._settings.env import env_number

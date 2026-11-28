@@ -1,13 +1,14 @@
 from datetime import date
-from enum import StrEnum
-from typing import ClassVar, TypedDict
+from enum import Enum
+from typing import ClassVar
 
 from pydantic import ConfigDict, Field
+from typing_extensions import TypedDict
 
 from betterlite.types.utils import JsonValue, ResponseObject
 
 
-class GroupByDimension(StrEnum):
+class GroupByDimension(str, Enum):
     DATE = "date"
     MODEL = "model"
     API_KEY = "api_key"

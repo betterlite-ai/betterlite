@@ -1,7 +1,7 @@
-from enum import StrEnum
+from enum import Enum
 
 
-class SearchProviders(StrEnum):
+class SearchProviders(str, Enum):
     PERPLEXITY = "perplexity"
     TAVILY = "tavily"
     PARALLEL_AI = "parallel_ai"

@@ -1,8 +1,8 @@
-from enum import StrEnum
-from typing import Literal, Required
+from enum import Enum
+from typing import Literal
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.vertex_ai.schema import FunctionDeclaration
 
@@ -20,7 +20,7 @@ class FunctionCallingConfig(TypedDict, total=False):
     allowed_function_names: list[str]
 
 
-class VertexToolName(StrEnum):
+class VertexToolName(str, Enum):
     GOOGLE_SEARCH = "googleSearch"
     GOOGLE_SEARCH_RETRIEVAL = "googleSearchRetrieval"
     ENTERPRISE_WEB_SEARCH = "enterpriseWebSearch"

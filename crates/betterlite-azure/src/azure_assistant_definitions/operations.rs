@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::records::{
     AssistantCreate, AssistantDeleted, AssistantObject, AssistantPage,
 };
@@ -111,7 +111,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
                 api_base: request.api_base.clone(),
                 model_name: Some(String::new()),
                 api_version: request.api_version.clone(),
-                is_async: kind == ClientKind::Async,
+                is_async: kind == ClientKind::Asynchronous,
                 session: request.session,
                 refresh_enabled: request.refresh_enabled,
                 settings: request.settings,
@@ -132,7 +132,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
 // Only the literal true flag selects the async client; a missing, false or other facade value stays sync.
 const fn requested_kind(flag: Option<bool>) -> ClientKind {
     match flag {
-        Some(true) => ClientKind::Async,
+        Some(true) => ClientKind::Asynchronous,
         Some(false) | None => ClientKind::Sync,
     }
 }

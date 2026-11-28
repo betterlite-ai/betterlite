@@ -133,7 +133,7 @@ async def avideo_generation(  # noqa: PLR0913, PLR0917  # https://github.com/Ber
     seconds: CallValue = None,
     size: CallValue = None,
     user: CallValue = None,
-    timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L35
+    timeout: CallValue = 600,
     custom_llm_provider: CallValue = None,
     extra_headers: CallValue = None,
     extra_query: CallValue = None,
@@ -157,7 +157,7 @@ def video_content(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litel
 
 
 async def avideo_content(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L383
-    video_id: CallValue, timeout: CallValue = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L383
+    video_id: CallValue, timeout: CallValue = None,
     custom_llm_provider: CallValue = None, variant: CallValue = None,
     extra_headers: CallValue = None, extra_query: CallValue = None, extra_body: CallValue = None,
     **kwargs: CallValue) -> bytes:
@@ -190,7 +190,7 @@ def video_remix(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
 async def avideo_remix(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L454
     video_id: CallValue,
     prompt: CallValue,
-    timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L454
+    timeout: CallValue = 600,
     custom_llm_provider: CallValue = None,
     extra_headers: CallValue = None,
     extra_query: CallValue = None,
@@ -226,7 +226,7 @@ async def avideo_list(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     limit: CallValue = None,
     order: CallValue = None,
     api_key: CallValue = None,
-    timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L656
+    timeout: CallValue = 600,
     custom_llm_provider: CallValue = None,
     extra_headers: CallValue = None,
     extra_query: CallValue = None,
@@ -252,7 +252,7 @@ def video_status(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litell
 
 
 async def avideo_status(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L870
-    video_id: CallValue, timeout: CallValue = 600, custom_llm_provider: CallValue = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L870
+    video_id: CallValue, timeout: CallValue = 600, custom_llm_provider: CallValue = None,
     extra_headers: CallValue = None, extra_query: CallValue = None, extra_body: CallValue = None,
     **kwargs: CallValue) -> VideoObject:
     return await avideo_object(NativeVideoSession("{}").astatus, {**kwargs, **dict(zip(

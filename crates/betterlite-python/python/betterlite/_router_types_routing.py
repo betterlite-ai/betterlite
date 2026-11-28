@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
 from typing import ClassVar, Final, Generic, Protocol, TypeVar, runtime_checkable
 
 from pydantic import ConfigDict, Field, JsonValue, ValidationInfo, field_validator
@@ -134,7 +134,7 @@ class ClassifierPlugin(Protocol):
     async def classify(self, context: RoutingContext) -> str | None: ...
 
 
-class RequestType(StrEnum):
+class RequestType(str, Enum):
     CODE_GENERATION = "code_generation"
     CODE_UNDERSTANDING = "code_understanding"
     TECHNICAL_DESIGN = "technical_design"

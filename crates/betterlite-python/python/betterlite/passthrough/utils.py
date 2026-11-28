@@ -1,10 +1,10 @@
 from collections.abc import AsyncIterable, Iterable, Mapping, Sequence
 from http.cookiejar import CookieJar
-from typing import Final, Protocol, TypeAlias, TypedDict
+from typing import Final, Protocol, TypeAlias
 from urllib.parse import parse_qsl
 
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import TypeIs, override
+from typing_extensions import TypedDict, TypeIs, override
 
 from betterlite import _native
 from betterlite._completion.arguments import SessionLike

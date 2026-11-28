@@ -1,10 +1,10 @@
 import datetime as dt
-from typing import ClassVar, Final, Literal, Self
+from typing import ClassVar, Final, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from betterlite.types.utils.base import InitValue, ResponseObject
 from betterlite.types.utils.pricing import MirroredPricingParams
@@ -14,8 +14,8 @@ def _as_utc(value: dt.datetime | None) -> dt.datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=dt.UTC)
-    return value.astimezone(dt.UTC)
+        return value.replace(tzinfo=dt.timezone.utc)
+    return value.astimezone(dt.timezone.utc)
 
 
 class ModelAccessWindow(ResponseObject):

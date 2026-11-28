@@ -1,12 +1,12 @@
 from collections.abc import Sequence
-from enum import StrEnum
+from enum import Enum
 from typing import Final, Literal
 
 from pydantic import BaseModel, JsonValue
 from typing_extensions import ReadOnly, TypedDict
 
 
-class LiteLLMCacheType(StrEnum):
+class LiteLLMCacheType(str, Enum):
     LOCAL = "local"
     REDIS = "redis"
     REDIS_SEMANTIC = "redis-semantic"
@@ -18,7 +18,7 @@ class LiteLLMCacheType(StrEnum):
     GCS = "gcs"
 
 
-class SemanticCacheScope(StrEnum):
+class SemanticCacheScope(str, Enum):
     KEY = "key"
     END_USER = "end_user"
 

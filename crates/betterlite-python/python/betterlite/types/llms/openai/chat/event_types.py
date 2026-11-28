@@ -1,7 +1,7 @@
-from enum import StrEnum
+from enum import Enum
 
 
-class ResponsesAPIStreamEvents(StrEnum):
+class ResponsesAPIStreamEvents(str, Enum):
     RESPONSE_CREATED = "response.created"
     RESPONSE_IN_PROGRESS = "response.in_progress"
     RESPONSE_COMPLETED = "response.completed"

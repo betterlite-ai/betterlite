@@ -70,7 +70,7 @@ pub trait ContentTransport: Send + Sync {
 }
 
 pub trait ClientSource: Send + Sync {
-    type Client: ContentTransport;
+    type Client;
 
     fn client(&self) -> Result<Self::Client, ClientError>;
 }

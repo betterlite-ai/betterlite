@@ -1,8 +1,8 @@
-from enum import Enum, StrEnum
-from typing import Final, NotRequired
+from enum import Enum
+from typing import Final
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from betterlite.types.integrations.custom_logger import StandardCustomLoggerInitParams
 
@@ -10,7 +10,7 @@ DD_MAX_BATCH_SIZE: Final = 1000
 DD_MAX_PAYLOAD_SIZE_BYTES: Final = 4_000_000
 
 
-class DataDogStatus(StrEnum):
+class DataDogStatus(str, Enum):
     INFO = "info"
     WARN = "warning"
     ERROR = "error"

@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum
 from typing import ClassVar, Final, Literal
 
 from pydantic import ConfigDict, JsonValue
@@ -10,7 +10,7 @@ from betterlite.types.llms.base import LiteLLMPydanticObjectBase
 from betterlite.types.utils.base import Dumpable, InitValue
 
 
-class SupportedPromptIntegrations(StrEnum):
+class SupportedPromptIntegrations(str, Enum):
     DOT_PROMPT = "dotprompt"
     LANGFUSE = "langfuse"
     CUSTOM = "custom"

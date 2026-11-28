@@ -103,6 +103,7 @@ description: >-
   B1100 registers state/auth_pricing.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_pricing.rs and leave state.rs as it is.
 scope:
   paths:
+    - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__reject_clientside_metadata_tags_config_yaml.snap"
     - crates/betterlite-auth/src/auth_pricing.rs
     - crates/betterlite-auth/src/auth_pricing/**
     - crates/betterlite-auth/Cargo.toml

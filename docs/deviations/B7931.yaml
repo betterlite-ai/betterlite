@@ -9,13 +9,6 @@ deviations:
     why: Pydantic models in the Python wheel go on ResponseObject, as in B7930.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L836
   - what: >-
-      ContentFilterAction, GuardrailEventHooks and GUARDRAIL_DEFINITION_LOCATION subclass enum.StrEnum
-      instead of (str, Enum).
-    why: >-
-      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and JSON
-      output are unchanged; str() and repr text is not part of parity.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1305
-  - what: >-
       The ported models carry no pydantic Field descriptions and no class docstrings, so
       model_json_schema() has no description keys where LiteLLM's does.
     why: >-
@@ -41,13 +34,10 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1278-L1288
   - what: >-
       guardrailConfig is a TypedDict class with LiteLLM's exact name, and its class statement carries a
-      noqa for Ruff N801. GUARDRAIL_DEFINITION_LOCATION is built with the functional StrEnum call
-      instead of a class statement.
+      noqa for Ruff N801.
     why: >-
-      LiteLLM names these classes guardrailConfig and GUARDRAIL_DEFINITION_LOCATION, which Ruff N801
-      rejects, and renaming either loses parity. The noqa is one of the task's budgeted suppressions;
-      the functional StrEnum form keeps that class statement off the budget. Keys, required keys,
-      members and values are identical.
+      LiteLLM names the class guardrailConfig, which Ruff N801 rejects, and renaming it loses parity.
+      The noqa is one of the task's budgeted suppressions. Keys and required keys are identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
   - what: >-
       LitellmParams turns an absent or null default_on into False with a mode="before" model validator

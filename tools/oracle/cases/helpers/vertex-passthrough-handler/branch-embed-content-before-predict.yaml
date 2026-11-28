@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-passthrough-handler-branch-embed-content-before-predict
+call:
+  b3642:
+    url_route: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/predict-embedding-001:embedContent"
+env: {}
+compare: {ignore: []}

@@ -1,6 +1,8 @@
 use betterlite_openai::api::container_contracts::records::ContainerFileListResponse;
 use betterlite_openai::containers::container_file_http::PreCallHook;
-use betterlite_openai::containers::container_file_http::transport::ClientSource;
+use betterlite_openai::containers::container_file_http::transport::{
+    AsyncClient, BlockingClient, ClientSource,
+};
 
 use super::error::{ContainerFileListError, ContainerFileListFailure, failure};
 // ast-grep-ignore: no-long-names
@@ -18,7 +20,7 @@ pub async fn alist_container_files<Source, Hook, Configs>(
     request: &ContainerFileListRequest<'_>,
 ) -> Result<ContainerFileListResponse, ContainerFileListFailure>
 where
-    Source: ClientSource,
+    Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>,
     Hook: PreCallHook,
     Configs: ContainerConfigLookup,
 {

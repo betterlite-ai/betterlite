@@ -1,8 +1,8 @@
 from collections.abc import Mapping
-from typing import Literal, NotRequired
+from typing import Literal
 
 from pydantic import JsonValue
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 
 # ast-grep-ignore: no-long-names

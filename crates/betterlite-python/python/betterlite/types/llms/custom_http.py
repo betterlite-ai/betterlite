@@ -1,9 +1,9 @@
 import ssl
-from enum import StrEnum
+from enum import Enum
 from typing import TypeAlias
 
 
-class httpxSpecialProvider(StrEnum):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/custom_http.py#L6
+class httpxSpecialProvider(str, Enum):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/custom_http.py#L6
     LoggingCallback = "logging_callback"
     GuardrailCallback = "guardrail_callback"
     Caching = "caching"

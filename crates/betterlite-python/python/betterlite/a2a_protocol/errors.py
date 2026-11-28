@@ -1,6 +1,7 @@
-from typing import Final, NoReturn, TypedDict
+from typing import Final, NoReturn
 
 from pydantic import TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._native import NativeA2aError
 from betterlite.a2a_protocol.exceptions import (

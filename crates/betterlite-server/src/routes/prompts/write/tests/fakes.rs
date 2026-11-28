@@ -31,6 +31,7 @@ use tower::ServiceExt as _;
 use super::super::routes;
 use super::super::state::PromptWriteState;
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 
 pub(super) type SharedRows = Arc<StdMutex<Vec<PromptRow>>>;
 pub(super) type SharedCalls = Arc<StdMutex<Vec<&'static str>>>;
@@ -191,7 +192,7 @@ pub(super) fn context(subject: &str, roles: Vec<Role>, user_id: Option<&str>) ->
 }
 
 pub(super) fn master_key() -> AuthContext {
-    context("master_key", Vec::new(), None)
+    master_caller()
 }
 
 pub(super) fn viewer() -> AuthContext {

@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, JsonValue
@@ -9,7 +9,7 @@ from typing_extensions import ReadOnly, TypedDict
 
 
 # ast-grep-ignore: no-long-names
-class SupportedVectorStoreIntegrations(StrEnum):
+class SupportedVectorStoreIntegrations(str, Enum):
     BEDROCK = "bedrock"
     RAGFLOW = "ragflow"
 
@@ -252,7 +252,7 @@ class IndexListResponse(BaseModel):
     data: tuple[ManagedVectorStoreIndex, ...]
 
 
-class VectorStoreIndexType(StrEnum):
+class VectorStoreIndexType(str, Enum):
     READ = "read"
     WRITE = "write"
 

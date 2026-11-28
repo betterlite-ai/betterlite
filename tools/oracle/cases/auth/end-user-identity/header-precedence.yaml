@@ -1,0 +1,19 @@
+name: auth-end-user-identity-header-precedence
+config: |
+  general_settings:
+    master_key: oracle-master
+  litellm_settings:
+    validate_end_user_id_in_db: true
+  model_list:
+    - {model_name: end-user-model, litellm_params: {model: openai/end-user-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers:
+    authorization: Bearer oracle-master
+    x-litellm-customer-id: customer-from-header
+    x-litellm-end-user-id: end-user-from-header
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

@@ -1,8 +1,9 @@
 import json
 from collections.abc import Awaitable, Mapping
-from typing import Final, NamedTuple, TypeAlias, TypedDict
+from typing import Final, NamedTuple, TypeAlias
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._completion.arguments import timeout_value
 from betterlite._completion.errors import UnsupportedCallArgument, raise_native_error

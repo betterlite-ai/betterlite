@@ -31,6 +31,7 @@ use super::store::{
 };
 use super::{ClaudePluginWriteState, mount};
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::mcp::outbound_credentials::WallClock;
 use crate::routes::router;
 use crate::routes::tests::state_for;
@@ -239,9 +240,7 @@ fn caller_from(identity: &str) -> AuthContext {
 }
 
 fn master() -> AuthContext {
-    caller_from(
-        r#"{"principal_type":"service_account","subject":"master_key","auth_method":"api_key"}"#,
-    )
+    master_caller()
 }
 
 fn plain_user() -> AuthContext {

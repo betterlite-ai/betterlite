@@ -1,0 +1,96 @@
+kind: helper
+name: auth-pricing-project-policy-order
+call:
+  auth_pricing:
+    calls:
+      # a blocked project is refused before any budget read, even with spend scripted
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        project:
+          project_id: proj-blocked
+          spend: 0.0
+          blocked: true
+          litellm_budget_table: {max_budget: 10.0}
+        spends: [99.0]
+      # a hard denial reads the counter, queues the project alert and names the project
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        project:
+          project_id: proj-hard
+          spend: 0.0
+          litellm_budget_table: {max_budget: 10.0}
+        token: {token: sk-hard, user_id: user-1, team_id: team-1}
+        spends: [12.0]
+      # spend equal to the ceiling denies too
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        project:
+          project_id: proj-equal
+          spend: 10.0
+          litellm_budget_table: {max_budget: 10.0}
+        spends: [10.0]
+      # a cent under the ceiling passes and queues nothing
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        project:
+          project_id: proj-under
+          spend: 0.0
+          litellm_budget_table: {max_budget: 10.0}
+        token: {token: sk-under, user_id: user-1}
+        spends: [9.99]
+      # the soft budget only alerts, and it reads the row's spend
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        project:
+          project_id: proj-soft
+          spend: 6.0
+          litellm_budget_table: {max_budget: 10.0, soft_budget: 5.0}
+        token: {token: sk-soft, user_id: user-1, team_id: team-1}
+        spends: [4.0]
+      # without a token the same denial raises and queues no alert
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        project:
+          project_id: proj-open
+          spend: 20.0
+          litellm_budget_table: {max_budget: 20.0}
+        spends: [20.0]
+      # a free model exempts the project checks entirely
+      - function: project
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        route: /chat/completions
+        model: free
+        project:
+          project_id: proj-free
+          spend: 20.0
+          litellm_budget_table: {max_budget: 10.0}
+        spends: [99.0]
+      # no project at all is a no-op
+      - function: project
+        router:
+          cache: {}
+        route: /chat/completions
+        spends: []
+env: {}
+compare:
+  ignore: []

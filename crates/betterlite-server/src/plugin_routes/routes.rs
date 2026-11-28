@@ -14,8 +14,6 @@ use super::proxy::PluginState;
 use crate::auth::auth_identity::AuthContext;
 use crate::tracing_routes::router::unauthenticated;
 
-const MASTER_KEY_SUBJECT: &str = "master_key";
-const DEFAULT_ADMIN_USER_ID: &str = "default_user_id";
 const DEFAULT_PLUGIN_NAME: &str = "litellm-platform-plugin";
 const SALT_MISSING_DETAIL: &str =
     "LITELLM_SALT_KEY is not configured; plugin iframe auth unavailable.";
@@ -60,14 +58,8 @@ struct SessionClaimBody {
     session_claim: String,
 }
 
-// the identity LiteLLM reads off user_api_key_dict, from the master key, the caller's key or its user record
+// the identity LiteLLM reads off user_api_key_dict, from the caller's key or its user record
 pub(crate) fn caller_identity(principal: &Principal) -> Result<Identity, serde_json::Error> {
-    if principal.subject == MASTER_KEY_SUBJECT {
-        return Ok(Identity {
-            user_id: Some(DEFAULT_ADMIN_USER_ID.to_owned()),
-            user_role: Some(PROXY_ADMIN_ROLE.to_owned()),
-        });
-    }
     let view = key_identity(principal)?;
     let key_user_id = view.as_ref().and_then(|key| key.user_id.clone());
     let user_id = key_user_id.or_else(|| principal.user.as_ref().map(|user| user.id.clone()));

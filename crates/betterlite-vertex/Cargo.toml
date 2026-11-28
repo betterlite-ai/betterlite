@@ -19,9 +19,11 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-redact = { path = "../betterlite-redact" }
 betterlite-sigv4 = { path = "../betterlite-sigv4" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+chrono.workspace = true
 data-encoding = "2.11.1"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 google-cloud-aiplatform-v1 = { version = "=1.18.0", default-features = false, features = ["default-rustls-provider", "vertex-rag-data-service"] }
@@ -49,9 +51,9 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait = "0.1.92"
+betterlite-http-fixture = { path = "../../tools/http-fixture" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-test-ports = { path = "../betterlite-test-ports" }
-chrono.workspace = true
 google-cloud-longrunning = "=1.14.0"
 google-cloud-wkt = "=1.11.0"
 rstest = "=0.27.0"

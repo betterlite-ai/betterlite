@@ -1,9 +1,9 @@
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import UTC, datetime
-from typing import Literal, Self, TypeAlias, TypeVar
+from datetime import datetime, timezone
+from typing import Literal, TypeAlias, TypeVar
 
 from pydantic import JsonValue
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from betterlite._integrations.custom_guardrail_recording import GuardrailRecording
 from betterlite._integrations.custom_guardrail_request import sync_guardrail_info
@@ -44,7 +44,7 @@ class GuardrailHooks(GuardrailRecording):
         request_data: dict[str, JsonValue], input_type: Literal["request", "response"],
         logging_obj: LiteLLMLoggingObj | None,
     ) -> GenericGuardrailAPIInputs:
-        start = datetime.now(tz=UTC)
+        start = datetime.now(tz=timezone.utc)
         original_inputs = OBJECT.validate_python(inputs)
         fallback = request_data.get("litellm_logging_obj")
         log_obj = fallback if logging_obj is None else logging_obj
@@ -52,7 +52,7 @@ class GuardrailHooks(GuardrailRecording):
         try:
             response = await hook(self, inputs, request_data, input_type, logging_obj)
             if not (self.records_own_guardrail_information or self._guardrail_self_recorded):
-                now = datetime.now(tz=UTC)
+                now = datetime.now(tz=timezone.utc)
                 self._process_response(
                     OBJECT.validate_python(response), request_data, start.timestamp(),
                     now.timestamp(), duration=(now - start).total_seconds(), event_type=None,
@@ -61,7 +61,7 @@ class GuardrailHooks(GuardrailRecording):
         except Exception as error:
             LOGGER.debug("Guardrail %s raised", "apply_guardrail", exc_info=True)
             if not self._guardrail_self_recorded:
-                now = datetime.now(tz=UTC)
+                now = datetime.now(tz=timezone.utc)
                 self._process_error(
                     error, request_data, start.timestamp(), now.timestamp(),
                     duration=(now - start).total_seconds(), event_type=None,

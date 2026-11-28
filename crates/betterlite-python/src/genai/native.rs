@@ -1,6 +1,8 @@
 use super::answer::{awaiting, outcome_object};
-use super::convert::{GenaiCall, parse, reject_files};
-use super::session::{Entry, GenaiCore};
+use super::convert::{parse, reject_files};
+use super::session::GenaiCore;
+use betterlite_vertex::genai::session::Entry;
+use betterlite_vertex::genai::session::call::GenaiCall;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
 use std::sync::Arc;

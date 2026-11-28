@@ -1,6 +1,6 @@
-from typing import Literal, NotRequired
+from typing import Literal
 
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 
 class ROISpendRecord(TypedDict):

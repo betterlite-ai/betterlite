@@ -1,12 +1,12 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum
 from types import MappingProxyType
 from typing import Protocol, TypeAlias
 
 
-class DailyActivityTable(StrEnum):
+class DailyActivityTable(str, Enum):
     USER = "litellm_dailyuserspend"
     TEAM = "litellm_dailyteamspend"
     TAG = "litellm_dailytagspend"
@@ -78,7 +78,7 @@ class KeyMetadataRow:
     tags: tuple[str, ...]
 
 
-class ExportType(StrEnum):
+class ExportType(str, Enum):
     DAILY = "daily"
     DAILY_WITH_KEYS = "daily_with_keys"
     DAILY_WITH_MODELS = "daily_with_models"

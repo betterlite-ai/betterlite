@@ -1,3 +1,6 @@
+use chrono::{DateTime, FixedOffset};
+use uuid::Uuid;
+
 use super::payload_state::{payload_from_object, payload_to_object};
 use super::types::SuccessError;
 use crate::callback_logger::CallbackLogger;
@@ -15,7 +18,7 @@ pub(super) fn redacted_payload(
     payload: &StandardLoggingPayload,
     logger: &dyn CallbackLogger,
     excluded_fields: &[String],
-    stamp: &ResponseStamp,
+    now: DateTime<FixedOffset>,
 ) -> Result<StandardLoggingPayload, SuccessError> {
     let turn_off_message_logging = logger.turn_off_message_logging();
     if !turn_off_message_logging && excluded_fields.is_empty() {
@@ -31,11 +34,16 @@ pub(super) fn redacted_payload(
         excluded_fields: excluded_fields.to_vec(),
         callback_redacts_itself: logger.redacts_messages_itself(),
     };
+    // LiteLLM builds a fresh ModelResponse per redacted payload, so its id and created are the call's now
+    let stamp = ResponseStamp {
+        id: format!("chatcmpl-{}", Uuid::new_v4()),
+        created: now.timestamp(),
+    };
     let Redaction::Redacted {
         standard_logging_object,
         ..
         // ast-grep-ignore: no-long-names
-    } = redact_standard_logging_payload(&details, &policy, stamp)
+    } = redact_standard_logging_payload(&details, &policy, &stamp)
     else {
         return Ok(payload.clone());
     };

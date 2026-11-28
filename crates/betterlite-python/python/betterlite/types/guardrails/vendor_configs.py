@@ -1,7 +1,8 @@
 from collections.abc import Mapping
-from typing import ClassVar, Final, Literal, Self, TypeAlias
+from typing import ClassVar, Final, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field, JsonValue, model_validator
+from typing_extensions import Self
 
 from betterlite.types.utils.base import ResponseObject
 

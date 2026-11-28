@@ -1,9 +1,8 @@
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -27,12 +26,7 @@ pub struct PostCallRecord {
     pub data: Option<IndexMap<String, Json>>,
 }
 
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
-}
-
-impl ImageGenerationLogger for PrePostLogger<'_, '_> {
+impl ImageGenerationLogger for LogContext<'_, '_> {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         let mut passthrough = IndexMap::new();
         passthrough.insert(String::from("acompletion"), Json::Bool(true));

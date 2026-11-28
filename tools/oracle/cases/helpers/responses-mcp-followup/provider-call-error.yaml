@@ -1,0 +1,13 @@
+kind: helper
+name: provider-call-error
+call:
+  responses_mcp_followup:
+    operation: provider_call_error
+    request: {input: x, model: gpt-5, tools: [{type: function, name: lookup}], previous_response_id: resp_previous}
+    call_params: {stream: true, tool_choice: required, temperature: 0.2}
+    follow_up_input:
+      - {type: function_call_output, call_id: call_1, output: sunny}
+    status: 429
+    ids: []
+env: {}
+compare: {ignore: []}

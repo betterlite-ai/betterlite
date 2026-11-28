@@ -1,8 +1,8 @@
 use super::bridge::ChatBridge;
 use super::interception::CreateInterception;
-use crate::api::responses_compact_http::service::SuppliedClient;
+use crate::api::responses_compact_http::service::{ClientSource, SuppliedClient};
 use crate::api::responses_create_http::config::CreateConfig;
-use crate::api::responses_create_http::service::{ClientSource, CreateHooks};
+use crate::api::responses_create_http::service::CreateHooks;
 use crate::api::responses_parameters::error::ResponsesParametersError;
 use crate::api::responses_parameters::provider::ResponsesParamProvider;
 use crate::api::responses_provider_selection::prompting::PromptManager;

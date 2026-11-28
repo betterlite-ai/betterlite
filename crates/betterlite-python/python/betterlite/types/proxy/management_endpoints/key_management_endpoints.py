@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import ClassVar, Literal, Self, TypeAlias, TypedDict
+from typing import ClassVar, Literal, TypeAlias
 
 from pydantic import ConfigDict
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, Self, TypedDict
 
 from betterlite.types.proxy.management_endpoints.internal_user_endpoints import (
     InsensitiveContains,

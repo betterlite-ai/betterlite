@@ -1,6 +1,6 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias
 
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.llms.openai.core.files import FileExpiresAfter
 from betterlite.types.llms.openai.core.not_given import NotGiven

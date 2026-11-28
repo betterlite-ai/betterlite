@@ -1,8 +1,8 @@
 from collections.abc import Iterable
-from typing import Literal, Required, TypeAlias, TypedDict
+from typing import Literal, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, Required, TypedDict
 
 
 class ChatCompletionAudioDelta(TypedDict, total=False):

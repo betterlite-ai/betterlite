@@ -32,9 +32,7 @@ deviations:
       handler(**arguments) still passes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/tool_registry.py#L12
   - what: >-
-      parse_pinned_tools takes a JSON value or a mapping of PinnedMCPTool instead of object, and the enums are
-      StrEnum classes instead of (str, Enum) classes. The member names and values are unchanged.
+      parse_pinned_tools takes a JSON value or a mapping of PinnedMCPTool instead of object.
     why: >-
-      No object in the wheel's types, and ruff UP042 rejects the (str, Enum) base. StrEnum members equal their value
-      as a str in both.
+      No object in the wheel's types, and a pinned-tool mapping validates as the JSON LiteLLM's object accepts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L83-L85

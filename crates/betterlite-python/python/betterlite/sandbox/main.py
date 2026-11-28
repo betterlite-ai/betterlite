@@ -139,7 +139,7 @@ async def acall_sandbox(
 async def acreate_sandbox(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L65
     provider: str,
     template: str | None = None,
-    timeout: int | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L68
+    timeout: int | None = None,
     allow_internet_access: bool | None = None,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L69
     api_key: str | None = None,
     api_base: str | None = None,
@@ -197,7 +197,7 @@ async def acode_interpreter_tool(  # noqa: PLR0913, PLR0917  # https://github.co
     provider: str,
     code: str,
     template: str | None = None,
-    timeout: int | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L124
+    timeout: int | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
     **kwargs: CallValue,

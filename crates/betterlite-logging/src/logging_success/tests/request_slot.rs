@@ -84,9 +84,7 @@ fn add_logger(fixture: &mut Fixture, logger: &Arc<SlotReadingLogger>) {
     };
     let erased = Arc::clone(logger);
     let sink = CallbackSink::Logger(erased);
-    let registration = fixture
-        .registry
-        .register(identity, sink, CallbackList::Callbacks);
+    let registration = fixture.register(identity, sink, CallbackList::Callbacks);
     assert_ne!(registration, Registration::SkippedCapacity);
 }
 

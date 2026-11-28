@@ -2,11 +2,11 @@ import os
 import time
 from collections.abc import Mapping
 from datetime import datetime
-from enum import Enum, StrEnum
-from typing import Final, NotRequired
+from enum import Enum
+from typing import Final
 
 from pydantic import BaseModel, Field, JsonValue
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 from betterlite.types.llms.base import LiteLLMPydanticObjectBase
 
@@ -185,7 +185,7 @@ class SlackAlertingCacheKeys(Enum):
     deprecation_alert_sent_key = "model_deprecation_alert_sent"
 
 
-class AlertType(StrEnum):
+class AlertType(str, Enum):
     llm_exceptions = "llm_exceptions"
     llm_too_slow = "llm_too_slow"
     llm_requests_hanging = "llm_requests_hanging"

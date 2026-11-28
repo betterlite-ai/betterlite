@@ -1,9 +1,10 @@
 import asyncio
 import json
 from collections.abc import AsyncGenerator, Awaitable, Coroutine, Mapping
-from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar, Unpack
+from typing import Final, Protocol, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict, Unpack
 
 from betterlite._endpoints import CallValue
 from betterlite._native import (
@@ -232,7 +233,7 @@ async def asend_message_streaming(  # noqa: PLR0913, PLR0917  # https://github.c
 
 async def create_a2a_client(
     base_url: str,
-    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767
+    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,
     extra_headers: dict[str, str] | None = None,
     streaming: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L771
     relative_card_path: str | None = None,
@@ -249,7 +250,7 @@ async def create_a2a_client(
 
 async def aget_agent_card(
     base_url: str,
-    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L848
+    timeout: float = DEFAULT_A2A_AGENT_TIMEOUT,
     extra_headers: dict[str, str] | None = None,
     relative_card_path: str | None = None,
 ) -> ResponseObject:

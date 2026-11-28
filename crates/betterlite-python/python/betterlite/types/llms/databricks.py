@@ -1,7 +1,7 @@
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, JsonValue
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import ReadOnly, Required, TypedDict
 
 
 class ChatCompletionUsageBlock(TypedDict, total=False):

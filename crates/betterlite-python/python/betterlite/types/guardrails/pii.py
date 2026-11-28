@@ -1,17 +1,18 @@
-from enum import StrEnum
-from typing import Final, Literal, TypedDict
+from enum import Enum
+from typing import Final, Literal
 
 from pydantic import Field, JsonValue
+from typing_extensions import TypedDict
 
 from betterlite.types.utils.base import ResponseObject
 
 
-class PiiAction(StrEnum):
+class PiiAction(str, Enum):
     BLOCK = "BLOCK"
     MASK = "MASK"
 
 
-class PiiEntityCategory(StrEnum):
+class PiiEntityCategory(str, Enum):
     GENERAL = "General"
     FINANCE = "Finance"
     USA = "USA"
@@ -34,7 +35,7 @@ class PiiEntityCategory(StrEnum):
     SOUTH_AFRICA = "South Africa"
 
 
-class PiiEntityType(StrEnum):
+class PiiEntityType(str, Enum):
     CREDIT_CARD = "CREDIT_CARD"
     CRYPTO = "CRYPTO"
     DATE_TIME = "DATE_TIME"
@@ -190,7 +191,7 @@ class PiiEntityCategoryMap(TypedDict):
     entities: list[str]
 
 
-class GuardrailParamUITypes(StrEnum):
+class GuardrailParamUITypes(str, Enum):
     BOOL = "bool"
     STR = "str"
     MULTISELECT = "multiselect"

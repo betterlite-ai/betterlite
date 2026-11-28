@@ -1,7 +1,8 @@
 from collections.abc import Awaitable, Mapping
-from typing import Annotated, Final, Literal, NotRequired, TypeAlias, TypedDict
+from typing import Annotated, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from typing_extensions import NotRequired, TypedDict
 
 from betterlite._completion import CustomStreamWrapper
 from betterlite._completion.completion import completion_from_arguments, settle_outcome

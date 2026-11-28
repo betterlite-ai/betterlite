@@ -5,6 +5,7 @@ use betterlite_auth::auth_identity::roles::Role;
 use rstest::rstest;
 
 use super::support::{FakeStore, principal};
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::tracing_routes::access::TraceRole;
 use crate::workflow_runs::access::{RunCaller, require_run};
 use crate::workflow_runs::error::RunsError;
@@ -59,7 +60,7 @@ fn a_status_is_its_lowercase_name(#[case] status: WorkflowRunStatus, #[case] tex
 }
 
 #[rstest]
-#[case::master_key(principal("master_key", Vec::new(), None), TraceRole::Admin, None)]
+#[case::master_key(master_caller().principal, TraceRole::Admin, Some("litellm_proxy_master_key"))]
 #[case::platform_admin(principal("virtual-key", vec![Role::PlatformAdmin], Some("hash-1")), TraceRole::Admin, Some("hash-1"))]
 #[case::platform_viewer(principal("virtual-key", vec![Role::PlatformViewer], Some("hash-1")), TraceRole::AdminViewOnly, Some("hash-1"))]
 #[case::admin_and_viewer(principal("virtual-key", vec![Role::PlatformViewer, Role::PlatformAdmin], None), TraceRole::Admin, None)]

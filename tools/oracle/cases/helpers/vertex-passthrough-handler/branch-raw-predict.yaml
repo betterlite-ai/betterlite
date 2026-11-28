@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-passthrough-handler-branch-raw-predict
+call:
+  b3642:
+    url_route: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/anthropic/models/claude-3-sonnet-20240229:rawPredict"
+env: {}
+compare: {ignore: []}

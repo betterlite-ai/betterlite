@@ -1,0 +1,64 @@
+kind: helper
+name: auth-pricing-required-user
+call:
+  auth_pricing:
+    calls:
+      # a POST to an LLM route without a user is the ordinary 401 auth_error
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: gpt-4o}
+        enforce: true
+      # a lowercase POST counts too
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: post
+        body: {model: gpt-4o}
+        enforce: true
+      # a present user key passes, including a null value
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: gpt-4o, user: null}
+        enforce: true
+      # a GET passes
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: GET
+        body: {}
+        enforce: true
+      # an embeddings route is an LLM route as well
+      - function: request_checks
+        router:
+          cache: {}
+        route: /v1/embeddings
+        method: POST
+        body: {}
+        enforce: true
+      # a non-LLM route passes even on POST
+      - function: request_checks
+        router:
+          cache: {}
+        route: /health
+        method: POST
+        body: {}
+        enforce: true
+      # the setting off means the missing user is never read
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: gpt-4o}
+        enforce: false
+env: {}
+compare:
+  ignore: []

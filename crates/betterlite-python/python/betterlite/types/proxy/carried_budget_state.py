@@ -1,10 +1,10 @@
-import typing
 from collections.abc import Mapping
 from datetime import datetime
 from types import MappingProxyType
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from typing_extensions import Self
 
 
 class _BudgetSnapshot(BaseModel):
@@ -17,7 +17,7 @@ class _BudgetSnapshot(BaseModel):
         return MappingProxyType(entries)
 
     @classmethod
-    def from_metadata(cls, metadata: Mapping[str, JsonValue]) -> "typing.Self | None":
+    def from_metadata(cls, metadata: Mapping[str, JsonValue]) -> Self | None:
         try:
             return cls.model_validate(metadata)
         except ValidationError:

@@ -1,7 +1,5 @@
-from typing import Required
-
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 
 class OpenAIChatCompletionLogprobsContentTopLogprobs(  # ast-grep-ignore: no-long-names

@@ -1,0 +1,22 @@
+kind: helper
+name: tool-execution-event-order
+call:
+  responses_mcp_followup:
+    operation: tool_execution_events
+    request: {input: x, model: m, tools: null, previous_response_id: null}
+    tool_calls:
+      - {call_id: call_1, name: get_weather, arguments: '{"city":"Paris"}'}
+      - {call_id: call_2, name: "", arguments: ""}
+    tool_results:
+      - {tool_call_id: call_1, result: sunny, name: get_weather}
+      - {tool_call_id: call_2, result: "", name: null}
+      - {tool_call_id: null, result: missing, name: null}
+    ids:
+      - a1b2c3d4-0000-4000-8000-000000000000
+      - b2c3d4e5-0000-4000-8000-000000000000
+      - c3d4e5f6-0000-4000-8000-000000000000
+      - d4e5f6a7-0000-4000-8000-000000000000
+      - e5f6a7b8-0000-4000-8000-000000000000
+      - f6a7b8c9-0000-4000-8000-000000000000
+env: {}
+compare: {ignore: []}

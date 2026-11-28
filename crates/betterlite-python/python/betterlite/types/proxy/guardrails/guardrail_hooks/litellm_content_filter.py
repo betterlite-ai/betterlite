@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, JsonValue
@@ -33,7 +33,7 @@ class CompetitorIntentResult(TypedDict, total=False):
     evidence: list[CompetitorIntentEvidenceEntry]
 
 
-class DetectionType(StrEnum):
+class DetectionType(str, Enum):
     PATTERN = "pattern"
     BLOCKED_WORD = "blocked_word"
     CATEGORY_KEYWORD = "category_keyword"

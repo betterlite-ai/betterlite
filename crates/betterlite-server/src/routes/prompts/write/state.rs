@@ -9,10 +9,6 @@ use tokio::sync::Mutex;
 use super::error::PromptWriteError;
 use crate::auth::auth_identity::AuthContext;
 
-const MASTER_KEY_SUBJECT: &str = "master_key";
-// LiteLLM names the master key's user this way, and the name lands in created_by
-const MASTER_KEY_USER_ID: &str = "default_user_id";
-
 pub(crate) struct PromptWriteState<Table> {
     pub(crate) table: Option<Table>,
     pub(crate) registry: Arc<Mutex<InMemoryPromptRegistry>>,
@@ -34,19 +30,14 @@ where
         action: &'static str,
     ) -> Result<Writer<'_, Table>, PromptWriteError<Table::Failure>> {
         let principal = &context.principal;
-        let is_master_key = principal.subject == MASTER_KEY_SUBJECT;
-        if !is_master_key && !principal.roles.contains(&Role::PlatformAdmin) {
+        if !principal.roles.contains(&Role::PlatformAdmin) {
             return Err(PromptWriteError::Forbidden { action });
         }
         let table = self
             .table
             .as_ref()
             .ok_or(PromptWriteError::<Table::Failure>::DbNotConnected)?;
-        let user_id = principal
-            .user
-            .as_ref()
-            .map(|user| user.id.clone())
-            .or_else(|| is_master_key.then(|| MASTER_KEY_USER_ID.to_owned()));
+        let user_id = principal.user.as_ref().map(|user| user.id.clone());
         Ok(Writer { table, user_id })
     }
 }

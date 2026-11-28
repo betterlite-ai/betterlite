@@ -56,7 +56,7 @@ async fn create_without_input_or_metadata_stores_none() {
 }
 
 #[tokio::test]
-async fn create_by_the_master_key_stores_no_owner() {
+async fn create_by_the_master_key_stores_the_alias_as_owner() {
     let store = Arc::new(FakeStore::default());
     let reply = call(
         Some(&store),
@@ -68,7 +68,7 @@ async fn create_by_the_master_key_stores_no_owner() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     let row: WorkflowRunRow = serde_json::from_str(&reply.body).unwrap();
-    assert_eq!(row.created_by, None);
+    assert_eq!(row.created_by.as_deref(), Some("litellm_proxy_master_key"));
 }
 
 #[tokio::test]

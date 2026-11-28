@@ -1,8 +1,9 @@
 import uuid
 from collections.abc import Awaitable, Mapping
-from typing import Final, TypedDict
+from typing import Final
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite import exceptions
 from betterlite._completion.errors import UnsupportedCallArgument

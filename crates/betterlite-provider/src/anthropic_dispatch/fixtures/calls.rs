@@ -1,6 +1,7 @@
 use super::services::Services;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::python_json::dumps;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -23,7 +24,7 @@ use super::super::base::{Globals, Surface};
 use super::super::completion::{CompletionCall, CompletionSettings, HandlerFuture};
 use super::super::config::AnthropicConfigKind;
 use super::super::operations::{DispatchDeps, Operation, Outcome};
-use super::super::{CallLogging, DispatchError, dispatch};
+use super::super::{DispatchError, dispatch};
 use super::recording::{Failure, Recorder, Transport, json};
 use super::runtime::logging;
 use super::{Action, FixtureError, Input, Observation};
@@ -84,7 +85,7 @@ fn invoke<'call>(
         let operation = operation(input, &headers, &file, &messages, &missing_key);
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         let (mut state, env) = logging(&redactor)?;
-        let mut log = CallLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &env,
         };

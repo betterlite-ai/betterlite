@@ -1,7 +1,8 @@
 import json
-from typing import Final, NoReturn, NotRequired, TypedDict
+from typing import Final, NoReturn
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import NotRequired, TypedDict
 
 from betterlite import exceptions
 from betterlite._native import NativeError

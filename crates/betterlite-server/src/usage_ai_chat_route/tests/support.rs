@@ -22,6 +22,7 @@ use tokio::sync::Notify;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::keepalive_interval::PingSetting;
 use crate::management_guards::error::ManagementGuardError;
 use crate::usage_ai_chat::messages::ChatMessage;
@@ -309,7 +310,7 @@ pub(crate) fn admin_principal(user: &str) -> Principal {
 }
 
 pub(crate) fn master_principal() -> Principal {
-    principal("master_key", None, &[])
+    master_caller().principal
 }
 
 pub(crate) fn key_admin_principal(subject: &str) -> Principal {

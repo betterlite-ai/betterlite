@@ -1,7 +1,7 @@
-from typing import Final, Literal, Required
+from typing import Final, Literal
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict, override
+from typing_extensions import Required, TypedDict, override
 
 from betterlite.types.llms.bedrock.converse.content import CachePointBlock
 

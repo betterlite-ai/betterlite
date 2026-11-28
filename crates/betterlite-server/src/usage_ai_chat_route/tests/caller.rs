@@ -9,8 +9,15 @@ fn caller_takes_an_admins_own_user_id_and_allows_null() {
         identity(&admin_principal("ana"), &caller).expect("an admin needs no caller guard");
     assert_eq!(with_user.user_id.as_deref(), Some("ana"));
     assert!(with_user.is_admin);
-    let without_user =
+    let master =
         identity(&master_principal(), &caller).expect("the master key needs no caller guard");
+    assert_eq!(master.user_id.as_deref(), Some("default_user_id"));
+    assert!(master.is_admin);
+    let without_user = identity(
+        &principal("role-admin", None, &[Role::PlatformAdmin]),
+        &caller,
+    )
+    .expect("an admin without a user needs no caller guard");
     assert_eq!(without_user.user_id, None);
     assert!(without_user.is_admin);
     let viewer = identity(
@@ -53,6 +60,24 @@ async fn caller_answers_a_user_bound_key_from_the_key_stage() {
     assert_eq!(response.status(), StatusCode::OK);
     assert!(body_text(response).await.contains("\"type\": \"done\""));
     assert_eq!(source.user_ids(), vec![Some("u1".to_owned())]);
+    assert_eq!(model.calls()[0].tools, 1);
+}
+
+#[tokio::test]
+async fn caller_treats_a_key_whose_user_is_master_key_as_a_non_admin() {
+    let model = FakeModel::new()
+        .replying(usage_tool_reply())
+        .replying(answer_reply("You spent nothing yet."));
+    let source = FakeSource::new();
+    let factory = FakeFactory::new(model.clone(), source.clone());
+    let request = with_principal(
+        post(TOOL_BODY),
+        caller_through_key_stage(r#"{"user_id":"master_key"}"#).principal,
+    );
+    let response = send(state(factory, None, GuardCallerId), request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_text(response).await.contains("\"type\": \"done\""));
+    assert_eq!(source.user_ids(), vec![Some("master_key".to_owned())]);
     assert_eq!(model.calls()[0].tools, 1);
 }
 

@@ -53,14 +53,6 @@ deviations:
       Keys, required keys, types, Literal values, defaults and constraints are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hide_secrets.py#L8
   - what: >-
-      HiddenlayerAction, HiddenlayerMessages and DetectionType derive from StrEnum where LiteLLM
-      writes class X(str, enum.Enum).
-    why: >-
-      StrEnum is the wheel's spelling for a string enum; it keeps str equality, the member names
-      and values, and pydantic's enum schema and validation. The base-class spelling is invisible
-      to a config author.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L42
-  - what: >-
       IBMDetectorOptionalParams.detector_params and extra_headers default through
       Field(default_factory=dict) where LiteLLM uses Field(default_factory=lambda: {}).
     why: >-

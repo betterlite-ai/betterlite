@@ -1,8 +1,8 @@
-from enum import StrEnum
-from typing import Literal, TypedDict
+from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, JsonValue
-from typing_extensions import override
+from typing_extensions import TypedDict, override
 
 from betterlite.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
 
@@ -16,12 +16,12 @@ class DynamoRequestMetadata(TypedDict):
     endUserId: str | None
 
 
-class DynamoTextType(StrEnum):
+class DynamoTextType(str, Enum):
     MODEL_INPUT = "MODEL_INPUT"
     MODEL_RESPONSE = "MODEL_RESPONSE"
 
 
-class PolicyMethod(StrEnum):
+class PolicyMethod(str, Enum):
     PII = "PII"
     TOXICITY = "TOXICITY"
     ALIGNMENT = "ALIGNMENT"
@@ -29,7 +29,7 @@ class PolicyMethod(StrEnum):
     RAG_HALLUCINATION = "RAG_HALLUCINATION"
 
 
-class PolicyApplicableTo(StrEnum):
+class PolicyApplicableTo(str, Enum):
     INPUT = "INPUT"
     OUTPUT = "OUTPUT"
     ALL = "ALL"

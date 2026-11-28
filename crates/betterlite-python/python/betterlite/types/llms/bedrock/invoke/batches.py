@@ -1,9 +1,9 @@
 from collections.abc import Sequence
 from enum import Enum
-from typing import ClassVar, Final, Literal, NotRequired, TypeAlias
+from typing import ClassVar, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, JsonValue
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 
 class BedrockS3InputDataConfig(TypedDict):

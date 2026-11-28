@@ -1,8 +1,9 @@
 import operator
 from functools import partial
-from typing import Final, Literal, Required, TypeAlias, TypedDict
+from typing import Final, Literal, TypeAlias
 
 from pydantic import Field, JsonValue, PrivateAttr
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.openai.core.aliases import FileTypes
 from betterlite.types.utils.base import DictJsonObject, ResponseObject

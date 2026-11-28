@@ -4,7 +4,8 @@ use betterlite_auth::auth_identity::roles::Role;
 use betterlite_logging::trace_types::TraceScope;
 use rstest::rstest;
 
-use super::support::{master_principal, principal, span_row};
+use super::support::{principal, span_row};
+use crate::auth::auth_key_lookup::tests::{caller_through_key_stage, master_caller};
 use crate::tracing_routes::access::{
     AccessError, SystemClock, Tenant, TraceAuth, TraceClock as _, TraceRole, provide_trace_access,
 };
@@ -20,9 +21,22 @@ fn maps_roles(#[case] roles: Vec<Role>, #[case] expected: TraceRole) {
 }
 
 #[test]
-fn master_key_subject_is_an_admin() {
-    let auth = TraceAuth::from_principal(&master_principal());
-    assert_eq!(auth.role, TraceRole::Admin);
+fn a_key_whose_user_or_alias_is_master_key_is_not_an_admin() {
+    let by_user = caller_through_key_stage(r#"{"user_id":"master_key"}"#);
+    let by_alias = caller_through_key_stage(r#"{"key_alias":"master_key"}"#);
+    let master = master_caller();
+    assert_eq!(
+        TraceAuth::from_principal(&by_user.principal).role,
+        TraceRole::Other
+    );
+    assert_eq!(
+        TraceAuth::from_principal(&by_alias.principal).role,
+        TraceRole::Other
+    );
+    assert_eq!(
+        TraceAuth::from_principal(&master.principal).role,
+        TraceRole::Admin
+    );
 }
 
 #[test]

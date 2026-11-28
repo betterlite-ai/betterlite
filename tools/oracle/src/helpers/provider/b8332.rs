@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use betterlite_context::chat_config_selection::tags::{
     ChatConfigTag, ConfigConstruction, ConfigSelection,
 };
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
@@ -21,7 +22,7 @@ use betterlite_provider::model_hub_dispatch::rerank::{
     HuggingFaceRerankConfig, huggingface_rerank_config,
 };
 use betterlite_provider::model_hub_dispatch::{
-    CallLogging, ChatContext, DispatchDeps, HubCompletion, HubDispatchError, dispatch,
+    ChatContext, DispatchDeps, HubCompletion, HubDispatchError, dispatch,
 };
 use betterlite_provider::prepared::PreparedRequest;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -112,7 +113,7 @@ fn run_arm(
     case: &Case,
     chat: Option<ChatConfigTag>,
     deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     runtime: &Runtime,
 ) -> Result<Option<HubCompletion>, HubDispatchError> {
     let mut asked = options(case);
@@ -202,7 +203,7 @@ fn rerank(case: &Case, recorder: &Recorder, globals: &Globals<'_>) -> Result<(),
 fn call(
     case: &Case,
     fixture: &Fixture,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     runtime: &Runtime,
 ) -> Result<(), HubDispatchError> {
     let globals = Globals::default();
@@ -250,7 +251,7 @@ impl Helper for Op {
         let fixture = Fixture::new(&input.replies);
         let mut state = log_state(&redactor)?;
         let env = log_env(&redactor);
-        let mut log = CallLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &env,
         };

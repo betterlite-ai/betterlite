@@ -1,4 +1,6 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias
+
+from typing_extensions import TypedDict
 
 BedrockGuardrailQualifier: TypeAlias = Literal[
     "grounding_source", "query", "guard_content"

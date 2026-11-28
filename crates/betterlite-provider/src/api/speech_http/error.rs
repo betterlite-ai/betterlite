@@ -1,5 +1,4 @@
-use betterlite_config::tls::TlsPolicyError;
-use betterlite_http::proxy::pool::PoolError;
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
@@ -15,14 +14,6 @@ pub struct SpeechProviderError {
     pub message: String,
     pub headers: SpeechHeaders,
     pub status_code_is_synthesized: bool,
-}
-
-#[derive(Debug, Error)]
-pub enum ClientError {
-    #[error(transparent)]
-    Tls(#[from] TlsPolicyError),
-    #[error(transparent)]
-    Pool(#[from] PoolError),
 }
 
 #[derive(Debug, Error)]

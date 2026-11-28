@@ -1,0 +1,68 @@
+kind: helper
+name: auth-pricing-explicit-zero-cost
+call:
+  auth_pricing:
+    calls:
+      # both rates explicitly zero and present in the raw cost entry: the model is free
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: free
+      # either raw token-price key counts, even when only one of them is set
+      - function: zero_cost
+        router:
+          groups:
+            half: {input: 0.0, output: 0.0}
+          deployments:
+            half:
+              - model_info: {id: dep-half}
+          costs:
+            dep-half: {input_cost_per_token: 0.0}
+          cache: {}
+        model: half
+      # a zero group cost with no raw token-price key is unknown cost, not free
+      - function: zero_cost
+        router:
+          groups:
+            sparse: {input: 0.0, output: 0.0}
+          deployments:
+            sparse:
+              - model_info: {id: dep-sparse}
+          costs:
+            dep-sparse: {id: dep-sparse}
+          cache: {}
+        model: sparse
+      # an undefined rate is not free
+      - function: zero_cost
+        router:
+          groups:
+            undefined: {output: 0.0}
+          deployments:
+            undefined:
+              - model_info: {id: dep-undefined}
+          costs:
+            dep-undefined: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: undefined
+      # a model with no group at all is not free
+      - function: zero_cost
+        router:
+          groups: {}
+          cache: {}
+        model: ghost
+      # no requested model answers false without touching the router
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          cache: {}
+env: {}
+compare:
+  ignore: []

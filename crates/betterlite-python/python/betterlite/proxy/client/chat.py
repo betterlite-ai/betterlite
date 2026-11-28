@@ -1,9 +1,9 @@
 import json
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Literal, Unpack, overload
+from typing import Literal, overload
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, Unpack
 
 from . import _transport
 from ._transport import UNAUTHORIZED_STATUS, HTTPError, Request, Response

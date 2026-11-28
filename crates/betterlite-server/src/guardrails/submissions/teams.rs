@@ -1,7 +1,5 @@
 use axum::extract::Extension;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
-use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
 use serde::Deserialize;
 
 use super::SubmissionsState;
@@ -10,7 +8,7 @@ use super::rows::SubmissionRows;
 use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::caller_identity;
 
-const MASTER_KEY_SUBJECT: &str = "master_key";
+pub(super) use crate::management_guards::caller::caller_has_admin_view as has_admin_view;
 
 // the user_api_key_dict fields B732's identity leaves out: the key's team and the caller's email
 #[derive(Debug, Default, Deserialize)]
@@ -35,18 +33,6 @@ pub(super) fn authenticated(
         Some(Extension(context)) => Ok(context),
         None => Err(SubmissionError::Unauthenticated),
     }
-}
-
-// B732's _user_has_admin_view as B3684 applies it, which both read routes follow
-pub(super) fn has_admin_view(principal: &Principal) -> bool {
-    principal.subject == MASTER_KEY_SUBJECT
-        || principal
-            .source_key
-            .0
-            .as_ref()
-            .is_some_and(user_api_key_has_admin_view)
-        || principal.roles.contains(&Role::PlatformAdmin)
-        || principal.roles.contains(&Role::PlatformViewer)
 }
 
 // user_api_key_dict's identity: B732's user id and role, the key's team and the user row's email first

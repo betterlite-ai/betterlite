@@ -1,6 +1,6 @@
-from typing import Literal, Required
+from typing import Literal
 
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 COHERE_EMBEDDING_INPUT_TYPES = Literal[
     "search_document", "search_query", "classification", "clustering", "image",

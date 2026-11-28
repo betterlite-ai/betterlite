@@ -43,6 +43,7 @@ use tokio::time::sleep;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 
 use super::body::TestCustomCodeRequest;
 use super::body::decode_test_request;
@@ -67,7 +68,6 @@ const ALLOW_SOURCE: &str =
 const ADMIN: &str = "key-admin";
 const VIEWER: &str = "key-viewer";
 const INTERNAL: &str = "key-internal";
-const MASTER: &str = "master_key";
 const ADMIN_REQUIRED: &str = "Admin access required to test custom code guardrails";
 
 #[derive(Clone)]
@@ -349,7 +349,7 @@ async fn access_master_key_is_a_proxy_admin() {
     let fake = host(allow_answer());
     let (status, _body) = post(
         routes(sandbox(&fake)),
-        Some(caller(MASTER, Vec::new())),
+        Some(master_caller()),
         &body_with_inputs(),
     )
     .await;

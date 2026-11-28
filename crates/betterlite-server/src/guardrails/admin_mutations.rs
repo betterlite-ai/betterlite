@@ -29,8 +29,6 @@ use self::review::{Decision, review_submission};
 use self::review_rows::ReviewRows;
 use crate::auth::auth_identity::AuthContext;
 
-const MASTER_KEY_SUBJECT: &str = "master_key";
-
 pub struct MutationState<R: GuardrailRows, S: ReviewRows> {
     pub database: Option<MutationDatabase<R, S>>,
 }
@@ -76,7 +74,7 @@ fn authenticated(caller: Option<Extension<AuthContext>>) -> Result<AuthContext, 
 // B732's rule: only the exact proxy_admin role counts, so a proxy_admin_viewer is refused
 fn require_admin(context: &AuthContext, detail: &'static str) -> Result<(), MutationError> {
     let principal = &context.principal;
-    if principal.subject == MASTER_KEY_SUBJECT || principal.roles.contains(&Role::PlatformAdmin) {
+    if principal.roles.contains(&Role::PlatformAdmin) {
         return Ok(());
     }
     Err(MutationError::Forbidden { detail })

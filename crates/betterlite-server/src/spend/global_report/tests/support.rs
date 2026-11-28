@@ -4,15 +4,13 @@ use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
 use axum::extract::Request;
 use axum::http::{Method, StatusCode};
-use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey,
-};
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_auth::auth_identity::records::Principal;
 use betterlite_db::postgres_store::errors::DbError;
 use rust_decimal::Decimal;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::spend::global_report::rows::GlobalReport;
 use crate::spend::global_report::store::{
     GlobalReportHandle, GlobalReportStore, ReportBranch, ReportWindow,
@@ -77,23 +75,7 @@ impl GlobalReportStore for FakeStore {
 }
 
 fn caller() -> Principal {
-    Principal {
-        principal_type: PrincipalType::Human,
-        subject: String::from("master_key"),
-        issuer: None,
-        audience: Vec::new(),
-        user: None,
-        organization: None,
-        teams: Vec::new(),
-        project: None,
-        end_user: None,
-        roles: Vec::new(),
-        scopes: Vec::new(),
-        auth_method: AuthMethod::ApiKey,
-        credential_ref: CredentialRef::default(),
-        network: NetworkContext::default(),
-        source_key: SourceKey(None),
-    }
+    master_caller().principal
 }
 
 pub(super) struct Reply {

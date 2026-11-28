@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, header};
+use betterlite_auth::auth_identity::roles::Role;
 use betterlite_auth::auth_route_patterns::canonical::{
     RequestRouteSource, ScopeFields, get_request_route,
 };
@@ -94,6 +95,10 @@ pub(crate) fn run_stage(stage: &RoutePolicyStageInput) -> Result<AuthContext, St
     let Some(caller) = token else {
         return Ok(stage.context.clone());
     };
+    // LiteLLM forces a PROXY_ADMIN user row from the token when the store has none, so the record's own role stands in for it here (user_api_key_auth.py L3010-L3015).
+    if stage.user.is_none() && stage.context.principal.roles.contains(&Role::PlatformAdmin) {
+        return Ok(stage.context.clone());
+    }
     let input = RoutePolicyInput {
         route: &stage.route,
         method: stage.method.as_deref(),

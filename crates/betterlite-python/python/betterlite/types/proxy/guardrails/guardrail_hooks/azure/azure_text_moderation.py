@@ -1,7 +1,7 @@
-from typing import ClassVar, Final, Literal, Required, TypeAlias
+from typing import ClassVar, Final, Literal, TypeAlias
 
 from pydantic import ConfigDict, Field, JsonValue
-from typing_extensions import TypedDict, override
+from typing_extensions import Required, TypedDict, override
 
 from betterlite.types.proxy.guardrails.guardrail_hooks.azure.base import (
     AzureContentSafetyConfigModel,
