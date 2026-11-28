@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -11,9 +12,11 @@ use betterlite_db::mcp_stored_contracts::MCPTransport;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::UserUrlError;
 use rstest::rstest;
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::openapi::{MAX_SPEC_BYTES, openapi_spec_health};
-use super::ports::{ProbeError, SessionError};
+use super::ports::{ProbeError, SessionError, SystemClock};
 use super::settings::{HEALTH_CHECK_TIMEOUT_VARIABLE, HealthSettings};
 use crate::config_loader::ports::InstructionsCache;
 use crate::openapi_tools::error::OpenApiError;
@@ -37,6 +40,42 @@ fn spec_error() -> OpenApiError {
     OpenApiError::Json {
         source: serde_json::from_str::<u8>("\"x\"").unwrap_err(),
     }
+}
+
+#[derive(Clone, Default)]
+struct CapturedLog(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for CapturedLog {
+    type Writer = CapturedLog;
+
+    fn make_writer(&self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn warnings_of<Run>(run: Run) -> String
+where
+    Run: FnOnce(),
+{
+    let log = CapturedLog::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(log.clone())
+        .finish();
+    with_default(subscriber, run);
+    let bytes = log.0.lock().unwrap().clone();
+    String::from_utf8(bytes).expect("the log is utf-8")
 }
 
 #[tokio::test]
@@ -247,6 +286,24 @@ fn check_timeout_setting_reads_the_environment(
     assert_eq!(settings.health_check_timeout, expected);
 }
 
+#[test]
+fn check_timeout_setting_warns_on_a_non_blank_invalid_value() {
+    let warned = warnings_of(|| {
+        let environment =
+            BTreeMap::from([(HEALTH_CHECK_TIMEOUT_VARIABLE.to_owned(), "soon".to_owned())]);
+        let settings = HealthSettings::from_lookup(&environment);
+        assert_eq!(settings.health_check_timeout, Duration::from_secs(10));
+    });
+    assert!(warned.contains("not a positive number of seconds"));
+    let quiet = warnings_of(|| {
+        let environment =
+            BTreeMap::from([(HEALTH_CHECK_TIMEOUT_VARIABLE.to_owned(), "   ".to_owned())]);
+        let settings = HealthSettings::from_lookup(&environment);
+        assert_eq!(settings.health_check_timeout, Duration::from_secs(10));
+    });
+    assert!(!quiet.contains("not a positive number of seconds"));
+}
+
 #[tokio::test]
 async fn check_timeout_setting_reaches_the_probe_and_the_message() {
     let json = server_json("a", "http", "");
@@ -261,6 +318,16 @@ async fn check_timeout_setting_reaches_the_probe_and_the_message() {
         Some("Health check timed out after 1.5 seconds")
     );
     assert_eq!(rig.session.calls()[0].timeout, Duration::from_millis(1_500));
+}
+
+#[tokio::test]
+async fn check_system_clock_moves_forward() {
+    let clock = SystemClock::default();
+    let monotonic_before = clock.now_monotonic();
+    let utc_before = clock.now_utc();
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert!(clock.now_monotonic() > monotonic_before);
+    assert!(clock.now_utc() > utc_before);
 }
 
 #[tokio::test]
@@ -788,6 +855,7 @@ async fn instructions_prefetch_skips_servers_that_cannot_be_probed(#[case] extra
 #[case::aws_sigv4(", \"auth_type\": \"aws_sigv4\"")]
 #[case::token_present(", \"auth_type\": \"api_key\", \"authentication_token\": \"tok\"")]
 #[case::blank_instructions(", \"instructions\": \"   \"")]
+#[case::empty_spec_path(", \"spec_path\": \"\"")]
 #[tokio::test]
 async fn instructions_prefetch_probes_without_static_instructions(#[case] extra: &str) {
     let json = server_json("a", "http", extra);
