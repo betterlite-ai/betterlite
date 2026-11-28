@@ -285,7 +285,7 @@ async def run_phases(input_value: Input, handler: CaptureHandler) -> dict[str, J
 
 def run(input_value: Input) -> JsonValue:
     handler = CaptureHandler()
-    logger = logging.getLogger("LiteLLM")
+    logger = logging.getLogger("LiteLLM Proxy")
     logger.addHandler(handler)
     logger.setLevel(logging.WARNING)
     try:

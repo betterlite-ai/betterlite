@@ -934,7 +934,8 @@ async fn failed_attempt_records_and_warns() {
         built.warnings.drain_classified(),
         vec!["blocked".to_owned()]
     );
-    assert_blocked(&built, "bob", Scope::User).await;
+    // the source block is on, so it names the refusal even for a pair whose own block is live
+    assert_blocked(&built, "bob", Scope::Source).await;
     assert_blocked(&built, "dave", Scope::Source).await;
 }
 
