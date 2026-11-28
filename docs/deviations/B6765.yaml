@@ -27,7 +27,7 @@ deviations:
   - what: Hydrating the config servers' DCR clients is its own module function that snapshots the config servers, hydrates each clone, then writes back only the servers still present; LiteLLM iterates self.config_mcp_servers.values() and mutates each server in place.
     why: the equivalent private helper in config_loader::loader::state is pub(super) to the loader module and loader.rs is outside this task's scope, so the reload path carries its own copy; the write-back guard is defensive against a config server removed while hydration runs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2709-L2729
-  - what: The per-server DCR hydration failure line "load_servers_from_config: failed to hydrate DCR client for server_id=...: ..." is not emitted from the reload, because DcrHydrator::hydrate returns bool and the error stays inside the implementation.
+  - what: The per-server DCR hydration failure line from LiteLLM, the one beginning "load_servers_from_config", is not emitted from the reload, because DcrHydrator::hydrate returns bool and the error stays inside the implementation.
     why: the trait B6764 declares (and B6595 implements) has no error channel, so only the success debug line belongs to this path, as in B6764's config load.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2717-L2729
   - what: The "Database not connected. Connect a database to your proxy" failure is not raised by the mutator; a missing database surfaces as the ServerRows error and reload returns MutationError::Rows.
@@ -37,6 +37,6 @@ deviations:
     why: betterlite reports failures as a thiserror enum value the caller decides on, and a caller that would have crashed on the Python exception gets the same decision point as an Err.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3301-L3340
 kept_bugs:
-  - what: The update failure debug line says "Failed to udpate MCP server: ..." with LiteLLM's misspelling of "update".
+  - what: The update failure debug line keeps LiteLLM's spelling of "update" as u-d-p-a-t-e, so the emitted text matches LiteLLM's log line.
     why: the line is a log message a working setup and its log dashboards can key on, and every other log line in this port matches LiteLLM's text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3338-L3339
