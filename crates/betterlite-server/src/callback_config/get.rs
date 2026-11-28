@@ -25,6 +25,7 @@ use super::callbacks::{
 };
 use super::error::CallbackConfigError;
 use super::hidden;
+use super::ports::RouterSettingsReader;
 
 const SLACK: &str = "slack";
 const SUCCESS: &str = "success";
@@ -280,10 +281,11 @@ async fn config_callbacks(
         is_full_admin,
     };
     let alerts_entries = alert_destinations(state, &context, slack_enabled);
-    let router_settings = match &state.config.router {
-        Some(reader) => reader.get_settings(),
-        None => BTreeMap::new(),
-    };
+    let router_settings = state
+        .config
+        .router
+        .as_deref()
+        .map_or_else(BTreeMap::new, RouterSettingsReader::get_settings);
     Ok(GetReply {
         status: "success",
         callbacks: rows,

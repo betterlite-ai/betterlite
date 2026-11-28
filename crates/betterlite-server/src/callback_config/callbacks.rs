@@ -73,7 +73,7 @@ fn invalid_config(field: &str, expected: &'static str) -> CallbackConfigError {
 }
 
 // Whether a bare string in the stored value counts as one entry: the settings page reads it that way, the delete path does not
-#[derive(Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub(crate) enum SingleEntry {
     Allowed,
     Rejected,
@@ -134,7 +134,7 @@ pub(crate) fn available_callbacks() -> BTreeMap<&'static str, available::UiCallb
             available::UiCallback {
                 litellm_callback_name: callback.litellm_callback_name,
                 litellm_callback_params: callback.params,
-                ui_callback_name: callback.ui_callback_name,
+                ui_name: callback.ui_callback_name,
             },
         );
     }

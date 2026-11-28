@@ -12,7 +12,8 @@ pub(crate) struct AvailableCallback {
 pub(crate) struct UiCallback {
     pub(crate) litellm_callback_name: &'static str,
     pub(crate) litellm_callback_params: &'static [&'static str],
-    pub(crate) ui_callback_name: &'static str,
+    #[serde(rename = "ui_callback_name")]
+    pub(crate) ui_name: &'static str,
 }
 
 pub(crate) const AVAILABLE_CALLBACKS: [AvailableCallback; 17] = [
