@@ -79,8 +79,8 @@ where
     if result.is_some() {
         return Ok(result);
     }
-    // the safety net after a compact-only failure: slice the client block even without a polyfill result
-    if prediction.compact && history.is_none() {
+    // the safety net after a compact-only failure: a compact prediction never computed history above
+    if prediction.compact {
         return client_history(request.messages, request.system);
     }
     Ok(history)
