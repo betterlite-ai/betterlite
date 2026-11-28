@@ -1,0 +1,27 @@
+kind: helper
+name: auth-model-budgets-auth-end-user-limits
+call:
+  auth_model_budgets:
+    calls:
+      - function: end_user_apply
+        budget:
+          tpm_limit: 0
+          rpm_limit: 5
+          max_budget: 0.0
+      - function: end_user_update
+        token:
+          token: sk-eu
+          end_user_id: keep
+          end_user_tpm_limit: 2
+        params:
+          end_user_id: new-id
+      - function: end_user_update
+        token:
+          token: sk-eu-region
+          end_user_id: eu
+        params:
+          end_user_id: eu
+          allowed_model_region: eu
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+id: B10222
+milestone: R2 bug fixes
+title: One Selected client enum in betterlite-http for the core, provider and openai handler modules
+status: todo
+depends_on: [B10200, B10216]
+file: tasks/B10222-supplied-created-selector.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

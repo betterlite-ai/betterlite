@@ -1,0 +1,2 @@
+litellm_settings:
+  max_budget: os.environ/PROXY_MAX_BUDGET

@@ -174,6 +174,7 @@ out_of_scope:
   - "The imports of sse_keepalive and CustomGuardrail's other paths in endpoints.py: used only by other routes in the file."
 
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - "A failing guardrail never fails the request: its text goes in `guardrail_errors` and the next guardrail still runs on the inputs from before the failure, so one bad guardrail cannot hide the rest."
   - "Names run in sorted string order, not in policy order, and a name that comes from both `guardrail_names` and a policy runs once."
   - "Policy names resolve with no match context, so a policy whose `condition.model` would not match still adds its guardrails."
