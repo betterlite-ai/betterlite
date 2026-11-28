@@ -6,12 +6,13 @@ use std::time::Duration;
 use betterlite_anthropic::anthropic_http_stream::completion::WrappedStream;
 use betterlite_anthropic::anthropic_http_stream::transport::StreamPost;
 use betterlite_anthropic::chat_call::error::ChatCallError;
-use betterlite_anthropic::chat_call::transport::{ClientKind, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{
     CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
 };
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -75,7 +76,7 @@ impl Run {
 }
 pub(super) const fn client_kind(acompletion: bool) -> ClientKind {
     if acompletion {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     }
@@ -181,7 +182,7 @@ pub(super) fn execute(
     let deps = ChatDeps {
         config: &config,
         clients: ChatClients {
-            supplied: Some(SuppliedChatClient {
+            supplied: Some(SuppliedClient {
                 kind,
                 transport: &transport,
             }),
@@ -202,7 +203,7 @@ pub(super) fn execute(
 }
 
 fn both(input: &Input) -> Result<(Run, Run), Box<HelperError>> {
-    let asynchronous = execute(input, CallStyle::Async, ClientKind::Async)?;
+    let asynchronous = execute(input, CallStyle::Async, ClientKind::Asynchronous)?;
     let synchronous = execute(input, CallStyle::Sync, ClientKind::Sync)?;
     Ok((asynchronous, synchronous))
 }

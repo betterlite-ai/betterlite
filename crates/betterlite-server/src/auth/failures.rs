@@ -24,13 +24,17 @@ pub(crate) enum StageFailure {
     RequestBodySafety(Box<ProxyException>),
     VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
+    ModelBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     TenantBudgets(Box<ProxyException>),
     OrganizationRoutePolicy(Box<ProxyException>),
+    AuthRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
+    EndUserIdentity(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
     AuthPolicySupport(Box<ProxyException>),
     ModelGrants(Box<ProxyException>),
+    OauthTokens(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -60,13 +64,17 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
+        | StageFailure::ModelBudgets(exception)
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)
+        | StageFailure::AuthRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
         | StageFailure::AuthPolicySupport(exception)
-        | StageFailure::ModelGrants(exception) => denial_response(exception),
+        | StageFailure::ModelGrants(exception)
+        | StageFailure::OauthTokens(exception)
+        | StageFailure::EndUserIdentity(exception) => denial_response(exception),
     }
 }
 

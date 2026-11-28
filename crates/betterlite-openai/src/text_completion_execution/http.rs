@@ -14,9 +14,9 @@ use url::Url;
 
 use crate::speech::result::read_error_body;
 use crate::text_completion_transport::sdk::{
-    ClientConstructor, ClientKind, RawCompletion, SdkArguments, SdkError, TextCompletionSdk,
-    status_error,
+    ClientConstructor, RawCompletion, SdkArguments, SdkError, TextCompletionSdk, status_error,
 };
+use betterlite_http::client_kind::ClientKind;
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 

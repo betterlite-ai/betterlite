@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use uuid::Uuid;
 
-use super::client::{ClientKind, TranscriptionConnection, select_client};
+use super::client::{TranscriptionConnection, select_client};
 use super::config::TranscriptionFamily;
 use super::decode::{ReplyFormat, decode_transcription_reply, reply_format};
 use super::duration::{duration_number, srt_vtt_duration};
@@ -17,6 +17,7 @@ use super::request::{TranscriptionData, logged_data, outbound_request, prepare_d
 use crate::api::audio_file_input::ProcessedAudioFile;
 use crate::files::error::StatusError;
 use crate::files::stream::flatten_headers;
+use betterlite_http::client_kind::ClientKind;
 
 pub struct TranscriptionCall<'file> {
     // get_audio_file_name of the audio the file was processed from
@@ -62,8 +63,13 @@ pub fn async_audio_transcriptions(
     data: &TranscriptionData,
     logger: &mut dyn TranscriptionLogger,
 ) -> Result<(OutboundRequest, Pending), TranscriptionError> {
-    begin(call, data, (ClientKind::Async, async_model(data)), logger)
-        .inspect_err(|error| log_failure(&call.input, error, logger))
+    begin(
+        call,
+        data,
+        (ClientKind::Asynchronous, async_model(data)),
+        logger,
+    )
+    .inspect_err(|error| log_failure(&call.input, error, logger))
 }
 
 // the hidden model: data.model, whisper-1 only when the key is missing, nothing for any other value
@@ -121,7 +127,7 @@ pub fn finish_transcription(
     let outcome = sent
         .map_err(|source| TranscriptionError::Transport { source })
         .and_then(|response| reply(&response, pending, logger));
-    if let (ClientKind::Async, Err(error)) = (kind, &outcome) {
+    if let (ClientKind::Asynchronous, Err(error)) = (kind, &outcome) {
         log_failure(&input, error, logger);
     }
     outcome
@@ -172,7 +178,9 @@ fn reply(
 // only the async path reads a duration, and only off a reply the SDK parsed as plain text
 fn stored_duration(kind: ClientKind, textual: bool, text: Option<&str>) -> StoredDuration {
     match (kind, textual) {
-        (ClientKind::Async, true) => StoredDuration::Known(text.and_then(srt_vtt_duration)),
-        (ClientKind::Sync, true | false) | (ClientKind::Async, false) => StoredDuration::Absent,
+        (ClientKind::Asynchronous, true) => StoredDuration::Known(text.and_then(srt_vtt_duration)),
+        (ClientKind::Sync, true | false) | (ClientKind::Asynchronous, false) => {
+            StoredDuration::Absent
+        }
     }
 }

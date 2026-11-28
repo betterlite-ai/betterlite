@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use crate::assistants::client::{ClientOptions, SdkClient};
 use crate::assistants::error::AssistantsError;
 use crate::assistants::records::{
     AssistantCreate, AssistantDeleted, AssistantObject, AssistantPage, ListParams,
 };
 use crate::assistants::transport::AssistantsTransport;
+use betterlite_http::client_kind::ClientKind;
 
 pub struct AssistantsApi<T> {
     pub transport: Arc<T>,
@@ -40,7 +41,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         client: Option<SdkClient<T>>,
         params: &ListParams,
     ) -> Result<AssistantPage, AssistantsError> {
-        self.get_openai_client(ClientKind::Async, options, client)
+        self.get_openai_client(ClientKind::Asynchronous, options, client)
             .list(params.request_params())
             .await
     }
@@ -55,7 +56,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
     ) -> Result<AssistantPage, AssistantsError> {
         let kind = client_kind(aget_assistants);
         let request_params = match kind {
-            ClientKind::Async => ListParams::default().request_params(),
+            ClientKind::Asynchronous => ListParams::default().request_params(),
             ClientKind::Sync => params.request_params(),
         };
         let listing = self.get_openai_client(kind, options, client);
@@ -92,7 +93,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
 
 const fn client_kind(async_requested: bool) -> ClientKind {
     if async_requested {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     }

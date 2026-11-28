@@ -3,6 +3,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
+use betterlite_sigv4::credentials::Credentials as SigV4Credentials;
+use betterlite_sigv4::error::SigV4Error;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -12,11 +15,10 @@ use crate::http_analytics_loggers::delivery::{DELIVERY_DEADLINE, Delivery, PostR
 use crate::sqs_logging::clock::Clock;
 use crate::sqs_logging::credentials::{CredentialError, CredentialParams, CredentialSource};
 
-use super::signing::{self, Signable, SigningError};
-
 mod tests;
 
 const CONTENT_TYPE: &str = "application/x-amz-json-1.0";
+const SERVICE: &str = "dynamodb";
 const TARGET: &str = "DynamoDB_20120810.PutItem";
 // boto3 raises for a 4xx or 5xx answer and returns the parsed body otherwise
 const FIRST_ERROR_STATUS: u16 = 400;
@@ -56,7 +58,7 @@ where
         source: InvalidHeaderValue,
     },
     #[error("the DynamoDB request could not be signed")]
-    Signing(#[from] SigningError),
+    Signing(#[from] SigV4Error),
     #[error("the DynamoDB delivery failed")]
     Delivery(#[source] E),
     #[error("DynamoDB answered with status {status}")]
@@ -128,17 +130,18 @@ impl<D: Delivery> HttpDynamoClient<D> {
             ("content-type".to_owned(), CONTENT_TYPE.to_owned()),
             ("x-amz-target".to_owned(), TARGET.to_owned()),
         ];
-        let signed = signing::signed_headers(
-            &Signable {
-                method: "POST",
-                url: url.as_str(),
-                headers: &unsigned,
-                body,
-                region: &self.region,
-                now: self.clock.now(),
-            },
-            credentials,
-        )?;
+        let sigv4_credentials = SigV4Credentials::from(credentials);
+        let signed = sign_request(&Signable {
+            method: "POST",
+            url: url.as_str(),
+            headers: &unsigned,
+            body,
+            service: SERVICE,
+            region: &self.region,
+            credentials: &sigv4_credentials,
+            mode: SigningMode::SigV4Auth,
+            now: self.clock.now(),
+        })?;
         header_map(&unsigned, &signed)
     }
 }

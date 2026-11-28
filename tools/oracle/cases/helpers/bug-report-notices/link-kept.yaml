@@ -1,0 +1,14 @@
+kind: helper
+name: bug-report-notices-link-kept
+call:
+  b10218:
+    env: {LITELLM_DISABLE_BUG_REPORT_LINK: "false"}
+    calls:
+      - {function: failure, status_code: null}
+env: {LITELLM_DISABLE_BUG_REPORT_LINK: "false"}
+compare:
+  ignore:
+    - pointer: /value/calls/0/environment/litellm_version
+      why: betterlite reports its own crate version where LiteLLM reports its package version
+    - pointer: /value/calls/0/environment/python_version
+      why: no CPython interpreter runs inside betterlite, so the field says unknown

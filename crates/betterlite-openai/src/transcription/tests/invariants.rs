@@ -4,9 +4,10 @@ use secrecy::ExposeSecret as _;
 
 use super::cases::{Run, SyncCall, run};
 use super::fixture::{AudioFixture, ConnectionOptions, Fixture, Reply, authorization, connection};
-use crate::transcription::client::{ClientKind, TranscriptionConnection, select_client};
+use crate::transcription::client::{TranscriptionConnection, select_client};
 use crate::transcription::error::TranscriptionError;
 use crate::transcription::request::TranscriptionData;
+use betterlite_http::client_kind::ClientKind;
 
 const SECRET: &str = "sk-transcription-fixture-secret";
 

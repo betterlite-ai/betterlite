@@ -1,12 +1,13 @@
 use std::future::{Future, ready};
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::batches::error::SdkError as BatchSdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery};
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, SdkArguments};
+use betterlite_openai::batches::sdk::{BatchesSdk, ClientConstructor, SdkArguments};
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
 use betterlite_openai::fine_tuning::client::{
     BuildError, ClientArgs, ClientBuilder, JobsApi, SdkError as JobSdkError,

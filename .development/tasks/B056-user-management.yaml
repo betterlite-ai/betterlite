@@ -105,6 +105,7 @@ out_of_scope:
   - B816 owns object-permission persistence, B1226 default teams and B797 event delivery; B736 owns the enrollment port this task fills.
   - B899 owns public login/session routes. They do not gain an auth requirement through this task.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Object permissions can remain after generation fails; team writes can remain after organization failure.
   - An explicit empty teams list suppresses defaults but still triggers the post-write team-ID read.
 budget:

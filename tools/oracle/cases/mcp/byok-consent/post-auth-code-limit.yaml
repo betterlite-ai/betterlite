@@ -1,0 +1,23 @@
+kind: helper
+name: byok-consent-post-auth-code-limit
+call:
+  b4677:
+    route: post
+    query: null
+    servers: null
+    form:
+      client_id: client-1
+      redirect_uri: "http://127.0.0.1:1456/callback"
+      code_challenge: challenge
+      code_challenge_method: S256
+      state: state-1
+      server_id: srv-1
+      api_key: sk-user
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImxvZ2luX21ldGhvZCI6InNzbyIsInVzZXJfaWQiOiJ1c2VyLTEifQ.Dpqdg8Nwh85urK29fzbd0Ol-mfCHAiJchLn8ruZUwos"
+    master_key: sk-oracle-master
+    now: 1700000000
+    prefill_live: 999
+    prefill_expired: 1000
+env: {}
+compare:
+  ignore: []

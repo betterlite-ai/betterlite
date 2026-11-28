@@ -9,6 +9,8 @@ use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::spend_storage::load_spend_storage_policy;
 use betterlite_logging::prometheus_query::daily_spend::PrometheusDailySpend;
 
+use crate::auth::auth_key_lookup::tests::caller_through_key_stage;
+
 use super::super::rows::{
     DailySpend, KeyDailySpend, KeySpend, ModelSpend, TeamSpend, TotalSpendRow, UserKeyDailySpend,
     UserModelSpend,
@@ -117,6 +119,25 @@ async fn logs_read_the_user_key_view_for_an_internal_viewer() {
     assert_eq!(body[0].user, "u1");
     assert_eq!(body[0].api_key, "sk-one");
     assert_eq!(body[0].spend, decimal("1.25"));
+    assert_eq!(
+        store.calls(),
+        vec!["user_daily_spend(u1,Some(\"sk-one\"))".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn logs_scope_a_user_bound_key_to_its_user() {
+    let mut fake = spend_store();
+    fake.user_daily = vec![user_daily("2026-01-01", "1.25", "sk-one", "u1")];
+    let store = store_with(fake);
+    let caller = caller_through_key_stage(r#"{"user_id":"u1","user_role":"internal_user"}"#);
+    let reply = call(
+        "/global/spend/logs?api_key=sk-one",
+        Some(&caller.principal),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(
         store.calls(),
         vec!["user_daily_spend(u1,Some(\"sk-one\"))".to_owned()]
@@ -573,6 +594,22 @@ async fn keys_ignore_the_query_limit_for_an_internal_viewer() {
     assert_eq!(reply.status, StatusCode::OK);
     let body: Vec<KeyBody> = decode(&reply);
     assert_eq!(body.len(), 1);
+    assert_eq!(store.calls(), vec!["user_keys_by_spend(u1,10)".to_owned()]);
+}
+
+#[tokio::test]
+async fn keys_scope_a_user_bound_key_to_its_user() {
+    let mut fake = spend_store();
+    fake.user_keys = vec![key_spend("sk-one", "1.5")];
+    let store = store_with(fake);
+    let caller = caller_through_key_stage(r#"{"user_id":"u1","user_role":"internal_user"}"#);
+    let reply = call(
+        "/global/spend/keys",
+        Some(&caller.principal),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(store.calls(), vec!["user_keys_by_spend(u1,10)".to_owned()]);
 }
 

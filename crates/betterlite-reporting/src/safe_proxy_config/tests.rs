@@ -9,6 +9,7 @@ use rstest::rstest;
 use crate::bug_report::environment::Host;
 use crate::bug_report::providers::KNOWN_PROVIDERS;
 use crate::bug_report::record::Surface;
+use crate::bug_report::report::exception_type_name;
 use crate::safe_proxy_config::credential::{CREDENTIAL_KEY_PARTS, is_credential_key};
 use crate::safe_proxy_config::known_values::KNOWN_VALUES;
 use crate::safe_proxy_config::litellm_settings::LITELLM_SETTINGS_KEYS;
@@ -519,7 +520,13 @@ fn report_bug_keeps_the_proxy_surface_and_call_fields() {
         custom_llm_provider: Some(String::from("openai")),
         stream: Some(true),
     };
-    let built = build_proxy_bug_report(&error, location, call, &snapshot(), no_docker());
+    let built = build_proxy_bug_report(
+        exception_type_name(&error),
+        location,
+        call,
+        &snapshot(),
+        no_docker(),
+    );
     assert_eq!(built.environment.surface, Surface::Proxy);
     assert_eq!(
         built.environment.config_lines,
@@ -544,7 +551,7 @@ fn report_bug_keeps_the_proxy_surface_and_call_fields() {
 fn report_bug_defaults_the_call_fields_to_none() {
     let (location, error) = failing_parse();
     let built = build_proxy_bug_report(
-        &error,
+        exception_type_name(&error),
         location,
         ProxyCall::default(),
         &snapshot(),

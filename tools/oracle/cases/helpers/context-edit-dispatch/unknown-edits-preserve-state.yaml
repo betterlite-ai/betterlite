@@ -1,0 +1,22 @@
+kind: helper
+name: unknown-edits-preserve-state
+call:
+  context_edit_dispatch:
+    scenarios:
+      - messages:
+          - role: user
+            content: keep me
+        system: BASE
+        context_management:
+          edits:
+            - type: future
+            - type: 7
+            - {}
+      - messages:
+          - role: user
+            content: keep me
+        system: BASE
+        context_management:
+          edits: []
+env: {}
+compare: {ignore: []}

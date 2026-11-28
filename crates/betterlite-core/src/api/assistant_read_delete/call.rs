@@ -1,5 +1,6 @@
 use betterlite_azure::endpoints::projection::LiteLlmParams;
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
+use betterlite_http::client_kind::ClientKind;
+use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;

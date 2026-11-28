@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use crate::assistants::client::{ClientKind, ClientOptions};
+use crate::assistants::client::ClientOptions;
 use crate::assistants::records::ListParams;
+use betterlite_http::client_kind::ClientKind;
 
 use crate::assistants::operations::AssistantsApi;
 
@@ -21,7 +22,7 @@ async fn openai_assistants_credential_identity_isolation() {
     let client_b = api.get_openai_client(ClientKind::Sync, tenant_b.clone(), None);
     assert_eq!(client_a.organization.as_deref(), Some("org-fixture"));
     assert_eq!(client_b.organization, None);
-    let kept = api.get_openai_client(ClientKind::Async, tenant_b, Some(client_a));
+    let kept = api.get_openai_client(ClientKind::Asynchronous, tenant_b, Some(client_a));
     assert_eq!(kept.base_url.as_deref(), Some("https://example.test/v1"));
     api.get_assistants(tenant_a, None, false, &ListParams::default())
         .await

@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use betterlite_core::api::assistant_run_sdk::service::RunOutcome;
 use betterlite_core::api::assistant_threads::SuppliedClient as ThreadClient;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::decisions::Json;
-use betterlite_openai::assistants::client::ClientKind;
 
 use super::super::client::SuppliedClass;
 use super::super::operation::AssistantOperation;
@@ -170,7 +170,7 @@ fn a_supplied_azure_client_keeps_its_class_in_the_thread_client() {
     let ThreadClient::Azure(azure) = thread else {
         panic!("the supplied azure class built another client");
     };
-    assert_eq!(azure.kind, ClientKind::Async);
+    assert_eq!(azure.kind, ClientKind::Asynchronous);
     let inputs = azure.inputs.expect("the constructor inputs");
     assert!(inputs.http_client.is_async);
 }

@@ -7,10 +7,10 @@ use tokio::runtime::Builder;
 
 use super::cases::{Answer, STABILITY_MODEL, answered, auth_params, call, image_list, run, secret};
 use super::fixture::{Factory, FixtureClient, Reply};
-use crate::image_call::transport::{ClientKind, SuppliedClient};
 use crate::image_edits::execute::dispatch_request;
 use crate::image_edits::plan::PreparedRequest;
 use crate::signing::request::AwsSignedRequest;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 pub(super) fn edit_signed_request(redactor: &Redactor) {
     signed_signature(redactor);

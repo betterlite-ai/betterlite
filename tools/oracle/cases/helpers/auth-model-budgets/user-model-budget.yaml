@@ -1,0 +1,33 @@
+kind: helper
+name: auth-model-budgets-user-model-budget
+call:
+  auth_model_budgets:
+    calls:
+      - function: user_budget
+        token:
+          user_id: u1
+          user_model_max_budget:
+            gpt-4: 5.0
+            claude: 7.0
+        models: [gpt-4, claude, gpt-4]
+      - function: user_budget
+        token:
+          token: sk-x
+          user_model_max_budget:
+            gpt-4: 5.0
+        models: [gpt-4]
+      - function: user_budget
+        token:
+          user_id: u1
+          user_model_max_budget: {}
+        models: [gpt-4]
+      - function: user_budget
+        token:
+          user_id: u1
+          user_model_max_budget:
+            gpt-4: 5.0
+        models: [gpt-4, claude]
+        failing_models: [claude]
+env: {}
+compare:
+  ignore: []

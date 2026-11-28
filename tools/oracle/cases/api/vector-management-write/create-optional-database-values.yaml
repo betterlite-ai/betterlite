@@ -1,0 +1,52 @@
+kind: helper
+name: create-optional-database-values
+call:
+  b1069:
+    calls:
+      # empty strings are stored, an empty metadata object and a null params both become
+      - route: new
+        body:
+          vector_store_id: vs_a
+          custom_llm_provider: openai
+          vector_store_name: ""
+          vector_store_description: ""
+          vector_store_metadata: {}
+          litellm_params: null
+          litellm_credential_name: ""
+        database: []
+        registry: []
+        caller: &user {user_id: u1, user_role: internal_user, team_id: null}
+        disabled: false
+      # omitted optional fields stay out of the inserted row
+      - route: new
+        body: {vector_store_id: vs_b, custom_llm_provider: openai}
+        database: []
+        registry: []
+        caller: *user
+        disabled: false
+      # a metadata value that is not a dict is dropped
+      - route: new
+        body: {vector_store_id: vs_c, custom_llm_provider: openai, vector_store_metadata: text}
+        database: []
+        registry: []
+        caller: *user
+        disabled: false
+      # truthy params are GenericLiteLLMParams.model_dump(exclude_none=True)
+      - route: new
+        body:
+          vector_store_id: vs_d
+          custom_llm_provider: openai
+          litellm_params: {litellm_embedding_model: embed, max_retries: "3", drop_params: true, use_litellm_proxy: null}
+        database: []
+        registry: []
+        caller: *user
+        disabled: false
+      # no database answers 500 before anything is written
+      - route: new
+        body: {vector_store_id: vs_e, custom_llm_provider: openai}
+        database: null
+        registry: []
+        caller: *user
+        disabled: false
+env: {}
+compare: {ignore: []}

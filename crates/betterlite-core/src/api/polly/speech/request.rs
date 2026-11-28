@@ -74,7 +74,7 @@ pub struct TextToSpeechRequest {
 }
 
 // transform_text_to_speech_request: the body is serialized once, those bytes are signed, and ssml_body carries them
-pub fn transform_request(
+pub async fn transform_request(
     request: &SignedRequest<'_>,
     resolver: &dyn CredentialResolver,
 ) -> Result<TextToSpeechRequest, SpeechError> {
@@ -83,7 +83,7 @@ pub fn transform_request(
     let body = request_body(request.input, request.voice, request.optional_params);
     let payload = dumps_object(&body);
     let sources = credentials::sources(request.litellm_params)?;
-    let identity = resolver.resolve(&sources)?;
+    let identity = resolver.resolve(&sources).await?;
     let headers = sign_post(&SignablePost {
         url: &url,
         region: region.unwrap_or(DEFAULT_REGION),

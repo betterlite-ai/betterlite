@@ -13,9 +13,8 @@ use crate::bedrock_embedding_io::credentials::{
 };
 use crate::bedrock_embedding_io::error::EmbeddingIoError;
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
-use crate::bedrock_embedding_io::transport::{
-    EmbeddingCall, EmbeddingRequest, SuppliedClient, post_embedding,
-};
+use crate::bedrock_embedding_io::transport::{EmbeddingCall, EmbeddingRequest, post_embedding};
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_read_dispatch::protocols::SyncSecretReader;
 use secrecy::SecretString;
