@@ -182,6 +182,9 @@ fn credential_target(
 }
 
 // ast-grep-ignore: no-one-line-functions - every sanitizer arm ends with the same view-to-JSON step
-fn serialized<T: Serialize>(view: Result<T, CredentialViewError>) -> HelperResult {
+fn serialized<T>(view: Result<T, CredentialViewError>) -> HelperResult
+where
+    T: Serialize,
+{
     serde_json::to_value(view.or_config_error()?).or_config_error()
 }

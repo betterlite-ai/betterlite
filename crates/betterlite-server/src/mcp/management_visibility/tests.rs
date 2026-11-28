@@ -158,6 +158,11 @@ fn virtual_key(source: &str) -> McpServerTable {
 }
 
 fn assert_shared_stripped(view: &McpServerTable) {
+    assert_connection_fields_stripped(view);
+    assert_oauth_fields_stripped(view);
+}
+
+fn assert_connection_fields_stripped(view: &McpServerTable) {
     assert!(view.credentials.is_none());
     assert!(view.pinned_tools.is_none());
     assert!(view.url.is_none());
@@ -166,6 +171,10 @@ fn assert_shared_stripped(view: &McpServerTable) {
     assert!(view.env.0.is_empty());
     assert!(view.command.is_none());
     assert!(view.args.is_empty());
+    assert!(view.env_vars.is_none());
+}
+
+fn assert_oauth_fields_stripped(view: &McpServerTable) {
     assert!(view.issuer.is_none());
     assert!(view.authorization_url.is_none());
     assert!(view.token_url.is_none());
@@ -174,7 +183,6 @@ fn assert_shared_stripped(view: &McpServerTable) {
     assert!(view.audience.is_none());
     assert!(view.subject_token_type.is_none());
     assert!(view.token_exchange_profile.is_none());
-    assert!(view.env_vars.is_none());
 }
 
 #[rstest]
@@ -542,12 +550,22 @@ fn non_admin_view_strips_secret_fields() {
 #[test]
 fn non_admin_view_keeps_discovery_fields() {
     let view = non_admin(FULL_ROW);
+    assert_discovery_identity(&view);
+    assert_discovery_access(&view);
+}
+
+fn assert_discovery_identity(view: &McpServerTable) {
     assert_eq!(view.server_name.as_deref(), Some("Test Server"));
     assert_eq!(view.alias.as_deref(), Some("test-alias"));
     assert_eq!(view.description.as_deref(), Some("test description"));
     assert_eq!(view.transport, MCPTransport::Http);
     assert_eq!(view.auth_type, Some(MCPAuth::BearerToken));
     assert_eq!(view.instructions.as_deref(), Some("test instructions"));
+    assert_eq!(view.mcp_access_groups, ["group-1"]);
+    assert_eq!(view.allowed_tools, ["tool-1"]);
+}
+
+fn assert_discovery_access(view: &McpServerTable) {
     assert_eq!(
         view.teams,
         vec![BTreeMap::from([(
@@ -555,8 +573,6 @@ fn non_admin_view_keeps_discovery_fields() {
             Some("team-1".to_owned())
         )])]
     );
-    assert_eq!(view.mcp_access_groups, ["group-1"]);
-    assert_eq!(view.allowed_tools, ["tool-1"]);
     assert_eq!(
         view.health_check_error.as_deref(),
         Some("test health failure")
