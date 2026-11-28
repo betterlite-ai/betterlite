@@ -297,8 +297,8 @@ async fn cohere_input_type() {
     assert_eq!(reply.usage.total_tokens, 7);
     assert_eq!(
         outcome.phases,
-        [String::from("pre_api_call")],
-        "the legacy sync transport logs its request and not its reply"
+        [String::from("pre_api_call"), String::from("post_api_call")],
+        "the legacy sync transport logs its request and its parsed reply"
     );
 }
 
