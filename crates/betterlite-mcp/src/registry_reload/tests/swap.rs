@@ -186,7 +186,14 @@ async fn swap_hydrates_config_servers() {
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.reload().await.unwrap();
-    let held = fixture.config_server("srv-cfg").await.unwrap();
+    let held = fixture
+        .registry
+        .read()
+        .await
+        .config_servers
+        .get("srv-cfg")
+        .cloned()
+        .unwrap();
     assert_eq!(held.fields.instructions.as_deref(), Some("hydrated"));
     assert_eq!(fixture.hydrator.calls(), strings(&["srv-cfg"]));
     assert!(
@@ -209,7 +216,14 @@ async fn swap_skips_hydration_when_dcr_returns_false() {
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.reload().await.unwrap();
-    let held = fixture.config_server("srv-cfg").await.unwrap();
+    let held = fixture
+        .registry
+        .read()
+        .await
+        .config_servers
+        .get("srv-cfg")
+        .cloned()
+        .unwrap();
     assert_eq!(held.fields.instructions, None);
     assert_eq!(fixture.hydrator.calls(), strings(&["srv-cfg"]));
     assert!(!captured.text().contains("hydrated persisted DCR client"));
@@ -230,7 +244,15 @@ async fn swap_skips_write_back_when_config_server_disappears() {
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.reload().await.unwrap();
-    assert!(fixture.config_server("srv-cfg").await.is_none());
+    assert!(
+        fixture
+            .registry
+            .read()
+            .await
+            .config_servers
+            .get("srv-cfg")
+            .is_none()
+    );
     assert_eq!(fixture.hydrator.calls(), strings(&["srv-cfg"]));
     assert!(!captured.text().contains("hydrated persisted DCR client"));
 }

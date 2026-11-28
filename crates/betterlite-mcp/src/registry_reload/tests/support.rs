@@ -521,15 +521,6 @@ impl Fixture {
             .collect()
     }
 
-    async fn config_server(&self, server_id: &str) -> Option<MCPServer> {
-        self.registry
-            .read()
-            .await
-            .config_servers
-            .get(server_id)
-            .cloned()
-    }
-
     async fn settle(&self) {
         self.tasks.close();
         self.tasks.wait().await;

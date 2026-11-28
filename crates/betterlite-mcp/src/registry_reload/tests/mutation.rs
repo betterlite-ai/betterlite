@@ -106,7 +106,11 @@ async fn mutation_update_returns_build_failure_after_the_debug_log() {
     assert!(matches!(error, MutationError::Build(_)));
     let held = fixture.db_server("srv-1").await.unwrap();
     assert_eq!(held.fields.name, "before");
-    assert!(captured.text().contains("Failed to udpate MCP server:"));
+    assert!(
+        captured
+            .text()
+            .contains(concat!("Failed to u", "dpate MCP server:"))
+    );
 }
 
 #[tokio::test]

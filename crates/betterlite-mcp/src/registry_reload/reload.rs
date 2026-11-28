@@ -198,22 +198,25 @@ where
         if self.warned_shadowed.record(&shadowed) {
             tracing::warn!(
                 "config.yaml MCP server_id(s) {} are also database-backed MCP servers. The database entry takes precedence, so the config.yaml server is unreachable. Give the config entry a different server_id.",
-                joined_ids(&shadowed)
+                shadowed
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
         let capturing = config_ids_taken_by_db(&config_ids, servers);
         if self.warned_capturing.record(&capturing) {
             tracing::warn!(
                 "config.yaml MCP server_id(s) {} are the name or alias of a database-backed MCP server. Permission entries naming them resolve to the config.yaml server, not the database one. Give the config entry a different server_id.",
-                joined_ids(&capturing)
+                capturing
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
         }
     }
-}
-
-fn joined_ids(ids: &BTreeSet<String>) -> String {
-    let values: Vec<&str> = ids.iter().map(String::as_str).collect();
-    values.join(", ")
 }
 
 // both sides come from the same row text, so compare the instant the build step would store
