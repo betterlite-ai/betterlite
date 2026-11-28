@@ -5,8 +5,8 @@ use secrecy::SecretString;
 use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
+use crate::auth::auth_key_lookup;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
-pub(crate) use crate::auth::auth_key_lookup::master_key_context;
 use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
@@ -235,6 +235,17 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
+}
+
+// auth.rs's master stage reads the record as optional and answers a refusal itself; the key lookup stage takes the Result.
+pub(crate) fn master_key_context(
+    presented: Option<&SecretString>,
+    master_key: &SecretString,
+) -> Option<AuthContext> {
+    let Some(key) = presented else {
+        return None;
+    };
+    auth_key_lookup::master_key_context(Some(key), master_key).unwrap_or_default()
 }
 
 mod tests;

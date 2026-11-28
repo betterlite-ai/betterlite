@@ -25,7 +25,7 @@ use support::{
 #[tokio::test]
 async fn the_master_key_is_a_proxy_admin_caller() {
     let master = SecretString::from("master".to_owned());
-    let Some(context) = master_key_context(Some(&master), &master) else {
+    let Ok(Some(context)) = master_key_context(Some(&master), &master) else {
         panic!("the master key authenticates");
     };
     let admin = AdminCaller::from_principal(&context.principal);

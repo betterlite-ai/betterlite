@@ -69,9 +69,10 @@ async fn create_records_the_master_key_admin_user_as_actor() {
     let registry = registry(Vec::new());
     let store = FakeStore::seeded(Vec::new());
     let master = SecretString::from("master".to_owned());
-    let caller = master_key_context(Some(&master), &master)
-        .expect("the master key authenticates")
-        .principal;
+    let Ok(Some(context)) = master_key_context(Some(&master), &master) else {
+        panic!("the master key authenticates");
+    };
+    let caller = context.principal;
     let reply = call(
         state(&registry, Some(&store), None),
         Method::POST,

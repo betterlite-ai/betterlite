@@ -3,16 +3,15 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::Request;
-use betterlite_auth::auth_errors::conversion::as_proxy_exception;
-use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
-};
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_auth::auth_errors::conversion::other_message_exception;
+use betterlite_auth::auth_identity::records::{CredentialRef, Principal};
+use betterlite_auth::auth_identity::roles::AuthMethod;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_auth::identity_store::principal::{Projection, principal_from_key};
+use betterlite_auth::master_key_admin::{MASTER_KEY_ALIAS, master_key_admin_auth};
 use betterlite_db::model_secrets::DEFAULT_USER_ID;
+use betterlite_models::key_digest::hashing::hash_token;
 use secrecy::{ExposeSecret as _, SecretString};
-use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
@@ -86,10 +85,10 @@ fn master_key_for(request: &Request<Body>) -> Option<SecretString> {
 
 // The master key wins as it does in LiteLLM, then the virtual key is read through get_key_object.
 pub(crate) async fn prefetch(stage: KeyLookupStageInput) -> Result<StageInput, StageFailure> {
-    let master = stage
-        .master_key
-        .as_ref()
-        .and_then(|key| master_key_context(stage.presented.as_ref(), key));
+    let master = match stage.master_key.as_ref() {
+        Some(key) => master_key_context(stage.presented.as_ref(), key)?,
+        None => None,
+    };
     if let Some(context) = master {
         return Ok(StageInput::Authenticated(Box::new(context)));
     }
@@ -129,42 +128,37 @@ fn key_context(outcome: &KeyLookupOutcome) -> AuthContext {
     }
 }
 
-// The master key authenticates as LiteLLM's proxy admin: litellm_proxy_admin_name with the PROXY_ADMIN role.
+// The master key authenticates as LiteLLM's master key record, projected the way _resolve_request_principal projects any key.
 pub(crate) fn master_key_context(
     presented: Option<&SecretString>,
     master_key: &SecretString,
-) -> Option<AuthContext> {
-    let key = presented?;
-    let equal = key
-        .expose_secret()
-        .as_bytes()
-        .ct_eq(master_key.expose_secret().as_bytes());
-    if key.expose_secret().is_empty() || !bool::from(equal) {
-        return None;
-    }
-    Some(AuthContext {
-        principal: Principal {
-            principal_type: PrincipalType::ServiceAccount,
-            subject: "master_key".to_owned(),
-            issuer: None,
-            audience: Vec::new(),
-            user: Some(UserIdentity {
-                id: DEFAULT_USER_ID.to_owned(),
-                external_id: None,
-                user_name: None,
-                email: None,
-                display_name: None,
-            }),
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: vec![Role::PlatformAdmin],
-            scopes: Vec::new(),
-            auth_method: AuthMethod::ApiKey,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey::default(),
-        },
-    })
+) -> Result<Option<AuthContext>, StageFailure> {
+    let Some(key) = presented else {
+        return Ok(None);
+    };
+    let digest = hash_token(key.expose_secret());
+    // The record is built from fixed fields, so a construct error is answered the way LiteLLM's handler answers an exception in this branch.
+    let Some(record) =
+        master_key_admin_auth(&digest, Some(master_key), DEFAULT_USER_ID).map_err(|error| {
+            StageFailure::KeyLookup(Box::new(other_message_exception(&error.to_string())))
+        })?
+    else {
+        return Ok(None);
+    };
+    let projection = Projection {
+        auth_method: AuthMethod::ApiKey,
+        issuer: None,
+        subject_fallback: Some(MASTER_KEY_ALIAS),
+        scopes: &[],
+        credential_ref: Some(CredentialRef {
+            key_id: None,
+            token_id: Some(MASTER_KEY_ALIAS.to_owned()),
+        }),
+        network: None,
+    };
+    let principal = Principal {
+        subject: "master_key".to_owned(),
+        ..principal_from_key(&record, projection)
+    };
+    Ok(Some(AuthContext { principal }))
 }

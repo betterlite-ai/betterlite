@@ -35,6 +35,7 @@ use super::KeyLookupStageInput;
 
 const CHAT_ROUTE: &str = "/v1/chat/completions";
 const COMPLIANCE_ROUTE: &str = "/compliance/eu-ai-act";
+const MASTER_TEXT: &str = "master";
 const PRESENTED: &str = "sk-virtual-key";
 const HASHED_KEY: &str = "hashed-key";
 
@@ -217,8 +218,8 @@ fn stage_input_debug_redacts_keys() {
 
 #[test]
 fn authenticated_stage_forwarding() {
-    let master = SecretString::from("master".to_owned());
-    let Some(context) = super::master_key_context(Some(&master), &master) else {
+    let master = SecretString::from(MASTER_TEXT.to_owned());
+    let Ok(Some(context)) = super::master_key_context(Some(&master), &master) else {
         panic!("matching master key authenticates");
     };
     let input = super::StageInput::Authenticated(Box::new(context));
@@ -287,6 +288,14 @@ pub(crate) fn caller_through_key_stage(fields: &str) -> AuthContext {
         auth,
         hashed_token: HASHED_KEY.to_owned(),
     })
+}
+
+pub(crate) fn master_caller() -> AuthContext {
+    let master = SecretString::from(MASTER_TEXT.to_owned());
+    let Ok(Some(context)) = super::master_key_context(Some(&master), &master) else {
+        panic!("the master key authenticates");
+    };
+    context
 }
 
 #[test]
@@ -387,30 +396,51 @@ fn key_context_takes_the_team_role_from_the_team_member_row() {
 #[test]
 fn empty_master_credential_is_refused() {
     let empty = SecretString::from(String::new());
-    let master = SecretString::from("master".to_owned());
-    assert!(super::master_key_context(Some(&empty), &master).is_none());
-    assert!(super::master_key_context(Some(&empty), &empty).is_none());
+    let master = SecretString::from(MASTER_TEXT.to_owned());
+    assert!(matches!(
+        super::master_key_context(Some(&empty), &master),
+        Ok(None)
+    ));
+    assert!(matches!(
+        super::master_key_context(Some(&empty), &empty),
+        Ok(None)
+    ));
 }
 
 #[test]
-fn master_key_context_carries_the_admin_user_and_role() {
-    let master = SecretString::from("master".to_owned());
-    let Some(context) = super::master_key_context(Some(&master), &master) else {
+fn master_key_context_carries_the_master_key_record() {
+    let master = SecretString::from(MASTER_TEXT.to_owned());
+    let Ok(Some(context)) = super::master_key_context(Some(&master), &master) else {
         panic!("the matching master key authenticates");
     };
     let principal = context.principal;
+    assert_eq!(principal.subject, "master_key");
     assert_eq!(
-        principal.user,
-        Some(UserIdentity {
-            id: DEFAULT_USER_ID.to_owned(),
-            external_id: None,
-            user_name: None,
-            email: None,
-            display_name: None,
-        })
+        principal.user.as_ref().map(|user| user.id.as_str()),
+        Some(DEFAULT_USER_ID)
     );
     assert_eq!(principal.roles, vec![Role::PlatformAdmin]);
-    assert_eq!(principal.subject, "master_key");
-    assert_eq!(principal.principal_type, PrincipalType::ServiceAccount);
-    assert!(principal.source_key.0.is_none());
+    assert_eq!(principal.principal_type, PrincipalType::Human);
+    assert_eq!(principal.credential_ref.key_id, None);
+    assert_eq!(
+        principal.credential_ref.token_id.as_deref(),
+        Some("litellm_proxy_master_key")
+    );
+    let record = principal
+        .source_key
+        .0
+        .as_ref()
+        .expect("the record is the source");
+    let wire = serde_json::to_value(record).expect("the record serializes");
+    assert_eq!(wire["api_key"], "litellm_proxy_master_key");
+    assert_eq!(wire["user_id"], DEFAULT_USER_ID);
+    assert_eq!(wire["user_role"], "proxy_admin");
+    assert!(matches!(
+        super::master_key_context(Some(&SecretString::from("other")), &master),
+        Ok(None)
+    ));
+    assert!(matches!(
+        super::master_key_context(Some(&SecretString::from(String::new())), &master),
+        Ok(None)
+    ));
 }
