@@ -40,8 +40,10 @@ async fn login(State(state): State<SamlEntrypointsState>, request: Request) -> R
     let relay_state = form_urlencoded::parse(request.uri().query().unwrap_or_default().as_bytes())
         .filter(|(key, _value)| key.as_ref() == "return_to")
         .last()
-        .map(|(_key, value)| value.into_owned())
-        .unwrap_or_else(|| default_relay_state(&base_url));
+        .map_or_else(
+            || default_relay_state(&base_url),
+            |(_key, value)| value.into_owned(),
+        );
     match state.provider.login(&urls, &relay_state).await {
         Ok(redirect) => login_redirect(&redirect, secure_request(&state, &request)),
         Err(error) => provider_error_response(&error),

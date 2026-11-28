@@ -9,7 +9,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http::proxy::{ProxiedClient, base_builder};
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse, base_builder};
 use betterlite_http::tls::{TlsError, apply_policy};
 use http::header::LOCATION;
 use tokio::time::timeout;
@@ -64,7 +64,8 @@ impl MetadataFetcher for ProxiedMetadataFetcher {
                 .client
                 .get(&current)
                 .build()
-                .map_err(|error| MetadataFetchError::Request(HttpError::Request(error)))?;
+                .map_err(HttpError::Request)
+                .map_err(MetadataFetchError::Request)?;
             let answered = timeout(
                 Duration::from_secs(FETCH_TIMEOUT_SECONDS),
                 client.execute_buffered(request, client.limits.body_bytes),
@@ -72,30 +73,28 @@ impl MetadataFetcher for ProxiedMetadataFetcher {
             .await
             .map_err(|_elapsed| MetadataFetchError::Request(HttpError::Timeout))?
             .map_err(MetadataFetchError::Request)?;
-            if (300..400).contains(&answered.status) {
-                let location = answered
-                    .headers
-                    .get(LOCATION)
-                    .and_then(|value| value.to_str().ok())
-                    .ok_or(MetadataFetchError::Status {
-                        status: answered.status,
-                    })?;
-                let base = Url::parse(&current).map_err(|_error| MetadataFetchError::InvalidUrl)?;
-                current = base
-                    .join(location)
-                    .map_err(|_error| MetadataFetchError::InvalidUrl)?
-                    .to_string();
-                continue;
+            match answered.status {
+                200 => return Ok(answered.body),
+                300..=399 => current = next_location(&current, &answered)?,
+                status => return Err(MetadataFetchError::Status { status }),
             }
-            if answered.status != 200 {
-                return Err(MetadataFetchError::Status {
-                    status: answered.status,
-                });
-            }
-            return Ok(answered.body);
         }
         Err(MetadataFetchError::TooManyRedirects {
             limit: MAX_REDIRECTS,
         })
     }
+}
+
+fn next_location(current: &str, answered: &UpstreamResponse) -> Result<String, MetadataFetchError> {
+    let location = answered
+        .headers
+        .get(LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(MetadataFetchError::Status {
+            status: answered.status,
+        })?;
+    Url::parse(current)
+        .and_then(|base| base.join(location))
+        .map(Url::into_string)
+        .map_err(|_error| MetadataFetchError::InvalidUrl)
 }
