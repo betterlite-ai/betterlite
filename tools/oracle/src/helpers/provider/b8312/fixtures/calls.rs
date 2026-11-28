@@ -80,7 +80,8 @@ pub(crate) fn section_settings(case: &Case) -> SectionSettings {
             nlp_cloud_api_key: read("NLP_CLOUD_API_KEY").map(SecretString::from), nlp_cloud_api_base: read("NLP_CLOUD_API_BASE"),
             qwen_ai_platform_key: None, qwen_ai_platform_base: None, qwen_ai_platform_rerank_base: None, qwen_ai_platform_image_base: None,
             qwencloud_key: None, qwencloud_base: None, qwencloud_rerank_base: None, qwencloud_image_base: None,
-            tencent_api_base: None, tencent_api_key: None, volcengine_api_base: None, volcengine_api_key: None,
+            tencent_api_base: None, tencent_api_key: None, volcengine_api_base: None,
+            volcengine_api_key: read("VOLCENGINE_API_KEY").map(SecretString::from),
         },
     }
 }
