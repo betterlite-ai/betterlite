@@ -41,7 +41,7 @@ call:
       - function: restore_file_identifiers
         original_file_id: litellm_proxy:managed
         response:
-          kind: null
+          kind: "null"
       - function: restore_file_identifiers
         original_file_id: litellm_proxy:managed
         response:
