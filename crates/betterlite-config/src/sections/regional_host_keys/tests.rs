@@ -139,9 +139,8 @@ fn read(settings: &Settings, setting: Setting) -> Option<String> {
 #[test]
 fn every_setting_is_unset_by_default() {
     let settings = load("", &[]).unwrap();
-    for setting in ALL {
-        assert_eq!(read(&settings, setting), None, "{setting:?}");
-    }
+    let unset = ALL.map(|setting| read(&settings, setting).is_none());
+    assert_eq!(unset, [true; 31]);
 }
 
 #[rstest]
@@ -176,6 +175,11 @@ fn every_setting_is_unset_by_default() {
 #[case::modelscope_api_key(Setting::ModelscopeApiKey, "", &[("MODELSCOPE_API_KEY", "sk-scope")], Some("sk-scope"))]
 #[case::tencent_api_base(Setting::TencentApiBase, "", &[("TENCENT_API_BASE", "http://tencent")], Some("http://tencent"))]
 #[case::tencent_api_key(Setting::TencentApiKey, "", &[("TENCENT_API_KEY", "sk-tencent")], Some("sk-tencent"))]
+#[case::litellm_api_base_resolves_an_environment_reference(Setting::ApiBase, "litellm_settings:\n  api_base: os.environ/GLOBAL_BASE\n", &[("GLOBAL_BASE", "http://from-env:4000")], Some("http://from-env:4000"))]
+#[case::litellm_api_key_resolves_an_environment_reference(Setting::ApiKey, "litellm_settings:\n  api_key: os.environ/GLOBAL_KEY\n", &[("GLOBAL_KEY", "sk-from-env")], Some("sk-from-env"))]
+#[case::headers_resolve_an_environment_reference(Setting::Headers, "litellm_settings:\n  headers:\n    Authorization: os.environ/HEADER_KEY\n", &[("HEADER_KEY", "Bearer sk-header")], Some("Authorization=Bearer sk-header"))]
+#[case::gigachat_key_resolves_an_environment_reference(Setting::GigachatKey, "litellm_settings:\n  gigachat_key: os.environ/GIGA_GLOBAL\n", &[("GIGA_GLOBAL", "sk-giga-env")], Some("sk-giga-env"))]
+#[case::nlp_cloud_key_resolves_an_environment_reference(Setting::NlpCloudKey, "litellm_settings:\n  nlp_cloud_key: os.environ/NLP_GLOBAL\n", &[("NLP_GLOBAL", "sk-nlp-env")], Some("sk-nlp-env"))]
 fn loads_each_listed_setting(
     #[case] setting: Setting,
     #[case] source: &str,
@@ -226,24 +230,6 @@ fn an_empty_value_counts_as_unset(
     #[case] environment: &[(&str, &str)],
 ) {
     assert_eq!(read(&load(source, environment).unwrap(), setting), None);
-}
-
-#[rstest]
-#[case::litellm_api_base_resolves_an_environment_reference(Setting::ApiBase, "litellm_settings:\n  api_base: os.environ/GLOBAL_BASE\n", &[("GLOBAL_BASE", "http://from-env:4000")], Some("http://from-env:4000"))]
-#[case::litellm_api_key_resolves_an_environment_reference(Setting::ApiKey, "litellm_settings:\n  api_key: os.environ/GLOBAL_KEY\n", &[("GLOBAL_KEY", "sk-from-env")], Some("sk-from-env"))]
-#[case::headers_resolve_an_environment_reference(Setting::Headers, "litellm_settings:\n  headers:\n    Authorization: os.environ/HEADER_KEY\n", &[("HEADER_KEY", "Bearer sk-header")], Some("Authorization=Bearer sk-header"))]
-#[case::gigachat_key_resolves_an_environment_reference(Setting::GigachatKey, "litellm_settings:\n  gigachat_key: os.environ/GIGA_GLOBAL\n", &[("GIGA_GLOBAL", "sk-giga-env")], Some("sk-giga-env"))]
-#[case::nlp_cloud_key_resolves_an_environment_reference(Setting::NlpCloudKey, "litellm_settings:\n  nlp_cloud_key: os.environ/NLP_GLOBAL\n", &[("NLP_GLOBAL", "sk-nlp-env")], Some("sk-nlp-env"))]
-fn resolves_an_environment_reference(
-    #[case] setting: Setting,
-    #[case] source: &str,
-    #[case] environment: &[(&str, &str)],
-    #[case] expected: Option<&str>,
-) {
-    assert_eq!(
-        read(&load(source, environment).unwrap(), setting),
-        expected.map(str::to_owned)
-    );
 }
 
 #[test]
