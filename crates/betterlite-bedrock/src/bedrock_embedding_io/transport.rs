@@ -3,6 +3,7 @@ use std::future::Future;
 use std::str;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_error::error::details::{TimeoutDetails, TimeoutStatus};
 use betterlite_error::error::{ErrorClass, ErrorContext};
 
@@ -94,18 +95,6 @@ pub trait EmbeddingTransport: Send + Sync {
     ) -> impl Future<Output = Result<EmbeddingReply, TransferError>> + Send;
 }
 
-// the supplied client's kind decides whether LiteLLM accepts it on the sync or the async path
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-
-pub struct SuppliedClient<'client, Client> {
-    pub kind: ClientKind,
-    pub transport: &'client Client,
-}
-
 // B173 owns client construction; this seam receives the client with the timeout LiteLLM passed it
 pub trait ClientFactory {
     type Client: EmbeddingTransport;
@@ -162,7 +151,7 @@ where
     Factory: ClientFactory + Sync,
 {
     match (call.asynchronous, supplied) {
-        (true, Some(client)) if client.kind == ClientKind::Async => {
+        (true, Some(client)) if client.kind == ClientKind::Asynchronous => {
             client.transport.post(request).await
         }
         (true, _) => {

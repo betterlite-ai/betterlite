@@ -2,6 +2,7 @@ use std::convert::Infallible;
 use std::str;
 use std::time::{Duration, SystemTime};
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::call_helpers::headers::{
@@ -20,8 +21,7 @@ use crate::converse_response::wire::ModelResponse;
 use crate::converse_usage::transform::ReasoningTokenCounter;
 use crate::image_call::plan::LogContext;
 use crate::rerank::transport::{
-    ClientKind, RerankHttpReply, RerankHttpRequest, RerankTransport as _, SuppliedClient,
-    TransferError,
+    RerankHttpReply, RerankHttpRequest, RerankTransport as _, TransferError,
 };
 
 use super::ConverseCall;
@@ -97,7 +97,9 @@ where
 {
     let built;
     let transport: &Factory::Buffered = match (parts.route, parts.supplied) {
-        (ClientKind::Async, Some(client)) if client.kind == ClientKind::Async => client.transport,
+        (ClientKind::Asynchronous, Some(client)) if client.kind == ClientKind::Asynchronous => {
+            client.transport
+        }
         (ClientKind::Sync, Some(client)) if client.kind == ClientKind::Sync => client.transport,
         _ => {
             built = factory.buffered(parts.route, parts.timeout);
@@ -111,7 +113,7 @@ where
         timeout: None,
     };
     let outcome = match parts.route {
-        ClientKind::Async => transport.post_with_logging(http, state).await,
+        ClientKind::Asynchronous => transport.post_with_logging(http, state).await,
         ClientKind::Sync => transport.post(http).await,
     };
     let reply = match outcome {

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
@@ -19,7 +20,7 @@ use crate::image_call::execute::{dispatch_request, transform_response};
 use crate::image_call::plan::{
     ImageCall, ImageEnvironment, LogContext, prepare_request, resolve_target,
 };
-use crate::image_call::transport::{ClientKind, ImageRequest, SuppliedClient};
+use crate::image_call::transport::ImageRequest;
 use crate::image_models::params::{Field, Params};
 use crate::image_models::response::ModelResponse;
 
@@ -817,7 +818,7 @@ fn sync_transport_selection(redactor: &Redactor) {
     let sync_with_async = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
-        Some(ClientKind::Async),
+        Some(ClientKind::Asynchronous),
         redactor,
     );
     assert_eq!(sync_with_async.sync_calls, 1);
@@ -855,7 +856,7 @@ fn async_transport_selection(redactor: &Redactor) {
     let async_supplied = run(
         async_supplied_call,
         Reply::ok(r#"{"images": []}"#),
-        Some(ClientKind::Async),
+        Some(ClientKind::Asynchronous),
         redactor,
     );
     assert!(async_supplied.async_calls.is_empty());
