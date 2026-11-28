@@ -6,13 +6,19 @@ description: >-
   Session identity comes from the UI token cookie with claims: exp (required), login_method ("sso" or "username_password"), and type (rejected if "byok_session"). Session keys starting with sk- are re-resolved against the database to catch revoked sessions from logout or password change, using the session-key DB liveness lookup (get_key_object, hash_token).
 
   The authorization code store is in-memory with a 300-second TTL per code and a 1000-entry capacity limit; lazy cleanup runs on each request to prevent memory exhaustion. The store is `AuthCodeStore` in crates/betterlite-mcp/src/byok_consent/store.rs, holding `AuthCodeRecord` values (api_key, server_id, code_challenge, redirect_uri, client_id, user_id, expires_at as Unix seconds in f64) and exposing `purge_expired(&self, now: f64)`, `get(&self, code: &str) -> Option<AuthCodeRecord>` and `remove(&self, code: &str)` for B4678's AuthCodeLookup port. AuthCodeRecord is B4678's type from betterlite-mcp byok_token_exchange::ports; the store holds it and implements AuthCodeLookup in byok_consent/store.rs. RFC 6749 requirements enforced: response_type must be "code", code_challenge is required, redirect_uri must be a loopback address (127.0.0.1, ::1, localhost over http/https), and client_id is recorded for later verification by B4678. The POST response is a 302 redirect to redirect_uri?code=...&state=... (with & if redirect_uri has existing query string).
-  B1100 registers routes/mcp_byok_consent.rs as a stub, so fill only crates/betterlite-server/src/routes/mcp_byok_consent.rs and leave routes.rs as it is.
+  B1100 registers routes/mcp_byok_consent.rs as a stub inside the auth layers, where route_match answers 404 for both methods. Mount the consent router in app::mcp::mount_public (crates/betterlite-server/src/app/mcp.rs) and drop the stub merge from routes.rs, since axum panics on a method registered twice. The form reading and 422 and 400 body shaping that routes/mcp_byok_oauth/token.rs already has move to crates/betterlite-server/src/api/request_form.rs, and both routes call them from there.
 
 scope:
   paths:
     - Cargo.toml
     - crates/betterlite-server/src/routes/mcp_byok_consent.rs
     - crates/betterlite-server/src/routes/mcp_byok_consent/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/api/request_form.rs
+    - crates/betterlite-server/src/api/request_form/**
+    - crates/betterlite-server/src/routes/mcp_byok_oauth/token.rs
+    - crates/betterlite-server/src/routes/mcp_byok_oauth/token/**
     - crates/betterlite-mcp/src/byok_consent.rs
     - crates/betterlite-mcp/src/byok_consent/**
     - crates/betterlite-mcp/src/mcp_registry_resolve.rs
@@ -215,5 +221,5 @@ pitfalls:
 
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 1

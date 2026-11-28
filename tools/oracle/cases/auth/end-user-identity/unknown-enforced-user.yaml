@@ -1,0 +1,51 @@
+name: auth-end-user-identity-unknown-enforced-user
+config: |
+  general_settings:
+    master_key: oracle-master
+  litellm_settings:
+    validate_end_user_id_in_db: true
+  model_list:
+    - model_name: end-user-model
+      litellm_params:
+        model: openai/end-user-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-litellm-call-id: oracle-call-end-user-unknown
+  body:
+    model: end-user-model
+    messages:
+      - {role: user, content: Say hello.}
+    user: ghost-user
+    stream: false
+database:
+  seed:
+    users: [{user_id: known-user}]
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-request-end-user-unknown}
+    body:
+      id: chatcmpl-end-user-unknown
+      object: chat.completion
+      created: 1700000009
+      model: gpt-end-user-upstream-2024
+      system_fingerprint: fp_oracle
+      service_tier: default
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!, refusal: null, annotations: []}
+          logprobs: null
+          finish_reason: stop
+      usage:
+        prompt_tokens: 5
+        completion_tokens: 3
+        total_tokens: 8
+        prompt_tokens_details: {cached_tokens: 0, audio_tokens: 0}
+        completion_tokens_details: {reasoning_tokens: 0, audio_tokens: 0, accepted_prediction_tokens: 0, rejected_prediction_tokens: 0}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}
