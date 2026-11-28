@@ -70,8 +70,7 @@ pub fn eligible_models(
     kept_tiers(config.tiers, order.get(floor..).unwrap_or_default())
 }
 
-// the eligible tiers in the order of the config's tier map, which LiteLLM's config.tiers.items() walks,
-// a model repeated across tiers keeping only its first tier
+// the eligible tiers in the stored tier map's order, LiteLLM's config.tiers.items(), each model once
 fn kept_tiers(tiers: &TierSet, order: &[&str]) -> Vec<(String, String)> {
     let mut kept: Vec<(String, String)> = Vec::new();
     for (name, pool) in &tiers.pools {
