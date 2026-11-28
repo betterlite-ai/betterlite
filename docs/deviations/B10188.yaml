@@ -1,0 +1,6 @@
+task: B10188
+deviations:
+  - what: LiteLLM resamples to whatever length the file header implies, so betterlite caps the resampled output at 64 MiB (16,777,216 float32 samples) and fails with HTTP 413, type invalid_request_error, param file and code audio_too_large before soxr, scipy or the linear fallback allocates.
+    why: LiteLLM sizes the output as the decoded sample count times 16000 divided by the header rate and never bounds it, so a 220 KB file declaring 100 Hz asks for 17.6 million output samples; the integer ceiling check keeps the same 64 MiB cap the decoders already use before any resampler allocates.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L185-L239
+kept_bugs: []
