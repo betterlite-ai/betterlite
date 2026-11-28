@@ -12,7 +12,7 @@ deviations:
   - what: "client and shared_session raise UnsupportedCallArgument instead of being handed to the HTTP handler."
     why: A Python HTTP client cannot drive the Rust transport (B158).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L612
-  - what: "retrieve, list, update, delete and their `a` twins run their body directly instead of through the `@client` wrapper, so the wrapper's logging-object setup, `litellm_credential_name` credential loading, the `litellm.max_budget` check, caching, success and failure handlers, post-call rules and cost tracking do not run."
+  - what: "retrieve, list, update, delete and their `a` twins run their body directly instead of through the `@client` wrapper, so the wrapper's logging-object setup, `litellm_credential_name` credential loading, the `litellm.max_budget` check, cache lookup, success and failure handlers, post-call rules and cost tracking do not run."
     why: betterlite-sdk has no vector store call target for CallWrapper; the native session builds its own pre and post-call logging (B1731), and adding the target is outside this task's scope.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
   - what: "litellm_logging_obj is dropped and logger_fn is never called; betterlite logs that the logger function was dropped."
