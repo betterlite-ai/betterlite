@@ -82,8 +82,14 @@ pub(crate) async fn run(
     let client = params::client(http, &timeouts)?;
     logging::record_environment(state, args, resolved, &call)?;
     let upstream = upstream(config, args, resolved, &call.params, &client).await?;
-    let (headers, signing) =
-        signed_headers(config, args, resolved, &call.params, &upstream).await?;
+    let signing = PassthroughSigning {
+        litellm_params: &call.params,
+        request_data: object_data(args.data.as_ref(), args.json.as_ref()),
+        api_base: upstream.url.as_str(),
+        model: Some(&resolved.model),
+    };
+    let request_headers = args.request_headers.as_deref().unwrap_or_default();
+    let (headers, signed) = signed_headers(config, request_headers, &upstream, &signing).await?;
     let json = replaced_model(args.json.as_ref(), &resolved.model);
     let empty = Object::new();
     let streaming = config.is_streaming_request(
@@ -98,7 +104,7 @@ pub(crate) async fn run(
         url: &upstream.url,
         headers: &headers,
         content: args.content.as_ref(),
-        signed: signing.as_deref(),
+        signed: signed.as_deref(),
         data: args.data.as_ref(),
         files: args.files.as_deref(),
         json: json.as_ref(),
@@ -166,23 +172,15 @@ async fn upstream(
 // steps 9 and 10: the caller's pass-through headers, then the provider's signature over them
 async fn signed_headers(
     config: &PassthroughCallConfig,
-    args: &PassthroughCallArgs,
-    resolved: &ResolvedModel,
-    params: &Object,
+    request_headers: &[(String, String)],
     upstream: &Upstream,
+    signing: &PassthroughSigning<'_>,
 ) -> Result<(Headers, Option<Vec<u8>>), Failure> {
-    let requested: IndexMap<String, String> =
-        args.request_headers.iter().flatten().cloned().collect();
+    let requested: IndexMap<String, String> = request_headers.iter().cloned().collect();
     let auth_headers: IndexMap<String, String> = upstream.headers.iter().cloned().collect();
     let headers = forward_headers_from_request(&requested, auth_headers, false)
         .into_iter()
         .collect();
-    let signing = PassthroughSigning {
-        litellm_params: params,
-        request_data: object_data(args.data.as_ref(), args.json.as_ref()),
-        api_base: upstream.url.as_str(),
-        model: Some(&resolved.model),
-    };
     let flavor = match config.tag {
         PassthroughConfigTag::Bedrock => Some(AwsFlavor::Bedrock),
         PassthroughConfigTag::BedrockMantle => Some(AwsFlavor::Mantle),
@@ -194,9 +192,9 @@ async fn signed_headers(
         | PassthroughConfigTag::NvidiaNim => None,
     };
     let Some(flavor) = flavor else {
-        return Ok(config.sign_request(headers, &signing)?);
+        return Ok(config.sign_request(headers, signing)?);
     };
-    Ok(config.aws.sign_request(flavor, headers, &signing).await?)
+    Ok(config.aws.sign_request(flavor, headers, signing).await?)
 }
 
 async fn send(
