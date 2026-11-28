@@ -1,12 +1,16 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -519,4 +523,14 @@ async fn an_invalid_url_is_refused() {
         "the invalid URL was accepted",
     );
     assert!(matches!(error, LangGraphStreamError::Url { .. }));
+}
+
+#[test]
+fn the_proxied_client_reports_the_async_class() {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    assert!(matches!(
+        StreamTransport::kind(&client),
+        ClientKind::Asynchronous
+    ));
 }

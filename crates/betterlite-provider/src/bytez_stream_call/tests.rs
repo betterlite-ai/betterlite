@@ -1,13 +1,17 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::future::pending;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::bytez_wire::messages::RawMessage;
@@ -661,4 +665,14 @@ async fn a_refusal_body_that_never_ends_times_out() {
         panic!("opened");
     };
     assert!(matches!(error, BytezStreamError::Timeout));
+}
+
+#[test]
+fn the_proxied_client_reports_the_async_class() {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    assert!(matches!(
+        BytezStreamTransport::kind(&client),
+        ClientKind::Asynchronous
+    ));
 }
