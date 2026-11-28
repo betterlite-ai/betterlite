@@ -129,7 +129,7 @@ pub fn require_admin(caller: &ConfigFieldCaller, gate: AdminGate) -> Result<(), 
 pub fn require_database(
     database: Option<&ConfigFieldDatabase>,
 ) -> Result<&ConfigFieldDatabase, ConfigFieldError> {
-    database.ok_or(ConfigFieldError::BadRequest {
+    database.ok_or_else(|| ConfigFieldError::BadRequest {
         detail: CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
     })
 }
