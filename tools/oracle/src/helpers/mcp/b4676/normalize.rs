@@ -1,13 +1,19 @@
 use betterlite_mcp::gateway_dcr::oauth_error::{OauthError, OauthErrorResponse as _};
 use betterlite_mcp::gateway_token::support::reply::{
-    IntrospectionBody, ProxyCredentialBody, TokenBody, TokenReply,
+    IntrospectionBody, ProxyCredentialBody, SessionPairBody, TokenBody, TokenReply,
 };
 use betterlite_mcp::session_tokens::open_session_token;
-use betterlite_mcp::types::{OpenedSessionToken, SessionSigningKeys, SessionTokenKind};
+use betterlite_mcp::types::{SessionSigningKeys, SessionTokenKind};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
 const REPORT_HEADERS: [&str; 2] = ["cache-control", "pragma"];
+
+struct Snapshot<'a> {
+    keys: Option<&'a SessionSigningKeys>,
+    now: DateTime<Utc>,
+    clients: &'a [String],
+}
 
 pub(super) fn token_report(
     name: &str,
@@ -16,30 +22,25 @@ pub(super) fn token_report(
     now: DateTime<Utc>,
     clients: &[String],
 ) -> Value {
-    match reply {
+    let view = Snapshot { keys, now, clients };
+    let (status, body, headers) = match reply {
         TokenReply::Json {
             status,
             body,
             headers,
-        } => {
-            let pairs = string_pairs(headers);
-            json!({
-                "name": name,
-                "status": status,
-                "headers": header_pairs(&pairs),
-                "body": body_value(body, keys, now, clients),
-            })
-        }
-        TokenReply::Error(error) => {
-            let pairs = error_pairs(error);
-            json!({
-                "name": name,
-                "status": error.status,
-                "headers": header_pairs(&pairs),
-                "body": serde_json::to_value(error.body()).unwrap_or_default(),
-            })
-        }
-    }
+        } => (*status, body_value(body, &view), string_pairs(headers)),
+        TokenReply::Error(error) => (
+            error.status,
+            serde_json::to_value(error.body()).unwrap_or_default(),
+            error_pairs(error),
+        ),
+    };
+    json!({
+        "name": name,
+        "status": status,
+        "headers": header_pairs(&headers),
+        "body": body,
+    })
 }
 
 pub(super) fn matches_report(name: &str, matched: bool) -> Value {
@@ -77,57 +78,34 @@ fn header_pairs(headers: &[(&str, &str)]) -> Value {
     Value::Array(pairs)
 }
 
-fn body_value(
-    body: &TokenBody,
-    keys: Option<&SessionSigningKeys>,
-    now: DateTime<Utc>,
-    clients: &[String],
-) -> Value {
+fn body_value(body: &TokenBody, view: &Snapshot<'_>) -> Value {
     match body {
-        TokenBody::SessionPair(pair) => json!({
-            "access_token": claims(&pair.access_token, SessionTokenKind::Session, keys, now, clients),
-            "token_type": pair.token_type,
-            "expires_in": pair.expires_in,
-            "refresh_token": claims(&pair.refresh_token, SessionTokenKind::Refresh, keys, now, clients),
-        }),
-        TokenBody::ProxyCredential(credential) => proxy_value(credential, keys, now, clients),
+        TokenBody::SessionPair(pair) => session_pair_value(pair, view),
+        TokenBody::ProxyCredential(credential) => proxy_value(credential, view),
         TokenBody::Revoked(_revoked) => json!({}),
-        TokenBody::Introspection(body) => introspection_value(body, clients),
+        TokenBody::Introspection(body) => introspection_value(body, view.clients),
     }
 }
 
-fn proxy_value(
-    credential: &ProxyCredentialBody,
-    keys: Option<&SessionSigningKeys>,
-    now: DateTime<Utc>,
-    clients: &[String],
-) -> Value {
-    let refresh = claims(
-        &credential.refresh_token,
-        SessionTokenKind::Refresh,
-        keys,
-        now,
-        clients,
-    );
-    match credential.issued_token_type {
-        None => json!({
-            "access_token": credential.access_token,
-            "token_type": credential.token_type,
-            "expires_in": credential.expires_in,
-            "refresh_token": refresh,
-            "user_id": credential.user_id,
-            "team_id": credential.team_id,
-        }),
-        Some(issued) => json!({
-            "access_token": credential.access_token,
-            "token_type": credential.token_type,
-            "expires_in": credential.expires_in,
-            "refresh_token": refresh,
-            "user_id": credential.user_id,
-            "team_id": credential.team_id,
-            "issued_token_type": issued,
-        }),
+fn session_pair_value(pair: &SessionPairBody, view: &Snapshot<'_>) -> Value {
+    json!({
+        "access_token": claims(&pair.access_token, SessionTokenKind::Session, view),
+        "token_type": pair.token_type,
+        "expires_in": pair.expires_in,
+        "refresh_token": claims(&pair.refresh_token, SessionTokenKind::Refresh, view),
+    })
+}
+
+fn proxy_value(credential: &ProxyCredentialBody, view: &Snapshot<'_>) -> Value {
+    let mut value = serde_json::to_value(credential).unwrap_or_default();
+    if let Value::Object(fields) = &mut value {
+        let refresh = claims(&credential.refresh_token, SessionTokenKind::Refresh, view);
+        fields.insert("refresh_token".to_owned(), refresh);
+        if let Some(issued) = credential.issued_token_type {
+            fields.insert("issued_token_type".to_owned(), json!(issued));
+        }
     }
+    value
 }
 
 fn introspection_value(body: &IntrospectionBody, clients: &[String]) -> Value {
@@ -144,27 +122,17 @@ fn introspection_value(body: &IntrospectionBody, clients: &[String]) -> Value {
     value
 }
 
-fn claims(
-    token: &str,
-    kind: SessionTokenKind,
-    keys: Option<&SessionSigningKeys>,
-    now: DateTime<Utc>,
-    clients: &[String],
-) -> Value {
-    let Some(keys) = keys else {
+fn claims(token: &str, kind: SessionTokenKind, view: &Snapshot<'_>) -> Value {
+    let Some(keys) = view.keys else {
         return json!("<unopenable>");
     };
-    match open_session_token(token, kind, keys, now) {
-        Ok(opened) => opened_value(&opened, clients),
-        Err(_error) => json!("<unopenable>"),
-    }
-}
-
-fn opened_value(opened: &OpenedSessionToken, clients: &[String]) -> Value {
+    let Ok(opened) = open_session_token(token, kind, keys, view.now) else {
+        return json!("<unopenable>");
+    };
     let principal = &opened.principal;
     json!({
         "user_id": principal.user_id,
-        "client_id": client_label(&principal.client_id, clients),
+        "client_id": client_label(&principal.client_id, view.clients),
         "resource_server_id": principal.resource_server_id,
         "audience": principal.audience,
         "kind": opened.kind,

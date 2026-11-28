@@ -80,8 +80,34 @@ impl Scenario {
         let now = timestamp(step.now)?;
         let reply = match step.kind {
             StepKind::Token => self.token(step, now)?,
-            StepKind::Revoke => self.revoke(step, now),
-            StepKind::Introspect => self.introspect(step, now)?,
+            StepKind::Revoke => {
+                let token = entry(&self.products, step.token, &step.token_text);
+                let client = entry(&self.clients, step.client, &step.client_id);
+                let request = RevokeRequest {
+                    token: &token,
+                    client_id: Some(&client),
+                };
+                let setup = self.setup(step.master);
+                self.runtime.block_on(revoke_refresh_token(
+                    &request,
+                    setup,
+                    &self.guard,
+                    &self.cipher,
+                    now,
+                ))
+            }
+            StepKind::Introspect => {
+                let token = entry(&self.products, step.token, &step.token_text);
+                let answers = Answers::new(step)?;
+                let setup = self.setup(step.master);
+                self.runtime.block_on(introspect_gateway_token(
+                    &token,
+                    setup,
+                    &answers,
+                    &self.guard,
+                    now,
+                ))
+            }
             StepKind::Pkce => {
                 let matched = pkce_verifier_matches(&step.code_verifier, &step.code_challenge);
                 return Ok(matches_report(step.name.as_str(), matched));
@@ -132,36 +158,6 @@ impl Scenario {
             .block_on(aggregate_token(setup, &form, &ports, now)))
     }
 
-    fn revoke(&self, step: &Step, now: DateTime<Utc>) -> TokenReply {
-        let token = entry(&self.products, step.token, &step.token_text);
-        let client = entry(&self.clients, step.client, &step.client_id);
-        let request = RevokeRequest {
-            token: &token,
-            client_id: Some(&client),
-        };
-        let setup = self.setup(step.master);
-        self.runtime.block_on(revoke_refresh_token(
-            &request,
-            setup,
-            &self.guard,
-            &self.cipher,
-            now,
-        ))
-    }
-
-    fn introspect(&self, step: &Step, now: DateTime<Utc>) -> Result<TokenReply, Box<HelperError>> {
-        let token = entry(&self.products, step.token, &step.token_text);
-        let answers = Answers::new(step)?;
-        let setup = self.setup(step.master);
-        Ok(self.runtime.block_on(introspect_gateway_token(
-            &token,
-            setup,
-            &answers,
-            &self.guard,
-            now,
-        )))
-    }
-
     fn setup(&self, mode: MasterMode) -> &SigningSetup {
         match mode {
             MasterMode::Present => &self.present,
@@ -180,38 +176,23 @@ impl Scenario {
     fn setup_products(&self, steps: &[SetupStep]) -> Result<Vec<String>, Box<HelperError>> {
         let mut products = Vec::with_capacity(steps.len());
         for step in steps {
-            let product = self.setup_product(step, &products)?;
+            let product = match step.kind {
+                SetupKind::MintCode => self.mint_code(step),
+                SetupKind::MintToken => self.mint_token(step),
+                SetupKind::BurnRefresh => self.burn_refresh(step, &products),
+            }?;
             products.push(product);
         }
         Ok(products)
     }
 
-    fn setup_product(
-        &self,
-        step: &SetupStep,
-        products: &[String],
-    ) -> Result<String, Box<HelperError>> {
-        match step.kind {
-            SetupKind::MintCode => self.mint_code(step),
-            SetupKind::MintToken => self.mint_token(step),
-            SetupKind::BurnRefresh => self.burn_refresh(step, products),
-        }
-    }
-
     fn mint_code(&self, step: &SetupStep) -> Result<String, Box<HelperError>> {
-        let auth_code = GatewayAuthCode {
-            user_id: step.user_id.clone(),
-            client_id: entry(&self.clients, step.client, &step.client_id),
-            redirect_uri: step.redirect_uri.clone(),
-            code_challenge: step.code_challenge.clone(),
-            jti: step.jti.clone(),
-            iat: step.iat,
-            exp: step.exp,
-            resource_server_id: step.resource_server_id.clone(),
-            audience: step.audience,
-            team_id: step.team_id.clone(),
-        };
-        seal(GATEWAY_AUTH_CODE_PREFIX, &auth_code, &self.cipher).or_value_error()
+        let sealed = seal(
+            GATEWAY_AUTH_CODE_PREFIX,
+            &auth_code(step, &self.clients),
+            &self.cipher,
+        );
+        sealed.or_value_error()
     }
 
     fn mint_token(&self, step: &SetupStep) -> Result<String, Box<HelperError>> {
@@ -261,6 +242,21 @@ impl Scenario {
                 Ok(String::new())
             }
         }
+    }
+}
+
+fn auth_code(step: &SetupStep, clients: &[String]) -> GatewayAuthCode {
+    GatewayAuthCode {
+        user_id: step.user_id.clone(),
+        client_id: entry(clients, step.client, &step.client_id),
+        redirect_uri: step.redirect_uri.clone(),
+        code_challenge: step.code_challenge.clone(),
+        jti: step.jti.clone(),
+        iat: step.iat,
+        exp: step.exp,
+        resource_server_id: step.resource_server_id.clone(),
+        audience: step.audience,
+        team_id: step.team_id.clone(),
     }
 }
 
