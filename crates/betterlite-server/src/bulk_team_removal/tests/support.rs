@@ -614,9 +614,10 @@ fn team_gauge(log: &EventLog) -> GaugeField<LogGauge> {
 pub(crate) fn fixture() -> Fixture {
     let log = EventLog::default();
     let auth = recording_auth(&log);
+    let auth_handle: Arc<RecordingAuth> = Arc::clone(&auth);
     let org_roles: Arc<dyn OrgRoles> = Arc::new(OrgAdmins::default());
     let invalidation = AuthInvalidation {
-        auth: Arc::clone(&auth),
+        auth: auth_handle,
         usage: None,
         spend: Arc::new(NoopSpend),
         transport: recording_transport(&log),
