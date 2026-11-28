@@ -800,22 +800,37 @@ def test_error_async_unsupported() -> None:
     with pytest.raises(BadRequestError) as created:
         asyncio.run(
             acreate_run(
-                EVAL_ID, DATA_SOURCE, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY
+                EVAL_ID, DATA_SOURCE, custom_llm_provider=ANTHROPIC,
+                api_base=CLOSED_BASE, api_key=GOOD_KEY,
             )
         )
     with pytest.raises(BadRequestError) as listed:
-        asyncio.run(alist_runs(EVAL_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY))
+        asyncio.run(
+            alist_runs(
+                EVAL_ID, custom_llm_provider=ANTHROPIC, api_base=CLOSED_BASE,
+                api_key=GOOD_KEY,
+            )
+        )
     with pytest.raises(BadRequestError) as fetched:
         asyncio.run(
-            aget_run(EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
+            aget_run(
+                EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_base=CLOSED_BASE,
+                api_key=GOOD_KEY,
+            )
         )
     with pytest.raises(BadRequestError) as cancelled:
         asyncio.run(
-            acancel_run(EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
+            acancel_run(
+                EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_base=CLOSED_BASE,
+                api_key=GOOD_KEY,
+            )
         )
     with pytest.raises(BadRequestError) as deleted:
         asyncio.run(
-            adelete_run(EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
+            adelete_run(
+                EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_base=CLOSED_BASE,
+                api_key=GOOD_KEY,
+            )
         )
     for raised, action in (
         (created, "CREATE run"),
