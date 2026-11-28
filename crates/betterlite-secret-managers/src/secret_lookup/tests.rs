@@ -26,3 +26,4 @@ include!("tests/manager.rs");
 include!("tests/env.rs");
 include!("tests/typed.rs");
 include!("tests/github_response.rs");
+include!("tests/clone.rs");

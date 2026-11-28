@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 
 use betterlite_bedrock::aws_endpoints::error::AwsEndpointError;
 use betterlite_bedrock::aws_endpoints::region::non_llm_region_name;
 use betterlite_bedrock::aws_settings::AuthError;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::aws_settings::{AuthParams, pop_aws_auth_params};
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -33,14 +33,6 @@ pub enum CredentialLoadError {
 pub struct RegionEnvironment<'text> {
     pub region_name: Option<&'text str>,
     pub region: Option<&'text str>,
-}
-
-pub trait CredentialSource: Send + Sync {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
 }
 
 pub async fn load_credentials<C>(

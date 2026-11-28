@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use betterlite_bedrock::aws_settings::sources::Credentials as AwsCredentials;
 use betterlite_bedrock::canvas_results;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::image_call::plan::CredentialSource;
 use betterlite_bedrock::image_call::transport::{
     ClientFactory, ImageReply, ImageRequest, ImageTransport, TransferError,
 };

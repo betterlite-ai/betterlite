@@ -51,7 +51,7 @@ mod login;
 mod managed_file;
 mod management_v1;
 mod master_key_rotation;
-mod mcp_byok_consent;
+pub(crate) mod mcp_byok_consent;
 mod mcp_byok_oauth;
 mod messages_token;
 mod model_block;
@@ -248,7 +248,6 @@ macro_rules! stub_router {
             .merge(key_block::routes($state))
             .merge(key_list::routes($state))
             .merge(login::routes($state))
-            .merge(mcp_byok_consent::routes($state))
             .merge(model_group_budget::routes($state))
             .merge(model_info_v2::routes($state))
             .merge(model_public_settings::routes($state))

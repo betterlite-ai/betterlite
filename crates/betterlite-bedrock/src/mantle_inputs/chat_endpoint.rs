@@ -1,10 +1,10 @@
 use secrecy::SecretString;
 
 use crate::aws_endpoints::region::validate_region;
+use crate::aws_settings::or_bearer_token;
 use crate::model_routes::ParamMap;
 
 use super::capability::base_segment;
-use super::credentials::resolve_bearer_token;
 use super::error::MantleInputError;
 use super::records::MantleGlobals;
 use super::region::{DEFAULT_REGION, split_region_prefix};
@@ -32,11 +32,11 @@ pub fn chat_endpoint_inputs(
     validate_region(Some(&region))?;
     let (_, base_model) = split_model(params.model);
     let api_base = selected_api_base(params.api_base, globals, &region, base_model, model_cost);
-    let api_key = resolve_bearer_token(
+    let api_key = or_bearer_token(&[
         params.api_key,
         globals.mantle_api_key.as_ref(),
         globals.aws_bearer_token.as_ref(),
-    );
+    ]);
     Ok(ChatEndpointInputs { api_base, api_key })
 }
 

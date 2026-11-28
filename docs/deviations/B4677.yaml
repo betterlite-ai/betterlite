@@ -1,0 +1,18 @@
+task: B4677
+deviations:
+  - what: The consent page is B4687's minified HTML with the same element ids, classes, hidden inputs, duration pills and two-step script, but without LiteLLM's indentation, inline SVG icons and full CSS block.
+    why: B4687 owns the HTML builder and renders one compact line; the oracle compares the page's structure (hidden input values, title, monogram, access items, help link, duration pills, step ids) rather than its whitespace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L187-L644
+  - what: The pending authorization codes live in an AuthCodeStore owned by the route state, one per router, instead of the module-level _byok_auth_codes dict shared by every importer of the endpoints module.
+    why: rules.yaml keeps global state out of modules; the store is passed in as a constructor value, and the lifecycle and capacity check stay identical to LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L43-L48
+  - what: The GET route always renders the "MCP Server" fallback, because betterlite's ServerState has no MCP registry yet, while LiteLLM looks the server_id up in global_mcp_server_manager.
+    why: The registry manager belongs to B4731 and wiring it into the server state is B8624's work; the resolution itself is built in mcp_registry_resolve and tested against a real ServerRegistry, and the oracle helper passes one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L733-L756
+  - what: The form body is capped at one MiB in total and one thousand fields before it is parsed, where LiteLLM caps a single field at one MiB and leaves the total unbounded.
+    why: A total cap closes the memory growth LiteLLM leaves open; a real consent form is under a kilobyte, and the 1000-field limit never rejects a form the browser renders.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L771-L826
+kept_bugs:
+  - what: Expired codes are purged only when a POST arrives, so a GET never frees capacity and a store full of expired codes still answers 503 until the next attempt purges it.
+    why: LiteLLM's lazy cleanup is what a working proxy relies on (the purge is the first statement of the POST), and moving it to a timer would change when a burst of abandoned flows is refused.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L70-L74

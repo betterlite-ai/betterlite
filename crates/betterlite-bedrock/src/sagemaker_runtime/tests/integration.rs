@@ -44,6 +44,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::aws_settings::sources::{Credentials, SourceError};
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
 use crate::sagemaker_runtime::chat::{self, ChatCall, ChatVariant};
 use crate::sagemaker_runtime::completion::{self, CompletionCall};
@@ -51,7 +52,7 @@ use crate::sagemaker_runtime::embedding::{self, EmbeddingCall, EmbeddingReply};
 use crate::sagemaker_runtime::endpoint::ParamMap;
 use crate::sagemaker_runtime::error::RuntimeFailure;
 use crate::sagemaker_runtime::runtime::{
-    ChunkStream, SagemakerCredentials, SagemakerEnvironment, SagemakerRuntime, SagemakerTransport,
+    ChunkStream, SagemakerEnvironment, SagemakerRuntime, SagemakerTransport,
 };
 use crate::sagemaker_stream::SagemakerChunk;
 use crate::signing::headers::{filter_for_signature, without_computed};
@@ -103,7 +104,7 @@ impl TestCredentials {
     }
 }
 
-impl SagemakerCredentials for TestCredentials {
+impl CredentialSource for TestCredentials {
     fn resolve(
         &self,
         _settings: AwsSettings,
@@ -197,7 +198,7 @@ fn fixed_identifier() -> Uuid {
 fn runtime<T, C>(transport: T, credentials: C, counter: &Counter) -> SagemakerRuntime<'_, T, C>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     SagemakerRuntime {
         transport,
