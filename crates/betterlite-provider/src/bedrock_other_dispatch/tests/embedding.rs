@@ -346,6 +346,37 @@ async fn async_status() {
     assert!(optional.is_empty());
 }
 
+// The caller's extra headers reach the signed embedding request
+async fn extra_headers_forwarded() {
+    let env = environment("{}");
+    let text = String::from("hello");
+    let headers = vec![(String::from("x-trace"), String::from("t1"))];
+    let fixture = scripted(&[Reply::ok(
+        r#"{"embeddings": [{"embedding": [1, 2, 3, 4]}]}"#,
+    )]);
+    let outcome = run(
+        &fixture,
+        BedrockOtherOperation::Embedding(EmbeddingOperation {
+            model: NOVA,
+            input: EmbeddingInput::Text(&text),
+            optional_params: params(IDENTITY),
+            api_base: None,
+            extra_headers: Some(headers.as_slice()),
+            api_key: None,
+            timeout: None,
+            aembedding: false,
+            drop_params: false,
+            environment: EmbeddingEnvironment {
+                variables: &env,
+                runtime_endpoint: None,
+                bearer_token: None,
+            },
+        }),
+    )
+    .await;
+    assert_eq!(outcome.header("x-trace"), Some("t1"));
+}
+
 pub(super) async fn case() {
     titan_vectors().await;
     sequential_successes().await;
@@ -355,4 +386,5 @@ pub(super) async fn case() {
     nova_media_payloads().await;
     marengo_payloads().await;
     async_status().await;
+    extra_headers_forwarded().await;
 }

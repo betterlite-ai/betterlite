@@ -227,9 +227,33 @@ async fn provider_failure() {
     assert_eq!(outcome.requests.len(), 1);
 }
 
+// The caller's extra headers reach the signed agent-runtime request
+async fn extra_headers_forwarded() {
+    let headers = vec![(String::from("x-trace"), String::from("t1"))];
+    let fixture = scripted(&[Reply::ok(ANONYMOUS_REPLY)]);
+    let outcome = run(
+        &fixture,
+        BedrockOtherOperation::Rerank(RerankOperation {
+            request: request(MODEL_ARN, None, documents(1)),
+            optional_params: params(CREDENTIALS),
+            api_base: None,
+            extra_headers: Some(headers.as_slice()),
+            api_key: None,
+            timeout: None,
+            is_async: false,
+            environment: RerankEnvironment::default(),
+            now: instant(NOW_SECONDS).expect("the fixture instant"),
+            generated_id: GENERATED_ID,
+        }),
+    )
+    .await;
+    assert_eq!(outcome.header("x-trace"), Some("t1"));
+}
+
 pub(super) async fn case() {
     agent_runtime_and_documents().await;
     top_n_and_region().await;
     reply_shape().await;
     provider_failure().await;
+    extra_headers_forwarded().await;
 }
