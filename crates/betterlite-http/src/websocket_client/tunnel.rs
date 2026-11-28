@@ -8,7 +8,7 @@ use http::{HeaderValue, Method, Request};
 use http_body_util::Empty;
 use hyper::body::Bytes;
 use hyper::client::conn::http1;
-use hyper::upgrade::Upgraded;
+use hyper::upgrade::{self, Upgraded};
 use hyper_util::rt::TokioIo;
 use secrecy::ExposeSecret as _;
 use tokio::net::TcpStream;
@@ -72,8 +72,8 @@ async fn establish(
         .handshake(stream)
         .await
         .map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
-    let mut connection = connection.with_upgrades();
-    tokio::pin!(connection);
+    let mut upgrading = connection.with_upgrades();
+    tokio::pin!(upgrading);
     let mut finished = false;
     let response = {
         let mut pending = sender.send_request(request);
@@ -82,7 +82,7 @@ async fn establish(
             tokio::select! {
                 biased;
                 response = &mut pending => break response.map_err(|error| WebSocketClientError::Io(IoError::other(error)))?,
-                result = &mut connection, if !finished => {
+                result = &mut upgrading, if !finished => {
                     finished = true;
                     result.map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
                 }
@@ -96,12 +96,12 @@ async fn establish(
     }
     drop(sender);
     if !finished {
-        connection
+        upgrading
             .as_mut()
             .await
             .map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
     }
-    hyper::upgrade::on(response)
+    upgrade::on(response)
         .await
         .map_err(|error| WebSocketClientError::Io(IoError::other(error)))
 }

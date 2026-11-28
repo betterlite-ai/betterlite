@@ -50,9 +50,9 @@ pub struct WebSocketConnection {
 impl WebSocketConnection {
     pub(crate) fn new(socket: Socket, keepalive: Option<Keepalive>) -> Self {
         let (sink, stream) = socket.split();
-        let sink = Arc::new(Mutex::new(sink));
+        let shared = Arc::new(Mutex::new(sink));
         let sender = WebSocketSender {
-            sink: Arc::clone(&sink),
+            sink: Arc::clone(&shared),
         };
         let receiver = WebSocketReceiver {
             stream,

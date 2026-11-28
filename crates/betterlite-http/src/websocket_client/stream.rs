@@ -1,3 +1,4 @@
+use std::future::poll_fn;
 use std::io::Error as IoError;
 
 use http::Uri;
@@ -24,7 +25,7 @@ pub(crate) async fn connect_tcp(
     let target = Uri::try_from(format!("http://{host}:{port}/"))
         .map_err(|_error| WebSocketClientError::Url)?;
     let mut connector = HttpConnector::new();
-    std::future::poll_fn(|context| connector.poll_ready(context))
+    poll_fn(|context| connector.poll_ready(context))
         .await
         .map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
     connector

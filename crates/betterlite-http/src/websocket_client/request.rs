@@ -15,12 +15,12 @@ pub struct Keepalive {
 
 // websockets.connect's arguments this client needs: url, ordered headers, tls, message cap, open deadline, keepalive, proxy
 #[derive(Debug, Clone)]
-pub struct WebSocketRequest<'a> {
+pub struct WebSocketRequest<'request> {
     pub url: Url,
-    pub headers: &'a [(HeaderName, HeaderValue)],
+    pub headers: &'request [(HeaderName, HeaderValue)],
     pub tls: Option<Arc<ClientConfig>>,
     pub max_message_size: usize,
     pub open_timeout: Duration,
     pub keepalive: Option<Keepalive>,
-    pub proxy: Option<&'a ProxyServer>,
+    pub proxy: Option<&'request ProxyServer>,
 }
