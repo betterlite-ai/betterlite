@@ -232,6 +232,23 @@ async fn config_authentication_token_wins_over_auth_value() {
 }
 
 #[tokio::test]
+async fn config_reads_the_client_secret() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "client_id": "client-1", "client_secret": "client-secret"}}"#,
+        ))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
+    assert_eq!(
+        secret_text(server.fields.client_secret.as_ref().unwrap()),
+        "client-secret"
+    );
+    assert_eq!(server.fields.client_id.as_deref(), Some("client-1"));
+}
+
+#[tokio::test]
 async fn config_scopes_accept_a_string_and_a_list() {
     let fixture = Fixture::new();
     fixture
