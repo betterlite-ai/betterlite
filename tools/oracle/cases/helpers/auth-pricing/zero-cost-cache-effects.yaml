@@ -1,0 +1,60 @@
+kind: helper
+name: auth-pricing-zero-cost-cache-effects
+call:
+  auth_pricing:
+    calls:
+      # a cached true answers free without any router lookup, even with no group at all
+      - function: zero_cost
+        router:
+          cache:
+            free: true
+        model: free
+      # a cached true also wins over a charged group
+      - function: zero_cost
+        router:
+          groups:
+            charged: {input: 5.0, output: 0.0}
+          cache:
+            charged: true
+        model: charged
+      # a cached false answers at once and leaves the rest of the list unread
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          cache:
+            free: false
+        model: [free, free]
+      # a cached false ends the walk before the next candidate, with no lookup at all
+      - function: zero_cost
+        router:
+          cache:
+            first: true
+            second: false
+        model: [first, second, third]
+      # the first evaluation records true and the repeat reads it back
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: [free, free]
+      # a failed evaluation records false
+      - function: zero_cost
+        router:
+          groups:
+            sparse: {input: 0.0, output: 0.0}
+          deployments:
+            sparse:
+              - model_info: {id: dep-sparse}
+          costs: {}
+          cache: {}
+        model: sparse
+env: {}
+compare:
+  ignore: []

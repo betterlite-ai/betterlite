@@ -1,0 +1,93 @@
+kind: helper
+name: auth-pricing-health-side-effect-budget
+call:
+  auth_pricing:
+    calls:
+      # the side-effect routes are exempted from the route skip, so a charged model is looked up
+      - function: request_skip
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /health
+        model: charged
+      - function: request_skip
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /health/services
+        model: charged
+      - function: request_skip
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /health/test_connection
+        model: charged
+      - function: request_skip
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /auto_router/test_routing
+        model: charged
+      # a free model still exempts a side-effect route
+      - function: request_skip
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        route: /health
+        model: free
+      # the side-effect route is not an LLM route, so the global budget never denies it
+      - function: request_checks
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /health
+        method: GET
+        body: {}
+        max_budget: 5.0
+        global_spend: 50.0
+        model: charged
+      # the project budget does run on it, because the route skip stayed false
+      - function: project
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /health
+        model: charged
+        project:
+          project_id: proj-health
+          spend: 0.0
+          litellm_budget_table: {max_budget: 0.0}
+        spends: [0.0]
+      # a free model exempts the project checks on the same route
+      - function: project
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        route: /health
+        model: free
+        project:
+          project_id: proj-health
+          spend: 0.0
+          litellm_budget_table: {max_budget: 0.0}
+        spends: [0.0]
+env: {}
+compare:
+  ignore: []

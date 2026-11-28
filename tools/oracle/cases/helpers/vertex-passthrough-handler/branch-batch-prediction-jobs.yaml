@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-passthrough-handler-branch-batch-prediction-jobs
+call:
+  b3642:
+    url_route: "/vertex_ai/v1/projects/p1/locations/us-central1/batchPredictionJobs"
+env: {}
+compare: {ignore: []}
