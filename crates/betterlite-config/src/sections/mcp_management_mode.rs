@@ -3,6 +3,7 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::Section;
+use crate::sections::settings::JsonValue;
 
 mod tests;
 
@@ -25,7 +26,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
-    user_mcp_management_mode: Option<String>,
+    #[serde(default)]
+    user_mcp_management_mode: JsonValue,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -40,12 +42,19 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let Some(value) = self.general_settings.user_mcp_management_mode else {
+        let raw = self.general_settings.user_mcp_management_mode;
+        if raw.is_null() {
             return Ok(Settings {
                 mode: ManagementMode::Restricted,
             });
+        }
+        let Some(text) = raw.as_str() else {
+            return Err(ConfigError::InvalidScalar {
+                path: MODE_PATH.to_owned(),
+                value: false,
+            });
         };
-        let resolved = resolve_string(value, MODE_PATH, lookup)?;
+        let resolved = resolve_string(text.to_owned(), MODE_PATH, lookup)?;
         let mode = if resolved == VIEW_ALL {
             ManagementMode::ViewAll
         } else {

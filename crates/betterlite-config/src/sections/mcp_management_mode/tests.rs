@@ -77,6 +77,13 @@ fn an_empty_environment_value_is_restricted() {
 
 #[test]
 fn a_non_string_value_is_a_load_error() {
-    loaded_mode("general_settings:\n  user_mcp_management_mode: true").unwrap_err();
+    let error = loaded_mode("general_settings:\n  user_mcp_management_mode: true").unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("general_settings.user_mcp_management_mode"),
+        "{error}"
+    );
     loaded_mode("general_settings:\n  user_mcp_management_mode: 5").unwrap_err();
+    loaded_mode("general_settings:\n  user_mcp_management_mode: [view_all]").unwrap_err();
 }
