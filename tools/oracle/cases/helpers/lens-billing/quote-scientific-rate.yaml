@@ -1,0 +1,14 @@
+kind: helper
+name: quote-scientific-rate
+call:
+  b4504:
+    operation: quote
+    prompt: hello
+    deployments:
+      - litellm_params: {model: lens-model}
+    model_info:
+      lens-model:
+        input_cost_per_token: 1.52587890625e-05
+        output_cost_per_token: 1.52587890625e-05
+env: {}
+compare: {ignore: []}

@@ -1,9 +1,8 @@
-use std::str::FromStr as _;
-
 use betterlite_auth::reservation_cost::ModelInfoSource;
 use betterlite_auth::reservation_cost::error::ModelInfoError;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use serde::Deserialize;
@@ -106,7 +105,8 @@ fn rate(
             rate: key,
         });
     };
-    let Ok(amount) = Decimal::from_str(&number.to_string()) else {
+    // the catalog and serde_json spell a rate like 1.25e-05, which Decimal's FromStr refuses
+    let Ok(amount) = parse_decimal_lexeme(&number.to_string()) else {
         return Err(QuoteError::InvalidRate {
             model: model.to_owned(),
             rate: key,

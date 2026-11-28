@@ -28,7 +28,7 @@ pub(crate) struct Op;
 
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     Quote(QuoteInput),
     Reserve(AnalyzeInput),
     Settle(AnalyzeInput),
@@ -37,7 +37,7 @@ enum Input {
 }
 
 #[derive(Deserialize)]
-struct QuoteInput {
+pub(crate) struct QuoteInput {
     prompt: String,
     deployments: Vec<Deployment>,
     #[serde(default)]
@@ -45,7 +45,7 @@ struct QuoteInput {
 }
 
 #[derive(Deserialize)]
-struct AnalyzeInput {
+pub(crate) struct AnalyzeInput {
     lens: Lens,
     job_id: String,
     worker_id: String,
@@ -63,7 +63,7 @@ struct AnalyzeInput {
 }
 
 #[derive(Deserialize)]
-struct ChargeInput {
+pub(crate) struct ChargeInput {
     deployments: Vec<Deployment>,
     response: ChatResponse,
     #[serde(with = "rust_decimal::serde::float")]

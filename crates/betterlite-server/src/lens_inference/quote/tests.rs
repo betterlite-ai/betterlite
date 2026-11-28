@@ -89,7 +89,7 @@ fn a_catalog_model_uses_its_highest_tier_rate() {
 #[test]
 fn the_prompt_is_measured_in_utf8_bytes() {
     let deployments = [custom("lens-model", Some("0.25"), Some("0.5"))];
-    let estimate = quote(&deployments, "日本", &Catalog::default()).unwrap();
+    let estimate = quote(&deployments, "\u{65e5}\u{672c}", &Catalog::default()).unwrap();
     assert_eq!(estimate, amount("4792.0"));
 }
 
@@ -102,6 +102,21 @@ fn one_custom_rate_falls_back_to_the_catalog() {
     );
     let estimate = quote(&deployments, "hello", &catalog).unwrap();
     assert_eq!(estimate, amount("4791.5"));
+}
+
+// the bundled catalog writes small rates as 1.25e-05, so the quote reads exponent notation
+#[test]
+fn a_scientific_notation_catalog_rate_is_priced() {
+    let deployments = [custom("lens-model", None, None)];
+    let catalog = catalog(
+        "lens-model",
+        concat!(
+            "{\"input_cost_per_token\":1.52587890625e-05,",
+            "\"output_cost_per_token\":1.52587890625e-05}"
+        ),
+    );
+    let estimate = quote(&deployments, "hello", &catalog).unwrap();
+    assert_eq!(estimate, amount("0.167449951171875"));
 }
 
 #[test]
