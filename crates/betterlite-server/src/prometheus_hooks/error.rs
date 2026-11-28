@@ -9,6 +9,8 @@ use betterlite_logging::prometheus_latency::error::LatencyRecordingError;
 use betterlite_logging::prometheus_rate_limits::error::PrometheusRateLimitError;
 use betterlite_logging::prometheus_usage::error::PrometheusUsageError;
 
+use crate::prometheus_remaining_budget::lookups::LookupError;
+
 // the success hook stops at the first emitter that fails, so every emitter error is one variant here
 #[derive(Debug, thiserror::Error)]
 pub enum PrometheusHookError {
@@ -30,8 +32,8 @@ pub enum PrometheusHookError {
     RateLimit(#[from] PrometheusRateLimitError<Infallible>),
     #[error(transparent)]
     Latency(#[from] LatencyRecordingError<Infallible>),
-    #[error("{message}")]
-    Budget { message: String },
+    #[error(transparent)]
+    Budget(#[from] LookupError),
     #[error("the caller's UserAPIKeyAuth could not be read: {0}")]
     Principal(#[from] serde_json::Error),
 }
