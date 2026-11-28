@@ -42,7 +42,7 @@ call:
               trigger:
                 type: input_tokens
                 value: 50000
-        dispatcher: null
+        dispatcher: "null"
         counter: 50001
       - model: main-model
         messages:
@@ -53,7 +53,7 @@ call:
               trigger:
                 type: input_tokens
                 value: 50000
-        dispatcher: null
+        dispatcher: "null"
         counter: 50001
 upstream: []
 compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}
