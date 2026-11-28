@@ -122,6 +122,21 @@ impl DcrHydrator for FakeDcrHydrator {
     }
 }
 
+struct FakeClientStore {
+    credentials: Option<JsonValue>,
+}
+
+impl DcrClientStore for FakeClientStore {
+    type Error = Infallible;
+
+    fn client_credentials(
+        &self,
+        _server_id: &str,
+    ) -> impl Future<Output = Result<Option<JsonValue>, StoreReadError<Self::Error>>> + Send {
+        ready(Ok(self.credentials.clone()))
+    }
+}
+
 struct RegisteredTool {
     name: String,
     description: String,
@@ -338,18 +353,30 @@ impl Fixture {
         }
     }
 
-    async fn load(&self, config: &IndexMap<String, McpServerConfig>) -> Result<(), ConfigError> {
-        self.load_with(config, None).await
-    }
-
-    async fn load_with(
-        &self,
-        config: &IndexMap<String, McpServerConfig>,
-        mcp_aliases: Option<&IndexMap<String, String>>,
-    ) -> Result<(), ConfigError> {
-        let builder = self.builder();
-        let loader = ConfigLoader {
-            builder: &builder,
+    fn loader<'load>(
+        &'load self,
+        builder: &'load ServerBuilder<
+            'load,
+            FakeDecryptor,
+            FakeFetcher,
+            FakeStdioPolicy,
+            FakeSlots,
+        >,
+    ) -> ConfigLoader<
+        'load,
+        FakeDecryptor,
+        FakeFetcher,
+        FakeStdioPolicy,
+        FakeSlots,
+        TokioClock,
+        FakeDcrHydrator,
+        FakeToolSink,
+        FakeInstructions,
+        FakeCaches,
+        SystemResolver,
+    > {
+        ConfigLoader {
+            builder,
             slots: &self.discovery,
             registry: Arc::clone(&self.registry),
             dcr: &self.dcr,
@@ -359,8 +386,25 @@ impl Fixture {
             spec_fetcher: &self.spec_fetcher,
             client: &self.client,
             id_jag_gap: self.id_jag_gap.as_deref(),
-        };
-        loader.load(config, mcp_aliases).await
+        }
+    }
+
+    async fn load(&self, config: &IndexMap<String, McpServerConfig>) -> Result<(), ConfigError> {
+        self.load_with(config, None).await
+    }
+
+    async fn load_with(
+        &self,
+        config: &IndexMap<String, McpServerConfig>,
+        mcp_aliases: Option<&IndexMap<String, String>>,
+    ) -> Result<(), ConfigError> {
+        self.loader(&self.builder()).load(config, mcp_aliases).await
+    }
+
+    async fn maybe_register(&self, server: &MCPServer) -> Result<(), ConfigError> {
+        self.loader(&self.builder())
+            .maybe_register_openapi_tools(server)
+            .await
     }
 
     async fn add_db_server(&self, server: MCPServer) {

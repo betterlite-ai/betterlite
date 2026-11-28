@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -39,6 +40,7 @@ use crate::config_loader::ports::{
 };
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
 use crate::credentials::McpAuthType;
+use crate::dcr_hydration::{DcrClientStore, DcrHydration, StoreReadError};
 use crate::discovery_slots::DiscoverySlots;
 use crate::discovery_slots::clock::TokioClock;
 use crate::discovery_slots::settings::DiscoverySettings;

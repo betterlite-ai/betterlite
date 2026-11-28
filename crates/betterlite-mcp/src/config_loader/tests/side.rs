@@ -125,6 +125,35 @@ async fn side_dcr_hydration_keeps_the_server_when_nothing_is_hydrated() {
 }
 
 #[tokio::test]
+async fn side_the_real_hydrator_applies_a_stored_client() {
+    let hydrator = DcrHydration {
+        store: FakeClientStore {
+            credentials: Some(JsonValue::Object(BTreeMap::from([(
+                String::from("client_id"),
+                JsonValue::String(String::from("stored-client")),
+            )]))),
+        },
+        cipher: test_cipher(),
+    };
+    let mut server =
+        json_server(r#"{"server_id": "test-id", "name": "test_server", "transport": "http"}"#);
+    assert!(DcrHydrator::hydrate(&hydrator, &mut server).await);
+    assert_eq!(server.fields.client_id.as_deref(), Some("stored-client"));
+}
+
+#[tokio::test]
+async fn side_the_real_hydrator_reports_nothing_stored() {
+    let hydrator = DcrHydration {
+        store: FakeClientStore { credentials: None },
+        cipher: test_cipher(),
+    };
+    let mut server =
+        json_server(r#"{"server_id": "test-id", "name": "test_server", "transport": "http"}"#);
+    assert!(!DcrHydrator::hydrate(&hydrator, &mut server).await);
+    assert_eq!(server.fields.client_id, None);
+}
+
+#[tokio::test]
 async fn side_tool_name_mapping_is_rebuilt_once_after_the_load() {
     let fixture = Fixture::new();
     let minimal = config(r#"{"test_server": {"url": "https://mcp.test"}}"#);

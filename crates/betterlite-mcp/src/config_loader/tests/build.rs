@@ -24,7 +24,7 @@ async fn build_records_the_identity_fields() {
 #[tokio::test]
 async fn build_the_first_mapped_alias_wins() {
     let fixture = Fixture::new();
-    let mapped = aliases(r#"{"a1": "test_server", "a2": "test_server"}"#);
+    let mapped = aliases(r#"{"a0": "test_other", "a1": "test_server", "a2": "test_server"}"#);
     let (captured, _guard) = capture();
     fixture
         .load_with(
@@ -136,6 +136,46 @@ async fn build_discovery_is_deferred_when_it_is_not_on_startup() {
 }
 
 #[tokio::test]
+async fn build_a_server_without_a_discovery_auth_type_does_not_discover() {
+    let fixture = Fixture::with_startup(true);
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "auth_type": "api_key", "authentication_token": "tok"}}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(fixture.fetcher.calls().is_empty());
+}
+
+#[tokio::test]
+async fn build_a_server_without_oauth_has_no_unresolved_warning() {
+    let fixture = Fixture::new();
+    let (captured, _guard) = capture_at(Level::WARN);
+    fixture
+        .load(&config(r#"{"test_server": {"url": "https://mcp.test"}}"#))
+        .await
+        .unwrap();
+    assert!(!captured.text().contains("not set manually"));
+}
+
+#[tokio::test]
+async fn build_an_authorization_code_server_warns_about_both_unresolved_endpoints() {
+    let fixture = Fixture::with_startup(true);
+    let (captured, _guard) = capture_at(Level::WARN);
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "auth_type": "oauth2", "oauth2_flow": "authorization_code"}}"#,
+        ))
+        .await
+        .unwrap();
+    assert!(
+        captured
+            .text()
+            .contains("left authorization_url, token_url unresolved")
+    );
+}
+
+#[tokio::test]
 async fn build_a_pinned_issuer_anchors_the_metadata_fetch() {
     let fixture = Fixture::with_metadata();
     fixture
@@ -154,6 +194,12 @@ async fn build_a_pinned_issuer_anchors_the_metadata_fetch() {
     assert_eq!(
         fixture.fetcher.calls().first().map(String::as_str),
         Some("https://as.test/.well-known/oauth-authorization-server")
+    );
+    assert!(
+        fixture
+            .fetcher
+            .calls()
+            .contains(&String::from("https://mcp.test"))
     );
 }
 

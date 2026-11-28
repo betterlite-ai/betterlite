@@ -242,6 +242,39 @@ async fn openapi_the_server_label_skips_an_empty_name() {
 }
 
 #[tokio::test]
+async fn openapi_maybe_register_tools_registers_a_servers_spec() {
+    let fixture = Fixture::new();
+    let spec = corpus("petstore.json");
+    let server = json_server(&format!(
+        r#"{{"server_id": "test-id", "name": "test_server", "server_name": "test_server", "transport": "http", "url": "https://api.test", "spec_path": "{spec}"}}"#
+    ));
+    fixture.maybe_register(&server).await.unwrap();
+    let mut names = fixture.tools.names();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            String::from("test_server-createpet"),
+            String::from("test_server-deletepet"),
+            String::from("test_server-get.pet_by_id"),
+            String::from("test_server-listpets"),
+        ]
+    );
+    assert_eq!(fixture.tools.rebuilds(), 1);
+}
+
+#[tokio::test]
+async fn openapi_maybe_register_skips_a_server_without_a_spec() {
+    let fixture = Fixture::new();
+    let server = json_server(
+        r#"{"server_id": "test-id", "name": "test_server", "transport": "http", "spec_path": ""}"#,
+    );
+    fixture.maybe_register(&server).await.unwrap();
+    assert!(fixture.tools.names().is_empty());
+    assert_eq!(fixture.tools.rebuilds(), 0);
+}
+
+#[tokio::test]
 async fn openapi_sensitive_header_values_are_not_logged() {
     let fixture = Fixture::new();
     let spec = corpus("petstore.json");

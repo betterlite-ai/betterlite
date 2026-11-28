@@ -1,17 +1,20 @@
 #[test]
 fn collision_config_ids_taken_by_db_are_reported() {
     let db = json_server(
-        r#"{"server_id": "db-id", "name": "db-name", "transport": "http", "server_name": "db-server", "alias": "db-alias"}"#,
+        r#"{"server_id": "db-id", "name": "db-name", "transport": "http", "server_name": "db-server", "alias": ""}"#,
     );
+    let same_id = json_server(r#"{"server_id": "db-two", "name": "db-two", "transport": "http"}"#);
     let ids: BTreeSet<String> = [
         String::from("db-id"),
         String::from("db-name"),
         String::from("db-server"),
+        String::from("db-two"),
         String::from("other"),
+        String::new(),
     ]
     .into_iter()
     .collect();
-    let captured = config_ids_taken_by_db(&ids, &[db]);
+    let captured = config_ids_taken_by_db(&ids, &[db, same_id]);
     let expected: BTreeSet<String> = [String::from("db-name"), String::from("db-server")]
         .into_iter()
         .collect();
