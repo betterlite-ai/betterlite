@@ -16,6 +16,7 @@ use self::support::{
 use super::entry;
 use super::error::{LlmPassthroughError, ModelBlockedError};
 use super::route::{PassthroughRoute, PassthroughRouteInput, RouteFlag, plan_passthrough_route};
+use crate::api::passthrough_call::config::ConfigError;
 use crate::api::passthrough_call::{PassthroughBody, PassthroughCallError};
 use crate::dispatch::Dispatch;
 use crate::dispatch::NoRules;
@@ -880,6 +881,20 @@ fn entry_resolution_call_error_is_400() {
     let error = LlmPassthroughError::Call(PassthroughCallError::Resolution(
         ResolutionError::MissingProvider {
             model: String::from("foo"),
+        },
+    ));
+    let (status, error_type, _code) = rejected_parts(&error);
+    assert_eq!(
+        (status, error_type.as_str()),
+        (400, "invalid_request_error")
+    );
+}
+
+#[test]
+fn entry_mantle_endpoint_call_error_is_400() {
+    let error = LlmPassthroughError::Call(PassthroughCallError::MantleEndpoint(
+        ConfigError::ValueError {
+            message: String::from("invalid AWS region format: Not_A_Region"),
         },
     ));
     let (status, error_type, _code) = rejected_parts(&error);
