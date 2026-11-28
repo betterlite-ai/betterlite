@@ -4,13 +4,12 @@ use std::time::Duration;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::canvas_results::COST_HEADER;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::image_call::transport::{
-    ClientKind, ImageReply, ImageRequest, SuppliedClient,
-};
+use betterlite_bedrock::image_call::transport::{ImageReply, ImageRequest};
 use betterlite_bedrock::image_edits::response::EditReply;
 use betterlite_bedrock::image_models::params::Params;
 use betterlite_bedrock::image_models::response::ModelResponse;
 use betterlite_bedrock::model_routes::ParamMap;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;

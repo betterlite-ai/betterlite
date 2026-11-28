@@ -15,11 +15,12 @@ use tempfile::NamedTempFile;
 use tracing::subscriber::set_default;
 use uuid::Uuid;
 
-use crate::gemini_http::call::{ClientKind, async_completion, async_streaming};
+use crate::gemini_http::call::{async_completion, async_streaming};
 use crate::gemini_http::error::GeminiHttpError;
 use crate::gemini_http::transform::{TransformRequestUnsupported, transform_request};
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::post::{ClientTimeout, Timeout};
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 use super::support::{
     ANSWER, BODY, GEMINI_KEY, MODEL, Recorder, Reply, SCHEMA_ERROR, TOKEN, auth, catalog,
@@ -231,7 +232,7 @@ async fn execution_complete_uses_the_supplied_async_client() {
         Vec::new(),
     ));
     let pooled_recorder = Arc::new(Recorder::scripted(Vec::new(), Vec::new()));
-    let clients = supplied(&caller, ClientKind::Async, &pooled_recorder);
+    let clients = supplied(&caller, ClientKind::Asynchronous, &pooled_recorder);
     async_completion(
         &call,
         &catalog(),
