@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use betterlite_http::client_kind::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::{HeaderMap, Method};
@@ -7,16 +8,6 @@ use http::{HeaderMap, Method};
 use crate::anthropic_http_stream::error::{PostFailure, StatusFailure, StreamFailure};
 use crate::anthropic_http_stream::transport::{StreamPost, StreamTransport};
 
-// Which handler LiteLLM's isinstance checks accept; a supplied client of the other kind is ignored by that branch
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-pub struct SuppliedChatClient<'clients, Client> {
-    pub kind: ClientKind,
-    pub transport: &'clients Client,
-}
 pub struct BufferedReply {
     pub status_code: u16,
     pub headers: HeaderMap,
