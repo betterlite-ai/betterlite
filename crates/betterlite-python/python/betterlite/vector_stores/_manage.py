@@ -139,7 +139,7 @@ def delete(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = No
     return now(manage_session().delete, arguments, JSON_OBJECT)
 
 
-async def aretrieve(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse:  # noqa: ASYNC109, E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L495
+async def aretrieve(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L495
     kwargs.pop("aretrieve", None)
     pending = retrieve(
         vector_store_id, extra_headers, extra_query, extra_body, timeout,
@@ -148,7 +148,7 @@ async def aretrieve(vector_store_id: str, extra_headers: dict[str, JsonValue] | 
     return CREATE_RESPONSE.validate_python(await settled(pending))
 
 
-async def alist(after: str | None = None, before: str | None = None, limit: int | None = 20, order: str | None = "desc", extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> dict[str, JsonValue]:  # noqa: ASYNC109, E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L627
+async def alist(after: str | None = None, before: str | None = None, limit: int | None = 20, order: str | None = "desc", extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> dict[str, JsonValue]:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L627
     kwargs.pop("alist", None)
     pending = list(
         after, before, limit, order, extra_headers, extra_query, extra_body,
@@ -157,7 +157,7 @@ async def alist(after: str | None = None, before: str | None = None, limit: int 
     return JSON_OBJECT.validate_python(await settled(pending))
 
 
-async def aupdate(vector_store_id: str, name: str | None = None, expires_after: JsonValue = None, metadata: dict[str, str] | None = None, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse:  # noqa: ASYNC109, E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L779
+async def aupdate(vector_store_id: str, name: str | None = None, expires_after: JsonValue = None, metadata: dict[str, str] | None = None, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> VectorStoreCreateResponse:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L779
     kwargs.pop("aupdate", None)
     pending = update(
         vector_store_id, name, expires_after, metadata, extra_headers, extra_query,
@@ -166,7 +166,7 @@ async def aupdate(vector_store_id: str, name: str | None = None, expires_after: 
     return CREATE_RESPONSE.validate_python(await settled(pending))
 
 
-async def adelete(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> dict[str, JsonValue]:  # noqa: ASYNC109, E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L934
+async def adelete(vector_store_id: str, extra_headers: dict[str, JsonValue] | None = None, extra_query: dict[str, JsonValue] | None = None, extra_body: dict[str, JsonValue] | None = None, timeout: float | TimeoutValues | None = None, custom_llm_provider: str | None = None, **kwargs: CallValue) -> dict[str, JsonValue]:  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L934
     kwargs.pop("adelete", None)
     pending = delete(
         vector_store_id, extra_headers, extra_query, extra_body, timeout,

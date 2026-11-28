@@ -123,7 +123,7 @@ async def acreate_run(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     data_source: dict[str, JsonValue],
     name: str | None = None, metadata: dict[str, JsonValue] | None = None,
     extra_headers: Headers = None, extra_query: Query = None, extra_body: Body = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1103
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1103
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> Run:
@@ -164,7 +164,7 @@ async def alist_runs(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
     limit: int | None = None, after: str | None = None, before: str | None = None,
     order: str | None = None,
     extra_headers: Headers = None, extra_query: Query = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1287
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1287
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> ListRunsResponse:
@@ -202,7 +202,7 @@ async def aget_run(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/lite
     eval_id: str,
     run_id: str,
     extra_headers: Headers = None, extra_query: Query = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1469
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1469
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> Run:
@@ -235,7 +235,7 @@ async def acancel_run(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     eval_id: str,
     run_id: str,
     extra_headers: Headers = None, extra_query: Query = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1625
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1625
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> CancelRunResponse:
@@ -270,7 +270,7 @@ async def adelete_run(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     eval_id: str,
     run_id: str,
     extra_headers: Headers = None, extra_query: Query = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1790
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1790
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> RunDeleteResponse:
