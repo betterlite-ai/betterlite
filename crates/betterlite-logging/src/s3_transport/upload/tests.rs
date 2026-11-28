@@ -11,6 +11,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::Method;
 use md5::Md5;
 use rstest::rstest;
@@ -22,8 +23,7 @@ use crate::s3_transport::batch_element::{ContentType, S3BatchLoggingElement};
 use crate::s3_transport::encryption::ServerSideEncryption;
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::signing::{
-    Clock, CredentialError, CredentialSource, Credentials, RequestToSign, StaticCredentials,
-    sign_request,
+    Clock, CredentialError, CredentialSource, Credentials, S3_SERVICE, StaticCredentials,
 };
 use crate::s3_transport::transport::{
     S3HttpClient, S3Request, S3Response, S3Transport, ThrottleSink, UploadOutcome,
@@ -519,25 +519,26 @@ async fn a_put_signs_one_frozen_credential_snapshot() {
     let requests = client.requests();
     let request = &requests[0];
     let unsigned = unsigned_put_headers(request);
-    let expected = sign_request(
-        &RequestToSign {
-            method: "PUT",
-            url: &request.url,
-            headers: &unsigned,
-            content_sha256: header(request, "x-amz-content-sha256").expect("a payload hash"),
-            region: "us-east-1",
-            now: fixed_time(),
-        },
-        &Credentials {
-            access_key_id: SecretString::from("AKIA1"),
-            secret_access_key: SecretString::from("secret1"),
-            session_token: Some(SecretString::from("token1")),
-        },
-    )
+    let credentials = Credentials {
+        access_key_id: SecretString::from("AKIA1"),
+        secret_access_key: SecretString::from("secret1"),
+        session_token: Some(SecretString::from("token1")),
+    };
+    let expected = sign_request(&Signable {
+        method: "PUT",
+        url: &request.url,
+        headers: &unsigned,
+        body: request.body.as_slice(),
+        service: S3_SERVICE,
+        region: "us-east-1",
+        credentials: &credentials,
+        mode: SigningMode::S3SigV4Auth,
+        now: fixed_time(),
+    })
     .expect("the request signs");
     let expected_authorization = expected
         .iter()
-        .find(|(name, _)| name == "authorization")
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
         .map(|(_, value)| value.as_str());
     assert_eq!(
         header(request, "authorization"),

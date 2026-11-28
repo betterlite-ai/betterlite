@@ -2,6 +2,7 @@ use std::str::from_utf8;
 use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
@@ -9,9 +10,7 @@ use sha2::{Digest as _, Sha256};
 use crate::focus_records::destinations::{FocusDestination, FocusTimeWindow};
 use crate::legacy_s3::credentials::ConfiguredCredentials;
 use crate::s3_transport::error::S3TransportError;
-use crate::s3_transport::signing::{
-    Clock, CredentialSource as _, Credentials, RequestToSign, sign_request,
-};
+use crate::s3_transport::signing::{Clock, CredentialSource as _, Credentials, S3_SERVICE};
 use crate::s3_transport::transport::{S3HttpClient, S3Request};
 use crate::s3_transport::url_construction::{EndpointInputs, S3Endpoint, resolve_endpoint};
 
@@ -151,17 +150,17 @@ impl FocusS3Destination {
             ("Content-Type".to_owned(), CONTENT_TYPE.to_owned()),
             ("x-amz-content-sha256".to_owned(), content_sha256.clone()),
         ];
-        let signed = sign_request(
-            &RequestToSign {
-                method: "PUT",
-                url,
-                headers: &headers,
-                content_sha256: &content_sha256,
-                region,
-                now: self.connection.clock.now(),
-            },
+        let signed = sign_request(&Signable {
+            method: "PUT",
+            url,
+            headers: &headers,
+            body: content,
+            service: S3_SERVICE,
+            region,
             credentials,
-        )?;
+            mode: SigningMode::S3SigV4Auth,
+            now: self.connection.clock.now(),
+        })?;
         headers.extend(signed);
         Ok(headers)
     }
