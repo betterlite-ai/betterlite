@@ -23,7 +23,6 @@ use betterlite_config::types::Config;
 use betterlite_db::budget_permission_rows::LiteLLMObjectPermissionTable;
 use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
-use betterlite_paths::paths::Document;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
