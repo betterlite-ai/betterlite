@@ -70,9 +70,11 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_request_policy::stage_input as request_policy_stage_input;
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
+use crate::auth::request_body_safety::stage_input as body_safety_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -144,12 +146,10 @@ fn stage_input(
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
         AuthBackend::JwtTeamSelection => jwt_team_selection::stage_input(request, authenticated),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
-        AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
-            auth_request_policy::stage_input(request, authenticated, body)?,
-        ))),
-        AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
-            request_body_safety::stage_input(request, authenticated, body)?,
-        ))),
+        AuthBackend::AuthRequestPolicy => request_policy_stage_input(request, authenticated, body)
+            .map(|stage| StageInput::AuthRequestPolicy(Box::new(stage))),
+        AuthBackend::RequestBodySafety => body_safety_stage_input(request, authenticated, body)
+            .map(|stage| StageInput::RequestBodySafety(Box::new(stage))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
@@ -171,7 +171,9 @@ fn stage_input(
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthEndUsers => end_user_stage_input(request, authenticated),
+        AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
+            auth_end_users::stage_input(request, authenticated)?,
+        ))),
         AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
         AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
             model_grant_intersection::stage_input(request, authenticated)?,
@@ -192,15 +194,6 @@ fn resource_grant_stage_input(
         database: auth_resource_grants::database_for_request(request),
     };
     Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
-
-fn end_user_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, StageFailure> {
-    Ok(StageInput::AuthEndUsers(Box::new(
-        auth_end_users::stage_input(request, authenticated)?,
-    )))
 }
 
 fn model_pattern_input(
