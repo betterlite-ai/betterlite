@@ -25,9 +25,10 @@ use crate::auth::auth_identity::{AuthBackend, StageFailure, dispatch};
 use crate::auth::auth_key_lookup;
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
-use crate::auth::{PreAuthenticated, headers_json, prefetch_stage, query_json};
+use crate::auth::{headers_json, prefetch_stage, query_json};
 use crate::state::ServerState;
 
+use super::PreAuthenticated;
 use super::selection::{Selection, select_model};
 
 #[derive(Clone, Default)]

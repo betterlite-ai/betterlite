@@ -24,10 +24,11 @@ use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
+use crate::auth::auth_context_sources::model_stage_input;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
-use crate::auth::{headers_json, model_stage_input, query_json};
+use crate::auth::{headers_json, query_json};
 use crate::error_body::AuthenticationFailure;
 use crate::routes;
 use crate::routes::tests::state_for;

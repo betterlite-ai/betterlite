@@ -53,13 +53,9 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::{
-    collections::BTreeSet,
-    sync::{Arc, PoisonError},
-};
+use std::sync::{Arc, PoisonError};
 
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
-use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
 use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
@@ -70,9 +66,8 @@ use crate::auth::auth_model_budgets::SharedViews;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
-use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::{CoreDecoders, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
-use crate::auth::model_grant_intersection::GrantStageInput;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
@@ -83,17 +78,6 @@ use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::{ExposeSecret as _, SecretString};
-
-// The rewrite step authenticates an LLM API request before buffering it, and the key lookup stage forwards this identity instead of reading the key again.
-#[derive(Clone)]
-pub(crate) struct PreAuthenticated(pub(crate) AuthContext);
-
-fn key_lookup_stage_input(request: &Request<Body>) -> StageInput {
-    request.extensions().get::<PreAuthenticated>().map_or_else(
-        || identity_store::lookup_stage_input(request),
-        |context| StageInput::Authenticated(Box::new(context.0.clone())),
-    )
-}
 
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -157,7 +141,7 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => Ok(key_lookup_stage_input(request)),
+        AuthBackend::AuthKeyLookup => Ok(auth_context_sources::key_lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
@@ -242,7 +226,7 @@ fn resolver_stage_input(
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
-    let stage = model_stage_input(request, context.clone(), resolver);
+    let stage = auth_context_sources::model_stage_input(request, context.clone(), resolver);
     if backend == AuthBackend::AuthRequestModels {
         return Ok(StageInput::AuthRequestModels(Box::new(stage)));
     }
@@ -279,13 +263,6 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
             Arc::clone,
         )
 }
-// the model grant prefetch reads the cache and database, so the caller awaits it on the owned stage input
-async fn prefetch_model_grants(stage: Box<GrantStageInput>) -> Result<StageInput, StageFailure> {
-    model_grant_intersection::prefetch(&stage)
-        .await
-        .map_err(StageFailure::ModelGrants)?;
-    Ok(StageInput::ModelGrantIntersection(stage))
-}
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
@@ -300,7 +277,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
         StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
-        StageInput::ModelGrantIntersection(stage) => prefetch_model_grants(stage).await,
+        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)
@@ -328,33 +305,6 @@ fn master_key_stage(
     })
 }
 
-fn model_stage_input(
-    request: &Request<Body>,
-    context: AuthContext,
-    resolver: &Arc<RequestModelResolver>,
-) -> RequestModelStageInput {
-    let route = request.uri().path().to_owned();
-    let headers = Some(headers_json(request.headers()));
-    let query = Some(query_json(request.uri().query()));
-    let body = request
-        .extensions()
-        .get::<RequestBodyInput>()
-        .and_then(|input| input.cached_body.as_ref())
-        .and_then(|cached| serde_json::to_vec(&cached.visible()).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default();
-    RequestModelStageInput {
-        context,
-        route,
-        body,
-        headers,
-        query,
-        endpoint_marker: None,
-        path_params: BTreeSet::new(),
-        team_id: None,
-        resolver: Arc::clone(resolver),
-    }
-}
 pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
     if header_bytes.is_empty() {
         return None;

@@ -6,7 +6,10 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
-use self::{AuthBackend::MasterKey, StageInput::Authenticated};
+use self::{
+    AuthBackend::MasterKey,
+    StageInput::{AuthIdentity, AuthKeyLookup, Authenticated},
+};
 use crate::auth::auth_context_sources;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
@@ -26,13 +29,13 @@ pub(crate) use crate::auth::failures::StageFailure;
 use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
 use crate::auth::master_key_stage;
-use crate::auth::model_grant_intersection::GrantStageInput;
+use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
-use crate::error_body::AuthenticationFailure;
+use crate::error_body::AuthenticationFailure::Missing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -139,6 +142,16 @@ pub trait BudgetAdmission {
 }
 
 impl StageInput {
+    // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
+    pub(crate) async fn prefetch_model_grants(
+        stage: Box<GrantStageInput>,
+    ) -> Result<Self, StageFailure> {
+        model_grant_intersection::prefetch(&stage)
+            .await
+            .map_err(StageFailure::ModelGrants)?;
+        Ok(Self::ModelGrantIntersection(stage))
+    }
+
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
@@ -176,7 +189,7 @@ fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), Stage
     if backend == input.backend() || key_pass_through {
         return Ok(());
     }
-    Err(StageFailure::from(AuthenticationFailure::Missing))
+    Err(StageFailure::from(Missing))
 }
 
 pub(crate) fn dispatch(
@@ -197,9 +210,7 @@ pub(crate) fn dispatch(
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
+        AuthKeyLookup(_) | AuthIdentity(_) => Err(StageFailure::from(Missing)),
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
         StageInput::MasterKey(presented) => Ok(master_key_stage(presented.as_ref(), master_key)?),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
@@ -233,7 +244,7 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
         Ok(_) => Ok(stage.context.clone()),
         Err(error) => {
             tracing::debug!(error = %error, "the request model stage failed");
-            Err(StageFailure::from(AuthenticationFailure::Missing))
+            Err(StageFailure::from(Missing))
         }
     }
 }
