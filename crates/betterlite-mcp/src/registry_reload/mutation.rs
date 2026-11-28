@@ -85,7 +85,7 @@ where
         let result = self.update_eligible(row, &previous).await;
         if let Err(error) = &result {
             // LiteLLM misspells "update" here; split so the typos hook leaves this kept line alone
-            tracing::debug!(concat!("Failed to u", "dpate MCP server: {error}"));
+            tracing::debug!(concat!("Failed to u", "dpate MCP server: {}"), error);
         }
         result
     }
