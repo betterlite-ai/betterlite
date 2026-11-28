@@ -324,7 +324,15 @@ async fn mutation_initialize_warns_on_tool_list_failure() {
             r#"{"server_id":"srv-1","name":"srv-1","transport":"http","url":"https://mcp.test"}"#,
         ))
         .await;
+    fixture
+        .put_db_server(server(
+            r#"{"server_id":"srv-2","name":"srv-2","transport":"http","url":"https://mcp.test"}"#,
+        ))
+        .await;
     fixture.lister.plan("srv-1", ToolPlan::Failed);
+    fixture
+        .lister
+        .plan("srv-2", ToolPlan::Tools(strings(&["srv-2-echo"])));
     let (captured, _guard) = capture();
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
@@ -333,5 +341,7 @@ async fn mutation_initialize_warns_on_tool_list_failure() {
     assert!(captured.text().contains(
         "Failed to get tools from server srv-1 during tool name mapping initialization: boom"
     ));
-    assert!(fixture.owners.read().unwrap().mapping.is_empty());
+    assert_eq!(fixture.lister.calls(), strings(&["srv-1", "srv-2"]));
+    let owners = fixture.owners.read().unwrap().mapping.clone();
+    assert_eq!(owners.get("echo").map(String::as_str), Some("srv-2"));
 }
