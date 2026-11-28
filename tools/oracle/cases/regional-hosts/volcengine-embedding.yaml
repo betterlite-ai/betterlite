@@ -34,6 +34,16 @@ calls:
       model: doubao-embedding
       input: hello
       api_base: "{{upstream}}"
+      litellm_api_key: "sk-global"
+      env: {ARK_API_KEY: "sk-ark"}
+      answer:
+        status: 200
+        body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+  - b8312:
+      op: volcengine_embedding
+      model: doubao-embedding
+      input: hello
+      api_base: "{{upstream}}"
       env: {VOLCENGINE_API_KEY: "sk-volcengine"}
       answer:
         status: 200

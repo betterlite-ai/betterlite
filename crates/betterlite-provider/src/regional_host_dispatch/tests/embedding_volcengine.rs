@@ -18,7 +18,7 @@ const VOLCENGINE_MESSAGE: &str = "Missing API key for Volcengine. Set ARK_API_KE
     Some("sk-volcengine"),
     Some("sk-request")
 )]
-#[case::global_key(None, Some("sk-global"), None, None, Some("sk-global"))]
+#[case::global_key(None, Some("sk-global"), Some("sk-ark"), None, Some("sk-global"))]
 #[case::volcengine_env(None, None, None, Some("sk-volcengine"), Some("sk-volcengine"))]
 #[case::volcengine_env_beats_the_global_key(
     None,
