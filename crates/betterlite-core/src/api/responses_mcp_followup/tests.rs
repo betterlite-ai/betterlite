@@ -181,6 +181,25 @@ fn request_param_precedence() {
         input.mcp_tools_with_litellm_proxy
     );
 
+    let mut listed = sample_input();
+    listed.input = parse(r#"[{"type":"message","role":"user","content":"hello"}]"#);
+    listed.call_params = params(&[("temperature", "0.2")]);
+    listed.kwargs = ParameterMap::new();
+    let listed_plan = create_mcp_streaming_response(&streaming_request(&listed)).unwrap();
+    assert_eq!(
+        listed_plan.request_params,
+        params(&[
+            (
+                "input",
+                r#"[{"type":"message","role":"user","content":"hello"}]"#,
+            ),
+            ("model", "\"gpt-5\""),
+            ("tools", r#"[{"type":"function","name":"lookup"}]"#),
+            ("previous_response_id", "\"resp_previous\""),
+            ("temperature", "0.2"),
+        ])
+    );
+
     let mut absent = sample_input();
     absent.previous_response_id = None;
     absent.tools = None;

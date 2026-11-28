@@ -11,6 +11,13 @@ call:
         mcp_tools: [{type: mcp, server_label: weather}]
         mcp_events: [{type: response.mcp_list_tools.completed, sequence_number: 2, output_index: 0, item_id: mcp_list_1}]
         tool_server_map: {weather: "http://weather.example"}
+      - request: {input: [{type: message, role: user, content: hello}], model: gpt-5, tools: [{type: function, name: lookup}], previous_response_id: null}
+        call_params: {temperature: 0.2}
+        kwargs: {top_p: 0.9}
+        auth: {kind: none}
+        mcp_tools: []
+        mcp_events: []
+        tool_server_map: {}
       - request: {input: hello, model: gpt-5, tools: null, previous_response_id: null}
         call_params: {}
         kwargs: {}

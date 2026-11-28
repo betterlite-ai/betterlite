@@ -10,6 +10,7 @@ from litellm.responses.mcp.litellm_proxy_mcp_handler import LiteLLM_Proxy_MCP_Ha
 from litellm.responses.mcp.litellm_proxy_mcp_handler import MCPToolResult
 from litellm.responses.mcp.mcp_streaming_iterator import MCPEnhancedStreamingIterator
 from litellm.types.llms.openai import ResponsesAPIResponse, ResponsesAPIStreamingResponse
+from openai.types.responses.response_input_param import ResponseInputParam
 from openai.types.responses.tool_param import ToolParam as ResponsesToolParam
 from pydantic import JsonValue, TypeAdapter
 
@@ -21,7 +22,7 @@ EventList = list[ResponsesAPIStreamingResponse]
 
 
 class RequestSpec(TypedDict):
-    input: str
+    input: str | ResponseInputParam
     model: str
     tools: list[JsonValue] | None
     previous_response_id: str | None
