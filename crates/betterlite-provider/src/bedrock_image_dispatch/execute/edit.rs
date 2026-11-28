@@ -1,7 +1,8 @@
 use std::time::SystemTime;
 
 use betterlite_bedrock::canvas_results;
-use betterlite_bedrock::image_call::plan::{CredentialSource, LogContext};
+use betterlite_bedrock::credentials::CredentialSource;
+use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_bedrock::image_call::transport::ClientFactory;
 use betterlite_bedrock::image_edits::execute::dispatch_request as dispatch_edit_request;
 use betterlite_bedrock::image_edits::plan::EditCall;
@@ -26,7 +27,7 @@ pub(super) async fn edit<Source, Factory>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<EditReply, BedrockImageError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
 {
     let Some(model) = operation.model else {

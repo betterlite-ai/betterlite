@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use betterlite_openai::batches::records::{BatchObject, BatchStatus};
 use serde_json::value::RawValue;
 
-use crate::image_call::plan::CredentialSource;
+use crate::credentials::CredentialSource;
 
 use super::client::{control_plane, send};
 use super::error::BatchCallError;
@@ -40,7 +40,7 @@ pub async fn cancel_batch<Source, Factory>(
     log: Option<&mut CallLogger<'_>>,
 ) -> Result<BatchObject, BatchCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ControlPlaneFactory,
 {
     let region = resolve_region(call.aws_region_name, call.batch_id)?;
@@ -85,7 +85,7 @@ async fn current_status<Source, Factory>(
     log: Option<&mut CallLogger<'_>>,
 ) -> Result<BatchObject, BatchCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ControlPlaneFactory,
 {
     retrieve_model_job_status(

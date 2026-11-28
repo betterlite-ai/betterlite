@@ -2,10 +2,9 @@ use std::collections::BTreeMap;
 use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::bedrock_bearer_token;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::signing::request::AwsSignedRequest;
-use betterlite_bedrock_guardrails::bedrock_credentials::{
-    CredentialSource, RegionEnvironment, load_credentials,
-};
+use betterlite_bedrock_guardrails::bedrock_credentials::{RegionEnvironment, load_credentials};
 use betterlite_bedrock_guardrails::bedrock_post::TransportLog;
 use betterlite_bedrock_guardrails::bedrock_request::{
     PrepareInput, RequestEnvironment, prepare_request,

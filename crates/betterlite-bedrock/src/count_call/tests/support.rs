@@ -18,10 +18,11 @@ use serde_json::value::{RawValue, to_raw_value};
 use crate::aws_settings::sources::Credentials;
 use crate::count_call::counter::{CountTokensCall, CountTokensDeployment};
 use crate::count_call::handler::{
-    BedrockCountTokensHandler, CountTokensCredentials, CountTokensEnvironment, CountTokensHandler,
-    CountTokensHandlerError, CountTokensHandlerRequest, CountTokensTransport, ParamMap,
+    BedrockCountTokensHandler, CountTokensEnvironment, CountTokensHandler, CountTokensHandlerError,
+    CountTokensHandlerRequest, CountTokensTransport, ParamMap,
 };
 use crate::count_call::reply::CountResponse;
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
 
 pub(crate) const MODEL: &str = "bedrock/converse/us.anthropic.claude-3-5-sonnet-20241022-v2:0";
@@ -210,7 +211,7 @@ impl FixtureCredentials {
     }
 }
 
-impl CountTokensCredentials for FixtureCredentials {
+impl CredentialSource for FixtureCredentials {
     fn resolve(
         &self,
         settings: AwsSettings,
@@ -243,7 +244,7 @@ impl FailingCredentials {
     }
 }
 
-impl CountTokensCredentials for FailingCredentials {
+impl CredentialSource for FailingCredentials {
     fn resolve(
         &self,
         _settings: AwsSettings,

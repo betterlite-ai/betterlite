@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -32,6 +32,23 @@ pub struct SecretLookup {
     pub azure_tokens: Arc<dyn AzureOidcTokens>,
     pub clock: Arc<dyn OidcClock>,
     pub oidc_cache: OidcTokenCache,
+}
+
+impl Clone for SecretLookup {
+    fn clone(&self) -> Self {
+        let tokens = self
+            .oidc_cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Self {
+            manager: self.manager.clone(),
+            oidc_http: Arc::clone(&self.oidc_http),
+            azure_tokens: Arc::clone(&self.azure_tokens),
+            clock: Arc::clone(&self.clock),
+            oidc_cache: Mutex::new(tokens),
+        }
+    }
 }
 
 impl SecretLookup {
