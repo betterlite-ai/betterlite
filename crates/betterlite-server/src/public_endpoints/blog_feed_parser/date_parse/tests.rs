@@ -9,9 +9,11 @@ use rstest::rstest;
 #[case::missing_weekday_and_timezone("12 Mar 2026 10:00:00", "2026-03-12")]
 #[case::numeric_timezone_offset("Thu, 12 Mar 2026 10:00:00 +0530", "2026-03-12")]
 #[case::two_digit_year("12 Mar 26 10:00:00 GMT", "2026-03-12")]
+#[case::three_digit_year_is_zero_padded("Thu, 12 Mar 999 10:00:00 GMT", "0999-03-12")]
 #[case::timezone_below_an_hour("Thu, 12 Mar 2026 10:00:00 +0099", "2026-03-12")]
 #[case::timezone_at_an_hour("Thu, 12 Mar 2026 10:00:00 +100", "2026-03-12")]
 #[case::unparsable_timezone_means_no_zone("Thu, 12 Mar 2026 10:00:00 +12a4", "2026-03-12")]
+#[case::underscore_in_day("Thu, 1_2 Mar 2026 10:00:00 GMT", "2026-03-12")]
 fn formats_valid_dates(#[case] raw: &str, #[case] expected: &str) {
     assert_eq!(parse_date(raw), expected);
 }
@@ -21,8 +23,11 @@ fn formats_valid_dates(#[case] raw: &str, #[case] expected: &str) {
 #[case::invalid_day_of_month("Thu, 32 Mar 2026 10:00:00 GMT")]
 #[case::invalid_hour("Thu, 12 Mar 2026 25:00:00 GMT")]
 #[case::invalid_timezone("Thu, 12 Mar 2026 10:00:00 +2500")]
+#[case::timezone_at_the_bound("Thu, 12 Mar 2026 10:00:00 +2400")]
+#[case::timezone_at_the_negative_bound("Thu, 12 Mar 2026 10:00:00 -2400")]
 #[case::unsigned_invalid_timezone("Thu, 12 Mar 2026 10:00:00 2500")]
 #[case::timezone_overflows_i64("Thu, 12 Mar 2026 10:00:00 +99999999999999999999")]
+#[case::negative_timezone_overflows_i64("Thu, 12 Mar 2026 10:00:00 -99999999999999999999")]
 #[case::timezone_with_underscores("Thu, 12 Mar 2026 10:00:00 +1_0000")]
 #[case::year_outside_python_range("Thu, 12 Mar 12026 10:00:00 GMT")]
 #[case::empty_string("")]

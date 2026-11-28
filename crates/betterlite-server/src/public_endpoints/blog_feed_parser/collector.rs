@@ -1,4 +1,4 @@
-use super::super::date_parse::parse_date;
+use super::date_parse::parse_date;
 use super::{BlogPost, CHANNEL, DESCRIPTION, ITEM, LINK, PUB_DATE, ParseFailure, TITLE};
 
 #[derive(Default)]
@@ -63,6 +63,7 @@ enum ChannelState {
 pub(super) struct Collector {
     posts: Vec<BlogPost>,
     pub(super) max_posts: usize,
+    pub(super) max_depth: usize,
     channel: ChannelState,
     item: Option<(usize, Item)>,
     active_field: Option<ActiveField>,
@@ -72,21 +73,35 @@ pub(super) struct Collector {
 }
 
 impl Collector {
-    pub(super) fn open(&mut self, name: &str, kind: TagKind, default_namespace: bool) {
+    pub(super) fn open(
+        &mut self,
+        name: &str,
+        kind: TagKind,
+        default_namespace: bool,
+    ) -> Result<(), ParseFailure> {
         if self.depth == 0 {
             if self.root_count > 0 {
                 self.root_count = self.root_count.saturating_add(1);
-                return;
+                return Ok(());
             }
             self.root_count = 1;
         }
         self.depth = self.depth.saturating_add(1);
+        if self.depth > self.max_depth {
+            return Err(ParseFailure::TooDeep {
+                max_depth: self.max_depth,
+            });
+        }
         self.default_namespace.push(default_namespace);
-        if let Some(active) = &mut self.active_field
-            && self.depth > active.depth
-        {
+        // Every element that opens while a field is active sits inside that field.
+        if let Some(active) = &mut self.active_field {
             active.saw_child = true;
         }
+        self.open_content(name, kind);
+        Ok(())
+    }
+
+    fn open_content(&mut self, name: &str, kind: TagKind) {
         // Mirrors `root.find("channel")`: only a direct child of the document root counts.
         if matches!(kind, TagKind::Plain)
             && name == CHANNEL
@@ -117,14 +132,21 @@ impl Collector {
         };
         let is_field =
             matches!(kind, TagKind::Plain) && matches!(name, TITLE | LINK | DESCRIPTION | PUB_DATE);
-        if is_field && self.depth == item_depth.saturating_add(1) && self.active_field.is_none() {
-            self.active_field = Some(ActiveField {
-                tag: name.to_owned(),
-                depth: self.depth,
-                text: String::new(),
-                saw_child: false,
-            });
+        if !is_field {
+            return;
         }
+        if self.depth != item_depth.saturating_add(1) {
+            return;
+        }
+        if self.active_field.is_some() {
+            return;
+        }
+        self.active_field = Some(ActiveField {
+            tag: name.to_owned(),
+            depth: self.depth,
+            text: String::new(),
+            saw_child: false,
+        });
     }
 
     pub(super) fn push_text(&mut self, value: &str) -> Result<(), ParseFailure> {
@@ -134,9 +156,13 @@ impl Collector {
         let Some(active) = &mut self.active_field else {
             return Ok(());
         };
-        if self.depth == active.depth && !active.saw_child {
-            active.text.push_str(value);
+        if self.depth != active.depth {
+            return Ok(());
         }
+        if active.saw_child {
+            return Ok(());
+        }
+        active.text.push_str(value);
         Ok(())
     }
 
@@ -151,11 +177,13 @@ impl Collector {
     }
 
     fn close_active_field(&mut self, name: &str) {
-        let closes_now = self
-            .active_field
-            .as_ref()
-            .is_some_and(|active| self.depth == active.depth && active.tag == name);
-        if !closes_now {
+        let Some(active) = self.active_field.as_ref() else {
+            return;
+        };
+        if self.depth != active.depth {
+            return;
+        }
+        if active.tag != name {
             return;
         }
         let Some(finished) = self.active_field.take() else {
