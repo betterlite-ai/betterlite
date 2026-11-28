@@ -8,6 +8,8 @@ use betterlite_auth::trusted_network::request::NetworkRequest;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::login_throttle::{Raw, Settings};
 use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_redis::cache_primitives::decode::DecodeError;
+use betterlite_redis::redis_cache::error::RedisCacheError;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Builder;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -19,8 +21,6 @@ use crate::login_throttle::keys::LoginKeys;
 use crate::login_throttle::local::{Clock, LocalStore, ThrottleStores};
 use crate::login_throttle::redis::{BlockTtls, FailureLimits, LoginRedis, ThrottleRedisError};
 use crate::login_throttle::throttle::{LoginThrottle, ThrottleRuntime};
-
-// ---------- fake clock ----------
 
 #[derive(Clone, Debug, Default)]
 pub struct FakeClock(Arc<Mutex<f64>>);
@@ -43,8 +43,6 @@ impl FakeClock {
         Arc::new(move || *shared.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
-
-// ---------- local store ----------
 
 #[derive(Debug, Default)]
 struct LocalState {
@@ -163,8 +161,6 @@ impl LocalStore for FakeLocalStore {
     }
 }
 
-// ---------- shared store ----------
-
 #[derive(Debug, Default)]
 struct RedisState {
     counters: BTreeMap<String, i64>,
@@ -219,9 +215,9 @@ impl FakeRedis {
     fn fault(&self, operation: &str) -> Option<ThrottleRedisError> {
         match self.faults.get(operation).map(String::as_str) {
             Some("malformed") => Some(ThrottleRedisError::MalformedBlockTtls),
-            Some(_other) => Some(ThrottleRedisError::Unavailable {
-                reason: "injected fault".to_owned(),
-            }),
+            Some(_other) => Some(ThrottleRedisError::from(RedisCacheError::Decode(
+                DecodeError::UnsupportedLiteral,
+            ))),
             None => None,
         }
     }
@@ -344,8 +340,6 @@ impl LoginRedis for FakeRedis {
     }
 }
 
-// ---------- warning capture ----------
-
 #[derive(Clone, Debug, Default)]
 pub struct WarningLog {
     lines: Arc<Mutex<Vec<String>>>,
@@ -441,8 +435,6 @@ pub fn classify(message: &str) -> String {
     tag.to_owned()
 }
 
-// ---------- oracle input and output ----------
-
 #[derive(Debug, Deserialize)]
 pub struct OracleInput {
     pub config: Raw,
@@ -530,7 +522,6 @@ pub struct ErrorView {
     pub code: String,
     pub r#type: String,
     pub param: Option<String>,
-    pub message: String,
     pub headers: BTreeMap<String, String>,
 }
 
@@ -670,7 +661,6 @@ async fn attempt_step<'throttle>(
                 code: exception.code,
                 r#type: exception.error_type,
                 param: exception.param,
-                message: exception.message,
                 headers: exception.headers,
             });
             view

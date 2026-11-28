@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_counters::scripts::RegisteredScript;
 use redis::{Value, from_redis_value};
 use thiserror::Error;
@@ -43,19 +44,39 @@ pub struct FailureLimits {
     pub block_seconds: i64,
 }
 
+// the counters and the admin delete report different typed errors; both are one recoverable class to the throttle
+#[derive(Debug, Error)]
+pub enum UnavailableCause {
+    #[error(transparent)]
+    Cache(#[from] RedisCacheError),
+    #[error(transparent)]
+    Admin(#[from] RedisAdminError),
+}
+
 // LiteLLM catches RedisError, RedisCircuitBreakerOpenError, OSError and asyncio.TimeoutError, so every shared failure is one recoverable class; a reply that is not two whole numbers is a validation error and propagates instead
 #[derive(Debug, Error)]
 pub enum ThrottleRedisError {
-    #[error("redis failed while counting Admin UI sign-in attempts: {reason}")]
-    Unavailable { reason: String },
+    #[error("redis failed while counting Admin UI sign-in attempts: {source}")]
+    Unavailable {
+        #[source]
+        source: UnavailableCause,
+    },
     #[error("the login block TTL reply is not two whole numbers")]
     MalformedBlockTtls,
 }
 
 impl From<RedisCacheError> for ThrottleRedisError {
-    fn from(error: RedisCacheError) -> Self {
+    fn from(source: RedisCacheError) -> Self {
         Self::Unavailable {
-            reason: error.to_string(),
+            source: UnavailableCause::Cache(source),
+        }
+    }
+}
+
+impl From<RedisAdminError> for ThrottleRedisError {
+    fn from(source: RedisAdminError) -> Self {
+        Self::Unavailable {
+            source: UnavailableCause::Admin(source),
         }
     }
 }
@@ -121,13 +142,7 @@ impl LoginRedis for RedisLogin {
     }
 
     async fn delete_counter(&self, key: &str) -> Result<(), ThrottleRedisError> {
-        self.cache
-            .admin
-            .async_delete_cache(key)
-            .await
-            .map_err(|error| ThrottleRedisError::Unavailable {
-                reason: error.to_string(),
-            })?;
+        self.cache.admin.async_delete_cache(key).await?;
         Ok(())
     }
 }

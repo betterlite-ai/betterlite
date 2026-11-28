@@ -219,7 +219,6 @@ async def run_step(
             "code": error.code,
             "type": error.type,
             "param": error.param,
-            "message": error.message,
             "headers": _JSON.validate_python(error.headers),
         }
         view["error"] = payload

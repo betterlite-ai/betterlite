@@ -109,7 +109,7 @@ fn oracle_replays_every_step_with_a_shared_store() {
                     {FAILED},
                     {ALLOWED},
                     {FAILED},
-                    {{"step": "attempt", "outcome": "refused", "error": {{"code": "429", "type": "auth_error", "param": "username", "message": "Too many failed sign-in attempts. Try again later.", "headers": {{"Retry-After": "300"}}}}, "user_block": null, "source_block": null}}
+                    {{"step": "attempt", "outcome": "refused", "error": {{"code": "429", "type": "auth_error", "param": "username", "headers": {{"Retry-After": "300"}}}}, "user_block": null, "source_block": null}}
                 ],
                 "warnings": ["blocked", "refused"]
             }}

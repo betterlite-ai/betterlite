@@ -133,8 +133,8 @@ impl LoginThrottle {
         };
         match redis.block_ttls(keys).await {
             Ok(ttls) => Ok(ttls),
-            Err(ThrottleRedisError::Unavailable { reason }) => {
-                warn!("{REDIS_FALLBACK_WARNING}: {reason}");
+            Err(ThrottleRedisError::Unavailable { source }) => {
+                warn!("{REDIS_FALLBACK_WARNING}: {source}");
                 Ok(BlockTtls::default())
             }
             Err(error @ ThrottleRedisError::MalformedBlockTtls) => {
@@ -183,8 +183,8 @@ impl LoginThrottle {
             };
             match redis.record_failure(&keys, limits).await {
                 Ok(ttls) => return Ok(ttls),
-                Err(ThrottleRedisError::Unavailable { reason }) => {
-                    warn!("{REDIS_FALLBACK_WARNING}: {reason}");
+                Err(ThrottleRedisError::Unavailable { source }) => {
+                    warn!("{REDIS_FALLBACK_WARNING}: {source}");
                 }
                 Err(error @ ThrottleRedisError::MalformedBlockTtls) => {
                     return Err(LoginThrottleError::Shared(error));
