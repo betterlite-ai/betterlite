@@ -197,6 +197,20 @@ fn self_hosted_tls_follows_the_override() {
     );
     assert_eq!(truthy_logger.pre[0].use_ssl, json(r#""yes""#));
 
+    let (_, array_logger) = complete(&host, r#"{"use_ssl":[]}"#, "localhost:50051");
+    assert_eq!(
+        value(&probe(&host), "auth.kwargs"),
+        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":false}"#
+    );
+    assert_eq!(array_logger.pre[0].use_ssl, json("[]"));
+
+    let (_, object_logger) = complete(&host, r#"{"use_ssl":{}}"#, "localhost:50051");
+    assert_eq!(
+        value(&probe(&host), "auth.kwargs"),
+        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":false}"#
+    );
+    assert_eq!(object_logger.pre[0].use_ssl, json("{}"));
+
     let (_, zero_logger) = complete(
         &host,
         r#"{"use_ssl":0,"nvcf_function_id":"fn-123"}"#,
@@ -355,6 +369,8 @@ fn auth_and_recognition_failures_keep_the_python_cause() {
             .starts_with("riva.client.Auth failed")
     );
     assert_eq!(auth_error.status_code(), Some(500));
+    let auth_only = probe(&host);
+    assert_eq!(auth_only.events, vec!["auth"]);
 
     let type_error = failure(&host, &["auth_type_error"], None, FINAL_SPEC);
     assert!(matches!(type_error, RivaCallError::Config { .. }));
