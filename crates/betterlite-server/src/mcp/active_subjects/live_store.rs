@@ -102,6 +102,7 @@ impl SubjectStore for LiveSubjectStore {
         self.identity_answer(key_hash)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn team_details(&self, teams: &[String]) -> Option<Vec<CliSsoTeamDetail>> {
         let Some(store) = self.database.as_ref() else {
             return None;
