@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::minimax_speech::params::SUPPORTED_OPENAI_PARAMS;
@@ -6,7 +8,7 @@ use betterlite_openai::openai_base_config::Object as SpeechObject;
 use betterlite_prompts::arguments::json::Json;
 use http::HeaderMap;
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::api::speech_provider_contract::{
     ClassAttribute, SpeechHeaders, SpeechMappingOptions, SpeechRequestInput, TextToSpeechConfig,
@@ -75,15 +77,9 @@ async fn minimax_speech_maps_the_voice_without_a_selected_config() {
         .expect("the arm answers");
     let call = handler.first();
     assert_eq!(call.voice.as_deref(), Some("v-2"));
-    assert_eq!(
-        call.optional_params.get("voice_id"),
-        Some(&Value::String(String::from("v-2")))
-    );
-    assert_eq!(call.optional_params.get("speed"), Some(&json!(2.0)));
-    assert_eq!(
-        call.optional_params.get("format"),
-        Some(&Value::String(String::from("mp3")))
-    );
+    assert_eq!(call.optional_params.get("voice_id"), Some(&json!("v-2")));
+    assert_eq!(call.optional_params.get("speed"), Some(&json!(2.0_f64)));
+    assert_eq!(call.optional_params.get("format"), Some(&json!("mp3")));
 }
 
 #[tokio::test]
@@ -97,10 +93,7 @@ async fn minimax_speech_reads_the_voice_id_option_without_a_voice() {
         .expect("the arm answers");
     let call = handler.first();
     assert_eq!(call.voice.as_deref(), Some("v-9"));
-    assert_eq!(
-        call.optional_params.get("voice_id"),
-        Some(&Value::String(String::from("v-9")))
-    );
+    assert_eq!(call.optional_params.get("voice_id"), Some(&json!("v-9")));
 }
 
 #[tokio::test]
@@ -115,7 +108,7 @@ async fn minimax_speech_without_a_voice_uses_the_minimax_default() {
     assert_eq!(call.voice.as_deref(), Some("male-qn-qingse"));
     assert_eq!(
         call.optional_params.get("voice_id"),
-        Some(&Value::String(String::from("male-qn-qingse")))
+        Some(&json!("male-qn-qingse"))
     );
 }
 
@@ -134,7 +127,7 @@ async fn minimax_speech_with_a_selected_config_passes_the_options_unmapped() {
     let call = handler.first();
     assert_eq!(
         call.optional_params.get("response_format"),
-        Some(&Value::String(String::from("wav")))
+        Some(&json!("wav"))
     );
     assert_eq!(call.optional_params.len(), 1_usize);
 }
@@ -159,16 +152,13 @@ async fn minimax_speech_writes_the_base_and_key_into_litellm_params_only_when_se
         .await
         .expect("the arm answers");
     let call = handler.first();
-    assert_eq!(
-        call.litellm_params.get("user"),
-        Some(&Value::String(String::from("oracle")))
-    );
+    assert_eq!(call.litellm_params.get("user"), Some(&json!("oracle")));
     assert_eq!(call.litellm_params.contains_key("api_base"), base_present);
     assert_eq!(call.litellm_params.contains_key("api_key"), key_present);
     assert_eq!(call.api_base.as_deref(), api_base);
     assert_eq!(
         call.litellm_params.get("api_key"),
-        api_key.map(|key| Value::String(key.to_owned())).as_ref()
+        api_key.map(|key| json!(key)).as_ref()
     );
 }
 
@@ -218,7 +208,7 @@ async fn minimax_speech_passes_the_request_fields_to_the_handler() {
     fixture.input = String::from("hello there");
     fixture.api_key = Some(secret("sk-request"));
     fixture.ssl_verify = Some(false);
-    fixture.timeout = Some(std::time::Duration::from_secs(7));
+    fixture.timeout = Some(Duration::from_secs(7));
     let mut extra_headers = SpeechHeaders::new();
     extra_headers.insert(String::from("x-scope"), String::from("tenant"));
     fixture.extra_headers = Some(extra_headers);
@@ -282,18 +272,12 @@ fn minimax_config_builds_the_request_body_with_the_voice_setting() {
         headers: &SpeechHeaders::new(),
     });
     let body = data.dict_body.expect("the request carries a dict body");
-    assert_eq!(
-        body.get("model"),
-        Some(&Value::String(String::from("speech-02-hd")))
-    );
-    assert_eq!(
-        body.get("text"),
-        Some(&Value::String(String::from("hello")))
-    );
+    assert_eq!(body.get("model"), Some(&json!("speech-02-hd")));
+    assert_eq!(body.get("text"), Some(&json!("hello")));
     assert_eq!(
         body.get("voice_setting")
             .and_then(|setting| setting.get("voice_id")),
-        Some(&Value::String(String::from("female-shaonv")))
+        Some(&json!("female-shaonv"))
     );
     assert_eq!(data.ssml_body, None);
     assert_eq!(
@@ -364,9 +348,6 @@ fn minimax_config_maps_the_voice_and_the_options() {
         .expect("the fixture options parse");
     let (voice, mapped) = config.map_openai_params("speech-02-hd", optional_params, &options);
     assert_eq!(voice.as_deref(), Some("v-2"));
-    assert_eq!(
-        mapped.get("voice_id"),
-        Some(&Value::String(String::from("v-2")))
-    );
-    assert_eq!(mapped.get("speed"), Some(&json!(2.0)));
+    assert_eq!(mapped.get("voice_id"), Some(&json!("v-2")));
+    assert_eq!(mapped.get("speed"), Some(&json!(2.0_f64)));
 }

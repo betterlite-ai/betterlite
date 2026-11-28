@@ -12,7 +12,7 @@ use secrecy::ExposeSecret as _;
 
 use crate::regional_host_dispatch::gigachat::{GigachatTokenBearer, chat_config, image_downloader};
 
-use super::support::{FailingTokens, FakeTokens, FakeTransport, proxy_policy, secret, secret_text};
+use super::support::{FailingTokens, FakeTokens, FakeTransport, proxy_policy, secret};
 
 const IMAGE: &str = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -36,7 +36,11 @@ async fn gigachat_token_bearer_returns_the_service_token() {
         .expect("the bearer answers");
     assert_eq!(token.expose_secret(), "token-1");
     assert_eq!(
-        secret_text(tokens.request().credentials.as_ref()),
+        tokens
+            .request()
+            .credentials
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("client-id:client-secret"))
     );
 }

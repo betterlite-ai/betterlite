@@ -1,52 +1,39 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json as LogJson;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 use serde_json::json;
 
 use crate::hosted_platform_dispatch::handler::HandlerError;
 use crate::regional_host_dispatch::error::DispatchError;
 
-use super::support::{
-    ChatFixture, ChatRecorder, chat_dispatch, headers, params, secret, secret_text,
-};
+use super::support::{ChatFixture, ChatRecorder, chat_dispatch, headers, params, secret};
 
 // LiteLLM's five-step GigaChat chain: the request key, the global, the section key, then the API key env and the credentials env
 #[rstest]
 #[case::request_key(
-    Some("sk-request"),
-    Some("sk-global"),
-    Some("sk-section"),
-    Some("sk-env"),
-    Some("sk-cred"),
+    [Some("sk-request"), Some("sk-global"), Some("sk-section"), Some("sk-env"), Some("sk-cred")],
     Some("sk-request")
 )]
 #[case::global_key(
-    None,
-    Some("sk-global"),
-    Some("sk-section"),
-    Some("sk-env"),
-    Some("sk-cred"),
+    [None, Some("sk-global"), Some("sk-section"), Some("sk-env"), Some("sk-cred")],
     Some("sk-global")
 )]
 #[case::section_key(
-    None,
-    None,
-    Some("sk-section"),
-    Some("sk-env"),
-    Some("sk-cred"),
+    [None, None, Some("sk-section"), Some("sk-env"), Some("sk-cred")],
     Some("sk-section")
 )]
-#[case::api_key_env(None, None, None, Some("sk-env"), Some("sk-cred"), Some("sk-env"))]
-#[case::credentials_env(None, None, None, None, Some("sk-cred"), Some("sk-cred"))]
-#[case::no_key(None, None, None, None, None, None)]
-fn gigachat_key_chain(
-    #[case] request_key: Option<&str>,
-    #[case] global_key: Option<&str>,
-    #[case] section_key: Option<&str>,
-    #[case] api_key_env: Option<&str>,
-    #[case] credentials_env: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
+#[case::api_key_env([None, None, None, Some("sk-env"), Some("sk-cred")], Some("sk-env"))]
+#[case::credentials_env([None, None, None, None, Some("sk-cred")], Some("sk-cred"))]
+#[case::no_key([None, None, None, None, None], None)]
+fn gigachat_key_chain(#[case] sources: [Option<&str>; 5], #[case] expected: Option<&str>) {
+    let [
+        request_key,
+        global_key,
+        section_key,
+        api_key_env,
+        credentials_env,
+    ] = sources;
     let mut fixture = ChatFixture::new();
     fixture.provider = String::from("gigachat");
     fixture.api_key = request_key.map(secret);
@@ -58,7 +45,11 @@ fn gigachat_key_chain(
     let (outcome, _state) = chat_dispatch(ChatConfigTag::GigaChat, &fixture, &handler);
     outcome.expect("the gigachat arm answers");
     assert_eq!(
-        secret_text(handler.first().api_key.as_ref()),
+        handler
+            .first()
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         expected.map(str::to_owned)
     );
 }

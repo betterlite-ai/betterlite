@@ -1,47 +1,39 @@
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use super::embedding::call_for;
-use super::support::{EmbeddingFixture, headers, secret, secret_text};
+use super::support::{EmbeddingFixture, headers, secret};
 
 // the GigaChat embedding chain reads the credentials env before the API key env, the reverse of its chat chain
 #[rstest]
 #[case::request_key(
-    Some("sk-request"),
-    Some("sk-global"),
-    Some("sk-section"),
-    Some("sk-cred"),
-    Some("sk-env"),
+    [Some("sk-request"), Some("sk-global"), Some("sk-section"), Some("sk-cred"), Some("sk-env")],
     Some("sk-request")
 )]
 #[case::global_key(
-    None,
-    Some("sk-global"),
-    Some("sk-section"),
-    Some("sk-cred"),
-    Some("sk-env"),
+    [None, Some("sk-global"), Some("sk-section"), Some("sk-cred"), Some("sk-env")],
     Some("sk-global")
 )]
 #[case::section_key(
-    None,
-    None,
-    Some("sk-section"),
-    Some("sk-cred"),
-    Some("sk-env"),
+    [None, None, Some("sk-section"), Some("sk-cred"), Some("sk-env")],
     Some("sk-section")
 )]
-#[case::credentials_env(None, None, None, Some("sk-cred"), Some("sk-env"), Some("sk-cred"))]
-#[case::api_key_env(None, None, None, None, Some("sk-env"), Some("sk-env"))]
-#[case::no_key(None, None, None, None, None, None)]
+#[case::credentials_env([None, None, None, Some("sk-cred"), Some("sk-env")], Some("sk-cred"))]
+#[case::api_key_env([None, None, None, None, Some("sk-env")], Some("sk-env"))]
+#[case::no_key([None, None, None, None, None], None)]
 fn gigachat_embedding_key_chain(
-    #[case] request_key: Option<&str>,
-    #[case] global_key: Option<&str>,
-    #[case] section_key: Option<&str>,
-    #[case] credentials_env: Option<&str>,
-    #[case] api_key_env: Option<&str>,
+    #[case] sources: [Option<&str>; 5],
     #[case] expected: Option<&str>,
 ) {
+    let [
+        request_key,
+        global_key,
+        section_key,
+        credentials_env,
+        api_key_env,
+    ] = sources;
     let mut fixture = EmbeddingFixture::new();
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
@@ -50,7 +42,9 @@ fn gigachat_embedding_key_chain(
     fixture.settings.environment.gigachat_api_key = api_key_env.map(secret);
     let call = call_for(ProviderId::Gigachat, &fixture).expect("the arm answers");
     assert_eq!(
-        secret_text(call.api_key.as_ref()),
+        call.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         expected.map(str::to_owned)
     );
 }

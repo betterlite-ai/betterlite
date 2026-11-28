@@ -6,6 +6,7 @@ use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 
 use crate::api::speech_provider_contract::SpeechHeaders;
+use crate::regional_host_dispatch::speech::SpeechContext;
 
 pub(crate) struct SpeechFixture {
     pub(crate) input: String,
@@ -35,6 +36,22 @@ impl SpeechFixture {
             ssl_verify: None,
             timeout: None,
             settings: SectionSettings::default(),
+        }
+    }
+
+    pub(crate) fn context(&self) -> SpeechContext<'_> {
+        SpeechContext {
+            api_base: self.api_base.as_deref(),
+            api_key: self.api_key.as_ref(),
+            extra_headers: self.extra_headers.as_ref(),
+            input: &self.input,
+            litellm_params: &self.litellm_params,
+            model: &self.model,
+            optional_params: &self.optional_params,
+            ssl_verify: self.ssl_verify,
+            timeout: self.timeout,
+            voice: self.voice.clone(),
+            settings: &self.settings,
         }
     }
 }

@@ -15,19 +15,16 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::regional_host_dispatch::chat::dispatch;
 use crate::regional_host_dispatch::context::CallLogging;
 use crate::regional_host_dispatch::error::DispatchError;
 
 mod chat;
-mod chat_context;
 mod chat_recorder;
 mod embedding;
-mod embedding_context;
 mod speech;
-mod speech_context;
 mod speech_recorder;
 mod tokens;
 mod transport;
@@ -87,10 +84,6 @@ pub(super) fn redactor() -> Redactor {
 
 pub(super) fn secret(value: &str) -> SecretString {
     SecretString::from(value)
-}
-
-pub(super) fn secret_text(value: Option<&SecretString>) -> Option<String> {
-    value.map(|key| key.expose_secret().to_owned())
 }
 
 pub(super) fn params(source: &str) -> Object {
