@@ -129,6 +129,58 @@ fn a_single_logout_url_is_checked_only_when_present_and_not_empty() {
 }
 
 #[test]
+fn an_empty_single_sign_on_url_is_reported_as_missing() {
+    let empty = merged(
+        IdpSettings {
+            sso_url: Some(String::new()),
+            ..idp_with(Some("urn:example:idp"))
+        },
+        true,
+        false,
+    );
+    assert_eq!(
+        empty.validate(false).unwrap_err().codes,
+        vec!["idp_sso_not_found"]
+    );
+}
+
+#[test]
+fn a_single_sign_on_url_without_a_scheme_is_reported_as_invalid() {
+    let invalid = merged(
+        IdpSettings {
+            sso_url: Some("not a url".to_owned()),
+            ..idp_with(Some("urn:example:idp"))
+        },
+        true,
+        false,
+    );
+    assert_eq!(
+        invalid.validate(false).unwrap_err().codes,
+        vec!["idp_sso_url_invalid"]
+    );
+}
+
+#[test]
+fn an_empty_acs_url_is_reported_as_missing() {
+    let mut empty = merged(idp_with(Some("urn:example:idp")), true, false);
+    empty.acs_url = String::new();
+    assert_eq!(
+        empty.validate(false).unwrap_err().codes,
+        vec!["sp_acs_not_found"]
+    );
+}
+
+#[test]
+fn an_acs_url_without_a_scheme_is_reported_as_invalid() {
+    let mut invalid = merged(idp_with(Some("urn:example:idp")), true, false);
+    invalid.acs_url = "not a url".to_owned();
+    assert_eq!(
+        invalid.validate(false).unwrap_err().codes,
+        vec!["sp_acs_url_invalid"]
+    );
+}
+
+#[test]
 fn a_multiple_certificate_counts_and_no_certificate_is_required_without_the_flags() {
     let multiple = IdpSettings {
         entity_id: Some("urn:example:idp".to_owned()),
