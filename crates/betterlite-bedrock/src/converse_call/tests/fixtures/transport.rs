@@ -9,6 +9,7 @@ use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
 use futures_util::{Stream, StreamExt as _};
@@ -22,10 +23,10 @@ use super::bedrock::agentcore_stream::transport::{
 };
 use super::bedrock::aws_settings::sources::Credentials;
 use super::bedrock::converse_call::transport::{ConverseClientFactory, StreamClient};
+use super::bedrock::credentials::CredentialSource;
 use super::bedrock::credentials::error::CredentialError;
-use super::bedrock::rerank::plan::CredentialSource;
 use super::bedrock::rerank::transport::{
-    ClientKind, RerankHttpReply, RerankHttpRequest, RerankTransport, TransferError,
+    RerankHttpReply, RerankHttpRequest, RerankTransport, TransferError,
 };
 use super::input::{Failure, Input, Observation};
 

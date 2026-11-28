@@ -1,4 +1,4 @@
-use betterlite_anthropic::chat_call::transport::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -34,7 +34,7 @@ fn identity(
 ) -> Run {
     execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         caller_headers: headers,
         argument_key: caller,
         configured_key: configured,
@@ -125,7 +125,7 @@ fn assert_secret_safe(run: &Run) {
 fn anthropic_chat_secret_safe_failure() {
     let rejected = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         configured_key: Some(CONFIGURED_KEY),
         token: Some(TOKEN),
         trip: Trip::Status {
@@ -162,7 +162,7 @@ fn anthropic_chat_secret_safe_failure() {
 fn assert_early_failures_are_secret_safe() {
     let unreachable = execute(&Setup {
         style: Style::Async,
-        supplied_kind: ClientKind::Async,
+        supplied_kind: ClientKind::Asynchronous,
         configured_key: Some(CONFIGURED_KEY),
         trip: Trip::Unknown("connect failed"),
         ..Setup::chat()

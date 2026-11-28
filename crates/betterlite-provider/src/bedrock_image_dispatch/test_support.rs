@@ -4,12 +4,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::image_call::plan::CredentialSource;
 use betterlite_bedrock::image_call::transport::{
-    ClientFactory, ClientKind, ImageReply, ImageRequest, ImageTransport, TransferError,
+    ClientFactory, ImageReply, ImageRequest, ImageTransport, TransferError,
 };
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -114,7 +115,7 @@ impl ClientFactory for Factory {
     }
 
     fn async_client(&self, timeout: Option<Duration>) -> Self::Client {
-        self.client(ClientKind::Async, timeout)
+        self.client(ClientKind::Asynchronous, timeout)
     }
 }
 

@@ -55,7 +55,8 @@ pub mod virtual_key_routes;
 
 use std::{
     collections::BTreeSet,
-    future::ready,
+    future::{Future, ready},
+    pin::Pin,
     sync::{Arc, PoisonError},
 };
 
@@ -71,7 +72,9 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
-use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
+use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
+use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
@@ -81,7 +84,6 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use futures_util::future::BoxFuture;
 use secrecy::{ExposeSecret as _, SecretString};
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -91,6 +93,24 @@ pub(crate) async fn authenticate(
 ) -> Response {
     if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
+    }
+    // both OAuth2 branches run before LiteLLM reads the master key, so they run here too
+    let pre_stage = oauth_tokens::pre_stage(
+        request.headers(),
+        request.uri().path(),
+        request.extensions(),
+    )
+    .await;
+    match pre_stage {
+        oauth_tokens::PreStage::Skipped => {}
+        oauth_tokens::PreStage::Authenticated(context) => {
+            request.extensions_mut().insert(*context);
+            return next.run(request).await;
+        }
+        oauth_tokens::PreStage::Rejected(failure) => {
+            let context = auth_errors::FailureContext::of(&request, None);
+            return context.respond(&failure, failure_response).await;
+        }
     }
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
@@ -168,32 +188,17 @@ fn stage_input(
         TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => org_route_stage_input(request, authenticated, body),
+        AuthBackend::AuthRoutePolicy => route_policy_stage_input(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
-            auth_end_users::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::AuthEndUserIdentity => end_user_identity_stage(request, authenticated, body),
+        AuthBackend::AuthEndUsers => end_user_identity::budget_stage(request, authenticated, body),
         AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
         AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
             model_grant_intersection::stage_input(request, authenticated)?,
         ))),
     }
-}
-
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, StageFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 fn model_pattern_input(
@@ -206,9 +211,7 @@ fn model_pattern_input(
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
     let stage = model_stage_input(request, context.clone(), resolver);
-    if backend == AuthBackend::AuthRequestModels {
-        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-    }
+    // the request model stage only resolves, so it runs in the shared input builder
     let requested = match resolve(&stage) {
         Ok(requested) => requested,
         Err(error) => {
@@ -216,6 +219,9 @@ fn model_pattern_input(
             return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
     };
+    if backend == AuthBackend::AuthRequestModels {
+        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+    }
     let rule = rule_for_request(request);
     let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
@@ -234,11 +240,12 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
-// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits this dispatch, which boxes each stage's own prefetch into the one future type
-pub(crate) fn prefetch_stage(
-    input: StageInput,
-) -> BoxFuture<'static, Result<StageInput, StageFailure>> {
-    match input {
+// the stage prefetch a stage module returns, erased so the one match below stays one arm per stage
+type StagePrefetch = Pin<Box<dyn Future<Output = Result<StageInput, StageFailure>> + Send>>;
+
+// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
+pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
+    let stage_future: StagePrefetch = match input {
         StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
         StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
@@ -251,7 +258,10 @@ pub(crate) fn prefetch_stage(
         }
         StageInput::AuthTenantBudgets(stage) => Box::pin(auth_tenant_budgets::prefetched(stage)),
         StageInput::AuthOrgLookup(stage) => Box::pin(auth_org_lookup::prefetched(stage)),
-        StageInput::AuthEndUsers(stage) => Box::pin(auth_end_users::prefetched(stage)),
+        StageInput::AuthEndUserIdentity(stage) => {
+            Box::pin(StageInput::prefetch_end_user_identity(stage))
+        }
+        StageInput::AuthEndUsers(stage) => Box::pin(end_user_identity::prefetch_budget(stage)),
         StageInput::ModelGrantIntersection(stage) => {
             Box::pin(StageInput::prefetch_model_grants(stage))
         }
@@ -267,10 +277,10 @@ pub(crate) fn prefetch_stage(
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
-        | StageInput::AuthPolicySupport(_)) => {
-            Box::pin(ready(Ok::<StageInput, StageFailure>(other)))
-        }
-    }
+        | StageInput::AuthPolicySupport(_)
+        | StageInput::AuthRoutePolicy(_)) => Box::pin(ready(Ok(other))),
+    };
+    stage_future.await
 }
 fn master_key_stage(
     input: &StageInput,

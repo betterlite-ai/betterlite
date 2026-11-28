@@ -1,0 +1,10 @@
+kind: helper
+name: auth-route-policy-non-admin-401-auth-error
+call:
+  auth_route_policy:
+    function: route_allowed
+    route: /user/new
+    method: POST
+    body: {}
+env: {}
+compare: {ignore: []}

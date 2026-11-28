@@ -1,6 +1,17 @@
+mod convert;
+mod error;
+mod native;
+mod service;
+mod session;
+mod source;
+
 use pyo3::prelude::*;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The vector_manage family task adds its native functions here.
+use self::native::NativeVectorManageSession;
+
+// The vector store manage session and the exception every failed call of it carries.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    error::register(module)?;
+    module.add_class::<NativeVectorManageSession>()?;
     Ok(())
 }

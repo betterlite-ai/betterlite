@@ -1,0 +1,26 @@
+kind: helper
+name: auth-route-policy-viewer-table-and-verbs
+call:
+  auth_route_policy:
+    function: viewer_access
+    route: /key/generate
+    method: POST
+    body: {}
+calls:
+  - auth_route_policy:
+      function: viewer_access
+      route: /key/key-1/reset_spend
+      method: POST
+      body: {}
+  - auth_route_policy:
+      function: viewer_access
+      route: /key/key-1/regenerate
+      method: POST
+      body: {}
+  - auth_route_policy:
+      function: viewer_access
+      route: /team/team-1
+      method: GET
+      body: {}
+env: {}
+compare: {ignore: []}

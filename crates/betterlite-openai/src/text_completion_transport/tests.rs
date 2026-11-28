@@ -25,7 +25,8 @@ use super::logging::{
     CompletionLogger as _, PostCallRecord, PreCallRecord, PrePostLogger, ResponseKind,
     SecretHeaders, base_hidden_params,
 };
-use super::sdk::{ClientKind, HttpClientSource, SdkArguments, SdkError, StatusError};
+use super::sdk::{HttpClientSource, SdkArguments, SdkError, StatusError};
+use betterlite_http::client_kind::ClientKind;
 use support::{Answer, RecordingLogger};
 
 type Transport = super::TextCompletionTransport<support::Constructor>;

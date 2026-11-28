@@ -7,11 +7,12 @@ use secrecy::ExposeSecret as _;
 use url::Url;
 
 use crate::files::error::StatusError;
-use crate::speech::client::{ClientKind, SpeechClient, SpeechConnection, select_client};
+use crate::speech::client::{SpeechClient, SpeechConnection, select_client};
 use crate::speech::error::SpeechError;
 use crate::speech::logging::{SpeechLogRecord, SpeechLogger};
 use crate::speech::request::{SpeechRequest, logged_body, wire_body};
 use crate::speech::result::{SpeechResponse, SpeechTransport, read_error_body};
+use betterlite_http::client_kind::ClientKind;
 
 pub struct SpeechCall<'call> {
     pub request: SpeechRequest<'call>,
@@ -89,7 +90,7 @@ where
         aspeech,
     } = call;
     let kind = if aspeech {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };

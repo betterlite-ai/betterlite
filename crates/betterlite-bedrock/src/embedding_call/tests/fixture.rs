@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -35,15 +36,16 @@ use tokio::runtime::{Builder, Runtime};
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use crate::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest,
-    SuppliedClient, Timeout, TransferError,
+    ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest, Timeout,
+    TransferError,
 };
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::plan::remaining_options;
 use crate::embedding_call::{
-    Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse,
-    EmbeddingEnvironment, LogContext, ParamMap, embeddings,
+    Clock, Dependencies, EmbeddingCall, EmbeddingCallResponse, EmbeddingEnvironment, LogContext,
+    ParamMap, embeddings,
 };
 use crate::signing::executor::AwsSigningExecutor;
 
@@ -339,7 +341,7 @@ impl ClientFactory for Factory {
 
     fn async_client(&self, provider: &str, timeout: Option<Timeout>) -> Self::Client {
         self.add(ClientCall {
-            kind: ClientKind::Async,
+            kind: ClientKind::Asynchronous,
             provider: Some(provider.to_owned()),
             timeout,
         });

@@ -1,0 +1,13 @@
+id: B10226
+milestone: R2 bug fixes
+title: One EntryPoint in betterlite-oracle-helper-api for the oracle's 34 Sync and Async entry-point enums
+status: todo
+depends_on: [B10200, B10216, B10220, B10224]
+file: tasks/B10226-oracle-entry-point-home.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

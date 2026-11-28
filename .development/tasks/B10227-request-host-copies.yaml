@@ -1,0 +1,56 @@
+id: B10227
+title: One RequestHost in betterlite-server reads a request's scheme and host for the agent skills index, the agent hub, the SAML routes and the queue route
+description: >-
+  Four betterlite-server routes read the same two facts from a request in the same steps: the scheme is the URI's scheme or "http", and the host is the URI's authority, else the Host header when it is valid text, else empty. `request_base_url` in crates/betterlite-server/src/agent_skills_routes/index.rs L101-L115 and `request_base_url` in crates/betterlite-server/src/public_endpoints/resource_hubs/agent_hub.rs L99-L113 are the same function line for line, and both end in `format!("{scheme}://{host}{root_path}/")`. `request_url` in crates/betterlite-server/src/invitation_routes/queue/request.rs L244-L263 runs the same two reads over `Parts`, then appends the path and query, and returns the path alone when the host is empty. B1625 lands first with a fourth copy: `request_base_url` in crates/betterlite-server/src/saml_entrypoints/routes.rs, the same function line for line as the two above. Copied code is not allowed, so this task writes one home and moves the four onto it. It is a refactor: every URL these routes build stays the same.
+
+
+  The home. The empty module crates/betterlite-server/src/request_host.rs and its `pub mod request_host;` line in lib.rs are on main. It holds `#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub struct RequestHost<'request> { pub scheme: &'request str, pub authority: &'request str }`, `pub fn read(uri: &'request Uri, headers: &'request HeaderMap) -> Self` with the two reads above, and `pub fn base_url(self, root_path: &str) -> String` returning `format!("{}://{}{root_path}/", self.scheme, self.authority)`. Both take axum's http types, so a `Request` passes `request.uri()` and `request.headers()` and a `Parts` passes `&parts.uri` and `&parts.headers`.
+
+
+  Callers. index.rs L52, agent_hub.rs L44 and saml_entrypoints/routes.rs (its resolved base URL) read `RequestHost::read(request.uri(), request.headers()).base_url(&root_path)`, and the three private `request_base_url` functions go. request.rs keeps `request_url`, since only it appends the path and returns the bare path for an empty host, but takes the scheme and authority from `RequestHost::read(&parts.uri, &parts.headers)` in place of its own reads. Imports that only the deleted code used go with it: `Authority` and `header` in index.rs and agent_hub.rs, `Authority` in saml_entrypoints/routes.rs (it keeps `header` for its other reads), `Authority` and `HOST` in request.rs.
+
+
+  Tests. crates/betterlite-server/src/request_host/tests.rs holds one rstest table for read and base_url: an absolute URI with a Host header (the URI wins), a path-only URI with a Host header, a Host header that is not valid text (empty host), no authority and no Host (empty host), and a root path ("" and "/litellm"). The routes' own tests already pin each caller's URLs: agent_skills_routes' index tests (tests.rs L53 and L249, support.rs L452-L453), resource_hubs' agent hub tests, saml_entrypoints' tests and invitation_routes' queue_builds_the_request_like_litellm. They must pass unchanged.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-server/src/request_host.rs
+    - crates/betterlite-server/src/request_host/**
+    - crates/betterlite-server/src/agent_skills_routes/index.rs
+    - crates/betterlite-server/src/public_endpoints/resource_hubs/agent_hub.rs
+    - crates/betterlite-server/src/invitation_routes/queue/request.rs
+    - crates/betterlite-server/src/saml_entrypoints/routes.rs
+  lint_tables: false
+references: []
+dod:
+  - text: RequestHost in crates/betterlite-server/src/request_host.rs is the one place betterlite-server reads a request's scheme or falls back from the URI's authority to the Host header, and the three request_base_url copies are gone.
+    proof: [request-host-copies, request-host-tests]
+  - text: The agent skills index, the agent hub, the SAML routes and the queue route build the same URLs as before.
+    proof: [request-host-tests]
+checks:
+  optional: []
+  commands:
+    - id: request-host-copies
+      why: a route still reads the scheme or the Host fallback itself, so the copy is still in place
+      run: |-
+        grep -q 'pub struct RequestHost' crates/betterlite-server/src/request_host.rs &&
+        grep -q 'pub fn base_url' crates/betterlite-server/src/request_host.rs &&
+        test -z "$(grep -rnF 'scheme_str().unwrap_or("http")' crates/betterlite-server/src --include=*.rs | grep -v '^crates/betterlite-server/src/request_host.rs:')" &&
+        test -z "$(grep -nw 'fn request_base_url' crates/betterlite-server/src/agent_skills_routes/index.rs crates/betterlite-server/src/public_endpoints/resource_hubs/agent_hub.rs crates/betterlite-server/src/saml_entrypoints/routes.rs)" &&
+        grep -q 'RequestHost::read' crates/betterlite-server/src/invitation_routes/queue/request.rs
+    - id: request-host-tests
+      why: the home or a route now builds a different base URL or request URL
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(request_host|agent_skills_routes|public_endpoints::resource_hubs|saml_entrypoints|invitation_routes::tests::queue)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "MCP's base URL reads (mcp/admission_fallback/challenge.rs request_base_url through betterlite-mcp's get_request_base_url, and the request_base_url and base_url traits in mcp/oauth_protected.rs and routes/mcp_byok_oauth.rs): they follow PROXY_BASE_URL and the forwarded headers, a different rule."
+pitfalls:
+  - "The scheme comes from the URI even when the host comes from the Host header, so a path-only URI gives \"http\" whatever the header says. Keep that: all three copies do it today."
+  - "request_url returns the bare path when the host is empty and base_url does not, so only the two reads move into RequestHost and the empty-host branch stays in request.rs."
+review_level: standard
+budget:
+  max_changed_lines: 230
+  max_new_expects: 0

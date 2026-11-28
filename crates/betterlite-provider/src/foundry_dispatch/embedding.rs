@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use betterlite_foundry::credentials::error::CredentialsError;
 use betterlite_foundry::embeddings::call::{
-    EmbeddingClientFactory, EmbeddingMode, FoundryEmbeddingRequest, SuppliedClient, TextEmbedding,
-    embedding,
+    EmbeddingClientFactory, FoundryEmbeddingRequest, TextEmbedding, embedding,
 };
 use betterlite_foundry::embeddings::error::FoundryEmbeddingError;
 use betterlite_foundry::embeddings::reply::FoundryEmbeddingResponse;
 use betterlite_foundry::embeddings::request::FoundryEmbeddingOptions;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use thiserror::Error;
@@ -22,7 +23,7 @@ pub struct Call<'data> {
     pub api_key: Option<&'data SecretString>,
     pub params: &'data Object,
     pub timeout: Duration,
-    pub mode: EmbeddingMode,
+    pub mode: ClientKind,
 }
 
 #[derive(Debug, Error)]

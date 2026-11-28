@@ -1,0 +1,5 @@
+kind: helper
+name: "client-auth-empty-alias-map"
+call: {"b7490":{"function":"client_auth","server_headers":{"gateway":{}}}}
+env: {}
+compare: {"ignore":[]}

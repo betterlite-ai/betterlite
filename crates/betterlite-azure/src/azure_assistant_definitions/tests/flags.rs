@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::AssistantCreate;
 
@@ -15,7 +15,7 @@ use super::support::{
 const KINDS: [(Option<bool>, ClientKind); 3] = [
     (None, ClientKind::Sync),
     (Some(false), ClientKind::Sync),
-    (Some(true), ClientKind::Async),
+    (Some(true), ClientKind::Asynchronous),
 ];
 
 pub(super) async fn check() {

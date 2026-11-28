@@ -1,10 +1,9 @@
 use std::collections::BTreeSet;
 
 use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
-use betterlite_bedrock::bedrock_embedding_io::transport::{
-    EmbeddingCall, SuppliedClient, post_embedding,
-};
+use betterlite_bedrock::bedrock_embedding_io::transport::{EmbeddingCall, post_embedding};
 use betterlite_bedrock::bedrock_settings::{BedrockError, ErrorHeaders};
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
 

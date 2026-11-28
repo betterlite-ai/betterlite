@@ -6,9 +6,8 @@ use std::string::FromUtf8Error;
 use std::time::Duration;
 
 use aws_credential_types::Credentials;
-use aws_sigv4::http_request::SigningError;
-use aws_sigv4::sign::v4::signing_params::BuildError;
-use http::header::{InvalidHeaderName, InvalidHeaderValue};
+use betterlite_sigv4::error::SigV4Error;
+use http::header::InvalidHeaderValue;
 use http::{HeaderMap, StatusCode};
 use secrecy::{SecretSlice, SecretString};
 use serde::Serialize;
@@ -141,12 +140,8 @@ where
     Credentials(ResolverError),
     #[error("failed to serialize the Secrets Manager request body: {0}")]
     Body(#[source] serde_json::Error),
-    #[error("failed to build the SigV4 signing parameters: {0}")]
-    SigningParams(#[source] BuildError),
     #[error("failed to sign the Secrets Manager request: {0}")]
-    Signing(#[source] SigningError),
-    #[error("signed header name is invalid: {0}")]
-    HeaderName(#[source] InvalidHeaderName),
+    Signing(#[source] SigV4Error),
     #[error("signed header value is invalid: {0}")]
     HeaderValue(#[source] InvalidHeaderValue),
     #[error("HTTP error occurred: {text}")]
