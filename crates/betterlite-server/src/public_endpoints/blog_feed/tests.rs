@@ -101,7 +101,7 @@ async fn success_is_cached() {
 
 #[tokio::test]
 async fn expires_at_one_hour() {
-    let clock = Arc::new(StepClock::new([3699.0, 3700.0]));
+    let clock = Arc::new(StepClock::new([3_699.0_f64, 3_700.0_f64]));
     let script = Script::new(vec![reply(200, OTHER)]);
     let stepped = Arc::clone(&clock);
     let (feed, _) = feed(
@@ -127,7 +127,7 @@ async fn expires_at_one_hour() {
 
 #[tokio::test]
 async fn timestamp_precedes_fetch() {
-    let clock = Arc::new(StepClock::new([100.0, 500.0]));
+    let clock = Arc::new(StepClock::new([100.0_f64, 500.0_f64]));
     let script = Script::new(vec![reply(200, FRESH)]);
     let stepped = Arc::clone(&clock);
     let (feed, _) = feed(script, FEED_URL, false, stepped, Arc::new(backup_posts()));
@@ -142,7 +142,7 @@ async fn timestamp_precedes_fetch() {
 
 #[tokio::test]
 async fn failed_refresh_keeps_cache() {
-    let clock = Arc::new(StepClock::new([4000.0, 4001.0]));
+    let clock = Arc::new(StepClock::new([4_000.0_f64, 4_001.0_f64]));
     let script = Script::new(vec![reply(503, ""), reply(200, OTHER)]);
     let (feed, warnings) = feed(
         script.clone(),
@@ -258,7 +258,7 @@ async fn deep_nesting_falls_back() {
 
 #[tokio::test]
 async fn backwards_clock_keeps_cache() {
-    let clock = Arc::new(StepClock::new([500.0]));
+    let clock = Arc::new(StepClock::new([500.0_f64]));
     let script = Script::new(Vec::new());
     let (feed, _) = feed(
         script.clone(),

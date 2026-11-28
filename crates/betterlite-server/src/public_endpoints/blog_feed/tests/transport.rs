@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 use super::support::{FRESH, backup_post, backup_posts, feed, post};
 use crate::public_endpoints::blog_feed::testing::FixedClock;
@@ -214,10 +214,10 @@ async fn cancelling_a_fetch_does_not_wedge_the_feed() {
         Arc::new(backup_posts()),
     );
     let mut fetch = Box::pin(feed.get_blog_posts());
-    tokio::select! {
-        ready = accepted.recv() => ready.unwrap(),
-        result = &mut fetch => panic!("the fetch answered before the server held it: {result:?}"),
-    }
+    accepted.recv().await.unwrap();
+    timeout(Duration::from_millis(50), &mut fetch)
+        .await
+        .expect_err("the fetch answered before the server held it");
     drop(fetch);
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![post("Fresh", "https://fresh")]);

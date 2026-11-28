@@ -175,7 +175,7 @@ fn sequence_answer(calls: &[GetBlogPostsCall]) -> HelperResult {
     let mut snapshots = Vec::new();
     let mut requests = Vec::new();
     let mut cached: Option<Vec<BlogPost>> = None;
-    let mut last_fetch_time = 0.0;
+    let mut last_fetch_time = 0.0_f64;
     for call in calls {
         let script = Script::new(vec![answer_for(&call.response)]);
         let warnings = Arc::new(RecordingWarnings::default());
