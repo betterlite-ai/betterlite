@@ -388,6 +388,40 @@ async fn a_model_prefixed_with_its_renamed_provider_loses_that_prefix() {
 }
 
 #[tokio::test]
+async fn an_undeclared_cohere_chat_model_is_labelled_without_its_cohere_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "cohere/command-r-08-2024".to_owned();
+    record.custom_llm_provider = None;
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    assert_eq!(
+        series_label(&fixture.registry, REQUESTS, "model"),
+        "command-r-08-2024"
+    );
+}
+
+#[tokio::test]
+async fn an_undeclared_anthropic_text_model_is_labelled_without_its_anthropic_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "anthropic/claude-2".to_owned();
+    record.custom_llm_provider = None;
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    assert_eq!(
+        series_label(&fixture.registry, REQUESTS, "model"),
+        "claude-2"
+    );
+}
+
+#[tokio::test]
 async fn deployment_remaining_headers_set_the_gauges() {
     let fixture = fixture();
     let mut record = rich_payload(dec("2.5"));
