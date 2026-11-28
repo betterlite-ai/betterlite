@@ -9,12 +9,12 @@ use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use crate::bedrock_embedding_io::transport::ClientFactory;
+use crate::credentials::CredentialSource;
 use crate::embedding_jobs::logging::StatusLogger;
 use crate::embedding_jobs::status::{
     AsyncInvokeStatusCall, StatusServices, get_async_invoke_status,
 };
 use crate::embedding_jobs::transport::StatusTransport;
-use crate::image_call::plan::CredentialSource;
 
 use super::error::BatchCallError;
 use super::fields::{
@@ -40,7 +40,7 @@ pub async fn retrieve_async_status<Source, Factory>(
     log: Option<&mut StatusLogger<'_>>,
 ) -> Result<BatchObject, BatchCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
     Factory::Client: StatusTransport,
 {

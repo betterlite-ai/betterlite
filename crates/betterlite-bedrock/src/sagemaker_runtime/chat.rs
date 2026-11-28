@@ -14,6 +14,7 @@ use betterlite_prompts::arguments::json::{Json, Object as Body};
 use bytes::BytesMut;
 use indexmap::IndexMap;
 
+use crate::credentials::CredentialSource;
 use crate::sagemaker_stream::events::EventState;
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerEvents};
 use crate::signing::request::AwsSignedRequest;
@@ -25,8 +26,8 @@ use super::convert;
 use super::endpoint::{self, EndpointRequest, ParamMap};
 use super::error::{RuntimeError, timeout_error};
 use super::runtime::{
-    ChunkStream, PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport,
-    body_text, reply_headers, stream_error,
+    ChunkStream, PreparedCall, SagemakerRuntime, SagemakerTransport, body_text, reply_headers,
+    stream_error,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +56,7 @@ pub async fn prepare_chat<T, C>(
 ) -> Result<PreparedCall, RuntimeError>
 where
     T: Sync,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let base_url = text_field(call.optional_params, "sagemaker_base_url")?;
     let region = resolve_region(call.signing, Some(call.model), runtime.environment.inputs())?;
@@ -84,7 +85,7 @@ async fn sign_chat<T, C>(
 ) -> Result<AwsSignedRequest, RuntimeError>
 where
     T: Sync,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let headers = chat_request::validate_environment(call.headers.clone(), call.optional_params);
     let pairs: Vec<(String, Option<String>)> = headers
@@ -134,7 +135,7 @@ pub async fn chat<T, C>(
 ) -> Result<CompatibleReply, SagemakerError>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let response = runtime
         .transport
@@ -162,7 +163,7 @@ pub async fn chat_stream<T, C>(
 ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     open_chat_stream(
         &runtime.transport,

@@ -34,8 +34,9 @@ use crate::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use crate::bedrock_embedding_io::transport::{
     ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
 };
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
-use crate::image_call::plan::{CredentialSource, LogContext};
+use crate::image_call::plan::LogContext;
 use crate::signing::executor::AwsSigningExecutor;
 
 pub(super) const ACCESS_KEY: &str = "AKIDEXAMPLE";

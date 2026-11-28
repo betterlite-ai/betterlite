@@ -9,8 +9,8 @@ use serde_json::value::RawValue;
 use crate::aws_endpoints::model_id::MODEL_ID_SAFE;
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
 use crate::aws_settings::sources::Credentials;
+use crate::credentials::CredentialSource;
 use crate::model_routes::ParamMap;
-use crate::rerank::plan::CredentialSource;
 use crate::signing::target::{RegionInputs, TargetRequest, request_target};
 
 use super::ConverseEnvironment;
@@ -87,7 +87,7 @@ pub(crate) async fn resolve_target<Source>(
     credentials: &Source,
 ) -> Result<PreparedTarget, ConverseCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     let mut raw = raw_params(params)?;
     let target = request_target(

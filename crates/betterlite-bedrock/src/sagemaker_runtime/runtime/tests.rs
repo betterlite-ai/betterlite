@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use super::{
-    OutboundRequest, PreparedCall, ProxiedClient, RequestBody, SagemakerCredentials,
-    SagemakerEnvironment, SagemakerRuntime, SagemakerTransport, header_map,
+    OutboundRequest, PreparedCall, ProxiedClient, RequestBody, SagemakerEnvironment,
+    SagemakerRuntime, SagemakerTransport, header_map,
 };
+use crate::credentials::CredentialSource;
 use crate::sagemaker_runtime::error::RuntimeError;
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_config::{proxy::ProxyPolicy, types::ProxyTrust};
@@ -268,7 +269,7 @@ async fn aws_credential_resolver_adapter_returns_resolved_credentials() {
         max_policy_size: 75,
     };
     let credentials =
-        SagemakerCredentials::resolve(&resolver, AwsSettings::default(), String::from("us-west-2"))
+        CredentialSource::resolve(&resolver, AwsSettings::default(), String::from("us-west-2"))
             .await
             .expect("resolved static credentials");
     assert_eq!(credentials.access_key_id.expose_secret(), "env-access");

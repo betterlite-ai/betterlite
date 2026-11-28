@@ -17,8 +17,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 
 use crate::aws_settings::sources::Credentials;
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
-use crate::rerank::plan::CredentialSource;
 use crate::rerank::transport::{
     ClientFactory, RerankHttpReply, RerankHttpRequest, RerankTransport, TransferError,
 };
