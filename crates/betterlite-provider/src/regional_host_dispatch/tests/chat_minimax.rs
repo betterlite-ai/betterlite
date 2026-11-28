@@ -147,6 +147,11 @@ fn minimax_logs_the_reply_on_success() {
         state.model_call_details.get("original_response"),
         Some(&LogJson::Null)
     );
+    let input = serde_json::from_value::<LogJson>(
+        serde_json::to_value(&fixture.messages).expect("the fixture messages serialize"),
+    )
+    .expect("the fixture messages are JSON");
+    assert_eq!(state.model_call_details.get("input"), Some(&input));
 }
 
 #[test]
