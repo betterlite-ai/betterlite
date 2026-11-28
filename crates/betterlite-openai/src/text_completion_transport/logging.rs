@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamOptions};
 use betterlite_streaming::stream_chunk_shaping::tokens::check_is_function_call;
@@ -108,12 +107,6 @@ pub trait CompletionLogger {
     fn stream_defaults(&self) -> StreamDefaults;
 }
 
-// The logging crate's pre-call and post-call dispatch over the transport's records
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
-}
-
 // Json and serde_json::Value hold the same shapes, so serde moves values between them without failing
 fn additional_args(
     api_base: Option<String>,
@@ -175,7 +168,7 @@ pub(super) fn base_hidden_params(litellm_params: &IndexMap<String, Json>) -> Jso
     hidden
 }
 
-impl CompletionLogger for PrePostLogger<'_, '_> {
+impl CompletionLogger for LogContext<'_, '_> {
     fn pre_call(&mut self, record: PreCallRecord) -> Result<(), PrePostError> {
         let call = PreCall {
             input: serde_json::from_value(Value::Array(record.input)).unwrap_or(Json::Null),

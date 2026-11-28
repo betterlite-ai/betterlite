@@ -3,8 +3,6 @@ use std::time::Duration;
 
 use betterlite_config::sections::hosted_platform_keys::Settings as SectionSettings;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -61,11 +59,6 @@ pub(super) fn first_secret<const N: usize>(
         .flatten()
         .find(|value| !value.expose_secret().is_empty())
         .cloned()
-}
-
-pub struct CallLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
 }
 
 pub struct DispatchContext<'request> {

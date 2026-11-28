@@ -5,6 +5,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use betterlite_context::resource_config_selection::skills_evals::EvalsConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -33,7 +34,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::api::eval_http::error::EvalHttpError;
-use crate::api::eval_http::exchange::{EvalConfig, EvalLogging};
+use crate::api::eval_http::exchange::EvalConfig;
 use crate::api::eval_run_create_list::args::{CreateRunArgs, ListRunsArgs};
 use crate::api::eval_run_create_list::error::{EvalRunCallError, EvalRunFailure};
 use crate::api::eval_run_create_list::providers::{
@@ -403,7 +404,7 @@ macro_rules! recorded_transport {
     ($method:ident, $call:ident, $pending:ident, $seen:ident, $slot:ident, $payload:ident, $fixture:path) => {
         fn $method<'call>(
             &'call self,
-            _log: EvalLogging<'call, '_>,
+            _log: LogContext<'call, '_>,
             call: $call<'call>,
         ) -> $pending<'call> {
             self.$slot
@@ -585,7 +586,7 @@ macro_rules! call_helper {
             let mut fixture = Fixture::new($call_type);
             let answer = {
                 let env = fixture.env.pre_post();
-                let log = EvalLogging {
+                let log = LogContext {
                     state: &mut fixture.state,
                     env: &env,
                 };
@@ -611,7 +612,7 @@ macro_rules! call_helper {
             let mut fixture = Fixture::new($call_type);
             let answer = {
                 let env = fixture.env.pre_post();
-                let log = EvalLogging {
+                let log = LogContext {
                     state: &mut fixture.state,
                     env: &env,
                 };
