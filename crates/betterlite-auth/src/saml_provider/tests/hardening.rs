@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 
 use super::{NOW, Recorded, TestMemory, TestTier};
 use crate::auth_cache::AuthCache;
+use crate::saml_provider::authn_request::authn_request_xml;
 use crate::saml_provider::cache::SamlCache;
 use crate::saml_provider::idp_metadata::parse::decode_document;
 use crate::saml_provider::idp_metadata::{
@@ -80,18 +81,24 @@ fn merged(
     }
 }
 
+fn idp_with(entity_id: Option<&str>) -> IdpSettings {
+    IdpSettings {
+        entity_id: entity_id.map(str::to_owned),
+        sso_url: Some("https://idp.example.com/sso".to_owned()),
+        slo_url: None,
+        x509_cert: Some("CERT".to_owned()),
+        x509_cert_multi: None,
+        name_id_format: None,
+        want_authn_requests_signed: None,
+    }
+}
+
 #[test]
 fn a_single_logout_url_is_checked_only_when_present_and_not_empty() {
-    let base = IdpSettings {
-        entity_id: Some("urn:example:idp".to_owned()),
-        sso_url: Some("https://idp.example.com/sso".to_owned()),
-        x509_cert: Some("CERT".to_owned()),
-        ..IdpSettings::default()
-    };
     let invalid = merged(
         IdpSettings {
             slo_url: Some("not a url".to_owned()),
-            ..base.clone()
+            ..idp_with(Some("urn:example:idp"))
         },
         true,
         false,
@@ -100,17 +107,24 @@ fn a_single_logout_url_is_checked_only_when_present_and_not_empty() {
         invalid.validate(false).unwrap_err().codes,
         vec!["idp_slo_url_invalid"]
     );
-    for slo_url in ["", "https://idp.example.com/slo"] {
-        let settings = merged(
-            IdpSettings {
-                slo_url: Some(slo_url.to_owned()),
-                ..base.clone()
-            },
-            true,
-            false,
-        );
-        settings.validate(false).unwrap();
-    }
+    let empty = merged(
+        IdpSettings {
+            slo_url: Some(String::new()),
+            ..idp_with(Some("urn:example:idp"))
+        },
+        true,
+        false,
+    );
+    empty.validate(false).unwrap();
+    let valid = merged(
+        IdpSettings {
+            slo_url: Some("https://idp.example.com/slo".to_owned()),
+            ..idp_with(Some("urn:example:idp"))
+        },
+        true,
+        false,
+    );
+    valid.validate(false).unwrap();
 }
 
 #[test]
@@ -118,17 +132,24 @@ fn a_multiple_certificate_counts_and_no_certificate_is_required_without_the_flag
     let multiple = IdpSettings {
         entity_id: Some("urn:example:idp".to_owned()),
         sso_url: Some("https://idp.example.com/sso".to_owned()),
+        slo_url: None,
+        x509_cert: None,
         x509_cert_multi: Some(X509CertMulti {
             signing: Some(vec!["AA".to_owned()]),
             encryption: None,
         }),
-        ..IdpSettings::default()
+        name_id_format: None,
+        want_authn_requests_signed: None,
     };
     merged(multiple, true, false).validate(false).unwrap();
     let bare = IdpSettings {
         entity_id: Some("urn:example:idp".to_owned()),
         sso_url: Some("https://idp.example.com/sso".to_owned()),
-        ..IdpSettings::default()
+        slo_url: None,
+        x509_cert: None,
+        x509_cert_multi: None,
+        name_id_format: None,
+        want_authn_requests_signed: None,
     };
     merged(bare, false, false).validate(false).unwrap();
 }
@@ -146,6 +167,24 @@ fn a_metadata_root_that_is_not_an_entity_descriptor_is_refused() {
         validate_sp_metadata(metadata, NOW).codes,
         vec!["noEntityDescriptor_xml"]
     );
+}
+
+#[test]
+fn authn_request_values_are_escaped() {
+    let idp = IdpSettings {
+        entity_id: Some("urn:example:idp".to_owned()),
+        sso_url: Some("https://idp.example.com/sso?a=1&b=2".to_owned()),
+        slo_url: None,
+        x509_cert: Some("CERT".to_owned()),
+        x509_cert_multi: None,
+        name_id_format: None,
+        want_authn_requests_signed: None,
+    };
+    let mut settings = merged(idp, true, false);
+    settings.sp_entity_id = "urn:a&b".to_owned();
+    let xml = authn_request_xml(&settings, "ONELOGIN_FIXED", NOW).unwrap();
+    assert!(xml.contains(r#"Destination="https://idp.example.com/sso?a=1&amp;b=2""#));
+    assert!(xml.contains("<saml:Issuer>urn:a&amp;b</saml:Issuer>"));
 }
 
 #[tokio::test]
@@ -173,7 +212,12 @@ async fn a_cached_idp_settings_is_decoded_from_the_tier() {
         decoded,
         Some(IdpSettings {
             entity_id: Some("urn:x".to_owned()),
-            ..IdpSettings::default()
+            sso_url: None,
+            slo_url: None,
+            x509_cert: None,
+            x509_cert_multi: None,
+            name_id_format: None,
+            want_authn_requests_signed: None,
         })
     );
 }
