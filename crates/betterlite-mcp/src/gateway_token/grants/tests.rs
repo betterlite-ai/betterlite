@@ -208,32 +208,12 @@ impl Harness {
         seal(GATEWAY_AUTH_CODE_PREFIX, code, &self.cipher).unwrap()
     }
 
-    fn refresh(&self, principal: &SessionPrincipal) -> String {
-        mint_session_token(
-            principal,
-            SessionTokenKind::Refresh,
-            self.keys(),
-            now(),
-            || Ok([9; 16]),
-        )
-        .unwrap()
-        .token
-        .expose_secret()
-        .to_owned()
-    }
-
-    fn access(&self, principal: &SessionPrincipal) -> String {
-        mint_session_token(
-            principal,
-            SessionTokenKind::Session,
-            self.keys(),
-            now(),
-            || Ok([8; 16]),
-        )
-        .unwrap()
-        .token
-        .expose_secret()
-        .to_owned()
+    fn minted(&self, principal: &SessionPrincipal, kind: SessionTokenKind, byte: u8) -> String {
+        mint_session_token(principal, kind, self.keys(), now(), || Ok([byte; 16]))
+            .unwrap()
+            .token
+            .expose_secret()
+            .to_owned()
     }
 
     async fn token(&self, form: &TokenForm<'_>) -> TokenReply {
@@ -632,7 +612,7 @@ async fn a_proxy_api_code_mints_a_credential() {
 #[tokio::test]
 async fn a_refresh_grant_rotates_the_pair() {
     let harness = Harness::new();
-    let refresh = harness.refresh(&alice());
+    let refresh = harness.minted(&alice(), SessionTokenKind::Refresh, 9);
     let pair = session_pair(harness.token(&refresh_form(&refresh)).await);
     assert_eq!(pair.expires_in, SESSION_TTL_SECONDS);
     assert_ne!(pair.refresh_token, refresh);
@@ -656,14 +636,14 @@ async fn a_refresh_grant_needs_its_fields() {
     let refusal = error(harness.token(&absent).await);
     assert_eq!(refusal.error, OauthErrorCode::InvalidRequest);
     assert_eq!(refusal.description, "refresh_token is required");
-    let refresh = harness.refresh(&alice());
+    let refresh = harness.minted(&alice(), SessionTokenKind::Refresh, 9);
     let mut other_client = refresh_form(&refresh);
     other_client.client_id = Some("client-2");
     assert_eq!(
         error(harness.token(&other_client).await).description,
         "the refresh token is invalid for this client"
     );
-    let access = harness.access(&alice());
+    let access = harness.minted(&alice(), SessionTokenKind::Session, 8);
     assert_eq!(
         error(harness.token(&refresh_form(&access)).await).description,
         "the refresh token is invalid for this client"
@@ -675,7 +655,7 @@ async fn a_scoped_refresh_token_keeps_its_server() {
     let harness = Harness::new();
     let mut scoped = alice();
     scoped.resource_server_id = Some("srv-a".to_owned());
-    let refresh = harness.refresh(&scoped);
+    let refresh = harness.minted(&scoped, SessionTokenKind::Refresh, 9);
     let mut conflicting = refresh_form(&refresh);
     conflicting.resource = Some("https://proxy.test:8443/beta/mcp");
     let refusal = error(harness.token(&conflicting).await);
@@ -694,7 +674,7 @@ async fn a_scoped_refresh_token_keeps_its_server() {
 async fn a_refresh_claim_outage_is_a_503() {
     let mut harness = Harness::new();
     harness.guard = SingleUseGuard::from(ClaimAuthority::Shared(NoBackend));
-    let refresh = harness.refresh(&alice());
+    let refresh = harness.minted(&alice(), SessionTokenKind::Refresh, 9);
     assert_eq!(
         error(harness.token(&refresh_form(&refresh)).await).status,
         503

@@ -34,22 +34,12 @@ fn now() -> DateTime<Utc> {
     Utc.timestamp_opt(NOW, 0).unwrap()
 }
 
-fn proxy_alice() -> SessionPrincipal {
+fn alice(server: Option<&str>, audience: Option<SessionAudience>) -> SessionPrincipal {
     SessionPrincipal {
         user_id: "alice".to_owned(),
         client_id: "client-1".to_owned(),
-        resource_server_id: Some("srv-a".to_owned()),
-        audience: Some(SessionAudience::ProxyApi),
-        team_id: Some("team-a".to_owned()),
-    }
-}
-
-fn plain_alice() -> SessionPrincipal {
-    SessionPrincipal {
-        user_id: "alice".to_owned(),
-        client_id: "client-1".to_owned(),
-        resource_server_id: None,
-        audience: None,
+        resource_server_id: server.map(str::to_owned),
+        audience,
         team_id: Some("team-a".to_owned()),
     }
 }
@@ -86,32 +76,12 @@ impl Harness {
         signing_refusal(&self.setup).unwrap()
     }
 
-    fn access(&self, principal: &SessionPrincipal) -> String {
-        mint_session_token(
-            principal,
-            SessionTokenKind::Session,
-            self.keys(),
-            now(),
-            || Ok([7; 16]),
-        )
-        .unwrap()
-        .token
-        .expose_secret()
-        .to_owned()
-    }
-
-    fn refresh(&self, principal: &SessionPrincipal) -> String {
-        mint_session_token(
-            principal,
-            SessionTokenKind::Refresh,
-            self.keys(),
-            now(),
-            || Ok([7; 16]),
-        )
-        .unwrap()
-        .token
-        .expose_secret()
-        .to_owned()
+    fn minted(&self, principal: &SessionPrincipal, kind: SessionTokenKind) -> String {
+        mint_session_token(principal, kind, self.keys(), now(), || Ok([7; 16]))
+            .unwrap()
+            .token
+            .expose_secret()
+            .to_owned()
     }
 
     async fn introspect(&self, token: &str) -> TokenReply {
@@ -156,7 +126,13 @@ async fn a_garbage_token_is_inactive() {
 #[tokio::test]
 async fn a_bearer_prefixed_token_is_inactive() {
     let harness = Harness::new();
-    let token = format!("Bearer {}", harness.access(&proxy_alice()));
+    let token = format!(
+        "Bearer {}",
+        harness.minted(
+            &alice(Some("srv-a"), Some(SessionAudience::ProxyApi)),
+            SessionTokenKind::Session
+        )
+    );
     assert_eq!(
         introspected_json(harness.introspect(&token).await),
         r#"{"active":false}"#
@@ -166,7 +142,13 @@ async fn a_bearer_prefixed_token_is_inactive() {
 #[tokio::test]
 async fn a_tampered_token_is_inactive() {
     let harness = Harness::new();
-    let token = format!("{}x", harness.access(&proxy_alice()));
+    let token = format!(
+        "{}x",
+        harness.minted(
+            &alice(Some("srv-a"), Some(SessionAudience::ProxyApi)),
+            SessionTokenKind::Session
+        )
+    );
     assert_eq!(
         introspected_json(harness.introspect(&token).await),
         r#"{"active":false}"#
@@ -176,7 +158,10 @@ async fn a_tampered_token_is_inactive() {
 #[tokio::test]
 async fn an_access_token_reports_its_session_fields() {
     let harness = Harness::new();
-    let token = harness.access(&proxy_alice());
+    let token = harness.minted(
+        &alice(Some("srv-a"), Some(SessionAudience::ProxyApi)),
+        SessionTokenKind::Session,
+    );
     assert_eq!(
         introspected_json(harness.introspect(&token).await),
         ACTIVE_SESSION
@@ -186,7 +171,7 @@ async fn an_access_token_reports_its_session_fields() {
 #[tokio::test]
 async fn a_refresh_token_omits_the_token_type() {
     let harness = Harness::new();
-    let token = harness.refresh(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Refresh);
     assert_eq!(
         introspected_json(harness.introspect(&token).await),
         ACTIVE_REFRESH
@@ -197,7 +182,7 @@ async fn a_refresh_token_omits_the_token_type() {
 async fn an_expired_token_is_inactive() {
     let harness = Harness::new();
     let token = mint_session_token(
-        &plain_alice(),
+        &alice(None, None),
         SessionTokenKind::Session,
         harness.keys(),
         Utc.timestamp_opt(0, 0).unwrap(),
@@ -216,7 +201,7 @@ async fn an_expired_token_is_inactive() {
 #[tokio::test]
 async fn a_burned_refresh_token_is_inactive() {
     let harness = Harness::new();
-    let token = harness.refresh(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Refresh);
     harness.claim_refresh().await;
     assert_eq!(
         introspected_json(harness.introspect(&token).await),
@@ -227,7 +212,7 @@ async fn a_burned_refresh_token_is_inactive() {
 #[tokio::test]
 async fn a_refresh_peek_outage_is_a_503() {
     let mut harness = Harness::new();
-    let token = harness.refresh(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Refresh);
     harness.guard = SingleUseGuard::from(ClaimAuthority::Shared(NoBackend));
     let refusal = error(harness.introspect(&token).await);
     assert_eq!(refusal.status, 503);
@@ -238,7 +223,7 @@ async fn a_refresh_peek_outage_is_a_503() {
 #[tokio::test]
 async fn an_access_token_skips_the_claim_lookup() {
     let mut harness = Harness::new();
-    let token = harness.access(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Session);
     harness.guard = SingleUseGuard::from(ClaimAuthority::Shared(NoBackend));
     introspected_json(harness.introspect(&token).await);
 }
@@ -252,7 +237,7 @@ async fn a_reload_database_failure_is_a_503(
     #[case] description: &str,
 ) {
     let mut harness = Harness::new();
-    let token = harness.access(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Session);
     harness.reload = Reload(Some(failure));
     let refusal = error(harness.introspect(&token).await);
     assert_eq!(refusal.status, 503);
@@ -265,7 +250,7 @@ async fn a_reload_database_failure_is_a_503(
 #[tokio::test]
 async fn a_vanished_user_is_inactive(#[case] failure: ReloadUserFailure) {
     let mut harness = Harness::new();
-    let token = harness.access(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Session);
     harness.reload = Reload(Some(failure));
     assert_eq!(
         introspected_json(harness.introspect(&token).await),
@@ -276,7 +261,7 @@ async fn a_vanished_user_is_inactive(#[case] failure: ReloadUserFailure) {
 #[tokio::test]
 async fn the_claim_check_precedes_the_reload() {
     let mut harness = Harness::new();
-    let token = harness.refresh(&plain_alice());
+    let token = harness.minted(&alice(None, None), SessionTokenKind::Refresh);
     harness.reload = Reload(Some(ReloadUserFailure::NoActiveKey));
     harness.guard = SingleUseGuard::from(ClaimAuthority::Shared(NoBackend));
     assert_eq!(error(harness.introspect(&token).await).status, 503);

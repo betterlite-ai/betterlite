@@ -61,32 +61,18 @@ impl Harness {
         signing_refusal(&self.setup).unwrap()
     }
 
-    fn refresh(&self, principal: &SessionPrincipal, at: DateTime<Utc>) -> String {
-        mint_session_token(
-            principal,
-            SessionTokenKind::Refresh,
-            self.keys(),
-            at,
-            || Ok([7; 16]),
-        )
-        .unwrap()
-        .token
-        .expose_secret()
-        .to_owned()
-    }
-
-    fn access(&self, principal: &SessionPrincipal, at: DateTime<Utc>) -> String {
-        mint_session_token(
-            principal,
-            SessionTokenKind::Session,
-            self.keys(),
-            at,
-            || Ok([8; 16]),
-        )
-        .unwrap()
-        .token
-        .expose_secret()
-        .to_owned()
+    fn minted(
+        &self,
+        principal: &SessionPrincipal,
+        kind: SessionTokenKind,
+        at: DateTime<Utc>,
+        byte: u8,
+    ) -> String {
+        mint_session_token(principal, kind, self.keys(), at, || Ok([byte; 16]))
+            .unwrap()
+            .token
+            .expose_secret()
+            .to_owned()
     }
 
     async fn revoke(&self, token: &str, client: Option<&str>, at: DateTime<Utc>) -> TokenReply {
@@ -127,7 +113,7 @@ fn error(reply: TokenReply) -> OauthError {
 async fn a_live_refresh_token_is_burned() {
     let harness = Harness::new();
     let client = sealed_client(&[CALLBACK]);
-    let token = harness.refresh(&alice(&client), now());
+    let token = harness.minted(&alice(&client), SessionTokenKind::Refresh, now(), 7);
     let reply = harness.revoke(&token, Some(&client), now()).await;
     assert_eq!(revoked_json(reply), "{}");
     assert_eq!(harness.claim_status(JTI).await, PeekOutcome::Claimed);
@@ -137,7 +123,10 @@ async fn a_live_refresh_token_is_burned() {
 async fn a_bearer_prefixed_refresh_is_burned() {
     let harness = Harness::new();
     let client = sealed_client(&[CALLBACK]);
-    let token = format!("Bearer {}", harness.refresh(&alice(&client), now()));
+    let token = format!(
+        "Bearer {}",
+        harness.minted(&alice(&client), SessionTokenKind::Refresh, now(), 7)
+    );
     revoked_json(harness.revoke(&token, Some(&client), now()).await);
     assert_eq!(harness.claim_status(JTI).await, PeekOutcome::Claimed);
 }
@@ -154,7 +143,7 @@ async fn a_garbage_token_is_still_200() {
 async fn an_access_token_is_left_alone() {
     let harness = Harness::new();
     let client = sealed_client(&[CALLBACK]);
-    let token = harness.access(&alice(&client), now());
+    let token = harness.minted(&alice(&client), SessionTokenKind::Session, now(), 8);
     revoked_json(harness.revoke(&token, Some(&client), now()).await);
     assert_eq!(
         harness.claim_status(ACCESS_JTI).await,
@@ -166,7 +155,12 @@ async fn an_access_token_is_left_alone() {
 async fn an_expired_refresh_token_is_not_burned() {
     let harness = Harness::new();
     let client = sealed_client(&[CALLBACK]);
-    let token = harness.refresh(&alice(&client), Utc.timestamp_opt(0, 0).unwrap());
+    let token = harness.minted(
+        &alice(&client),
+        SessionTokenKind::Refresh,
+        Utc.timestamp_opt(0, 0).unwrap(),
+        7,
+    );
     revoked_json(harness.revoke(&token, Some(&client), now()).await);
     assert_eq!(harness.claim_status(JTI).await, PeekOutcome::Unclaimed);
 }
@@ -176,7 +170,7 @@ async fn another_clients_refresh_token_is_kept() {
     let harness = Harness::new();
     let client = sealed_client(&[CALLBACK]);
     let other = sealed_client(&[CALLBACK]);
-    let token = harness.refresh(&alice(&other), now());
+    let token = harness.minted(&alice(&other), SessionTokenKind::Refresh, now(), 7);
     revoked_json(harness.revoke(&token, Some(&client), now()).await);
     assert_eq!(harness.claim_status(JTI).await, PeekOutcome::Unclaimed);
 }
@@ -240,7 +234,7 @@ async fn an_invalid_signing_config_is_a_500() {
 async fn a_claim_outage_is_a_503() {
     let mut harness = Harness::new();
     let client = sealed_client(&[CALLBACK]);
-    let token = harness.refresh(&alice(&client), now());
+    let token = harness.minted(&alice(&client), SessionTokenKind::Refresh, now(), 7);
     harness.guard = SingleUseGuard::from(ClaimAuthority::Shared(NoBackend));
     let refusal = error(harness.revoke(&token, Some(&client), now()).await);
     assert_eq!(refusal.status, 503);
