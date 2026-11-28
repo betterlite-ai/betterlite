@@ -14,10 +14,10 @@ pub fn resolve_agent_id(
     let Some(claim) = claims.agent_claim()? else {
         return Ok(None);
     };
-    let agent = registry
+    let matched = registry
         .get_agent_by_id(&claim)
         .or_else(|| registry.get_agent_by_name(&claim));
-    let Some(agent) = agent else {
+    let Some(agent) = matched else {
         return Err(TeamSelectionError::agent_not_registered(
             claims.settings.agent_id_jwt_field.as_deref(),
             &claim,

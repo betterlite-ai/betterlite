@@ -12,8 +12,14 @@ pub struct Slot {
 impl Slot {
     #[must_use]
     pub fn new(config: &Config, _shared: &Shared) -> Self {
+        let settings = &config.sections.jwt_settings;
         Self {
-            settings: SelectionSettings::from_section(&config.sections.jwt_settings),
+            settings: SelectionSettings {
+                teams: settings.teams.clone(),
+                routes: settings.routes.clone(),
+                scopes: settings.scopes.clone(),
+                routing: settings.routing.clone(),
+            },
         }
     }
 }

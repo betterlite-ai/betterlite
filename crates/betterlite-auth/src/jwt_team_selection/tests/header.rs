@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::support::{Script, headers, ids, lookup, rendered};
@@ -10,7 +11,7 @@ const BROKEN: &str = r#"{"team_id": 5}"#;
 #[test]
 fn header_missing_empty() {
     assert_eq!(team_header_value(None), None);
-    let empty = std::collections::BTreeMap::new();
+    let empty = BTreeMap::new();
     assert_eq!(team_header_value(Some(&empty)), None);
     let blank = headers(&[("x-litellm-team-id", "")]);
     assert_eq!(team_header_value(Some(&blank)), Some(String::new()));

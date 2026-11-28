@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_config::sections::jwt_settings::Settings as JwtSettings;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
@@ -12,7 +11,7 @@ use crate::agent_policy::AgentResponse;
 use crate::auth_model_patterns::decision::ModelAccessContext;
 use crate::auth_model_patterns::pattern::UnresolvedProviderInference;
 use crate::auth_prefetch::permission::lookup::{
-    ObjectPermissionCache, PermissionAnswer, PermissionCacheError,
+    ObjectPermissionCache, PermissionAnswer, PermissionCacheError, PermissionError,
 };
 use crate::auth_prefetch::permission::store::ObjectPermissionStore;
 use crate::auth_team_lookup::lookup::{TeamDatabase, TeamLookup};
@@ -24,6 +23,7 @@ use crate::auth_user_lookup::ports::PortError;
 use crate::jwt_claims::claims::JwtClaims;
 use crate::jwt_claims::settings::JwtAuthSettings;
 use crate::jwt_keys::agent::AgentLookup;
+use crate::jwt_team_selection::error::TeamSelectionError;
 use crate::pass_through_registry::{
     PassThroughMetadata, PassThroughRegistry, PassThroughRouteType,
 };
@@ -82,14 +82,14 @@ impl Script {
     pub(crate) fn events(&self) -> Vec<String> {
         self.events
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
     fn record(&self, event: String) {
         self.events
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(event);
     }
 }
@@ -159,10 +159,7 @@ impl TeamStore for Script {
 
 #[async_trait]
 impl ObjectPermissionStore for Script {
-    async fn find_permission(
-        &self,
-        _id: &str,
-    ) -> Result<Option<JsonData>, crate::auth_prefetch::permission::lookup::PermissionError> {
+    async fn find_permission(&self, _id: &str) -> Result<Option<JsonData>, PermissionError> {
         Ok(None)
     }
 }
@@ -200,12 +197,12 @@ impl TeamProvisioner for Script {
 
 #[must_use]
 pub(crate) fn lookup(script: &Arc<Script>, database: bool) -> TeamLookup {
-    let cache: Arc<dyn TeamCache> = Arc::clone(script);
-    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::clone(script);
-    let store: Arc<dyn TeamStore> = Arc::clone(script);
-    let reader: Arc<dyn ObjectPermissionStore> = Arc::clone(script);
-    let writer: Arc<dyn ObjectPermissionStore> = Arc::clone(script);
-    let provisioner: Arc<dyn TeamProvisioner> = Arc::clone(script);
+    let cache: Arc<dyn TeamCache> = Arc::<Script>::clone(script);
+    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::<Script>::clone(script);
+    let store: Arc<dyn TeamStore> = Arc::<Script>::clone(script);
+    let reader: Arc<dyn ObjectPermissionStore> = Arc::<Script>::clone(script);
+    let writer: Arc<dyn ObjectPermissionStore> = Arc::<Script>::clone(script);
+    let provisioner: Arc<dyn TeamProvisioner> = Arc::<Script>::clone(script);
     TeamLookup {
         cache,
         permission_cache,
@@ -234,9 +231,9 @@ pub(crate) fn selection<Patch>(patch: Patch) -> SelectionSettings
 where
     Patch: FnOnce(&mut SelectionSettings),
 {
-    let mut settings = SelectionSettings::from_section(&JwtSettings::default());
-    patch(&mut settings);
-    settings
+    let mut selected = SelectionSettings::default();
+    patch(&mut selected);
+    selected
 }
 
 pub(crate) fn claims<'auth>(
@@ -252,9 +249,7 @@ pub(crate) fn claims<'auth>(
 
 // the status, type and message B757 puts on the wire for a selection failure
 #[must_use]
-pub(crate) fn rendered(
-    error: crate::jwt_team_selection::error::TeamSelectionError,
-) -> (u16, String, String) {
+pub(crate) fn rendered(error: TeamSelectionError) -> (u16, String, String) {
     let exception = error.into_proxy_exception();
     let status = exception.code.parse().expect("the status is numeric");
     (

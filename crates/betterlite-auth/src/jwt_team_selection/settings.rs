@@ -1,4 +1,3 @@
-use betterlite_config::sections::jwt_settings::Settings as JwtSettings;
 use betterlite_config::sections::jwt_settings::groups::{
     RouteFields, RoutingFields, ScopeFields, TeamFields,
 };
@@ -10,16 +9,4 @@ pub struct SelectionSettings {
     pub routes: RouteFields,
     pub scopes: ScopeFields,
     pub routing: RoutingFields,
-}
-
-impl SelectionSettings {
-    #[must_use]
-    pub fn from_section(section: &JwtSettings) -> Self {
-        Self {
-            teams: section.teams.clone(),
-            routes: section.routes.clone(),
-            scopes: section.scopes.clone(),
-            routing: section.routing.clone(),
-        }
-    }
 }

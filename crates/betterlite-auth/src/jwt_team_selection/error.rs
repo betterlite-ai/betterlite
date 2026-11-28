@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_error::proxy_exception::ProxyException;
+use betterlite_logging::analytics::python::{FormatError, repr};
 use thiserror::Error;
 
 use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
@@ -18,6 +19,8 @@ pub enum TeamSelectionError {
     Lookup(Box<TeamLookupError>),
     #[error(transparent)]
     Claim(Box<ClaimError>),
+    #[error(transparent)]
+    Format(Box<FormatError>),
     #[error(
         "No team found in token. Checked team_id field '{team_id_field}' and team_alias field '{team_alias_field}'.{hint}"
     )]
@@ -78,21 +81,22 @@ impl TeamSelectionError {
     }
 
     // sorted(ids) as Python prints them: ['a', 'b']
-    #[must_use]
-    pub fn header_team_not_allowed(header_value: String, allowed: &BTreeSet<String>) -> Self {
-        Self::HeaderTeamNotAllowed {
+    pub fn header_team_not_allowed(
+        header_value: String,
+        allowed: &BTreeSet<String>,
+    ) -> Result<Self, FormatError> {
+        Ok(Self::HeaderTeamNotAllowed {
             header_value,
-            allowed: format!("[{}]", quoted(allowed)),
-        }
+            allowed: format!("[{}]", quoted(allowed)?),
+        })
     }
 
     // the set as Python prints it; betterlite sorts where LiteLLM keeps hash order
-    #[must_use]
-    pub fn no_team_for_model(model: &str, checked: &BTreeSet<String>) -> Self {
-        Self::NoTeamForModel {
+    pub fn no_team_for_model(model: &str, checked: &BTreeSet<String>) -> Result<Self, FormatError> {
+        Ok(Self::NoTeamForModel {
             model: model.to_owned(),
-            checked: format!("{{{}}}", quoted(checked)),
-        }
+            checked: format!("{{{}}}", quoted(checked)?),
+        })
     }
 
     // B757's two renderings: an HTTPException keeps its status, any other exception becomes a 401
@@ -101,6 +105,7 @@ impl TeamSelectionError {
         match self {
             Self::Lookup(error) => lookup_exception(&error),
             Self::Claim(error) => other_exception(error.to_string()),
+            Self::Format(error) => other_exception(error.to_string()),
             // LiteLLM raises this one as a plain Exception, which becomes an auth error with a 401
             failure @ Self::NoTeamInToken { .. } => other_exception(failure.to_string()),
             failure @ (Self::AgentNotRegistered { .. }
@@ -117,6 +122,12 @@ impl TeamSelectionError {
 impl From<ClaimError> for TeamSelectionError {
     fn from(source: ClaimError) -> Self {
         Self::Claim(Box::new(source))
+    }
+}
+
+impl From<FormatError> for TeamSelectionError {
+    fn from(source: FormatError) -> Self {
+        Self::Format(Box::new(source))
     }
 }
 
@@ -152,11 +163,11 @@ fn other_exception(message: String) -> ProxyException {
     as_proxy_exception(&failure).exception().clone()
 }
 
-// Python's repr of one value: 'a', with the quote and backslash escapes Python adds
-fn quoted(values: &BTreeSet<String>) -> String {
+// Python's repr of each value, as the shared analytics formatter writes it
+fn quoted(values: &BTreeSet<String>) -> Result<String, FormatError> {
     values
         .iter()
-        .map(|value| format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")))
-        .collect::<Vec<_>>()
-        .join(", ")
+        .map(repr)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|rendered| rendered.join(", "))
 }

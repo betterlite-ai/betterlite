@@ -41,7 +41,7 @@ enum CandidateVerdict {
     // the row resolved but grants neither the model nor the route
     Skip,
     PassthroughDenied,
-    Selected(LiteLLMTeamTable),
+    Selected(Box<LiteLLMTeamTable>),
 }
 
 // find_team_with_model_access: the first candidate that grants the model and the route
@@ -66,7 +66,7 @@ pub async fn find_team_with_model_access(
                 resolved = true;
                 passthrough_denied = true;
             }
-            CandidateVerdict::Selected(team) => return Ok(Some((team_id.clone(), team))),
+            CandidateVerdict::Selected(team) => return Ok(Some((team_id.clone(), *team))),
         }
     }
     if passthrough_denied {
@@ -74,13 +74,13 @@ pub async fn find_team_with_model_access(
             route: request.route.to_owned(),
         });
     }
-    if let Some(model) = request.requested_model {
-        if resolved || !settings.routing.team_claim_fallback {
-            return Err(TeamSelectionError::no_team_for_model(
-                model,
-                request.team_ids,
-            ));
-        }
+    if let Some(model) = request.requested_model
+        && (resolved || !settings.routing.team_claim_fallback)
+    {
+        return Err(TeamSelectionError::no_team_for_model(
+            model,
+            request.team_ids,
+        )?);
     }
     Ok(None)
 }
@@ -125,7 +125,7 @@ async fn candidate_verdict(
     ) {
         return CandidateVerdict::PassthroughDenied;
     }
-    CandidateVerdict::Selected(team.team)
+    CandidateVerdict::Selected(Box::new(team.team))
 }
 
 // team_model_aliases feeds the team grant; an unrequested model passes without reading the grant

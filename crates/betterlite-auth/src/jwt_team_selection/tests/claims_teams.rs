@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use super::support::{Script, claims, ids, lookup, rendered, selection, settings};
+use crate::jwt_claims::settings::JwtAuthSettings;
 use crate::jwt_team_selection::claims_teams::{find_team_in_claims, get_all_team_ids};
+use crate::jwt_team_selection::settings::SelectionSettings;
 
 const TEAM_A: &str = r#"{"team_id": "team-a", "models": ["model-a"]}"#;
 const DEFAULT_TEAM: &str = r#"{"team_id": "default-team", "models": []}"#;
 const CREATED_TEAM: &str = r#"{"team_id": "team-new", "models": []}"#;
 
-fn claim_fields() -> crate::jwt_claims::settings::JwtAuthSettings {
+fn claim_fields() -> JwtAuthSettings {
     settings(|fields| {
         fields.team_id_jwt_field = Some("team_id".to_owned());
         fields.team_alias_jwt_field = Some("team_alias".to_owned());
@@ -15,7 +17,7 @@ fn claim_fields() -> crate::jwt_claims::settings::JwtAuthSettings {
     })
 }
 
-fn required_team() -> super::super::settings::SelectionSettings {
+fn required_team() -> SelectionSettings {
     selection(|fields| {
         fields.teams.team_id_jwt_field = Some("team_id".to_owned());
         fields.teams.team_alias_jwt_field = Some("team_alias".to_owned());
@@ -167,7 +169,7 @@ async fn required_team_missing() {
     );
 }
 
-fn hint_settings(field: &str) -> super::super::settings::SelectionSettings {
+fn hint_settings(field: &str) -> SelectionSettings {
     selection(|fields| fields.teams.team_id_jwt_field = Some(field.to_owned()))
 }
 

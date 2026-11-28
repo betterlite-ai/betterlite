@@ -1,7 +1,8 @@
 use super::support::{Agents, claims, rendered, settings};
+use crate::jwt_claims::settings::JwtAuthSettings;
 use crate::jwt_team_selection::agent::resolve_agent_id;
 
-fn agent_settings() -> crate::jwt_claims::settings::JwtAuthSettings {
+fn agent_settings() -> JwtAuthSettings {
     settings(|fields| fields.agent_id_jwt_field = Some("agent_id".to_owned()))
 }
 

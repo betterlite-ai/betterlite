@@ -55,7 +55,7 @@ pub async fn resolve_team_from_header(
         _ => Err(TeamSelectionError::header_team_not_allowed(
             header_value,
             allowed_team_ids,
-        )),
+        )?),
     }
 }
 
@@ -101,7 +101,7 @@ async fn team_id_by_alias(
         return Ok(None);
     }
     match get_team_object_by_alias(lookup, team_alias).await {
-        Ok(team) => Ok(Some(team.team.fields.base.team_id.clone())),
+        Ok(team) => Ok(Some(team.team.fields.base.team_id)),
         Err(error) => {
             let client_error = error
                 .http()

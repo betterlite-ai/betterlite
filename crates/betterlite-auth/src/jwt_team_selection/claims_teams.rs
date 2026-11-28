@@ -77,12 +77,13 @@ fn missing_team(settings: &SelectionSettings) -> TeamSelectionError {
 
 // the dot-notation and bracket-notation hints LiteLLM gives for a field path that indexes a list
 fn index_hint(field: &str) -> Option<String> {
-    if let Some((base, index)) = field.rsplit_once('.') {
-        if !index.is_empty() && index.chars().all(|character| character.is_ascii_digit()) {
-            return Some(format!(
-                " Hint: dot-notation array indexing (e.g. '{field}') is not supported. Use '{base}' instead — LiteLLM automatically uses the first element when the field value is a list."
-            ));
-        }
+    if let Some((base, index)) = field.rsplit_once('.')
+        && !index.is_empty()
+        && index.chars().all(|character| character.is_ascii_digit())
+    {
+        return Some(format!(
+            " Hint: dot-notation array indexing (e.g. '{field}') is not supported. Use '{base}' instead — LiteLLM automatically uses the first element when the field value is a list."
+        ));
     }
     let body = field.strip_suffix(']')?;
     let (base, index) = body.split_once('[')?;

@@ -1,10 +1,14 @@
 use super::support::rendered;
-use crate::jwt_team_selection::object::validate_object_id;
+use crate::jwt_team_selection::object::{ObjectPolicy, validate_object_id};
 
 #[test]
 fn object_identity_required() {
+    let policy = ObjectPolicy {
+        enforce_rbac: true,
+        is_proxy_admin: false,
+    };
     let (status, error_type, message) =
-        rendered(validate_object_id(None, None, true, false).expect_err("no identity is refused"));
+        rendered(validate_object_id(None, None, policy).expect_err("no identity is refused"));
     assert_eq!(status, 403);
     assert_eq!(error_type, "auth_error");
     assert_eq!(
@@ -15,20 +19,36 @@ fn object_identity_required() {
 
 #[test]
 fn object_identity_accepts_user() {
-    assert!(validate_object_id(Some("user-1"), None, true, false).is_ok());
+    let policy = ObjectPolicy {
+        enforce_rbac: true,
+        is_proxy_admin: false,
+    };
+    assert!(validate_object_id(Some("user-1"), None, policy).is_ok());
 }
 
 #[test]
 fn object_identity_accepts_team() {
-    assert!(validate_object_id(None, Some("team-a"), true, false).is_ok());
+    let policy = ObjectPolicy {
+        enforce_rbac: true,
+        is_proxy_admin: false,
+    };
+    assert!(validate_object_id(None, Some("team-a"), policy).is_ok());
 }
 
 #[test]
 fn object_identity_accepts_admin() {
-    assert!(validate_object_id(None, None, true, true).is_ok());
+    let policy = ObjectPolicy {
+        enforce_rbac: true,
+        is_proxy_admin: true,
+    };
+    assert!(validate_object_id(None, None, policy).is_ok());
 }
 
 #[test]
 fn object_identity_not_enforced() {
-    assert!(validate_object_id(None, None, false, false).is_ok());
+    let policy = ObjectPolicy {
+        enforce_rbac: false,
+        is_proxy_admin: false,
+    };
+    assert!(validate_object_id(None, None, policy).is_ok());
 }
