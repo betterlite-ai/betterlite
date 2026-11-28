@@ -99,7 +99,7 @@ impl Helper for Op {
         let config = GeminiAgentsConfig { settings };
         let outcome = operate(input.operation, &config, deps, &request, &runtime);
         let head = finish_head(serving)?;
-        compared_answer(input, &harness, &head, outcome)
+        Ok(compared_answer(input, &harness, &head, outcome))
     }
 }
 
@@ -109,7 +109,7 @@ fn compared_answer(
     harness: &Harness,
     head: &str,
     outcome: Result<Value, AgentItemFailureError<GeminiAgentError>>,
-) -> HelperResult {
+) -> Value {
     let mut answer = Map::new();
     let sent_report = projection::request(head, &wanted(input));
     answer.insert("request".to_owned(), sent_report);
@@ -118,7 +118,7 @@ fn compared_answer(
         Ok(value) => answer.insert("response".to_owned(), value),
         Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
     };
-    Ok(Value::Object(answer))
+    Value::Object(answer)
 }
 
 fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {
