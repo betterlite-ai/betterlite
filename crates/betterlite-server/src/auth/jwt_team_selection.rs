@@ -132,9 +132,7 @@ pub(crate) async fn prefetched(
 }
 
 // validate_object_id needs the team the earlier phases selected, so it runs once prefetch has stored it
-pub(crate) fn run_stage(
-    stage: &JwtTeamSelectionStageInput,
-) -> Result<AuthContext, Box<ProxyException>> {
+pub(crate) fn run_stage(stage: &JwtTeamSelectionStageInput) -> Result<AuthContext, StageFailure> {
     let Some(rule) = stage.rule.as_deref() else {
         return Ok(stage.context.clone());
     };
@@ -153,6 +151,6 @@ pub(crate) fn run_stage(
             is_proxy_admin: rule.is_proxy_admin,
         },
     )
-    .map_err(|error| Box::new(error.into_proxy_exception()))?;
+    .map_err(|error| StageFailure::JwtTeamSelection(Box::new(error.into_proxy_exception())))?;
     Ok(stage.context.clone())
 }

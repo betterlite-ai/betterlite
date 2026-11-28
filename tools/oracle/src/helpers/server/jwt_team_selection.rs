@@ -19,14 +19,13 @@ use betterlite_auth::jwt_team_selection::settings::SelectionSettings;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_paths::paths::Document;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 mod case;
 mod script;
 
-use self::case::{Fields, Function, Input, Scenario, claim_settings, registry, selection_settings};
+use self::case::{Function, Input, Scenario, claim_settings, registry, selection_settings};
 use self::script::{Script, lookup};
 
 static UNRESOLVED_PROVIDER: UnresolvedProviderInference = UnresolvedProviderInference;
@@ -89,19 +88,20 @@ async fn answer(scenario: &Scenario) -> HelperResult {
             resolve_header(scenario, &lookup, &settings).await,
             &script,
         )),
-        Function::Object => Ok(tagged(
-            validate_object_id(
-                scenario.user_id.as_deref(),
-                scenario.team_id.as_deref(),
-                ObjectPolicy {
-                    enforce_rbac: scenario.enforce_rbac.unwrap_or(false),
-                    is_proxy_admin: scenario.is_proxy_admin.unwrap_or(false),
-                },
-            )
-            .map(|()| json!({"ok": true})),
-            &script,
-        )),
+        Function::Object => Ok(tagged(object_answer(scenario), &script)),
     }
+}
+
+fn object_answer(scenario: &Scenario) -> Result<Value, TeamSelectionError> {
+    validate_object_id(
+        scenario.user_id.as_deref(),
+        scenario.team_id.as_deref(),
+        ObjectPolicy {
+            enforce_rbac: scenario.enforce_rbac.unwrap_or(false),
+            is_proxy_admin: scenario.is_proxy_admin.unwrap_or(false),
+        },
+    )
+    .map(|()| json!({"ok": true}))
 }
 
 async fn await_candidates(

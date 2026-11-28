@@ -2,7 +2,10 @@ use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::Principal;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use self::{AuthBackend::MasterKey, StageInput::Authenticated};
+use self::{
+    AuthBackend::MasterKey,
+    StageInput::{AuthIdentity, AuthKeyLookup as KeyLookup, Authenticated},
+};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
@@ -225,13 +228,9 @@ pub(crate) fn dispatch(
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
+        KeyLookup(_) | AuthIdentity(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
-        StageInput::JwtTeamSelection(stage) => {
-            jwt_team_selection::run_stage(stage).map_err(StageFailure::JwtTeamSelection)
-        }
+        StageInput::JwtTeamSelection(stage) => jwt_team_selection::run_stage(stage),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
