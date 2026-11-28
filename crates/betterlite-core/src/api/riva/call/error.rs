@@ -17,9 +17,7 @@ pub const INSTALL_HINT: &str =
 const INVALID_STATUS: u16 = 400;
 const INTERNAL_STATUS: u16 = 500;
 
-// Every failure the Riva call can reach, with the boundary it crossed: auth and config keep the
-// Python cause, ASR service and stream failures are the source's gRPC-mapped exception, and the
-// audio, records and worker failures keep their own types.
+// Every failure the Riva call can reach, with the boundary it crossed: auth and config keep the Python cause, ASR service and stream failures are the source's gRPC-mapped exception, and the audio, records and worker failures keep their own types.
 #[derive(Debug, Error)]
 pub enum RivaCallError {
     #[error("{message}")]

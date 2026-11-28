@@ -4,7 +4,6 @@ mod options;
 mod sdk;
 mod stream;
 
-#[cfg(test)]
 mod tests;
 
 use std::time::Duration;
@@ -67,8 +66,7 @@ pub fn transcribe_attached(
     finish(call, &resolved, &resampled, &final_results, logger)
 }
 
-// async_audio_transcriptions: the decode and both SDK halves run through the tracked blocking pool,
-// and the source's atranscription=True reaches the log record from this entry alone
+// async_audio_transcriptions: the decode and both SDK halves run through the tracked blocking pool, and atranscription=True reaches the log record from this entry alone
 pub async fn transcribe(
     host: &PythonHost,
     tracker: &WorkTracker,
@@ -126,7 +124,10 @@ fn finish(
         Some(duration),
         resolved.request.timestamp_granularities.as_deref(),
     )?;
-    let original_response = json_value(&response)?;
+    let encoded =
+        serde_json::to_value(&response).map_err(|source| RivaCallError::Json { source })?;
+    let original_response =
+        serde_json::from_value(encoded).map_err(|source| RivaCallError::Json { source })?;
     let recognition_config = json_records(&resolved.request.recognition_config)?;
     drop(logger.record(RivaEvent::PostCall(RivaPostCall {
         input: Json::Text(call.input.to_owned()),
@@ -154,12 +155,4 @@ where
         });
     };
     Ok(fields)
-}
-
-fn json_value<T>(value: &T) -> Result<Json, RivaCallError>
-where
-    T: serde::Serialize + ?Sized,
-{
-    let encoded = serde_json::to_value(value).map_err(|source| RivaCallError::Json { source })?;
-    serde_json::from_value(encoded).map_err(|source| RivaCallError::Json { source })
 }

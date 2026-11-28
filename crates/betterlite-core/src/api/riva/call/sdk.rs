@@ -31,8 +31,7 @@ const DEFAULT_ENCODING_ATTR: &str = "LINEAR_PCM";
 const ENDPOINTING_ATTR: &str = "EndpointingConfig";
 const COPY_FROM: &str = "CopyFrom";
 
-// The optional client's handles: the package for Auth and ASRService, and whichever module exposes
-// the protobuf constructors. Holds no state, so one instance can cross a blocking job.
+// The optional client's handles: the package for Auth and ASRService, and whichever module exposes the protobuf constructors; stateless, so one instance can cross a blocking job.
 pub struct RivaSdk {
     client: Py<PyAny>,
     asr: Py<PyAny>,
@@ -149,7 +148,12 @@ impl RivaSdk {
     ) -> Result<(Py<PyAny>, Py<PyAny>), RivaCallError> {
         let module = self.asr.bind(py);
         let keywords = recognition_keywords(py, module, options)?;
-        let recognition = construct(py, module, RECOGNITION, RECOGNITION_ATTR, &keywords)?;
+        let recognition_factory = config_call(py, RECOGNITION, module.getattr(RECOGNITION_ATTR))?;
+        let recognition = config_call(
+            py,
+            RECOGNITION,
+            recognition_factory.call((), Some(&keywords)),
+        )?;
         apply_endpointing(py, module, &recognition, options)?;
         let streaming_keywords = PyDict::new(py);
         config_call(
@@ -162,7 +166,12 @@ impl RivaSdk {
             STREAMING,
             streaming_keywords.set_item("interim_results", false),
         )?;
-        let streaming = construct(py, module, STREAMING, STREAMING_ATTR, &streaming_keywords)?;
+        let streaming_factory = config_call(py, STREAMING, module.getattr(STREAMING_ATTR))?;
+        let streaming = config_call(
+            py,
+            STREAMING,
+            streaming_factory.call((), Some(&streaming_keywords)),
+        )?;
         Ok((recognition.unbind(), streaming.unbind()))
     }
 
@@ -182,18 +191,6 @@ impl RivaSdk {
             .map_err(|error| provider_failure(py, &error))?;
         Ok(service.unbind())
     }
-}
-
-// Both config constructors take keywords on the class the SDK exposes through its module
-fn construct<'py>(
-    py: Python<'py>,
-    module: &Bound<'py, PyAny>,
-    operation: &'static str,
-    class: &str,
-    keywords: &Bound<'py, PyDict>,
-) -> Result<Bound<'py, PyAny>, RivaCallError> {
-    let factory = config_call(py, operation, module.getattr(class))?;
-    config_call(py, operation, factory.call((), Some(keywords)))
 }
 
 fn metadata(spec: &AuthSpec<'_>) -> Vec<(&'static str, String)> {

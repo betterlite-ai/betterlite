@@ -12,8 +12,7 @@ pub const NVCF_FUNCTION_ID_SET: &str = "nvcf_function_id_set";
 pub const USE_SSL: &str = "use_ssl";
 pub const RECOGNITION_CONFIG: &str = "recognition_config";
 
-// pre_call's additional_args: the endpoint, the async flag, and the recognition dict with the
-// function-ID presence and the raw TLS override beside it
+// pre_call's additional_args: the endpoint, the async flag, and the recognition dict with the function-ID presence and the raw TLS override beside it
 pub struct RivaPreCall {
     pub api_base: String,
     pub atranscription: bool,
@@ -52,6 +51,7 @@ impl RivaLogger for PrePostLogger<'_, '_> {
                     model: None,
                     additional_args: AdditionalArgs {
                         api_base: Some(record.api_base),
+                        headers: None,
                         complete_input_dict: Some(RawBody::Object(IndexMap::from([
                             (
                                 RECOGNITION_CONFIG.to_owned(),
@@ -63,11 +63,12 @@ impl RivaLogger for PrePostLogger<'_, '_> {
                             ),
                             (USE_SSL.to_owned(), record.use_ssl),
                         ]))),
+                        request_str: None,
+                        openai_sdk: None,
                         passthrough: IndexMap::from([(
                             ATRANSCRIPTION_FIELD.to_owned(),
                             Json::Bool(record.atranscription),
                         )]),
-                        ..AdditionalArgs::default()
                     },
                 };
                 pre_call(self.state, &call, self.env).map(drop)
@@ -77,8 +78,12 @@ impl RivaLogger for PrePostLogger<'_, '_> {
                     original_response: record.original_response,
                     input: record.input,
                     additional_args: AdditionalArgs {
+                        api_base: None,
+                        headers: None,
                         complete_input_dict: Some(RawBody::Object(record.recognition_config)),
-                        ..AdditionalArgs::default()
+                        request_str: None,
+                        openai_sdk: None,
+                        passthrough: IndexMap::new(),
                     },
                 };
                 post_call(self.state, &call, self.env);
