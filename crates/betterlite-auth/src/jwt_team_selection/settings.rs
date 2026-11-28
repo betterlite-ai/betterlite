@@ -22,10 +22,4 @@ impl SelectionSettings {
             routing: section.routing.clone(),
         }
     }
-
-    // is_required_team_id: either configured team claim field demands a team in the token
-    #[must_use]
-    pub fn requires_team(&self) -> bool {
-        self.teams.team_id_jwt_field.is_some() || self.teams.team_alias_jwt_field.is_some()
-    }
 }

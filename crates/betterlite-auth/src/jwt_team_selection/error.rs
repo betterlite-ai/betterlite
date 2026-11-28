@@ -77,19 +77,21 @@ impl TeamSelectionError {
         }
     }
 
+    // sorted(ids) as Python prints them: ['a', 'b']
     #[must_use]
     pub fn header_team_not_allowed(header_value: String, allowed: &BTreeSet<String>) -> Self {
         Self::HeaderTeamNotAllowed {
             header_value,
-            allowed: python_list(allowed),
+            allowed: format!("[{}]", quoted(allowed)),
         }
     }
 
+    // the set as Python prints it; betterlite sorts where LiteLLM keeps hash order
     #[must_use]
     pub fn no_team_for_model(model: &str, checked: &BTreeSet<String>) -> Self {
         Self::NoTeamForModel {
             model: model.to_owned(),
-            checked: python_set(checked),
+            checked: format!("{{{}}}", quoted(checked)),
         }
     }
 
@@ -150,19 +152,10 @@ fn other_exception(message: String) -> ProxyException {
     as_proxy_exception(&failure).exception().clone()
 }
 
-// Python's repr of a sorted set: {'a', 'b'}; the scan only reports a non-empty set, since an empty
-// one returns before the denial. betterlite sorts where LiteLLM keeps hash order
-fn python_set(values: &BTreeSet<String>) -> String {
-    format!("{{{}}}", quoted(values.iter()))
-}
-
-// Python's repr of sorted(ids): ['a', 'b']
-fn python_list(values: &BTreeSet<String>) -> String {
-    format!("[{}]", quoted(values.iter()))
-}
-
-fn quoted<'value>(values: impl Iterator<Item = &'value String>) -> String {
+// Python's repr of one value: 'a', with the quote and backslash escapes Python adds
+fn quoted(values: &BTreeSet<String>) -> String {
     values
+        .iter()
         .map(|value| format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")))
         .collect::<Vec<_>>()
         .join(", ")

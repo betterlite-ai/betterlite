@@ -220,13 +220,19 @@ pub(crate) fn lookup(script: &Arc<Script>, database: bool) -> TeamLookup {
 }
 
 // the claim readers and the selection settings share one JwtAuthSettings, as they do in production
-pub(crate) fn settings(patch: impl FnOnce(&mut JwtAuthSettings)) -> JwtAuthSettings {
+pub(crate) fn settings<Patch>(patch: Patch) -> JwtAuthSettings
+where
+    Patch: FnOnce(&mut JwtAuthSettings),
+{
     let mut settings = JwtAuthSettings::default();
     patch(&mut settings);
     settings
 }
 
-pub(crate) fn selection(patch: impl FnOnce(&mut SelectionSettings)) -> SelectionSettings {
+pub(crate) fn selection<Patch>(patch: Patch) -> SelectionSettings
+where
+    Patch: FnOnce(&mut SelectionSettings),
+{
     let mut settings = SelectionSettings::default();
     patch(&mut settings);
     settings

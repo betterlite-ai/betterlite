@@ -7,10 +7,7 @@ use axum::http::Request;
 use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
 use betterlite_auth::jwt_claims::claims::JwtClaims;
 use betterlite_auth::jwt_claims::settings::JwtAuthSettings;
-use betterlite_auth::jwt_team_selection::claims_teams::{
-    find_and_validate_specific_team_id, get_all_team_ids,
-};
-use betterlite_auth::jwt_team_selection::error::TeamSelectionError;
+use betterlite_auth::jwt_team_selection::claims_teams::{find_team_in_claims, get_all_team_ids};
 use betterlite_auth::jwt_team_selection::header::{HeaderTeam, resolve_team_from_header};
 use betterlite_auth::jwt_team_selection::object::validate_object_id;
 use betterlite_auth::jwt_team_selection::settings::SelectionSettings;
@@ -102,10 +99,11 @@ pub(crate) async fn prefetch(
         trusted_issuers: &[],
     };
     let (claim_team_id, _team) =
-        find_and_validate_specific_team_id(&claims, &rule.lookup, settings, rule.team_id_upsert)
+        find_team_in_claims(&claims, &rule.lookup, settings, rule.team_id_upsert)
             .await
-            .map_err(selection_failure)?;
-    let mut allowed = get_all_team_ids(&claims).map_err(selection_failure)?;
+            .map_err(|error| Box::new(error.into_proxy_exception()))?;
+    let mut allowed =
+        get_all_team_ids(&claims).map_err(|error| Box::new(error.into_proxy_exception()))?;
     if let Some(team_id) = &claim_team_id {
         allowed.insert(team_id.clone());
     }
@@ -116,7 +114,7 @@ pub(crate) async fn prefetch(
         &rule.lookup,
     )
     .await
-    .map_err(selection_failure)?;
+    .map_err(|error| Box::new(error.into_proxy_exception()))?;
     stage.selection = Selection {
         claim_team_id,
         header,
@@ -144,10 +142,6 @@ pub(crate) fn run_stage(
         rule.enforce_rbac,
         rule.is_proxy_admin,
     )
-    .map_err(selection_failure)?;
+    .map_err(|error| Box::new(error.into_proxy_exception()))?;
     Ok(stage.context.clone())
-}
-
-fn selection_failure(error: TeamSelectionError) -> Box<ProxyException> {
-    Box::new(error.into_proxy_exception())
 }

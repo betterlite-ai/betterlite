@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use super::support::{Script, claims, ids, lookup, rendered, selection, settings};
-use crate::jwt_team_selection::claims_teams::{
-    find_and_validate_specific_team_id, get_all_team_ids,
-};
+use crate::jwt_team_selection::claims_teams::{find_team_in_claims, get_all_team_ids};
 
 const TEAM_A: &str = r#"{"team_id": "team-a", "models": ["model-a"]}"#;
 const DEFAULT_TEAM: &str = r#"{"team_id": "default-team", "models": []}"#;
@@ -36,7 +34,7 @@ async fn team_id_before_alias() {
     let document = serde_json::json!({"team_id": "team-a", "team_alias": "alias-a"});
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, true);
-    let (team_id, row) = find_and_validate_specific_team_id(&jwt, &lookup, &required_team(), None)
+    let (team_id, row) = find_team_in_claims(&jwt, &lookup, &required_team(), None)
         .await
         .unwrap();
     assert_eq!(team_id.as_deref(), Some("team-a"));
@@ -60,7 +58,7 @@ async fn alias_before_default() {
     let document = serde_json::json!({"team_alias": "alias-a"});
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, true);
-    let (team_id, _row) = find_and_validate_specific_team_id(&jwt, &lookup, &required_team(), None)
+    let (team_id, _row) = find_team_in_claims(&jwt, &lookup, &required_team(), None)
         .await
         .unwrap();
     assert_eq!(team_id.as_deref(), Some("team-a"));
@@ -75,7 +73,7 @@ async fn explicit_upsert_override() {
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, true);
     let settings = required_team();
-    let (team_id, _row) = find_and_validate_specific_team_id(&jwt, &lookup, &settings, Some(true))
+    let (team_id, _row) = find_team_in_claims(&jwt, &lookup, &settings, Some(true))
         .await
         .unwrap();
     assert_eq!(team_id.as_deref(), Some("team-new"));
@@ -91,7 +89,7 @@ async fn explicit_upsert_absent_without_override() {
     let lookup = lookup(&script, true);
     let settings = required_team();
     let (status, _, _) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &settings, None)
+        find_team_in_claims(&jwt, &lookup, &settings, None)
             .await
             .unwrap_err(),
     );
@@ -108,14 +106,14 @@ async fn claim_404_fallback() {
     let lookup = lookup(&script, true);
     let fallback = selection(|fields| fields.routing.team_claim_fallback = true);
     assert_eq!(
-        find_and_validate_specific_team_id(&jwt, &lookup, &fallback, None)
+        find_team_in_claims(&jwt, &lookup, &fallback, None)
             .await
             .unwrap(),
         (None, None)
     );
     let strict = required_team();
     let (status, _, _) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &strict, None)
+        find_team_in_claims(&jwt, &lookup, &strict, None)
             .await
             .unwrap_err(),
     );
@@ -130,7 +128,7 @@ async fn claim_non404_propagates() {
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, false);
     let (status, _, message) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &required_team(), None)
+        find_team_in_claims(&jwt, &lookup, &required_team(), None)
             .await
             .unwrap_err(),
     );
@@ -142,7 +140,7 @@ async fn claim_non404_propagates() {
     // the fallback only swallows a proven 404, so the same read failure still propagates
     let fallback = selection(|fields| fields.routing.team_claim_fallback = true);
     let (status, _, _) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &fallback, None)
+        find_team_in_claims(&jwt, &lookup, &fallback, None)
             .await
             .unwrap_err(),
     );
@@ -157,7 +155,7 @@ async fn required_team_missing() {
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, true);
     let (status, error_type, message) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &required_team(), None)
+        find_team_in_claims(&jwt, &lookup, &required_team(), None)
             .await
             .unwrap_err(),
     );
@@ -181,7 +179,7 @@ async fn dot_index_hint() {
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, true);
     let (status, _, message) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &hint_settings("roles.0"), None)
+        find_team_in_claims(&jwt, &lookup, &hint_settings("roles.0"), None)
             .await
             .unwrap_err(),
     );
@@ -200,7 +198,7 @@ async fn bracket_index_hint() {
     let jwt = claims(document, &fields);
     let lookup = lookup(&script, true);
     let (status, _, message) = rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &hint_settings("roles[0]"), None)
+        find_team_in_claims(&jwt, &lookup, &hint_settings("roles[0]"), None)
             .await
             .unwrap_err(),
     );
@@ -217,7 +215,7 @@ async fn hint_message(field: &str) -> String {
     let fields = settings(|fields| fields.team_id_jwt_field = Some(field.to_owned()));
     let jwt = claims(serde_json::json!({"sub": "someone"}), &fields);
     rendered(
-        find_and_validate_specific_team_id(&jwt, &lookup, &hint_settings(field), None)
+        find_team_in_claims(&jwt, &lookup, &hint_settings(field), None)
             .await
             .unwrap_err(),
     )

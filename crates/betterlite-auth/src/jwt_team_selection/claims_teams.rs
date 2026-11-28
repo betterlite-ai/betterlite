@@ -12,8 +12,8 @@ use crate::jwt_claims::teams::TeamClaims as _;
 use super::error::TeamSelectionError;
 use super::settings::SelectionSettings;
 
-// find_and_validate_specific_team_id: the individual claim first, then the alias, then the required-team refusal
-pub async fn find_and_validate_specific_team_id(
+// find_team_in_claims: the individual claim first, then the alias, then the required-team refusal
+pub async fn find_team_in_claims(
     claims: &JwtClaims<'_>,
     lookup: &TeamLookup,
     settings: &SelectionSettings,
@@ -47,7 +47,7 @@ pub async fn find_and_validate_specific_team_id(
             .map_err(|error| TeamSelectionError::Lookup(Box::new(error)))?;
         return Ok((Some(team.team.fields.base.team_id.clone()), Some(team.team)));
     }
-    if settings.requires_team() {
+    if settings.teams.team_id_jwt_field.is_some() || settings.teams.team_alias_jwt_field.is_some() {
         return Err(missing_team(settings));
     }
     Ok((None, None))
@@ -55,7 +55,10 @@ pub async fn find_and_validate_specific_team_id(
 
 // get_all_team_ids: the plural groups only, deduplicated
 pub fn get_all_team_ids(claims: &JwtClaims<'_>) -> Result<BTreeSet<String>, TeamSelectionError> {
-    Ok(claims.team_ids()?.into_iter().collect())
+    let groups = claims.team_ids()?;
+    let mut ids = BTreeSet::new();
+    ids.extend(groups);
+    Ok(ids)
 }
 
 fn not_found(error: &TeamLookupError) -> bool {

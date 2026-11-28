@@ -116,7 +116,7 @@ async fn candidate_verdict(
     if !route_allowed {
         return CandidateVerdict::Skip;
     }
-    if !team_has_passthrough_route_access(
+    if !team_passthrough_access(
         Some(&team.team),
         request.route,
         request.request_method,
@@ -151,9 +151,9 @@ async fn grants_model(
         .is_ok()
 }
 
-// _team_has_passthrough_route_access: the config grant, then the selected team's own metadata
+// team_passthrough_access: the config grant, then the selected team's own metadata
 #[must_use]
-pub fn team_has_passthrough_route_access(
+pub fn team_passthrough_access(
     team: Option<&LiteLLMTeamTable>,
     route: &str,
     request_method: Option<&str>,

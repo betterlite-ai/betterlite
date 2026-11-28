@@ -4,8 +4,7 @@ use std::sync::Arc;
 use rstest::rstest;
 
 use super::super::candidates::{
-    CandidateContext, CandidateRequest, find_team_with_model_access,
-    team_has_passthrough_route_access,
+    CandidateContext, CandidateRequest, find_team_with_model_access, team_passthrough_access,
 };
 use super::support::{
     Script, context, ids, lookup, open_registry, protected_registry, rendered, selection, team,
@@ -282,21 +281,21 @@ async fn resolved_model_denied() {
 #[test]
 fn pass_through_method_upper() {
     let registry = protected_registry(PROTECTED, "POST");
-    assert!(!team_has_passthrough_route_access(
+    assert!(!team_passthrough_access(
         None,
         PROTECTED,
         Some("post"),
         &[],
         &registry
     ));
-    assert!(!team_has_passthrough_route_access(
+    assert!(!team_passthrough_access(
         None,
         PROTECTED,
         None,
         &[],
         &registry
     ));
-    assert!(team_has_passthrough_route_access(
+    assert!(team_passthrough_access(
         None,
         "/elsewhere",
         Some("post"),
@@ -308,7 +307,7 @@ fn pass_through_method_upper() {
 #[test]
 fn pass_through_config_grant() {
     let registry = protected_registry(PROTECTED, "POST");
-    assert!(team_has_passthrough_route_access(
+    assert!(team_passthrough_access(
         None,
         PROTECTED,
         Some("POST"),
@@ -323,7 +322,7 @@ fn pass_through_metadata_grant() {
     let row = team(
         r#"{"team_id": "team-a", "models": [], "metadata": {"allowed_passthrough_routes": ["/v1/registered"]}}"#,
     );
-    assert!(team_has_passthrough_route_access(
+    assert!(team_passthrough_access(
         Some(&row),
         PROTECTED,
         Some("POST"),
