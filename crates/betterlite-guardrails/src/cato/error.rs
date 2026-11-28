@@ -173,7 +173,14 @@ impl From<WebSocketClientError> for CatoError {
     fn from(error: WebSocketClientError) -> Self {
         match error {
             WebSocketClientError::Timeout => Self::ConnectTimeout,
-            other => Self::WebSocket { source: other },
+            other @ (WebSocketClientError::Io(_)
+            | WebSocketClientError::Tls
+            | WebSocketClientError::Status { .. }
+            | WebSocketClientError::ProxyStatus { .. }
+            | WebSocketClientError::Capacity { .. }
+            | WebSocketClientError::Url
+            | WebSocketClientError::KeepaliveTimeout
+            | WebSocketClientError::Protocol) => Self::WebSocket { source: other },
         }
     }
 }
