@@ -1,0 +1,355 @@
+use std::collections::BTreeMap;
+use std::error::Error as StdError;
+use std::sync::Arc;
+use std::time::SystemTime;
+
+use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::count_call::counter::TokenCountResponse;
+use betterlite_bedrock::count_call::handler::{
+    BedrockCountTokensHandler, CountTokensHandler, CountTokensHandlerError,
+    CountTokensHandlerRequest,
+};
+use betterlite_bedrock::count_call::reply::CountResponse;
+use betterlite_bedrock::embedding_call::ParamMap;
+use betterlite_bedrock::embedding_call::{Clock, EmbeddingCallResponse};
+use betterlite_bedrock::signing::executor::AwsSigningExecutor;
+use betterlite_bedrock::transcription::binding::{TranscriptionBinding, TranscriptionResponse};
+use betterlite_bedrock::transcription::call::NativeTranscription;
+use betterlite_bedrock::transcription::error::CallError;
+use betterlite_bedrock::transcription::params::Params;
+use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::decisions::Json;
+use betterlite_openai::api::image_contracts::records::ImageParams;
+use betterlite_openai::api::rerank_contracts::records::RerankResponse;
+use betterlite_redact::secret::Redactor;
+use indexmap::IndexMap;
+use serde_json::Number;
+
+use crate::bedrock_image_dispatch::BedrockImageResult;
+use crate::bedrock_other_dispatch::BedrockOtherRequest;
+use crate::bedrock_other_dispatch::BedrockOtherResult;
+use crate::bedrock_other_dispatch::call::BedrockOtherOperation;
+use crate::bedrock_other_dispatch::error::BedrockOtherError;
+use crate::bedrock_other_dispatch::execute::{LogContext, Services, dispatch};
+use crate::bedrock_other_dispatch::test_support::client::{FixtureClient, Replies, Reply};
+use crate::bedrock_other_dispatch::test_support::factory::{ClientCall, Factory};
+use crate::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
+use crate::bedrock_other_dispatch::test_support::source::Source;
+use crate::bedrock_other_dispatch::test_support::{
+    Counting, DiscardingSink, Files, FixedClock, NOW_SECONDS, instant, logging_state, prepost_env,
+    redactor, region_worker, secret_lookup,
+};
+use crate::operation::{OperationRequest, OperationResult};
+
+// The handler a family that never counts tokens is handed; it answers no count at all
+pub(crate) struct Unavailable;
+
+impl CountTokensHandler for Unavailable {
+    async fn handle_count_tokens_request(
+        &self,
+        _request: &CountTokensHandlerRequest<'_>,
+        _now: SystemTime,
+    ) -> Result<Option<CountResponse>, CountTokensHandlerError> {
+        Ok(None)
+    }
+}
+
+pub(crate) type Handler = BedrockCountTokensHandler<FixtureClient, Source>;
+pub(crate) type Binding = NativeTranscription<FixtureClient, Source>;
+
+// The scripted factory, transport and identity one dispatch runs against
+pub(crate) struct Fixture {
+    factory: Factory,
+    transport: FixtureClient,
+    source: Source,
+}
+
+impl Fixture {
+    pub(crate) fn new(replies: &[Reply], credentials: Credentials) -> Self {
+        let seen = Seen::default();
+        let mut factory = Factory::queued(replies);
+        factory.seen = seen.clone();
+        Self {
+            factory,
+            transport: FixtureClient::new(Replies::queue(replies), seen),
+            source: Source::new(credentials),
+        }
+    }
+
+    pub(crate) fn source(&self) -> &Source {
+        &self.source
+    }
+
+    pub(crate) fn client(&self) -> FixtureClient {
+        FixtureClient::new(self.factory.replies.clone(), self.factory.seen.clone())
+    }
+}
+
+// What one dispatch observed: its outcome, every posted request, and the logging state it wrote
+pub(crate) struct Outcome<E> {
+    pub(crate) result: Result<BedrockOtherResult, BedrockOtherError<E>>,
+    pub(crate) requests: Vec<Recorded>,
+    pub(crate) calls: Vec<ClientCall>,
+    pub(crate) regions: Vec<String>,
+    pub(crate) state: LoggingState,
+}
+
+impl<E> Outcome<E>
+where
+    E: StdError + 'static,
+{
+    pub(crate) fn embedding(&self) -> &EmbeddingCallResponse {
+        match &self.result {
+            Ok(BedrockOtherResult::Embedding(response)) => response.as_ref(),
+            Ok(_other) => panic!("the embedding arm returns an embedding reply"),
+            Err(error) => panic!("the embedding dispatch failed: {error}"),
+        }
+    }
+
+    pub(crate) fn status_body(&self) -> &Json {
+        match &self.result {
+            Ok(BedrockOtherResult::EmbeddingStatus(status)) => status.as_ref(),
+            Ok(_other) => panic!("the status arm returns a status body"),
+            Err(error) => panic!("the status dispatch failed: {error}"),
+        }
+    }
+
+    pub(crate) fn rerank(&self) -> &RerankResponse {
+        match &self.result {
+            Ok(BedrockOtherResult::Rerank(response)) => response.as_ref(),
+            Ok(_other) => panic!("the rerank arm returns a rerank reply"),
+            Err(error) => panic!("the rerank dispatch failed: {error}"),
+        }
+    }
+
+    pub(crate) fn count(&self) -> Option<&TokenCountResponse> {
+        match &self.result {
+            Ok(BedrockOtherResult::Count(count)) => count.as_deref(),
+            Ok(_other) => panic!("the count arm returns a token count"),
+            Err(error) => panic!("the count dispatch failed: {error}"),
+        }
+    }
+
+    pub(crate) fn transcription(&self) -> &TranscriptionResponse {
+        match &self.result {
+            Ok(BedrockOtherResult::Transcription(response)) => response.as_ref(),
+            Ok(_other) => panic!("the transcription arm returns a transcript"),
+            Err(error) => panic!("the transcription dispatch failed: {error}"),
+        }
+    }
+
+    pub(crate) fn image(&self) -> &BedrockImageResult {
+        match &self.result {
+            Ok(BedrockOtherResult::Image(result)) => result.as_ref(),
+            Ok(_other) => panic!("the image arm returns an image result"),
+            Err(error) => panic!("the image dispatch failed: {error}"),
+        }
+    }
+
+    pub(crate) fn error(&self) -> &BedrockOtherError<E> {
+        match &self.result {
+            Ok(_other) => panic!("the dispatch should fail"),
+            Err(error) => error,
+        }
+    }
+
+    pub(crate) fn posted(&self) -> &Recorded {
+        assert_eq!(self.requests.len(), 1, "one dispatch posts one request");
+        &self.requests[0]
+    }
+
+    pub(crate) fn body(&self, index: usize) -> Json {
+        serde_json::from_slice(&self.requests[index].body).expect("the request body is JSON")
+    }
+
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
+        self.posted()
+            .headers
+            .iter()
+            .find(|(key, _value)| key.eq_ignore_ascii_case(name))
+            .map(|(_key, value)| value.as_str())
+    }
+
+    pub(crate) fn authorization(&self) -> Option<&str> {
+        self.header("authorization")
+    }
+
+    pub(crate) fn post_call(&self) -> bool {
+        self.state
+            .model_call_details
+            .contains_key("original_response")
+    }
+}
+
+pub(crate) fn value(source: &str) -> Json {
+    serde_json::from_str(source).expect("the fixture value is JSON")
+}
+
+pub(crate) fn params(source: &str) -> ParamMap {
+    serde_json::from_str(source).expect("the optional params are a JSON object")
+}
+
+pub(crate) fn object(value: &Json) -> &IndexMap<String, Json> {
+    match value {
+        Json::Object(fields) => fields,
+        _other => panic!("the value is a JSON object"),
+    }
+}
+
+pub(crate) fn array(value: &Json) -> &[Json] {
+    match value {
+        Json::List(items) => items,
+        _other => panic!("the value is a JSON array"),
+    }
+}
+
+pub(crate) fn text(value: &Json) -> &str {
+    match value {
+        Json::Text(text) => text,
+        _other => panic!("the value is JSON text"),
+    }
+}
+
+pub(crate) fn number(value: &Json) -> &Number {
+    match value {
+        Json::Number(number) => number,
+        _other => panic!("the value is a JSON number"),
+    }
+}
+
+pub(crate) fn image_params(source: &str) -> ImageParams {
+    serde_json::from_str(source).expect("the image params are a JSON object")
+}
+
+pub(crate) fn transcription_params(source: &str) -> Params {
+    serde_json::from_str(source).expect("the transcription params are a JSON object")
+}
+
+pub(crate) fn environment(source: &str) -> BTreeMap<String, String> {
+    serde_json::from_str(source).expect("the environment is a string map")
+}
+
+pub(crate) async fn run(
+    fixture: &Fixture,
+    operation: BedrockOtherOperation<'_, '_, '_, Unavailable, Binding>,
+) -> Outcome<CallError> {
+    exchange(fixture, operation).await
+}
+
+pub(crate) async fn run_count(
+    fixture: &Fixture,
+    operation: BedrockOtherOperation<'_, '_, '_, Handler, Binding>,
+) -> Outcome<CallError> {
+    exchange(fixture, operation).await
+}
+
+pub(crate) async fn run_transcription<B>(
+    fixture: &Fixture,
+    operation: BedrockOtherOperation<'_, '_, '_, Unavailable, B>,
+) -> Outcome<B::Error>
+where
+    B: TranscriptionBinding + Sync,
+{
+    exchange(fixture, operation).await
+}
+
+// The dependencies one dispatch reads that do not come from the fixture, built once per exchange
+struct Prepared {
+    redactor: Redactor,
+    state: LoggingState,
+    secrets: SecretLookup,
+    workers: ManagedRegionWorker,
+    signing: AwsSigningExecutor,
+    encoding: Counting,
+    files: Files,
+    clock: Arc<dyn Clock>,
+}
+
+impl Prepared {
+    fn new() -> Self {
+        let redactor = redactor().expect("the fixture redactor builds");
+        let state = logging_state(&redactor).expect("the fixture logging state builds");
+        Self {
+            redactor,
+            state,
+            secrets: secret_lookup(),
+            workers: region_worker().expect("the fixture region worker builds"),
+            signing: AwsSigningExecutor::default(),
+            encoding: Counting,
+            files: Files,
+            clock: Arc::new(FixedClock(
+                instant(NOW_SECONDS).expect("the fixture instant builds"),
+            )),
+        }
+    }
+
+    async fn dispatch<H, B>(
+        &mut self,
+        fixture: &Fixture,
+        operation: BedrockOtherOperation<'_, '_, '_, H, B>,
+    ) -> Result<BedrockOtherResult, BedrockOtherError<B::Error>>
+    where
+        H: CountTokensHandler,
+        B: TranscriptionBinding + Sync,
+    {
+        let sink = DiscardingSink;
+        let env = prepost_env(&self.state, &self.redactor, &sink);
+        let services = Services {
+            secrets: &self.secrets,
+            region_worker: &self.workers,
+            source: &fixture.source,
+            factory: &fixture.factory,
+            transport: &fixture.transport,
+            encoding: &self.encoding,
+            signing: &self.signing,
+            clock: Arc::clone(&self.clock),
+            files: &self.files,
+        };
+        let mut log = LogContext {
+            state: &mut self.state,
+            env: &env,
+        };
+        outcome(
+            dispatch(
+                OperationRequest::BedrockOther(BedrockOtherRequest),
+                operation,
+                &services,
+                &mut log,
+            )
+            .await,
+        )
+    }
+}
+
+async fn exchange<H, B>(
+    fixture: &Fixture,
+    operation: BedrockOtherOperation<'_, '_, '_, H, B>,
+) -> Outcome<B::Error>
+where
+    H: CountTokensHandler,
+    B: TranscriptionBinding + Sync,
+{
+    let mut prepared = Prepared::new();
+    let result = prepared.dispatch(fixture, operation).await;
+    Outcome {
+        result,
+        requests: fixture.factory.requests(),
+        calls: fixture.factory.calls(),
+        regions: fixture.source.regions(),
+        state: prepared.state,
+    }
+}
+
+// A dispatcher that answered another operation result would be a bug, and the fixture reports it as one
+fn outcome<E>(
+    dispatched: Result<OperationResult, BedrockOtherError<E>>,
+) -> Result<BedrockOtherResult, BedrockOtherError<E>>
+where
+    E: StdError + 'static,
+{
+    match dispatched {
+        Ok(OperationResult::BedrockOther(result)) => Ok(result),
+        Ok(_other) => panic!("the non-chat dispatcher returns a non-chat result"),
+        Err(error) => Err(error),
+    }
+}
