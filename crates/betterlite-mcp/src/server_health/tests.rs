@@ -26,6 +26,7 @@ use crate::config_loader::ports::InstructionsCache;
 use crate::openapi_tools::error::OpenApiError;
 use crate::server_record::MCPServer;
 
+mod spec_loader;
 mod support;
 
 use support::{
