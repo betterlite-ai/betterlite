@@ -318,10 +318,6 @@ async fn opaque_unreadable_session_token_answers_true() {
     let store = FakeStore::new();
     let calls = store.calls();
     let active = subjects(store);
-    assert!(
-        active
-            .uses_gateway_credential(&auth_headers(token.expose_secret()))
-            .await
-    );
+    assert!(active.uses_gateway_credential(&auth_headers(&token)).await);
     assert!(calls.lock().unwrap().identities.is_empty());
 }

@@ -33,10 +33,13 @@ const fn mint_failure(failure: ReloadUserFailure) -> ProxyCredentialMintFailure 
     }
 }
 
-async fn consent_team_list<S: SubjectStore>(
+async fn consent_team_list<S>(
     active: &ActiveSubjects<S>,
     user_id: &str,
-) -> Result<Vec<ConsentTeam>, ReloadUserFailure> {
+) -> Result<Vec<ConsentTeam>, ReloadUserFailure>
+where
+    S: SubjectStore,
+{
     let user = match active.load_active_user(user_id, UserRowSource::Cache).await {
         Ok(user) => user,
         Err(failure) => return Err(failure),
@@ -56,11 +59,14 @@ async fn consent_team_list<S: SubjectStore>(
         .collect())
 }
 
-async fn minted_credential<S: SubjectStore>(
+async fn minted_credential<S>(
     active: &ActiveSubjects<S>,
     user_id: &str,
     team_id: Option<&str>,
-) -> Result<MintedProxyCredential, ProxyCredentialMintFailure> {
+) -> Result<MintedProxyCredential, ProxyCredentialMintFailure>
+where
+    S: SubjectStore,
+{
     let user = match active
         .load_active_user(user_id, UserRowSource::Database)
         .await
@@ -89,11 +95,14 @@ async fn minted_credential<S: SubjectStore>(
 }
 
 // the membership, team read and team_required checks, in LiteLLM's order
-async fn minted_team_details<S: SubjectStore>(
+async fn minted_team_details<S>(
     active: &ActiveSubjects<S>,
     user: &LiteLLMUserTable,
     team_id: Option<&str>,
-) -> Result<Vec<CliSsoTeamDetail>, ProxyCredentialMintFailure> {
+) -> Result<Vec<CliSsoTeamDetail>, ProxyCredentialMintFailure>
+where
+    S: SubjectStore,
+{
     if let Some(wanted) = team_id
         && !user.teams.iter().any(|team| team.as_str() == wanted)
     {
@@ -113,12 +122,15 @@ async fn minted_team_details<S: SubjectStore>(
     Ok(details)
 }
 
-fn minted_key<S: SubjectStore>(
+fn minted_key<S>(
     active: &ActiveSubjects<S>,
     user: &LiteLLMUserTable,
     team_id: Option<&str>,
     selected: CliSsoTeamDetail,
-) -> Result<SecretString, ProxyCredentialMintFailure> {
+) -> Result<SecretString, ProxyCredentialMintFailure>
+where
+    S: SubjectStore,
+{
     let row = minted_user_row(user);
     let session = CliSession {
         team_id: team_id.map(str::to_owned),
@@ -136,9 +148,10 @@ fn minted_key<S: SubjectStore>(
     }
 }
 
-fn cli_codec<S: SubjectStore>(
-    active: &ActiveSubjects<S>,
-) -> SessionTokenCodec<SharedNonces, TracingDiagnostics> {
+fn cli_codec<S>(active: &ActiveSubjects<S>) -> SessionTokenCodec<SharedNonces, TracingDiagnostics>
+where
+    S: SubjectStore,
+{
     SessionTokenCodec {
         cipher: StoredCipher {
             settings: CipherSettings {

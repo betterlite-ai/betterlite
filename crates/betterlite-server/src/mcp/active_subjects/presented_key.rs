@@ -28,12 +28,12 @@ pub fn litellm_key_from_request(headers: &HeaderMap) -> Option<String> {
         let stripped = text.trim_matches(is_text_space);
         let token = if stripped.to_lowercase().starts_with("bearer ") {
             let remainder: String = stripped.chars().skip(BEARER_PREFIX_CHARS).collect();
-            remainder.trim_matches(is_text_space)
+            remainder.trim_matches(is_text_space).to_owned()
         } else {
-            stripped
+            stripped.to_owned()
         };
         if !token.is_empty() {
-            return Some(token.to_owned());
+            return Some(token);
         }
     }
     None

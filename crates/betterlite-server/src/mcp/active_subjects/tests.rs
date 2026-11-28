@@ -182,7 +182,10 @@ impl SubjectStore for FakeStore {
     }
 }
 
-pub(crate) fn subjects<S: SubjectStore>(store: S) -> ActiveSubjects<S> {
+pub(crate) fn subjects<S>(store: S) -> ActiveSubjects<S>
+where
+    S: SubjectStore,
+{
     ActiveSubjects {
         store,
         settings: ActiveSubjectSettings {

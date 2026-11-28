@@ -47,7 +47,10 @@ impl<S: SubjectStore> GatewayCredential for ActiveSubjects<S> {
 }
 
 // The comparison is over the encoded bytes, the way secrets.compare_digest reads them
-fn matches_master_key<S: SubjectStore>(active: &ActiveSubjects<S>, token: &str) -> bool {
+fn matches_master_key<S>(active: &ActiveSubjects<S>, token: &str) -> bool
+where
+    S: SubjectStore,
+{
     let Some(master_key) = active.settings.master_key.as_ref() else {
         return false;
     };
@@ -59,7 +62,10 @@ fn matches_master_key<S: SubjectStore>(active: &ActiveSubjects<S>, token: &str) 
 }
 
 // The unscoped global validator can accept issuers the configured list doesn't name
-fn jwt_issuer_is_trusted<S: SubjectStore>(active: &ActiveSubjects<S>, token: &str) -> bool {
+fn jwt_issuer_is_trusted<S>(active: &ActiveSubjects<S>, token: &str) -> bool
+where
+    S: SubjectStore,
+{
     let Some(claims) = unverified_claims(token) else {
         return true;
     };
@@ -83,10 +89,10 @@ fn jwt_issuer_is_trusted<S: SubjectStore>(active: &ActiveSubjects<S>, token: &st
             .any(|configured| configured.as_str() == issuer)
 }
 
-async fn opaque_bearer_credential<S: SubjectStore>(
-    active: &ActiveSubjects<S>,
-    token: &str,
-) -> bool {
+async fn opaque_bearer_credential<S>(active: &ActiveSubjects<S>, token: &str) -> bool
+where
+    S: SubjectStore,
+{
     if token.is_envelope() || token.is_refresh_envelope() || token.starts_with(V2_GCM_PREFIX) {
         return true;
     }
