@@ -1,5 +1,6 @@
 use std::io::Error as IoError;
 
+use hyper::Error as HyperError;
 use thiserror::Error;
 use tokio_tungstenite::tungstenite::error::{CapacityError, Error as TungsteniteError};
 
@@ -26,6 +27,13 @@ pub enum WebSocketClientError {
     Protocol,
 }
 
+// a hyper connection or upgrade failure is a socket failure like connect_tcp's
+impl From<HyperError> for WebSocketClientError {
+    fn from(error: HyperError) -> Self {
+        Self::Io(IoError::other(error))
+    }
+}
+
 impl WebSocketClientError {
     pub(crate) fn from_tungstenite(error: TungsteniteError) -> Self {
         match error {
@@ -34,12 +42,12 @@ impl WebSocketClientError {
             TungsteniteError::Capacity(CapacityError::MessageTooLong { size, max_size }) => {
                 Self::Capacity { size, max_size }
             }
-            TungsteniteError::Capacity(CapacityError::TooManyHeaders) => Self::Protocol,
             TungsteniteError::Url(_) => Self::Url,
             TungsteniteError::Http(response) => Self::Status {
                 status: response.status().as_u16(),
             },
-            TungsteniteError::ConnectionClosed
+            TungsteniteError::Capacity(CapacityError::TooManyHeaders)
+            | TungsteniteError::ConnectionClosed
             | TungsteniteError::AlreadyClosed
             | TungsteniteError::Protocol(_)
             | TungsteniteError::WriteBufferFull(_)

@@ -1,4 +1,6 @@
-use std::io::Error as IoError;
+use std::future::Future as _;
+use std::future::poll_fn;
+use std::task::Poll;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -68,40 +70,34 @@ async fn establish(
     stream: TokioIo<TcpStream>,
     request: Request<Empty<Bytes>>,
 ) -> Result<Upgraded, WebSocketClientError> {
-    let (mut sender, connection) = http1::Builder::new()
-        .handshake(stream)
-        .await
-        .map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
-    let mut upgrading = connection.with_upgrades();
+    let (mut sender, connection) = http1::Builder::new().handshake(stream).await?;
+    let upgrading = connection.with_upgrades();
     tokio::pin!(upgrading);
-    let mut finished = false;
-    let response = {
-        let mut pending = sender.send_request(request);
-        tokio::pin!(pending);
-        loop {
-            tokio::select! {
-                biased;
-                response = &mut pending => break response.map_err(|error| WebSocketClientError::Io(IoError::other(error)))?,
-                result = &mut upgrading, if !finished => {
-                    finished = true;
-                    result.map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
-                }
+    let pending = sender.send_request(request);
+    tokio::pin!(pending);
+    let mut upgraded = false;
+    // the connection future must run beside the request, and it may be polled only until it hands over the upgrade
+    let response = poll_fn(|context| {
+        if !upgraded {
+            match upgrading.as_mut().poll(context) {
+                Poll::Ready(Ok(())) => upgraded = true,
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Pending => {}
             }
         }
-    };
+        pending.as_mut().poll(context)
+    })
+    .await?;
     if !response.status().is_success() {
         return Err(WebSocketClientError::ProxyStatus {
             status: response.status().as_u16(),
         });
     }
     drop(sender);
-    if !finished {
-        upgrading
-            .as_mut()
-            .await
-            .map_err(|error| WebSocketClientError::Io(IoError::other(error)))?;
+    if !upgraded {
+        upgrading.as_mut().await?;
     }
     upgrade::on(response)
         .await
-        .map_err(|error| WebSocketClientError::Io(IoError::other(error)))
+        .map_err(WebSocketClientError::from)
 }
