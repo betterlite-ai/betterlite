@@ -5,8 +5,8 @@ use betterlite_provider::regional_host_dispatch::speech::{self, SpeechContext};
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 
-use super::fixtures::{SpeechRecorder, input_failure};
-use super::oracle::{Case, section_settings};
+use super::fixtures::{SpeechRecorder, input_failure, section_settings};
+use super::oracle::Case;
 
 // the minimax speech arm over the case's own context, read back as the voice and the params the handler saw
 #[rustfmt::skip]
