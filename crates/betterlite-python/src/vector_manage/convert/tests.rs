@@ -6,6 +6,7 @@ use betterlite_core::api::vector_store_http_create_read::error::CreateReadError;
 use betterlite_core::api::vector_store_http_write::error::{
     BaseLlmException, HeaderMap as WireHeaders, WriteError,
 };
+use betterlite_core::api::vector_store_read::TransportRequest as ReadTransport;
 use betterlite_core::api::vector_store_read::error::{
     VectorStoreReadError, failure as read_failure,
 };
@@ -224,7 +225,7 @@ fn error_read_failure_is_a_status_class() {
     let failure = read_failure(error, "openai", &redactor());
     let payload = payload_of(
         &failure.class,
-        provider_name(ProviderError::Read(&failure.error), "openai"),
+        provider_name(&ProviderError::Read(&failure.error), "openai"),
     );
     assert_eq!(
         payload,
@@ -247,7 +248,7 @@ fn error_unconfigured_read_is_an_api_connection_error() {
     let failure = read_failure(error, "anthropic", &redactor());
     let payload = payload_of(
         &failure.class,
-        provider_name(ProviderError::Read(&failure.error), "anthropic"),
+        provider_name(&ProviderError::Read(&failure.error), "anthropic"),
     );
     assert_eq!(payload.kind, "APIConnectionError");
     assert_eq!(payload.llm_provider, "anthropic");
@@ -264,7 +265,7 @@ fn error_write_failure_is_a_status_class() {
     let failure = write_failure(error, "openai", &redactor());
     let payload = payload_of(
         &failure.class,
-        provider_name(ProviderError::Write(&failure.error), "openai"),
+        provider_name(&ProviderError::Write(&failure.error), "openai"),
     );
     assert_eq!(payload.kind, "NotFoundError");
     assert_eq!(payload.message, "NotFoundError: OpenAIException - missing");
@@ -282,7 +283,7 @@ fn error_unsupported_write_is_an_api_connection_error() {
     let failure = write_failure(error, "anthropic", &redactor());
     let payload = payload_of(
         &failure.class,
-        provider_name(ProviderError::Write(&failure.error), "anthropic"),
+        provider_name(&ProviderError::Write(&failure.error), "anthropic"),
     );
     assert_eq!(payload.kind, "APIConnectionError");
     assert_eq!(payload.llm_provider, "anthropic");

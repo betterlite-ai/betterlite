@@ -70,7 +70,7 @@ fn a_raised_read_failure_is_the_registered_error_class() {
         let redactor =
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
         let failure = NativeFailure::Read {
-            failure: read_failure(
+            failure: Box::new(read_failure(
                 VectorStoreReadError::Read(CreateReadError::Write(WriteError::Provider(
                     BaseLlmException {
                         status_code: 401,
@@ -81,7 +81,7 @@ fn a_raised_read_failure_is_the_registered_error_class() {
                 ))),
                 "openai",
                 &redactor,
-            ),
+            )),
             provider: String::from("openai"),
         };
         let error = raise(py, &failure);

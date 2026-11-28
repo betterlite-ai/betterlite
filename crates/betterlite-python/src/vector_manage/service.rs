@@ -178,7 +178,7 @@ impl WriteService for SessionService<'_> {
 }
 
 // B2402's HTTP call for a write: update's optional fields, or delete's bare target
-fn write_call<'call>(call: &CoreWriteCall<'call>) -> HttpWriteCall<'call> {
+const fn write_call<'call>(call: &CoreWriteCall<'call>) -> HttpWriteCall<'call> {
     let target = WriteTarget {
         vector_store_id: call.vector_store_id,
         params: call.params,

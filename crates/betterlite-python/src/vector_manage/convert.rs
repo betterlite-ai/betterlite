@@ -1,13 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::vector_store_http_write::config::WriteParams;
-use betterlite_core::api::vector_store_read::TransportRequest as ReadTransport;
-use betterlite_core::api::vector_store_read::error::{
-    VectorStoreReadError, VectorStoreReadFailure,
-};
-use betterlite_core::api::vector_store_write::error::{
-    VectorStoreWriteError, VectorStoreWriteFailure,
-};
+use betterlite_core::api::vector_store_read::error::VectorStoreReadError;
+use betterlite_core::api::vector_store_write::error::VectorStoreWriteError;
 use betterlite_core::api::vector_store_write::{
     TransportRequest as WriteTransport, VectorStoreWriteRequest,
 };
@@ -99,7 +94,7 @@ pub(crate) fn params(kwargs: &IndexMap<String, Json>) -> Result<WriteParams, Con
     let mut ssl_verify = None;
     for (field, value) in kwargs {
         match (field.as_str(), value) {
-            ("api_base", Json::Null) | ("api_key", Json::Null) | ("ssl_verify", Json::Null) => {}
+            ("api_base" | "api_key" | "ssl_verify", Json::Null) => {}
             ("api_base", Json::Text(base)) => api_base = Some(base.clone()),
             ("api_key", Json::Text(key)) => api_key = Some(SecretString::from(key.clone())),
             ("ssl_verify", Json::Bool(flag)) => ssl_verify = Some(*flag),
@@ -189,7 +184,7 @@ pub(crate) enum ProviderError<'failure> {
     Write(&'failure VectorStoreWriteError),
 }
 
-pub(crate) fn provider_name(error: ProviderError<'_>, requested: &str) -> String {
+pub(crate) fn provider_name(error: &ProviderError<'_>, requested: &str) -> String {
     match error {
         ProviderError::Read(VectorStoreReadError::Unconfigured { provider, .. })
         | ProviderError::Write(

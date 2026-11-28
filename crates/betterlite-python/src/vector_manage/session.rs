@@ -41,7 +41,7 @@ use uuid::Uuid;
 
 use crate::completion::setup::openai_defaults;
 
-use self::operations::ReadRequest;
+use self::operations::{ReadRequest, read, write};
 use super::convert::{ListWire, RetrieveWire, WriteWire, params, parse, read_transport};
 use super::error::{NativeFailure, setup};
 use super::service::SessionService;
@@ -172,7 +172,7 @@ impl SessionCore {
                     transport: read_transport!(wire, &parameters),
                     vector_store_id: &wire.vector_store_id,
                 });
-                self.read(request, flag, &logging).await
+                read(self, request, flag, &logging).await
             }
             Pending::List(wire) => {
                 let parameters = params(&wire.transport.kwargs)?;
@@ -183,15 +183,13 @@ impl SessionCore {
                     limit: Some(wire.limit),
                     order: Some(wire.order.as_deref()),
                 });
-                self.read(request, flag, &logging).await
+                read(self, request, flag, &logging).await
             }
             Pending::Update(wire) => {
-                self.write(WriteOperation::Update, &wire, flag, &logging)
-                    .await
+                write(self, WriteOperation::Update, &wire, flag, &logging).await
             }
             Pending::Delete(wire) => {
-                self.write(WriteOperation::Delete, &wire, flag, &logging)
-                    .await
+                write(self, WriteOperation::Delete, &wire, flag, &logging).await
             }
         }
     }

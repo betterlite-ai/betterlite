@@ -1,4 +1,5 @@
 use std::ffi::CStr;
+use std::fmt::Display;
 
 use betterlite_core::api::vector_store_read::error::VectorStoreReadFailure;
 use betterlite_core::api::vector_store_write::error::VectorStoreWriteFailure;
@@ -39,18 +40,24 @@ pub(crate) fn raise(py: Python<'_>, failure: &NativeFailure) -> PyErr {
     match failure {
         NativeFailure::Convert(error) => PyValueError::new_err(error.to_string()),
         NativeFailure::Setup { message } => PyRuntimeError::new_err(message.clone()),
-        NativeFailure::Read { failure, provider } => exception(
+        NativeFailure::Read {
+            failure: read,
+            provider,
+        } => exception(
             py,
             payload_of(
-                &failure.class,
-                provider_name(ProviderError::Read(&failure.error), provider),
+                &read.class,
+                provider_name(&ProviderError::Read(&read.error), provider),
             ),
         ),
-        NativeFailure::Write { failure, provider } => exception(
+        NativeFailure::Write {
+            failure: write,
+            provider,
+        } => exception(
             py,
             payload_of(
-                &failure.class,
-                provider_name(ProviderError::Write(&failure.error), provider),
+                &write.class,
+                provider_name(&ProviderError::Write(&write.error), provider),
             ),
         ),
     }
@@ -76,18 +83,18 @@ pub(crate) enum NativeFailure {
     Setup { message: String },
     #[error("{failure}")]
     Read {
-        failure: VectorStoreReadFailure,
+        failure: Box<VectorStoreReadFailure>,
         provider: String,
     },
     #[error("{failure}")]
     Write {
-        failure: VectorStoreWriteFailure,
+        failure: Box<VectorStoreWriteFailure>,
         provider: String,
     },
 }
 
 // A session that cannot be built names the value that failed, before any request is made
-pub(crate) fn setup(what: &str, source: &dyn std::fmt::Display) -> NativeFailure {
+pub(crate) fn setup(what: &str, source: &dyn Display) -> NativeFailure {
     NativeFailure::Setup {
         message: format!("{what}: {source}"),
     }
