@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
@@ -183,12 +184,12 @@ where
 pub struct NoCredentialChain;
 
 impl CredentialSource for NoCredentialChain {
-    async fn resolve(
+    fn resolve(
         &self,
         _settings: AwsSettings,
         _region: String,
-    ) -> Result<Credentials, CredentialError> {
-        Err(CredentialError::Source(SourceError::MissingProvider))
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
+        ready(Err(CredentialError::Source(SourceError::MissingProvider)))
     }
 }
 

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
@@ -70,11 +71,11 @@ impl FakeSource {
 }
 
 impl CredentialSource for FakeSource {
-    async fn resolve(
+    fn resolve(
         &self,
         settings: AwsSettings,
         region: String,
-    ) -> Result<Credentials, CredentialError> {
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
         let access_key_id = settings
             .access_key_id
             .as_ref()
@@ -86,11 +87,11 @@ impl CredentialSource for FakeSource {
                 access_key_id,
                 region: region.clone(),
             });
-        Ok(Credentials {
+        ready(Ok(Credentials {
             access_key_id: SecretString::from(self.access_key.clone()),
             secret_access_key: SecretString::from("fixture-secret"),
             session_token: None,
-        })
+        }))
     }
 }
 
