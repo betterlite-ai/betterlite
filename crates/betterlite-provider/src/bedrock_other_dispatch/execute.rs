@@ -91,7 +91,7 @@ where
         ),
         BedrockOtherOperation::EmbeddingStatus(status_operation) => {
             BedrockOtherResult::EmbeddingStatus(Box::new(
-                embedding_status(status_operation, services).await?,
+                embedding_status(status_operation, services, log).await?,
             ))
         }
         BedrockOtherOperation::Rerank(rerank_operation) => {
