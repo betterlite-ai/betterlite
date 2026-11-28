@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::{Future, pending};
+use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -11,6 +12,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
 use tokio::task::yield_now;
 use tokio_util::sync::CancellationToken;
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::openapi_tools::error::OpenApiError;
 use crate::registry::servers::{RegistrySettings, ServerRegistry, SharedRegistry};
@@ -392,4 +395,59 @@ impl Clock for FakeClock {
         let offset = TimeDelta::try_milliseconds(millis).unwrap_or(TimeDelta::zero());
         self.0.now.checked_add_signed(offset).unwrap_or(self.0.now)
     }
+}
+
+pub(super) fn plain(server_id: &str) -> MCPServer {
+    record(&server_json(server_id, "http", ""))
+}
+
+pub(super) fn spec_error() -> OpenApiError {
+    OpenApiError::Json {
+        source: serde_json::from_str::<u8>("\"x\"").unwrap_err(),
+    }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct CapturedLog(Arc<Mutex<Vec<u8>>>);
+
+impl CapturedLog {
+    pub(super) fn text(&self) -> String {
+        let bytes = self.0.lock().unwrap().clone();
+        String::from_utf8(bytes).expect("the log is utf-8")
+    }
+}
+
+impl io::Write for CapturedLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for CapturedLog {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) fn warnings_of<Run>(run: Run) -> String
+where
+    Run: FnOnce(),
+{
+    let log = CapturedLog::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(log.clone())
+        .finish();
+    with_default(subscriber, run);
+    log.text()
 }

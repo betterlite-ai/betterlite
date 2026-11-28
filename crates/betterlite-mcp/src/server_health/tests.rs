@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -13,8 +12,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::UserUrlError;
 use rstest::rstest;
 use tokio::time::sleep;
-use tracing::subscriber::{set_default, with_default};
-use tracing_subscriber::fmt::MakeWriter;
+use tracing::subscriber::set_default;
 
 use super::batches::HealthBatches as _;
 use super::check::ServerHealthChecks as _;
@@ -25,73 +23,18 @@ use super::reachability::ServerReachability as _;
 use super::settings::{HEALTH_CHECK_TIMEOUT_VARIABLE, HealthSettings};
 use crate::config_loader::ports::InstructionsCache as _;
 use crate::openapi_tools::error::OpenApiError;
-use crate::server_record::MCPServer;
 
 mod spec_loader;
 mod support;
 
 use support::{
-    NOW_TEXT, fake_loader, record, rig, rig_with, server_ids, server_json, timestamp_text,
+    CapturedLog, NOW_TEXT, fake_loader, plain, record, rig, rig_with, server_ids, server_json,
+    spec_error, timestamp_text, warnings_of,
 };
 
 const URL: &str = ", \"url\": \"https://up.example/mcp\"";
 const SPEC: &str = "https://up.example/spec.json";
 const SPEC_EXTRA: &str = ", \"spec_path\": \"https://up.example/spec.json\"";
-
-fn plain(server_id: &str) -> MCPServer {
-    record(&server_json(server_id, "http", ""))
-}
-
-fn spec_error() -> OpenApiError {
-    OpenApiError::Json {
-        source: serde_json::from_str::<u8>("\"x\"").unwrap_err(),
-    }
-}
-
-#[derive(Clone, Default)]
-struct CapturedLog(Arc<Mutex<Vec<u8>>>);
-
-impl CapturedLog {
-    fn text(&self) -> String {
-        let bytes = self.0.lock().unwrap().clone();
-        String::from_utf8(bytes).expect("the log is utf-8")
-    }
-}
-
-impl io::Write for CapturedLog {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl MakeWriter<'_> for CapturedLog {
-    type Writer = Self;
-
-    fn make_writer(&self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-fn warnings_of<Run>(run: Run) -> String
-where
-    Run: FnOnce(),
-{
-    let log = CapturedLog::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(log.clone())
-        .finish();
-    with_default(subscriber, run);
-    log.text()
-}
 
 #[tokio::test]
 async fn check_not_found_row_reports_server_not_found() {
@@ -336,6 +279,34 @@ async fn check_timeout_setting_reaches_the_probe_and_the_message() {
 }
 
 #[tokio::test]
+async fn check_reachability_probe_uses_the_configured_timeout() {
+    let json = server_json("a", "http", &format!("{URL}, \"auth_type\": \"oauth2\""));
+    let settings = HealthSettings {
+        health_check_timeout: Duration::from_millis(1_500),
+    };
+    let rig = rig_with(&[json.as_str()], &[], settings);
+    let row = rig.service.check_server("a").await;
+    assert_eq!(row.status, Some(McpStatus::Reachable));
+    assert_eq!(rig.probe.calls()[0].timeout, Duration::from_millis(1_500));
+}
+
+#[tokio::test(start_paused = true)]
+async fn check_spec_path_timeout_uses_the_configured_timeout() {
+    let spec = server_json("spec", "http", SPEC_EXTRA);
+    let settings = HealthSettings {
+        health_check_timeout: Duration::from_millis(1_500),
+    };
+    let rig = rig_with(&[spec.as_str()], &[], settings);
+    rig.loader.hold_open();
+    let row = rig.service.check_server("spec").await;
+    assert_eq!(row.status, Some(McpStatus::Unhealthy));
+    assert_eq!(
+        row.health_check_error.as_deref(),
+        Some("OpenAPI specification check timed out after 1.5 seconds")
+    );
+}
+
+#[tokio::test]
 async fn check_system_clock_moves_forward() {
     let clock = SystemClock::default();
     let monotonic_before = clock.now_monotonic();
@@ -418,10 +389,11 @@ async fn row_session_result_takes_the_pydantic_defaults() {
     let json = server_json(
         "a",
         "http",
-        ", \"spec_path\": \"\", \"is_byok\": true, \"byok_description\": [\"why\"], \"byok_api_key_help_url\": \"https://help.example\", \"source_url\": \"https://src.example\", \"available_on_public_internet\": false, \"delegate_auth_to_upstream\": true, \"oauth_passthrough\": true, \"configured_scopes\": [\"s1\"], \"tool_name_to_display_name\": {\"t\": \"T\"}",
+        ", \"spec_path\": \"\", \"is_byok\": true, \"byok_description\": [\"why\"], \"byok_api_key_help_url\": \"https://help.example\", \"source_url\": \"https://src.example\", \"available_on_public_internet\": false, \"delegate_auth_to_upstream\": true, \"oauth_passthrough\": true, \"configured_scopes\": [\"s1\"], \"tool_name_to_display_name\": {\"t\": \"T\"}, \"tool_name_to_description\": {\"t\": \"T\"}",
     );
-    let rig = rig(&[], &[json.as_str()]);
+    let rig = rig(&[json.as_str()], &[]);
     let row = rig.service.check_server("a").await;
+    assert!(!row.is_config.0);
     assert!(row.available_on_public_internet.0);
     assert!(!row.delegate_auth_to_upstream.0);
     assert!(!row.oauth_passthrough.0);
@@ -432,6 +404,7 @@ async fn row_session_result_takes_the_pydantic_defaults() {
     assert!(row.credentials.is_none());
     assert_eq!(row.spec_path, None);
     assert_eq!(row.tool_name_to_display_name, None);
+    assert_eq!(row.tool_name_to_description, None);
     assert_eq!(row.pinned_tools, None);
 }
 
@@ -454,7 +427,11 @@ async fn row_spec_path_result_keeps_the_table_view() {
 }
 
 #[rstest]
-#[case::stdio("stdio", "", "Server reachability requires an HTTP or SSE URL")]
+#[case::stdio(
+    "stdio",
+    ", \"url\": \"https://up.example/mcp\"",
+    "Server reachability requires an HTTP or SSE URL"
+)]
 #[case::no_url("http", "", "Server reachability requires an HTTP or SSE URL")]
 #[case::empty_url(
     "http",
@@ -915,9 +892,43 @@ async fn instructions_prefetch_caches_the_trimmed_text() {
     let server = plain("a");
     rig.service.ensure_instructions_cached(&server).await;
     assert_eq!(rig.session.calls().len(), 1);
+    assert_eq!(
+        rig.service
+            .instructions
+            .lock()
+            .unwrap()
+            .get("a")
+            .map(String::as_str),
+        Some("Use it")
+    );
     rig.clock.advance(Duration::from_secs(11));
     rig.service.ensure_instructions_cached(&server).await;
     assert_eq!(rig.session.calls().len(), 1);
+}
+
+#[rstest]
+#[case::spaces(Some("   "))]
+#[case::empty(Some(""))]
+#[tokio::test]
+async fn instructions_prefetch_keeps_a_blank_result_uncached(#[case] text: Option<&str>) {
+    let rig = rig(&[], &[]);
+    rig.session.script(Ok(text.map(str::to_owned)));
+    let server = plain("a");
+    rig.service.ensure_instructions_cached(&server).await;
+    assert!(!rig.service.instructions.lock().unwrap().contains_key("a"));
+    rig.clock.advance(Duration::from_secs(11));
+    rig.service.ensure_instructions_cached(&server).await;
+    assert_eq!(rig.session.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn instructions_prefetch_uses_the_configured_timeout() {
+    let settings = HealthSettings {
+        health_check_timeout: Duration::from_millis(1_500),
+    };
+    let rig = rig_with(&[], &[], settings);
+    rig.service.ensure_instructions_cached(&plain("a")).await;
+    assert_eq!(rig.session.calls()[0].timeout, Duration::from_millis(1_500));
 }
 
 #[tokio::test]
