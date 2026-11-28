@@ -185,7 +185,7 @@ async fn signed_headers(
     let headers = forward_headers_from_request(&requested, auth_headers, false)
         .into_iter()
         .collect();
-    let flavor = match config.tag {
+    let aws_flavor = match config.tag {
         PassthroughConfigTag::Bedrock => Some(AwsFlavor::Bedrock),
         PassthroughConfigTag::BedrockMantle => Some(AwsFlavor::Mantle),
         PassthroughConfigTag::VLLM
@@ -195,7 +195,7 @@ async fn signed_headers(
         | PassthroughConfigTag::Watsonx
         | PassthroughConfigTag::NvidiaNim => None,
     };
-    let Some(flavor) = flavor else {
+    let Some(flavor) = aws_flavor else {
         return Ok(config.sign_request(headers, signing)?);
     };
     Ok(config.aws.sign_request(flavor, headers, signing).await?)

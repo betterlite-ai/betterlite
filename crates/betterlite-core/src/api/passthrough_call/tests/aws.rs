@@ -88,16 +88,20 @@ impl AwsPassthrough for FakeAws {
         self.record(Call::MantleEndpoint {
             model: request.model.to_owned(),
         });
-        match &self.mantle_error {
-            Some(message) => Err(ConfigError::ValueError {
-                message: message.clone(),
-            }),
-            None => Ok(MantleEndpoint {
-                api_base: self.base.clone(),
-                api_key: Some(SecretString::from("port-key")),
-                base_model: String::from("original"),
-            }),
-        }
+        self.mantle_error.as_deref().map_or_else(
+            || {
+                Ok(MantleEndpoint {
+                    api_base: self.base.clone(),
+                    api_key: Some(SecretString::from("port-key")),
+                    base_model: String::from("original"),
+                })
+            },
+            |message| {
+                Err(ConfigError::ValueError {
+                    message: message.to_owned(),
+                })
+            },
+        )
     }
 
     fn complete_url(

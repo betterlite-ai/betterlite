@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use betterlite_bedrock::passthrough::sdk_call::{BedrockSdkCall, NoCredentialChain};
+use betterlite_config::loader::ConfigError;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -61,7 +62,7 @@ pub(crate) enum SessionError {
     #[error("the AWS pass-through settings could not be read: {source}")]
     Settings {
         #[source]
-        source: betterlite_config::loader::ConfigError,
+        source: ConfigError,
     },
 }
 

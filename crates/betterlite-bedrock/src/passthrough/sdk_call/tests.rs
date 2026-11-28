@@ -134,6 +134,15 @@ fn url_of(
     config.complete_url(flavor, request).unwrap().0.to_string()
 }
 
+fn bedrock_url(
+    config: &BedrockSdkCall<FakeSource>,
+    params: &Object,
+    api_base: Option<&str>,
+) -> String {
+    let request = url_request("anthropic.claude", "model/x/converse", params, api_base);
+    url_of(config, AwsFlavor::Bedrock, &request)
+}
+
 fn signing<'text>(params: &'text Object) -> PassthroughSigning<'text> {
     PassthroughSigning {
         litellm_params: params,
@@ -157,16 +166,12 @@ fn resolution<'text>(
 }
 
 #[test]
-fn from_environment_reads_every_field() {
+fn from_environment_reads_the_bedrock_fields() {
     let settings = build(&[
         ("AWS_REGION_NAME", "us-east-1"),
         ("AWS_REGION", "us-west-2"),
         ("AWS_DEFAULT_REGION", "eu-west-1"),
         ("AWS_BEDROCK_RUNTIME_ENDPOINT", "https://endpoint.example"),
-        ("BEDROCK_MANTLE_API_BASE", "https://mantle.example/v1"),
-        ("BEDROCK_MANTLE_API_KEY", "mantle-key"),
-        ("BEDROCK_MANTLE_REGION", "eu-central-1"),
-        ("AWS_BEARER_TOKEN_BEDROCK", "bearer-token"),
     ]);
     assert_eq!(
         settings.environment.region_name.as_deref(),
@@ -182,6 +187,21 @@ fn from_environment_reads_every_field() {
         Some("https://endpoint.example")
     );
     assert_eq!(
+        settings.globals.aws_region_name.as_deref(),
+        Some("us-east-1")
+    );
+    assert_eq!(settings.globals.aws_region.as_deref(), Some("us-west-2"));
+}
+
+#[test]
+fn from_environment_reads_the_mantle_fields() {
+    let settings = build(&[
+        ("BEDROCK_MANTLE_API_BASE", "https://mantle.example/v1"),
+        ("BEDROCK_MANTLE_API_KEY", "mantle-key"),
+        ("BEDROCK_MANTLE_REGION", "eu-central-1"),
+        ("AWS_BEARER_TOKEN_BEDROCK", "bearer-token"),
+    ]);
+    assert_eq!(
         settings.globals.mantle_api_base.as_deref(),
         Some("https://mantle.example/v1")
     );
@@ -189,11 +209,6 @@ fn from_environment_reads_every_field() {
         settings.globals.mantle_region.as_deref(),
         Some("eu-central-1")
     );
-    assert_eq!(
-        settings.globals.aws_region_name.as_deref(),
-        Some("us-east-1")
-    );
-    assert_eq!(settings.globals.aws_region.as_deref(), Some("us-west-2"));
     assert_eq!(
         exposed(settings.globals.mantle_api_key.as_ref()),
         Some("mantle-key")
@@ -213,32 +228,31 @@ fn bedrock_url_region_chain_follows_the_environment() {
     ]);
     let empty = Object::new();
     let explicit = object(&[("aws_region_name", "ap-south-1")]);
-    let request = url_request("anthropic.claude", "model/x/converse", &explicit, None);
     assert_eq!(
-        url_of(&config, AwsFlavor::Bedrock, &request),
+        bedrock_url(&config, &explicit, None),
         "https://bedrock-runtime.ap-south-1.amazonaws.com/model/x/converse"
     );
-    let request = url_request("anthropic.claude", "model/x/converse", &empty, None);
     assert_eq!(
-        url_of(&config, AwsFlavor::Bedrock, &request),
+        bedrock_url(&config, &empty, None),
         "https://bedrock-runtime.us-east-1.amazonaws.com/model/x/converse"
     );
     let region_only = build(&[("AWS_REGION", "eu-central-1")]);
     assert_eq!(
-        url_of(&region_only, AwsFlavor::Bedrock, &request),
+        bedrock_url(&region_only, &empty, None),
         "https://bedrock-runtime.eu-central-1.amazonaws.com/model/x/converse"
     );
     let session_only = build(&[("AWS_DEFAULT_REGION", "eu-west-1")]);
     assert_eq!(
-        url_of(&session_only, AwsFlavor::Bedrock, &request),
+        bedrock_url(&session_only, &empty, None),
         "https://bedrock-runtime.eu-west-1.amazonaws.com/model/x/converse"
     );
     let default = build(&[]);
     assert_eq!(
-        url_of(&default, AwsFlavor::Bedrock, &request),
+        bedrock_url(&default, &empty, None),
         "https://bedrock-runtime.us-west-2.amazonaws.com/model/x/converse"
     );
     let invalid = build(&[("AWS_REGION_NAME", "Not_A_Region")]);
+    let request = url_request("anthropic.claude", "model/x/converse", &empty, None);
     let error = invalid
         .complete_url(AwsFlavor::Bedrock, &request)
         .unwrap_err();
@@ -252,41 +266,26 @@ fn bedrock_url_endpoint_precedence() {
         "https://environment.example",
     )]);
     let empty = Object::new();
-    let request = url_request("anthropic.claude", "model/x/converse", &empty, None);
     assert_eq!(
-        url_of(&config, AwsFlavor::Bedrock, &request),
+        bedrock_url(&config, &empty, None),
         "https://environment.example/model/x/converse"
     );
-    let addressed = url_request(
-        "anthropic.claude",
-        "model/x/converse",
-        &empty,
-        Some("https://base.example"),
-    );
     assert_eq!(
-        url_of(&config, AwsFlavor::Bedrock, &addressed),
+        bedrock_url(&config, &empty, Some("https://base.example")),
         "https://base.example/model/x/converse"
     );
     let configured = object(&[("aws_bedrock_runtime_endpoint", "https://configured.example")]);
-    let request = url_request("anthropic.claude", "model/x/converse", &configured, None);
     assert_eq!(
-        url_of(&config, AwsFlavor::Bedrock, &request),
+        bedrock_url(&config, &configured, None),
         "https://configured.example/model/x/converse"
     );
-    let addressed = url_request(
-        "anthropic.claude",
-        "model/x/converse",
-        &configured,
-        Some("https://base.example"),
-    );
     assert_eq!(
-        url_of(&config, AwsFlavor::Bedrock, &addressed),
+        bedrock_url(&config, &configured, Some("https://base.example")),
         "https://base.example/model/x/converse"
     );
     let default = build(&[]);
-    let request = url_request("anthropic.claude", "model/x/converse", &empty, None);
     assert_eq!(
-        url_of(&default, AwsFlavor::Bedrock, &request),
+        bedrock_url(&default, &empty, None),
         "https://bedrock-runtime.us-west-2.amazonaws.com/model/x/converse"
     );
 }
@@ -321,41 +320,33 @@ fn bedrock_url_takes_the_region_from_the_model_arn() {
 #[test]
 fn mantle_url_takes_the_region_from_the_base_host_or_the_environment() {
     let config = build(&[("BEDROCK_MANTLE_REGION", "eu-central-1")]);
+    let model = "openai.gpt-oss-120b";
+    let endpoint = "chat/completions";
     let host = "https://bedrock-mantle.eu-west-1.api.aws/v1";
-    let params = object(&[("api_base", host)]);
-    let request = url_request(
-        "openai.gpt-oss-120b",
-        "chat/completions",
-        &params,
-        Some(host),
-    );
+    let base_params = object(&[("api_base", host)]);
+    let base_request = url_request(model, endpoint, &base_params, Some(host));
     assert_eq!(
-        url_of(&config, AwsFlavor::Mantle, &request),
+        url_of(&config, AwsFlavor::Mantle, &base_request),
         "https://bedrock-runtime.eu-west-1.amazonaws.com/chat/completions"
     );
     let empty = Object::new();
-    let request = url_request("openai.gpt-oss-120b", "chat/completions", &empty, None);
+    let environment_request = url_request(model, endpoint, &empty, None);
     assert_eq!(
-        url_of(&config, AwsFlavor::Mantle, &request),
+        url_of(&config, AwsFlavor::Mantle, &environment_request),
         "https://bedrock-runtime.eu-central-1.amazonaws.com/chat/completions"
     );
     let plain = "http://127.0.0.1:9";
-    let params = object(&[("api_base", plain)]);
-    let request = url_request(
-        "openai.gpt-oss-120b",
-        "chat/completions",
-        &params,
-        Some(plain),
-    );
+    let local_params = object(&[("api_base", plain)]);
+    let local_request = url_request(model, endpoint, &local_params, Some(plain));
     assert_eq!(
-        url_of(&config, AwsFlavor::Mantle, &request),
+        url_of(&config, AwsFlavor::Mantle, &local_request),
         "http://127.0.0.1:9/chat/completions"
     );
     let mut wrong = Object::new();
     wrong.insert(String::from("aws_region_name"), JsonValue::Bool(true));
-    let request = url_request("openai.gpt-oss-120b", "chat/completions", &wrong, None);
+    let wrong_request = url_request(model, endpoint, &wrong, None);
     let error = config
-        .complete_url(AwsFlavor::Mantle, &request)
+        .complete_url(AwsFlavor::Mantle, &wrong_request)
         .unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -441,24 +432,24 @@ async fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
         Some("application/json")
     );
     assert_eq!(body.as_deref(), Some(b"{}".as_slice()));
-    let (headers, _body) = config
+    let (environment_headers, _environment_body) = config
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&empty))
         .await
         .unwrap();
     assert_eq!(
-        headers.get("Authorization").map(String::as_str),
+        environment_headers.get("Authorization").map(String::as_str),
         Some("Bearer mantle-key")
     );
     let fallback = build(&[
         ("BEDROCK_MANTLE_API_KEY", ""),
         ("AWS_BEARER_TOKEN_BEDROCK", "aws-token"),
     ]);
-    let (headers, _body) = fallback
+    let (fallback_headers, _fallback_body) = fallback
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&empty))
         .await
         .unwrap();
     assert_eq!(
-        headers.get("Authorization").map(String::as_str),
+        fallback_headers.get("Authorization").map(String::as_str),
         Some("Bearer aws-token")
     );
 }
@@ -559,10 +550,10 @@ fn mantle_endpoint_derives_the_base_from_the_model_region_prefix() {
     assert!(endpoint.api_key.is_none());
     // split_mantle_region_prefix: a head that names no Bedrock region stays part of the model id
     let trailing = resolution("bedrock_mantle/openai.gpt-oss-120b/extra", None, None);
-    let endpoint = config.mantle_endpoint(&trailing).unwrap();
-    assert_eq!(endpoint.base_model, "openai.gpt-oss-120b/extra");
+    let trailing_endpoint = config.mantle_endpoint(&trailing).unwrap();
+    assert_eq!(trailing_endpoint.base_model, "openai.gpt-oss-120b/extra");
     assert_eq!(
-        endpoint.api_base,
+        trailing_endpoint.api_base,
         "https://bedrock-mantle.us-east-1.api.aws/v1"
     );
 }
@@ -584,9 +575,10 @@ fn mantle_endpoint_keeps_the_configured_base_and_the_key_chain() {
     assert_eq!(endpoint.api_base, "https://mantle.example/v1");
     assert_eq!(exposed(endpoint.api_key.as_ref()), Some("request-key"));
     assert_eq!(endpoint.base_model, "openai.gpt-oss-120b");
-    let request = resolution("bedrock_mantle/openai.gpt-oss-120b", None, None);
+    let environment_request = resolution("bedrock_mantle/openai.gpt-oss-120b", None, None);
+    let environment_endpoint = config.mantle_endpoint(&environment_request).unwrap();
     assert_eq!(
-        exposed(config.mantle_endpoint(&request).unwrap().api_key.as_ref()),
+        exposed(environment_endpoint.api_key.as_ref()),
         Some("mantle-key")
     );
     let fallback = build(&[
@@ -595,12 +587,15 @@ fn mantle_endpoint_keeps_the_configured_base_and_the_key_chain() {
         ("BEDROCK_MANTLE_REGION", "eu-central-1"),
         ("AWS_BEARER_TOKEN_BEDROCK", "aws-token"),
     ]);
-    let endpoint = fallback.mantle_endpoint(&request).unwrap();
+    let fallback_endpoint = fallback.mantle_endpoint(&environment_request).unwrap();
     assert_eq!(
-        endpoint.api_base,
+        fallback_endpoint.api_base,
         "https://bedrock-mantle.eu-central-1.api.aws/v1"
     );
-    assert_eq!(exposed(endpoint.api_key.as_ref()), Some("aws-token"));
+    assert_eq!(
+        exposed(fallback_endpoint.api_key.as_ref()),
+        Some("aws-token")
+    );
 }
 
 #[test]

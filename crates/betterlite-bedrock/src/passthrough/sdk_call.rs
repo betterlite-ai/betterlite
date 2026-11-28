@@ -176,7 +176,7 @@ where
             bearer_token: bearer.as_ref(),
             now: (self.now)(),
         };
-        Ok(sign_headers(headers, context, &identity, &region)?)
+        Ok(sign_headers(&headers, context, &identity, &region)?)
     }
 }
 

@@ -11,6 +11,7 @@ use std::time::Duration;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::openai_base_config::Object;
@@ -25,7 +26,10 @@ use self::support::{
 };
 use super::params;
 use super::send::arn_encoded;
-use super::{PassthroughBody, PassthroughCallError, PassthroughUpload, allm_passthrough_route};
+use super::{
+    PassthroughBody, PassthroughCallArgs, PassthroughCallError, PassthroughReply,
+    PassthroughUpload, allm_passthrough_route,
+};
 
 const MODEL_ARN: &str = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc";
 const BEDROCK_RUNTIME: &str = "https://bedrock-runtime.us-east-1.amazonaws.com";
@@ -45,6 +49,15 @@ fn json_object(pairs: &[(&str, &str)]) -> Object {
     object(&converted)
 }
 
+// every call test outside the AWS module runs over an empty environment and a refusing port
+async fn call(
+    args: PassthroughCallArgs,
+    state: &mut LoggingState,
+) -> Result<PassthroughReply, PassthroughCallError> {
+    let http = proxy_client(1024);
+    allm_passthrough_route(args, state, &http, &empty_environment(), &failing_aws()).await
+}
+
 #[tokio::test]
 async fn call_vllm_gets_the_url_the_headers_and_the_swapped_model() {
     let serving = serve(
@@ -58,16 +71,7 @@ async fn call_vllm_gets_the_url_the_headers_and_the_swapped_model() {
         ("input", "hi"),
     ])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    let answer = call(args, &mut state).await.expect("the upstream answers");
     assert_eq!(answer.status, 200);
     assert_eq!(header(&answer, "x-upstream").as_deref(), Some("yes"));
     assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
@@ -94,16 +98,7 @@ async fn call_content_wins_over_data_and_json() {
         "vllm/original",
     )])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    let answer = call(args, &mut state).await.expect("the upstream answers");
     assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
     let sent = serving.finish().unwrap();
     assert!(sent.head.contains("content-type: application/octet-stream"));
@@ -126,16 +121,7 @@ async fn call_data_is_form_encoded_when_no_content_is_given() {
     );
     args.data = Some(data);
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    let answer = call(args, &mut state).await.expect("the upstream answers");
     assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
     let sent = serving.finish().unwrap();
     assert!(
@@ -169,16 +155,7 @@ async fn call_files_build_a_multipart_body_after_the_data_fields() {
         bytes: Bytes::from_static(b"hello"),
     }]);
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    let answer = call(args, &mut state).await.expect("the upstream answers");
     assert_eq!(answer.status, 200);
     let sent = serving.finish().unwrap();
     assert!(
@@ -213,16 +190,7 @@ async fn call_files_expand_a_list_field_into_one_part_per_item() {
         bytes: Bytes::from_static(b"hello"),
     }]);
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    call(args, &mut state).await.expect("the upstream answers");
     let sent = serving.finish().unwrap();
     assert_eq!(sent.body.matches("name=\"tag\"").count(), 2);
     assert!(sent.body.contains("\r\n\r\na\r\n"));
@@ -238,16 +206,7 @@ async fn call_forwarded_headers_need_the_x_pass_prefix() {
         (String::from("authorization"), String::from("Bearer caller")),
     ]);
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    let answer = call(args, &mut state).await.expect("the upstream answers");
     assert_eq!(answer.status, 200);
     let sent = serving.finish().unwrap();
     assert!(sent.head.contains("x-tenant: acme"));
@@ -259,16 +218,9 @@ async fn call_a_redirect_is_returned_as_a_full_reply() {
     let serving = serve(reply("302 fixture", &[], ""), Duration::ZERO).unwrap();
     let args = vllm_args(&format!("http://{}/v1", serving.address));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("a redirect is an answer");
+    let answer = call(args, &mut state)
+        .await
+        .expect("a redirect is an answer");
     assert_eq!(answer.status, 302);
     assert!(full_bytes(answer.body).is_empty());
     assert_eq!(
@@ -303,16 +255,7 @@ async fn stream_vllm_relays_the_chunks_and_sets_the_stream_flag() {
         JsonValue::Bool(true),
     )])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the stream starts");
+    let answer = call(args, &mut state).await.expect("the stream starts");
     assert_eq!(state.stream, Some(true));
     assert_eq!(answer.status, 200);
     assert_eq!(header(&answer, "x-upstream").as_deref(), Some("yes"));
@@ -341,16 +284,7 @@ async fn stream_without_the_key_is_not_streaming() {
     let mut args = vllm_args(&format!("http://{}/v1", serving.address));
     args.json = Some(JsonValue::Object(json_object(&[("input", "hi")])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("the upstream answers");
+    let answer = call(args, &mut state).await.expect("the upstream answers");
     assert_eq!(state.stream, Some(false));
     assert_eq!(full_bytes(answer.body).as_ref(), b"pong");
     assert!(
@@ -371,16 +305,9 @@ async fn stream_redirect_answer_becomes_a_relay() {
         JsonValue::Bool(true),
     )])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let answer = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .expect("a redirect still streams");
+    let answer = call(args, &mut state)
+        .await
+        .expect("a redirect still streams");
     assert_eq!(answer.status, 307);
     let PassthroughBody::Stream(mut relay) = answer.body else {
         panic!("expected a stream");
@@ -488,17 +415,7 @@ async fn error_upstream_4xx_is_reported_with_its_body() {
     let mut args = vllm_args(&format!("http://{}/v1", serving.address));
     args.json = Some(JsonValue::Object(json_object(&[("input", "hi")])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let error = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .err()
-    .expect("429 is an error");
+    let error = call(args, &mut state).await.err().expect("429 is an error");
     let PassthroughCallError::UpstreamStatus {
         status,
         headers,
@@ -532,17 +449,7 @@ async fn error_a_streaming_5xx_is_reported_before_the_stream() {
         JsonValue::Bool(true),
     )])));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let error = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .err()
-    .expect("503 is an error");
+    let error = call(args, &mut state).await.err().expect("503 is an error");
     let PassthroughCallError::UpstreamStatus { status, body, .. } = error else {
         panic!("expected the upstream status");
     };
@@ -563,17 +470,10 @@ async fn error_a_provider_without_a_passthrough_config_is_named() {
     args.model = String::from("gpt-4o");
     args.custom_llm_provider = Some(String::from("openai"));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let error = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .err()
-    .expect("openai has no passthrough config");
+    let error = call(args, &mut state)
+        .await
+        .err()
+        .expect("openai has no passthrough config");
     assert!(
         matches!(&error, PassthroughCallError::ProviderNotFound(name) if name.as_str() == "openai")
     );
@@ -587,17 +487,10 @@ async fn error_a_model_without_a_provider_is_a_resolution_error() {
     args.custom_llm_provider = None;
     args.api_base = None;
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let error = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .err()
-    .expect("no provider can be found for the model");
+    let error = call(args, &mut state)
+        .await
+        .err()
+        .expect("no provider can be found for the model");
     assert!(matches!(error, PassthroughCallError::Resolution(_)));
 }
 
@@ -608,17 +501,10 @@ async fn error_a_send_failure_goes_through_handle_error() {
     drop(listener);
     let args = vllm_args(&format!("http://{address}/v1"));
     let mut state = logging_state();
-    let http = proxy_client(1024);
-    let error = allm_passthrough_route(
-        args,
-        &mut state,
-        &http,
-        &empty_environment(),
-        &failing_aws(),
-    )
-    .await
-    .err()
-    .expect("the connection is refused");
+    let error = call(args, &mut state)
+        .await
+        .err()
+        .expect("the connection is refused");
     let PassthroughCallError::Mapped(provider) = &error else {
         panic!("expected the provider error");
     };

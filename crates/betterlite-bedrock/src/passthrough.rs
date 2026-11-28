@@ -126,14 +126,14 @@ pub(crate) struct SigningIdentity<'text> {
 }
 
 pub(crate) fn sign_headers(
-    headers: Headers,
+    headers: &Headers,
     context: &PassthroughSigning<'_>,
     identity: &SigningIdentity<'_>,
     region: &str,
 ) -> Result<(Headers, Option<Vec<u8>>), PassthroughFailure> {
     let body = request_body(context)?;
     let bearer = bedrock_bearer_token(None, identity.bearer_token);
-    let pairs = content_type_pairs(&headers, bearer.is_some());
+    let pairs = content_type_pairs(headers, bearer.is_some());
     let supplied = supplied_authorization(&pairs);
     let bounded = pairs.iter().any(|(name, _)| {
         name.eq_ignore_ascii_case("content-length")
@@ -182,7 +182,7 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         };
         let bearer = bedrock_bearer_token(None, identity.bearer_token);
         let region = signing_region(&self.environment, context, bearer.is_some())?;
-        sign_headers(headers, context, &identity, &region)
+        sign_headers(&headers, context, &identity, &region)
     }
     fn get_error_class(&self, message: &str, status_code: u16, headers: &Headers) -> ProviderError {
         error::bedrock_provider_error(message, status_code, headers)
