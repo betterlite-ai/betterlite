@@ -287,7 +287,7 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {
     let mut buffer = Vec::new();
     let head_end = read_head(stream, &mut buffer).await?;
     let head = parse_head(&buffer[..head_end])?;
-    let body = read_body(stream, &mut buffer, head_end, head.length).await?;
+    let body = read_body(stream, &buffer, head_end, head.length).await?;
     Ok(Seen {
         method: head.method,
         target: head.target,
@@ -344,15 +344,15 @@ fn parse_head(head: &[u8]) -> io::Result<Head> {
 
 async fn read_body(
     stream: &mut TcpStream,
-    buffer: &mut Vec<u8>,
+    buffer: &[u8],
     head_end: usize,
     length: usize,
 ) -> io::Result<String> {
     let buffered = buffer.len().saturating_sub(head_end).min(length);
-    let mut body = buffer[head_end..head_end.saturating_add(buffered)].to_vec();
-    let mut tail = vec![0_u8; length.saturating_sub(buffered)];
-    let tail_read = stream.read_exact(&mut tail).await?;
-    body.extend_from_slice(&tail[..tail_read]);
+    let mut body = vec![0_u8; length];
+    body[..buffered].copy_from_slice(&buffer[head_end..head_end.saturating_add(buffered)]);
+    let tail_read = stream.read_exact(&mut body[buffered..]).await?;
+    body.truncate(buffered.saturating_add(tail_read));
     Ok(from_utf8(&body).unwrap_or_default().to_owned())
 }
 
