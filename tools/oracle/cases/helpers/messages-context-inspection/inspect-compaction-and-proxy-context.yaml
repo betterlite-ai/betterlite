@@ -94,6 +94,21 @@ call:
           - role: assistant
             content: [compaction]
         kwargs:
+          metadata:
+            user_id: u-1
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs:
+          litellm_metadata: text
+          metadata:
+            user_id: u-1
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs:
           litellm_metadata:
             user_api_key_auth: null
         router: missing

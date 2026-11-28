@@ -88,6 +88,14 @@ fn assert_proxy_absences() {
     assert!(extract_proxy_metadata(&extra(r#"{"litellm_metadata":null}"#)).is_none());
     assert!(extract_proxy_metadata(&extra(r#"{"litellm_metadata":"text"}"#)).is_none());
     assert!(extract_proxy_metadata(&extra(r#"{"litellm_metadata":[1,2]}"#)).is_none());
+    // an Anthropic-shape metadata key never counts: only kwargs["litellm_metadata"] is read
+    assert!(extract_proxy_metadata(&extra(r#"{"metadata":{"user_id":"u-1"}}"#)).is_none());
+    assert!(
+        extract_proxy_metadata(&extra(
+            r#"{"litellm_metadata":"text","metadata":{"user_id":"u-1"}}"#
+        ))
+        .is_none()
+    );
 }
 
 // the router handle comes back as the caller passed it, and nothing answers when it is absent
