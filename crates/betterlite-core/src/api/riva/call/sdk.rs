@@ -1,0 +1,236 @@
+mod config;
+mod grpc;
+
+use betterlite_pyhost::call_error::PythonError;
+use pyo3::exceptions::{PyAttributeError, PyImportError, PyTypeError};
+use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyList};
+use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
+use secrecy::{ExposeSecret as _, SecretString};
+
+use self::config::{apply_endpointing, recognition_keywords};
+use self::grpc::observe;
+use super::error::{INSTALL_HINT, RivaCallError};
+use super::options::Resolved;
+use crate::api::riva::records::grpc_status::grpc_error_to_exception;
+use crate::api::riva::records::recognition::RecognitionOptions;
+
+pub(super) const AUTH: &str = "riva.client.Auth";
+pub(super) const RECOGNITION: &str = "riva.client.RecognitionConfig";
+pub(super) const STREAMING: &str = "riva.client.StreamingRecognitionConfig";
+
+const CLIENT_MODULE: &str = "riva.client";
+const PROTO_MODULE: &str = "riva.client.proto.riva_asr_pb2";
+const RECOGNITION_ATTR: &str = "RecognitionConfig";
+const STREAMING_ATTR: &str = "StreamingRecognitionConfig";
+const FUNCTION_ID_FIELD: &str = "function-id";
+const AUTHORIZATION_FIELD: &str = "authorization";
+const ENCODING_FIELD: &str = "encoding";
+const ENDPOINTING_FIELD: &str = "endpointing_config";
+const ENCODING_ATTR: &str = "AudioEncoding";
+const DEFAULT_ENCODING_ATTR: &str = "LINEAR_PCM";
+const ENDPOINTING_ATTR: &str = "EndpointingConfig";
+const COPY_FROM: &str = "CopyFrom";
+
+// The optional client's handles: the package for Auth and ASRService, and whichever module exposes the protobuf constructors; stateless, so one instance can cross a blocking job.
+pub(super) struct RivaSdk {
+    client: Py<PyAny>,
+    asr: Py<PyAny>,
+}
+
+pub(super) struct AuthSpec<'call> {
+    pub uri: &'call str,
+    pub use_ssl: bool,
+    pub api_key: Option<&'call SecretString>,
+    pub function_id: Option<&'call str>,
+}
+
+// The SDK objects one call shares between its two blocking jobs
+pub(super) struct Prepared {
+    pub sdk: RivaSdk,
+    pub auth: Py<PyAny>,
+    pub streaming: Py<PyAny>,
+}
+
+// The source's step from a resolved endpoint to the configs the stream is opened with
+pub(super) fn prepare_attached(
+    py: Python<'_>,
+    resolved: &Resolved,
+    uri: &str,
+    api_key: Option<&SecretString>,
+) -> Result<Prepared, RivaCallError> {
+    let sdk = RivaSdk::import(py)?;
+    let spec = AuthSpec {
+        uri,
+        use_ssl: resolved.use_ssl,
+        api_key,
+        function_id: resolved.function_id.as_deref(),
+    };
+    let auth = sdk.auth(py, &spec)?.unbind();
+    let streaming = sdk.configs(py, &resolved.request.recognition_config)?;
+    Ok(Prepared {
+        sdk,
+        auth,
+        streaming,
+    })
+}
+
+impl RivaSdk {
+    pub(super) fn import(py: Python<'_>) -> Result<Self, RivaCallError> {
+        let client = match py.import(CLIENT_MODULE) {
+            Ok(module) => module.unbind().into_any(),
+            Err(error) if error.is_instance_of::<PyImportError>(py) => {
+                return Err(RivaCallError::Install {
+                    message: INSTALL_HINT.to_owned(),
+                });
+            }
+            Err(error) => {
+                return Err(RivaCallError::Import {
+                    source: Box::new(PythonError::from_pyerr(py, &error)),
+                });
+            }
+        };
+        let asr = match client.bind(py).getattr(RECOGNITION_ATTR) {
+            Ok(_constructor) => client.clone_ref(py),
+            Err(error) if error.is_instance_of::<PyAttributeError>(py) => {
+                match py.import(PROTO_MODULE) {
+                    Ok(module) => module.unbind().into_any(),
+                    Err(proto_error) if proto_error.is_instance_of::<PyImportError>(py) => {
+                        return Err(RivaCallError::Install {
+                            message: INSTALL_HINT.to_owned(),
+                        });
+                    }
+                    Err(proto_error) => {
+                        return Err(RivaCallError::Import {
+                            source: Box::new(PythonError::from_pyerr(py, &proto_error)),
+                        });
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(RivaCallError::Import {
+                    source: Box::new(PythonError::from_pyerr(py, &error)),
+                });
+            }
+        };
+        Ok(Self { client, asr })
+    }
+
+    // Keyword arguments first, and the old positional signature only when that raises TypeError
+    pub(super) fn auth<'py>(
+        &self,
+        py: Python<'py>,
+        spec: &AuthSpec<'_>,
+    ) -> Result<Bound<'py, PyAny>, RivaCallError> {
+        let factory = config_call(py, AUTH, self.client.bind(py).getattr("Auth"))?;
+        let pairs = config_call(py, AUTH, PyList::new(py, metadata(spec)))?;
+        let keywords = PyDict::new(py);
+        config_call(py, AUTH, keywords.set_item("uri", spec.uri))?;
+        config_call(py, AUTH, keywords.set_item("use_ssl", spec.use_ssl))?;
+        config_call(py, AUTH, keywords.set_item("metadata_args", &pairs))?;
+        match factory.call((), Some(&keywords)) {
+            Ok(auth) => Ok(auth),
+            Err(error) if error.is_instance_of::<PyTypeError>(py) => config_call(
+                py,
+                AUTH,
+                factory.call1((py.None(), spec.use_ssl, spec.uri, &pairs)),
+            ),
+            Err(error) => Err(config_failure(py, AUTH, &error)),
+        }
+    }
+
+    // The recognition config first, then the streaming wrapper that points the service at it
+    pub(super) fn configs(
+        &self,
+        py: Python<'_>,
+        options: &RecognitionOptions,
+    ) -> Result<Py<PyAny>, RivaCallError> {
+        let module = self.asr.bind(py);
+        let keywords = recognition_keywords(py, module, options)?;
+        let recognition_factory = config_call(py, RECOGNITION, module.getattr(RECOGNITION_ATTR))?;
+        let recognition = config_call(
+            py,
+            RECOGNITION,
+            recognition_factory.call((), Some(&keywords)),
+        )?;
+        apply_endpointing(py, module, &recognition, options)?;
+        let streaming_keywords = PyDict::new(py);
+        config_call(
+            py,
+            STREAMING,
+            streaming_keywords.set_item("config", &recognition),
+        )?;
+        config_call(
+            py,
+            STREAMING,
+            streaming_keywords.set_item("interim_results", false),
+        )?;
+        let streaming_factory = config_call(py, STREAMING, module.getattr(STREAMING_ATTR))?;
+        let streaming = config_call(
+            py,
+            STREAMING,
+            streaming_factory.call((), Some(&streaming_keywords)),
+        )?;
+        Ok(streaming.unbind())
+    }
+
+    // From here on a failure belongs to the SDK call, so it is observed and mapped as the source does
+    pub(super) fn asr_service(
+        &self,
+        py: Python<'_>,
+        auth: &Py<PyAny>,
+    ) -> Result<Py<PyAny>, RivaCallError> {
+        let factory = self
+            .client
+            .bind(py)
+            .getattr("ASRService")
+            .map_err(|error| provider_failure(py, &error))?;
+        let service = factory
+            .call1((auth.bind(py),))
+            .map_err(|error| provider_failure(py, &error))?;
+        Ok(service.unbind())
+    }
+}
+
+fn metadata(spec: &AuthSpec<'_>) -> Vec<(&'static str, String)> {
+    let mut pairs: Vec<(&'static str, String)> = Vec::new();
+    if let Some(function_id) = spec.function_id {
+        pairs.push((FUNCTION_ID_FIELD, function_id.to_owned()));
+    }
+    if let Some(key) = spec.api_key.filter(|key| !key.expose_secret().is_empty()) {
+        pairs.push((
+            AUTHORIZATION_FIELD,
+            format!("Bearer {}", key.expose_secret()),
+        ));
+    }
+    pairs
+}
+
+fn config_failure(py: Python<'_>, operation: &'static str, error: &PyErr) -> RivaCallError {
+    let failure = PythonError::from_pyerr(py, error);
+    let source = Box::new(failure);
+    RivaCallError::Config { operation, source }
+}
+
+fn config_call<T>(
+    py: Python<'_>,
+    operation: &'static str,
+    result: PyResult<T>,
+) -> Result<T, RivaCallError> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => Err(config_failure(py, operation, &error)),
+    }
+}
+
+pub(super) fn provider_call<T>(py: Python<'_>, result: PyResult<T>) -> Result<T, RivaCallError> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => Err(provider_failure(py, &error)),
+    }
+}
+
+pub(super) fn provider_failure(py: Python<'_>, error: &PyErr) -> RivaCallError {
+    let observation = observe(py, error);
+    let exception = grpc_error_to_exception(&observation);
+    RivaCallError::Provider(exception)
+}

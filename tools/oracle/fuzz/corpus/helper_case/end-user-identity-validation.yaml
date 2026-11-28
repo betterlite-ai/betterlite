@@ -1,0 +1,13 @@
+kind: helper
+name: end-user-identity-validation-seed
+call:
+  end_user_identity:
+    raw_end_user_id: ghost
+    validate_in_db: true
+    database: true
+    proxy_default: b-proxy
+    cached: invalid
+    end_user: missing
+    user: missing
+env: {}
+compare: {ignore: []}
