@@ -78,42 +78,22 @@ impl Scenario {
 
     fn report(&self, step: &Step) -> Result<Value, Box<HelperError>> {
         let now = timestamp(step.now)?;
-        match step.kind {
-            StepKind::Token => {
-                let reply = self.token(step, now)?;
-                Ok(token_report(
-                    step.name.as_str(),
-                    &reply,
-                    self.session_keys(),
-                    now,
-                    &self.clients,
-                ))
-            }
-            StepKind::Revoke => {
-                let reply = self.revoke(step, now);
-                Ok(token_report(
-                    step.name.as_str(),
-                    &reply,
-                    self.session_keys(),
-                    now,
-                    &self.clients,
-                ))
-            }
-            StepKind::Introspect => {
-                let reply = self.introspect(step, now)?;
-                Ok(token_report(
-                    step.name.as_str(),
-                    &reply,
-                    self.session_keys(),
-                    now,
-                    &self.clients,
-                ))
-            }
+        let reply = match step.kind {
+            StepKind::Token => self.token(step, now)?,
+            StepKind::Revoke => self.revoke(step, now),
+            StepKind::Introspect => self.introspect(step, now)?,
             StepKind::Pkce => {
                 let matched = pkce_verifier_matches(&step.code_verifier, &step.code_challenge);
-                Ok(matches_report(step.name.as_str(), matched))
+                return Ok(matches_report(step.name.as_str(), matched));
             }
-        }
+        };
+        Ok(token_report(
+            step.name.as_str(),
+            &reply,
+            self.session_keys(),
+            now,
+            &self.clients,
+        ))
     }
 
     fn token(&self, step: &Step, now: DateTime<Utc>) -> Result<TokenReply, Box<HelperError>> {
