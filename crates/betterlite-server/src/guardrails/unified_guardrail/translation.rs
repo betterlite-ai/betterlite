@@ -5,6 +5,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailMessage;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamingScanKey, TranslationCall,
 };
@@ -152,15 +153,12 @@ where
     ) -> GuardrailValue);
 
     forward_fallible!(process_streaming_response(
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> ());
 
-    fn get_streaming_scan_key(
-        &self,
-        responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
+    fn get_streaming_scan_key(&self, responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
         each_variant!(self, inner => inner.get_streaming_scan_key(responses_so_far))
     }
 
@@ -168,7 +166,7 @@ where
         &self,
         failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         each_variant!(self, inner => inner.build_block_sse_chunks(&AdapterFailure::from_failure(failure.clone()), stream_started, responses_so_far))
     }
@@ -176,8 +174,8 @@ where
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         each_variant!(self, inner => inner.build_stream_error_items(&AdapterFailure::from_failure(failure.clone()), responses_so_far))
     }
 

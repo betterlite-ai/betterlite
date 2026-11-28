@@ -2,6 +2,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_guardrails::unified_dispatch::stream_items::trailing_metadata_chunks;
 
@@ -40,8 +41,15 @@ where
         )
         .await?;
     }
-    for trailing in trailing_metadata_chunks(responses_so_far.as_slice()) {
-        let chunk = trailing.clone();
+    let json_values: Vec<GuardrailValue> = responses_so_far
+        .iter()
+        .filter_map(|item| match item {
+            StreamItem::Json(value) => Some(value.clone()),
+            StreamItem::Bytes(_) => None,
+        })
+        .collect();
+    for trailing in trailing_metadata_chunks(&json_values) {
+        let chunk = StreamItem::Json(trailing.clone());
         responses_yielded.push(chunk.clone());
         outputs.push_back(StreamOutput::Item(chunk));
     }

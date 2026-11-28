@@ -2,7 +2,7 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
-use betterlite_guardrails::guardrail_message_scope::Object;
+use betterlite_guardrails::guardrail_message_scope::{Object, StreamItem};
 use uuid::Uuid;
 
 use super::super::failure_parts;
@@ -44,11 +44,11 @@ pub(super) fn failure_error_object(failure: &GuardrailFailure) -> Option<Object>
     )
 }
 
-pub(super) fn object_chunks(items: &[GuardrailValue]) -> (Vec<usize>, Vec<Object>) {
+pub(super) fn object_chunks(items: &[StreamItem]) -> (Vec<usize>, Vec<Object>) {
     let mut positions = Vec::new();
     let mut chunks = Vec::new();
     for (position, item) in items.iter().enumerate() {
-        let GuardrailValue::Object(fields) = item else {
+        let StreamItem::Json(GuardrailValue::Object(fields)) = item else {
             continue;
         };
         positions.push(position);
@@ -58,7 +58,7 @@ pub(super) fn object_chunks(items: &[GuardrailValue]) -> (Vec<usize>, Vec<Object
 }
 
 pub(super) fn write_object_chunks(
-    items: &mut [GuardrailValue],
+    items: &mut [StreamItem],
     positions: &[usize],
     chunks: &[Object],
 ) {
@@ -66,7 +66,7 @@ pub(super) fn write_object_chunks(
         let Some(slot) = items.get_mut(*position) else {
             continue;
         };
-        *slot = GuardrailValue::Object(chunk.clone());
+        *slot = StreamItem::Json(GuardrailValue::Object(chunk.clone()));
     }
 }
 

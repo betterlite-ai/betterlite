@@ -9,7 +9,8 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
-use betterlite_guardrails::guardrail_message_scope::Object;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
+use betterlite_guardrails::guardrail_message_scope::{Object, StreamItem};
 use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
 use rstest::rstest;
 
@@ -173,7 +174,10 @@ async fn flags_responses_delivery_flag_reaches_handler(
         .process_streaming_response(&mut stream, &applied, call(deliver))
         .await
         .unwrap();
-    assert_eq!(text_at(&stream[0], &["delta"]), expected);
+    assert_eq!(
+        text_at(&stream_item_value(&stream[0]), &["delta"]),
+        expected
+    );
 }
 
 #[tokio::test]
@@ -208,8 +212,35 @@ async fn stream_responses_events_edit_in_place() {
         .await
         .unwrap();
     assert_eq!(stream.len(), 2);
-    assert_eq!(stream[0], GuardrailValue::Text(String::from("raw")));
-    assert_eq!(text_at(&stream[1], &["delta"]), "masked");
+    assert_eq!(
+        stream[0],
+        StreamItem::Json(GuardrailValue::Text(String::from("raw")))
+    );
+    assert_eq!(
+        text_at(&stream_item_value(&stream[1]), &["delta"]),
+        "masked"
+    );
+}
+
+#[tokio::test]
+async fn stream_raw_frame_bytes_slot_keeps_its_position() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let raw = b"event: response.raw\ndata: {\"type\": \"response.raw\"}\n\n".to_vec();
+    let mut stream = items(
+        r#"[{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"one"},{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"two"}]"#,
+    );
+    stream.insert(1, StreamItem::Bytes(raw.clone()));
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(true))
+        .await
+        .unwrap();
+    assert_eq!(stream[1], StreamItem::Bytes(raw));
+    assert_eq!(
+        text_at(&stream_item_value(&stream[0]), &["delta"]),
+        "masked"
+    );
+    assert_eq!(text_at(&stream_item_value(&stream[2]), &["delta"]), "");
 }
 
 #[test]
@@ -250,12 +281,13 @@ fn stamp_responses_error_items_use_the_failure_status() {
     let built = translation()
         .build_stream_error_items(&failure, None)
         .unwrap();
-    let [GuardrailValue::Object(_)] = built.as_slice() else {
+    let [StreamItem::Json(GuardrailValue::Object(_))] = built.as_slice() else {
         panic!("expected one error item, got {built:?}");
     };
-    assert_eq!(text_at(&built[0], &["error", "code"]), "400");
-    assert_eq!(text_at(&built[0], &["error", "message"]), "blocked");
-    assert_eq!(text_at(&built[0], &["error", "type"]), "guardrail_error");
+    let item = stream_item_value(&built[0]);
+    assert_eq!(text_at(&item, &["error", "code"]), "400");
+    assert_eq!(text_at(&item, &["error", "message"]), "blocked");
+    assert_eq!(text_at(&item, &["error", "type"]), "guardrail_error");
 }
 
 #[tokio::test]
@@ -359,7 +391,7 @@ fn stamp_responses_error_items_continue_the_stream_sequence() {
         .build_stream_error_items(&failure, Some(&stream))
         .unwrap();
     assert_eq!(
-        nested(&built[0], &["sequence_number"]),
+        nested(&stream_item_value(&built[0]), &["sequence_number"]),
         Some(&GuardrailValue::SignedInteger(42))
     );
 }

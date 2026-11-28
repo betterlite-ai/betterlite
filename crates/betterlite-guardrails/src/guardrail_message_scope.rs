@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem as CoreStreamItem;
+
+// `pub use betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem` cannot pass clippy::pub_use, so this alias names the same type.
+pub type StreamItem = CoreStreamItem;
 
 pub mod blocked_usage;
 pub mod fingerprint;
@@ -12,9 +16,3 @@ pub mod tool_names;
 pub mod unappliable_rewrite;
 
 pub type Object = BTreeMap<String, GuardrailValue>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum StreamItem {
-    Json(GuardrailValue),
-    Bytes(Vec<u8>),
-}

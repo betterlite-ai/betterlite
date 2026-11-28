@@ -3,11 +3,14 @@ use std::future::{Future, ready};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::guardrails::streaming_rewrite::failure::UndeliverableStreamRewrite;
-use betterlite_core::guardrails::streaming_rewrite::shapes::{RequestData, StreamInputs};
+use betterlite_core::guardrails::streaming_rewrite::shapes::{
+    RequestData, StreamInputs, StreamItem,
+};
 use betterlite_core::guardrails::streaming_rewrite::traits::{
     ApplySurface, GuardrailCall, GuardrailCallback, HookSurface, InputType, NamedGuardrail,
     PostCallHook, PostCallSurface, RewriteFailure, StreamCall, StreamGuardrail, StreamTranslation,
 };
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use thiserror::Error;
 
 use super::input::{GuardrailScript, HookMode, Kind, TranslationScript};
@@ -170,7 +173,7 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
 
     async fn process_streaming_response<Guardrail>(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &mut Guardrail,
         call: StreamCall<'_, ()>,
     ) -> Result<(), StepError>
@@ -178,13 +181,13 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
         Guardrail: StreamGuardrail<(), Failure = StepError>,
     {
         let request_data = call.request_data.ok_or(StepError::NoRequestData)?;
-        let texts = texts_of(responses_so_far);
+        let values: Vec<GuardrailValue> = responses_so_far.iter().map(stream_item_value).collect();
+        let texts = texts_of(&values);
+        let text_count = texts.len();
         let tool_calls = self.script.tool_calls.clone();
         let stored_tools = tool_calls.clone().unwrap_or_default();
-        request_data.insert(
-            "response".to_owned(),
-            assembled_value(&texts, &stored_tools),
-        );
+        let response = assembled_value(&texts, &stored_tools);
+        request_data.insert("response".to_owned(), response);
         let inputs = StreamInputs {
             texts: Some(texts),
             tool_calls,
@@ -198,9 +201,14 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
         let outputs = guardrail.apply_guardrail(inputs, call_args).await?;
         if call.deliver_ended_stream_rewrites
             && let Some(rewritten) = outputs.texts
-            && rewritten.len() == responses_so_far.len()
+            && rewritten.len() == text_count
         {
-            *responses_so_far = rewritten.into_iter().map(GuardrailValue::Text).collect();
+            let text_slots = responses_so_far
+                .iter_mut()
+                .filter(|item| matches!(item, StreamItem::Json(GuardrailValue::Text(_))));
+            for (item, text) in text_slots.zip(rewritten) {
+                *item = StreamItem::Json(GuardrailValue::Text(text));
+            }
         }
         if let Some(delivered) = outputs.tool_calls {
             request_data.insert(

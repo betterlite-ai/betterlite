@@ -8,6 +8,7 @@ use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
@@ -314,14 +315,14 @@ async fn bedrock_default_methods_keep_the_base_behavior() {
         assert!(!<BedrockAdapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
     }
     let response = json_value(r#"{"ok": true}"#);
-    let mut responses = vec![response.clone()];
+    let mut responses = vec![StreamItem::Json(response.clone())];
     assert_eq!(subject.post_call_hook_response(response.clone()), response);
     assert_eq!(subject.get_streaming_scan_key(&responses), None);
     subject
         .process_streaming_response(&mut responses, &fake, response_call(None, None, None))
         .await
         .expect("the default keeps the list");
-    assert_eq!(responses, vec![response]);
+    assert_eq!(responses, vec![StreamItem::Json(response)]);
 }
 
 #[tokio::test]

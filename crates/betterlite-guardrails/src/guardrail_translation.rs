@@ -7,6 +7,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::generic_guardrail_contracts::GuardrailMessage;
+use crate::guardrail_message_scope::StreamItem;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StreamTransformSink {
@@ -83,17 +84,14 @@ pub trait BaseTranslation {
     // LiteLLM's process_output_streaming_response; the name limit drops its output_ prefix
     fn process_streaming_response(
         &self,
-        _responses_so_far: &mut Vec<GuardrailValue>,
+        _responses_so_far: &mut Vec<StreamItem>,
         _guardrail: &Self::Guardrail,
         _call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
         ready(Ok(()))
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        _responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
+    fn get_streaming_scan_key(&self, _responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
         None
     }
 
@@ -101,7 +99,7 @@ pub trait BaseTranslation {
         &self,
         _failure: &Self::Failure,
         _stream_started: bool,
-        _responses_so_far: Option<&[GuardrailValue]>,
+        _responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         None
     }
@@ -109,8 +107,8 @@ pub trait BaseTranslation {
     fn build_stream_error_items(
         &self,
         _failure: &Self::Failure,
-        _responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        _responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         None
     }
 

@@ -11,6 +11,7 @@ use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::llm_passthrough_dispatch::LlmPassthroughRouteHandler;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
@@ -65,10 +66,10 @@ const ANTHROPIC_DATA_ONLY: &str =
     r#""data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n""#;
 const ENDED_EVERYWHERE: &[&str] = &[CHAT_DONE, ANTHROPIC_DONE, ANTHROPIC_FRAME, RESPONSES_DONE];
 
-fn parsed(items: &[&str]) -> Vec<GuardrailValue> {
+fn parsed(items: &[&str]) -> Vec<StreamItem> {
     items
         .iter()
-        .map(|text| serde_json::from_str(text).unwrap())
+        .map(|text| serde_json::from_str(text).map(StreamItem::Json).unwrap())
         .collect()
 }
 
@@ -109,7 +110,7 @@ fn chat() -> Probe {
 #[case::responses_terminal_not_last(responses(), &[RESPONSES_DONE, RESPONSES_OPEN], false)]
 #[case::responses_nothing_yet(responses(), &[], false)]
 #[case::anthropic_stop_reason_event(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, ANTHROPIC_DONE], true)]
-#[case::anthropic_sse_frame(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, ANTHROPIC_FRAME], true)]
+#[case::anthropic_text_frame_is_not_read(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, ANTHROPIC_FRAME], false)]
 #[case::anthropic_data_line_without_event(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_DATA_ONLY], false)]
 #[case::anthropic_null_stop_reason(UnifiedTranslation::Anthropic(AnthropicTranslation { stamps: (), _guardrail: PhantomData }), &[ANTHROPIC_OPEN, CHAT_DONE], false)]
 #[case::completion(
@@ -174,4 +175,28 @@ fn each_variant_reports_its_own_stream_end(
     #[case] ended: bool,
 ) {
     assert_eq!(probe.streaming_has_ended(&parsed(items)), ended);
+}
+
+#[test]
+fn frame_bytes_end_the_anthropic_stream() {
+    let probe: Probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
+        stamps: (),
+        _guardrail: PhantomData,
+    });
+    let frame = String::from(
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+    );
+    assert!(probe.streaming_has_ended(&[StreamItem::Bytes(frame.into_bytes())]));
+}
+
+#[test]
+fn frame_text_does_not_end_the_anthropic_stream() {
+    let probe: Probe = UnifiedTranslation::Anthropic(AnthropicTranslation {
+        stamps: (),
+        _guardrail: PhantomData,
+    });
+    let frame = String::from(
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+    );
+    assert!(!probe.streaming_has_ended(&[StreamItem::Json(GuardrailValue::Text(frame))]));
 }

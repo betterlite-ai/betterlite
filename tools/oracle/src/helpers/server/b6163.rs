@@ -7,6 +7,8 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_server::guardrails::a2a_translation::{input, output, stream};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -180,11 +182,11 @@ fn stream_result(
     scenario: &StreamScenario,
     guardrail: &ScriptedGuardrail,
 ) -> HelperResult {
-    let mut responses: Vec<GuardrailValue> = scenario
+    let mut responses: Vec<StreamItem> = scenario
         .responses
         .iter()
         .cloned()
-        .map(serde_json::from_value)
+        .map(|value| serde_json::from_value(value).map(StreamItem::Json))
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;
     let mut stored = request_data(scenario.request_data.as_ref())?;
@@ -192,7 +194,8 @@ fn stream_result(
         stream::process_streaming_response(&mut responses, guardrail, None, None, stored.as_mut());
     runtime.block_on(action).or_value_error()?;
     let calls = guardrail.recorded();
-    Ok(json!({"responses": serde_json::to_value(&responses).or_value_error()?, "calls": calls}))
+    let values: Vec<GuardrailValue> = responses.iter().map(stream_item_value).collect();
+    Ok(json!({"responses": serde_json::to_value(&values).or_value_error()?, "calls": calls}))
 }
 
 fn request_data(

@@ -20,6 +20,7 @@ use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailLogTarget;
+use crate::guardrail_message_scope::StreamItem;
 use crate::guardrail_translation::{
     BaseTranslation, StreamTransformSink, StreamingScanKey, TranslationCall,
 };
@@ -177,11 +178,11 @@ impl BaseTranslation for FakeProvider {
 
     fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         _guardrail: &Self::Guardrail,
         _call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        responses_so_far.push(text("provider chunk"));
+        responses_so_far.push(StreamItem::Json(text("provider chunk")));
         self.ledger
             .0
             .lock()
@@ -191,10 +192,7 @@ impl BaseTranslation for FakeProvider {
         ready(Ok(()))
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        _responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
+    fn get_streaming_scan_key(&self, _responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
         Some(StreamingScanKey {
             texts: vec!["provider".to_owned()],
             tool_calls: Vec::new(),
@@ -207,7 +205,7 @@ impl BaseTranslation for FakeProvider {
         &self,
         _failure: &Self::Failure,
         _stream_started: bool,
-        _responses_so_far: Option<&[GuardrailValue]>,
+        _responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         Some(vec![b"block".to_vec()])
     }
@@ -215,9 +213,9 @@ impl BaseTranslation for FakeProvider {
     fn build_stream_error_items(
         &self,
         _failure: &Self::Failure,
-        _responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
-        Some(vec![text("provider error")])
+        _responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
+        Some(vec![StreamItem::Json(text("provider error"))])
     }
 
     fn get_structured_messages(
@@ -594,7 +592,7 @@ async fn defaults_streaming_keeps_the_items_and_calls_no_provider() {
         name: "pii".to_owned(),
     };
     let mut request_data = BTreeMap::from([("custom_llm_provider".to_owned(), text("bedrock"))]);
-    let mut responses = vec![text("chunk")];
+    let mut responses = vec![StreamItem::Json(text("chunk"))];
     let original = responses.clone();
     let call = TranslationCall {
         user_api_key_dict: None,
@@ -615,7 +613,7 @@ async fn defaults_streaming_keeps_the_items_and_calls_no_provider() {
 fn defaults_scan_key_and_stream_builders_are_absent() {
     let handler = Dispatch::new(vec![("bedrock".to_owned(), provider())]);
     let failure = GuardrailFailure::Other("blocked".to_owned());
-    let chunks: &[GuardrailValue] = &[text("chunk")];
+    let chunks: &[StreamItem] = &[StreamItem::Json(text("chunk"))];
     assert!(handler.get_streaming_scan_key(chunks).is_none());
     assert!(
         handler

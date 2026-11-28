@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
 
 use crate::guardrails::unified_guardrail::other_adapters::google_genai::GoogleGenAiTranslation;
@@ -68,8 +69,12 @@ async fn google_genai_response_scan_reads_the_model_from_the_request() {
 async fn google_genai_scans_the_stream_text_so_far() {
     let guardrail = FakeGuardrail::masking();
     let mut frames = vec![
-        value(r#"{"candidates": [{"content": {"parts": [{"text": "sec"}]}}]}"#),
-        value(r#"{"candidates": [{"content": {"parts": [{"text": "ret"}]}}]}"#),
+        StreamItem::Json(value(
+            r#"{"candidates": [{"content": {"parts": [{"text": "sec"}]}}]}"#,
+        )),
+        StreamItem::Json(value(
+            r#"{"candidates": [{"content": {"parts": [{"text": "ret"}]}}]}"#,
+        )),
     ];
     let before = frames.clone();
     GoogleGenAiTranslation(PhantomData)
@@ -78,6 +83,25 @@ async fn google_genai_scans_the_stream_text_so_far() {
         .unwrap();
     assert_eq!(frames, before);
     assert_eq!(guardrail.seen_texts(), vec![vec![String::from("secret")]]);
+}
+
+#[tokio::test]
+async fn google_genai_stream_bytes_frames_are_scanned() {
+    let guardrail = FakeGuardrail::masking();
+    let mut frames = vec![StreamItem::Bytes(
+        b"data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"sec\xffret\"}]}}]}\r\n"
+            .to_vec(),
+    )];
+    let before = frames.clone();
+    GoogleGenAiTranslation(PhantomData)
+        .process_streaming_response(&mut frames, guardrail.as_ref(), no_call())
+        .await
+        .unwrap();
+    assert_eq!(frames, before);
+    assert_eq!(
+        guardrail.seen_texts(),
+        vec![vec![String::from("sec\u{fffd}ret")]]
+    );
 }
 
 #[tokio::test]

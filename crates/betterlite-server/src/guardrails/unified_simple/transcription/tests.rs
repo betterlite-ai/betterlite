@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
 
 use super::{TranscriptionTranslation, TranscriptionTranslationError};
@@ -151,7 +152,7 @@ async fn adapter_output_failure_is_returned() {
 async fn defaults_stream_methods_flags_and_hooks_keep_the_trait_values() {
     let fake = FakeGuardrail::replying(&["safe"]);
     let calls = fake.calls();
-    let mut responses = vec![value(r#"{"text": "raw transcript"}"#)];
+    let mut responses = vec![StreamItem::Json(value(r#"{"text": "raw transcript"}"#))];
     let original = responses.clone();
     Adapter::default()
         .process_streaming_response(&mut responses, &fake, call(&mut BTreeMap::new(), None))

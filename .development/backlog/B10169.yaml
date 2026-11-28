@@ -1,13 +1,13 @@
 id: B10169
 milestone: R2 bug fixes
 title: Stream guardrails keep raw frames
-status: todo
+status: done
 depends_on: [B3661, B3663, B3246, B3679, B6161, B6163, B6164, B6260, B3680, B3673, B3676]
 file: tasks/B10169-guardrail-stream-frames.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3400

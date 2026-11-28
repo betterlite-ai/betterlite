@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use rstest::rstest;
 
 use super::{get_streaming_scan_key, process_streaming_response};
@@ -13,38 +14,32 @@ use crate::guardrails::a2a_translation::tests::support::{
     FakeGuardrail, capture_logs, log_text, value,
 };
 
-fn chunks(raw: &[&str]) -> Vec<GuardrailValue> {
-    raw.iter().map(|item| value(item)).collect()
+fn chunks(raw: &[&str]) -> Vec<StreamItem> {
+    raw.iter()
+        .map(|item| StreamItem::Json(value(item)))
+        .collect()
 }
 
-fn text_of(item: &GuardrailValue) -> String {
-    match item {
-        GuardrailValue::Object(fields) => {
-            let Some(GuardrailValue::Object(result)) = fields.get("result") else {
-                panic!("result");
-            };
-            let Some(GuardrailValue::Object(artifact)) = result.get("artifact") else {
-                panic!("artifact");
-            };
-            let Some(GuardrailValue::Array(parts)) = artifact.get("parts") else {
-                panic!("parts");
-            };
-            let Some(GuardrailValue::Object(part)) = parts.first() else {
-                panic!("part");
-            };
-            let Some(GuardrailValue::Text(text)) = part.get("text") else {
-                panic!("text");
-            };
-            text.clone()
-        }
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => panic!("unexpected chunk {item:?}"),
-    }
+fn text_of(item: &StreamItem) -> String {
+    let StreamItem::Json(GuardrailValue::Object(fields)) = item else {
+        panic!("unexpected chunk {item:?}");
+    };
+    let Some(GuardrailValue::Object(result)) = fields.get("result") else {
+        panic!("result");
+    };
+    let Some(GuardrailValue::Object(artifact)) = result.get("artifact") else {
+        panic!("artifact");
+    };
+    let Some(GuardrailValue::Array(parts)) = artifact.get("parts") else {
+        panic!("parts");
+    };
+    let Some(GuardrailValue::Object(part)) = parts.first() else {
+        panic!("part");
+    };
+    let Some(GuardrailValue::Text(text)) = part.get("text") else {
+        panic!("text");
+    };
+    text.clone()
 }
 
 const FIRST: &str =
@@ -56,7 +51,7 @@ const SECOND: &str =
 async fn stream_joins_the_item_texts_and_scans_once() {
     let guardrail = FakeGuardrail::replying(&["REDACTED"]);
     let mut responses = chunks(&[FIRST, SECOND]);
-    let original = responses.clone();
+    let original: Vec<GuardrailValue> = [FIRST, SECOND].iter().map(|item| value(item)).collect();
     process_streaming_response(&mut responses, &guardrail, None, None, None)
         .await
         .unwrap();
@@ -82,7 +77,7 @@ async fn stream_keeps_only_the_first_text_part_of_the_first_chunk() {
     process_streaming_response(&mut responses, &guardrail, None, None, None)
         .await
         .unwrap();
-    let GuardrailValue::Object(fields) = &responses[0] else {
+    let StreamItem::Json(GuardrailValue::Object(fields)) = &responses[0] else {
         panic!("chunk");
     };
     let Some(GuardrailValue::Object(result)) = fields.get("result") else {
@@ -105,7 +100,7 @@ async fn stream_rewrites_an_ndjson_item_as_a_compact_line() {
         r#"{"jsonrpc":"2.0","id":1,"result":{"parts":[{"kind":"text","text":"hi"}]}}"#,
         "\n"
     );
-    let mut responses = vec![GuardrailValue::Text(raw.to_owned())];
+    let mut responses = vec![StreamItem::Json(GuardrailValue::Text(raw.to_owned()))];
     process_streaming_response(&mut responses, &guardrail, None, None, None)
         .await
         .unwrap();
@@ -117,18 +112,23 @@ async fn stream_rewrites_an_ndjson_item_as_a_compact_line() {
         r#"{"jsonrpc":"2.0","id":1,"result":{"parts":[{"kind":"text","text":"rewritten"}]}}"#,
     );
     let line = format!("{}\n", serde_json::to_string(&expected).unwrap());
-    assert_eq!(responses, vec![GuardrailValue::Text(line)]);
+    assert_eq!(
+        responses,
+        vec![StreamItem::Json(GuardrailValue::Text(line))]
+    );
 }
 
 #[tokio::test]
 async fn stream_rewrites_a_parsed_ndjson_item_that_has_no_text() {
     let guardrail = FakeGuardrail::replying(&["unused"]);
     let mut responses = vec![
-        GuardrailValue::Text(
+        StreamItem::Json(GuardrailValue::Text(
             r#"{"jsonrpc":"2.0","id":1,"result":{"artifact":{"parts":[{"kind":"text","text":"hi"}]}}}"#
                 .to_owned(),
-        ),
-        GuardrailValue::Text(r#"{"jsonrpc":"2.0","id":2,"result":{"kind":"task"}}"#.to_owned()),
+        )),
+        StreamItem::Json(GuardrailValue::Text(
+            r#"{"jsonrpc":"2.0","id":2,"result":{"kind":"task"}}"#.to_owned(),
+        )),
     ];
     process_streaming_response(&mut responses, &guardrail, None, None, None)
         .await
@@ -136,10 +136,10 @@ async fn stream_rewrites_a_parsed_ndjson_item_that_has_no_text() {
     let expected = value(r#"{"jsonrpc":"2.0","id":2,"result":{"kind":"task"}}"#);
     assert_eq!(
         responses.get(1),
-        Some(&GuardrailValue::Text(format!(
+        Some(&StreamItem::Json(GuardrailValue::Text(format!(
             "{}\n",
             serde_json::to_string(&expected).unwrap()
-        )))
+        ))))
     );
 }
 
@@ -147,10 +147,12 @@ async fn stream_rewrites_a_parsed_ndjson_item_that_has_no_text() {
 async fn stream_leaves_invalid_items_alone() {
     let guardrail = FakeGuardrail::replying(&["rewritten"]);
     let mut responses = vec![
-        GuardrailValue::Text("not json".to_owned()),
-        value("7"),
-        value(r#"{"result":"not an object"}"#),
-        value(r#"{"result":{"parts":[{"kind":"text","text":"hi"}]}}"#),
+        StreamItem::Json(GuardrailValue::Text("not json".to_owned())),
+        StreamItem::Json(value("7")),
+        StreamItem::Json(value(r#"{"result":"not an object"}"#)),
+        StreamItem::Json(value(
+            r#"{"result":{"parts":[{"kind":"text","text":"hi"}]}}"#,
+        )),
     ];
     let before_first = responses[0].clone();
     let before_second = responses[1].clone();
@@ -165,6 +167,25 @@ async fn stream_leaves_invalid_items_alone() {
         guardrail.calls()[0].inputs.texts,
         Some(vec!["hi".to_owned()])
     );
+}
+
+#[tokio::test]
+async fn bytes_items_are_skipped_and_kept() {
+    let guardrail = FakeGuardrail::replying(&["rewritten"]);
+    let raw = b"{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{\"parts\":[{\"kind\":\"text\",\"text\":\"raw\"}]}}\n".to_vec();
+    let mut responses = chunks(&[FIRST]);
+    responses.push(StreamItem::Bytes(raw.clone()));
+    process_streaming_response(&mut responses, &guardrail, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        guardrail.calls()[0].inputs.texts,
+        Some(vec!["he".to_owned()])
+    );
+    assert_eq!(responses[1], StreamItem::Bytes(raw));
+    assert_eq!(text_of(&responses[0]), "rewritten");
+    let key = get_streaming_scan_key(&responses);
+    assert_eq!(key.texts, vec!["rewritten".to_owned()]);
 }
 
 #[rstest]

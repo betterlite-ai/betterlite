@@ -4,6 +4,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 
 use super::error::{RoundFailure, StreamLoopError};
@@ -13,8 +15,8 @@ use super::{StreamLoopParams, StreamOutput};
 // LiteLLM's _inspect_full_response_for_block: the transforms are dropped, only the block matters
 pub(crate) async fn inspect_response_for_block<T, G, E>(
     params: &mut StreamLoopParams<'_, T, G>,
-    assembled: &mut Vec<GuardrailValue>,
-    responses_yielded: &[GuardrailValue],
+    assembled: &mut Vec<StreamItem>,
+    responses_yielded: &[StreamItem],
     outputs: &mut VecDeque<StreamOutput>,
 ) -> Result<(), RoundFailure<E>>
 where
@@ -30,7 +32,9 @@ where
     match failure {
         GuardrailFailure::ModifyResponse(mut details) => {
             if details.original_response.is_none() {
-                details.original_response = Some(GuardrailValue::Array(assembled.clone()));
+                details.original_response = Some(GuardrailValue::Array(
+                    assembled.iter().map(stream_item_value).collect(),
+                ));
             }
             round::terminate_with_block(
                 params.translation,

@@ -8,7 +8,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
-use betterlite_guardrails::guardrail_message_scope::Object;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
+use betterlite_guardrails::guardrail_message_scope::{Object, StreamItem};
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation as _, StreamTransformSink, TranslationCall,
 };
@@ -90,12 +91,13 @@ fn delta_content(item: &GuardrailValue) -> String {
     text_at(&choices[0], &["delta", "content"])
 }
 
-fn assert_error_frame(items: &[GuardrailValue], code: &str, message: &str) {
-    let [GuardrailValue::Text(frame)] = items else {
+fn assert_error_frame(items: &[StreamItem], code: &str, message: &str) {
+    let [StreamItem::Bytes(frame)] = items else {
         panic!("expected one error frame, got {items:?}");
     };
-    assert!(frame.contains(&format!("\"code\":\"{code}\"")));
-    assert!(frame.contains(&format!("\"message\":\"{message}\"")));
+    let text = String::from_utf8(frame.clone()).unwrap();
+    assert!(text.contains(&format!("\"code\":\"{code}\"")));
+    assert!(text.contains(&format!("\"message\":\"{message}\"")));
 }
 
 #[tokio::test]
@@ -262,7 +264,7 @@ async fn flags_chat_delivery_flag_reaches_handler(#[case] deliver: bool, #[case]
         .process_streaming_response(&mut stream, &applied, call(deliver))
         .await
         .unwrap();
-    assert_eq!(delta_content(&stream[0]), expected);
+    assert_eq!(delta_content(&stream_item_value(&stream[0])), expected);
 }
 
 #[tokio::test]
@@ -275,8 +277,32 @@ async fn stream_chat_chunks_round_trip() {
         .await
         .unwrap();
     assert_eq!(stream.len(), 2);
-    assert_eq!(delta_content(&stream[0]), "masked");
-    assert_eq!(stream[1], GuardrailValue::Text(String::from("raw")));
+    assert_eq!(delta_content(&stream_item_value(&stream[0])), "masked");
+    assert_eq!(
+        stream[1],
+        StreamItem::Json(GuardrailValue::Text(String::from("raw")))
+    );
+}
+
+#[tokio::test]
+async fn stream_raw_frame_text_item_is_neither_scanned_nor_changed() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let frame = String::from("event: data: one\n\n");
+    let mut stream = items(
+        r#"[{"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"one"},"finish_reason":null}]}]"#,
+    );
+    stream.insert(0, StreamItem::Json(GuardrailValue::Text(frame.clone())));
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(true))
+        .await
+        .unwrap();
+    assert_eq!(stream[0], StreamItem::Json(GuardrailValue::Text(frame)));
+    assert_eq!(delta_content(&stream_item_value(&stream[1])), "masked");
+    assert_eq!(
+        fake.calls()[0].inputs.texts.as_ref().unwrap(),
+        &[String::from("one")]
+    );
 }
 
 #[test]
@@ -310,7 +336,7 @@ fn stamp_chat_block_chunks_use_the_injected_stamp() {
 }
 
 #[test]
-fn stamp_chat_error_items_carry_the_failure_status_and_message() {
+fn stream_raw_frame_error_items_are_bytes() {
     let http = GuardrailFailure::Http {
         status: 429,
         detail: String::from("quota"),
@@ -383,7 +409,7 @@ async fn stream_chat_transform_sink_carries_the_guardrail_text() {
         sink.mutated_text_per_choice.get(&0),
         Some(&String::from("masked"))
     );
-    assert_eq!(delta_content(&stream[0]), "one");
+    assert_eq!(delta_content(&stream_item_value(&stream[0])), "one");
 }
 
 #[test]

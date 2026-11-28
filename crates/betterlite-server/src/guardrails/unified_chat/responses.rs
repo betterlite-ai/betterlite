@@ -11,6 +11,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailMessage;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::ScopeFlags;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamingScanKey, TranslationCall,
@@ -129,14 +130,11 @@ where
 
     async fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> Result<(), Self::Failure> {
-        let mut events: Vec<JsonValue> = responses_so_far
-            .iter()
-            .map(serde_json::to_value)
-            .collect::<Result<_, _>>()?;
+        let mut events = events_of(responses_so_far)?;
         let name = guardrail.guardrail_name.as_deref();
         let applied = guardrail.guardrail.as_ref();
         let logged = call.logging_obj;
@@ -164,15 +162,8 @@ where
         }
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
-        let events: Vec<JsonValue> = responses_so_far
-            .iter()
-            .map(serde_json::to_value)
-            .collect::<Result<_, _>>()
-            .ok()?;
+    fn get_streaming_scan_key(&self, responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
+        let events = events_of(responses_so_far).ok()?;
         stream_scan::streaming_scan_key(&events)
     }
 
@@ -180,19 +171,11 @@ where
         &self,
         failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         let details = modify_response(failure.guardrail()?)?;
         let original = serde_json::to_value(details.original_response.as_ref()).ok()?;
-        let events: Option<Vec<JsonValue>> = responses_so_far
-            .map(|items| {
-                items
-                    .iter()
-                    .map(serde_json::to_value)
-                    .collect::<Result<_, _>>()
-            })
-            .transpose()
-            .ok()?;
+        let events = responses_so_far.map(events_of).transpose().ok()?;
         block_events::build_block_sse_chunks(
             &details.message,
             &details.model,
@@ -207,24 +190,16 @@ where
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         let (status, message) = failure_message(failure.guardrail()?)?;
-        let events: Option<Vec<JsonValue>> = responses_so_far
-            .map(|items| {
-                items
-                    .iter()
-                    .map(serde_json::to_value)
-                    .collect::<Result<_, _>>()
-            })
-            .transpose()
-            .ok()?;
+        let events = responses_so_far.map(events_of).transpose().ok()?;
         block_events::build_stream_error_items(status, &message, events.as_deref())
             .into_iter()
             .map(|event| {
                 serde_json::to_value(event)
                     .ok()
-                    .map(|value| to_guardrail(&value))
+                    .map(|value| StreamItem::Json(to_guardrail(&value)))
             })
             .collect()
     }
@@ -247,9 +222,23 @@ where
     }
 }
 
-fn write_events(items: &mut [GuardrailValue], events: &[JsonValue]) {
+// A raw frame keeps its slot as null, since the events after it must keep their positions
+fn events_of(items: &[StreamItem]) -> Result<Vec<JsonValue>, serde_json::Error> {
+    items
+        .iter()
+        .map(|item| match item {
+            StreamItem::Json(value) => serde_json::to_value(value),
+            StreamItem::Bytes(_) => Ok(JsonValue::Null),
+        })
+        .collect()
+}
+
+fn write_events(items: &mut [StreamItem], events: &[JsonValue]) {
     for (slot, event) in items.iter_mut().zip(events) {
-        *slot = to_guardrail(event);
+        let StreamItem::Json(_) = slot else {
+            continue;
+        };
+        *slot = StreamItem::Json(to_guardrail(event));
     }
 }
 

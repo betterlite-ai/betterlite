@@ -10,6 +10,7 @@ use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_selection::gate::GuardrailSelection as _;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_guardrails::unified_dispatch::registry::{
@@ -71,7 +72,7 @@ where
         + Sync
         + 'run,
     G: GuardrailContract + 'run,
-    S: Stream<Item = Result<GuardrailValue, E>> + Send + 'run,
+    S: Stream<Item = Result<StreamItem, E>> + Send + 'run,
     E: Error + Send + Sync + 'static,
 {
     let state = match plan(params) {
@@ -172,7 +173,7 @@ where
         + StreamEndCheck
         + Sync,
     G: GuardrailContract,
-    S: Stream<Item = Result<GuardrailValue, E>> + Send,
+    S: Stream<Item = Result<StreamItem, E>> + Send,
     E: Error + Send + Sync + 'static,
 {
     // a plan error is the only output, so the source is never polled
@@ -235,7 +236,7 @@ where
         }
     }
 
-    async fn consume(&mut self, item: GuardrailValue) {
+    async fn consume(&mut self, item: StreamItem) {
         let stage = mem::replace(&mut self.stage, Stage::PassThrough);
         self.stage = match stage {
             Stage::Unresolved(inputs) => resolved_stage(inputs, &item),
@@ -254,7 +255,7 @@ where
 // LiteLLM's call type is the route's first, else inferred from the first chunk; without a translation every chunk passes
 fn resolved_stage<'run, T, G>(
     inputs: BlockOnlyInputs<'run, T, G>,
-    first: &GuardrailValue,
+    first: &StreamItem,
 ) -> Stage<'run, T, G> {
     let BlockOnlyInputs {
         registry,

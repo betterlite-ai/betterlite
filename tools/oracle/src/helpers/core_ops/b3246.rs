@@ -1,7 +1,8 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_core::guardrails::streaming_rewrite::shapes::RequestData;
+use betterlite_core::guardrails::streaming_rewrite::shapes::{RequestData, StreamItem};
 use betterlite_core::guardrails::streaming_rewrite::step::{StreamingStep, run_streaming_step};
 use betterlite_core::guardrails::streaming_rewrite::traits::UserApiKey;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -51,17 +52,17 @@ async fn drive<const DELIVERS: bool>(input: &Input) -> Result<Output, StepError>
     let translation = Translation::<DELIVERS> {
         script: &input.translation,
     };
-    let mut chunks: Vec<GuardrailValue> = input
+    let mut items: Vec<StreamItem> = input
         .chunks
         .iter()
         .cloned()
-        .map(GuardrailValue::Text)
+        .map(|chunk| StreamItem::Json(GuardrailValue::Text(chunk)))
         .collect();
     let mut hook_input = RequestData::new();
     let user_api_key_dict = UserApiKey::new();
     let step = StreamingStep {
         guardrail: &input.guardrail.name,
-        streaming_chunks: &mut chunks,
+        streaming_chunks: &mut items,
         hook_input: &mut hook_input,
         user_api_key_dict: &user_api_key_dict,
         logging_obj: None::<&mut ()>,
@@ -69,7 +70,7 @@ async fn drive<const DELIVERS: bool>(input: &Input) -> Result<Output, StepError>
     run_streaming_step(&mut guardrail, &translation, step, record_applied).await?;
     Ok(Output {
         outcome: "pass",
-        chunks,
+        chunks: items.iter().map(stream_item_value).collect(),
         applied_guardrails: hook_input
             .remove("applied_guardrails")
             .unwrap_or_else(|| GuardrailValue::Array(Vec::new())),

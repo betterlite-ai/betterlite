@@ -1,6 +1,7 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 use betterlite_core::routes::catalog::{CATALOG, RouteCatalog};
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::unified_dispatch::registry::{
     TranslationEntry, TranslationRegistry, resolve_endpoint_translation,
 };
@@ -40,11 +41,12 @@ pub(super) fn resolve(request: &ResolutionRequest) -> HelperResult {
             })
             .collect(),
     };
+    let first_item = request.first_item.clone().map(StreamItem::Json);
     let resolved = resolve_endpoint_translation(
         &registry,
         &catalog,
         request.request_route.as_deref(),
-        request.first_item.as_ref(),
+        first_item.as_ref(),
     );
     match resolved {
         Some((call_type, translation)) => Ok(json!({

@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 use betterlite_core::routes::catalog::RouteCatalog;
 
+use crate::guardrail_message_scope::StreamItem;
 use crate::unified_dispatch::stream_items::CHUNK_OBJECT;
 
 pub struct TranslationEntry<T> {
@@ -33,8 +34,8 @@ pub enum ResponseKind {
 
 impl ResponseKind {
     #[must_use]
-    pub fn of_stream_item(item: &GuardrailValue) -> Self {
-        let GuardrailValue::Object(fields) = item else {
+    pub fn of_stream_item(item: &StreamItem) -> Self {
+        let StreamItem::Json(GuardrailValue::Object(fields)) = item else {
             return Self::Other;
         };
         match fields.get("object") {
@@ -84,7 +85,7 @@ pub fn resolve_endpoint_translation<'registry, T>(
     registry: &'registry TranslationRegistry<T>,
     routes: &RouteCatalog,
     request_route: Option<&str>,
-    first_item: Option<&GuardrailValue>,
+    first_item: Option<&StreamItem>,
 ) -> Option<(CallType, &'registry T)> {
     let call_type = first_route_call_type(routes, request_route).or_else(|| {
         first_item

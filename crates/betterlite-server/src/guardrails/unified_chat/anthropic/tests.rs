@@ -9,7 +9,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
-use betterlite_guardrails::guardrail_message_scope::Object;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
+use betterlite_guardrails::guardrail_message_scope::{Object, StreamItem};
 use betterlite_guardrails::guardrail_translation::{BaseTranslation as _, TranslationCall};
 use rstest::rstest;
 
@@ -35,6 +36,11 @@ const ROUND_TRIP: &str = r#"["raw",{"type":"content_block_delta","index":0,"delt
 
 const NO_TEXT_DELTA: &str =
     r#"[{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}]"#;
+
+const TEXT_DELTA_FRAME: &[u8] = b"event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"one\"}}\n\n";
+
+// The ended-stream assembly reads the served model from message_start, so the frame carries a real stream's start.
+const ENDED_FRAME: &[u8] = b"event: message_start\ndata: {\"message\": {\"id\": \"msg_1\", \"model\": \"claude-3\", \"role\": \"assistant\", \"usage\": {\"input_tokens\": 1, \"output_tokens\": 0}}, \"type\": \"message_start\"}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"one\"}}\n\nevent: message_delta\ndata: {\"delta\": {\"stop_reason\": \"end_turn\"}, \"type\": \"message_delta\", \"usage\": {\"output_tokens\": 9}}\n\n";
 
 fn translation() -> Anthropic {
     AnthropicTranslation {
@@ -182,7 +188,10 @@ async fn flags_anthropic_delivery_flag_reaches_handler(
         .process_streaming_response(&mut stream, &applied, call(deliver))
         .await
         .unwrap();
-    assert_eq!(text_at(&stream[0], &["delta", "text"]), expected);
+    assert_eq!(
+        text_at(&stream_item_value(&stream[0]), &["delta", "text"]),
+        expected
+    );
 }
 
 #[tokio::test]
@@ -216,8 +225,67 @@ async fn stream_anthropic_events_round_trip() {
         .await
         .unwrap();
     assert_eq!(stream.len(), 2);
-    assert_eq!(stream[0], GuardrailValue::Text(String::from("raw")));
-    assert_eq!(text_at(&stream[1], &["delta", "text"]), "masked");
+    assert_eq!(
+        stream[0],
+        StreamItem::Json(GuardrailValue::Text(String::from("raw")))
+    );
+    assert_eq!(
+        text_at(&stream_item_value(&stream[1]), &["delta", "text"]),
+        "masked"
+    );
+}
+
+#[tokio::test]
+async fn stream_raw_frame_bytes_text_delta_is_scanned() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let mut stream = vec![StreamItem::Bytes(TEXT_DELTA_FRAME.to_vec())];
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.calls()[0].inputs.texts.as_ref().unwrap(),
+        &[String::from("one")]
+    );
+    assert_eq!(stream, vec![StreamItem::Bytes(TEXT_DELTA_FRAME.to_vec())]);
+}
+
+#[tokio::test]
+async fn stream_raw_frame_ended_rewrite_stays_bytes() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let mut stream = vec![StreamItem::Bytes(ENDED_FRAME.to_vec())];
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(true))
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.calls()[0].inputs.texts.as_ref().unwrap(),
+        &[String::from("one")]
+    );
+    let [StreamItem::Bytes(frame)] = stream.as_slice() else {
+        panic!("expected the raw frame in place, got {stream:?}");
+    };
+    let text = str::from_utf8(frame).unwrap();
+    assert!(text.contains("\"text\": \"masked\""), "{text}");
+}
+
+#[tokio::test]
+async fn stream_raw_frame_json_text_is_neither_scanned_nor_changed() {
+    let fake = Arc::new(FakeGuardrail::replying(texts_reply(&["masked"])));
+    let applied = context(&fake, Some("guard"));
+    let frame = String::from_utf8(TEXT_DELTA_FRAME.to_vec()).unwrap();
+    let mut stream = vec![StreamItem::Json(GuardrailValue::Text(frame.clone()))];
+    translation()
+        .process_streaming_response(&mut stream, &applied, call(false))
+        .await
+        .unwrap();
+    assert_eq!(
+        fake.calls()[0].inputs.texts.as_ref().unwrap(),
+        &[String::new()]
+    );
+    assert_eq!(stream, vec![StreamItem::Json(GuardrailValue::Text(frame))]);
 }
 
 #[test]
@@ -249,7 +317,7 @@ fn stamp_anthropic_block_chunks_use_the_message_id() {
 }
 
 #[test]
-fn stamp_anthropic_error_items_carry_the_failure_message() {
+fn stream_raw_frame_error_items_are_bytes() {
     let failure =
         AnthropicTranslationError::from(ProcessStreamError::Guardrail(GuardrailFailure::Http {
             status: 429,
@@ -258,10 +326,10 @@ fn stamp_anthropic_error_items_carry_the_failure_message() {
     let items = translation()
         .build_stream_error_items(&failure, None)
         .unwrap();
-    let [GuardrailValue::Text(frame)] = items.as_slice() else {
+    let [StreamItem::Bytes(frame)] = items.as_slice() else {
         panic!("expected one error frame, got {items:?}");
     };
-    assert!(frame.contains("quota"));
+    assert!(str::from_utf8(frame).unwrap().contains("quota"));
 }
 
 #[test]
@@ -371,7 +439,10 @@ async fn stream_anthropic_forwards_the_api_key_and_request_data() {
         )
         .await
         .unwrap();
-    assert_eq!(text_at(&stream[0], &["delta", "text"]), "masked");
+    assert_eq!(
+        text_at(&stream_item_value(&stream[0]), &["delta", "text"]),
+        "masked"
+    );
     let sent = GuardrailValue::Object(fake.calls()[0].request_data.clone());
     assert_eq!(
         nested(&sent, &["litellm_metadata", "user_api_key_user_id"]),

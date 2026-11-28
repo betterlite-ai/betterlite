@@ -4,6 +4,7 @@ use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::guardrail_message_scope::Object;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::decode_replacing_invalid;
 use serde_json::Value;
 
 use super::StreamContext;
@@ -14,22 +15,10 @@ use crate::guardrails::anthropic_translation::stream_rewrite::ended;
 use crate::guardrails::anthropic_translation::usage_response::build_streaming_usage_response;
 use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
 
-// Python's errors="replace" over a bytes chunk; String::from_utf8_lossy is banned.
-fn decoded_text(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    for chunk in bytes.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push('\u{FFFD}');
-        }
-    }
-    text
-}
-
 // The chunks as the guardrail sees them: a parsed event as its object, bytes as their text, the rest as null.
 fn chunk_value(chunk: &SseChunk) -> GuardrailValue {
     match chunk {
-        SseChunk::Bytes(bytes) => GuardrailValue::Text(decoded_text(bytes)),
+        SseChunk::Bytes(bytes) => GuardrailValue::Text(decode_replacing_invalid(bytes)),
         SseChunk::Event(event) => to_guardrail(&Value::Object(event.clone())),
         SseChunk::Other => GuardrailValue::Null,
     }

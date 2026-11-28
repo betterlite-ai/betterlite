@@ -10,11 +10,12 @@ use std::collections::{BTreeMap, VecDeque};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 
 // What one step of the loop writes: a stream item, or the byte frames of a block message
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamOutput {
-    Item(GuardrailValue),
+    Item(StreamItem),
     BlockChunks(Vec<Vec<u8>>),
 }
 
@@ -31,7 +32,7 @@ pub struct StreamLoopParams<'run, T, G> {
 
 // The three lists a round reads or writes, bundled to keep a round under the argument limit
 pub(crate) struct StreamBuffers<'buffers> {
-    pub(crate) responses_so_far: &'buffers mut Vec<GuardrailValue>,
-    pub(crate) responses_yielded: &'buffers mut Vec<GuardrailValue>,
+    pub(crate) responses_so_far: &'buffers mut Vec<StreamItem>,
+    pub(crate) responses_yielded: &'buffers mut Vec<StreamItem>,
     pub(crate) outputs: &'buffers mut VecDeque<StreamOutput>,
 }
