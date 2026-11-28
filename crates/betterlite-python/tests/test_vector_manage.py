@@ -29,7 +29,12 @@ import betterlite.vector_stores.main as package_main
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints.payload import LOGGER_FN_DROPPED
 from betterlite._native import NativeVectorManageError
-from betterlite.exceptions import APIConnectionError, AuthenticationError, NotFoundError
+from betterlite.exceptions import (
+    APIConnectionError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+)
 from betterlite.vector_stores._create_search import acreate, asearch, create, search
 from betterlite.vector_stores._manage import (
     Managed,
@@ -51,6 +56,7 @@ OK = 200
 UNAUTHORIZED = 401
 NOT_FOUND = 404
 CUSTOM_PROVIDER = "anthropic"
+AZURE = "azure"
 MISSING_ID = "vs_missing"
 STORE_URL = f"{STORE_PATH}/{STORE_ID}"
 DELETED_OBJECT = "vector_store.deleted"
@@ -598,6 +604,41 @@ def test_calls_refuse_provider() -> None:
             )
         assert server.calls == []
     assert type(ours_caught.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
+
+
+# azure has a LiteLLM config this build does not serve: reads fail as APIConnectionError,
+# writes as BadRequestError, and no request leaves
+def test_calls_refuse_unserved_tags() -> None:
+    with closing(ManageServer()) as server:
+        with pytest.raises(APIConnectionError):
+            retrieve(
+                vector_store_id=STORE_ID,
+                custom_llm_provider=AZURE,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(APIConnectionError):
+            list_call(
+                custom_llm_provider=AZURE,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(BadRequestError):
+            update(
+                vector_store_id=STORE_ID,
+                name=UPDATED_NAME,
+                custom_llm_provider=AZURE,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(BadRequestError):
+            delete(
+                vector_store_id=STORE_ID,
+                custom_llm_provider=AZURE,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        assert server.calls == []
 
 
 def test_error_keeps_class() -> None:

@@ -53,8 +53,7 @@ impl VectorStoreReadConfigs for SessionService<'_> {
         &'source self,
         resolved: &ResolvedProvider,
     ) -> Option<ReadConfig<'source>> {
-        // B010 serves OpenAI's vector stores only
-        if resolved.tag != VectorStoresConfigTag::OpenAI {
+        if !served(resolved.tag) {
             return None;
         }
         let config: Box<dyn CreateReadConfig + 'source> = Box::new(OpenAiCreateReadConfig::new(
@@ -143,8 +142,8 @@ fn missing_id() -> CreateReadError {
 
 impl WriteService for SessionService<'_> {
     async fn write(&self, call: &CoreWriteCall<'_>) -> Result<Json, WriteError> {
-        // B010 serves OpenAI's vector stores only; a tag with no config here names its provider back
-        if call.config != VectorStoresConfigTag::OpenAI {
+        // a tag this build has no write config for names its provider back without a request
+        if !served(call.config) {
             return Err(unsupported(call));
         }
         let config = OpenAiWriteConfig::new(
@@ -231,6 +230,25 @@ fn pre_post<'env>(
         sentry: None,
         logger_fn: None,
         now: clock.now(),
+    }
+}
+
+// B010 and B1066 serve OpenAI's vector stores only; the other tags are named so a new provider fails to compile here
+const fn served(tag: VectorStoresConfigTag) -> bool {
+    match tag {
+        VectorStoresConfigTag::OpenAI => true,
+        VectorStoresConfigTag::AzureOpenAI
+        | VectorStoresConfigTag::Vertex
+        | VectorStoresConfigTag::VertexSearchAPI
+        | VectorStoresConfigTag::Bedrock
+        | VectorStoresConfigTag::PGVector
+        | VectorStoresConfigTag::AzureAI
+        | VectorStoresConfigTag::Milvus
+        | VectorStoresConfigTag::Gemini
+        | VectorStoresConfigTag::RAGFlow
+        | VectorStoresConfigTag::S3Vectors
+        | VectorStoresConfigTag::Valkey
+        | VectorStoresConfigTag::MongoDB => false,
     }
 }
 
