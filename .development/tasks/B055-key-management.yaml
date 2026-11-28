@@ -98,6 +98,7 @@ out_of_scope:
   - B770/B1224 own request fields/hooks; B771/B772 own generation permission and parent-limit policy.
   - Update, deletion, rotation, lookup and listing remain their existing key task owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Normal generation runs its policy before team limits; service-account generation reverses them.
   - Service-account hooks see the supplied user_id, which is cleared only after the policy check.
 budget:
