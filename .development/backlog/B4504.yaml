@@ -1,7 +1,7 @@
 id: B4504
 milestone: M8 platform
 title: Authorize and charge Lens analysis calls
-status: todo
+status: done
 depends_on: [B4500, B4501, B014, B068, B188, B743, B844, B2225, B3003, B4001, B10091]
 file: tasks/B4504-lens-billing.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/lens/inference.py"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3408
