@@ -483,6 +483,22 @@ async fn blocked_failure_does_not_extend() {
     assert_eq!(fail(&built, "bob").await.user, 295);
 }
 
+// a block that has just expired no longer short-circuits the bump: the failure counts
+#[tokio::test]
+async fn expired_pair_block_lets_the_next_failure_count() {
+    let mut settings = default_settings();
+    settings.source_limit = 2;
+    let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
+    let keys = keys_of(&built, "bob");
+    built
+        .blocks
+        .set(&keys.pair_block, CacheValue::Float(1005.0), 5)
+        .expect("the expired block");
+    built.clock.set(1005.0);
+    assert_eq!(fail(&built, "bob").await.user, 0);
+    assert_eq!(built.counters.value(&keys.pair_counter), Some(1.0_f64));
+}
+
 #[tokio::test]
 async fn success_preserves_blocks_and_source() {
     let mut settings = default_settings();
