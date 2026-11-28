@@ -237,18 +237,18 @@ where
             .into_iter()
             .map(|(range, raw_value)| SourceOverride {
                 range,
-                limit: override_limit(resolved_environment(raw_value, lookup), default),
+                limit: override_limit(&resolved_environment(raw_value, lookup), default),
             })
             .collect(),
     )
 }
 
 // _override_limit: a null value silently keeps the source default; only a stripped 0 exempts, otherwise the value must be a positive integer
-fn override_limit(raw: Json, default: i64) -> OverrideLimit {
-    if raw == Json::Null {
+fn override_limit(raw: &Json, default: i64) -> OverrideLimit {
+    if *raw == Json::Null {
         return OverrideLimit::Limit(default);
     }
-    let text = text_of(&raw);
+    let text = text_of(raw);
     if text.trim() == "0" {
         return OverrideLimit::Exempt;
     }
