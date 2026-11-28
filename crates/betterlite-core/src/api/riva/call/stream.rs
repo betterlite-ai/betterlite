@@ -122,7 +122,8 @@ fn collect_response(
             continue;
         };
         let top = provider_call(py, alternatives.get_item(0_i32))?;
-        let transcript = transcript(py, &top)?;
+        let transcript = present(py, &top, TRANSCRIPT)?
+            .map_or_else(|| Ok(String::new()), |value| text_value(&value))?;
         let words = words(py, &top)?;
         finals.push(FinalResult { transcript, words });
     }
@@ -159,10 +160,6 @@ fn items<'py>(
     Ok(values)
 }
 
-fn transcript(py: Python<'_>, top: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
-    present(py, top, TRANSCRIPT)?.map_or_else(|| Ok(String::new()), |value| text_value(&value))
-}
-
 fn text_value(value: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
     match value.extract::<String>() {
         Ok(text) => Ok(text),
@@ -185,8 +182,11 @@ fn words(py: Python<'_>, top: &Bound<'_, PyAny>) -> Result<Vec<WordTiming>, Riva
 
 fn word_timing(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<WordTiming, RivaCallError> {
     let text = word_text(py, word)?;
-    let start_time_ms = timing(py, word, START_TIME)?;
-    let end_time_ms = timing(py, word, END_TIME)?;
+    // int(getattr(word, name, 0) or 0): a missing or falsey timing is zero, and int() truncates
+    let start_time_ms = present(py, word, START_TIME)?
+        .map_or_else(|| Ok(0_i64), |value| integer_value(py, &value))?;
+    let end_time_ms = present(py, word, END_TIME)?
+        .map_or_else(|| Ok(0_i64), |value| integer_value(py, &value))?;
     Ok(WordTiming {
         word: text,
         start_time_ms,
@@ -197,11 +197,6 @@ fn word_timing(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<WordTiming, Ri
 fn word_text(py: Python<'_>, word: &Bound<'_, PyAny>) -> Result<String, RivaCallError> {
     skip_missing(py, word.getattr(WORD))?
         .map_or_else(|| Ok(String::new()), |value| text_value(&value))
-}
-
-// int(getattr(word, name, 0) or 0): a missing or falsey timing is zero, and int() truncates
-fn timing(py: Python<'_>, word: &Bound<'_, PyAny>, name: &str) -> Result<i64, RivaCallError> {
-    present(py, word, name)?.map_or_else(|| Ok(0_i64), |value| integer_value(py, &value))
 }
 
 fn integer_value(py: Python<'_>, value: &Bound<'_, PyAny>) -> Result<i64, RivaCallError> {
