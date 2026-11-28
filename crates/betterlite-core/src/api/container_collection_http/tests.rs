@@ -29,7 +29,7 @@ use betterlite_openai::api::container_contracts::records::{
 use betterlite_openai::containers::container_file_http::PreCallHook;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
 use betterlite_openai::containers::container_file_http::transport::{
-    ContainerHttpReply, TransferError,
+    ClientSource, ContainerHttpReply, TransferError,
 };
 use betterlite_openai::containers::{replies, requests};
 use betterlite_openai::openai_base_config::Object;
@@ -42,8 +42,8 @@ use tokio::time::sleep;
 use url::Url;
 
 use super::{
-    CollectionBase, CollectionClientSource, CollectionReply, CollectionRequest,
-    CollectionTransport, ContainerCollectionError, ContainerCreateCall, ContainerListCall,
+    CollectionBase, CollectionReply, CollectionRequest, CollectionTransport,
+    ContainerCollectionError, ContainerCreateCall, ContainerListCall,
 };
 
 pub(super) const BASE: &str = "https://api.example.com/v1/containers";
@@ -255,7 +255,7 @@ impl FakeSource {
     }
 }
 
-impl CollectionClientSource for FakeSource {
+impl ClientSource for FakeSource {
     type Blocking = BlockingFake;
     type Asynchronous = AsyncFake;
 

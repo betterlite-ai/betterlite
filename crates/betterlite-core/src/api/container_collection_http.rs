@@ -13,7 +13,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::{config, error, records};
 use betterlite_openai::containers::container_file_http::request::{self, SslVerify};
-use betterlite_openai::containers::container_file_http::transport::{self, Selected};
+use betterlite_openai::containers::container_file_http::transport::{self, ClientSource, Selected};
 use betterlite_openai::containers::container_file_http::{self as file, response};
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
@@ -38,16 +38,7 @@ pub type CollectionReply = Result<transport::ContainerHttpReply, transport::Tran
 pub trait CollectionTransport: Send + Sync {
     fn send(&self, request: &CollectionRequest) -> impl Future<Output = CollectionReply> + Send;
 }
-// B173 owns the pool behind this: the blocking and async clients are different types, as HTTPHandler and AsyncHTTPHandler are
-pub trait CollectionClientSource: Send + Sync {
-    type Blocking: CollectionTransport;
-    type Asynchronous: CollectionTransport;
-    fn blocking_client(&self, ssl_verify: Option<&SslVerify>) -> Result<Self::Blocking, PoolError>;
-    fn async_client(&self, ssl_verify: Option<&SslVerify>)
-    -> Result<Self::Asynchronous, PoolError>;
-}
-
-pub struct CollectionBase<'call, Source: CollectionClientSource> {
+pub struct CollectionBase<'call, Source: ClientSource> {
     pub config: &'call dyn config::BaseContainerConfig,
     pub litellm_params: &'call Object,
     pub logging: &'call Mutex<LoggingState>,
@@ -59,12 +50,12 @@ pub struct CollectionBase<'call, Source: CollectionClientSource> {
     pub hook: &'call dyn file::PreCallHook,
 }
 
-pub struct ContainerCreateCall<'call, Source: CollectionClientSource> {
+pub struct ContainerCreateCall<'call, Source: ClientSource> {
     pub base: CollectionBase<'call, Source>,
     pub name: &'call str,
     pub params: &'call Object,
 }
-pub struct ContainerListCall<'call, Source: CollectionClientSource> {
+pub struct ContainerListCall<'call, Source: ClientSource> {
     pub base: CollectionBase<'call, Source>,
     pub query: config::ContainerListQuery<'call>,
 }
@@ -95,7 +86,7 @@ fn pick<'call, 'supplied, Source, Client>(
     build: fn(&Source, Option<&SslVerify>) -> Result<Client, PoolError>,
 ) -> Result<Chosen<'supplied, 'call, Client>, ContainerCollectionError>
 where
-    Source: CollectionClientSource,
+    Source: ClientSource,
 {
     let params = request::read_params(base.litellm_params)?;
     let client = Selected::choose(supplied, || build(base.source, params.ssl_verify.as_ref()))?;
@@ -122,7 +113,7 @@ macro_rules! collection_handlers {
                 call: &$call<'_, Source>,
             ) -> Result<$reply, ContainerCollectionError>
             where
-                Source: CollectionClientSource,
+                Source: ClientSource<Blocking: CollectionTransport, Asynchronous: CollectionTransport>,
             {
                 let (client, params) =
                     pick(&call.base, call.base.blocking, Source::blocking_client)?;
@@ -133,7 +124,7 @@ macro_rules! collection_handlers {
                 call: &$call<'_, Source>,
             ) -> Result<$reply, ContainerCollectionError>
             where
-                Source: CollectionClientSource,
+                Source: ClientSource<Blocking: CollectionTransport, Asynchronous: CollectionTransport>,
             {
                 let (client, params) =
                     pick(&call.base, call.base.asynchronous, Source::async_client)?;
@@ -155,7 +146,7 @@ async fn create_body<Client, Source>(
 ) -> Result<records::ContainerObject, ContainerCollectionError>
 where
     Client: CollectionTransport,
-    Source: CollectionClientSource,
+    Source: ClientSource,
 {
     let config = call.base.config;
     let extra = call.base.extra_headers.cloned().unwrap_or_default();
@@ -204,7 +195,7 @@ async fn list_body<Client, Source>(
 ) -> Result<records::ContainerListResponse, ContainerCollectionError>
 where
     Client: CollectionTransport,
-    Source: CollectionClientSource,
+    Source: ClientSource,
 {
     let config = call.base.config;
     let headers =
