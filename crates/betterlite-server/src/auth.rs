@@ -233,17 +233,17 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
-        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
-        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
         StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         StageInput::AuthPricing(stage) => auth_pricing::prefetched(stage).await,
+        budget @ (StageInput::AuthTagBudgets(_)
+        | StageInput::AuthKeyBudgets(_)
+        | StageInput::AuthModelBudgets(_)
+        | StageInput::TeamBudgetAdmission(_)
+        | StageInput::AuthTenantBudgets(_)) => prefetch_budget_stage(budget).await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
@@ -255,6 +255,18 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
+    }
+}
+
+// the budget stages read their limits and current spend before dispatch
+async fn prefetch_budget_stage(input: StageInput) -> Result<StageInput, StageFailure> {
+    match input {
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
+        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
+        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
+        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+        other => Ok(other),
     }
 }
 
