@@ -137,6 +137,11 @@ where
             request.headers.to_vec(),
             credentials.session_token.is_some(),
         );
+        let mode = if request.service == S3_SERVICE {
+            SigningMode::S3SigV4Auth
+        } else {
+            SigningMode::SigV4Auth
+        };
         let computed = sign_request(&Signable {
             method: request.method,
             url: request.url,
@@ -145,7 +150,7 @@ where
             service: request.service,
             region: request.signing_region,
             credentials: &credentials,
-            mode: SigningMode::SigV4Auth,
+            mode,
             now: self.clock.now(),
         })
         .map_err(SigningError::from)?;

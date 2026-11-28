@@ -26,7 +26,10 @@ use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
     OidcTokenCache,
 };
+use betterlite_sigv4::credentials::Credentials as SigV4Credentials;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use secrecy::{ExposeSecret, SecretString};
+use sha2::{Digest as _, Sha256};
 
 use crate::bedrock_ingestion::client::clock::{Clock as _, SystemClock};
 use crate::bedrock_ingestion::client::credentials::RagCredentialResolver as _;
@@ -243,6 +246,101 @@ async fn client_signed_request_matches_signed_request_with_no_headers() {
     let requests = transport.requests();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0], requests[1]);
+}
+
+fn signed_authorization(request: &SignedRequest<'_>, mode: SigningMode) -> String {
+    let credentials = SigV4Credentials {
+        access_key_id: SecretString::from(TEST_KEY.to_owned()),
+        secret_access_key: SecretString::from(TEST_SECRET.to_owned()),
+        session_token: None,
+    };
+    sign_request(&Signable {
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+        body: request.body,
+        service: request.service,
+        region: request.signing_region,
+        credentials: &credentials,
+        mode,
+        now: fixed_now(),
+    })
+    .expect("the reference request signs")
+    .into_iter()
+    .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+    .map(|(_, value)| value)
+    .expect("the reference request carries an authorization header")
+}
+
+#[tokio::test]
+async fn client_signs_s3_with_the_path_as_sent() {
+    let (built, transport, _resolver) = rag_clients(vec![json_response("{}")]);
+    let content: &[u8] = b"body";
+    let headers = vec![(
+        "x-amz-content-sha256".to_owned(),
+        hex::encode(Sha256::digest(content)),
+    )];
+    let request = SignedRequest {
+        service: "s3",
+        signing_region: "us-west-2",
+        method: "PUT",
+        url: "https://example-bucket.s3.us-west-2.amazonaws.com/docs/my%20file.pdf",
+        headers: &headers,
+        body: content,
+    };
+    built
+        .signed_request_with(request)
+        .await
+        .expect("the signed request succeeds");
+    let requests = transport.requests();
+    let authorization = header(&requests[0], "Authorization").expect("the request is signed");
+    assert_eq!(
+        authorization,
+        signed_authorization(&request, SigningMode::S3SigV4Auth)
+    );
+    assert_ne!(
+        authorization,
+        signed_authorization(&request, SigningMode::SigV4Auth)
+    );
+}
+
+#[tokio::test]
+async fn client_signs_other_services_in_the_default_mode() {
+    let (built, transport, _resolver) = rag_clients(vec![json_response("{}"), json_response("{}")]);
+    let url = format!("{AGENT}/knowledgebases/KB%201/datasources/");
+    let agent_request = SignedRequest {
+        service: "bedrock",
+        signing_region: "us-west-2",
+        method: "POST",
+        url: &url,
+        headers: &[],
+        body: &[],
+    };
+    // s3vectors starts with s3 and botocore still signs it with SigV4Auth
+    let vectors_request = SignedRequest {
+        service: "s3vectors",
+        ..agent_request
+    };
+    built
+        .signed_request_with(agent_request)
+        .await
+        .expect("the bedrock request succeeds");
+    built
+        .signed_request_with(vectors_request)
+        .await
+        .expect("the s3vectors request succeeds");
+    let requests = transport.requests();
+    for (sent, request) in requests.iter().zip([&agent_request, &vectors_request]) {
+        let authorization = header(sent, "Authorization").expect("the request is signed");
+        assert_eq!(
+            authorization,
+            signed_authorization(request, SigningMode::SigV4Auth)
+        );
+        assert_ne!(
+            authorization,
+            signed_authorization(request, SigningMode::S3SigV4Auth)
+        );
+    }
 }
 
 #[tokio::test]
