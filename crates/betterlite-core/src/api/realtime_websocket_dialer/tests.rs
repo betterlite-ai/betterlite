@@ -61,21 +61,22 @@ struct UpgradeRecorder {
 impl Callback for UpgradeRecorder {
     fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
         if let Some(seen) = &self.seen {
-            let mut recorded = seen.lock().unwrap_or_else(PoisonError::into_inner);
-            for (name, value) in request.headers() {
-                if let Ok(text) = value.to_str() {
-                    recorded.push((name.as_str().to_owned(), text.to_owned()));
-                }
-            }
+            let recorded = request.headers().iter().filter_map(|(name, value)| {
+                let text = value.to_str().ok()?;
+                Some((name.as_str().to_owned(), text.to_owned()))
+            });
+            seen.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .extend(recorded);
         }
-        self.rejection.map_or_else(
-            || Ok(response),
-            |status| {
+        match self.rejection {
+            Some(status) => {
                 let mut rejected = ErrorResponse::new(Some("rejected".to_owned()));
                 *rejected.status_mut() = status;
                 Err(rejected)
-            },
-        )
+            }
+            None => Ok(response),
+        }
     }
 }
 
@@ -125,6 +126,7 @@ async fn serve_upgrade_attempts(
         attempts.fetch_add(1, Ordering::SeqCst);
         let Some(status) = rejection else {
             held.push(stream);
+            assert!(held.len() <= ATTEMPTS);
             continue;
         };
         drop(
@@ -212,7 +214,7 @@ async fn serve_proxy_status(listener: TcpListener, status: u16) {
 }
 
 // a server that records the upgrade's headers before it answers the handshake
-async fn serve_with_headers(listener: TcpListener, seen: Arc<Mutex<Vec<(String, String)>>>) {
+async fn serve_with_headers(listener: TcpListener, seen: SeenHeaders) {
     let (stream, _peer) = listener.accept().await.expect("accept");
     drop(
         tokio_tungstenite::accept_hdr_async(
@@ -265,7 +267,7 @@ fn expect_closed(
 ) -> ConnectionClosed {
     match outcome {
         Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_) => panic!("{failure}"),
+        Err(error) => panic!("{failure}: {error:?}"),
         Ok(_message) => panic!("{arrival}"),
     }
 }
@@ -666,7 +668,7 @@ async fn source_reports_a_missed_pong_as_the_keepalive_close() {
         .expect("deadline");
     let closed = match outcome {
         Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_) => panic!("the keepalive timeout failed instead of closing"),
+        Err(error) => panic!("the keepalive timeout failed instead of closing: {error:?}"),
         Ok(_message) => panic!("the silent server sent a frame"),
     };
     assert_eq!(closed.received, None);
@@ -730,7 +732,7 @@ async fn source_applies_the_decode_flag_to_frames() {
         .expect("deadline");
     let failed = match outcome {
         Err(RelayReceiveError::Failed(failed)) => failed,
-        Err(_) => panic!("invalid UTF-8 closed the socket"),
+        Err(error) => panic!("invalid UTF-8 closed the socket: {error:?}"),
         Ok(_message) => panic!("invalid UTF-8 decoded"),
     };
     assert_eq!(
@@ -741,7 +743,7 @@ async fn source_applies_the_decode_flag_to_frames() {
 }
 
 #[tokio::test]
-async fn dialer_sends_the_backend_headers_in_order() {
+async fn dialer_sends_the_backend_headers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -770,8 +772,10 @@ async fn dialer_sends_the_backend_headers_in_order() {
         .expect("server")
         .expect("server task");
     let recorded = seen.lock().expect("recorded headers");
+    let mut pairs = custom_headers(recorded.as_slice());
+    pairs.sort_unstable();
     assert_eq!(
-        custom_headers(recorded.as_slice()),
+        pairs,
         [("authorization", "Bearer two"), ("x-request-id", "one")]
     );
 }

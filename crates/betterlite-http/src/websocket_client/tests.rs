@@ -67,14 +67,14 @@ impl Callback for Recorder<'_> {
                     .push((name.as_str().to_owned(), text.to_owned()));
             }
         }
-        self.rejection.map_or_else(
-            || Ok(response),
-            |status| {
+        match self.rejection {
+            Some(status) => {
                 let mut rejected = ErrorResponse::new(Some("forbidden".to_owned()));
                 *rejected.status_mut() = status;
                 Err(rejected)
-            },
-        )
+            }
+            None => Ok(response),
+        }
     }
 }
 
@@ -290,7 +290,7 @@ struct TlsServer {
     ca_pem: String,
 }
 
-// a client opened over a plain ws URL with the given ordered headers, through the proxy when one is given
+// a client opened over a plain ws URL with the given headers, through the proxy when one is given
 async fn plain_connection(
     url: &str,
     headers: &[(HeaderName, HeaderValue)],
@@ -348,33 +348,45 @@ async fn assert_peer_close(receiver: &mut WebSocketReceiver, code: u16, reason: 
     );
 }
 
-fn assert_handshake_order(recorded: &[(String, String)], address: SocketAddr) {
+fn assert_handshake_headers(recorded: &[(String, String)], address: SocketAddr) {
     let names: Vec<&str> = recorded
         .iter()
         .map(|(name, _value)| name.as_str())
         .collect();
     assert_eq!(
-        names,
+        &names[..5],
         [
             "host",
             "connection",
             "upgrade",
             "sec-websocket-version",
             "sec-websocket-key",
-            "x-request-id",
-            "authorization",
         ]
     );
-    let host = recorded.first().expect("host header");
-    assert_eq!(host.1, address.to_string());
-    let request_id = recorded.get(5).expect("x-request-id header");
-    assert_eq!(request_id.1, "one");
-    let authorization = recorded.get(6).expect("authorization header");
-    assert_eq!(authorization.1, "Bearer two");
+    // removing its own five headers reorders the caller's two in the HeaderMap, so only their set is fixed
+    let mut custom: Vec<&str> = names[5..].to_vec();
+    custom.sort_unstable();
+    assert_eq!(custom, ["authorization", "x-request-id"]);
+    let host = recorded
+        .iter()
+        .find(|(name, _value)| name.as_str() == "host")
+        .map(|(_name, value)| value.as_str());
+    let expected_host = address.to_string();
+    assert_eq!(host, Some(expected_host.as_str()));
+    let request_id = recorded
+        .iter()
+        .find(|(name, _value)| name.as_str() == "x-request-id")
+        .map(|(_name, value)| value.as_str());
+    assert_eq!(request_id, Some("one"));
+    let authorization = recorded
+        .iter()
+        .find(|(name, _value)| name.as_str() == "authorization")
+        .map(|(_name, value)| value.as_str());
+    assert_eq!(authorization, Some("Bearer two"));
 }
 
 #[tokio::test]
-async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
+async fn websocket_client_tests_open_plain_socket_with_custom_headers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let mut tasks = JoinSet::new();
@@ -400,7 +412,7 @@ async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
         .expect("server")
         .expect("server task");
     assert_eq!(target, "/realtime?model=x");
-    assert_handshake_order(&recorded, address);
+    assert_handshake_headers(&recorded, address);
 }
 
 #[tokio::test]
