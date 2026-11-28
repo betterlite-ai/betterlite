@@ -125,6 +125,31 @@ async fn candidate_models_null() {
     assert_eq!(row.fields.base.team_id, "team-b");
 }
 
+// the deviation: a NULL models row does not decode, so the scan treats it as unresolved and the claim
+// fallback applies, where LiteLLM reads models=None as a resolved team that is skipped and denies
+#[tokio::test]
+async fn candidate_models_null_defers_under_fallback() {
+    let script = Arc::new(Script::new().with_raw("team-a-null", NULL_MODELS));
+    let lookup = lookup(&script, true);
+    let aliases = BTreeMap::new();
+    let models = context(&aliases);
+    let deps = CandidateContext {
+        lookup: &lookup,
+        registry: &open_registry(),
+        models: &models,
+    };
+    let settings = selection(|fields| fields.routing.team_claim_fallback = true);
+    let team_ids = ids(&["team-a-null"]);
+    let call = request(&team_ids, Some("model-b"), ALLOWED_ROUTE);
+    assert_eq!(
+        find_team_with_model_access(&call, &deps, &settings)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(script.events(), vec!["team team-a-null"]);
+}
+
 #[tokio::test]
 async fn candidate_no_model() {
     let script = Arc::new(Script::new().with_team(TEAM_A));

@@ -12,6 +12,9 @@ deviations:
   - what: The team-claim hint that follows "No team found in token" needs an ASCII index, where LiteLLM's str.isdigit and \d pattern also accept decimal digits from other scripts.
     why: betterlite checks the index with char::is_ascii_digit, and Rust's standard library has no exact equivalent of Python's Unicode isdigit, since char::is_numeric also matches fractions that isdigit rejects. A field such as roles.٣ therefore gets the plain refusal without the hint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1599-L1608
+  - what: A claim team whose stored row has a NULL models column is treated as unresolved, so with team_claim_fallback on and no other claim team granting the model the scan defers, where LiteLLM reads models=None as a resolved team that is skipped and raises the model denial.
+    why: betterlite's shared team row decoder holds models as a list rather than an optional list, so a NULL row fails to decode before this stage sees it, and the row shape belongs to the DB team readers. A row that is provably the team still resolves in LiteLLM, but betterlite cannot tell it apart from a corrupt row; counting every decode failure as resolved would also change the swallowed-exception behavior the task keeps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1704-L1717
 kept_bugs:
   - what: A candidate team whose read or grant check raises is skipped and the request ends in the team-model denial.
     why: LiteLLM swallows every exception inside the candidate loop, so a degraded team read cannot fail the request; the task pins this behavior, so betterlite copies it.
