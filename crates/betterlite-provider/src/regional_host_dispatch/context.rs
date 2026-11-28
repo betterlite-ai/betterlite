@@ -19,6 +19,7 @@ pub fn first_nonempty<const N: usize>(candidates: [Option<&str>; N]) -> Option<S
         .map(str::to_owned)
 }
 
+#[must_use]
 pub fn first_secret<const N: usize>(
     candidates: [Option<&SecretString>; N],
 ) -> Option<SecretString> {

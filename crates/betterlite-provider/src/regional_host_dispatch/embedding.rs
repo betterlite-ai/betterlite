@@ -1,7 +1,7 @@
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::dashscope_family::{self, DashscopeFamily};
 use betterlite_prompts::arguments::json::{Json, Object};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::hosted_platform_dispatch::call::EmbeddingCall;
 
@@ -61,11 +61,11 @@ fn family(
     let passed = first_secret([context.api_key, context.settings.api_key.as_ref()]);
     let key = dashscope_family::resolve_family_api_key(
         brand,
-        passed.as_ref().map(|key| key.expose_secret()),
+        passed.as_ref().map(ExposeSecret::expose_secret),
         brand_key(brand, context),
         context.settings.environment.dashscope_api_key.as_ref(),
     )
-    .ok_or(DispatchError::MissingKey {
+    .ok_or_else(|| DispatchError::MissingKey {
         message: dashscope_family::missing_family_key_message(brand),
     })?;
     let mut call = embedding_call(context);

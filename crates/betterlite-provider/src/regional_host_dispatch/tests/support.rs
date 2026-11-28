@@ -36,7 +36,7 @@ pub(super) use chat::ChatFixture;
 pub(super) use chat_recorder::ChatRecorder;
 pub(super) use embedding::EmbeddingFixture;
 pub(super) use speech::SpeechFixture;
-pub(super) use speech_recorder::{SpeechRecorder, SpeechSnapshot};
+pub(super) use speech_recorder::SpeechRecorder;
 pub(super) use tokens::{FailingTokens, FakeTokens};
 pub(super) use transport::FakeTransport;
 

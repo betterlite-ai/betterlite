@@ -7,7 +7,9 @@ use betterlite_config::sections::regional_host_keys::Settings as SectionSettings
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::{SpeechVoice, TextToSpeechRequestData};
 use betterlite_openai::files::records::BinaryContent;
-use betterlite_openai::minimax_speech::params::{MappedOptions, VoiceInput, map_openai_params};
+use betterlite_openai::minimax_speech::params::{
+    MappedOptions, SUPPORTED_OPENAI_PARAMS, VoiceInput, map_openai_params,
+};
 use betterlite_openai::minimax_speech::reply::{SpeechReply, decode_speech_reply};
 use betterlite_openai::minimax_speech::request::{
     TTS_BASE_URL, get_complete_url, speech_request_body, validate_environment,
@@ -17,7 +19,6 @@ use betterlite_openai::speech::result::SpeechResponse;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 
 use crate::api::speech_http::SpeechCall;
 use crate::api::speech_http::SpeechParams;
@@ -59,11 +60,14 @@ pub trait SpeechHandler {
 }
 
 // speech()'s minimax branch: the selected config or B8174's, the caller's base and key into litellm_params only when set, then the handler
-pub async fn minimax<H: SpeechHandler>(
+pub async fn minimax<H>(
     provider_config: Option<&dyn TextToSpeechConfig>,
     context: &SpeechContext<'_>,
     handler: &H,
-) -> Result<H::Reply, DispatchError> {
+) -> Result<H::Reply, DispatchError>
+where
+    H: SpeechHandler + Sync,
+{
     let key = first_secret([
         context.api_key,
         context.settings.api_key.as_ref(),
@@ -77,22 +81,13 @@ pub async fn minimax<H: SpeechHandler>(
     };
     // speech() maps voice and options before the arm when a config is selected; with none the arm uses B8174's and maps here
     let (voice, optional_params) = match provider_config {
-        Some(_given) => (
+        Some(_) => (
             context.voice.clone(),
             logging::convert(context.optional_params)?,
         ),
-        None => mapped(context.voice.clone(), context.optional_params)?,
+        None => mapped(context.voice.as_ref(), context.optional_params)?,
     };
-    let mut litellm_params: SpeechObject = logging::convert(context.litellm_params)?;
-    if let Some(api_base) = context.api_base {
-        litellm_params.insert(String::from("api_base"), Value::String(api_base.to_owned()));
-    }
-    if let Some(api_key) = context.api_key {
-        litellm_params.insert(
-            String::from("api_key"),
-            Value::String(api_key.expose_secret().to_owned()),
-        );
-    }
+    let litellm_params = wire_params(context)?;
     let params = SpeechParams {
         api_key: Some(key),
         api_base: context.api_base.map(str::to_owned),
@@ -113,11 +108,26 @@ pub async fn minimax<H: SpeechHandler>(
     handler.synthesize(&call, config).await
 }
 
+// the caller's base and key join litellm_params only when they are set, before the dict is handed to the handler
+fn wire_params(context: &SpeechContext<'_>) -> Result<SpeechObject, DispatchError> {
+    let mut params = context.litellm_params.clone();
+    if let Some(api_base) = context.api_base {
+        params.insert(String::from("api_base"), Json::Text(api_base.to_owned()));
+    }
+    if let Some(api_key) = context.api_key {
+        params.insert(
+            String::from("api_key"),
+            Json::Text(api_key.expose_secret().to_owned()),
+        );
+    }
+    logging::convert(&params)
+}
+
 fn mapped(
-    voice: Option<SpeechVoice>,
+    voice: Option<&SpeechVoice>,
     optional_params: &Object,
 ) -> Result<(Option<SpeechVoice>, SpeechObject), DispatchError> {
-    let given = voice.as_ref().map(voice_input);
+    let given = voice.map(voice_input);
     let options = map_minimax(given.as_ref(), &logging::convert(optional_params)?)?;
     Ok((Some(SpeechVoice::Name(options.voice)), options.params))
 }
@@ -167,7 +177,7 @@ impl TextToSpeechConfig for MinimaxSpeechConfig<'_> {
     }
 
     fn supported_openai_params(&self, _model: &str) -> Vec<String> {
-        betterlite_openai::minimax_speech::params::SUPPORTED_OPENAI_PARAMS
+        SUPPORTED_OPENAI_PARAMS
             .iter()
             .map(|name| (*name).to_owned())
             .collect()

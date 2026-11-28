@@ -2,7 +2,7 @@ use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_prompts::arguments::json::Object;
+use betterlite_openai::openai_base_config::Object as SpeechObject;
 use secrecy::ExposeSecret as _;
 
 use crate::api::speech_http::SpeechCall;
@@ -15,8 +15,8 @@ pub(crate) struct SpeechSnapshot {
     pub(crate) model: String,
     pub(crate) input: String,
     pub(crate) voice: Option<String>,
-    pub(crate) optional_params: Object,
-    pub(crate) litellm_params: Object,
+    pub(crate) optional_params: SpeechObject,
+    pub(crate) litellm_params: SpeechObject,
     pub(crate) extra_headers: Option<SpeechHeaders>,
     pub(crate) api_key: Option<String>,
     pub(crate) api_base: Option<String>,

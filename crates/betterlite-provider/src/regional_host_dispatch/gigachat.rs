@@ -42,11 +42,14 @@ impl GigachatBearer for GigachatTokenBearer {
             scope: None,
             auth_url: None,
         };
-        self.tokens.access_token(&request).await.map_err(auth_error)
+        self.tokens
+            .access_token(&request)
+            .await
+            .map_err(|error| auth_error(&error))
     }
 }
 
-fn auth_error(error: GigachatAuthError) -> GigaChatError {
+fn auth_error(error: &GigachatAuthError) -> GigaChatError {
     GigaChatError {
         status_code: error.status_code().as_u16(),
         message: error.to_string(),
@@ -70,27 +73,37 @@ pub struct GigachatFilesSettings<'settings> {
     pub credentials: Option<&'settings SecretString>,
 }
 
+// the dependencies the uploader is built from, each injected by the caller that keeps the uploader alive
+pub struct GigachatUploadDeps<'deps> {
+    pub client: &'deps ProxiedClient,
+    pub policy: &'deps UserUrlPolicy,
+    pub bearer: Arc<dyn GigachatBearer>,
+    pub ids: Arc<dyn IdSource>,
+}
+
 // B9996 takes the download out of the transport; the uploader holds the downloader built from the user url policy
 pub fn uploader(
-    client: &ProxiedClient,
-    policy: &UserUrlPolicy,
-    bearer: Arc<dyn GigachatBearer>,
-    ids: Arc<dyn IdSource>,
+    deps: &GigachatUploadDeps<'_>,
     settings: &GigachatFilesSettings<'_>,
     capacity: usize,
 ) -> GigachatFileUploader<ProxiedGigachatTransport, SystemResolver> {
     let config = GigachatFilesConfig {
-        bearer,
-        ids,
+        bearer: Arc::clone(&deps.bearer),
+        ids: Arc::clone(&deps.ids),
         credentials: settings.credentials.cloned(),
         api_base: settings.api_base.map(str::to_owned),
         api_base_env: settings.api_base_env.map(str::to_owned),
-        downloader: image_downloader(client, policy),
+        downloader: image_downloader(deps.client, deps.policy),
     };
-    GigachatFileUploader::new(ProxiedGigachatTransport(client.clone()), config, capacity)
+    GigachatFileUploader::new(
+        ProxiedGigachatTransport(deps.client.clone()),
+        config,
+        capacity,
+    )
 }
 
 // the downloader fetches an image url under the user url policy and the outbound client's body limit
+#[must_use]
 pub fn image_downloader(
     client: &ProxiedClient,
     policy: &UserUrlPolicy,

@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use betterlite_config::sections::user_url_policy::Settings as UserUrlPolicy;
+use betterlite_http::gigachat_tokens::tokens::GigachatTokens;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::gigachat_chat::config::{GigachatBearer, GigachatImageUploader};
 use betterlite_openai::gigachat_files::{GigachatFileUploader, GigachatFilesConfig};
@@ -25,9 +26,9 @@ fn outbound_client() -> (ProxiedClient, UserUrlPolicy) {
 #[tokio::test]
 async fn gigachat_token_bearer_returns_the_service_token() {
     let tokens = Arc::new(FakeTokens::new());
-    let bearer = GigachatTokenBearer {
-        tokens: Arc::clone(&tokens),
-    };
+    let handle = Arc::clone(&tokens);
+    let shared: Arc<dyn GigachatTokens> = handle;
+    let bearer = GigachatTokenBearer { tokens: shared };
     let credentials = secret("client-id:client-secret");
     let token = bearer
         .access_token(Some(&credentials))
