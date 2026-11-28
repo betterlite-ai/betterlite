@@ -49,39 +49,24 @@ impl HookCall {
 
 // LiteLLM labels kwargs["model"], the name get_llm_provider returned, not the payload's rebuilt name
 fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> String {
-    // get_llm_provider's handlers rename a declared provider and return the model without its prefix
-    let (cohere_model, cohere_provider) = cohere_chat_provider(
-        &payload.model,
-        payload.custom_llm_provider.as_deref(),
-        catalog,
-    );
+    // the handlers rename a declared provider and return the model without its prefix
+    let custom = payload.custom_llm_provider.as_deref();
+    let (cohere_model, cohere_provider) = cohere_chat_provider(&payload.model, custom, catalog);
     let (model, provider) = anthropic_text_provider(&cohere_model, cohere_provider.as_deref());
-    let Some(resolved) = provider else {
-        return model;
-    };
-    // the payload records the provider the rename resolved to, so the declared prefix is the one it replaced
+    let resolved = provider.unwrap_or_default();
+    // the payload records the resolved provider, so the declared prefix is the rename it replaced
     let declared = match resolved.as_str() {
         "cohere_chat" => "cohere",
         "anthropic_text" => "anthropic",
         "ai21_chat" => "ai21",
         other => other,
     };
-    let rest = model
-        .strip_prefix(declared)
-        .and_then(|tail| tail.strip_prefix('/'))
-        .or_else(|| {
-            model
-                .strip_prefix(resolved.as_str())
-                .and_then(|tail| tail.strip_prefix('/'))
-        });
-    let Some(unprefixed) = rest else {
-        return model;
-    };
+    let rest = [declared, resolved.as_str()]
+        .into_iter()
+        .find_map(|prefix| model.strip_prefix(prefix)?.strip_prefix('/'));
     // get_llm_provider keeps a native OpenRouter id such as "openrouter/auto" whole
-    if resolved == "openrouter" && !unprefixed.contains('/') {
-        return model;
-    }
-    unprefixed.to_owned()
+    let label = rest.filter(|tail| resolved != "openrouter" || tail.contains('/'));
+    label.unwrap_or(&model).to_owned()
 }
 
 // the request metadata LiteLLM hands the hooks, with the typed payload fields filling the keys it lacks
@@ -97,12 +82,8 @@ fn merged_metadata(event: &LoggerEvent) -> IndexMap<String, Json> {
         }
     }
     merge_model_info(&mut merged, event.payload.model_id.as_deref());
-    if let Some(group) = event
-        .payload
-        .model_group
-        .as_deref()
-        .filter(|name| !name.is_empty())
-    {
+    let model_group = event.payload.model_group.as_deref();
+    if let Some(group) = model_group.filter(|name| !name.is_empty()) {
         merged
             .entry("model_group".to_owned())
             .or_insert_with(|| Json::Text(group.to_owned()));
