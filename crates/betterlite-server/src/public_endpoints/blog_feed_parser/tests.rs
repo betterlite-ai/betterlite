@@ -90,6 +90,14 @@ fn namespace_qualified_channel_is_not_selected() {
 }
 
 #[test]
+fn namespaced_field_does_not_shadow_a_plain_one() {
+    let xml = "<rss><channel><item><title xmlns=\"urn:t\">Fake</title>\
+        <title>Real</title><link>https://real</link></item></channel></rss>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, vec![post("Real", "", "", "https://real")]);
+}
+
+#[test]
 fn malformed_document_boundaries_are_rejected() {
     drop(parse_rss_to_posts("<rss><channel/></rss>tail", 1, 64).unwrap_err());
     drop(parse_rss_to_posts("<rss><channel/></rss><extra/>", 1, 64).unwrap_err());
@@ -151,6 +159,29 @@ fn item_nested_inside_another_element_is_not_collected() {
 }
 
 #[test]
+fn item_element_as_the_root_is_not_collected() {
+    let xml = "<item><channel/><title>T</title><link>https://t</link></item>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, Vec::new());
+}
+
+#[test]
+fn a_nested_channel_does_not_close_the_real_channel() {
+    let xml = "<rss><channel><channel/><item><title>T</title>\
+        <link>https://t</link></item></channel></rss>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, vec![post("T", "", "", "https://t")]);
+}
+
+#[test]
+fn a_nested_item_does_not_close_the_real_item() {
+    let xml = "<rss><channel><item><title>T</title><item/>\
+        <link>https://t</link></item></channel></rss>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, vec![post("T", "", "", "https://t")]);
+}
+
+#[test]
 fn item_missing_title_or_link_is_skipped() {
     let xml = "<rss><channel>\
         <item><description>x</description><link>https://x</link></item>\
@@ -158,6 +189,14 @@ fn item_missing_title_or_link_is_skipped() {
         </channel></rss>";
     let posts = parse_rss_to_posts(xml, 2, 64).unwrap();
     assert_eq!(posts, vec![post("Valid", "", "", "https://valid")]);
+}
+
+#[test]
+fn pub_date_is_formatted_into_the_post() {
+    let xml = "<rss><channel><item><title>T</title><link>https://x</link>\
+        <pubDate>Thu, 05 Mar 2026 10:00:00 GMT</pubDate></item></channel></rss>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, vec![post("T", "", "2026-03-05", "https://x")]);
 }
 
 #[test]

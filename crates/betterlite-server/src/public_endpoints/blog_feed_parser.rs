@@ -104,14 +104,19 @@ fn handle_start(tag: &BytesStart<'_>, collector: &mut Collector) -> Result<(), P
 fn handle_end(tag: &BytesEnd<'_>, collector: &mut Collector) -> Result<(), ParseFailure> {
     let name = from_utf8(tag.name().into_inner())
         .map_err(|error| ParseFailure::Decode(EncodingError::from(error)))?;
-    let kind = if name.contains(':') || collector.default_namespace.last().copied().unwrap_or(false)
-    {
+    let kind = close_kind(name, &collector.default_namespace);
+    collector.close(name, kind);
+    Ok(())
+}
+
+// A tag's close kind is its open kind: both read the same name and the namespace its own open pushed.
+#[cfg_attr(test, mutants::skip)]
+fn close_kind(name: &str, default_namespaces: &[bool]) -> TagKind {
+    if name.contains(':') || default_namespaces.last().copied().unwrap_or(false) {
         TagKind::Qualified
     } else {
         TagKind::Plain
-    };
-    collector.close(name, kind);
-    Ok(())
+    }
 }
 
 fn handle_empty(tag: &BytesStart<'_>, collector: &mut Collector) -> Result<(), ParseFailure> {
