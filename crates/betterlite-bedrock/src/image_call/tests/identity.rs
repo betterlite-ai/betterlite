@@ -6,8 +6,8 @@ use secrecy::ExposeSecret;
 use super::cases::{Run, auth_params, call, run_with_source};
 use super::fixture::{Reply, Source};
 use crate::image_call::error::ImageCallError;
-use crate::image_call::transport::ClientKind;
 use crate::image_models::params::{Field, Params};
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 const FIRST_ACCESS: &str = "AKIAFIRSTEXAMPLE00000";
 const FIRST_SECRET: &str = "firstSecretKey0000000000000000000000000000";

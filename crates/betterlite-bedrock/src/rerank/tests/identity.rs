@@ -7,7 +7,7 @@ use secrecy::ExposeSecret;
 use super::cases::{Run, call, params, request, run_with_source, text};
 use super::fixture::{Reply, Source};
 use crate::rerank::plan::ParamMap;
-use crate::rerank::transport::ClientKind;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 const VALID_REPLY: &str = r#"{"id":"resp-1","results":[{"index":0,"relevanceScore":0.5}]}"#;
 const FIRST_ACCESS: &str = "AKIAFIRSTEXAMPLE00000";

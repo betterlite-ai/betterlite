@@ -46,18 +46,6 @@ pub trait ImageTransport: Send + Sync {
     ) -> impl Future<Output = Result<ImageReply, TransferError>> + Send;
 }
 
-// the supplied client's kind decides whether LiteLLM accepts it for the sync or the async path
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-
-pub struct SuppliedClient<'client, Client> {
-    pub kind: ClientKind,
-    pub transport: &'client Client,
-}
-
 // B173 owns client construction; this seam receives the sync client or the async client built with the call timeout
 pub trait ClientFactory {
     type Client: ImageTransport;
