@@ -118,4 +118,5 @@ def branch_for(url_route: str) -> str | None:
 
 def run(input_value: Input) -> dict[str, JsonValue]:
     case = INPUT.validate_python(input_value)
-    return {"branch": branch_for(case["url_route"])}
+    answer: dict[str, JsonValue] = {"branch": branch_for(case["url_route"])}
+    return answer
