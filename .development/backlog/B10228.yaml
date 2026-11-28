@@ -1,0 +1,13 @@
+id: B10228
+milestone: M4 keys, spend and management
+title: Verify SAML response signatures with samael behind a non-default saml feature
+status: todo
+depends_on: [B1625, B1631]
+file: tasks/B10228-saml-signatures.yaml
+covers: []
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
