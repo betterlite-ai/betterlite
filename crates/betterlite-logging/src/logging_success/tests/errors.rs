@@ -133,6 +133,38 @@ async fn a_counter_in_the_success_list_is_found_after_the_callbacks_list() {
     assert_eq!(counter.calls(), ["langfuse"]);
 }
 
+#[tokio::test]
+async fn a_counter_in_the_failure_list_is_found_after_the_success_list() {
+    let mut fixture = Fixture::new();
+    let failing_calls = Arc::new(CallLog::default());
+    let mut failing = FakeLogger::new("langfuse", &failing_calls);
+    failing.fail = true;
+    fixture.add(&Arc::new(failing));
+    let counting_calls = Arc::new(CallLog::default());
+    let counter = Arc::new(RecordingCounter::default());
+    let counting = counting_logger("prometheus", &counting_calls, &counter);
+    let identity = CallbackIdentity {
+        class_name: "prometheus".to_owned(),
+        attributes: IndexMap::new(),
+    };
+    let sink = CallbackSink::Logger(counting);
+    let registration = fixture.register(identity, sink, CallbackList::Failure);
+    assert_ne!(registration, Registration::SkippedCapacity);
+    let mut state = state(Some(false));
+    state
+        .litellm_params
+        .insert("acompletion".to_owned(), Json::Bool(true));
+    let mut correlation = correlation();
+    dispatch_success_handlers(
+        &fixture.handler(),
+        &mut state,
+        &mut correlation,
+        &request(chat_result()),
+    )
+    .await;
+    assert_eq!(counter.calls(), ["langfuse"]);
+}
+
 #[rstest]
 #[case::sync_failure(false)]
 #[case::async_failure(true)]
