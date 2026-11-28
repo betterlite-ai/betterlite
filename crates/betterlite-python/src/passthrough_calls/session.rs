@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
+use betterlite_bedrock::passthrough::sdk_call::{BedrockSdkCall, NoCredentialChain};
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_core::api::passthrough_call::aws::AwsPassthrough;
 use betterlite_core::api::passthrough_call::{
     PassthroughCallArgs, PassthroughCallError, PassthroughReply, allm_passthrough_route,
 };
@@ -56,12 +58,18 @@ pub(crate) enum SessionError {
         #[source]
         source: HttpError,
     },
+    #[error("the AWS pass-through settings could not be read: {source}")]
+    Settings {
+        #[source]
+        source: betterlite_config::loader::ConfigError,
+    },
 }
 
-// Everything one Python passthrough call owns: the outbound client every provider request goes through, and the environment its provider settings read
+// Everything one Python passthrough call owns: the outbound client every provider request goes through, the environment its provider settings read and the AWS port built from it
 pub(crate) struct SessionCore {
     client: ProxiedClient,
     environment: BTreeMap<String, String>,
+    aws: Arc<dyn AwsPassthrough>,
 }
 
 impl SessionCore {
@@ -72,9 +80,13 @@ impl SessionCore {
             .map_err(|source| SessionError::Proxy { source })?;
         let client = ProxiedClient::outbound(&Arc::new(policy))
             .map_err(|source| SessionError::Client { source })?;
+        let aws =
+            BedrockSdkCall::from_environment(&environment, NoCredentialChain, SystemTime::now)
+                .map_err(|source| SessionError::Settings { source })?;
         Ok(Self {
             client,
             environment,
+            aws: Arc::new(aws),
         })
     }
 
@@ -85,9 +97,15 @@ impl SessionCore {
         let model = args.model.clone();
         let provider = args.custom_llm_provider.clone().unwrap_or_default();
         let mut logging = logging_state(&model)?;
-        allm_passthrough_route(args, &mut logging, &self.client, &self.environment)
-            .await
-            .map_err(|error| Box::new(failure(&error, &provider, &model)))
+        allm_passthrough_route(
+            args,
+            &mut logging,
+            &self.client,
+            &self.environment,
+            &self.aws,
+        )
+        .await
+        .map_err(|error| Box::new(failure(&error, &provider, &model)))
     }
 }
 
@@ -102,6 +120,9 @@ fn failure(error: &PassthroughCallError, provider: &str, model: &str) -> ErrorPa
         PassthroughCallError::ProviderNotFound(name) => ErrorPayload::provider_not_found(name),
         PassthroughCallError::Resolution(reason) => {
             ErrorPayload::failed(BAD_REQUEST, Some(BAD_REQUEST_STATUS), reason.to_string())
+        }
+        PassthroughCallError::MantleEndpoint(source) => {
+            ErrorPayload::failed(BAD_REQUEST, Some(BAD_REQUEST_STATUS), source.to_string())
         }
         PassthroughCallError::Mapped(mapped) => ErrorPayload::provider(mapped, provider, model),
         PassthroughCallError::Transport(transport) => {
