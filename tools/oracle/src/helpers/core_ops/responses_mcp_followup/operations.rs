@@ -17,6 +17,11 @@ use super::support::{
     run_service, service, service_input, stream_events, streaming_auth,
 };
 
+const STREAMING_SETTINGS: Settings = Settings {
+    should_auto_execute: false,
+    original_stream: true,
+};
+
 pub(super) fn request_params(scenarios: &[RequestScenario]) -> HelperResult {
     let answers: Result<Vec<Value>, Box<HelperError>> =
         scenarios.iter().map(request_scenario).collect();
@@ -32,12 +37,8 @@ fn request_scenario(scenario: &RequestScenario) -> Result<Value, Box<HelperError
         .clone_from(&scenario.mcp_tools);
     input.mcp_discovery_events = stream_events(&scenario.mcp_events);
     input.tool_server_map = scenario.tool_server_map.clone();
-    let settings = Settings {
-        should_auto_execute: false,
-        original_stream: true,
-    };
     let provider = Provider::answering(minimal_response()?, None);
-    let result = run_service(&input, &provider, &[], settings)?;
+    let result = run_service(&input, &provider, &[], STREAMING_SETTINGS)?;
     let Some(plan) = result.streaming else {
         return Err(helper_error("the streaming branch must build a plan"));
     };
@@ -62,12 +63,8 @@ pub(super) fn tool_execution_events(
         .map(|fields| McpToolCall::Fields(fields.clone()))
         .collect();
     input.tool_results = tool_results.to_vec();
-    let settings = Settings {
-        should_auto_execute: false,
-        original_stream: true,
-    };
     let provider = Provider::answering(minimal_response()?, None);
-    let result = run_service(&input, &provider, ids, settings)?;
+    let result = run_service(&input, &provider, ids, STREAMING_SETTINGS)?;
     Ok(json!({ "events": result.events }))
 }
 
