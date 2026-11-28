@@ -793,16 +793,39 @@ def test_error_unsupported() -> None:
         assert theirs.value.status_code == SERVER_ERROR
         assert f"{action} is not supported for {ANTHROPIC}" in str(ours.value)
         assert f"{action} is not supported for {ANTHROPIC}" in str(theirs.value)
-    with RunsServer() as server:
-        with pytest.raises(BadRequestError) as async_created:
-            asyncio.run(
-                acreate_run(
-                    EVAL_ID, DATA_SOURCE, custom_llm_provider=ANTHROPIC,
-                    api_base=server.url, api_key=GOOD_KEY,
-                )
+
+
+# every async run name forwards custom_llm_provider, so the unsupported provider is refused
+def test_error_async_unsupported() -> None:
+    with pytest.raises(BadRequestError) as created:
+        asyncio.run(
+            acreate_run(
+                EVAL_ID, DATA_SOURCE, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY
             )
-    assert async_created.value.status_code == BAD_REQUEST
-    assert f"CREATE run is not supported for {ANTHROPIC}" in str(async_created.value)
+        )
+    with pytest.raises(BadRequestError) as listed:
+        asyncio.run(alist_runs(EVAL_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY))
+    with pytest.raises(BadRequestError) as fetched:
+        asyncio.run(
+            aget_run(EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
+        )
+    with pytest.raises(BadRequestError) as cancelled:
+        asyncio.run(
+            acancel_run(EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
+        )
+    with pytest.raises(BadRequestError) as deleted:
+        asyncio.run(
+            adelete_run(EVAL_ID, RUN_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
+        )
+    for raised, action in (
+        (created, "CREATE run"),
+        (listed, "LIST runs"),
+        (fetched, "GET run"),
+        (cancelled, "CANCEL run"),
+        (deleted, "DELETE run"),
+    ):
+        assert raised.value.status_code == BAD_REQUEST
+        assert f"{action} is not supported for {ANTHROPIC}" in str(raised.value)
 
 
 # the async twins forward timeout, so a value the native request refuses fails each call
