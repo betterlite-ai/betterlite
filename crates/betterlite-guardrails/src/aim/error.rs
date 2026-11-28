@@ -53,3 +53,13 @@ impl AimError {
         }
     }
 }
+
+// websockets waits `open` for the handshake and the old connector answered a slower one as a connect timeout
+impl From<WebSocketClientError> for AimError {
+    fn from(error: WebSocketClientError) -> Self {
+        match error {
+            WebSocketClientError::Timeout => Self::ConnectTimeout,
+            other => Self::WebSocket(other),
+        }
+    }
+}

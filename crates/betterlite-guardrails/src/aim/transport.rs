@@ -92,14 +92,14 @@ impl AimSocketConnector for AimWebSocketConnector {
         open: Duration,
         read: Duration,
     ) -> Result<AimSocket, AimError> {
-        let url =
+        let parsed =
             Url::parse(url).map_err(|_error| AimError::WebSocket(WebSocketClientError::Url))?;
         let mut pairs = Vec::with_capacity(headers.len());
         for (name, value) in headers {
             pairs.push((name.clone(), value.clone()));
         }
         let connection = connect(WebSocketRequest {
-            url,
+            url: parsed,
             headers: &pairs,
             tls: None,
             max_message_size: MAX_STREAM_FRAME_BYTES,
@@ -108,7 +108,7 @@ impl AimSocketConnector for AimWebSocketConnector {
             proxy: None,
         })
         .await
-        .map_err(connect_error)?;
+        .map_err(AimError::from)?;
         let WebSocketConnection { sender, receiver } = connection;
         Ok(AimSocket {
             reader: Box::new(ClientFrameReader {
@@ -117,14 +117,6 @@ impl AimSocketConnector for AimWebSocketConnector {
             }),
             writer: Box::new(ClientFrameWriter { sender }),
         })
-    }
-}
-
-// websockets waits `open` for the handshake and the old connector answered a slower one as a connect timeout
-fn connect_error(error: WebSocketClientError) -> AimError {
-    match error {
-        WebSocketClientError::Timeout => AimError::ConnectTimeout,
-        other => AimError::WebSocket(other),
     }
 }
 

@@ -168,4 +168,14 @@ impl CatoError {
     }
 }
 
+// websockets waits `open` for the handshake and the old connector answered a slower one as a connect timeout
+impl From<WebSocketClientError> for CatoError {
+    fn from(error: WebSocketClientError) -> Self {
+        match error {
+            WebSocketClientError::Timeout => Self::ConnectTimeout,
+            other => Self::WebSocket { source: other },
+        }
+    }
+}
+
 pub const INVALID_REQUEST_ERROR: &str = "invalid_request_error";

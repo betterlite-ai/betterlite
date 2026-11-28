@@ -45,7 +45,7 @@ impl CatoSocketConnector for WebSocketConnector {
         open: Duration,
         read: Duration,
     ) -> Result<CatoSocket, CatoError> {
-        let url = Url::parse(url).map_err(|_error| CatoError::WebSocket {
+        let parsed = Url::parse(url).map_err(|_error| CatoError::WebSocket {
             source: WebSocketClientError::Url,
         })?;
         let mut pairs = Vec::with_capacity(headers.len());
@@ -59,7 +59,7 @@ impl CatoSocketConnector for WebSocketConnector {
         };
         let tls = chosen.as_ref().map(tls_config).transpose()?;
         let connection = connect(WebSocketRequest {
-            url,
+            url: parsed,
             headers: &pairs,
             tls: tls.map(Arc::new),
             max_message_size: MAX_FRAME_BYTES,
@@ -68,7 +68,7 @@ impl CatoSocketConnector for WebSocketConnector {
             proxy: None,
         })
         .await
-        .map_err(connect_error)?;
+        .map_err(CatoError::from)?;
         let WebSocketConnection { sender, receiver } = connection;
         Ok(CatoSocket {
             reader: Box::new(ClientFrameReader {
@@ -80,13 +80,6 @@ impl CatoSocketConnector for WebSocketConnector {
                 write_timeout: read,
             }),
         })
-    }
-}
-
-fn connect_error(error: WebSocketClientError) -> CatoError {
-    match error {
-        WebSocketClientError::Timeout => CatoError::ConnectTimeout,
-        other => CatoError::WebSocket { source: other },
     }
 }
 
