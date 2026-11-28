@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::responses_mcp_followup::error::McpFollowupError;
-use betterlite_core::api::responses_mcp_followup::records::FollowUpCall;
 use betterlite_core::api::responses_mcp_results::McpToolResult;
 use betterlite_core::api::responses_mcp_tool_selection::McpToolCall;
 use betterlite_core::api::responses_provider_selection::ParameterMap;
@@ -19,10 +18,9 @@ use super::support::{
 };
 
 pub(super) fn request_params(scenarios: &[RequestScenario]) -> HelperResult {
-    let answers = scenarios.iter().map(request_scenario);
-    answers
-        .collect::<Result<Vec<Value>, Box<HelperError>>>()
-        .map(Value::Array)
+    let answers: Result<Vec<Value>, Box<HelperError>> =
+        scenarios.iter().map(request_scenario).collect();
+    answers.map(Value::Array)
 }
 
 fn request_scenario(scenario: &RequestScenario) -> Result<Value, Box<HelperError>> {
@@ -101,11 +99,9 @@ pub(super) fn append_output(
     };
     let provider = Provider::answering(response.clone(), None);
     let result = run_service(&input, &provider, ids, settings)?;
-    let Some(composed) = result.response else {
-        return Err(helper_error(
-            "the completed branch must return the response",
-        ));
-    };
+    let composed = result
+        .response
+        .ok_or_else(|| helper_error("the completed branch must return the response"))?;
     serde_json::to_value(composed.output).map_err(|error| helper_error(&error.to_string()))
 }
 
@@ -132,21 +128,17 @@ pub(super) fn provider_call_error(
                 return Err(helper_error("the provider must receive the follow-up call"));
             };
             Ok(json!({
-                "request": follow_up_projection(pending),
+                "request": {
+                    "input": pending.input,
+                    "model": pending.model,
+                    "tools": pending.tools,
+                    "previous_response_id": pending.previous_response_id,
+                    "call_params": pending.kwargs,
+                },
                 "error": { "status": failure.status },
             }))
         }
         Ok(_) => Err(helper_error("the follow-up call must fail")),
         Err(other) => Err(helper_error(&other.to_string())),
     }
-}
-
-fn follow_up_projection(call: &FollowUpCall) -> Value {
-    json!({
-        "input": call.input,
-        "model": call.model,
-        "tools": call.tools,
-        "previous_response_id": call.previous_response_id,
-        "call_params": call.kwargs,
-    })
 }

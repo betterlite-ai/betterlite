@@ -159,10 +159,7 @@ pub(super) fn streaming_auth(spec: &AuthSpec) -> Result<StreamingAuth, Box<Helpe
         }),
         AuthSpec::Metadata { user_id } => Ok(StreamingAuth {
             direct: None,
-            metadata: MetadataAuth::Mapping(match user_id {
-                Some(user_id) => Some(principal(user_id)?),
-                None => None,
-            }),
+            metadata: MetadataAuth::Mapping(user_id.as_deref().map(principal).transpose()?),
         }),
     }
 }
@@ -202,12 +199,8 @@ pub(super) fn ids_source(values: &[String]) -> IdSource {
 }
 
 pub(super) fn minimal_response() -> Result<ResponsesApiResponse, Box<HelperError>> {
-    serde_json::from_value(json!({
-        "id": "resp_follow_up",
-        "created_at": 1,
-        "output": [],
-    }))
-    .map_err(|error| helper_error(&error.to_string()))
+    serde_json::from_value(json!({ "id": "resp_follow_up", "created_at": 1, "output": [] }))
+        .map_err(|error| helper_error(&error.to_string()))
 }
 
 pub(super) fn helper_error(message: &str) -> Box<HelperError> {
