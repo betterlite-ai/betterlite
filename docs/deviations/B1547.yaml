@@ -1,0 +1,6 @@
+task: B1547
+deviations:
+  - what: An optional param of the wrong type, such as max_alternatives as a string, fails with HTTP 400 and an error that names the field, where the source reads the request dict untyped and lets the ValueError escape as a 500.
+    why: the value comes from the caller's request, so it is a client error the field name can explain; the B1545 mapper already reports every wrong-typed option this way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/handler.py#L386-L397
+kept_bugs: []
