@@ -53,21 +53,23 @@ pub(super) fn embedding_call(context: &EmbeddingContext<'_>) -> EmbeddingCall {
     }
 }
 
-// the three DashScope brands read the passed key, litellm.api_key, their own env key and DASHSCOPE_API_KEY, and name the brand they were called as when none is set
+// the three DashScope brands read get_llm_provider's dynamic key (the passed key, their own env key, DASHSCOPE_API_KEY), then litellm.api_key, and name the brand they were called as when none is set
 fn family(
     brand: DashscopeFamily,
     context: &EmbeddingContext<'_>,
 ) -> Result<EmbeddingCall, DispatchError> {
-    let passed = first_secret([context.api_key, context.settings.api_key.as_ref()]);
-    let key = dashscope_family::resolve_family_api_key(
+    let dynamic = dashscope_family::resolve_family_api_key(
         brand,
-        passed.as_ref().map(ExposeSecret::expose_secret),
+        context.api_key.map(ExposeSecret::expose_secret),
         brand_key(brand, context),
         context.settings.environment.dashscope_api_key.as_ref(),
-    )
-    .ok_or_else(|| DispatchError::MissingKey {
-        message: dashscope_family::missing_family_key_message(brand),
-    })?;
+    );
+    let key =
+        first_secret([dynamic.as_ref(), context.settings.api_key.as_ref()]).ok_or_else(|| {
+            DispatchError::MissingKey {
+                message: dashscope_family::missing_family_key_message(brand),
+            }
+        })?;
     let mut call = embedding_call(context);
     call.api_key = Some(key);
     call.headers = Some(context.extra_headers.cloned().unwrap_or_default());

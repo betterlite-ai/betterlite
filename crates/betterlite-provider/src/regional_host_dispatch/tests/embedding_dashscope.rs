@@ -9,6 +9,7 @@ use super::support::{EmbeddingFixture, headers, secret};
 
 const DASHSCOPE_MESSAGE: &str = "Missing API key for DashScope. Set DASHSCOPE_API_KEY environment variable or pass api_key parameter.";
 
+// DASHSCOPE_API_KEY reaches the arm through get_llm_provider, ahead of litellm.api_key
 #[rstest]
 #[case::request_key(
     Some("sk-request"),
@@ -16,8 +17,14 @@ const DASHSCOPE_MESSAGE: &str = "Missing API key for DashScope. Set DASHSCOPE_AP
     Some("sk-dashscope"),
     Some("sk-request")
 )]
-#[case::global_key(None, Some("sk-global"), Some("sk-dashscope"), Some("sk-global"))]
+#[case::global_key(None, Some("sk-global"), None, Some("sk-global"))]
 #[case::dashscope_env(None, None, Some("sk-dashscope"), Some("sk-dashscope"))]
+#[case::dashscope_env_beats_the_global_key(
+    None,
+    Some("sk-global"),
+    Some("sk-dashscope"),
+    Some("sk-dashscope")
+)]
 fn dashscope_key_chain(
     #[case] request_key: Option<&str>,
     #[case] global_key: Option<&str>,
