@@ -661,6 +661,25 @@ fn search_keeps_the_callers_litellm_params() {
 }
 
 #[test]
+fn search_list_litellm_params_is_an_error() {
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(3, 3)));
+    let mut fixture = fixture(SEARCH_ROUTE, SEARCH_BODY);
+    fixture
+        .call_log
+        .model_call_details
+        .insert("litellm_params".to_owned(), json("[1]"));
+    let error = passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect_err("litellm_params must be an object");
+    assert!(matches!(
+        error,
+        VertexPassthroughError::Detail {
+            field: "litellm_params"
+        }
+    ));
+}
+
+#[test]
 fn batch_maps_the_input_and_returns_the_record() {
     let (passthrough, _) = handler(FakeCost::priced(Decimal::new(125, 2)));
     let mut fixture = fixture(BATCH_ROUTE, BATCH_BODY);
@@ -774,6 +793,22 @@ fn batch_list_metadata_is_an_error() {
     assert!(matches!(
         error,
         VertexPassthroughError::Detail { field: "metadata" }
+    ));
+}
+
+#[test]
+fn batch_list_litellm_params_is_an_error() {
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(125, 2)));
+    let mut fixture = fixture(BATCH_ROUTE, BATCH_BODY);
+    fixture.kwargs = kwargs(&[("litellm_params", json("[1]"))]);
+    let error = passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect_err("litellm_params must be an object");
+    assert!(matches!(
+        error,
+        VertexPassthroughError::Detail {
+            field: "litellm_params"
+        }
     ));
 }
 
@@ -957,6 +992,12 @@ fn raw_predict_completion_reads_the_body_model_and_usage() {
     let empty = completion_response(&json(r#"{"model":""}"#));
     assert_eq!(empty.model, None);
     assert_eq!(empty.usage, None);
+    let numeric_model = completion_response(&json(r#"{"model":7}"#));
+    assert_eq!(numeric_model.model, None);
+    let text_usage = completion_response(&json(r#"{"usage":"none"}"#));
+    assert_eq!(text_usage.usage, None);
+    let not_object = completion_response(&json("[]"));
+    assert_eq!(not_object.model, None);
 }
 
 #[test]
