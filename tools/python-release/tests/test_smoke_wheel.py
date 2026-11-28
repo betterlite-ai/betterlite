@@ -11,9 +11,9 @@ class RecordingImport:
     def __init__(self) -> None:
         self.names: list[str] = []
 
-    def __call__(self, name: str, package: str | None = None) -> ModuleType:
+    def __call__(self, name: str) -> ModuleType:
         self.names.append(name)
-        return import_module(name, package)
+        return import_module(name)
 
 
 def distribution_modules() -> set[str]:
@@ -38,10 +38,7 @@ def test_module_list() -> None:
 
 def test_main_passes() -> None:
     recorder = RecordingImport()
-    original = smoke_wheel.import_module
-    smoke_wheel.import_module = recorder
     installed_version = importlib.metadata.version(DISTRIBUTION)
-    code = smoke_wheel.main([installed_version])
-    smoke_wheel.import_module = original
+    code = smoke_wheel.main([installed_version], recorder)
     assert code == 0
     assert set(smoke_wheel.installed_modules()) <= set(recorder.names)

@@ -1,6 +1,8 @@
 import sys
+from collections.abc import Callable
 from importlib import import_module
 from importlib.metadata import distribution
+from types import ModuleType
 
 import betterlite
 from betterlite import _native, _version
@@ -10,6 +12,8 @@ PACKAGE_PREFIX = f"{DISTRIBUTION}/"
 PYTHON_SUFFIX = ".py"
 INIT_SUFFIX = ".__init__"
 USAGE = "usage: smoke_wheel.py <expected version>\n"
+
+Importer = Callable[[str], ModuleType]
 
 
 def module_names(paths: list[str]) -> list[str]:
@@ -51,12 +55,12 @@ def litellm_failure() -> str | None:
     return f"the environment imports litellm as {module.__name__}"
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], importer: Importer = import_module) -> int:
     if len(argv) != 1:
         sys.stderr.write(USAGE)
         return 2
     for name in installed_modules():
-        import_module(name)
+        importer(name)
     failures = version_failures(argv[0])
     litellm_problem = litellm_failure()
     if litellm_problem is not None:
