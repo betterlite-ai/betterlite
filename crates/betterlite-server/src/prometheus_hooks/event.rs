@@ -50,17 +50,17 @@ impl HookCall {
 // LiteLLM labels kwargs["model"], the name get_llm_provider returned, not the payload's rebuilt name
 fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> String {
     // get_llm_provider's handlers rename a declared provider and return the model without its prefix
-    let (model, provider) = cohere_chat_provider(
+    let (cohere_model, cohere_provider) = cohere_chat_provider(
         &payload.model,
         payload.custom_llm_provider.as_deref(),
         catalog,
     );
-    let (model, provider) = anthropic_text_provider(&model, provider.as_deref());
-    let Some(provider) = provider else {
+    let (model, provider) = anthropic_text_provider(&cohere_model, cohere_provider.as_deref());
+    let Some(resolved) = provider else {
         return model;
     };
     // the payload records the provider the rename resolved to, so the declared prefix is the one it replaced
-    let declared = match provider.as_str() {
+    let declared = match resolved.as_str() {
         "cohere_chat" => "cohere",
         "anthropic_text" => "anthropic",
         "ai21_chat" => "ai21",
@@ -71,17 +71,17 @@ fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> S
         .and_then(|tail| tail.strip_prefix('/'))
         .or_else(|| {
             model
-                .strip_prefix(provider.as_str())
+                .strip_prefix(resolved.as_str())
                 .and_then(|tail| tail.strip_prefix('/'))
         });
-    let Some(rest) = rest else {
+    let Some(unprefixed) = rest else {
         return model;
     };
     // get_llm_provider keeps a native OpenRouter id such as "openrouter/auto" whole
-    if provider == "openrouter" && !rest.contains('/') {
+    if resolved == "openrouter" && !unprefixed.contains('/') {
         return model;
     }
-    rest.to_owned()
+    unprefixed.to_owned()
 }
 
 // the request metadata LiteLLM hands the hooks, with the typed payload fields filling the keys it lacks
