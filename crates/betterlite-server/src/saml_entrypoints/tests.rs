@@ -99,7 +99,9 @@ impl SamlCache for FakeCache {
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
         let request = (cache_key.to_owned(), ttl_seconds);
-        lock(&self.authn_requests).push(request);
+        let mut writes = lock(&self.authn_requests);
+        writes.push(request);
+        drop(writes);
         Ok(())
     }
 }
@@ -262,13 +264,12 @@ async fn login_redirects_to_the_idp_with_the_state_cookie() {
         "{location}"
     );
     let xml = authn_request(&location);
-    for needle in [
-        r#"AssertionConsumerServiceURL="http://proxy.test/sso/saml/callback""#,
-        r#"Destination="https://idp.example/sso""#,
-        "<saml:Issuer>http://proxy.test/sso/saml/metadata</saml:Issuer>",
-    ] {
-        assert!(xml.contains(needle), "{xml}");
-    }
+    assert!(
+        xml.contains(r#"AssertionConsumerServiceURL="http://proxy.test/sso/saml/callback""#)
+            && xml.contains(r#"Destination="https://idp.example/sso""#)
+            && xml.contains("<saml:Issuer>http://proxy.test/sso/saml/metadata</saml:Issuer>"),
+        "{xml}"
+    );
     let cookie = header_of(&headers, header::SET_COOKIE);
     let request_id = request_id_of(&cookie);
     assert_eq!(
