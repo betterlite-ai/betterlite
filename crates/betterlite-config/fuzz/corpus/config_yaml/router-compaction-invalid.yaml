@@ -1,0 +1,9 @@
+model_list:
+  - model_name: broken-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        context_compaction:
+          trigger_ratio: 1
+          max_tokens: 100
+          timeout_seconds: 0
