@@ -19,7 +19,7 @@ description: >-
   prefix the answer is the request-validation problem, else the OTLP answer or 422 {"detail": errors}.
   `unhandled_error_response` ports otel_unhandled_exception_handler: a database-unavailable error anywhere in the
   cause chain becomes B872's service-unavailable ProxyException answered by proxy_exception_response; anything else
-  logs "Unhandled exception in request: <type>", logs bug_report_notice of B10218's BugReportNotices::report (from state.proxy_diagnostics.notices, call_type the allowlisted route) when it answers one, closes the span
+  logs "Unhandled exception in request: <type>", logs bug_report_notice of B10218's BugReportNotices::report (from state.proxy_diagnostics.notices, call_type B10218's betterlite_auth::known_proxy_routes::known_proxy_route over the request path) when it answers one, closes the span
   with 500, and answers the OTLP response or 500 {"error": {"message": "Internal server error", "type":
   "internal_server_error"}}.
 

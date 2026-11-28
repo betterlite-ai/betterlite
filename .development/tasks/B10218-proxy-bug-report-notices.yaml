@@ -54,6 +54,25 @@ description: >-
   place of B4170, so a worker who reads the signature finds the impl.
 
 
+  The route allowlist. LiteLLM fills call_type from KNOWN_PROXY_ROUTES (common_request_processing.py L129-L131),
+  every route that starts with "/" in every LiteLLMRoutes member, through allowlisted (bug_report.py L74-L75).
+  Module known_proxy_routes in betterlite-auth (crates/betterlite-auth/src/known_proxy_routes.rs, tests in
+  known_proxy_routes/tests.rs), declared in lib.rs over an empty file, is their one home, built over the member lists
+  betterlite-auth already ports; don't copy a route. `pub fn known_proxy_routes() -> BTreeSet<&'static str>` inserts
+  the routes that start with "/" from auxiliary_routes' OPENAI_ROUTE_NAMES, MAPPED_PASS_THROUGH_ROUTES,
+  PASSTHROUGH_ROUTES_WILDCARD, LITELLM_NATIVE_ROUTES, MCP_INFERENCE_ROUTES, MCP_MANAGEMENT_ROUTES, MCP_ROUTES,
+  AGENT_INFERENCE_ROUTES, AGENT_MANAGEMENT_ROUTES, AGENT_ROUTES, GOOGLE_ROUTES, APPLY_GUARDRAIL_ROUTES,
+  MODEL_INFO_ROUTES, INFO_ROUTES, UI_ROUTES, COMPLIANCE_CHECK_ROUTES, SELF_MANAGED_ROUTES and public_routes();
+  inference_routes' OPENAI_ROUTES, ANTHROPIC_ROUTES and llm_api_routes(); and management_routes'
+  MASTER_KEY_ONLY_ROUTES, KEY_MANAGEMENT_ROUTES, TEAM_SERVICE_ACCOUNT_ROUTES, management_routes(),
+  SPEND_TRACKING_ROUTES, GLOBAL_SPEND_TRACKING_ROUTES, internal_user_routes(), INTERNAL_USER_VIEW_ONLY_ROUTES,
+  ORG_ADMIN_ONLY_ROUTES, admin_viewer_routes() and org_admin_allowed_routes(). Those stand for the 32 LiteLLMRoutes
+  members (_types.py L328-L1129). `pub fn known_proxy_route(path: &str) -> Option<&'static str>` is
+  allowlisted(path, KNOWN_PROXY_ROUTES): the set's entry equal to the path, else None, so a route template such as
+  "/key/{key_id}" matches only that exact text. B8591's unhandled handler and B10178's _handle_llm_api_exception
+  call it for call_type. betterlite-server already depends on betterlite-auth, so no crate edge is new.
+
+
   Oracle. Helper cases on b10218 in the server group. The input is `{env, calls}`, and env repeats the case env for
   the Rust side, since a helper sees only its input. A `notice` call takes a whole BugReport record, with
   litellm_version and python_version pinned in the case, and answers bug_report_notice's text: the Python adapter
@@ -70,13 +89,18 @@ description: >-
   429 and 500 with no env. link-disabled.yaml sets LITELLM_DISABLE_BUG_REPORT_LINK to True and link-kept.yaml to
   false, each with a failure of status_code null. The failure cases ignore the two version fields of each record
   (B4170's and B9979's deviations); deployment and config_lines stay compared, since both sides read /.dockerenv on
-  the same machine and both see an empty config. The diagnostics-order case B2400 wrote runs again to show its helper
+  the same machine and both see an empty config. known-proxy-routes.yaml sends a `routes` call, answered with
+  known_proxy_routes() in order and LiteLLM's sorted KNOWN_PROXY_ROUTES, so a missing or extra member route shows
+  as a difference, and `route` calls for "/chat/completions", "/v1/chat/completions", "/key/generate",
+  "/key/{key_id}", "chat_completion", "/chat/completions/" and "/not/a/route", answered with known_proxy_route and
+  allowlisted(path, KNOWN_PROXY_ROUTES). The diagnostics-order case B2400 wrote runs again to show its helper
   still answers with the location field. No byte parser is added, so there is no fuzz target.
 
 
-  Budget: about 10 owned LiteLLM lines (bug_report_enabled, should_report_bug and the notice in
-  handle_exception_on_proxy), about 50 lines for the section, 70 for the notices module, 30 for the slot and
-  state.rs, 30 for the reporting and FailureFacts changes, 200 for the two adapters and 300 test lines.
+  Budget: about 15 owned LiteLLM lines (bug_report_enabled, should_report_bug, the notice in
+  handle_exception_on_proxy, KNOWN_PROXY_ROUTES and allowlisted), about 50 lines for the section, 70 for the
+  notices module, 30 for the slot and state.rs, 30 for the reporting and FailureFacts changes, 40 for the route
+  allowlist, 230 for the two adapters and 350 test lines.
 scope:
   paths:
     - crates/betterlite-server/src/api/proxy_diagnostics.rs
@@ -94,6 +118,8 @@ scope:
     - crates/betterlite-reporting/src/bug_report/tests.rs
     - crates/betterlite-reporting/src/safe_proxy_config.rs
     - crates/betterlite-reporting/src/safe_proxy_config/tests.rs
+    - crates/betterlite-auth/src/known_proxy_routes.rs
+    - crates/betterlite-auth/src/known_proxy_routes/**
     - tools/oracle/src/helpers/server/proxy_endpoint_support.rs
     - tools/oracle/src/helpers/server/b10218.rs
     - tools/oracle/src/helpers/server/b10218/**
@@ -120,6 +146,12 @@ references:
     why: _handle_llm_api_exception logs the notice with call_type, custom_llm_provider and stream; report takes them as a ProxyCall.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2059-L2067
     why: The unhandled exception handler logs the notice with call_type only; B8591 calls report for it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L129-L131
+    why: Owned. KNOWN_PROXY_ROUTES, every route starting with "/" in every LiteLLMRoutes member.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L74-L75
+    why: Owned. allowlisted, the exact-match lookup known_proxy_route ports for the route set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L328-L1129
+    why: The 32 LiteLLMRoutes members betterlite-auth already ports, the inputs of known_proxy_routes.
 dod:
   - text: >-
       LITELLM_DISABLE_BUG_REPORT_LINK set to true in any case disables the link, false, unset and empty keep it, and a
@@ -147,6 +179,10 @@ dod:
       The variable name has one home and ProxyDiagnostics one production impl: eligibility.rs is gone, and no other
       source file under crates names LITELLM_DISABLE_BUG_REPORT_LINK or implements ProxyDiagnostics.
     proof: [bug-report-single-home]
+  - text: >-
+      known_proxy_routes() equals LiteLLM's KNOWN_PROXY_ROUTES, built over betterlite-auth's ported member lists with no
+      route copied, and known_proxy_route answers a path only when it is exactly one of those routes.
+    proof: [bug-report-routes, oracle, bug-report-helper-python]
   - text: A new b10218 seed reaches the shared helper case parser.
     proof: [bug-report-helper-corpus, oracle, bug-report-helper-python]
   - text: docs/deviations/B10218.yaml lists the empty config snapshot.
@@ -182,6 +218,9 @@ checks:
         test ! -e crates/betterlite-reporting/src/bug_report/eligibility.rs &&
         test "$(git grep -l -F '"LITELLM_DISABLE_BUG_REPORT_LINK"' -- crates ':(exclude,glob)**/tests.rs' ':(exclude,glob)**/tests/**' | wc -l)" -eq 1 &&
         test "$(git grep -l 'impl ProxyDiagnostics for' -- crates ':(exclude,glob)**/tests.rs' ':(exclude,glob)**/tests/**' | wc -l)" -eq 1
+    - id: bug-report-routes
+      why: the route allowlist is missing, drops a member list or matches more than the exact route
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^known_proxy_routes::/)'
     - id: bug-report-helper-python
       why: the b10218 adapter is missing or fails the strict Python checks
       run: >-
@@ -202,6 +241,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/bug-report-notices/report-eligibility.yaml
   - tools/oracle/cases/helpers/bug-report-notices/link-disabled.yaml
   - tools/oracle/cases/helpers/bug-report-notices/link-kept.yaml
+  - tools/oracle/cases/helpers/bug-report-notices/known-proxy-routes.yaml
   - tools/oracle/cases/helpers/proxy-endpoint-support/diagnostics-order.yaml
 deviations:
   - what: >-
@@ -210,15 +250,15 @@ deviations:
     why: >-
       No code on main keeps the loaded config as a map. B8380's ProxyConfigState.snapshot has no startup writer, and a
       config section that read general_settings, litellm_settings and router_settings as open maps would count every
-      key as read, so an unsupported key would no longer stop startup. Slot::new is the one place to fill it once the
-      running config reaches the server.
+      key as read, so an unsupported key would no longer stop startup. Slot::new is the one place to fill it; B4171
+      fills it at startup and deletes this row.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L201-L207
 out_of_scope:
   - "Passing the notices into each route's handle_exception_on_proxy call: the route tasks that depend on this one."
-  - "The notice _handle_llm_api_exception logs with call fields (common_request_processing.py L3747-L3762) and its KNOWN_PROXY_ROUTES allowlist: B10178 leaves it out today; report already takes the ProxyCall that caller passes."
-  - "The unhandled exception handler's notice (proxy_server.py L2059-L2067): B8591, through report."
+  - "The notice _handle_llm_api_exception logs with call fields (common_request_processing.py L3747-L3762): B10178, through report and known_proxy_route."
+  - "The unhandled exception handler's notice (proxy_server.py L2059-L2067): B8591, through report and known_proxy_route."
   - "GET /debug/report: B4171, reading snapshot and dockerenv from this slot."
-  - "Filling the snapshot from the running config: B8380 owns ProxyConfigState.snapshot and B8610 puts it in Shared; no task writes it at startup yet."
+  - "Filling the snapshot from the running config at startup and deleting the empty-snapshot row: B4171."
   - "The record, the issue URL and the notice text: B4170. safe_config_lines and the proxy report builder: B10058. The exception conversion and its log lines: B2400."
   - "The SDK's notice (exception_mapping_utils.py L2696-L2703): B186."
 pitfalls:
