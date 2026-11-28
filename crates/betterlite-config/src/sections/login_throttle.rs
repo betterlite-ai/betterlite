@@ -222,24 +222,24 @@ fn overrides<L>(raw: Option<Json>, lookup: &L) -> SourceOverrides
 where
     L: EnvironmentLookup,
 {
-    match resolved(raw, lookup) {
-        None => SourceOverrides::Absent,
-        Some(Json::Object(entries)) => SourceOverrides::Mapping(
-            entries
-                .into_iter()
-                .map(|(range, value)| SourceOverride {
-                    range,
-                    limit: override_limit(&resolved_environment(value, lookup)),
-                })
-                .collect(),
-        ),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            warn!(
-                "Invalid {SOURCE_LIMIT_OVERRIDES_KEY} value; expected a mapping of address or range to limit"
-            );
-            SourceOverrides::Invalid
-        }
-    }
+    let Some(value) = resolved(raw, lookup) else {
+        return SourceOverrides::Absent;
+    };
+    let Json::Object(entries) = value else {
+        warn!(
+            "Invalid {SOURCE_LIMIT_OVERRIDES_KEY} value; expected a mapping of address or range to limit"
+        );
+        return SourceOverrides::Invalid;
+    };
+    SourceOverrides::Mapping(
+        entries
+            .into_iter()
+            .map(|(range, value)| SourceOverride {
+                range,
+                limit: override_limit(&resolved_environment(value, lookup)),
+            })
+            .collect(),
+    )
 }
 
 // _override_limit: only a stripped 0 exempts, otherwise the value must be a positive integer
