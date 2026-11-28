@@ -9,7 +9,7 @@ per-file-target-version = { "tests/*" = "py311" }
 [lint.per-file-ignores]
 "python/betterlite/__init__.py" = ["F403"] # each later task fills a module that this file star-imports
 "python/betterlite/*.pyi" = ["F403"] # _native.pyi star-imports one stub per native family
-"tests/*" = ["INP001", "S101", "TID251"] # pytest finds test_package.py by path and checks with assert, and the tests run on 3.11 where pydantic accepts typing.TypedDict
+"tests/*" = ["INP001", "S101", "TID251"] # pytest finds test_package.py by path and checks with assert, and the tests run in tools/oracle/litellm on its Python 3.13, where pydantic accepts their typing.TypedDict; py311 is only their ruff and pyright target
 "python/betterlite/_custom_llm/*" = ["A002", "ARG002", "ASYNC109", "FBT001", "PLE0302", "PLR0913", "PLR0917", "PYI036"] # user subclasses override LiteLLM's handler signatures, so these parameters stay as LiteLLM has them
 "python/betterlite/_completion/*" = ["B006", "BLE001", "PLR0913", "PLR0917"] # LiteLLM's 44-parameter completion, its messages: list = [] defaults, the 6-parameter acount_tokens and keyword-only LiteLLM(), and its broad proxy-auth catch stay as LiteLLM has them
 "python/betterlite/_completion/acompletion.py" = ["ASYNC109"] # LiteLLM's acompletion is async and keeps the timeout parameter its signature carries
