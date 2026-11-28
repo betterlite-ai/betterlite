@@ -1,0 +1,23 @@
+kind: helper
+name: jwt-oauth-routing-selector-null-absent-empty
+env: {}
+compare: {ignore: []}
+call:
+  b10161: {operation: selector, selector: null, claim: null, split_space_delimited: false}
+calls:
+  - b10161: {operation: selector, selector: null, split_space_delimited: false}
+  - b10161: {operation: selector, selector: null, claim: issuer, split_space_delimited: false}
+  - b10161: {operation: selector, selector: issuer, claim: null, split_space_delimited: false}
+  - b10161: {operation: selector, selector: issuer, split_space_delimited: false}
+  - b10161: {operation: selector, selector: [issuer], claim: null, split_space_delimited: false}
+  - b10161: {operation: selector, selector: [], claim: issuer, split_space_delimited: false}
+  - b10161: {operation: selector, selector: [], claim: [], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [], split_space_delimited: false}
+  - b10161: {operation: selector, selector: issuer, claim: [], split_space_delimited: false}
+  - b10161: {operation: selector, selector: issuer, claim: issuer, split_space_delimited: false}
+  - b10161: {operation: selector, selector: issuer, claim: other, split_space_delimited: false}
+  - b10161: {operation: selector, selector: '', claim: '', split_space_delimited: false}
+  - b10161: {operation: selector, selector: '', claim: a, split_space_delimited: false}
+  - b10161: {operation: selector, selector: [a, b], claim: [b], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [a, b], claim: [c], split_space_delimited: false}
+  - b10161: {operation: selector, selector: [a, b], claim: b, split_space_delimited: false}

@@ -117,30 +117,20 @@ pub(crate) fn object(pairs: &[(&str, JsonValue)]) -> Object {
     object
 }
 
+pub(crate) fn empty_environment() -> BTreeMap<String, String> {
+    BTreeMap::new()
+}
+
+pub(crate) fn test_environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
 // the Watsonx environment the call reads when nothing but the IAM endpoint is set
-pub(crate) fn watsonx_environment(iam_url: String) -> WatsonxEnvironment {
-    WatsonxEnvironment {
-        watsonx_iam_url: Some(iam_url),
-        wx_api_key: None,
-        watsonx_api_key: None,
-        watsonx_apikey: None,
-        watsonx_zenapikey: None,
-        watsonx_token: None,
-        watsonx_api_base: None,
-        watsonx_url: None,
-        wx_url: None,
-        wml_url: None,
-        watsonx_project_id: None,
-        wx_project_id: None,
-        project_id: None,
-        watsonx_region: None,
-        wx_region: None,
-        region: None,
-        watsonx_deployment_space_id: None,
-        watsonx_space_id: None,
-        wx_space_id: None,
-        space_id: None,
-    }
+pub(crate) fn watsonx_environment(iam_url: &str) -> WatsonxEnvironment {
+    WatsonxEnvironment::from_lookup(&test_environment(&[("WATSONX_IAM_URL", iam_url)]))
 }
 
 pub(crate) fn client_timeouts() -> PassthroughClient {

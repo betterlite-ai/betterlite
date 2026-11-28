@@ -1,0 +1,9 @@
+kind: helper
+name: identity-store-auth-missing-key-token-not-found
+call:
+  identity_store:
+    aspect: error
+    kind: missing_key
+    hashed_token: sk-hashed-missing
+env: {}
+compare: {ignore: []}

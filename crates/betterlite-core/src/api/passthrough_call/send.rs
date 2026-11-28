@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -54,6 +55,7 @@ impl From<ConfigError> for Failure {
 // What the reply conversion needs when a redirect answer has to become a relay
 pub(crate) struct RelayContext<'call> {
     pub tag: PassthroughConfigTag,
+    pub environment: Arc<BTreeMap<String, String>>,
     pub model: &'call str,
     pub provider: &'call str,
     pub endpoint: &'call str,
@@ -69,17 +71,16 @@ struct Upstream {
 pub(crate) async fn run(
     args: &PassthroughCallArgs,
     resolved: &ResolvedModel,
-    tag: PassthroughConfigTag,
+    config: &PassthroughCallConfig,
     state: &mut LoggingState,
     http: &ProxiedClient,
 ) -> Result<PassthroughReply, Failure> {
     let call = params::build(args, resolved);
     let timeouts = params::timeouts(args, &call.params)?;
     let client = params::client(http, &timeouts)?;
-    let config = PassthroughCallConfig { tag };
     logging::record_environment(state, args, resolved, &call)?;
-    let upstream = upstream(&config, args, resolved, &call.params, &client).await?;
-    let (headers, signing) = signed_headers(&config, args, resolved, &call.params, &upstream)?;
+    let upstream = upstream(config, args, resolved, &call.params, &client).await?;
+    let (headers, signing) = signed_headers(config, args, resolved, &call.params, &upstream)?;
     let json = replaced_model(args.json.as_ref(), &resolved.model);
     let empty = Object::new();
     let streaming = config.is_streaming_request(
@@ -102,19 +103,20 @@ pub(crate) async fn run(
         cookies: args.cookies.as_deref(),
         deadline: timeouts.read,
     };
-    let context = relay_context(tag, args, resolved, &client);
+    let context = relay_context(config, args, resolved, &client);
     send(wire::build(&request)?, streaming, &context, &client).await
 }
 
 // what the reply conversion needs from the call: the target a redirect relay reports
 fn relay_context<'call>(
-    tag: PassthroughConfigTag,
+    config: &PassthroughCallConfig,
     args: &'call PassthroughCallArgs,
     resolved: &'call ResolvedModel,
     client: &ProxiedClient,
 ) -> RelayContext<'call> {
     RelayContext {
-        tag,
+        tag: config.tag,
+        environment: Arc::clone(&config.environment),
         model: &resolved.model,
         provider: resolved.provider.slug(),
         endpoint: &args.endpoint,
@@ -150,8 +152,7 @@ async fn upstream(
     };
     let (url, base) = config.get_complete_url(&request)?;
     let encoded = arn_encoded(url, resolved, &args.endpoint)?;
-    let headers =
-        validate_auth(config.tag, resolved.api_key.as_ref(), params, &base, client).await?;
+    let headers = validate_auth(config, resolved.api_key.as_ref(), params, &base, client).await?;
     Ok(Upstream {
         url: encoded,
         headers,
@@ -202,7 +203,10 @@ async fn send(
     };
     let reply = async_passthrough_request(
         relay,
-        PassthroughCallConfig { tag: context.tag },
+        PassthroughCallConfig {
+            tag: context.tag,
+            environment: Arc::clone(&context.environment),
+        },
         Arc::clone(&relay_logging),
         TaskTracker::new(),
     )
