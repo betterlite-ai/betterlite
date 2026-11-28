@@ -4,6 +4,8 @@ pub mod role;
 mod sources;
 mod tests;
 
+use std::future::Future;
+
 use betterlite_config::sections::bedrock_aws_settings::AwsS3Settings;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::tls::VerifySetting;
@@ -22,6 +24,24 @@ pub struct AwsCredentialResolver<'deps> {
     pub secrets: &'deps SecretLookup,
     pub sts: &'deps StsClientKwargs,
     pub max_policy_size: i64,
+}
+
+pub trait CredentialSource: Send + Sync {
+    fn resolve(
+        &self,
+        settings: AwsSettings,
+        region: String,
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
+}
+
+impl CredentialSource for AwsCredentialResolver<'_> {
+    async fn resolve(
+        &self,
+        settings: AwsSettings,
+        region: String,
+    ) -> Result<Credentials, CredentialError> {
+        self.resolve_credentials(&settings, Some(&region)).await
+    }
 }
 
 impl AwsCredentialResolver<'_> {

@@ -53,7 +53,11 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::sync::{Arc, PoisonError};
+use std::{
+    future::{Future, ready},
+    pin::Pin,
+    sync::{Arc, PoisonError},
+};
 
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
@@ -68,8 +72,9 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, resolve};
-use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
+use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
@@ -189,9 +194,8 @@ fn stage_input(
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
-            auth_end_users::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::AuthEndUserIdentity => end_user_identity_stage(request, authenticated, body),
+        AuthBackend::AuthEndUsers => end_user_identity::budget_stage(request, authenticated, body),
         AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
         AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
             model_grant_intersection::stage_input(request, authenticated)?,
@@ -212,25 +216,6 @@ fn budget_stage_input(
     }
     Ok(StageInput::AuthKeyBudgets(Box::new(
         auth_key_budgets::stage_input(request, authenticated)?,
-    )))
-}
-
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, StageFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let rule = auth_resource_grants::rule_for_request(request);
-    let database = auth_resource_grants::database_for_request(request);
-    Ok(StageInput::AuthResourceGrants(Box::new(
-        ResourceGrantStageInput {
-            context,
-            rule,
-            database,
-        },
     )))
 }
 
@@ -283,22 +268,32 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         )
 }
 
+// the stage prefetch a stage module returns, erased so the one match below stays one arm per stage
+type StagePrefetch = Pin<Box<dyn Future<Output = Result<StageInput, StageFailure>> + Send>>;
+
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
-    match input {
-        StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
-        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
-        StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
-        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
-        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
-        StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
-        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
-        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
-        StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
+    let stage_future: StagePrefetch = match input {
+        StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
+        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
+        StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
+        StageInput::AuthTagBudgets(stage) => Box::pin(auth_tag_budgets::prefetched(stage)),
+        StageInput::AuthKeyBudgets(stage) => Box::pin(auth_key_budgets::prefetched(stage)),
+        StageInput::AuthModelBudgets(stage) => Box::pin(auth_model_budgets::prefetched(stage)),
+        StageInput::TeamBudgetAdmission(stage) => {
+            Box::pin(team_budget_admission::prefetched(stage))
+        }
+        StageInput::AuthTenantBudgets(stage) => Box::pin(auth_tenant_budgets::prefetched(stage)),
+        StageInput::AuthOrgLookup(stage) => Box::pin(auth_org_lookup::prefetched(stage)),
+        StageInput::AuthEndUserIdentity(stage) => {
+            Box::pin(StageInput::prefetch_end_user_identity(stage))
+        }
+        StageInput::AuthEndUsers(stage) => Box::pin(end_user_identity::prefetch_budget(stage)),
+        StageInput::ModelGrantIntersection(stage) => {
+            Box::pin(StageInput::prefetch_model_grants(stage))
+        }
+        StageInput::AuthModelGrants(stage) => Box::pin(auth_model_grants::prefetched(stage)),
+        StageInput::EntityModelAccess(stage) => Box::pin(entity_model_access::prefetched(stage)),
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
@@ -311,8 +306,9 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)
-        | StageInput::AuthRoutePolicy(_)) => Ok(other),
-    }
+        | StageInput::AuthRoutePolicy(_)) => Box::pin(ready(Ok(other))),
+    };
+    stage_future.await
 }
 
 fn master_key_stage(

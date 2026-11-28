@@ -125,6 +125,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::ModelGrants(_)
             | StageFailure::KeyLookup(_)
             | StageFailure::TenantBudgets(_)
+            | StageFailure::EndUserIdentity(_)
             | StageFailure::TrustedNetwork(_)
             | StageFailure::AuthContextSources(_)
             | StageFailure::JwtKeys(_)

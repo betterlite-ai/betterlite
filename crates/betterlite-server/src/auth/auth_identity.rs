@@ -22,6 +22,7 @@ use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_route_policy::{self, RoutePolicyStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
+use crate::auth::end_user_identity::{self, EndUserIdentityStageInput};
 use crate::auth::entity_model_access::EntityModelStageInput;
 pub(crate) use crate::auth::failures::StageFailure;
 use crate::auth::identity_store::IdentityStageInput;
@@ -57,6 +58,7 @@ pub enum AuthBackend {
     OrganizationRoutePolicy,
     AuthRoutePolicy,
     AuthOrgLookup,
+    AuthEndUserIdentity,
     AuthEndUsers,
     AuthPolicySupport,
     ModelGrantIntersection,
@@ -83,6 +85,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::OrganizationRoutePolicy,
     AuthBackend::AuthTenantBudgets,
     AuthBackend::AuthOrgLookup,
+    AuthBackend::AuthEndUserIdentity,
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
     AuthBackend::AuthContextSources,
@@ -115,6 +118,7 @@ pub enum StageInput {
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
     AuthRoutePolicy(Box<RoutePolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
+    AuthEndUserIdentity(Box<EndUserIdentityStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
     AuthPolicySupport(Box<AuthPolicySupportStageInput>),
     ModelGrantIntersection(Box<GrantStageInput>),
@@ -153,6 +157,16 @@ impl StageInput {
         Ok(Self::ModelGrantIntersection(stage))
     }
 
+    // the identity stage's id validation is async, so the caller awaits it on the owned input
+    pub(crate) async fn prefetch_end_user_identity(
+        mut stage: Box<EndUserIdentityStageInput>,
+    ) -> Result<Self, StageFailure> {
+        end_user_identity::prefetch(&mut stage)
+            .await
+            .map_err(StageFailure::EndUserIdentity)?;
+        Ok(Self::AuthEndUserIdentity(stage))
+    }
+
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
@@ -177,6 +191,7 @@ impl StageInput {
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
             Self::AuthRoutePolicy(_) => AuthBackend::AuthRoutePolicy,
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
+            Self::AuthEndUserIdentity(_) => AuthBackend::AuthEndUserIdentity,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
             Self::AuthPolicySupport(_) => AuthBackend::AuthPolicySupport,
             Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
@@ -210,6 +225,7 @@ pub(crate) fn dispatch(
         StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
         StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUserIdentity(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
         AuthKeyLookup(_) | AuthIdentity(_) => Err(StageFailure::from(Missing)),

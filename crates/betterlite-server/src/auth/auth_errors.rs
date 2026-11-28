@@ -192,7 +192,8 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::ModelGrants(exception)
         | StageFailure::OauthTokens(exception)
         | StageFailure::KeyLookup(exception)
-        | StageFailure::AuthContextSources(exception) => Some((**exception).clone()),
+        | StageFailure::AuthContextSources(exception)
+        | StageFailure::EndUserIdentity(exception) => Some((**exception).clone()),
         StageFailure::Authentication(authentication) => match **authentication {
             AuthenticationFailure::Invalid => Some(ProxyException::new(ProxyExceptionInit {
                 message: "the API key is not valid".to_owned(),

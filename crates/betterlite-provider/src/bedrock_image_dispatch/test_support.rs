@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::image_call::plan::CredentialSource;
 use betterlite_bedrock::image_call::transport::{
     ClientFactory, ImageReply, ImageRequest, ImageTransport, TransferError,
 };
