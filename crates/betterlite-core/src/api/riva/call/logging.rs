@@ -46,55 +46,55 @@ impl RivaLogger for PrePostLogger<'_, '_> {
     fn record(&mut self, event: RivaEvent) -> Result<(), PrePostError> {
         match event {
             RivaEvent::PreCall(record) => self.record_pre(record),
-            RivaEvent::PostCall(record) => self.record_post(record),
+            RivaEvent::PostCall(record) => {
+                let call = PostCall {
+                    original_response: record.original_response,
+                    input: record.input,
+                    additional_args: AdditionalArgs {
+                        api_base: None,
+                        headers: None,
+                        complete_input_dict: Some(RawBody::Object(record.recognition_config)),
+                        request_str: None,
+                        openai_sdk: None,
+                        passthrough: IndexMap::new(),
+                    },
+                };
+                post_call(self.state, &call, self.env);
+                Ok(())
+            }
         }
     }
 }
 
 impl PrePostLogger<'_, '_> {
     fn record_pre(&mut self, record: RivaPreCall) -> Result<(), PrePostError> {
+        let fields = IndexMap::from([
+            (
+                RECOGNITION_CONFIG.to_owned(),
+                Json::Object(record.recognition_config),
+            ),
+            (
+                NVCF_FUNCTION_ID_SET.to_owned(),
+                Json::Bool(record.nvcf_function_id_set),
+            ),
+            (USE_SSL.to_owned(), record.use_ssl),
+        ]);
+        let additional_args = AdditionalArgs {
+            api_base: Some(record.api_base),
+            headers: None,
+            complete_input_dict: Some(RawBody::Object(fields)),
+            request_str: None,
+            openai_sdk: None,
+            passthrough: IndexMap::from([(
+                ATRANSCRIPTION_FIELD.to_owned(),
+                Json::Bool(record.atranscription),
+            )]),
+        };
         let call = PreCall {
             input: Json::Null,
             model: None,
-            additional_args: AdditionalArgs {
-                api_base: Some(record.api_base),
-                headers: None,
-                complete_input_dict: Some(RawBody::Object(IndexMap::from([
-                    (
-                        RECOGNITION_CONFIG.to_owned(),
-                        Json::Object(record.recognition_config),
-                    ),
-                    (
-                        NVCF_FUNCTION_ID_SET.to_owned(),
-                        Json::Bool(record.nvcf_function_id_set),
-                    ),
-                    (USE_SSL.to_owned(), record.use_ssl),
-                ]))),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::from([(
-                    ATRANSCRIPTION_FIELD.to_owned(),
-                    Json::Bool(record.atranscription),
-                )]),
-            },
+            additional_args,
         };
         pre_call(self.state, &call, self.env).map(drop)
-    }
-
-    fn record_post(&mut self, record: RivaPostCall) -> Result<(), PrePostError> {
-        let call = PostCall {
-            original_response: record.original_response,
-            input: record.input,
-            additional_args: AdditionalArgs {
-                api_base: None,
-                headers: None,
-                complete_input_dict: Some(RawBody::Object(record.recognition_config)),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
-        };
-        post_call(self.state, &call, self.env);
-        Ok(())
     }
 }
