@@ -1,0 +1,10 @@
+kind: helper
+name: dashscope-embedding-no-key
+call:
+  b8312:
+    op: dashscope_embedding
+    model: text-embedding-v3
+    input: hello
+    api_base: "{{upstream}}"
+env: {}
+compare: {ignore: []}
