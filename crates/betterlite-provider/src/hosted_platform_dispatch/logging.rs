@@ -1,3 +1,4 @@
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -8,7 +9,6 @@ use serde::de::DeserializeOwned;
 
 use crate::model_hub_dispatch::json;
 
-use super::context::CallLogging;
 use super::error::DispatchError;
 use super::handler::HandlerError;
 
@@ -24,7 +24,7 @@ where
 
 // _complete_fireworks_ai and _complete_together_ai log the handler error's text and the headers as they came
 pub(super) fn post(
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     messages: &[Message],
     error: &HandlerError,
     headers: Option<&Headers>,

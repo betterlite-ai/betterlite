@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-active-subjects-presented-key-seed
+call:
+  b4658:
+    operation: presented_key
+    headers:
+      - ["x-litellm-api-key", "Bearer sk-seed"]
+      - ["authorization", "Bearer sk-other"]
+calls:
+  - b4658:
+      operation: presented_key
+      headers:
+        - ["authorization", "bEaReR sk-seed"]
+env: {}
+compare: {ignore: []}

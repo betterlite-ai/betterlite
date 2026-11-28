@@ -9,15 +9,15 @@ use betterlite_cache::handler::call_types::call_type_name;
 use betterlite_cache::handler::retrieve::CacheSource;
 use betterlite_cache::handler::state::{CachingHandler, HandlerDependencies, OriginalFunction};
 use betterlite_config::sections::logging_privacy::Settings;
-use betterlite_core::caching::hit_callbacks::job::{CacheHitSuccessJob, OwnedSuccessHandler};
+use betterlite_core::caching::hit_callbacks::job::CacheHitSuccessJob;
 use betterlite_core::caching::lookup::error::TokenCountError;
 use betterlite_core::caching::lookup::hit::HitLogging;
 use betterlite_core::caching::lookup::services::{LookupServices, ResponseTokens};
-use betterlite_logging::exporter_options::redaction::ResponseStamp;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_success::owned::OwnedSuccessHandler;
 use betterlite_logging::registry::CallbackRegistry;
 use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
@@ -101,8 +101,8 @@ fn logging_state(scenario: &Scenario) -> Result<LoggingState, Box<HelperError>> 
 
 fn owned_handler(
     snapshots: &Arc<Mutex<Vec<Logged>>>,
-) -> Result<OwnedSuccessHandler, Box<HelperError>> {
-    Ok(OwnedSuccessHandler {
+) -> Result<Arc<OwnedSuccessHandler>, Box<HelperError>> {
+    Ok(Arc::new(OwnedSuccessHandler {
         registry: Arc::new(CallbackRegistry::new(10)),
         payload_builder: Arc::new(SnapshotBuilder {
             snapshots: Arc::clone(snapshots),
@@ -111,15 +111,10 @@ fn owned_handler(
         clock: Arc::new(FixedClock {
             now: DateTime::parse_from_rfc3339(FIXED_TIME).or_value_error()?,
         }),
-        failure_counters: Vec::new(),
         excluded_fields: Vec::new(),
         known_callback: Arc::new(|_name: &str| false),
-        stamp: ResponseStamp {
-            id: "chatcmpl-1".to_owned(),
-            created: 1_704_067_200,
-        },
         privacy: Settings::default(),
-    })
+    }))
 }
 
 pub(crate) fn hit_logging(

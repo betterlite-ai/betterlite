@@ -105,7 +105,7 @@ deny = [
   # Google's Rust SDK sends through its own client: google-cloud-auth for Vertex credentials (B1301), google-cloud-gax-internal for Speech (B1358)
   { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-oracle-core-ops", "betterlite-oracle-guardrails", "betterlite-oracle-http", "betterlite-oracle-openai", "betterlite-oracle-prompts", "betterlite-guardrails", "betterlite-secret-managers", "google-cloud-auth", "google-cloud-gax-internal", "hf-hub", "reqwest-middleware", "xet-client", "xet-runtime"] },
   { crate = "betterlite-router", wrappers = ["betterlite", "betterlite-oracle", "betterlite-python", "betterlite-router-fuzz", "betterlite-server"] },
-  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-backend", "betterlite-gateway", "betterlite-oracle", "betterlite-oracle-a2a", "betterlite-oracle-guardrails", "betterlite-oracle-logging", "betterlite-oracle-mcp", "betterlite-oracle-models", "betterlite-oracle-openapi", "betterlite-oracle-roi", "betterlite-oracle-server", "betterlite-server-fuzz"] },
+  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-backend", "betterlite-gateway", "betterlite-oracle", "betterlite-oracle-a2a", "betterlite-oracle-auth", "betterlite-oracle-guardrails", "betterlite-oracle-logging", "betterlite-oracle-mcp", "betterlite-oracle-models", "betterlite-oracle-openapi", "betterlite-oracle-roi", "betterlite-oracle-server", "betterlite-server-fuzz"] },
 ]
 [sources]
 unknown-registry = "deny"

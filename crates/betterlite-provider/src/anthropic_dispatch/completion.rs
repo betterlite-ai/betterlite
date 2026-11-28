@@ -5,15 +5,16 @@ use std::time::Duration;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
+use super::DispatchError;
 use super::base::{Environment, Globals, Surface, resolve_base, resolve_key};
 use super::config::selected_config;
-use super::{CallLogging, DispatchError};
 
 // Client and encoding handles stay in the caller's types across the native handler boundary.
 #[derive(Debug, Clone)]
@@ -60,7 +61,7 @@ pub trait CompletionHandler<Client, Encoding> {
     fn complete<'call>(
         &'call mut self,
         call: ResolvedCall<Client, Encoding>,
-        log: &'call mut CallLogging<'_, '_>,
+        log: &'call mut LogContext<'_, '_>,
     ) -> HandlerFuture<'call, Self::Reply, Self::Failure>;
 
     fn logged_response(reply: &Self::Reply) -> Result<Json, Self::Failure>;
@@ -71,7 +72,7 @@ pub fn complete<'call, Client, Encoding, Handler>(
     mut call: CompletionCall<Client, Encoding>,
     settings: &'call CompletionSettings<'_>,
     handler: &'call mut Handler,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> HandlerFuture<'call, Handler::Reply, DispatchError<Handler::Failure>>
 where
     Client: Send + 'call,

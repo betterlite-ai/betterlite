@@ -15,7 +15,7 @@ use betterlite_core::api::file_http_content::error::ContentError;
 use betterlite_core::api::file_http_content::service::buffered::retrieve_file_content;
 use betterlite_core::api::file_http_content::service::streaming::retrieve_content_streaming;
 use betterlite_core::api::file_http_content::service::{
-    ClientSource, ContentDeps, LogContext, PreparedContent, RetrieveCall, prepare,
+    ClientSource, ContentDeps, ContentTransport, LogContext, PreparedContent, RetrieveCall, prepare,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
@@ -203,7 +203,7 @@ async fn answer_operation<C, S>(
 ) -> Result<ContentReply, ContentWireError>
 where
     C: FileContentConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ContentTransport>,
 {
     match operation {
         ContentOperation::Buffered { .. } => Ok(ContentReply::Buffered(Box::new(

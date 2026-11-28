@@ -1,10 +1,11 @@
-use betterlite_core::api::eval_http::exchange::{EvalConnection, EvalLogging};
+use betterlite_core::api::eval_http::exchange::EvalConnection;
 use betterlite_core::api::eval_run_create_list::error::EvalRunCallError;
 use betterlite_core::api::eval_run_create_list::providers::{
     CreateRunCall, ListRunsCall, PendingCreateRun, PendingListRuns, RunTransport,
 };
 use betterlite_core::api::eval_run_http::{create_run_handler, list_runs_handler};
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 
 // B9371's two run handlers behind B3424's transport seam, over the session's pooled client.
 pub(super) struct HttpRunTransport<'client> {
@@ -16,7 +17,7 @@ macro_rules! run_handler {
     ($method:ident, $call:ident, $pending:ident, $handler:ident, payload $payload:ident $(, timeout $timeout:ident)?) => {
         fn $method<'call>(
             &'call self,
-            log: EvalLogging<'call, '_>,
+            log: LogContext<'call, '_>,
             call: $call<'call>,
         ) -> $pending<'call> {
             Box::pin(async move {

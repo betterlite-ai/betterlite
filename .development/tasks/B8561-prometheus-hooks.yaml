@@ -112,5 +112,5 @@ pitfalls:
   - "async_post_call_success_hook must stay empty: litellm_proxy_total_requests_metric is counted in the success event for streams and non-streams alike."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2250
   max_new_expects: 0

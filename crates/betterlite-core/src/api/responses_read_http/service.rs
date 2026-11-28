@@ -22,9 +22,8 @@ use self::facts::{body_text, status_facts, transport_facts};
 use self::request::{query_pairs, request_endpoint, select_client, wire_headers};
 use super::config::{ReadConfig, ReadParams, ReadResource};
 use super::error::ReadError;
-use crate::api::vector_store_http_write::error::{
-    ClientError, FailureFacts, handle_error, header_text,
-};
+use crate::api::vector_store_http_write::error::{FailureFacts, handle_error, header_text};
+use crate::api::vector_store_http_write::service::ClientSource;
 
 mod facts;
 mod proxied;
@@ -71,12 +70,6 @@ pub trait ReadTransport: Send + Sync {
         &self,
         request: ReadRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: ReadTransport;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
 
 pub struct ReadDeps<'deps, C: ReadConfig, S: ClientSource> {
@@ -224,7 +217,7 @@ fn log_pre_call(
 pub async fn send<C, S>(prepared: PreparedRead<'_, C, S>) -> Result<ReadOutcome, ReadError>
 where
     C: ReadConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     let PreparedRead {
         config,

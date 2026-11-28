@@ -1,11 +1,12 @@
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use indexmap::IndexMap;
 
 use super::error::EvalHttpError;
-use super::exchange::{EvalConnection, EvalExchange, EvalLogging};
+use super::exchange::{EvalConnection, EvalExchange};
 
 fn logged_headers(headers: &Headers) -> IndexMap<String, Json> {
     headers
@@ -26,7 +27,7 @@ fn complete_input_dict(fields: &Object) -> Result<RawBody, EvalHttpError> {
 pub(super) fn record_pre_call(
     connection: &EvalConnection<'_>,
     exchange: &EvalExchange<'_>,
-    log: &mut EvalLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<(), EvalHttpError> {
     // list_runs logs its query under `params`, beside the fields every eval pre-call records
     let passthrough = match exchange.params {

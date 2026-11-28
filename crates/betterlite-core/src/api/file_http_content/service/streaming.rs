@@ -7,8 +7,8 @@ use http::Method;
 use super::super::config::{FileContentConfig, StreamContext};
 use super::super::error::ContentError;
 use super::{
-    ClientSource, ContentRequest, ContentTransport as _, PreparedContent, decoded_body_headers,
-    facts, query,
+    ClientSource, ContentRequest, ContentTransport, PreparedContent, decoded_body_headers, facts,
+    query,
 };
 
 // async_retrieve_file_content_streaming: the prepared query overrides the transform's own, and the body stays unread until the caller iterates
@@ -19,7 +19,7 @@ pub async fn retrieve_content_streaming<C, S>(
 ) -> Result<FileContentStreamingResult, ContentError>
 where
     C: FileContentConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ContentTransport>,
 {
     let request = ContentRequest {
         method: Method::GET,

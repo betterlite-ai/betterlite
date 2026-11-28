@@ -1,13 +1,13 @@
 id: B10183
 milestone: R2 bug fixes
 title: The GenAI SDK session, its provider config and its clients move to betterlite-vertex, and B9800's call steps take a route type
-status: todo
+status: done
 depends_on: [B7844, B3489, B9800]
 file: tasks/B10183-genai-session-in-vertex.yaml
 covers: []
 parent: null
 split_from: B10178
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3411

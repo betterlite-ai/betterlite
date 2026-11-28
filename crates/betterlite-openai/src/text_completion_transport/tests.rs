@@ -5,6 +5,7 @@ mod support;
 use std::collections::BTreeMap;
 use std::future::Future;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -22,8 +23,8 @@ use super::call::{
 };
 use super::error::{ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure};
 use super::logging::{
-    CompletionLogger as _, PostCallRecord, PreCallRecord, PrePostLogger, ResponseKind,
-    SecretHeaders, base_hidden_params,
+    CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
+    base_hidden_params,
 };
 use super::sdk::{HttpClientSource, SdkArguments, SdkError, StatusError};
 use betterlite_http::client_kind::ClientKind;
@@ -427,7 +428,7 @@ fn stream_include_usage(logging: &mut LoggingState, options: Option<Json>) -> Op
     logging.stream_options = options;
     let redactor = support::redactor();
     let env = support::prepost_env(logging, &redactor, &support::DiscardingSink);
-    PrePostLogger {
+    LogContext {
         state: logging,
         env: &env,
     }
@@ -467,7 +468,7 @@ fn prepost_logger_records_the_call() {
 }
 
 fn pre_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>, headers: SecretHeaders) {
-    PrePostLogger {
+    LogContext {
         state: logging,
         env,
     }
@@ -500,7 +501,7 @@ fn post_call_is_logged(logging: &mut LoggingState, env: &PrePostEnv<'_>) {
         headers: SecretHeaders::default(),
         api_base: Some("https://host/v1".to_owned()),
     };
-    PrePostLogger {
+    LogContext {
         state: logging,
         env,
     }

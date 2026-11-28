@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::time::Duration;
 
+use betterlite_core::api::file_http_content::service::ClientSource;
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::decisions::Json;
@@ -9,7 +11,6 @@ use http::header::HeaderMap;
 use thiserror::Error;
 use url::Url;
 
-use super::error::ClientError;
 use crate::api::rerank_contracts::RerankLogging;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,12 +55,6 @@ pub trait RerankTransport: Send + Sync {
         request: RerankHttpRequest,
         logging: Option<&RerankLogging>,
     ) -> impl Future<Output = Result<UpstreamResponse, RerankSendError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: RerankTransport;
-
-    fn client(&self) -> Result<Self::Client, ClientError>;
 }
 
 pub(super) enum Selected<'client, Client> {

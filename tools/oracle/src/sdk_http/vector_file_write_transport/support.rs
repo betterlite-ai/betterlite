@@ -7,10 +7,10 @@ use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::vector_file_http_write::config::FileWriteConfig;
 use betterlite_core::api::vector_file_http_write::service::{
-    ClientSource, LogContext, PreparedWrite, WriteCall, WriteDeps, prepare,
+    LogContext, PreparedWrite, WriteCall, WriteDeps, prepare,
 };
 use betterlite_core::api::vector_store_http_write::error::ClientError;
-use betterlite_core::api::vector_store_http_write::service::ClientKind;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, ClientSource};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;

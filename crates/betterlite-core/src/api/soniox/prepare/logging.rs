@@ -1,10 +1,9 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::{AudioFile, get_audio_file_name};
 use betterlite_openai::openai_base_config::Object;
@@ -35,12 +34,7 @@ pub trait SonioxLogger {
     fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError>;
 }
 
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
-}
-
-impl SonioxLogger for PrePostLogger<'_, '_> {
+impl SonioxLogger for LogContext<'_, '_> {
     fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
         match event {
             SonioxEvent::PreCall(record) => {
