@@ -75,6 +75,7 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
 use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
+use crate::auth::failures::request_model_failure;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
@@ -152,6 +153,7 @@ fn rewritten_body(request: &mut Request<Body>, body: Option<Bytes>) -> Option<By
     rewritten
 }
 
+#[rustfmt::skip] // the model stages share one arm, kept on one line to stay within clippy's line limit
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -171,12 +173,11 @@ fn stage_input(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
-        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
-            model_pattern_input(backend, request, authenticated, resolver)
-        }
+        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => model_pattern_input(backend, request, authenticated, resolver),
         AuthBackend::AuthModelGrants => auth_model_grants::stage_input(request, authenticated),
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
+        AuthBackend::AuthPricing => auth_pricing::stage_input(request, authenticated, body),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
@@ -211,13 +212,7 @@ fn model_pattern_input(
         .ok_or(AuthenticationFailure::Missing)?;
     let stage = model_stage_input(request, context.clone(), resolver);
     // the request model stage only resolves, so it runs in the shared input builder
-    let requested = match resolve(&stage) {
-        Ok(requested) => requested,
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            return Err(StageFailure::from(AuthenticationFailure::Missing));
-        }
-    };
+    let requested = resolve(&stage).map_err(|error| request_model_failure(&error))?;
     if backend == AuthBackend::AuthRequestModels {
         return Ok(StageInput::AuthRequestModels(Box::new(stage)));
     }
@@ -248,13 +243,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
         StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
-        StageInput::AuthTagBudgets(stage) => Box::pin(auth_tag_budgets::prefetched(stage)),
-        StageInput::AuthKeyBudgets(stage) => Box::pin(auth_key_budgets::prefetched(stage)),
-        StageInput::AuthModelBudgets(stage) => Box::pin(auth_model_budgets::prefetched(stage)),
-        StageInput::TeamBudgetAdmission(stage) => {
-            Box::pin(team_budget_admission::prefetched(stage))
-        }
-        StageInput::AuthTenantBudgets(stage) => Box::pin(auth_tenant_budgets::prefetched(stage)),
         StageInput::AuthOrgLookup(stage) => Box::pin(auth_org_lookup::prefetched(stage)),
         StageInput::AuthEndUserIdentity(stage) => {
             Box::pin(StageInput::prefetch_end_user_identity(stage))
@@ -265,6 +253,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         }
         StageInput::AuthModelGrants(stage) => Box::pin(auth_model_grants::prefetched(stage)),
         StageInput::EntityModelAccess(stage) => Box::pin(entity_model_access::prefetched(stage)),
+        StageInput::AuthPricing(stage) => Box::pin(auth_pricing::prefetched(stage)),
+        budget @ (StageInput::AuthTagBudgets(_)
+        | StageInput::AuthKeyBudgets(_)
+        | StageInput::AuthModelBudgets(_)
+        | StageInput::TeamBudgetAdmission(_)
+        | StageInput::AuthTenantBudgets(_)) => Box::pin(budget.prefetch_budget()),
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)

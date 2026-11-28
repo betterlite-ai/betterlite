@@ -1,0 +1,68 @@
+kind: helper
+name: auth-pricing-ptu-not-free
+call:
+  auth_pricing:
+    calls:
+      # a deployment that bills PTU per hour is not free even with both token rates at zero
+      - function: zero_cost
+        router:
+          groups:
+            ptu: {input: 0.0, output: 0.0}
+          deployments:
+            ptu:
+              - model_info: {id: dep-ptu, ptu_count: 5, cost_per_ptu_per_hour: 2.5}
+          costs:
+            dep-ptu: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: ptu
+      # zero values count as configured PTU fields, since only null and absent are ignored
+      - function: zero_cost
+        router:
+          groups:
+            ptu-zero: {input: 0.0, output: 0.0}
+          deployments:
+            ptu-zero:
+              - model_info: {id: dep-ptu-zero, ptu_count: 0, cost_per_ptu_per_hour: 0.0}
+          costs:
+            dep-ptu-zero: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: ptu-zero
+      # only one of the two fields leaves the model free
+      - function: zero_cost
+        router:
+          groups:
+            ptu-half: {input: 0.0, output: 0.0}
+          deployments:
+            ptu-half:
+              - model_info: {id: dep-ptu-half, ptu_count: 5}
+          costs:
+            dep-ptu-half: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: ptu-half
+      # a null field is not a configured field
+      - function: zero_cost
+        router:
+          groups:
+            ptu-null: {input: 0.0, output: 0.0}
+          deployments:
+            ptu-null:
+              - model_info: {id: dep-ptu-null, ptu_count: 5, cost_per_ptu_per_hour: null}
+          costs:
+            dep-ptu-null: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: ptu-null
+      # PTU fields without any explicit token price still leave the model not explicit
+      - function: zero_cost
+        router:
+          groups:
+            ptu-bare: {input: 0.0, output: 0.0}
+          deployments:
+            ptu-bare:
+              - model_info: {id: dep-ptu-bare, ptu_count: 5, cost_per_ptu_per_hour: 2.5}
+          costs:
+            dep-ptu-bare: {id: dep-ptu-bare}
+          cache: {}
+        model: ptu-bare
+env: {}
+compare:
+  ignore: []

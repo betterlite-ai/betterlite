@@ -2,6 +2,7 @@ use axum::Json;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
+use betterlite_auth::auth_request_models::catalog::CatalogError;
 use betterlite_core::api::api_boundaries::ApiLimitError;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_error::proxy_exception::ProxyException;
@@ -20,6 +21,7 @@ pub(crate) enum StageFailure {
     TrustedNetwork(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
+    Pricing(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
     VirtualKeyRoutes(Box<ProxyException>),
@@ -60,6 +62,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
+        | StageFailure::Pricing(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)
@@ -76,6 +79,12 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::OauthTokens(exception)
         | StageFailure::EndUserIdentity(exception) => denial_response(exception),
     }
+}
+
+// the request model stages share one failure: the caller is known but the request names no model
+pub(crate) fn request_model_failure(error: &CatalogError) -> StageFailure {
+    tracing::debug!(error = %error, "the request model stage failed");
+    StageFailure::from(AuthenticationFailure::Missing)
 }
 
 // the body stream itself failed, so there is nothing left to forward; the buffer rejection is a bare 400

@@ -1,0 +1,74 @@
+kind: helper
+name: auth-pricing-auth-explicit-zero-cost
+call:
+  auth_pricing:
+    calls:
+      # a charged model does not skip, and spend at the ceiling is not over it
+      - function: request_checks
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: charged, user: user-1}
+        model: charged
+        max_budget: 10.0
+        global_spend: 10.0
+      # a cent over the ceiling denies with the proxy budget envelope
+      - function: request_checks
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: charged, user: user-1}
+        model: charged
+        max_budget: 10.0
+        global_spend: 10.01
+      # an explicitly zero-cost model skips the budget entirely
+      - function: request_checks
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: free, user: user-1}
+        model: free
+        max_budget: 10.0
+        global_spend: 10.01
+      # the cache records what the skip evaluated and replays it
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache:
+            free: true
+        model: free
+      # a zero group rate without an explicit price does not skip
+      - function: unpriced
+        router:
+          groups:
+            sparse: {input: 0.0, output: 0.0}
+          deployments:
+            sparse:
+              - model_info: {id: dep-sparse}
+          costs:
+            dep-sparse: {id: dep-sparse}
+          cache: {}
+        model: sparse
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,59 @@
+kind: helper
+name: auth-pricing-mixed-model-list
+call:
+  auth_pricing:
+    calls:
+      # every candidate has to be free; a charged one ends the walk and is cached false
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+            charged: {input: 0.0001, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+            charged:
+              - model_info: {id: dep-charged}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+            dep-charged: {input_cost_per_token: 0.0001, output_cost_per_token: 0.0}
+          cache: {}
+        model: [free, charged]
+      # a charge only on the output rate is enough to end the walk
+      - function: zero_cost
+        router:
+          groups:
+            output-charged: {input: 0.0, output: 2.0}
+          deployments:
+            output-charged:
+              - model_info: {id: dep-output}
+          costs:
+            dep-output: {input_cost_per_token: 0.0, output_cost_per_token: 2.0}
+          cache: {}
+        model: [output-charged, free]
+      # a repeated free model is answered from the cache the first one filled
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: [free, free]
+      # a cached false candidate wins over a missing one, and an unknown candidate is never skipped
+      - function: zero_cost
+        router:
+          cache:
+            cached-charged: false
+        model: [cached-charged, ghost]
+      # the empty list has no candidate to charge
+      - function: zero_cost
+        router:
+          cache: {}
+        model: []
+env: {}
+compare:
+  ignore: []
