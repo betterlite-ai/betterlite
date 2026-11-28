@@ -1,0 +1,11 @@
+kind: helper
+name: item-reference-input
+call:
+  b10153:
+    state: armed
+    payload:
+      input:
+        - type: item_reference
+          id: msg_1
+env: {}
+compare: {ignore: []}

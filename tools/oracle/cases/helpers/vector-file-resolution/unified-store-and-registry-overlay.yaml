@@ -1,0 +1,65 @@
+kind: helper
+name: vector-file-resolution-unified-store-and-registry-overlay
+call:
+  vector_file_resolution:
+    calls:
+      - function: unified_store_and_registry_overlay
+        data: {model: old, vector_store_id: vs_request}
+        vector_store_id: "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1aWQtNTttb2RlbF9pZCxzdG9yZV9tb2RlbDtyZXNvdXJjZV9pZCx2c19wcm92aWRlcjs"
+      - function: unified_store_and_registry_overlay
+        data: {vector_store_id: vs_request}
+        vector_store_id: "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1aWQtNjt0YXJnZXRfbW9kZWxfbmFtZXMsbTE7"
+        registry:
+          - {vector_store_id: "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1aWQtNjt0YXJnZXRfbW9kZWxfbmFtZXMsbTE7", custom_llm_provider: openai, litellm_params: {api_key: sk-registry}}
+      - function: unified_store_and_registry_overlay
+        data: {vector_store_id: vs_request}
+        vector_store_id: "bGl0ZWxsbV9wcm94eTpmaWxl"
+        registry:
+          - {vector_store_id: "bGl0ZWxsbV9wcm94eTpmaWxl", custom_llm_provider: openai}
+      - function: unified_store_and_registry_overlay
+        data: {custom_llm_provider: openai}
+        vector_store_id: vs_registry
+        managed_store: {vector_store_id: vs_other, custom_llm_provider: azure, litellm_params: {api_key: sk-managed}}
+        registry:
+          - {vector_store_id: vs_registry, custom_llm_provider: openai, litellm_params: {api_key: sk-registry}}
+      - function: unified_store_and_registry_overlay
+        data: {custom_llm_provider: openai}
+        vector_store_id: vs_registry
+        registry:
+          - {vector_store_id: vs_registry, custom_llm_provider: azure, litellm_params: {api_key: sk-registry}}
+        should_lookup_registry: false
+      - function: unified_store_and_registry_overlay
+        data: {custom_llm_provider: openai, litellm_credential_name: keep}
+        vector_store_id: vs_null
+        registry:
+          - {vector_store_id: vs_null, custom_llm_provider: null, litellm_credential_name: null}
+      - function: unified_store_and_registry_overlay
+        data: {api_key: sk-request}
+        vector_store_id: vs_params
+        registry:
+          - {vector_store_id: vs_params, custom_llm_provider: openai, litellm_credential_name: cred, litellm_params: {custom_llm_provider: azure, litellm_credential_name: other, api_base: "http://params"}}
+      - function: unified_store_and_registry_overlay
+        data: {api_key: sk-request}
+        vector_store_id: vs_params
+        registry:
+          - {vector_store_id: vs_params, litellm_params: null}
+      - function: unified_store_and_registry_overlay
+        data: {api_key: sk-request}
+        vector_store_id: vs_params
+        managed_store: {vector_store_id: vs_params}
+      - function: unified_store_and_registry_overlay
+        data: {api_key: sk-request}
+        vector_store_id: vs_missing
+        registry:
+          - {vector_store_id: vs_other, custom_llm_provider: openai}
+      - function: unified_store_and_registry_overlay
+        data: {api_key: sk-request}
+        vector_store_id: vs_missing
+        should_lookup_registry: null
+      - function: unified_store_and_registry_overlay
+        data: {api_key: sk-request}
+        vector_store_id: vs_extra
+        registry:
+          - {vector_store_id: vs_extra, custom_llm_provider: openai, team_id: team-1, vector_store_name: name, is_config: true}
+env: {}
+compare: {ignore: []}

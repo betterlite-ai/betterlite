@@ -94,6 +94,7 @@ out_of_scope:
 - B088 owns create/retrieve/list HTTP handlers; B1141 owns config and complete cancellation SDK functions. Remove fine_tuning/main.py coverage from this route entry.
 - B004 owns resolved-model execution and common headers; B1100 owns raw JSON decoding and B2400 exception mapping.
 pitfalls:
+- "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
 - The advertised provider query parameter is never read by cancel.
 - Missing provider config match falls through to the SDK's openai default, while an unset configuration raises.
 - Every caught HTTPException is converted to internal_server_error, even when its status is 400.

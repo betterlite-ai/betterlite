@@ -1,0 +1,9 @@
+kind: helper
+name: string-input
+call:
+  b10153:
+    state: armed
+    payload:
+      input: summarize the thread
+env: {}
+compare: {ignore: []}

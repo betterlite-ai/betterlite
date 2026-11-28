@@ -1,0 +1,8 @@
+kind: helper
+name: compaction-state-absent-seed
+call:
+  b10153:
+    state: absent
+    payload: {}
+env: {}
+compare: {ignore: []}
