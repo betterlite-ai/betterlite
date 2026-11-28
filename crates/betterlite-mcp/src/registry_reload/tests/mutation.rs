@@ -74,6 +74,48 @@ async fn mutation_add_builds_with_plain_env_vars() {
 }
 
 #[tokio::test]
+async fn mutation_add_warns_when_stdio_is_blocked() {
+    let mut fixture = test_fixture();
+    fixture.stdio.blocked = true;
+    let (captured, _guard) = capture();
+    let table =
+        row(r#"{"server_id":"srv-1","transport":"stdio","command":"npx","alias":"blocked"}"#);
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    mutator.add(&table).await.unwrap();
+    let held = fixture.db_server("srv-1").await.unwrap();
+    assert_eq!(held.fields.name, "blocked");
+    assert!(
+        captured
+            .text()
+            .contains("MCP server 'blocked' will not start:")
+    );
+}
+
+#[tokio::test]
+async fn mutation_add_registers_openapi_tools() {
+    let fixture = test_fixture();
+    let spec = corpus("petstore.json");
+    let source = format!(
+        r#"{{"server_id":"srv-1","transport":"http","url":"https://api.test","spec_path":"{spec}","server_name":"test_server"}}"#
+    );
+    fixture
+        .lister
+        .plan("srv-1", ToolPlan::Tools(strings(&["test_server-listpets"])));
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    mutator.add(&row(&source)).await.unwrap();
+    assert!(fixture.tools.tools().contains("test_server-listpets"));
+    fixture.settle().await;
+    assert_eq!(fixture.lister.calls(), strings(&["srv-1"]));
+    let owners = fixture.owners.read().unwrap().mapping.clone();
+    assert_eq!(
+        owners.get("test_server-listpets").map(String::as_str),
+        Some("test_server")
+    );
+}
+
+#[tokio::test]
 async fn mutation_add_returns_build_failure_after_the_debug_log() {
     let fixture = test_fixture();
     let (captured, _guard) = capture();
