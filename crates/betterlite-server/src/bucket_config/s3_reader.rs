@@ -17,9 +17,8 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::s3_transport::download::EMPTY_SHA256;
 use betterlite_logging::s3_transport::error::S3TransportError;
-use betterlite_logging::s3_transport::signing::{
-    Clock, Credentials as SigningCredentials, RequestToSign, SystemClock, sign_request,
-};
+use betterlite_logging::s3_transport::signing::{Clock, S3_SERVICE, SystemClock};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use url::Url;
@@ -126,7 +125,7 @@ impl S3Get for ProxiedS3Get {
 pub struct S3Reader {
     pub bucket_name: String,
     pub region: String,
-    pub credentials: Option<SigningCredentials>,
+    pub credentials: Option<Credentials>,
     pub transport: Arc<dyn S3Get>,
     pub clock: Arc<dyn Clock>,
 }
@@ -140,11 +139,7 @@ impl S3Reader {
     ) -> Self {
         let region = region_from_environment(environment);
         let credentials = match resolve_credentials(&region, environment).await {
-            Ok(credentials) => Some(SigningCredentials {
-                access_key_id: credentials.access_key_id,
-                secret_access_key: credentials.secret_access_key,
-                session_token: credentials.session_token,
-            }),
+            Ok(credentials) => Some(credentials),
             Err(error) => {
                 tracing::error!(
                     bucket_name,
@@ -166,18 +161,20 @@ impl S3Reader {
     fn signed_headers(
         &self,
         url: &str,
-        credentials: &SigningCredentials,
+        credentials: &Credentials,
     ) -> Result<Vec<(String, String)>, S3TransportError> {
         let prepared = [(CONTENT_SHA256_HEADER.to_owned(), EMPTY_SHA256.to_owned())];
-        let request = RequestToSign {
+        let signed = sign_request(&Signable {
             method: METHOD,
             url,
             headers: &prepared,
-            content_sha256: EMPTY_SHA256,
+            body: &[],
+            service: S3_SERVICE,
             region: &self.region,
+            credentials,
+            mode: SigningMode::S3SigV4Auth,
             now: self.clock.now(),
-        };
-        let signed = sign_request(&request, credentials)?;
+        })?;
         let mut headers = Vec::with_capacity(prepared.len().saturating_add(signed.len()));
         headers.extend(prepared);
         headers.extend(signed);

@@ -105,7 +105,7 @@ async fn an_s3_module_is_signed_and_written_to_the_local_path() {
         transport
             .headers()
             .iter()
-            .any(|(name, _)| name == "authorization")
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
     );
 }
 
@@ -141,7 +141,7 @@ async fn each_s3_download_signs_its_own_request() {
         requests.iter().all(|request| request
             .headers
             .iter()
-            .any(|(name, _)| name == "authorization")),
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))),
         "each request is signed: {requests:?}"
     );
 }

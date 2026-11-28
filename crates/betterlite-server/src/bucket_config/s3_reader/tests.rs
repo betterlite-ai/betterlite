@@ -52,6 +52,16 @@ fn credentials() -> Credentials {
     }
 }
 
+fn signed_header<'headers>(
+    headers: &'headers [(String, String)],
+    name: &str,
+) -> Option<&'headers str> {
+    headers
+        .iter()
+        .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
 fn reader(transport: Arc<FakeS3>, bucket_name: &str) -> S3Reader {
     S3Reader {
         bucket_name: bucket_name.to_owned(),
@@ -245,11 +255,11 @@ async fn a_signed_get_carries_the_sigv4_headers() {
         headers.first(),
         Some(&("x-amz-content-sha256".to_owned(), EMPTY_SHA256.to_owned()))
     );
-    assert!(headers.contains(&("x-amz-date".to_owned(), "20231114T221320Z".to_owned())));
-    let authorization = headers
-        .iter()
-        .find(|(name, _)| name == "authorization")
-        .map(|(_, value)| value.as_str());
+    assert_eq!(
+        signed_header(&headers, "x-amz-date"),
+        Some("20231114T221320Z")
+    );
+    let authorization = signed_header(&headers, "authorization");
     assert_eq!(
         authorization,
         Some(
@@ -273,7 +283,10 @@ async fn a_signed_get_carries_the_session_token() {
         )
         .unwrap();
 
-    assert!(headers.contains(&("x-amz-security-token".to_owned(), "token".to_owned())));
+    assert_eq!(
+        signed_header(&headers, "x-amz-security-token"),
+        Some("token")
+    );
 }
 
 #[tokio::test]
@@ -288,10 +301,10 @@ async fn a_get_with_a_key_needing_encoding_is_signed_as_sent() {
         transport.urls(),
         vec!["https://bucket.s3.us-east-1.amazonaws.com/team%20dir/config.yaml".to_owned()]
     );
-    assert!(
-        transport
-            .headers()
-            .contains(&("x-amz-date".to_owned(), "20231114T221320Z".to_owned()))
+    let headers = transport.headers();
+    assert_eq!(
+        signed_header(&headers, "x-amz-date"),
+        Some("20231114T221320Z")
     );
 }
 
