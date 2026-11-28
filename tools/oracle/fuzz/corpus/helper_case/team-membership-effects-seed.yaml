@@ -1,0 +1,14 @@
+kind: helper
+name: team-membership-effects-seed
+call:
+  b10140:
+    team_alias: Alpha
+    members:
+      - {"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "admin"}
+      - {"user_id": null, "user_email": "test-2@example.com", "role": "user"}
+calls:
+  - b10140:
+      team_alias: null
+      members: []
+env: {}
+compare: {ignore: []}

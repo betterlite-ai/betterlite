@@ -1,0 +1,34 @@
+kind: helper
+name: chat-mcp-followup-order
+call:
+  b10123:
+    original_messages:
+      - role: user
+        content: null
+        name: recall
+      - role: user
+        content: weather in Oslo?
+    body:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1
+      model: gpt-4o
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: null
+            refusal: "no"
+            tool_calls:
+              - id: call_1
+                type: function
+                function:
+                  name: lookup
+                  arguments: ''
+          finish_reason: tool_calls
+    tool_results:
+      - tool_call_id: call_1
+        result: sunny
+        name: lookup
+env: {}
+compare: {ignore: []}

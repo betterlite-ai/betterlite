@@ -1,0 +1,10 @@
+kind: helper
+name: identity-store-principal-projection
+call:
+  identity_store:
+    aspect: principal
+    key: {token: sk-hashed-corpus, key_name: sk-corpus, user_id: u1, team_id: t1}
+    auth_method: api_key
+    scopes: [read, read]
+env: {}
+compare: {ignore: []}

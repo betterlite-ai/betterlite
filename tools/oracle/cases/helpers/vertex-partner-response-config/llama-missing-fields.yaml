@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-partner-response-config-llama-missing-fields
+call:
+  b10159:
+    publisher: openapi
+    model: meta/llama-3.1-405b-instruct-maas
+    status: 200
+    raw_text: |
+      {"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}
+    headers: {x-request-id: req-b10159}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+env: {}
+compare: {ignore: []}

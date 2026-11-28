@@ -4,6 +4,7 @@ pub mod eval_deployments;
 pub mod evals;
 pub mod gateway_compaction;
 pub mod google;
+pub mod google_agents;
 pub mod google_count_tokens;
 pub mod google_generation;
 pub mod google_sdk_call;
