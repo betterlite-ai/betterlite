@@ -36,8 +36,9 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2440-L2462
   - what: >-
-      A request base URL whose authority urlparse rejects, an unmatched IPv6 bracket, is kept as given and the
-      root route answers, where Python's urlparse raises and LiteLLM's root route answers 500.
+      A request base URL whose authority python_url rejects, an unmatched IPv6 bracket or a bracketed host that
+      is not an IPv6 address, is kept as given and the root route answers, where Python's urlparse raises and
+      LiteLLM's root route answers 500.
     why: >-
       The base URL comes from the request, so a malformed Host header should not turn discovery into a server
       error; the kept text names the input that could not be parsed.
