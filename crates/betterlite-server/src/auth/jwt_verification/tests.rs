@@ -31,7 +31,9 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use super::stage_input;
-use crate::auth::auth_identity::{AuthBackend, INSTALLED_STAGES, StageFailure, dispatch};
+use crate::auth::auth_identity::{
+    AuthBackend, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
+};
 use crate::auth::prefetch_stage;
 use crate::routes;
 use crate::routes::tests::state_for;
@@ -170,6 +172,20 @@ fn chat_application(config: &Config, reached: &Arc<AtomicBool>) -> Router {
         chat,
         Router::new(),
     )
+}
+
+#[test]
+fn stage_input_debug_marks_presence_without_the_token() {
+    let request = request_with(TOKEN, SourceReply::Key(jwk()));
+    let StageInput::JwtVerification(stage) = stage_input(&request) else {
+        panic!("the JWT verification layer keeps its own stage input");
+    };
+    let debug = format!("{stage:?}");
+    assert!(debug.contains("verifier_present: true"), "{debug}");
+    assert!(debug.contains("source_present: true"), "{debug}");
+    assert!(debug.contains("token_present: true"), "{debug}");
+    assert!(debug.contains("verified: false"), "{debug}");
+    assert!(!debug.contains(TOKEN), "{debug}");
 }
 
 #[tokio::test]

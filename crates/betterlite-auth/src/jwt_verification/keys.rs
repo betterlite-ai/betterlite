@@ -192,7 +192,7 @@ fn verify_with_certificate(
 }
 
 // x509-parser keeps DER INTEGER bytes as written, and a leading zero only pads the unsigned value.
-fn unsigned(bytes: &[u8]) -> &[u8] {
+pub(super) fn unsigned(bytes: &[u8]) -> &[u8] {
     match bytes {
         [0_u8, rest @ ..] if !rest.is_empty() => rest,
         _ => bytes,

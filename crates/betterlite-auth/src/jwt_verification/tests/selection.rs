@@ -328,6 +328,25 @@ async fn unscoped_warning_once() {
     );
 }
 
+#[test]
+fn audience_only_scope_stays_quiet_and_builds_partial_options() {
+    let (logs, _guard) = capture_logs();
+    let h = harness(settings(
+        Some("litellm-proxy"),
+        None,
+        JwtAuthSettings::default(),
+    ));
+    let kwargs = h.verifier.build_decode_kwargs();
+    assert_eq!(
+        kwargs.options,
+        Some(DecodeOptions {
+            verify_aud: None,
+            verify_iss: Some(false),
+        })
+    );
+    assert_eq!(logs.warnings(), 0);
+}
+
 #[tokio::test]
 async fn unmatched_issuer_fallback() {
     let (logs, _guard) = capture_logs();

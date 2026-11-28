@@ -1,12 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use crate::jwt_verification::decode::{
-    DecodeError, MAX_SIGNED_JWT_BYTES, MAX_SIGNED_JWT_DEPTH, decode_signed_jwt,
+    DecodeError, JwtHeader, MAX_SIGNED_JWT_BYTES, MAX_SIGNED_JWT_DEPTH, decode_signed_jwt,
 };
 use crate::jwt_verification::errors::{VerificationError, into_proxy_exception};
 
@@ -94,4 +96,70 @@ fn decodes_jwk_and_compact_payload() {
 fn replays_the_jwt_verification_corpus(#[files("fuzz/corpus/jwt_verification/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     drop(decode_signed_jwt(&bytes));
+}
+
+fn encoded(text: &str) -> String {
+    URL_SAFE_NO_PAD.encode(text.as_bytes())
+}
+
+fn header_of(header: &str, payload_segment: &str) -> Result<JwtHeader, DecodeError> {
+    JwtHeader::parse(&format!("{}.{}.AAAA", encoded(header), payload_segment))
+}
+
+#[test]
+fn header_byte_limit_is_inclusive_of_the_limit() {
+    let exact = "a".repeat(MAX_SIGNED_JWT_BYTES);
+    assert_eq!(
+        JwtHeader::parse(&exact).unwrap_err().to_string(),
+        "the signed JWT input has fewer than three segments"
+    );
+    let mut past = exact;
+    past.push('a');
+    assert_eq!(
+        JwtHeader::parse(&past).unwrap_err().to_string(),
+        format!(
+            "the signed JWT input is {len} bytes, over the {MAX_SIGNED_JWT_BYTES}-byte limit",
+            len = past.len()
+        )
+    );
+}
+
+#[test]
+fn detached_payload_requires_an_empty_segment() {
+    let valid = header_of(r#"{"alg":"RS256","b64":false,"crit":["b64"]}"#, "").unwrap();
+    assert_eq!(valid.algorithm.as_deref(), Some("RS256"));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","b64":false}"#, &encoded("{}")),
+        Err(DecodeError::Header)
+    ));
+}
+
+#[test]
+fn critical_headers_name_only_a_present_b64_parameter() {
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","crit":["b64"]}"#, &encoded("{}")),
+        Err(DecodeError::Header)
+    ));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","b64":false,"crit":["exp"]}"#, ""),
+        Err(DecodeError::Header)
+    ));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","crit":"b64"}"#, &encoded("{}")),
+        Err(DecodeError::Header)
+    ));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","b64":false,"crit":[]}"#, ""),
+        Err(DecodeError::Header)
+    ));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","b64":false,"crit":[1]}"#, ""),
+        Err(DecodeError::Header)
+    ));
+}
+
+#[test]
+fn an_invalid_payload_segment_fails_the_header_parse() {
+    let error = header_of(r#"{"alg":"RS256"}"#, "!!!").unwrap_err();
+    assert!(matches!(error, DecodeError::Claims(_)));
 }

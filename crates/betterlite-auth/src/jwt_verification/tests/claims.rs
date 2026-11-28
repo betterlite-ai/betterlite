@@ -1,6 +1,8 @@
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
-use betterlite_config::sections::jwt_settings::records::IssuerConfig;
+use betterlite_config::sections::jwt_settings::records::{IssuerConfig, Selector};
 
+use crate::jwt_verification::claims::{ClaimChecks, validate_claims};
+use crate::jwt_verification::errors::VerificationError;
 use crate::jwt_verification::normalize::strip_internal_claims;
 use crate::passthrough::caller_headers::header_sets::LITELLM_INTERNAL_CLAIMS;
 
@@ -179,4 +181,225 @@ async fn mappings_read_original_payload() {
         Some(fixtures::ISSUER_A)
     );
     assert!(!fields.contains_key("_litellm_org_id"));
+}
+
+fn validation_detail(payload: &str, checks: &ClaimChecks<'_>) -> String {
+    match validate_claims(&document(payload), checks) {
+        Err(VerificationError::Validation { detail }) => detail,
+        other => panic!("expected a validation error, got {other:?}"),
+    }
+}
+
+#[test]
+fn temporal_claims_use_zero_leeway() {
+    let audience = audience_one("litellm-proxy");
+    let checks = ClaimChecks {
+        audience: audience.as_ref(),
+        issuer: None,
+        verify_aud: true,
+        verify_iss: false,
+        now: 100.0,
+    };
+    validate_claims(
+        &document(r#"{"exp":101,"iat":100,"nbf":100,"aud":"litellm-proxy"}"#),
+        &checks,
+    )
+    .unwrap();
+    validate_claims(
+        &document(r#"{"exp":101,"iat":99,"nbf":99,"aud":"litellm-proxy"}"#),
+        &checks,
+    )
+    .unwrap();
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"iat":101,"aud":"litellm-proxy"}"#, &checks),
+        "The token is not yet valid (iat)"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"nbf":101,"aud":"litellm-proxy"}"#, &checks),
+        "The token is not yet valid (nbf)"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"iat":"soon","aud":"litellm-proxy"}"#, &checks),
+        "Issued At claim (iat) must be an integer."
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"nbf":"soon","aud":"litellm-proxy"}"#, &checks),
+        "Not Before claim (nbf) must be an integer."
+    );
+}
+
+#[test]
+fn expiration_uses_zero_leeway_and_requires_an_integer() {
+    let audience = audience_one("litellm-proxy");
+    let checks = ClaimChecks {
+        audience: audience.as_ref(),
+        issuer: None,
+        verify_aud: true,
+        verify_iss: false,
+        now: 100.0,
+    };
+    assert_eq!(
+        validation_detail(r#"{"iat":99,"nbf":99,"aud":"litellm-proxy"}"#, &checks),
+        "Token is missing the \"exp\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":"soon","aud":"litellm-proxy"}"#, &checks),
+        "Expiration Time claim (exp) must be an integer."
+    );
+    let expired = validate_claims(&document(r#"{"exp":100,"aud":"litellm-proxy"}"#), &checks);
+    assert!(matches!(expired, Err(VerificationError::Expired)));
+    validate_claims(&document(r#"{"exp":101,"aud":"litellm-proxy"}"#), &checks).unwrap();
+}
+
+#[test]
+fn issuer_checks_follow_the_configured_value() {
+    let checks = ClaimChecks {
+        audience: None,
+        issuer: Some("https://idp.example.com"),
+        verify_aud: false,
+        verify_iss: true,
+        now: 100.0,
+    };
+    validate_claims(
+        &document(r#"{"exp":101,"iss":"https://idp.example.com"}"#),
+        &checks,
+    )
+    .unwrap();
+    assert_eq!(
+        validation_detail(r#"{"exp":101}"#, &checks),
+        "Token is missing the \"iss\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"iss":1}"#, &checks),
+        "Issuer must be a string."
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"iss":"https://evil.example.com"}"#, &checks),
+        "Invalid issuer"
+    );
+    let unset = ClaimChecks {
+        audience: None,
+        issuer: None,
+        verify_aud: false,
+        verify_iss: true,
+        now: 100.0,
+    };
+    validate_claims(&document(r#"{"exp":101}"#), &unset).unwrap();
+}
+
+#[test]
+fn unconfigured_audience_rejects_only_a_truthy_claim() {
+    let checks = ClaimChecks {
+        audience: None,
+        issuer: None,
+        verify_aud: true,
+        verify_iss: false,
+        now: 100.0,
+    };
+    validate_claims(&document(r#"{"exp":101,"aud":null}"#), &checks).unwrap();
+    validate_claims(&document(r#"{"exp":101,"aud":""}"#), &checks).unwrap();
+    validate_claims(&document(r#"{"exp":101,"aud":[]}"#), &checks).unwrap();
+    validate_claims(&document(r#"{"exp":101,"aud":false}"#), &checks).unwrap();
+    validate_claims(&document(r#"{"exp":101,"aud":0}"#), &checks).unwrap();
+    validate_claims(&document(r#"{"exp":101}"#), &checks).unwrap();
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":true}"#, &checks),
+        "Invalid audience"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"litellm-proxy"}"#, &checks),
+        "Invalid audience"
+    );
+}
+
+#[test]
+fn configured_audience_requires_a_matching_token_value() {
+    let audience = audience_one("litellm-proxy");
+    let checks = ClaimChecks {
+        audience: audience.as_ref(),
+        issuer: None,
+        verify_aud: true,
+        verify_iss: false,
+        now: 100.0,
+    };
+    assert_eq!(
+        validation_detail(r#"{"exp":101}"#, &checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":null}"#, &checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":""}"#, &checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":[]}"#, &checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":[1]}"#, &checks),
+        "Invalid claim format in token"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":1}"#, &checks),
+        "Invalid claim format in token"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"other"}"#, &checks),
+        "Invalid audience"
+    );
+    validate_claims(&document(r#"{"exp":101,"aud":"litellm-proxy"}"#), &checks).unwrap();
+    validate_claims(
+        &document(r#"{"exp":101,"aud":["litellm-proxy","other"]}"#),
+        &checks,
+    )
+    .unwrap();
+
+    let many = Some(Selector::Many(vec![
+        "first".to_owned(),
+        "litellm-proxy".to_owned(),
+    ]));
+    let many_checks = ClaimChecks {
+        audience: many.as_ref(),
+        issuer: None,
+        verify_aud: true,
+        verify_iss: false,
+        now: 100.0,
+    };
+    validate_claims(
+        &document(r#"{"exp":101,"aud":"litellm-proxy"}"#),
+        &many_checks,
+    )
+    .unwrap();
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"other"}"#, &many_checks),
+        "Invalid audience"
+    );
+}
+
+#[test]
+fn subject_and_jwt_id_must_be_strings() {
+    let audience = audience_one("litellm-proxy");
+    let checks = ClaimChecks {
+        audience: audience.as_ref(),
+        issuer: None,
+        verify_aud: true,
+        verify_iss: false,
+        now: 100.0,
+    };
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"litellm-proxy","sub":1}"#, &checks),
+        "Subject must be a string"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"litellm-proxy","jti":false}"#, &checks),
+        "JWT ID must be a string"
+    );
+    validate_claims(
+        &document(r#"{"exp":101,"aud":"litellm-proxy","sub":"u","jti":"id"}"#),
+        &checks,
+    )
+    .unwrap();
 }
