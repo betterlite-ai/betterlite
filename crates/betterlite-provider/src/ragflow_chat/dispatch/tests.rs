@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Object;
@@ -13,7 +14,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::call::CompletionCall;
-use super::context::{CallLogging, DispatchContext, DispatchGlobals};
+use super::context::{DispatchContext, DispatchGlobals};
 use super::dispatch;
 use super::error::DispatchError;
 use super::handler::{ChatCompletionHandler, HandlerError};
@@ -158,7 +159,7 @@ fn run_arm(
 ) {
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &env,
     };
@@ -409,7 +410,7 @@ fn another_provider_tag_is_left_to_its_own_arm(#[case] tag: ChatConfigTag) {
     let handler = Recorder::succeeding();
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &env,
     };

@@ -9,9 +9,9 @@ use super::support::{
 };
 use super::{FILE, json, run};
 use crate::api::vector_file_http_create_list::error::FileTransportError;
-use crate::api::vector_file_http_create_list::service::{FileDeps, Operation, SuppliedClient};
+use crate::api::vector_file_http_create_list::service::{FileDeps, Operation};
 use crate::api::vector_store_http_write::error::HeaderMap;
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 #[rstest]
 #[case::sync(ClientKind::Sync)]

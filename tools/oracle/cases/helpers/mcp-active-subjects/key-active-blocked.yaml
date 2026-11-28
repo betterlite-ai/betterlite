@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-key-active-blocked
+call:
+  b4658:
+    operation: key_is_active
+    key:
+      token: sk-blocked
+      blocked: true
+env: {}
+compare: {ignore: []}

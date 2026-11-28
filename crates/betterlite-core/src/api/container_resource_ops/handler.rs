@@ -6,7 +6,9 @@ use std::time::Duration;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::api::container_contracts::config::BaseContainerConfig;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
-use betterlite_openai::containers::container_file_http::transport::ClientSource;
+use betterlite_openai::containers::container_file_http::transport::{
+    AsyncClient, BlockingClient, ClientSource,
+};
 use betterlite_openai::containers::container_file_http::{ContainerFileHttpError, PreCallHook};
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
@@ -73,7 +75,7 @@ macro_rules! asynchronous_endpoint {
 
 impl<Source, Hook> ContainerHandler for ContainerResourceHandler<Source, Hook>
 where
-    Source: ClientSource,
+    Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>,
     Hook: PreCallHook,
 {
     blocking_endpoint! {

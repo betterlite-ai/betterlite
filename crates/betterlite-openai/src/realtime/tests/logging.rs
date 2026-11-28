@@ -2,6 +2,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -19,7 +20,7 @@ use secrecy::SecretString;
 
 use crate::realtime::connect::{RealtimeConnectSettings, prepare_connection};
 use crate::realtime::error::RealtimeError;
-use crate::realtime::logging::{PrePostLogger, RealtimeLogRecord, RealtimeLogger};
+use crate::realtime::logging::{RealtimeLogRecord, RealtimeLogger};
 use crate::realtime::url::QueryParams;
 
 #[derive(Default)]
@@ -86,7 +87,7 @@ fn records_the_realtime_pre_call() {
         ssl_verification: &Verification::Enabled,
         max_message_size_bytes: 4_096,
     };
-    let mut logger = PrePostLogger {
+    let mut logger = LogContext {
         state: &mut state,
         env: &env,
     };
@@ -176,7 +177,7 @@ fn records_a_null_query_value_as_null() {
         ssl_verification: &Verification::Enabled,
         max_message_size_bytes: 4_096,
     };
-    let mut logger = PrePostLogger {
+    let mut logger = LogContext {
         state: &mut state,
         env: &env,
     };

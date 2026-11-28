@@ -114,15 +114,9 @@ use betterlite_anthropic::count_tokens::error::ApiError;
 use betterlite_anthropic::count_tokens::handler::CountTokensTransport;
 use betterlite_anthropic::files::error::FilesError;
 use betterlite_anthropic::response::Logging;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::files::transport::FileTransport;
 use operations::{DispatchDeps, Operation, Outcome};
-
-pub struct CallLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum DispatchError<Failure>
@@ -146,7 +140,7 @@ where
 pub fn dispatch<'call, Client, Encoding, Transport, Handler>(
     operation: Operation<'call, Client, Encoding>,
     deps: &'call mut DispatchDeps<'_, Transport, Handler>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> completion::HandlerFuture<'call, Outcome<Handler::Reply>, DispatchError<Handler::Failure>>
 where
     Client: Send + 'call,

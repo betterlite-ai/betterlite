@@ -25,6 +25,9 @@ description: >-
   What users see: nothing.
 scope:
   paths:
+    - "crates/betterlite-python/src/eval_runs/transport.rs"
+    - "crates/betterlite-python/src/eval_runs/session/operations.rs"
+    - "crates/betterlite-core/src/api/riva/call/logging.rs"
     - crates/betterlite-azure/src/embeddings/logging.rs
     - crates/betterlite-azure/src/embeddings/tests/logging_cases.rs
     - crates/betterlite-azure/src/speech/logging.rs

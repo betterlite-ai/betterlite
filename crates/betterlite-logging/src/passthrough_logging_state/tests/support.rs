@@ -14,7 +14,6 @@ use tracing_subscriber::fmt::MakeWriter;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -22,6 +21,7 @@ use crate::logging_state::correlation::{
 use crate::logging_state::types::{CallbackPolicy, DynamicCallbacks, RequestLoggingFlags};
 use crate::logging_state::{LoggingInit, LoggingState};
 use crate::logging_success::handler::SuccessHandler;
+use crate::logging_success::owned::OwnedSuccessHandler;
 use crate::logging_success::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use crate::logging_success::types::{SuccessMode, SuccessResult};
 use crate::passthrough_logging_state::dispatch::{
@@ -174,14 +174,7 @@ impl SuccessClock for FixedClock {
 }
 
 pub(super) struct Fixture {
-    registry: CallbackRegistry,
-    builder: FakeBuilder,
-    assembler: FakeAssembler,
-    clock: FixedClock,
-    excluded_fields: Vec<String>,
-    known: Box<dyn Fn(&str) -> bool + Send + Sync>,
-    stamp: ResponseStamp,
-    privacy: Settings,
+    handler: OwnedSuccessHandler,
     pub(super) calls: Arc<RecordedCalls>,
 }
 
@@ -200,36 +193,27 @@ impl Fixture {
         let sink = CallbackSink::Logger(logger);
         let registration = registry.register(identity, sink, CallbackList::Callbacks);
         assert_ne!(registration, Registration::SkippedCapacity);
+        let payload_builder: Arc<dyn StandardPayloadBuilder> = Arc::new(FakeBuilder { payload });
+        let stream_assembler: Arc<dyn StreamAssembler> = Arc::new(FakeAssembler);
+        let clock: Arc<dyn SuccessClock> = Arc::new(FixedClock {
+            now: time("2024-01-01T00:00:02+00:00"),
+        });
         Self {
-            registry,
-            builder: FakeBuilder { payload },
-            assembler: FakeAssembler,
-            clock: FixedClock {
-                now: time("2024-01-01T00:00:02+00:00"),
+            handler: OwnedSuccessHandler {
+                registry: Arc::new(registry),
+                payload_builder,
+                stream_assembler,
+                clock,
+                excluded_fields: Vec::new(),
+                known_callback: Arc::new(|_name: &str| false),
+                privacy: Settings::default(),
             },
-            excluded_fields: Vec::new(),
-            known: Box::new(|_name: &str| false),
-            stamp: ResponseStamp {
-                id: "chatcmpl-placeholder".to_owned(),
-                created: 1_704_067_200,
-            },
-            privacy: Settings::default(),
             calls,
         }
     }
 
     pub(super) fn handler(&self) -> SuccessHandler<'_> {
-        SuccessHandler {
-            registry: &self.registry,
-            payload_builder: &self.builder,
-            stream_assembler: &self.assembler,
-            clock: &self.clock,
-            failure_counters: &[],
-            excluded_fields: &self.excluded_fields,
-            known_callback: self.known.as_ref(),
-            stamp: &self.stamp,
-            privacy: self.privacy,
-        }
+        SuccessHandler::from(&self.handler)
     }
 }
 

@@ -1,4 +1,5 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_openai::vercel_ai_gateway::DEFAULT_API_BASE as VERCEL_DEFAULT_API_BASE;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -8,7 +9,7 @@ use crate::agent_platform_dispatch::context::headers_or_global;
 
 use super::call::CompletionCall;
 use super::context::{
-    CallLogging, DispatchContext, DispatchSettings, first_nonempty, first_secret, referer_headers,
+    DispatchContext, DispatchSettings, first_nonempty, first_secret, referer_headers,
 };
 use super::error::DispatchError;
 use super::handler::ChatCompletionHandler;
@@ -27,7 +28,7 @@ pub fn dispatch<R>(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
     handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Option<Result<R, DispatchError>> {
     match tag {
         ChatConfigTag::Openrouter => Some(complete(context, handler, log, &Gateway::OPENROUTER)),
@@ -122,7 +123,7 @@ pub(super) const fn chains(settings: DispatchSettings<'_>, which: Which) -> Chai
 fn complete<R>(
     context: &DispatchContext<'_>,
     handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     gateway: &Gateway,
 ) -> Result<R, DispatchError> {
     let values = chains(context.settings, gateway.which);

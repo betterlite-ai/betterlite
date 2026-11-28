@@ -72,7 +72,7 @@ pub trait WriteTransport: Send + Sync {
 }
 
 pub trait ClientSource: Send + Sync {
-    type Client: WriteTransport;
+    type Client;
 
     fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
@@ -228,7 +228,7 @@ fn wire_body(body: Option<&IndexMap<String, Json>>) -> Result<RequestBody, Write
 pub async fn send<C, S>(prepared: PreparedWrite<'_, C, S>) -> Result<Json, WriteError>
 where
     C: WriteConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let PreparedWrite {
         config,

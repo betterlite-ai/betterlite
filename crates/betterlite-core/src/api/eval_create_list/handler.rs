@@ -1,17 +1,18 @@
 use std::future::Future;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::evals::types::{Eval, ListEvalsResponse};
 use betterlite_openai::openai_base_config::Object;
 
 use crate::api::eval_http::error::EvalHttpError;
-use crate::api::eval_http::exchange::{EvalConnection, EvalLogging};
+use crate::api::eval_http::exchange::EvalConnection;
 use crate::api::eval_http::handlers::{create_eval_handler, list_evals_handler};
 
 // the inputs BaseLLMHTTPHandler.create_eval_handler takes from create_eval
 pub struct CreateEvalHttpCall<'call, 'env> {
     pub connection: EvalConnection<'call>,
-    pub logging: EvalLogging<'call, 'env>,
+    pub logging: LogContext<'call, 'env>,
     pub timeout: Duration,
     pub body: &'call Object,
 }
@@ -19,7 +20,7 @@ pub struct CreateEvalHttpCall<'call, 'env> {
 // the inputs list_evals_handler takes, plus the timeout LiteLLM hands it and never sends
 pub struct ListEvalsHttpCall<'call, 'env> {
     pub connection: EvalConnection<'call>,
-    pub logging: EvalLogging<'call, 'env>,
+    pub logging: LogContext<'call, 'env>,
     pub timeout: Duration,
     pub query: &'call Object,
 }

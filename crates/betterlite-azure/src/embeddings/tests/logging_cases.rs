@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -17,7 +18,7 @@ use secrecy::SecretString;
 
 use crate::embeddings::client::Fields;
 use crate::embeddings::logging::{
-    EmbeddingLogger as _, PostCallRecord, PreCallRecord, PrePostLogger, ResponseKind,
+    EmbeddingLogger as _, PostCallRecord, PreCallRecord, ResponseKind,
 };
 
 #[derive(Default)]
@@ -80,7 +81,7 @@ fn environment<'env>(redactor: &'env Redactor, sink: &'env Sink) -> PrePostEnv<'
 }
 
 fn pre_call_records_the_request(recorded: &mut LoggingState, env: &PrePostEnv<'_>) {
-    PrePostLogger {
+    LogContext {
         state: recorded,
         env,
     }
@@ -107,7 +108,7 @@ fn pre_call_records_the_request(recorded: &mut LoggingState, env: &PrePostEnv<'_
 }
 
 fn post_call_records_the_response(recorded: &mut LoggingState, env: &PrePostEnv<'_>) {
-    PrePostLogger {
+    LogContext {
         state: recorded,
         env,
     }

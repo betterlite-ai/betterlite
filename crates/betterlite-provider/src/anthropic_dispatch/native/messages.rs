@@ -1,4 +1,3 @@
-use super::super::CallLogging;
 use super::super::completion::{CompletionCall, HandlerFuture, ResolvedCall};
 use super::legacy::Transport;
 use super::{ClientHandle, Counter, Failure, Native, Reply, Runtime, config::Config};
@@ -8,6 +7,7 @@ use betterlite_anthropic::chat_call::{
 };
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::client_kind::SuppliedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
@@ -21,7 +21,7 @@ fn execute<'call, Client, FileFailure>(
     call: &'call CompletionCall<ClientHandle<Client>, Engine>,
     config: &'call Config<'_>,
     runtime: &'call Runtime<'_, Client>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> HandlerFuture<
     'call,
     ChatOutcome<Client::Failure, Counter>,
@@ -69,7 +69,7 @@ impl<Client> Runtime<'_, Client> {
         &'call self,
         call: &'call CompletionCall<ClientHandle<Client>, Engine>,
         config: &'call Config<'matrix>,
-        log: &'call mut CallLogging<'_, '_>,
+        log: &'call mut LogContext<'_, '_>,
     ) -> ChatDeps<'call, Config<'matrix>, Client, Counter> {
         let clients = ChatClients {
             pooled: self.pooled,
@@ -98,7 +98,7 @@ type Completion<'call, ClientFailure, FileFailure> =
 pub(super) fn complete<'call, Client, Source, Metadata, Fetcher, Blocks, Ids>(
     handler: &'call mut Native<'_, Client, Source, Metadata, Fetcher, Blocks, Ids>,
     call: ResolvedCall<ClientHandle<Client>, Engine>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> Completion<'call, Client::Failure, Blocks::Failure>
 where
     Client: ChatTransport + Transport,
