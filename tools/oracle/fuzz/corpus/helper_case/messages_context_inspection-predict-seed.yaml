@@ -1,0 +1,17 @@
+kind: helper
+name: messages_context_inspection-predict-seed
+call:
+  messages_context_inspection:
+    inspections: []
+    predictions:
+      - context_management_spec:
+          edits:
+            - {type: compact_20260112}
+        additional_drop_params: null
+      - context_management_spec:
+          - {type: compaction, compact_threshold: 60000}
+        additional_drop_params: []
+      - context_management_spec: {}
+        additional_drop_params: [context_management]
+env: {}
+compare: {ignore: []}
