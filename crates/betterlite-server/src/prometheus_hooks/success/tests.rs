@@ -10,6 +10,7 @@ use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits
 use betterlite_logging::prometheus_latency::input_sequence_length::UsageMapping;
 use betterlite_logging::prometheus_rate_limits::gauge::RateLimitGauges;
 use betterlite_logging::prometheus_usage::counters::UsageCounters;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::key_digest::hashing::hash_token;
 use betterlite_models::zero_cost::{TEXT_INPUT_RATE, ZeroCostReason};
@@ -313,6 +314,80 @@ async fn an_openrouter_native_id_keeps_its_prefix() {
 }
 
 #[tokio::test]
+async fn a_cohere_chat_model_is_labelled_without_the_declared_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "cohere/command-r".to_owned();
+    record.custom_llm_provider = Some("cohere_chat".to_owned());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(series_label(registry, REQUESTS, "model"), "command-r");
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_SUCCESSES, "litellm_model_name"),
+        "command-r"
+    );
+}
+
+#[tokio::test]
+async fn an_anthropic_text_model_is_labelled_without_the_declared_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "anthropic/claude-2".to_owned();
+    record.custom_llm_provider = Some("anthropic_text".to_owned());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(series_label(registry, REQUESTS, "model"), "claude-2");
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_SUCCESSES, "litellm_model_name"),
+        "claude-2"
+    );
+}
+
+#[tokio::test]
+async fn an_ai21_chat_model_is_labelled_without_the_declared_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "ai21/jamba-instruct".to_owned();
+    record.custom_llm_provider = Some("ai21_chat".to_owned());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(series_label(registry, REQUESTS, "model"), "jamba-instruct");
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_SUCCESSES, "litellm_model_name"),
+        "jamba-instruct"
+    );
+}
+
+#[tokio::test]
+async fn a_model_prefixed_with_its_renamed_provider_loses_that_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "cohere_chat/command-r".to_owned();
+    record.custom_llm_provider = Some("cohere_chat".to_owned());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    assert_eq!(
+        series_label(&fixture.registry, REQUESTS, "model"),
+        "command-r"
+    );
+}
+
+#[tokio::test]
 async fn deployment_remaining_headers_set_the_gauges() {
     let fixture = fixture();
     let mut record = rich_payload(dec("2.5"));
@@ -397,15 +472,12 @@ async fn the_virtual_key_error_stops_the_rate_limits_and_the_later_steps() {
 async fn a_latency_overflow_stops_the_deployment_and_the_tail() {
     let fixture = fixture_with_settings(labelled_settings());
     let mut record = rich_payload(dec("2.5"));
+    // the total alone sits at the ceiling, so adding the metadata's one queue-time second overflows
+    record.start_time = Decimal::ZERO;
     record.end_time = Decimal::MAX;
-    let mut metadata = success_metadata();
-    metadata.insert(
-        "queue_time_seconds".to_owned(),
-        number(&Decimal::MAX.to_string()),
-    );
     let result = fixture
         .hooks
-        .async_log_success_event(Arc::new(event_with_metadata(record, metadata)))
+        .async_log_success_event(Arc::new(event_with_metadata(record, success_metadata())))
         .await;
     assert!(matches!(result, Err(LoggerError::Delivery { .. })));
     let registry = &fixture.registry;
@@ -564,7 +636,7 @@ fn the_metrics_adapter_forwards_the_configured_ports() {
 
 #[test]
 fn the_rebuilt_kwargs_carry_the_payload_identity() {
-    let call = HookCall::from_event(&event(rich_payload(dec("2.5"))));
+    let call = HookCall::from_event(&event(rich_payload(dec("2.5"))), &ModelCatalog::default());
     assert_eq!(call.model, "gpt-4o");
     assert_eq!(
         call.metadata.get("user_api_key_user_id"),

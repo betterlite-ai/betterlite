@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
+use betterlite_models::identity::anthropic_text::anthropic_text_provider;
+use betterlite_models::identity::cohere::cohere_chat_provider;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 
@@ -15,7 +18,7 @@ pub(crate) struct HookCall {
 }
 
 impl HookCall {
-    pub(crate) fn from_event(event: &LoggerEvent) -> Self {
+    pub(crate) fn from_event(event: &LoggerEvent, catalog: &ModelCatalog) -> Self {
         let payload = &event.payload;
         let metadata = merged_metadata(event);
         let mut params = JsonObject::new();
@@ -37,28 +40,46 @@ impl HookCall {
             params.insert("proxy_rejected_before_routing".to_owned(), flag.clone());
         }
         Self {
-            model: labelled_model(payload),
+            model: labelled_model(payload, catalog),
             litellm_params: params,
             metadata,
         }
     }
 }
 
-// LiteLLM labels kwargs["model"], the name get_llm_provider stripped, not the payload's rebuilt name
-fn labelled_model(payload: &StandardLoggingPayload) -> String {
-    let Some(provider) = payload.custom_llm_provider.as_deref() else {
-        return payload.model.clone();
+// LiteLLM labels kwargs["model"], the name get_llm_provider returned, not the payload's rebuilt name
+fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> String {
+    // get_llm_provider's handlers rename a declared provider and return the model without its prefix
+    let (model, provider) = cohere_chat_provider(
+        &payload.model,
+        payload.custom_llm_provider.as_deref(),
+        catalog,
+    );
+    let (model, provider) = anthropic_text_provider(&model, provider.as_deref());
+    let Some(provider) = provider else {
+        return model;
     };
-    let Some(rest) = payload
-        .model
-        .strip_prefix(provider)
+    // the payload records the provider the rename resolved to, so the declared prefix is the one it replaced
+    let declared = match provider.as_str() {
+        "cohere_chat" => "cohere",
+        "anthropic_text" => "anthropic",
+        "ai21_chat" => "ai21",
+        other => other,
+    };
+    let rest = model
+        .strip_prefix(declared)
         .and_then(|tail| tail.strip_prefix('/'))
-    else {
-        return payload.model.clone();
+        .or_else(|| {
+            model
+                .strip_prefix(provider.as_str())
+                .and_then(|tail| tail.strip_prefix('/'))
+        });
+    let Some(rest) = rest else {
+        return model;
     };
     // get_llm_provider keeps a native OpenRouter id such as "openrouter/auto" whole
     if provider == "openrouter" && !rest.contains('/') {
-        return payload.model.clone();
+        return model;
     }
     rest.to_owned()
 }

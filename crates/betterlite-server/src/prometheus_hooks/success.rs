@@ -67,7 +67,7 @@ pub(crate) async fn record_success(
     payload: &StandardLoggingPayload,
     event: &LoggerEvent,
 ) -> Result<(), PrometheusHookError> {
-    let call = HookCall::from_event(event);
+    let call = HookCall::from_event(event, hooks.provider.catalog.as_ref());
     let exception = payload_exception(payload);
     if skip_invalid_key(None, None, exception.as_ref()) {
         return Ok(());
