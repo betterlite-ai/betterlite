@@ -14,7 +14,7 @@ use betterlite_server::routing::cache_alternatives::eligibility::eligible_models
 use serde::Deserialize;
 use serde_json::json;
 
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
@@ -27,15 +27,15 @@ struct Config {
     #[serde(default)]
     tier_definitions: Option<Vec<tier_section::TierDefinition>>,
     #[serde(default, alias = "enable_non_reasoning_tier")]
-    non_reasoning_tier: bool,
+    non_reasoning_tier: Option<bool>,
     #[serde(default)]
     classifier_type: ClassifierKind,
     #[serde(default)]
     fallback_tier: Option<String>,
     #[serde(default)]
-    adaptive: bool,
+    adaptive: Option<bool>,
     #[serde(default)]
-    session_affinity: bool,
+    session_affinity: Option<bool>,
     #[serde(default)]
     plugins: Option<Vec<Json>>,
     #[serde(default)]
@@ -43,7 +43,7 @@ struct Config {
 }
 
 #[derive(Deserialize)]
-struct Input {
+pub(crate) struct Input {
     config: Config,
     decision: RoutingDecision,
 }
@@ -81,7 +81,7 @@ impl Helper for Op {
 fn tier_config(config: &Config) -> tier_section::Config {
     tier_section::Config {
         tier_definitions: config.tier_definitions.clone(),
-        non_reasoning_tier: config.non_reasoning_tier,
+        non_reasoning_tier: config.non_reasoning_tier.unwrap_or(false),
         tier_labels: BTreeMap::new(),
         tier_models: config.tier_models.clone(),
     }
@@ -97,7 +97,7 @@ struct RouterFeatures {
 fn router_features(config: &Config) -> RouterFeatures {
     let mut order = Vec::new();
     let mut active = Vec::new();
-    if config.adaptive {
+    if config.adaptive.unwrap_or(false) {
         order.push(OrderFeature::Adaptive);
         active.push(Feature::Adaptive);
     }
@@ -109,7 +109,7 @@ fn router_features(config: &Config) -> RouterFeatures {
         order.push(OrderFeature::Plugins);
         active.push(Feature::Plugins);
     }
-    if config.session_affinity {
+    if config.session_affinity.unwrap_or(false) {
         order.push(OrderFeature::SessionAffinity);
         active.push(Feature::SessionAffinity);
     }

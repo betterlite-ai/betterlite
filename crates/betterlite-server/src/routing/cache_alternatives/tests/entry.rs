@@ -5,9 +5,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_config::sections::cache_cost_routing as section;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
-use betterlite_router::cache_cost_routing::{
-    CacheAwareChoice, CachedModelChooser, ChooseCached, PreRoutingResponse,
-};
+use betterlite_router::cache_cost_routing::CachedModelChooser as _;
+use betterlite_router::cache_cost_routing::{CacheAwareChoice, ChooseCached, PreRoutingResponse};
 use betterlite_router::router_predicates::JsonMap;
 use rstest::rstest;
 use tracing::Level;
@@ -335,7 +334,7 @@ async fn an_empty_metadata_bucket_logs_nothing() {
 }
 
 // the proxy headers a case rebuilds its prediction body from
-fn proxy_headers<'case>(case: &'case mut EntryCase) -> &'case mut JsonMap {
+fn proxy_headers(case: &mut EntryCase) -> &mut JsonMap {
     let Some(Json::Object(proxy)) = case.request_kwargs.get_mut("proxy_server_request") else {
         panic!("the proxy request is an object");
     };

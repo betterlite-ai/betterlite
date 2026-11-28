@@ -89,10 +89,10 @@ pub(super) fn number(value: i64) -> Json {
 
 // LiteLLM's _body: one cache breakpoint over the stable context, then the question.
 pub(super) fn body(text: &str) -> Json {
-    let text = format!(
+    let rendered = format!(
         r#"{{"max_tokens":20000,"messages":[{{"role":"user","content":[{{"type":"text","text":"{text}","cache_control":{{"type":"ephemeral"}}}},{{"type":"text","text":"What is 2 + 2?"}}]}}]}}"#
     );
-    json(&text)
+    json(&rendered)
 }
 
 pub(super) fn body_with_max_tokens(text: &str, max_tokens: i64) -> Json {
@@ -322,11 +322,24 @@ impl Rates {
     }
 }
 
+// the fixture rates and token counts keep every product far inside Decimal's range
 fn tokens_cost(rates: Rates, tokens: &CacheTokenBuckets) -> Decimal {
-    rates.input * Decimal::from(tokens.uncached_input_tokens)
-        + rates.read * Decimal::from(tokens.cache_read_input_tokens)
-        + rates.creation * Decimal::from(tokens.cache_creation_5m_input_tokens)
-        + rates.creation * Decimal::from(tokens.cache_creation_1h_input_tokens)
+    let parts = [
+        (rates.input, tokens.uncached_input_tokens),
+        (rates.read, tokens.cache_read_input_tokens),
+        (rates.creation, tokens.cache_creation_5m_input_tokens),
+        (rates.creation, tokens.cache_creation_1h_input_tokens),
+    ];
+    let mut total = Decimal::ZERO;
+    for (rate, count) in parts {
+        let cost = rate
+            .checked_mul(Decimal::from(count))
+            .expect("the fixture rates stay in range");
+        total = total
+            .checked_add(cost)
+            .expect("the fixture costs stay in range");
+    }
+    total
 }
 
 // price_cache_tokens over the fixtures' rates: the arm's own buckets plus the completion the caller prices.
@@ -394,9 +407,14 @@ impl CacheCostService for RatesCost {
 
     fn price(&self, request: &PriceRequest<'_>, _moment: DateTime<Utc>) -> Option<Decimal> {
         let rates = self.rates_for(request.model)?;
+        let completion = rates
+            .output
+            .checked_mul(Decimal::from(request.completion_tokens))
+            .expect("the fixture rates stay in range");
         Some(
             tokens_cost(rates, request.tokens)
-                + rates.output * Decimal::from(request.completion_tokens),
+                .checked_add(completion)
+                .expect("the fixture costs stay in range"),
         )
     }
 }
@@ -472,16 +490,17 @@ impl CountTokensTransport for ScriptedTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.url.to_string());
         let counted = match &request.body {
-            RequestBody::Json(bytes) => match serde_json::from_slice::<JsonObject>(bytes) {
-                Ok(fields) => {
-                    if fields.contains_key("max_tokens") {
-                        self.total
-                    } else {
-                        self.prefix
-                    }
-                }
-                Err(_) => None,
-            },
+            RequestBody::Json(bytes) => {
+                serde_json::from_slice::<JsonObject>(bytes)
+                    .ok()
+                    .and_then(|fields| {
+                        if fields.contains_key("max_tokens") {
+                            self.total
+                        } else {
+                            self.prefix
+                        }
+                    })
+            }
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => None,
         };
         let response = counted.map_or_else(
@@ -840,13 +859,8 @@ impl CacheRoutingHost for FakeHost<'_> {
     }
 
     fn capacity_limiter(&self) -> Option<&dyn CapacityLimiter> {
-        match &self.limiter {
-            Some(limiter) => {
-                let slot: &dyn CapacityLimiter = limiter;
-                Some(slot)
-            }
-            None => None,
-        }
+        let limiter: &dyn CapacityLimiter = self.limiter.as_ref()?;
+        Some(limiter)
     }
 
     fn clock_seconds(&self) -> f64 {

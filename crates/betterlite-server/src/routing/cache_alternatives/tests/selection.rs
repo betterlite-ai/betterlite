@@ -85,7 +85,7 @@ fn count_handler(
     }
 }
 
-fn strong_observation<'observation>(body: &'observation Json) -> Observation<'observation> {
+fn strong_observation(body: &Json) -> Observation<'_> {
     Observation {
         deployment: STRONG_ID,
         model: STRONG_MODEL,
@@ -414,7 +414,7 @@ async fn evidence_that_expires_during_the_counts_is_dropped() {
     seed(&fixture.cache, &case.body, 1000.5);
     let context = fixture.context();
     let mut host = fixture.host(&context);
-    host.clock = Mutex::new(VecDeque::from([NOW, NOW + 0.5]));
+    host.clock = Mutex::new(VecDeque::from([NOW, NOW + 0.5_f64]));
     assert!(case.run(&host).await.unwrap().is_none());
     assert_eq!(host.requests(), 4);
 }
@@ -427,7 +427,7 @@ async fn evidence_still_fresh_at_the_second_reading_switches() {
     seed(&fixture.cache, &case.body, 1000.4);
     let context = fixture.context();
     let mut host = fixture.host(&context);
-    host.clock = Mutex::new(VecDeque::from([NOW, NOW + 0.3]));
+    host.clock = Mutex::new(VecDeque::from([NOW, NOW + 0.3_f64]));
     let choice = case.run(&host).await.unwrap().expect("still fresh");
     assert_eq!(choice.estimated_cost, decimal("0.03336"));
 }
