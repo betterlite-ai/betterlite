@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_bedrock::count_call::handler::{BedrockCountTokensHandler, CountTokensHandler};
 use betterlite_bedrock::transcription::binding::TranscriptionBinding;
+use betterlite_models::decisions::Json;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherRequest;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::BedrockOtherOperation;
@@ -12,11 +13,11 @@ use betterlite_provider::bedrock_other_dispatch::execute::{LogContext, Services,
 use betterlite_provider::bedrock_other_dispatch::test_support::client::{
     FixtureClient, Replies, Reply,
 };
-use betterlite_provider::bedrock_other_dispatch::test_support::factory::Factory;
+use betterlite_provider::bedrock_other_dispatch::test_support::factory::{ClientCall, Factory};
 use betterlite_provider::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
 use betterlite_provider::bedrock_other_dispatch::test_support::source::Source;
 use betterlite_provider::bedrock_other_dispatch::test_support::{
-    DiscardingSink, Prepared, prepost_env,
+    Capture, DiscardingSink, Prepared, capturing_env,
 };
 use betterlite_provider::operation::{OperationRequest, OperationResult};
 
@@ -58,14 +59,16 @@ impl Harness {
     }
 }
 
-// What one dispatch observed: its outcome, every posted request, and the regions it resolved
+// What one dispatch observed: its outcome, every posted request, the clients it asked for and the phases it logged
 pub(super) struct Outcome<E>
 where
     E: StdError + 'static,
 {
     pub(super) result: Result<BedrockOtherResult, BedrockOtherError<E>>,
     pub(super) requests: Vec<Recorded>,
+    pub(super) calls: Vec<ClientCall>,
     pub(super) regions: Vec<String>,
+    pub(super) phases: Vec<String>,
 }
 
 pub(super) async fn exchange<H, B>(
@@ -78,7 +81,9 @@ where
 {
     let mut prepared = Prepared::new().map_err(|error| failure("Prepared", error))?;
     let sink = DiscardingSink;
-    let env = prepost_env(&prepared.state, &prepared.redactor, &sink);
+    let capture = Capture::default();
+    let logger = |details: &Json| capture.record(details);
+    let env = capturing_env(&prepared.state, &prepared.redactor, &sink, &logger);
     let services = Services {
         secrets: &prepared.secrets,
         region_worker: &prepared.workers,
@@ -101,10 +106,24 @@ where
         &mut log,
     )
     .await;
+    observe(harness, &capture, dispatched)
+}
+
+// What the dispatch observed, including the clients the family asked for and the phases it logged
+fn observe<E>(
+    harness: &Harness,
+    capture: &Capture,
+    dispatched: Result<OperationResult, BedrockOtherError<E>>,
+) -> Result<Outcome<E>, Failed>
+where
+    E: StdError + 'static,
+{
     Ok(Outcome {
         result: outcome(dispatched)?,
         requests: harness.factory.seen.requests(),
+        calls: harness.factory.calls(),
         regions: harness.source.regions(),
+        phases: capture.phases(),
     })
 }
 

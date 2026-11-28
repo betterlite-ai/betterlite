@@ -71,6 +71,8 @@ pub(super) struct Probe {
     #[serde(default)]
     pub(super) region: Option<String>,
     #[serde(default)]
+    pub(super) logging: bool,
+    #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
     #[serde(default)]
     pub(super) file: Option<File>,

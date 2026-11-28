@@ -56,10 +56,26 @@ call:
           - status: 500
             headers: {Content-Type: application/json}
             body: '{"message":"boom"}'
+      - case: embedding
+        model: amazon.titan-embed-text-v2:0
+        input: [timed]
+        timeout: 2.5
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        environment:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+        reply:
+          status: 200
+          headers: {Content-Type: application/json}
+          body: '{"embedding":[0.5],"inputTextTokenCount":1}'
       - case: embedding_status
         model: amazon.titan-embed-text-v2:0
         invocation_arn: arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1
         region: us-west-2
+        logging: true
         optional_params:
           aws_access_key_id: AKIAIOSFODNN7EXAMPLE
           aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY

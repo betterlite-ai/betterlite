@@ -8,6 +8,7 @@ use betterlite_provider::bedrock_other_dispatch::call::{
     BedrockOtherOperation, EmbeddingInput, EmbeddingOperation,
 };
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
+use betterlite_provider::bedrock_other_dispatch::test_support::factory::{ClientCall, Kind};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
@@ -45,15 +46,22 @@ pub(super) async fn embedding_row(probe: &Probe) -> Result<Value, Failed> {
     let harness = Harness::new(probe)?;
     let outcome: Outcome<CallError> = exchange::<Handler, Recording>(&harness, operation).await?;
     let value = match &outcome.result {
-        Ok(BedrockOtherResult::Embedding(response)) => embedding_value(response),
+        Ok(BedrockOtherResult::Embedding(response)) => {
+            embedding_value(response, &outcome.calls, &outcome.phases)
+        }
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
     row(&outcome, &value, None)
 }
 
-// The reply fields both dialects carry: each input's vector under its own index, with the usage totals
-fn embedding_value(response: &EmbeddingCallResponse) -> Value {
+// The reply fields both dialects carry, plus the clients the leaf asked for and the phases it logged
+fn embedding_value(
+    response: &EmbeddingCallResponse,
+    calls: &[ClientCall],
+    phases: &[String],
+) -> Value {
+    let factory = factory_value(calls);
     match response {
         EmbeddingCallResponse::Batch(reply) => json!({
             "model": &reply.model,
@@ -62,6 +70,8 @@ fn embedding_value(response: &EmbeddingCallResponse) -> Value {
                 "prompt_tokens": reply.usage.prompt_tokens,
                 "total_tokens": reply.usage.total_tokens,
             },
+            "factory": factory,
+            "phases": phases,
         }),
         EmbeddingCallResponse::Legacy(reply) => json!({
             "model": &reply.model,
@@ -70,8 +80,27 @@ fn embedding_value(response: &EmbeddingCallResponse) -> Value {
                 "prompt_tokens": reply.usage.prompt_tokens,
                 "total_tokens": reply.usage.total_tokens,
             },
+            "factory": factory,
+            "phases": phases,
         }),
     }
+}
+
+// The factory records in the shape LiteLLM's patched client constructor reports them
+fn factory_value(calls: &[ClientCall]) -> Value {
+    let mut values = Vec::with_capacity(calls.len());
+    for call in calls {
+        let kind = match call.kind {
+            Kind::Sync => "sync",
+            Kind::Async => "async",
+        };
+        values.push(json!({
+            "kind": kind,
+            "provider": &call.provider,
+            "timeout": call.timeout.as_ref().map(Timeout::fields),
+        }));
+    }
+    Value::Array(values)
 }
 
 fn batch_records(data: &[EmbeddingRecord]) -> Value {

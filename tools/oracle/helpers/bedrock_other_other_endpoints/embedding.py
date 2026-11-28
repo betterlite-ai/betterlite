@@ -1,3 +1,5 @@
+from typing import Literal
+
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue
 
@@ -44,6 +46,13 @@ def embedding_reply(reply: Reply) -> dict[str, JsonValue]:
     return raw
 
 
+def supplied_kind(probe: Probe) -> Literal["none", "sync"]:
+    # the cohere legacy transport is the supplied seam; every batch family builds its client through the factory
+    if probe["model"].startswith("cohere."):
+        return "sync"
+    return "none"
+
+
 def embedding_case(probe: Probe) -> dict[str, JsonValue]:
     replies: list[JsonValue] = [
         JSON.validate_python(embedding_reply(reply)) for reply in replies_of(probe)
@@ -60,14 +69,18 @@ def embedding_case(probe: Probe) -> dict[str, JsonValue]:
         "timeout": probe.get("timeout"),
         "aembedding": False,
         "drop_params": False,
-        "supplied": "sync",
+        "supplied": supplied_kind(probe),
         "environment": JSON.validate_python(environment_of(probe)),
         "replies": JSON.validate_python(replies),
     }
     return raw
 
 
-def embedding_value(response: EmbeddingResponse) -> JsonValue:
+def embedding_value(
+    response: EmbeddingResponse,
+    factory: list[JsonValue],
+    phases: list[JsonValue],
+) -> JsonValue:
     payload = EMBEDDING_PAYLOAD.validate_json(response.model_dump_json())
     data: list[JsonValue] = [
         {"index": record["index"], "embedding": record["embedding"]}
@@ -81,6 +94,8 @@ def embedding_value(response: EmbeddingResponse) -> JsonValue:
         "model": payload["model"],
         "data": data,
         "usage": usage,
+        "factory": JSON.validate_python(factory),
+        "phases": JSON.validate_python(phases),
     }
     return JSON.validate_python(raw)
 
@@ -102,7 +117,7 @@ def embedding_row(probe: Probe) -> JsonValue:
     value: JsonValue = None
     response = output["response"]
     if response is not None:
-        value = embedding_value(response)
+        value = embedding_value(response, output["factory"], output["phases"])
     return success_row(requests, value)
 
 
@@ -116,6 +131,7 @@ def status_request(probe: Probe) -> dict[str, JsonValue]:
         "credentials": JSON.validate_python(keys_of(probe)),
         "status": reply_status(reply),
         "body": reply_body(reply),
+        "logging": probe.get("logging", False),
     }
     endpoint = params_of(probe).get("aws_bedrock_runtime_endpoint")
     if endpoint is not None:
@@ -123,10 +139,20 @@ def status_request(probe: Probe) -> dict[str, JsonValue]:
     return raw
 
 
+def status_phases(output: StatusOutput) -> list[JsonValue]:
+    phases: list[JsonValue] = []
+    if output["pre"] is not None:
+        phases.append("pre_api_call")
+    if output["post"] is not None:
+        phases.append("post_api_call")
+    return phases
+
+
 def status_value(output: StatusOutput) -> JsonValue:
     raw: dict[str, JsonValue] = {
         "body": output["value"],
         "regions": JSON.validate_python(output["resolved_regions"]),
+        "phases": status_phases(output),
     }
     return JSON.validate_python(raw)
 

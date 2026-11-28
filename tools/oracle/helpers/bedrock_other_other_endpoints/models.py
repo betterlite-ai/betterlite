@@ -49,6 +49,7 @@ class Probe(TypedDict, total=False):
     request_model: str | None
     invocation_arn: str | None
     region: str | None
+    logging: bool
     environment: dict[str, str]
     file: File | None
     timeout: float | None
@@ -94,6 +95,8 @@ class EmbeddingOutput(TypedDict):
     status: int | None
     requests: list[EmbeddingRequest]
     response: EmbeddingResponse | None
+    factory: list[JsonValue]
+    phases: list[JsonValue]
 
 
 class StatusRequest(TypedDict):
@@ -107,6 +110,8 @@ class StatusOutput(TypedDict):
     resolved_regions: list[str]
     kind: Literal["returned", "failed"]
     value: JsonValue
+    pre: JsonValue
+    post: JsonValue
 
 
 class SignedHeaders(TypedDict):
