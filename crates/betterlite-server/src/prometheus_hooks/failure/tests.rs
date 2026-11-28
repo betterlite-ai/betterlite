@@ -259,6 +259,30 @@ async fn a_cohere_chat_failure_is_labelled_without_the_declared_prefix() {
 }
 
 #[tokio::test]
+async fn a_ragflow_failure_keeps_its_ragflow_prefix() {
+    let fixture = fixture();
+    let mut record = payload(Decimal::ZERO);
+    record.model = "ragflow/chat/abc/gpt-4o".to_owned();
+    record.custom_llm_provider = Some("ragflow".to_owned());
+    record.model_id = Some("deployment-1".to_owned());
+    record.error_information = Some(error_information("Something went wrong"));
+    fixture
+        .hooks
+        .async_log_failure_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(
+        series_label(registry, FAILED, "model"),
+        "ragflow/chat/abc/gpt-4o"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_FAILURES, "litellm_model_name"),
+        "ragflow/chat/abc/gpt-4o"
+    );
+}
+
+#[tokio::test]
 async fn the_failure_event_writes_the_zero_cost_counter() {
     let fixture = fixture();
     let mut record = rich_payload(Decimal::ZERO);

@@ -22,11 +22,9 @@ impl HookCall {
         let payload = &event.payload;
         let metadata = merged_metadata(event);
         let mut params = JsonObject::new();
-        params.insert("metadata".to_owned(), Json::Object(metadata.clone()));
-        params.insert(
-            "litellm_metadata".to_owned(),
-            Json::Object(metadata.clone()),
-        );
+        let metadata_json = Json::Object(metadata.clone());
+        params.insert("metadata".to_owned(), metadata_json.clone());
+        params.insert("litellm_metadata".to_owned(), metadata_json);
         params.insert("model".to_owned(), Json::Text(payload.model.clone()));
         params.insert("api_base".to_owned(), Json::Text(payload.api_base.clone()));
         if let Some(provider) = &payload.custom_llm_provider {
@@ -54,12 +52,13 @@ fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> S
     let (cohere_model, cohere_provider) = cohere_chat_provider(&payload.model, custom, catalog);
     let (model, provider) = anthropic_text_provider(&cohere_model, cohere_provider.as_deref());
     let resolved = provider.unwrap_or_default();
-    // the payload records the resolved provider, so the declared prefix is the rename it replaced
+    // the payload records the resolved provider, so the declared prefix is the rename it replaced;
+    // an empty provider, or ragflow whose prefix get_llm_provider re-adds, keeps the model whole
     let declared = match resolved.as_str() {
         "cohere_chat" => "cohere",
         "anthropic_text" => "anthropic",
         "ai21_chat" => "ai21",
-        "" => return model,
+        "" | "ragflow" => return model,
         other => other,
     };
     let rest = [declared, resolved.as_str()]

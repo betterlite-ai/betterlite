@@ -439,6 +439,36 @@ async fn a_model_without_a_resolved_provider_is_labelled_whole() {
 }
 
 #[tokio::test]
+async fn a_ragflow_model_keeps_its_ragflow_prefix() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "ragflow/chat/abc/gpt-4o".to_owned();
+    record.custom_llm_provider = Some("ragflow".to_owned());
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    let registry = &fixture.registry;
+    assert_eq!(
+        series_label(registry, REQUESTS, "model"),
+        "ragflow/chat/abc/gpt-4o"
+    );
+    assert_eq!(
+        series_label(registry, SPEND, "model"),
+        "ragflow/chat/abc/gpt-4o"
+    );
+    assert_eq!(
+        series_label(registry, TOTAL_TOKENS, "model"),
+        "ragflow/chat/abc/gpt-4o"
+    );
+    assert_eq!(
+        series_label(registry, DEPLOYMENT_SUCCESSES, "litellm_model_name"),
+        "ragflow/chat/abc/gpt-4o"
+    );
+}
+
+#[tokio::test]
 async fn deployment_remaining_headers_set_the_gauges() {
     let fixture = fixture();
     let mut record = rich_payload(dec("2.5"));
