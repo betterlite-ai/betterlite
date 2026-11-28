@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
 use betterlite_logging::callback_logger::event::LoggerEvent;
+use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
@@ -36,11 +37,30 @@ impl HookCall {
             params.insert("proxy_rejected_before_routing".to_owned(), flag.clone());
         }
         Self {
-            model: payload.model.clone(),
+            model: labelled_model(payload),
             litellm_params: params,
             metadata,
         }
     }
+}
+
+// LiteLLM labels kwargs["model"], the name get_llm_provider stripped, not the payload's rebuilt name
+fn labelled_model(payload: &StandardLoggingPayload) -> String {
+    let Some(provider) = payload.custom_llm_provider.as_deref() else {
+        return payload.model.clone();
+    };
+    let Some(rest) = payload
+        .model
+        .strip_prefix(provider)
+        .and_then(|tail| tail.strip_prefix('/'))
+    else {
+        return payload.model.clone();
+    };
+    // get_llm_provider keeps a native OpenRouter id such as "openrouter/auto" whole
+    if provider == "openrouter" && !rest.contains('/') {
+        return payload.model.clone();
+    }
+    rest.to_owned()
 }
 
 // the request metadata LiteLLM hands the hooks, with the typed payload fields filling the keys it lacks
