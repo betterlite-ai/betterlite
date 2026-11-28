@@ -59,8 +59,8 @@ async fn the_model_call_runs_under_the_lens_privacy_scope() {
         header::HOST,
         "lens.example.com",
     );
-    let built = with_header(built, HeaderName::from_static("x-forwarded-proto"), "https");
-    let reply = worker_call(harness.app(), built).await;
+    let forwarded = with_header(built, HeaderName::from_static("x-forwarded-proto"), "https");
+    let reply = worker_call(harness.app(), forwarded).await;
     assert_eq!(reply.status, StatusCode::OK);
     let calls = harness.calls();
     assert!(

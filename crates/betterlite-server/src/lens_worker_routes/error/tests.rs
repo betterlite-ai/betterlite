@@ -2,7 +2,7 @@
 
 use axum::body::to_bytes;
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 use betterlite_lens::models::messages::Progress;
 
 use crate::lens_access::error::LensAccessError;

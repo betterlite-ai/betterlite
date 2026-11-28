@@ -49,7 +49,7 @@ fn lens_with(findings: Vec<Finding>) -> Lens {
     stored
 }
 
-fn assert_refusal(error: LensWorkerError, status: StatusCode, detail: &str) {
+fn assert_refusal(error: &LensWorkerError, status: StatusCode, detail: &str) {
     assert_eq!(error.status(), status);
     assert_eq!(error.detail(), detail);
 }
@@ -79,7 +79,7 @@ async fn an_unknown_previous_finding_is_422() {
     let error = validate_finding(&lens, &selected(), &draft, None::<&WorkerStorage>)
         .await
         .expect_err("the named finding does not exist");
-    assert_refusal(error, StatusCode::UNPROCESSABLE_ENTITY, EXISTING_CHECK);
+    assert_refusal(&error, StatusCode::UNPROCESSABLE_ENTITY, EXISTING_CHECK);
 }
 
 #[tokio::test]
@@ -89,7 +89,7 @@ async fn a_previous_finding_of_another_check_is_422() {
     let error = validate_finding(&lens, &selected(), &draft, None::<&WorkerStorage>)
         .await
         .expect_err("the named finding belongs to another check");
-    assert_refusal(error, StatusCode::UNPROCESSABLE_ENTITY, EXISTING_CHECK);
+    assert_refusal(&error, StatusCode::UNPROCESSABLE_ENTITY, EXISTING_CHECK);
 }
 
 #[tokio::test]
@@ -99,7 +99,7 @@ async fn the_same_check_rule_runs_before_storage() {
     let error = validate_finding(&lens, &selected(), &draft, None::<&WorkerStorage>)
         .await
         .expect_err("the same-check rule fails first");
-    assert_refusal(error, StatusCode::UNPROCESSABLE_ENTITY, EXISTING_CHECK);
+    assert_refusal(&error, StatusCode::UNPROCESSABLE_ENTITY, EXISTING_CHECK);
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn mismatching_evidence_is_422() {
     let error = validate_finding(&lens, &selected(), &draft, Some(&storage))
         .await
         .expect_err("the quote is not in the stored span");
-    assert_refusal(error, StatusCode::UNPROCESSABLE_ENTITY, EVIDENCE_MISMATCH);
+    assert_refusal(&error, StatusCode::UNPROCESSABLE_ENTITY, EVIDENCE_MISMATCH);
 }
 
 #[tokio::test]
@@ -146,7 +146,7 @@ async fn an_evidence_run_outside_the_sample_is_500() {
     let error = validate_finding(&lens, &selected(), &draft, Some(&storage))
         .await
         .expect_err("the run is not in the sample");
-    assert_refusal(error, StatusCode::INTERNAL_SERVER_ERROR, MISSING_RUN);
+    assert_refusal(&error, StatusCode::INTERNAL_SERVER_ERROR, MISSING_RUN);
     assert!(storage.evidence_calls().is_empty());
 }
 
@@ -173,6 +173,6 @@ async fn every_evidence_entry_is_checked_in_order() {
     let error = validate_finding(&lens, &sample, &draft, Some(&storage))
         .await
         .expect_err("the second entry names no run");
-    assert_refusal(error, StatusCode::INTERNAL_SERVER_ERROR, MISSING_RUN);
+    assert_refusal(&error, StatusCode::INTERNAL_SERVER_ERROR, MISSING_RUN);
     assert_eq!(storage.evidence_calls().len(), 1);
 }

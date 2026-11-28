@@ -1,13 +1,11 @@
 #![cfg(test)]
 
-use betterlite_lens::models::finding::{
-    Evidence, FindingDraft, FindingStatus, Kind, Priority, Role,
-};
-use betterlite_lens::models::job::Lens;
-
 use crate::lens_access::tests::support::{finding, now};
 use crate::lens_worker_routes::merge::merge_results;
 use crate::lens_worker_routes::tests::support::base_lens;
+use betterlite_lens::models::finding::{
+    Evidence, FindingDraft, FindingStatus, Kind, Priority, Role,
+};
 
 fn draft_with(
     title: &str,
@@ -160,7 +158,7 @@ fn counterexample_evidence_is_not_an_occurrence() {
         None,
         &[("t0", Role::Counterexample)],
     );
-    let merged: Lens = merge_results(&lens, &[draft], 1, now());
+    let merged = merge_results(&lens, &[draft], 1, now());
     assert!(merged.findings[0].occurrences.is_empty());
     assert_eq!(merged.findings[0].evidence.len(), 1);
 }

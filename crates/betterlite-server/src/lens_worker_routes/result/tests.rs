@@ -91,9 +91,18 @@ fn assert_finished_run(stored: &Lens, first: &Execution) {
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].check_id, "c1");
     assert_eq!(snapshots[0].title, "Checkout retries");
+    assert_finished_findings(stored, first);
+}
+
+fn assert_finished_findings(stored: &Lens, first: &Execution) {
+    let snapshots = stored.jobs[0]
+        .findings
+        .as_ref()
+        .expect("the job keeps the run's findings");
     assert_eq!(snapshots[0].revision, 1);
     assert_eq!(snapshots[0].status, FindingStatus::Open);
-    assert_eq!(snapshots[0].occurrences, [first.id.clone()]);
+    assert_eq!(snapshots[0].occurrences.len(), 1);
+    assert_eq!(snapshots[0].occurrences[0], first.id);
     assert_eq!(snapshots[0].id, stored.findings[0].id);
     assert_eq!(stored.findings[0].title, "Checkout retries");
     assert_eq!(stored.last_scan_at, Some(job_end()));

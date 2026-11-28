@@ -157,7 +157,7 @@ pub(crate) fn sample_of(executions: Vec<Execution>) -> Sample {
 }
 
 pub(crate) fn page(rows: usize, first: usize, eligible: i64, selected: i64) -> String {
-    let entries: Vec<String> = (first..first + rows)
+    let entries: Vec<String> = (first..first.wrapping_add(rows))
         .map(|index| {
             format!(
                 concat!(
@@ -280,7 +280,7 @@ impl WorkerDatabase {
         let Ok(parsed) = DateTime::parse_from_rfc3339(stamp) else {
             return;
         };
-        let workers = &mut self.inner.workers.lock().expect("the worker lock");
+        let mut workers = self.inner.workers.lock().expect("the worker lock");
         let slot = workers.iter_mut().find(|found| found.id == worker_id);
         if let Some(worker_record) = slot {
             worker_record.last_seen = parsed.with_timezone(&Utc);
@@ -302,7 +302,7 @@ impl WorkerDatabase {
         let replacement = pending.clone();
         *swap = None;
         drop(swap);
-        let lenses = &mut self.inner.lenses.lock().expect("the lens lock");
+        let mut lenses = self.inner.lenses.lock().expect("the lens lock");
         let slot = lenses.iter_mut().find(|stored| stored.id == replacement.id);
         if let Some(stored) = slot {
             *stored = replacement;
@@ -422,7 +422,10 @@ impl WorkerStorage {
     }
 
     fn broken(&self) -> Result<(), TestError> {
-        let failing = *self.failure.lock().expect("the failure lock");
+        let failing = match self.failure.lock() {
+            Ok(guard) => *guard,
+            Err(_poisoned) => return Err(TestError),
+        };
         if failing {
             return Err(TestError);
         }
@@ -449,7 +452,7 @@ impl WorkerStorage {
         }
     }
 
-    fn stored(&self, reply: Reply) -> Vec<u8> {
+    fn stored(&self, reply: &Reply) -> Vec<u8> {
         match reply {
             Reply::Sample => self
                 .pages
@@ -481,7 +484,7 @@ impl WorkerStorage {
         }
     }
 
-    fn reply(&self, recorded: Recorded, reply: Reply) -> Result<Vec<u8>, TestError> {
+    fn reply(&self, recorded: Recorded, reply: &Reply) -> Result<Vec<u8>, TestError> {
         self.record(recorded);
         self.broken()?;
         Ok(self.stored(reply))
@@ -509,21 +512,21 @@ impl Storage for WorkerStorage {
         &self,
         parameters: SampleParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        ready(self.reply(Recorded::Sample(parameters), Reply::Sample))
+        ready(self.reply(Recorded::Sample(parameters), &Reply::Sample))
     }
 
     fn lens_content(
         &self,
         parameters: ContentParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        ready(self.reply(Recorded::Content(parameters), Reply::Content))
+        ready(self.reply(Recorded::Content(parameters), &Reply::Content))
     }
 
     fn lens_evidence(
         &self,
         parameters: EvidenceParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        ready(self.reply(Recorded::Evidence(parameters), Reply::Evidence))
+        ready(self.reply(Recorded::Evidence(parameters), &Reply::Evidence))
     }
 }
 
