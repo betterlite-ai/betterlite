@@ -1,0 +1,56 @@
+task: B9300
+deviations:
+  - what: >-
+      An RSS response above 16 MiB, or XML that nests beyond 64 element levels, fails the fetch and serves the bundled
+      posts with a warning, where LiteLLM hands any size and any depth to ElementTree and returns the feed's posts.
+    why: >-
+      LiteLLM's synchronous whole-document parser has no input cap, while a public endpoint must not buffer unbounded
+      bytes or recurse without a bound; an oversize or over-deep document takes the same warning-and-bundled fallback as
+      any other failed fetch, so a feed any blog reader would serve is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L64-L75
+  - what: >-
+      The posts cache and its timestamp belong to one BlogFeed built at construction, not to LiteLLM's class-level
+      GetBlogPosts._cached_posts and _last_fetch_time, which every caller in the process shares.
+    why: >-
+      betterlite keeps no module-level state, and the feed's settings are resolved per app; B077 builds one BlogFeed per
+      app, so requests of one server still share one cache while two separately built apps never do, which is what the
+      task requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L48-L49
+  - what: >-
+      The bundled backup is compiled in with include_str! and decoded when it is loaded, where LiteLLM reads
+      litellm/blog_posts.json through importlib.resources on each load.
+    why: >-
+      betterlite carries bundled data files as include_str! constants, as B3192 does for the auto-router presets; the
+      file is byte-identical to the pin's, and a decode failure still propagates instead of being served as empty posts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L51-L55
+  - what: >-
+      An RSS response whose bytes are not valid UTF-8 is a failed fetch that serves the bundled posts, where httpx
+      decodes the body with the response charset and replaces undecodable bytes in response.text.
+    why: >-
+      betterlite refuses bytes that are not UTF-8 rather than mangling them, so a feed such as Latin-1 without a charset
+      header falls back; a UTF-8 feed, which is what the configured docs feed is, decodes the same way as httpx's default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L64-L66
+  - what: >-
+      litellm_settings.blog_posts_url and LITELLM_LOCAL_BLOG_POSTS are read when the public_discovery section loads,
+      where LiteLLM reads LITELLM_LOCAL_BLOG_POSTS on every get_blog_posts call and the proxy overwrites
+      litellm.blog_posts_url from settings at startup.
+    why: >-
+      Configuration enters through the config crate and B10009 owns that section, so the local-only flag is fixed when
+      the app is built; setting the environment variable after startup does not switch an already built app to local mode.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L131
+  - what: >-
+      The fallback warning names betterlite's own typed failure, such as "the RSS request failed" or the parser's
+      message, where LiteLLM interpolates str(e), which for httpx is its status or connection message.
+    why: >-
+      The warning keeps LiteLLM's text around the failure ("LiteLLM: Failed to fetch blog posts from %s: %s. Falling
+      back to local backup.") and its subject, but the failure detail is a thiserror message; the blog_feed cases
+      ignore that field, as their compare.ignore entries record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L142-L148
+  - what: >-
+      A response with a 3xx status is a failed fetch that serves the bundled posts, where httpx's raise_for_status
+      accepts a 3xx and LiteLLM hands the redirector's body to the XML parser.
+    why: >-
+      The feed accepts only successful statuses, as the endpoint requires; httpx does not follow the redirect either, so
+      LiteLLM only ever sees the redirector's body, and betterlite reports the status instead of parsing that body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L64-L66
+kept_bugs: []

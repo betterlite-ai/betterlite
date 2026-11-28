@@ -1,15 +1,22 @@
-use betterlite_oracle_helper_api::error::HelperError;
+use std::sync::Arc;
+use std::time::Duration;
+
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::public_endpoints::blog_feed_parser::{
-    BlogPost, ParseFailure, parse_rss_to_posts,
+use betterlite_server::public_endpoints::blog_feed::BlogFeed;
+use betterlite_server::public_endpoints::blog_feed::local::BundledBlogPosts;
+use betterlite_server::public_endpoints::blog_feed::testing::{
+    FixedClock, RecordingWarnings, Script,
 };
+use betterlite_server::public_endpoints::blog_feed::warnings::{FeedWarning, validate_blog_posts};
+use betterlite_server::public_endpoints::blog_feed_parser::{BlogPost, parse_rss_to_posts};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use thiserror::Error;
+use tokio::runtime::Builder;
 
 mod logic;
 
-use logic::{Cache, fetch_rss_feed, get_blog_posts, local_posts, validate_blog_posts};
+use logic::{answer_for, call_value, feed_for, settings_for, snapshot_value, warning_value};
 
 pub(crate) struct Op;
 
@@ -77,71 +84,29 @@ pub(crate) struct MockResponse {
     error: bool,
 }
 
-struct GetRequest<'request> {
-    url: &'request str,
+struct GetCall<'call> {
+    url: &'call str,
     now: f64,
     local_only: bool,
-    cached_posts: Option<&'request Vec<BlogPost>>,
+    cached: Option<&'call Vec<BlogPost>>,
     last_fetch_time: f64,
-    response: &'request MockResponse,
-}
-
-const BLOG_POSTS_TTL_SECONDS: f64 = 3_600.0;
-
-#[derive(Debug, Error)]
-enum Failure {
-    #[error("HTTP request to {url} failed")]
-    Connect { url: String },
-    #[error("RSS response returned HTTP status {status}")]
-    Status { status: u16 },
-    #[error(transparent)]
-    Parse(#[from] ParseFailure),
-}
-
-impl Failure {
-    const fn class(&self) -> &'static str {
-        match self {
-            Self::Connect { .. } => "ConnectError",
-            Self::Status { .. } => "HTTPStatusError",
-            Self::Parse(parse_failure) => parse_failure_class(parse_failure),
-        }
-    }
-}
-
-const fn parse_failure_class(error: &ParseFailure) -> &'static str {
-    match error {
-        ParseFailure::MissingChannel => "ValueError",
-        ParseFailure::Xml(_)
-        | ParseFailure::Decode(_)
-        | ParseFailure::Escape(_)
-        | ParseFailure::UnclosedElement
-        | ParseFailure::OutsideRoot
-        | ParseFailure::TooDeep { .. } => "ParseError",
-    }
+    response: &'call MockResponse,
 }
 
 impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
-            Input::LoadLocalBlogPosts => {
-                serde_json::to_value(local_posts()).map_err(|error| serialization_error(&error))?
-            }
+            Input::LoadLocalBlogPosts => local_answer()?,
             Input::FetchRssFeed {
                 url,
                 timeout,
                 response,
-            } => {
-                let (request, fetched) = fetch_rss_feed(url, *timeout, response);
-                let text = fetched?;
-                json!({ "text": text, "request": request })
-            }
-            Input::ParseRssToPosts { xml, max_posts } => {
-                let posts =
-                    parse_rss_to_posts(xml, *max_posts, usize::MAX).map_err(Failure::from)?;
-                serde_json::to_value(posts).map_err(|error| serialization_error(&error))?
-            }
-            Input::ValidateBlogPosts { posts } => run_validate(posts),
+            } => fetch_answer(url, *timeout, response)?,
+            Input::ParseRssToPosts { xml, max_posts } => serde_json::to_value(
+                parse_rss_to_posts(xml, *max_posts, usize::MAX).or_value_error()?,
+            )?,
+            Input::ValidateBlogPosts { posts } => validate_answer(posts),
             Input::GetBlogPosts {
                 url,
                 now,
@@ -149,93 +114,110 @@ impl Helper for Op {
                 cached_posts,
                 last_fetch_time,
                 response,
-            } => run_get(&GetRequest {
+            } => get_answer(&GetCall {
                 url,
                 now: *now,
                 local_only: *local_only,
-                cached_posts: cached_posts.as_ref(),
+                cached: cached_posts.as_ref(),
                 last_fetch_time: *last_fetch_time,
                 response,
             })?,
-            Input::GetBlogPostsSequence { calls } => run_sequence(calls),
+            Input::GetBlogPostsSequence { calls } => sequence_answer(calls)?,
         };
         Ok(value)
     }
 }
 
-fn run_validate(posts: &Value) -> Value {
-    let (valid, warnings) = validate_blog_posts(posts);
-    json!({ "valid": valid, "warnings": warnings })
-}
-
-fn run_get(request: &GetRequest<'_>) -> Result<Value, Box<HelperError>> {
-    let mut cache = Cache {
-        posts: request.cached_posts.cloned(),
-        last_fetch_time: request.last_fetch_time,
-    };
-    let (posts, warnings, _fetch_request) = get_blog_posts(
-        &mut cache,
-        request.url,
-        request.now,
-        request.local_only,
-        request.response,
+fn local_answer() -> HelperResult {
+    let settings = settings_for("", true);
+    let script = Script::new(Vec::new());
+    let feed = BlogFeed::new(
+        script,
+        &settings,
+        Arc::new(FixedClock { now: 0.0 }),
+        Arc::new(BundledBlogPosts),
+        Arc::new(RecordingWarnings::default()),
     );
-    serde_json::to_value(json!({ "posts": posts, "warnings": warnings }))
-        .map_err(|error| serialization_error(&error))
+    let runtime = Builder::new_current_thread().build()?;
+    let posts = runtime.block_on(feed.get_blog_posts()).or_value_error()?;
+    Ok(serde_json::to_value(posts)?)
 }
 
-fn run_sequence(calls: &[GetBlogPostsCall]) -> Value {
-    let mut cache = Cache {
-        posts: None,
-        last_fetch_time: 0.0,
-    };
+fn fetch_answer(url: &str, timeout: u64, response: &MockResponse) -> HelperResult {
+    let script = Script::new(vec![answer_for(response)]);
+    let warnings = Arc::new(RecordingWarnings::default());
+    let feed = feed_for(script.clone(), url, false, 0.0, &warnings);
+    let runtime = Builder::new_current_thread().build()?;
+    let text = runtime
+        .block_on(feed.fetch_rss_feed(url, Duration::from_secs(timeout)))
+        .or_value_error()?;
+    let request = script
+        .seen()
+        .into_iter()
+        .next()
+        .map(|seen| json!({ "url": seen.url, "timeout": seen.timeout_seconds }));
+    Ok(json!({ "text": text, "request": request }))
+}
+
+fn get_answer(call: &GetCall<'_>) -> HelperResult {
+    let script = Script::new(vec![answer_for(call.response)]);
+    let warnings = Arc::new(RecordingWarnings::default());
+    let feed = feed_for(script, call.url, call.local_only, call.now, &warnings);
+    feed.seed_cache(call.cached.cloned(), call.last_fetch_time);
+    let runtime = Builder::new_current_thread().build()?;
+    let posts = runtime.block_on(feed.get_blog_posts()).or_value_error()?;
+    Ok(call_value(&posts, &warnings))
+}
+
+fn sequence_answer(calls: &[GetBlogPostsCall]) -> HelperResult {
+    let runtime = Builder::new_current_thread().build()?;
     let mut results = Vec::new();
     let mut snapshots = Vec::new();
-    let mut fetch_count = 0_u64;
     let mut requests = Vec::new();
+    let mut cached: Option<Vec<BlogPost>> = None;
+    let mut last_fetch_time = 0.0_f64;
     for call in calls {
-        let (posts, warnings, fetch_request) = get_blog_posts(
-            &mut cache,
+        let script = Script::new(vec![answer_for(&call.response)]);
+        let warnings = Arc::new(RecordingWarnings::default());
+        let feed = feed_for(
+            script.clone(),
             &call.url,
-            call.now,
             call.local_only,
-            &call.response,
+            call.now,
+            &warnings,
         );
-        if let Some(request) = fetch_request {
-            fetch_count = fetch_count.saturating_add(1);
-            requests.push(json!({ "url": request.url, "timeout": request.timeout }));
+        feed.seed_cache(cached.take(), last_fetch_time);
+        let posts = runtime.block_on(feed.get_blog_posts()).or_value_error()?;
+        for seen in script.seen() {
+            requests.push(json!({ "url": seen.url, "timeout": seen.timeout_seconds }));
         }
-        results.push(json!({ "posts": posts, "warnings": warnings }));
-        snapshots.push(json!({
-            "cached_posts": cache.posts.clone(),
-            "last_fetch_time": cache.last_fetch_time,
-        }));
+        results.push(call_value(&posts, &warnings));
+        let snapshot = feed.cache_snapshot();
+        snapshots.push(snapshot_value(&snapshot));
+        cached = snapshot.cached_posts;
+        last_fetch_time = snapshot.last_fetch_time;
     }
-    json!({ "results": results, "snapshots": snapshots, "fetch_count": fetch_count, "requests": requests })
+    Ok(json!({
+        "results": results,
+        "snapshots": snapshots,
+        "fetch_count": requests.len(),
+        "requests": requests,
+    }))
 }
 
-fn serialization_error(error: &serde_json::Error) -> Box<HelperError> {
-    let helper_error = HelperError {
-        class: "SerializationError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
+fn validate_answer(posts: &Value) -> Value {
+    let Some(entries) = posts.as_array() else {
+        return json!({
+            "valid": false,
+            "warnings": [warning_value(&FeedWarning::empty_posts())],
+        });
     };
-    Box::new(helper_error)
-}
-
-impl From<Failure> for Box<HelperError> {
-    fn from(error: Failure) -> Self {
-        Self::new(HelperError {
-            class: error.class().to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
+    match validate_blog_posts(entries) {
+        Ok(()) => json!({ "valid": true, "warnings": [] }),
+        Err(warning) => json!({
+            "valid": false,
+            "warnings": [warning_value(&warning)],
+        }),
     }
 }
 
