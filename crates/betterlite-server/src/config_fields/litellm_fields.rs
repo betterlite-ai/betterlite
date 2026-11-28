@@ -92,7 +92,7 @@ pub static UI_FIELDS: [UiLitellmField; 6] = [
         options: None,
         tab: None,
         default: UiDefault::One,
-        description: "USD spend cap for each dashboard login session; covers LLM calls made from the dashboard such as the playground and auto Router Test Connection. Each login starts a fresh session with this budget. Clearing restores the $1 default.",
+        description: "USD spend cap for each dashboard login session; covers LLM calls made from the dashboard such as the playground and auto router Test Connection. Each login starts a fresh session with this budget. Clearing restores the $1 default.",
     },
 ];
 
