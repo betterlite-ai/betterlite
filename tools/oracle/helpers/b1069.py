@@ -149,6 +149,7 @@ class ProxyServer(types.ModuleType):
         self.prisma_client: FakePrisma | None = None
         self.general_settings: dict[str, bool] = {}
         self.user_api_key_cache: UserApiKeyCache | None = None
+        self.redis_usage_cache: None = None
 
 
 PROXY: Final = ProxyServer(PROXY_MODULE)
