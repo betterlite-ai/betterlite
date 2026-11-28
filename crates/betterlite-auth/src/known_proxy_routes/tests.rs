@@ -54,6 +54,14 @@ fn known_proxy_route_answers_the_exact_route(#[case] path: &'static str) {
     assert_eq!(known_proxy_route(path), Some(path));
 }
 
+// betterlite's anthropic table lists two routes LiteLLM serves but leaves out of LiteLLMRoutes, so they stay known
+#[rstest]
+#[case::plugin_enable("/claude-code/plugins/{plugin_name}/enable")]
+#[case::plugin_disable("/claude-code/plugins/{plugin_name}/disable")]
+fn plugin_routes_stay_known(#[case] route: &'static str) {
+    assert_eq!(known_proxy_route(route), Some(route));
+}
+
 #[rstest]
 #[case::concrete_key("/key/abc")]
 #[case::trailing_slash("/chat/completions/")]
