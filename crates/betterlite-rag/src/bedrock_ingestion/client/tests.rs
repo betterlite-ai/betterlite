@@ -272,6 +272,17 @@ fn signed_authorization(request: &SignedRequest<'_>, mode: SigningMode) -> Strin
     .expect("the reference request carries an authorization header")
 }
 
+fn assert_default_mode(authorization: &str, request: &SignedRequest<'_>) {
+    assert_eq!(
+        authorization,
+        signed_authorization(request, SigningMode::SigV4Auth)
+    );
+    assert_ne!(
+        authorization,
+        signed_authorization(request, SigningMode::S3SigV4Auth)
+    );
+}
+
 #[tokio::test]
 async fn client_signs_s3_with_the_path_as_sent() {
     let (built, transport, _resolver) = rag_clients(vec![json_response("{}")]);
@@ -305,10 +316,10 @@ async fn client_signs_s3_with_the_path_as_sent() {
 }
 
 #[tokio::test]
-async fn client_signs_bedrock_in_the_default_mode() {
-    let (built, transport, _resolver) = rag_clients(vec![json_response("{}")]);
+async fn client_signs_other_services_in_the_default_mode() {
+    let (built, transport, _resolver) = rag_clients(vec![json_response("{}"), json_response("{}")]);
     let url = format!("{AGENT}/knowledgebases/KB%201/datasources/");
-    let request = SignedRequest {
+    let bedrock = SignedRequest {
         service: "bedrock",
         signing_region: "us-west-2",
         method: "POST",
@@ -316,51 +327,26 @@ async fn client_signs_bedrock_in_the_default_mode() {
         headers: &[],
         body: &[],
     };
-    built
-        .signed_request_with(request)
-        .await
-        .expect("the bedrock request succeeds");
-    let requests = transport.requests();
-    let authorization =
-        header(&requests[0], "Authorization").expect("the bedrock request is signed");
-    assert_eq!(
-        authorization,
-        signed_authorization(&request, SigningMode::SigV4Auth)
-    );
-    assert_ne!(
-        authorization,
-        signed_authorization(&request, SigningMode::S3SigV4Auth)
-    );
-}
-
-#[tokio::test]
-async fn client_signs_s3vectors_in_the_default_mode() {
-    let (built, transport, _resolver) = rag_clients(vec![json_response("{}")]);
-    let url = format!("{AGENT}/knowledgebases/KB%201/datasources/");
     // s3vectors starts with s3 and botocore still signs it with SigV4Auth
-    let request = SignedRequest {
+    let vectors = SignedRequest {
         service: "s3vectors",
-        signing_region: "us-west-2",
-        method: "POST",
-        url: &url,
-        headers: &[],
-        body: &[],
+        ..bedrock
     };
     built
-        .signed_request_with(request)
+        .signed_request_with(bedrock)
+        .await
+        .expect("the bedrock request succeeds");
+    built
+        .signed_request_with(vectors)
         .await
         .expect("the s3vectors request succeeds");
     let requests = transport.requests();
-    let authorization =
-        header(&requests[0], "Authorization").expect("the s3vectors request is signed");
-    assert_eq!(
-        authorization,
-        signed_authorization(&request, SigningMode::SigV4Auth)
-    );
-    assert_ne!(
-        authorization,
-        signed_authorization(&request, SigningMode::S3SigV4Auth)
-    );
+    let bedrock_authorization =
+        header(&requests[0], "Authorization").expect("the bedrock request is signed");
+    assert_default_mode(bedrock_authorization, &bedrock);
+    let vectors_authorization =
+        header(&requests[1], "Authorization").expect("the s3vectors request is signed");
+    assert_default_mode(vectors_authorization, &vectors);
 }
 
 #[tokio::test]
