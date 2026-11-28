@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_prometheus::collector_factory::collector::{MetricLike, MetricValue};
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{CountGauges, refresh_counts};
@@ -60,8 +61,16 @@ async fn a_missing_database_logs_and_skips_the_counts() {
     );
 }
 
+#[rstest]
+#[case::total_users("total_users", 5_i32, "Prometheus: set litellm_total_users to 5")]
+#[case::active_users("active_users", 3_i32, "Prometheus: set litellm_active_users to 3")]
+#[case::teams("team_count", 7_i32, "Prometheus: set litellm_teams_count to 7")]
 #[tokio::test]
-async fn the_three_counts_are_written_in_order() {
+async fn the_three_counts_are_written_in_order(
+    #[case] metric: &str,
+    #[case] value: i32,
+    #[case] message: &str,
+) {
     let (logs, _guard) = capture_logs();
     let setup = count_setup();
     let source = FakeSource::new();
@@ -75,24 +84,12 @@ async fn the_three_counts_are_written_in_order() {
         source.calls(),
         vec!["user_count", "billable_user_count", "team_count"]
     );
-    for (metric, value) in [
-        ("total_users", 5_i32),
-        ("active_users", 3),
-        ("team_count", 7),
-    ] {
-        assert_eq!(
-            setup.rig.log.for_metric(metric)[0].value,
-            MetricValue::Finite(Decimal::from(value))
-        );
-    }
+    assert_eq!(
+        setup.rig.log.for_metric(metric)[0].value,
+        MetricValue::Finite(Decimal::from(value))
+    );
     let captured = logs.text();
-    for message in [
-        "Prometheus: set litellm_total_users to 5",
-        "Prometheus: set litellm_active_users to 3",
-        "Prometheus: set litellm_teams_count to 7",
-    ] {
-        assert!(captured.contains(message), "{captured}");
-    }
+    assert!(captured.contains(message), "{captured}");
 }
 
 #[tokio::test]

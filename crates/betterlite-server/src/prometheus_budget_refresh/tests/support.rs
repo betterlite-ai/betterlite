@@ -216,22 +216,6 @@ pub(crate) fn team(
 }
 
 #[must_use]
-pub(crate) fn user(
-    user_id: &str,
-    spend: Decimal,
-    max_budget: Option<Decimal>,
-) -> UserBudgetGaugeInput {
-    UserBudgetGaugeInput {
-        user_id: user_id.to_owned(),
-        user_email: None,
-        user_alias: None,
-        spend,
-        max_budget,
-        budget_reset_at: None,
-    }
-}
-
-#[must_use]
 pub(crate) fn org(
     org_id: &str,
     spend: Option<Decimal>,

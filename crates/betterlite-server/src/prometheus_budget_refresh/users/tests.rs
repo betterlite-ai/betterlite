@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_logging::prometheus::budget_gauges::inputs::UserBudgetGaugeInput;
 use betterlite_logging::prometheus_label_schema::PrometheusLabelSettings;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 use rust_decimal::Decimal;
@@ -7,7 +8,7 @@ use rust_decimal::Decimal;
 use super::refresh_users;
 use crate::prometheus_budget_refresh::source::Page;
 use crate::prometheus_budget_refresh::tests::support::{
-    FakeSource, budget_rig, capture_logs, labels_source, now, prometheus_only, user,
+    FakeSource, budget_rig, capture_logs, labels_source, now, prometheus_only,
 };
 
 #[tokio::test]
@@ -39,15 +40,25 @@ async fn every_page_of_users_reaches_the_gauges() {
     let settings = PrometheusLabelSettings::with_defaults();
     let source = FakeSource::new();
     source.push_users(Ok(Page {
-        rows: vec![user(
-            "u-1",
-            Decimal::from(30_i32),
-            Some(Decimal::from(100_i32)),
-        )],
+        rows: vec![UserBudgetGaugeInput {
+            user_id: "u-1".to_owned(),
+            user_email: None,
+            user_alias: None,
+            spend: Decimal::from(30_i32),
+            max_budget: Some(Decimal::from(100_i32)),
+            budget_reset_at: None,
+        }],
         total_count: Some(51),
     }));
     source.push_users(Ok(Page {
-        rows: vec![user("u-2", Decimal::from(5_i32), None)],
+        rows: vec![UserBudgetGaugeInput {
+            user_id: "u-2".to_owned(),
+            user_email: None,
+            user_alias: None,
+            spend: Decimal::from(5_i32),
+            max_budget: None,
+            budget_reset_at: None,
+        }],
         total_count: Some(51),
     }));
 
