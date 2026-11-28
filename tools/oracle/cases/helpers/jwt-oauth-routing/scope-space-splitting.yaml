@@ -1,0 +1,23 @@
+kind: helper
+name: jwt-oauth-routing-scope-space-splitting
+env: {}
+compare: {ignore: []}
+call:
+  b10161: {operation: selector, selector: profile, claim: "openid profile", split_space_delimited: true}
+calls:
+  - b10161: {operation: selector, selector: profile, claim: "openid profile", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "openid profile", claim: "openid profile", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "openid profile", claim: "openid profile", split_space_delimited: true}
+  - b10161: {operation: selector, selector: openid, claim: "  openid  ", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "  openid  ", claim: "  openid  ", split_space_delimited: true}
+  - b10161: {operation: selector, selector: b, claim: " a  b ", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "a b", claim: " a  b ", split_space_delimited: true}
+  - b10161: {operation: selector, selector: a, claim: "a\tb", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "a\tb", claim: "a\tb", split_space_delimited: true}
+  - b10161: {operation: selector, selector: b, claim: "App:LiteLLM openid", split_space_delimited: true}
+  - b10161: {operation: selector, selector: [b], claim: "a b", split_space_delimited: true}
+  - b10161: {operation: selector, selector: [b], claim: [a, b], split_space_delimited: true}
+  - b10161: {operation: selector, selector: ["openid profile"], claim: "openid profile", split_space_delimited: true}
+  - b10161: {operation: selector, selector: " ", claim: " ", split_space_delimited: true}
+  - b10161: {operation: selector, selector: '', claim: " ", split_space_delimited: true}
+  - b10161: {operation: selector, selector: openid, claim: openid, split_space_delimited: true}

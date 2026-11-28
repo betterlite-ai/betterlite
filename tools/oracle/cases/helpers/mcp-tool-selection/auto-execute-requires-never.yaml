@@ -1,0 +1,64 @@
+kind: helper
+name: mcp-tool-selection-auto-execute-requires-never
+call:
+  b10122:
+    calls:
+      - function: should_auto_execute_tools
+        references:
+          - require_approval: never
+calls:
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: never
+            - require_approval: never
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references: []
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - {}
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: null
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: always
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: manual
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval:
+                never:
+                  tools: [search]
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: never
+            - require_approval: always
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: true
+  - b10122:
+      calls:
+        - function: should_auto_execute_tools
+          references:
+            - require_approval: Never
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,38 @@
+kind: helper
+name: mcp-client-auth-headers-passthrough-authorization
+call:
+  b10155:
+    calls:
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers: null
+        oauth2_headers: {Authorization: "Bearer test-top"}
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers: null
+        oauth2_headers: {authorization: "test"}
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers:
+          github: {Authorization: "Bearer test-server"}
+        oauth2_headers: {}
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers: null
+        oauth2_headers: {}
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers:
+          github: {Authorization: "Bearer test-server"}
+        oauth2_headers: {X-Api-Key: "test-key"}
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers: null
+        oauth2_headers: null
+      - function: passthrough_authorization
+        server: {alias: github, server_name: null, access_groups: null}
+        server_auth_headers:
+          github: {X-Api-Key: "test-key"}
+        oauth2_headers: {}
+env: {}
+compare: {ignore: []}

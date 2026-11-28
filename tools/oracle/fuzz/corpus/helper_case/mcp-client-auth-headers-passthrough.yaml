@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-client-auth-headers-corpus-passthrough
+call:
+  b10155:
+    calls:
+      - function: per_server_authorization
+        server: {alias: null, server_name: beta, access_groups: [team-a]}
+        server_auth_headers:
+          team-a: {Authorization: ""}
+      - function: passthrough_authorization
+        server: {alias: beta, server_name: null, access_groups: null}
+        server_auth_headers: null
+        oauth2_headers: {authorization: "test"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,87 @@
+id: B10214
+title: The Gemini, Vertex and Meta realtime configs behind B10213's port, and one Vertex token port for the server and Python
+description: >-
+  B10213's executor asks its RealtimeConfigs port for the Gemini and Meta configs (B1011's ProviderConfig branch, LiteLLM's get_provider_realtime_config at utils.py L9746-L9758) and for the Vertex config of the Vertex branch (vertex_realtime_config), and B1011's dispatch asks for a Vertex access token source. Nothing in production answers either. Core and betterlite-vertex hold every protocol part (B1378 to B1382 and B1394 for Gemini Live, B1365 for the Vertex Live policy, B1357 for Chirp, B6414 for Meta Muse), but only core's VertexChirpRealtimeConfig implements BaseRealtimeConfig, ChirpBackend implements no RealtimeBackend, and neither the server's CredentialCache nor Python's load_auth lookup implements core's VertexAccessTokenSource. This task builds those pieces, so B1125's route and B10212's Python `_arealtime` pass the same configs and the same token port, and neither answers NotBuilt for gemini, meta or vertex_ai. It takes over the provider Live arms B1125 used to plan.
+
+
+  Configs (crates/betterlite-provider/src/api/realtime_provider_configs.rs and realtime_provider_configs/). Main declares `pub mod realtime_provider_configs;` in api.rs. `ProviderRealtimeConfigs` implements B10213's RealtimeConfigs. provider_config builds a new Gemini or Meta config for each call, as LiteLLM returns a fresh GeminiRealtimeConfig() or MetaRealtimeConfig(), so no state crosses from one session to the next. vertex_config runs core's `vertex_realtime_config` (crates/betterlite-core/src/api/vertex_realtime_factory.rs L57) with this task's Chirp factory and wraps its Chirp or Live answer. `type Config = RealtimeProviderConfig`, an enum with the variants Gemini, VertexLive, Chirp and Meta whose BaseRealtimeConfig methods only match and delegate. One error enum wraps each arm's error, and `type Backend` is the Chirp backend, since only Chirp opens its own backend; the other arms answer None from open_backend and B2457 dials them. `ProviderRealtimeConfigs::new` takes what the arms read, built once by the caller: the ModelCatalog, the ApiLimits, the Studio settings (betterlite_config studio_identity, whose environment_key is LiteLLM's get_api_key_from_env, GOOGLE_API_KEY then GEMINI_API_KEY) and the Vertex settings.
+
+  Each arm keeps its session state behind one Mutex, because BaseRealtimeConfig takes `&self` while B1379's LiveSessionState, B1380's ContentState, B1382's CallerState and B6414's MetaRealtimeConfig change on every frame. Only Meta's pace_backend_send awaits, so the Meta arm uses a tokio Mutex held across that sleep; every other arm method takes a std Mutex and never holds it across an await.
+
+
+  Gemini arm, LiteLLM's GeminiRealtimeConfig (gemini/realtime/transformation.py L143-L1693). get_complete_url is B1378's connect_url with the call's api_key or the Studio environment key; validate_environment hands the headers back. transform_realtime_request decodes the client event and calls B1379's `LiveClient::transform_realtime_request` with B1378's setup settings. transform_realtime_response decodes the frame and calls B1382's `gemini_live_frames::transform::transform_realtime_response` with the arm's CallerState and LiveSessionState, B1380's content state, B1381's accounting and B1394's tool turn, and runs B1115's usage conversion on the usage it reports. is_setup_message, is_content_message, requires_session_configuration (true), session_configuration_request (B1378's setup), session_created_event and session_close_usage (B1381's input transcription estimate, LiteLLM's unbilled_usage_on_session_close) delegate the same way. The Studio arm keeps the response id in functionResponse, LiteLLM's `_include_function_response_id` true.
+
+
+  Vertex arms. Live is LiteLLM's VertexAIRealtimeConfig (vertex_ai/realtime/transformation.py L27-L242), a subclass of GeminiRealtimeConfig: it is the Gemini arm with B1365's VertexLivePolicy for complete_url, environment and session_configuration_request, B1365's `vertex_live` client transform for session.update, the regional host from vertex_realtime_config's location, and functionResponse without the id. Build it from the Gemini arm's parts with that policy passed in, not as a second copy of the arm. Chirp is core's VertexChirpRealtimeConfig over this task's ChirpBackendFactory. The Chirp production parts go in realtime_provider_configs/chirp.rs: `ChirpSession`, a newtype over betterlite-vertex's ChirpBackend implementing core's RealtimeBackend (a Text message goes to send, a Binary one to send_audio, recv answers Text, close closes; a ChirpBackendError becomes a WebSocketError with its text), `SdkSpeechClients` implementing SpeechClientFactory over chirp_stream's open_speech_client (client.rs L151), `SystemChirpClock` implementing ChirpClock with Instant::now, and `ChirpBackends` implementing core's ChirpBackendFactory with `Backend = ChirpSession` over `ChirpBackend::new(target, clients, clock)`. RealtimeBackend is an async_trait and betterlite-vertex has async-trait only as a dev-dependency, so the adapter is a provider newtype and not an impl beside ChirpBackend.
+
+
+  Meta arm, LiteLLM's MetaRealtimeConfig (meta/realtime/transformation.py L455-L580). B6414's `MetaRealtimeConfig::new(monotonic, sleep, limits, ids)` (crates/betterlite-core/src/meta_muse_realtime/request.rs L61) with a monotonic clock, tokio's sleep, the caller's ApiLimits and B6414's UUID ids sits behind the tokio Mutex. transform_session_created_event serves session_created_event and unbilled_usage_on_session_close serves session_close_usage.
+
+
+  Token port (crates/betterlite-vertex/src/token_cache/access_token_source.rs; main declares `pub mod access_token_source;` in token_cache.rs). Core's VertexAccessTokenSource with `Error = VertexTokenError` is the one port. It is the `VertexTokenSource` alias in crates/betterlite-core/src/api/realtime_connection_plan/vertex.rs L19, and B10213's dispatch and B1127's health probe both take it. `impl VertexAccessTokenSource for CredentialCache` reads the credentials Json through `ConfiguredCredentials::from_text` (a string as is, an object as its JSON text) and calls get_access_token. The second impl is on Python's lookup. B10183 moves it out of crates/betterlite-python/src/genai/provider.rs (L185-L213) into crates/betterlite-vertex/src/genai/session/provider.rs with its owned parts (the Vertex settings, GoogleAuth, the clock and the AWS source) in one private struct. In that file, make the struct and its fields `pub` and implement the port on it by calling lookup; change nothing else there. Both impls turn the AccessToken into ResolvedVertexToken (the token and the resolved project) and a CredentialCacheError into VertexTokenError with its text through one `pub` function in access_token_source.rs. The lookup code is moved once by B10183 and never copied; B10212 builds the parts the way the GenAI session does.
+
+
+  Tests. api::realtime_provider_configs::tests: the Gemini arm turns a session.update into B1378's setup and a serverContent text frame into response events in order, with a tool call turn and usage; the Studio URL carries `key=` from the call or from the environment key, and a missing key fails before any dial; Vertex Live builds the regional URL and bearer header and drops the functionResponse id; a Chirp model gives a Chirp config whose open_backend answers a backend over a fake SpeechClientFactory; Meta paces two audio packets through a fake sleep and reports the unbilled usage on close; two provider_config calls share no state. The Chirp adapter sends text and binary to the right ChirpBackend methods and maps a backend error. token_cache::access_token_source::tests: the cache source answers the token and project from a fake CredentialExecutor and passes a load failure through as VertexTokenError with the text. genai::session::provider::tests (a new provider/tests.rs, declared in provider.rs): the lookup source over an unreadable credential file answers the load error text.
+scope:
+  paths:
+    - crates/betterlite-provider/src/api/realtime_provider_configs.rs
+    - crates/betterlite-provider/src/api/realtime_provider_configs/**
+    - crates/betterlite-vertex/src/token_cache/access_token_source.rs
+    - crates/betterlite-vertex/src/token_cache/access_token_source/**
+    - crates/betterlite-vertex/src/genai/session/provider.rs
+    - crates/betterlite-vertex/src/genai/session/provider/tests.rs
+    - crates/betterlite-vertex/src/genai/session/provider/tests/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9746-L9758
+    why: get_provider_realtime_config returns a new GeminiRealtimeConfig or MetaRealtimeConfig for every call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143-L1693
+    why: GeminiRealtimeConfig, the methods the Gemini arm delegates to the B1378 to B1394 parts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/realtime/transformation.py#L27-L257
+    why: VertexAIRealtimeConfig's overrides and vertex_realtime_config's choice between Chirp and Live.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta/realtime/transformation.py#L455-L580
+    why: MetaRealtimeConfig's base methods, including pace_backend_send and its session requirement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L470-L471
+    why: get_api_key_from_env reads GOOGLE_API_KEY, then GEMINI_API_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L540-L589
+    why: The Vertex branch builds its config from the resolved token, project and location and a refresh callback.
+dod:
+  - text: ProviderRealtimeConfigs answers B10213's RealtimeConfigs with a Gemini, Vertex Live, Chirp or Meta config, each delegating to the merged protocol parts.
+    proof: [configs-tests, production-impl]
+  - text: A Chirp session is a RealtimeBackend opened through a production ChirpBackendFactory, SpeechClientFactory and ChirpClock.
+    proof: [configs-tests, production-impl]
+  - text: The server's CredentialCache and B10183's lookup parts both implement core's VertexAccessTokenSource with VertexTokenError.
+    proof: [vertex-tests, production-impl]
+  - text: No arm rebuilds a protocol step, URL builder, credential loader or speech client that a merged task owns.
+    proof: [no-copies]
+checks:
+  optional: []
+  commands:
+    - id: configs-tests
+      why: an arm sends the wrong setup, URL or events, a config leaks state into the next session, or Meta paces wrong
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::realtime_provider_configs::/)'
+    - id: vertex-tests
+      why: a token source answers the wrong token or project or hides a load error
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_cache::access_token_source::/) | test(/^genai::session::provider::/)'
+    - id: production-impl
+      why: the port, the Chirp backend or a token source still has no production impl
+      run: test -n "$(grep -rl --exclude-dir=tests 'impl.*RealtimeConfigs for' crates/betterlite-provider/src/api/realtime_provider_configs.rs crates/betterlite-provider/src/api/realtime_provider_configs)" && test -n "$(grep -rl --exclude-dir=tests 'impl.*RealtimeBackend for ChirpSession' crates/betterlite-provider/src/api/realtime_provider_configs)" && grep -q 'impl.*VertexAccessTokenSource for CredentialCache' crates/betterlite-vertex/src/token_cache/access_token_source.rs && grep -q 'impl.*VertexAccessTokenSource for' crates/betterlite-vertex/src/genai/session/provider.rs
+    - id: no-copies
+      why: an arm rebuilt a function a merged task owns
+      run: test -n "$(grep -rl --exclude-dir=tests 'impl.*BaseRealtimeConfig for' crates/betterlite-provider/src/api/realtime_provider_configs.rs crates/betterlite-provider/src/api/realtime_provider_configs)" && test -z "$(grep -rnE --exclude-dir=tests 'fn (connect_url|decode_gemini_live_setup|decode_gemini_live_frame|transform_tool_call_events|add_usage_detail_aliases|handle_openai_modality_event|open_speech_client|load_auth|lookup|select_region)\b|wss://' crates/betterlite-provider/src/api/realtime_provider_configs.rs crates/betterlite-provider/src/api/realtime_provider_configs crates/betterlite-vertex/src/token_cache/access_token_source.rs)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The RealtimeConfigs port, the dispatch and the executor: B10213. The route that passes these configs and its four Live oracle cases: B1125. The Python caller: B10212."
+  - "Moving Python's lookup into betterlite-vertex: B10183. The AWS credential chain the Python parts get in place of UnavailableAws: B10176."
+  - "Realtime as an operation of B033's vertex_media_dispatch or B035's studio_dispatch: none, since sessions run through B10213's executor."
+pitfalls:
+  - "LiteLLM builds a new config per session and the Gemini and Meta configs keep per-session state; returning one shared Arc from provider_config would carry a session's setup, tool calls or pacing into the next."
+  - "Meta's pace_backend_send fails with SessionNotConfigured only when no session.update has arrived, and its transform_realtime_request already refuses audio before that (append_audio, request.rs L203-L209), so the arm can never reach that error through the relay; the trait's pace_backend_send returns nothing, so log the error at debug and return rather than widening the trait."
+  - "The Vertex Live subclass differs from the Gemini arm only where VertexAIRealtimeConfig overrides a method; a second copy of the Gemini arm's frame handling for Vertex fails the review's copy rule."
+  - "connect_url returns the URL as a SecretString because the key sits in its query; get_complete_url must return it as text, so never log the returned URL."
+  - "A ChirpBackend owns its pump tasks and its link queue; open a new one inside open_backend for each session and never keep one in the config."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

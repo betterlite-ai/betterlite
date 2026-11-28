@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-services-s3-listing-list-purpose-prefix
+call:
+  bedrock_services_s3_listing:
+    operation: list_request
+    requests:
+      - purpose: null
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch_output
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+      - purpose: ""
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket/pre]]
+      - purpose: assistants
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: null
+        litellm_params: {aws_region_name: us-east-1}
+        environment: {AWS_S3_BUCKET_NAME: envbucket}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: user-search-predicate-null-seed
+call: {b10149: {search: null}}
+env: {}
+compare: {ignore: []}

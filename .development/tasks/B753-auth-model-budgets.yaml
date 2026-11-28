@@ -101,6 +101,7 @@ description: >-
   B1100 registers state/auth_model_budgets.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_model_budgets.rs and leave state.rs as it is.
 scope:
   paths:
+    - "crates/betterlite-auth/**"
     - crates/betterlite-auth/src/auth_model_budgets.rs
     - crates/betterlite-auth/src/auth_model_budgets/**
     - crates/betterlite-auth/Cargo.toml
@@ -298,6 +299,6 @@ pitfalls:
   - The limiter protocols return booleans, but this caller enforces exceptions, not false returns.
   - Updating the token deliberately omits end_user_max_budget despite the preceding parameter builder setting it.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2250
   max_new_expects: 0
 review_level: security

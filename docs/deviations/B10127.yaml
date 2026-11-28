@@ -1,0 +1,27 @@
+task: B10127
+deviations:
+  - what: >-
+      The team ids and the user reload come through B10070's UiSessionTeams and B10126's DelegatedHuman
+      ports passed as arguments, instead of get_user_object and MCPRequestHandler.reload_admitted_user
+      read from proxy_server.
+    why: >-
+      betterlite has no module-level state; the production ports run the same reads, so the contexts are
+      the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L53-L73
+  - what: >-
+      Every Err from the reload is treated as LiteLLM's HTTPException case (warning, then None). LiteLLM
+      lets a non-HTTP exception escape, which here is only B10126's Auth error for a user row whose
+      user_role fails validation; betterlite drops the user's own context with the warning instead of
+      answering 500.
+    why: >-
+      The port returns one error type, and every other reload failure is an HTTPException in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L104-L110
+  - what: >-
+      The per-team copies and the admitted context are built from ports and plain clones; there are no
+      oracle cases.
+    why: >-
+      admitted_user_context and build_effective_auth_contexts read prisma_client and MCPRequestHandler
+      through proxy_server, B10070's cases already compare the team id resolution, and the HTTP cases come
+      with the routes that list servers for a session (B4720, B4723, B4726 to B4728).
+    link: ""
+kept_bugs: []
