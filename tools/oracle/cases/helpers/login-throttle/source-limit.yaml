@@ -1,0 +1,29 @@
+kind: helper
+name: login-throttle-source-limit
+call:
+  login_throttle:
+    config:
+      general_settings:
+        max_failed_login_attempts_per_source: 4
+        trusted_proxy_ranges: []
+    phases:
+      - request: {peer: "10.1.1.1"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+          - {kind: attempt, username: alice}
+          - {kind: failed}
+          - {kind: attempt, username: alice}
+          - {kind: failed}
+          - {kind: attempt, username: alice}
+          - {kind: failed}
+          - {kind: attempt, username: dave}
+          - {kind: failed}
+          - {kind: attempt, username: carol}
+env: {}
+compare: {ignore: []}

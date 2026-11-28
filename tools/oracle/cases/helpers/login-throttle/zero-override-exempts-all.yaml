@@ -1,0 +1,18 @@
+kind: helper
+name: login-throttle-zero-override-exempts-all
+call:
+  login_throttle:
+    config:
+      general_settings:
+        trusted_proxy_ranges: []
+        max_failed_login_attempts_per_source_overrides:
+          10.0.0.0/8: 0
+    phases:
+      - request: {peer: "10.1.1.1"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+          - {kind: attempt, username: alice}
+env: {}
+compare: {ignore: []}

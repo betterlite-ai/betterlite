@@ -4807,6 +4807,7 @@ dependencies = [
  "hyper-util",
  "icu_properties",
  "indexmap 2.14.2",
+ "ipnet",
  "jiff",
  "jsonwebtoken",
  "mime_guess",

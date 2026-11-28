@@ -1,0 +1,23 @@
+kind: helper
+name: login-throttle-ipv6-group
+call:
+  login_throttle:
+    config:
+      general_settings:
+        max_failed_login_attempts_per_source: 4
+    phases:
+      - request: {peer: "2001:db8::1"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+          - {kind: attempt, username: bob}
+          - {kind: failed}
+      - request: {peer: "2001:db8::ffff:1"}
+        now: 1010.0
+        steps:
+          - {kind: attempt, username: bob}
+env: {}
+compare: {ignore: []}
