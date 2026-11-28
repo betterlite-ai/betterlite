@@ -56,11 +56,13 @@ pub fn presign_request(
     let (instructions, signature) =
         sign_once(request, SignatureLocation::QueryParams, Some(expires_in))?.into_parts();
     let (_headers, parameters) = instructions.into_parts();
-    let mut pairs: Vec<(String, String)> = parameters
-        .into_iter()
-        .filter(|(name, _)| *name != SIGNATURE_PARAM)
-        .map(|(name, value)| (name.to_owned(), value.into_owned()))
-        .collect();
+    let mut pairs: Vec<(String, String)> = Vec::with_capacity(parameters.len());
+    for (name, value) in parameters {
+        if name == SIGNATURE_PARAM {
+            continue;
+        }
+        pairs.push((name.to_owned(), value.into_owned()));
+    }
     // botocore ends the query with the signature; aws-sigv4 emits it before the security token
     pairs.push((SIGNATURE_PARAM.to_owned(), signature));
     Ok(pairs)

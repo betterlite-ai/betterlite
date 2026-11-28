@@ -517,14 +517,16 @@ fn gcp_iam_credential_provider_fetches_through_its_cache() {
     assert_eq!(token.expose_secret(), "redis-sa-token-1");
 }
 
-struct StaticAwsCredentials;
+struct StaticAwsCredentials {
+    session_token: Option<&'static str>,
+}
 
 impl AwsCredentialsResolver for StaticAwsCredentials {
     fn resolve(&self) -> Result<Credentials, super::aws::ElastiCacheSigningError> {
         Ok(Credentials::new(
             "AKIAIOSFODNN7EXAMPLE",
             "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-            None,
+            self.session_token.map(str::to_owned),
             None,
             "redis-credentials-tests",
         ))
@@ -542,7 +544,12 @@ fn elasticache_provider_signs_connect_url_for_the_configured_cache() {
     };
     let provider = ElastiCacheIamProvider { settings };
     let (user_name, signed) = provider
-        .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
+        .get_credentials(
+            &StaticAwsCredentials {
+                session_token: None,
+            },
+            SystemTime::UNIX_EPOCH,
+        )
         .unwrap();
     let signed_url = signed.expose_secret();
     assert_eq!(user_name, "app");
@@ -573,23 +580,14 @@ fn elasticache_provider_matches_botocore_sigv4_query_auth_known_answer() {
     };
     let provider = ElastiCacheIamProvider { settings };
     let (_user_name, signed) = provider
-        .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
+        .get_credentials(
+            &StaticAwsCredentials {
+                session_token: None,
+            },
+            SystemTime::UNIX_EPOCH,
+        )
         .unwrap();
     assert_eq!(signed.expose_secret(), expected);
-}
-
-struct StaticSessionAwsCredentials;
-
-impl AwsCredentialsResolver for StaticSessionAwsCredentials {
-    fn resolve(&self) -> Result<Credentials, super::aws::ElastiCacheSigningError> {
-        Ok(Credentials::new(
-            "AKIAIOSFODNN7EXAMPLE",
-            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-            Some("tokenEXAMPLE".to_owned()),
-            None,
-            "redis-credentials-tests",
-        ))
-    }
 }
 
 #[test]
@@ -603,7 +601,12 @@ fn elasticache_provider_puts_the_session_token_before_the_signature() {
     };
     let provider = ElastiCacheIamProvider { settings };
     let (_user_name, signed) = provider
-        .get_credentials(&StaticSessionAwsCredentials, SystemTime::UNIX_EPOCH)
+        .get_credentials(
+            &StaticAwsCredentials {
+                session_token: Some("tokenEXAMPLE"),
+            },
+            SystemTime::UNIX_EPOCH,
+        )
         .unwrap();
     let signed_url = signed.expose_secret();
     let token = signed_url
@@ -630,7 +633,12 @@ fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
     };
     let provider = ElastiCacheIamProvider { settings };
     let (_user_name, signed) = provider
-        .get_credentials(&StaticAwsCredentials, SystemTime::UNIX_EPOCH)
+        .get_credentials(
+            &StaticAwsCredentials {
+                session_token: None,
+            },
+            SystemTime::UNIX_EPOCH,
+        )
         .unwrap();
     assert!(
         signed
