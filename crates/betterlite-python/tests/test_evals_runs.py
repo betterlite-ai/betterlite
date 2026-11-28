@@ -640,31 +640,54 @@ def test_calls_drop_logging() -> None:
 # LiteLLM's wrapper fills the call from a matching litellm_credential_name before the body runs
 def test_calls_credential_name() -> None:
     with RunsServer() as server:
+        other_values: dict[str, JsonValue] = {"api_key": "sk-other", "api_base": server.url}
+        other: dict[str, JsonValue] = {
+            "credential_name": "other-openai",
+            "credential_values": other_values,
+        }
         values: dict[str, JsonValue] = {"api_key": GOOD_KEY, "api_base": server.url}
         stored: dict[str, JsonValue] = {
             "credential_name": CREDENTIAL_NAME,
             "credential_values": values,
         }
+        other_entry = StoredCredential(
+            credential_name="other-openai", credential_info={}, credential_values=other_values
+        )
         theirs = StoredCredential(
             credential_name=CREDENTIAL_NAME, credential_info={}, credential_values=values
         )
-        betterlite.credential_list.append(stored)
-        LITELLM_CREDENTIALS.credential_list.append(theirs)
+        betterlite.credential_list.extend([other, stored])
+        LITELLM_CREDENTIALS.credential_list.extend([other_entry, theirs])
         try:
             ours = create_run(EVAL_ID, DATA_SOURCE, litellm_credential_name=CREDENTIAL_NAME)
             reference = LITELLM.create_run(
                 eval_id=EVAL_ID, data_source=DATA_SOURCE,
                 litellm_credential_name=CREDENTIAL_NAME,
             )
+            named = create_run(
+                EVAL_ID, DATA_SOURCE, litellm_credential_name=CREDENTIAL_NAME,
+                api_key="sk-caller",
+            )
+            reference_named = LITELLM.create_run(
+                eval_id=EVAL_ID, data_source=DATA_SOURCE,
+                litellm_credential_name=CREDENTIAL_NAME, api_key="sk-caller",
+            )
         finally:
+            betterlite.credential_list.remove(other)
             betterlite.credential_list.remove(stored)
+            LITELLM_CREDENTIALS.credential_list.remove(other_entry)
             LITELLM_CREDENTIALS.credential_list.remove(theirs)
         our_call = server.calls[0]
         their_call = server.calls[1]
+        named_call = server.calls[2]
+        their_named_call = server.calls[3]
     assert dumped(made_answer(ours)) == dumped(reference)
+    assert dumped(made_answer(named)) == dumped(reference_named)
     assert our_call["path"] == their_call["path"] == RUNS_PATH
     assert header_of(our_call, "authorization") == f"Bearer {GOOD_KEY}"
     assert header_of(their_call, "authorization") == f"Bearer {GOOD_KEY}"
+    assert header_of(named_call, "authorization") == "Bearer sk-caller"
+    assert header_of(their_named_call, "authorization") == "Bearer sk-caller"
 
 
 # a structured httpx.Timeout becomes one deadline; docs/deviations/B7886.yaml records the phase loss
