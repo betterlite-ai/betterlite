@@ -90,7 +90,7 @@ fn rbac_required() {
     )
     .unwrap_err();
     assert!(matches!(
-        failure,
+        &*failure,
         AuthFailure::Http {
             status_code: 403,
             ..
@@ -114,7 +114,7 @@ fn role_route_denial() {
         CHAT,
     )
     .unwrap_err();
-    assert!(matches!(failure, AuthFailure::Http { .. }));
+    assert!(matches!(&*failure, AuthFailure::Http { .. }));
     let exception = wire(&failure);
     assert_eq!(exception.code, "403");
     assert!(exception.message.contains("not allowed to call route"));
@@ -130,7 +130,7 @@ fn admin_route_limited() {
         None,
     )
     .unwrap_err();
-    assert!(matches!(failure, AuthFailure::Other { .. }));
+    assert!(matches!(&*failure, AuthFailure::Other { .. }));
     let exception = wire(&failure);
     assert_eq!(exception.error_type, "auth_error");
     assert_eq!(exception.param.as_deref(), Some("None"));
@@ -236,7 +236,7 @@ fn role_route_group() {
     can_rbac_role_call(&permissions, RbacRole::Team, RoleCheck::Route(CHAT)).unwrap();
     let failure = can_rbac_role_call(&permissions, RbacRole::Team, RoleCheck::Route("/user/info"))
         .unwrap_err();
-    assert!(matches!(failure, AuthFailure::Http { .. }));
+    assert!(matches!(&*failure, AuthFailure::Http { .. }));
 }
 
 #[test]
@@ -382,9 +382,7 @@ fn admin_not_scoped() {
 
 #[test]
 fn admin_result() {
-    let claims = TypedValue {
-        json: serde_json::json!({"sub": "user-1", "custom": true}),
-    };
+    let claims: TypedValue = serde_json::from_str(r#"{"sub": "user-1", "custom": true}"#).unwrap();
     let result = check_admin_access(
         &Settings::default(),
         &values(&["litellm_proxy_admin"]),
@@ -402,10 +400,7 @@ fn admin_result() {
     assert_eq!(result.agent_id.as_deref(), Some("agent-1"));
     assert!(result.team_id.is_none());
     assert!(result.end_user_id.is_none());
-    assert_eq!(
-        result.jwt_claims.json,
-        serde_json::json!({"sub": "user-1", "custom": true})
-    );
+    assert_eq!(result.jwt_claims, claims);
     let without_claims = check_admin_access(
         &Settings::default(),
         &values(&["litellm_proxy_admin"]),
@@ -415,5 +410,6 @@ fn admin_result() {
     )
     .unwrap()
     .unwrap();
-    assert_eq!(without_claims.jwt_claims.json, serde_json::json!({}));
+    let empty: TypedValue = serde_json::from_str("{}").unwrap();
+    assert_eq!(without_claims.jwt_claims, empty);
 }

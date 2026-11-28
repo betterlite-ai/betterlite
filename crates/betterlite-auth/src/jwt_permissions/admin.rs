@@ -7,8 +7,6 @@ use crate::jwt_claims::TypedValue;
 use crate::route_match::groups::get_actual_routes;
 use crate::user_roles::UserRole;
 
-const UNAUTHORIZED: u16 = 401;
-
 // the verified identity authorize_jwt passes into check_admin_access
 pub struct AdminIdentity<'identity> {
     pub token: &'identity str,
@@ -39,7 +37,7 @@ pub fn check_admin_access(
     route: &str,
     identity: &AdminIdentity<'_>,
     claims: Option<&TypedValue>,
-) -> Result<Option<AdminAuthResult>, AuthFailure> {
+) -> Result<Option<AdminAuthResult>, Box<AuthFailure>> {
     if !scopes
         .iter()
         .any(|scope| scope == &settings.routes.admin_jwt_scope)
@@ -54,28 +52,40 @@ pub fn check_admin_access(
     ) {
         return Err(route_denial(settings, route));
     }
-    Ok(Some(admin_result(identity, claims)))
+    let jwt_claims = match claims {
+        Some(claims) => claims.clone(),
+        None => serde_json::from_str::<TypedValue>("{}").map_err(empty_claims_failure)?,
+    };
+    Ok(Some(admin_result(identity, jwt_claims)))
 }
 
 // the plain Exception check_admin_access raises, which B757 turns into the 401 auth error
-fn route_denial(settings: &Settings, route: &str) -> AuthFailure {
+fn route_denial(settings: &Settings, route: &str) -> Box<AuthFailure> {
     let configured = settings
         .routes
         .admin_allowed_routes
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    AuthFailure::Other {
+    Box::new(AuthFailure::Other {
         message: format!(
             "Admin not allowed to access this route. Route={route}, Allowed Routes={:?}",
             get_actual_routes(&configured)
         ),
         param: None,
-    }
+    })
 }
 
-// JWTAuthBuilderResult's admin branch: the token and identity with no team, end-user or membership object
-fn admin_result(identity: &AdminIdentity<'_>, claims: Option<&TypedValue>) -> AdminAuthResult {
+// `claims or {}`: a token without claims still carries the empty document, which the literal always decodes
+fn empty_claims_failure(error: serde_json::Error) -> Box<AuthFailure> {
+    Box::new(AuthFailure::Other {
+        message: format!("the empty JWT claims document could not be decoded: {error}"),
+        param: None,
+    })
+}
+
+// JWTAuthBuilderResult's admin branch: the token, identity and claims with no team, end-user or membership object
+fn admin_result(identity: &AdminIdentity<'_>, jwt_claims: TypedValue) -> AdminAuthResult {
     AdminAuthResult {
         is_proxy_admin: true,
         token: SecretString::from(identity.token.to_owned()),
@@ -85,8 +95,6 @@ fn admin_result(identity: &AdminIdentity<'_>, claims: Option<&TypedValue>) -> Ad
         end_user_id: None,
         org_id: identity.org_id.map(str::to_owned),
         agent_id: identity.agent_id.map(str::to_owned),
-        jwt_claims: claims.cloned().unwrap_or_else(|| TypedValue {
-            json: serde_json::json!({}),
-        }),
+        jwt_claims,
     }
 }

@@ -85,7 +85,10 @@ pub(crate) fn run_stage(
     Ok(stage.context.clone())
 }
 
-fn authorize(stage: &JwtPermissionStageInput, rule: &JwtPermissionRule) -> Result<(), AuthFailure> {
+fn authorize(
+    stage: &JwtPermissionStageInput,
+    rule: &JwtPermissionRule,
+) -> Result<(), Box<AuthFailure>> {
     let permissions = role_permissions(stage.role_permissions.as_deref()).map_err(setup_failure)?;
     check_rbac_role(
         &stage.settings,
@@ -123,12 +126,12 @@ fn authorize(stage: &JwtPermissionStageInput, rule: &JwtPermissionRule) -> Resul
 }
 
 // the config section already validated this list, so a failed conversion is a wiring error that fails closed
-fn setup_failure(error: RolePermissionSetupError) -> AuthFailure {
+fn setup_failure(error: RolePermissionSetupError) -> Box<AuthFailure> {
     tracing::error!(%error, "general_settings.role_permissions could not be read");
-    AuthFailure::Other {
+    Box::new(AuthFailure::Other {
         message: String::from("the JWT permission configuration could not be read"),
         param: None,
-    }
+    })
 }
 
 fn configured(

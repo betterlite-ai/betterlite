@@ -42,7 +42,7 @@ pub fn can_rbac_role_call(
     permissions: &RolePermissions,
     rbac_role: RbacRole,
     check: RoleCheck<'_>,
-) -> Result<(), AuthFailure> {
+) -> Result<(), Box<AuthFailure>> {
     match check {
         RoleCheck::Route(route) => {
             let Some(allowed_routes) = role_list(permissions, rbac_role, RoleList::Routes) else {
@@ -51,35 +51,35 @@ pub fn can_rbac_role_call(
             if allowed_routes_check(UserRole::ProxyAdmin, route, allowed_routes, None) {
                 return Ok(());
             }
-            Err(AuthFailure::Http {
+            Err(Box::new(AuthFailure::Http {
                 detail: format!(
                     "Role={rbac_role:?} not allowed to call route={route}. Allowed routes={allowed_routes:?}"
                 ),
                 param: None,
                 status_code: FORBIDDEN,
                 invalid_virtual_key: false,
-            })
+            }))
         }
         RoleCheck::Model(model) => {
             let Some(allowed_models) = role_list(permissions, rbac_role, RoleList::Models) else {
                 return Ok(());
             };
-            let Some(model) = model else {
+            let Some(requested) = model else {
                 return Ok(());
             };
             if allowed_models
                 .iter()
-                .any(|allowed| allowed.as_str() == model)
+                .any(|allowed| allowed.as_str() == requested)
             {
                 return Ok(());
             }
-            Err(AuthFailure::ModelAccessDenied {
-                detail: model_denied_client_message(model),
+            Err(Box::new(AuthFailure::ModelAccessDenied {
+                detail: model_denied_client_message(requested),
                 internal_message: format!(
-                    "Role={rbac_role:?} not allowed to call model={model}. Allowed models={allowed_models:?}"
+                    "Role={rbac_role:?} not allowed to call model={requested}. Allowed models={allowed_models:?}"
                 ),
                 status_code: FORBIDDEN,
-            })
+            }))
         }
     }
 }
@@ -91,20 +91,20 @@ pub fn check_rbac_role(
     rbac_role: Option<RbacRole>,
     model: Option<&str>,
     route: &str,
-) -> Result<(), AuthFailure> {
+) -> Result<(), Box<AuthFailure>> {
     if !settings.rbac.enforce_rbac {
         return Ok(());
     }
-    let Some(rbac_role) = rbac_role else {
-        return Err(AuthFailure::Http {
+    let Some(role) = rbac_role else {
+        return Err(Box::new(AuthFailure::Http {
             detail: UNMATCHED_ROLE.to_owned(),
             param: None,
             status_code: FORBIDDEN,
             invalid_virtual_key: false,
-        });
+        }));
     };
-    can_rbac_role_call(permissions, rbac_role, RoleCheck::Model(model))?;
-    can_rbac_role_call(permissions, rbac_role, RoleCheck::Route(route))
+    can_rbac_role_call(permissions, role, RoleCheck::Model(model))?;
+    can_rbac_role_call(permissions, role, RoleCheck::Route(route))
 }
 
 #[derive(Debug, thiserror::Error)]

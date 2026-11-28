@@ -182,7 +182,7 @@ fn granted(input: &Input, result: &AdminAuthResult) -> Value {
     })
 }
 
-fn outcome(result: Result<(), AuthFailure>) -> HelperResult {
+fn outcome(result: Result<(), Box<AuthFailure>>) -> HelperResult {
     match result {
         Ok(()) => Ok(serde_json::to_value(answer("allowed", None))?),
         Err(failure) => Ok(serde_json::to_value(denial(&failure))?),

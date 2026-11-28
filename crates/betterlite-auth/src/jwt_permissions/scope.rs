@@ -10,7 +10,7 @@ pub fn check_scope_based_access(
     scope_mappings: Option<&[ScopeMapping]>,
     scopes: &[String],
     model: Option<&str>,
-) -> Result<(), AuthFailure> {
+) -> Result<(), Box<AuthFailure>> {
     let Some(mappings) = scope_mappings.filter(|mappings| !mappings.is_empty()) else {
         return Ok(());
     };
@@ -25,15 +25,17 @@ pub fn check_scope_based_access(
         allowed_models.extend(models.iter().map(String::as_str));
     }
     // request_data.get("model") is falsy for an absent model and for the empty string
-    let Some(model) = model.filter(|model| !model.is_empty()) else {
+    let Some(requested) = model.filter(|candidate| !candidate.is_empty()) else {
         return Ok(());
     };
-    if allowed_models.iter().any(|allowed| *allowed == model) {
+    if allowed_models.contains(&requested) {
         return Ok(());
     }
-    Err(AuthFailure::ModelAccessDenied {
-        detail: model_denied_client_message(model),
-        internal_message: format!("model={model} not allowed. Allowed_models={allowed_models:?}"),
+    Err(Box::new(AuthFailure::ModelAccessDenied {
+        detail: model_denied_client_message(requested),
+        internal_message: format!(
+            "model={requested} not allowed. Allowed_models={allowed_models:?}"
+        ),
         status_code: FORBIDDEN,
-    })
+    }))
 }
