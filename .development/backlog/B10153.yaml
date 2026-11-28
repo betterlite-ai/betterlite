@@ -1,7 +1,7 @@
 id: B10153
 milestone: M2 routing
 title: Context compaction config and the pending compaction state
-status: todo
+status: done
 depends_on: [B002, B385]
 file: tasks/B10153-compaction-state.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_strategy/complexity_router/config.py"
 parent: B021
 split_from: B336
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3397
