@@ -8,8 +8,8 @@ use betterlite_mcp::server_record::MCPServer;
 use serde_json::json;
 
 use super::{
-    ChallengeContext, GatewayChallengeDetail, McpAuthHeaders, bridge_invalid_token_challenge,
-    challenge_target, gateway_dcr_challenge, has_client_supplied_mcp_auth, is_dcr_challenge_scope,
+    ChallengeContext, McpAuthHeaders, bridge_invalid_token_challenge, challenge_target,
+    gateway_dcr_challenge, has_client_supplied_mcp_auth, is_dcr_challenge_scope,
 };
 use crate::mcp::admission_fallback::targets::TargetQuery;
 
@@ -170,13 +170,12 @@ fn gateway_challenge_aggregate_url() {
     let response = gateway_dcr_challenge(&ctx, &query(&registry, "/mcp"), false);
     let url = "http://testserver/.well-known/oauth-protected-resource/mcp";
     assert_eq!(response.status, 401);
+    let detail = response.detail.as_object().unwrap();
+    assert_eq!(detail.len(), 2);
+    assert_eq!(detail["error"], "authentication_required");
     assert_eq!(
-        response.detail,
-        serde_json::to_value(GatewayChallengeDetail {
-            error: "authentication_required",
-            message: "Authenticate with the gateway to use the MCP endpoint.",
-        })
-        .unwrap()
+        detail["message"],
+        "Authenticate with the gateway to use the MCP endpoint."
     );
     assert_eq!(
         response.headers,
