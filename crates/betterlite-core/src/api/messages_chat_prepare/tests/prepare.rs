@@ -166,7 +166,12 @@ fn assert_clear_input(calls: &[DispatchRecord], spec: &Json, tools: &[Json]) {
 async fn assert_disabled_forwards(messages: &[Json], system: &Json, spec: &Json, tools: &[Json]) {
     let history = history_result();
     let disabled = ScriptedDispatch::new(Ok(None));
-    for candidate in [None, Some(parse("null")), Some(parse("{}"))] {
+    for candidate in [
+        None,
+        Some(parse("null")),
+        Some(parse("{}")),
+        Some(parse("[]")),
+    ] {
         let result = prepare_context_managed_request(
             context(
                 messages,
