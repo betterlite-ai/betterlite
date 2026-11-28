@@ -197,8 +197,8 @@ async fn complete_authorizes_reserves_then_runs() {
 async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
     let plan = Plan {
         outcome: Outcome::Budget,
+        billed: None,
         reservation: Some(stamped_reservation()),
-        ..Default::default()
     };
     let (billing, fake, log) = harness(plan);
     let error = complete(
@@ -223,8 +223,8 @@ async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
 async fn a_reserve_failure_releases_and_skips_the_chat_call() {
     let plan = Plan {
         outcome: Outcome::ReserveFailure,
+        billed: None,
         reservation: Some(stamped_reservation()),
-        ..Default::default()
     };
     let (billing, fake, log) = harness(plan);
     let error = complete(
@@ -245,8 +245,8 @@ async fn a_reserve_failure_releases_and_skips_the_chat_call() {
 async fn a_chat_failure_releases_the_reservation() {
     let plan = Plan {
         outcome: Outcome::RunFailure,
+        billed: None,
         reservation: Some(stamped_reservation()),
-        ..Default::default()
     };
     let (billing, fake, log) = harness(plan);
     let error = complete(
@@ -267,8 +267,9 @@ async fn a_callback_bound_reservation_is_not_released() {
     let reservation = ReservationHandle::new(Decimal::ZERO, Vec::new(), Decimal::ZERO);
     lock(&reservation.0).callback_bound = true;
     let plan = Plan {
+        outcome: Outcome::Proceed,
+        billed: None,
         reservation: Some(reservation),
-        ..Default::default()
     };
     let (billing, fake, log) = harness(plan);
     complete(
@@ -310,8 +311,9 @@ async fn the_billed_cost_header_is_parsed(
     #[case] expected: Option<&'static str>,
 ) {
     let plan = Plan {
+        outcome: Outcome::Proceed,
         billed,
-        ..Default::default()
+        reservation: None,
     };
     let (billing, fake, _log) = harness(plan);
     let answer = complete(
@@ -330,9 +332,9 @@ async fn the_billed_cost_header_is_parsed(
 #[tokio::test]
 async fn an_unparsable_billed_cost_fails_the_call() {
     let plan = Plan {
+        outcome: Outcome::Proceed,
         billed: Some("cheap"),
         reservation: Some(stamped_reservation()),
-        ..Default::default()
     };
     let (billing, fake, log) = harness(plan);
     let error = complete(
