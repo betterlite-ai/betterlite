@@ -155,7 +155,7 @@ pub(crate) fn handler_with_predict(
     predict_price: Option<Decimal>,
 ) -> (VertexPassthroughHandler, Arc<PredictCost>) {
     let predict_cost = PredictCost::new(predict_price);
-    let relay: Arc<dyn CompletionCost> = predict_cost.clone();
+    let relay: Arc<dyn CompletionCost> = Arc::clone(&predict_cost);
     let predict = VertexPredictLogger::new(relay);
     let batch = VertexBatchLogging::new(
         None,
@@ -227,12 +227,12 @@ impl LogBuffer {
 }
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(bytes);
-        Ok(bytes.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

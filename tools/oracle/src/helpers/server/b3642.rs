@@ -29,7 +29,7 @@ impl Helper for Op {
     }
 }
 
-fn branch_name(branch: VertexBranch) -> &'static str {
+const fn branch_name(branch: VertexBranch) -> &'static str {
     match branch {
         VertexBranch::Interactions => "interactions",
         VertexBranch::Video => "video",

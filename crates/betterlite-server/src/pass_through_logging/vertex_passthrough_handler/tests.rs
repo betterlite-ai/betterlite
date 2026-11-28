@@ -178,8 +178,7 @@ fn location_is_not_written_without_one() {
 
 #[test]
 fn interactions_runs_the_b3638_handler_with_the_vertex_provider() {
-    let cost = FakeCost::priced(Decimal::new(125, 2));
-    let (passthrough, _) = handler(Arc::clone(&cost));
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(125, 2)));
     let mut fixture = fixture(INTERACTIONS_ROUTE, INTERACTIONS_BODY);
     let outcome = passthrough
         .vertex_passthrough_handler(input(&mut fixture))
@@ -199,6 +198,16 @@ fn interactions_runs_the_b3638_handler_with_the_vertex_provider() {
         logged_provider(&fixture.logging_obj).as_deref(),
         Some("vertex_ai")
     );
+}
+
+#[test]
+fn interactions_prices_the_reply_with_the_vertex_location() {
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let (passthrough, _) = handler(Arc::clone(&cost));
+    let mut fixture = fixture(INTERACTIONS_ROUTE, INTERACTIONS_BODY);
+    passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect("the interactions reply is logged");
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "response-model");
@@ -538,8 +547,7 @@ fn raw_predict_prices_the_partner_reply() {
 
 #[test]
 fn raw_predict_without_a_publisher_returns_the_empty_chat_response() {
-    let cost = FakeCost::priced(Decimal::new(125, 2));
-    let (passthrough, _) = handler(Arc::clone(&cost));
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(125, 2)));
     let mut fixture = fixture(RAW_PREDICT_GOOGLE_ROUTE, "{}");
     let outcome = passthrough
         .vertex_passthrough_handler(input(&mut fixture))
@@ -559,6 +567,16 @@ fn raw_predict_without_a_publisher_returns_the_empty_chat_response() {
     assert_eq!(field(message, "function_call"), &Json::Null);
     assert_eq!(as_text(kwarg(&outcome, "model")), "vertex_ai/gemini-pro");
     assert_eq!(logged_model(&fixture.logging_obj), "vertex_ai/gemini-pro");
+}
+
+#[test]
+fn raw_predict_without_a_publisher_prices_the_bare_model() {
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let (passthrough, _) = handler(Arc::clone(&cost));
+    let mut fixture = fixture(RAW_PREDICT_GOOGLE_ROUTE, "{}");
+    passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect("a body without a publisher is logged as an empty chat response");
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "vertex_ai/gemini-pro");
@@ -597,7 +615,7 @@ fn raw_predict_keeps_the_caller_kwargs() {
 }
 
 #[test]
-fn search_wraps_and_prices_the_reply() {
+fn search_wraps_the_reply() {
     let cost = FakeCost::priced(Decimal::new(3, 3));
     let (passthrough, _) = handler(Arc::clone(&cost));
     let mut fixture = fixture(SEARCH_ROUTE, SEARCH_BODY);
@@ -620,6 +638,16 @@ fn search_wraps_and_prices_the_reply() {
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "0.003");
     assert_eq!(as_text(kwarg(&outcome, "model")), "vertex_ai/search_api");
     assert_eq!(outcome.kwargs.entries.get("custom_llm_provider"), None);
+}
+
+#[test]
+fn search_writes_the_cost_and_the_base_model() {
+    let cost = FakeCost::priced(Decimal::new(3, 3));
+    let (passthrough, _) = handler(Arc::clone(&cost));
+    let mut fixture = fixture(SEARCH_ROUTE, SEARCH_BODY);
+    passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect("the search reply is logged");
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "vertex_ai/search_api");
