@@ -195,9 +195,11 @@ async fn complete_authorizes_reserves_then_runs() {
 
 #[tokio::test]
 async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
-    let mut plan = Plan::default();
-    plan.outcome = Outcome::Budget;
-    plan.reservation = Some(stamped_reservation());
+    let plan = Plan {
+        outcome: Outcome::Budget,
+        reservation: Some(stamped_reservation()),
+        ..Default::default()
+    };
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,
@@ -219,9 +221,11 @@ async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
 
 #[tokio::test]
 async fn a_reserve_failure_releases_and_skips_the_chat_call() {
-    let mut plan = Plan::default();
-    plan.outcome = Outcome::ReserveFailure;
-    plan.reservation = Some(stamped_reservation());
+    let plan = Plan {
+        outcome: Outcome::ReserveFailure,
+        reservation: Some(stamped_reservation()),
+        ..Default::default()
+    };
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,
@@ -239,9 +243,11 @@ async fn a_reserve_failure_releases_and_skips_the_chat_call() {
 
 #[tokio::test]
 async fn a_chat_failure_releases_the_reservation() {
-    let mut plan = Plan::default();
-    plan.outcome = Outcome::RunFailure;
-    plan.reservation = Some(stamped_reservation());
+    let plan = Plan {
+        outcome: Outcome::RunFailure,
+        reservation: Some(stamped_reservation()),
+        ..Default::default()
+    };
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,
@@ -260,8 +266,10 @@ async fn a_chat_failure_releases_the_reservation() {
 async fn a_callback_bound_reservation_is_not_released() {
     let reservation = ReservationHandle::new(Decimal::ZERO, Vec::new(), Decimal::ZERO);
     lock(&reservation.0).callback_bound = true;
-    let mut plan = Plan::default();
-    plan.reservation = Some(reservation);
+    let plan = Plan {
+        reservation: Some(reservation),
+        ..Default::default()
+    };
     let (billing, fake, log) = harness(plan);
     complete(
         &billing,
@@ -301,8 +309,10 @@ async fn the_billed_cost_header_is_parsed(
     #[case] billed: Option<&'static str>,
     #[case] expected: Option<&'static str>,
 ) {
-    let mut plan = Plan::default();
-    plan.billed = billed;
+    let plan = Plan {
+        billed,
+        ..Default::default()
+    };
     let (billing, fake, _log) = harness(plan);
     let answer = complete(
         &billing,
@@ -319,9 +329,11 @@ async fn the_billed_cost_header_is_parsed(
 
 #[tokio::test]
 async fn an_unparsable_billed_cost_fails_the_call() {
-    let mut plan = Plan::default();
-    plan.billed = Some("cheap");
-    plan.reservation = Some(stamped_reservation());
+    let plan = Plan {
+        billed: Some("cheap"),
+        reservation: Some(stamped_reservation()),
+        ..Default::default()
+    };
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,

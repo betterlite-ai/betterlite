@@ -36,7 +36,7 @@ pub struct SettleRequest<'call> {
 
 // inference.settle: the estimate comes back off and the billed cost goes on, never below zero
 pub fn settle_transform(lens: Lens, request: &SettleRequest<'_>) -> Result<Lens, SettlementError> {
-    let charged = lens
+    let active = lens
         .jobs
         .iter()
         .find(|job| job.id == request.job_id)
@@ -50,7 +50,7 @@ pub fn settle_transform(lens: Lens, request: &SettleRequest<'_>) -> Result<Lens,
             .ok_or(SettlementError::Overflow)?;
         adjusted.spent = spent.max(Decimal::ZERO);
     }
-    let Some(charged) = charged else {
+    let Some(charged) = active else {
         return Ok(adjusted);
     };
     let cost = charged

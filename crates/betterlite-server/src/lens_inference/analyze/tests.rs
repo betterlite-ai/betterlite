@@ -176,14 +176,14 @@ impl ClientIp for NoIp {
 }
 
 struct KeyFake {
-    blocked: bool,
+    key: KeyState,
 }
 
 #[async_trait]
 impl KeyResolver for KeyFake {
     async fn resolve(&self, _hashed_token: &str) -> Result<LensKey, AuthError> {
         Ok(LensKey {
-            blocked: self.blocked,
+            blocked: self.key == KeyState::Blocked,
             is_session_token: false,
             team_id: Some("team-1".to_owned()),
         })
@@ -223,9 +223,7 @@ impl ModelInfoSource for PricesFake {
     }
 }
 
-struct CalculatorFake {
-    amount: &'static str,
-}
+struct CalculatorFake(Decimal);
 
 impl CostCalculator for CalculatorFake {
     fn completion_cost(
@@ -233,7 +231,7 @@ impl CostCalculator for CalculatorFake {
         _response: &ChatResponse,
         _custom: Option<&CustomRates<'_>>,
     ) -> Result<Decimal, CostError> {
-        Ok(Decimal::from_str(self.amount).unwrap())
+        Ok(self.0)
     }
 }
 
@@ -301,7 +299,8 @@ fn lens_fixture(
 ) -> Lens {
     let json = [
         "{\"id\":\"lens-1\",\"scope\":{\"team_id\":\"team-1\"},",
-        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\",\"monthly_budget\":",
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\",",
+        "\"context\":\"describe the expected behavior\",\"monthly_budget\":",
         budget,
         "},\"created_at\":\"2026-01-10T08:00:00Z\",\"next_run_at\":\"2026-02-01T00:00:00Z\",",
         "\"budget_month\":\"2026-02\",\"spent\":",
@@ -311,7 +310,8 @@ fn lens_fixture(
         job_status,
         "\",\"created_at\":\"2026-01-10T08:00:00Z\",",
         "\"start\":\"2026-01-10T00:00:00Z\",\"end\":\"2026-01-10T08:00:00Z\",",
-        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\"},\"revision\":1,",
+        "\"settings\":{\"name\":\"n\",\"model\":\"lens-model\",",
+        "\"context\":\"describe the expected behavior\"},\"revision\":1,",
         "\"worker_id\":\"",
         job_worker,
         "\",\"lease_until\":\"",
@@ -363,7 +363,7 @@ struct Setup {
     key: KeyState,
     deployments: Vec<Deployment>,
     catalog: Catalog,
-    calculator: &'static str,
+    calculator: Decimal,
     billed: Option<&'static str>,
     content: Option<&'static str>,
     choices: usize,
@@ -389,7 +389,7 @@ fn setup() -> Setup {
         key: KeyState::Active,
         deployments: vec![deployment()],
         catalog: Catalog::Known(None),
-        calculator: "7.5",
+        calculator: amount("7.5"),
         billed: Some("2.5"),
         content: Some("{}"),
         choices: 1,
@@ -442,16 +442,12 @@ fn dependencies(setup: &Setup) -> Dependencies {
         releaser,
         client_ip: Arc::new(NoIp),
     };
-    let keys = KeyFake {
-        blocked: setup.key == KeyState::Blocked,
-    };
+    let keys = KeyFake { key: setup.key };
     let models = CatalogFake {
         configured: setup.router == Router::Configured,
         deployments: setup.deployments.clone(),
     };
-    let costs = CalculatorFake {
-        amount: setup.calculator,
-    };
+    let costs = CalculatorFake(setup.calculator);
     let clock = ClockFake::new(&setup.readings);
     let store = Store(Arc::new(Mutex::new(Some(setup.lens.clone()))));
     Dependencies {
