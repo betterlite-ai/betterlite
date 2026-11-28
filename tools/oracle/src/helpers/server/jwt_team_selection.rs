@@ -11,7 +11,9 @@ use betterlite_auth::jwt_team_selection::agent::resolve_agent_id;
 use betterlite_auth::jwt_team_selection::candidates::{
     CandidateContext, CandidateRequest, find_team_with_model_access,
 };
-use betterlite_auth::jwt_team_selection::claims_teams::find_and_validate_specific_team_id;
+use betterlite_auth::jwt_team_selection::claims_teams::{
+    find_and_validate_specific_team_id, get_all_team_ids,
+};
 use betterlite_auth::jwt_team_selection::error::TeamSelectionError;
 use betterlite_auth::jwt_team_selection::header::resolve_team_from_header;
 use betterlite_auth::jwt_team_selection::object::validate_object_id;
