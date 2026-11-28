@@ -2,6 +2,7 @@ use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::Principal;
 use secrecy::SecretString;
 
+use self::StageInput::{AuthIdentity, AuthKeyLookup};
 use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
@@ -31,6 +32,7 @@ use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
+use crate::error_body::AuthenticationFailure::Missing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -210,9 +212,7 @@ pub(crate) fn dispatch(
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
+        AuthKeyLookup(_) | AuthIdentity(_) => Err(StageFailure::from(Missing)),
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),

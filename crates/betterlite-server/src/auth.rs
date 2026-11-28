@@ -61,6 +61,7 @@ use std::{
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
+use self::model_pattern_input as model_stage;
 use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
@@ -151,9 +152,8 @@ fn stage_input(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
-        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
-            model_pattern_input(backend, request, authenticated, resolver)
-        }
+        AuthBackend::AuthRequestModels => model_stage(backend, request, authenticated, resolver),
+        AuthBackend::AuthModelPatterns => model_stage(backend, request, authenticated, resolver),
         AuthBackend::AuthModelGrants => auth_model_grants::stage_input(request, authenticated),
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
@@ -277,6 +277,7 @@ async fn prefetch_budget_stage(input: StageInput) -> Result<StageInput, StageFai
         | StageInput::MasterKey(_) | StageInput::TrustedNetwork(_) | StageInput::AuthRequestPolicy(_) | StageInput::RequestBodySafety(_)
         | StageInput::AuthVirtualKeyRoutes(_) | StageInput::AuthRequestModels(_) | StageInput::AuthModelPatterns(_) | StageInput::AuthModelGrants(_)
         | StageInput::EntityModelAccess(_) | StageInput::AuthResourceGrants(_) | StageInput::AuthPricing(_) | StageInput::OrganizationRoutePolicy(_)
+        | StageInput::AuthRoutePolicy(_)
         | StageInput::AuthOrgLookup(_) | StageInput::AuthEndUsers(_) | StageInput::AuthPolicySupport(_) | StageInput::ModelGrantIntersection(_)) => Ok(other),
     }
 }
