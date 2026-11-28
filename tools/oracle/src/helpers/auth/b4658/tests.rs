@@ -104,7 +104,10 @@ fn the_active_user_id_comes_from_a_live_key(#[case] input: Value, #[case] expect
 
 #[rstest]
 #[case::scim_false(json!({"user_id": "user-1", "metadata": {"scim_active": false}}), "no_active_key")]
-#[case::scim_zero(json!({"user_id": "user-1", "metadata": {"scim_active": 0}}), "active")]
+#[case::scim_zero(
+    json!({"user_id": "user-1", "metadata": {"scim_active": 0_i32}}),
+    "active"
+)]
 #[case::metadata_null(json!({"user_id": "user-1", "metadata": null}), "active")]
 #[case::no_metadata(json!({"user_id": "user-1"}), "active")]
 fn the_user_record_is_active_unless_scim_says_false(#[case] user: Value, #[case] expected: &str) {
