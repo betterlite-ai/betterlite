@@ -1,0 +1,12 @@
+task: B4676
+deviations:
+  - what: The signing keys, the clock, the jti source, the single-use authority, the cipher, the server registry and the request base URL are passed in. LiteLLM reads master_key, the session signing settings, datetime.now, secrets and the proxy cache inside each function.
+    why: betterlite keeps no module state, so cases fix the clock and entropy and compare what the tokens open to, never the signed strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1199-L1227
+  - what: When the signing configuration is invalid, introspection answers 500 server_error with the text of SessionSigningConfigError ("mcp_session_token_signing is misconfigured" and the like). LiteLLM answers with the Python error's detail string, which can embed a library exception message.
+    why: Typed errors have no free-form detail, and the library message is not part of the contract. Status and error code are unchanged, and revoke and the token verb keep the fixed gateway text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1526-L1528
+  - what: A failure to mint a token (a signing fault, a token over the size limit, a failed random source) answers 500 server_error "failed to mint the session credential" in every case. LiteLLM checks only that the result is a MintedSessionToken and has one text for it.
+    why: B4652 returns a typed MintError, and the same single answer keeps the wire text identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1066-L1071
+kept_bugs: []
