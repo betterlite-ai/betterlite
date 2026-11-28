@@ -424,17 +424,19 @@ def test_calls_list() -> None:
 
 def test_calls_list_sends_given() -> None:
     with RunsServer() as server:
-        ours = list_runs(
-            eval_id=EVAL_ID, limit=0, after="", before="", order=None,
-            api_base=server.url, api_key=GOOD_KEY,
-        )
-        reference = LITELLM.list_runs(
-            eval_id=EVAL_ID, limit=0, after="", before="", order=None,
-            api_base=server.url, api_key=GOOD_KEY,
-        )
-        paths = [call["path"] for call in server.calls]
-    assert dumped(made_answer(ours)) == dumped(reference)
-    assert paths == [RUNS_PATH, RUNS_PATH]
+        paths: list[tuple[str, str]] = []
+        for limit, after, before in ((0, "", ""), (None, None, None)):
+            ours = list_runs(
+                EVAL_ID, limit=limit, after=after, before=before, order=None,
+                api_base=server.url, api_key=GOOD_KEY,
+            )
+            reference = LITELLM.list_runs(
+                eval_id=EVAL_ID, limit=limit, after=after, before=before, order=None,
+                api_base=server.url, api_key=GOOD_KEY,
+            )
+            assert dumped(made_answer(ours)) == dumped(reference)
+            paths.append((server.calls[-2]["path"], server.calls[-1]["path"]))
+    assert paths == [(RUNS_PATH, RUNS_PATH), (RUNS_PATH, RUNS_PATH)]
 
 
 def test_calls_get() -> None:
@@ -868,27 +870,18 @@ def test_error_async_unsupported() -> None:
 
 # the async twins forward timeout, so a value the native request refuses fails each call
 def test_error_async_timeout() -> None:
-    with pytest.raises(BadRequestError) as created:
-        asyncio.run(
-            acreate_run(
-                EVAL_ID, DATA_SOURCE, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY
-            )
-        )
-    with pytest.raises(BadRequestError) as listed:
-        asyncio.run(alist_runs(EVAL_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY))
-    with pytest.raises(BadRequestError) as fetched:
-        asyncio.run(
-            aget_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
-        )
-    with pytest.raises(BadRequestError) as cancelled:
-        asyncio.run(
-            acancel_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
-        )
-    with pytest.raises(BadRequestError) as deleted:
-        asyncio.run(
-            adelete_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
-        )
-    for raised in (created, listed, fetched, cancelled, deleted):
+    pending = [
+        acreate_run(
+            EVAL_ID, DATA_SOURCE, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY
+        ),
+        alist_runs(EVAL_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
+        aget_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
+        acancel_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
+        adelete_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
+    ]
+    for call in pending:
+        with pytest.raises(BadRequestError) as raised:
+            asyncio.run(call)
         assert raised.value.status_code == BAD_REQUEST
         assert "timeout" in str(raised.value)
 
