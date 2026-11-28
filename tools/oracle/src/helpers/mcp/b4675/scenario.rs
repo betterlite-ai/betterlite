@@ -117,7 +117,7 @@ impl Scenario {
         }
     }
 
-    fn ports<'scenario>(
+    const fn ports<'scenario>(
         &'scenario self,
         prepared: &'scenario Prepared,
     ) -> ConnectPorts<'scenario, Answers, Answers> {

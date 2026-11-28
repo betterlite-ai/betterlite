@@ -3,7 +3,7 @@ use serde_json::Value;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) clients: Vec<ClientSeed>,
     pub(super) servers: Vec<Value>,
     pub(super) steps: Vec<Step>,
