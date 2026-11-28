@@ -1,7 +1,7 @@
 task: B1625
 deviations:
-  - what: 'Signatures are not verified in this build: samael''s xmlsec backend needs libxml2, xmlsec and OpenSSL, which betterlite does not link, so the verifier seam answers Unavailable and B1626''s ACS route answers 501. Login and metadata work, and no path accepts an unsigned response.'
-    why: 'The task forbids implementing XML signatures or canonicalization and forbids silently disabling the check; LiteLLM''s saml extra always verifies process_response before it reads identity data.'
+  - what: 'Signatures are not verified in a build without the saml feature, which is the default build: the verifier seam answers Unavailable, so B1626''s ACS route answers 501, and a later task adds samael''s verifier behind that feature. Login and metadata work, and no path accepts an unsigned response.'
+    why: 'The task forbids implementing XML signatures or canonicalization and forbids silently disabling the check; LiteLLM''s saml extra always verifies process_response before it reads identity data, so a build that omits the feature refuses every response instead of trusting one.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L309-L330
   - what: 'Values interpolated into the AuthnRequest and SP metadata are XML-escaped. python3-saml''s templates use raw %s, so a value holding & < > or a quote yields an escaped document where LiteLLM yields malformed XML.'
     why: 'An unescaped & makes the document invalid, and an injected < or quote could add elements to a request the IdP trusts; no working setup relies on malformed XML.'
