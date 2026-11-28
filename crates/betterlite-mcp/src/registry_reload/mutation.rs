@@ -1,10 +1,15 @@
+use std::future::Future;
+
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_http::user_url::validate::Resolve;
 use indexmap::IndexMap;
 
+use super::cleanup::ToolRoutingCleanup as _;
 use super::error::MutationError;
+use super::owners::ToolOwnerInitialization as _;
 use super::ports::{CacheInvalidator, ServerRows, ToolLister, ToolRegistrySink};
 use super::prefix_owners::prefix_owners;
+use super::registration::OpenApiRegistration as _;
 use super::{PLAIN_DB_ENV_VARS, RegistryMutator};
 use crate::config_loader::ports::{DcrHydrator, InstructionsCache};
 use crate::discovery_slots::clock::Clock;
@@ -13,8 +18,37 @@ use crate::server_build::{Decryptor, DeferredSlots, StdioPolicy};
 use crate::server_oauth::trust::carry_forward_endpoints;
 use crate::server_record::MCPServer;
 
-impl<D, F, S, R, C, Rows, H, L, T, I, X, U>
-    RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
+// LiteLLM's add_server, update_server and remove_server, on a trait because the workspace denies multiple_inherent_impl
+pub trait RegistryMutations {
+    fn add(&self, row: &McpServerTable) -> impl Future<Output = Result<(), MutationError>> + Send;
+
+    fn update(
+        &self,
+        row: &McpServerTable,
+    ) -> impl Future<Output = Result<(), MutationError>> + Send;
+
+    fn remove(&self, row: &McpServerTable) -> impl Future<Output = ()> + Send;
+
+    fn add_eligible(
+        &self,
+        row: &McpServerTable,
+    ) -> impl Future<Output = Result<(), MutationError>> + Send;
+
+    fn update_eligible(
+        &self,
+        row: &McpServerTable,
+        previous: &MCPServer,
+    ) -> impl Future<Output = Result<(), MutationError>> + Send;
+
+    fn install(
+        &self,
+        server: MCPServer,
+        carry: Option<&MCPServer>,
+    ) -> impl Future<Output = Result<MCPServer, MutationError>> + Send;
+}
+
+impl<D, F, S, R, C, Rows, H, L, T, I, X, U> RegistryMutations
+    for RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
 where
     D: Decryptor,
     F: MetadataFetcher + 'static,
@@ -30,7 +64,7 @@ where
     U: Resolve,
 {
     // LiteLLM's add_server
-    pub async fn add(&self, row: &McpServerTable) -> Result<(), MutationError> {
+    async fn add(&self, row: &McpServerTable) -> Result<(), MutationError> {
         if !eligible(row) {
             return Ok(());
         }
@@ -60,7 +94,7 @@ where
     }
 
     // LiteLLM's update_server
-    pub async fn update(&self, row: &McpServerTable) -> Result<(), MutationError> {
+    async fn update(&self, row: &McpServerTable) -> Result<(), MutationError> {
         if !eligible(row) {
             let evicted = {
                 let mut held = self.registry.write().await;
@@ -141,7 +175,7 @@ where
     }
 
     // LiteLLM's remove_server
-    pub async fn remove(&self, row: &McpServerTable) {
+    async fn remove(&self, row: &McpServerTable) {
         let evicted = {
             let mut held = self.registry.write().await;
             pop_registered(&mut held.db_servers, row)

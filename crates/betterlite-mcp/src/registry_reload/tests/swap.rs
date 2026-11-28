@@ -85,7 +85,7 @@ async fn swap_primes_discovery_for_staged_servers() {
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.reload().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    sleep(Duration::from_millis(500)).await;
     let calls = fixture.fetcher.calls();
     assert_eq!(calls.first().map(String::as_str), Some("https://mcp.test"));
 }

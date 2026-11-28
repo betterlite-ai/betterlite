@@ -58,13 +58,10 @@ async fn mutation_add_inserts_and_assigns_prefix() {
 async fn mutation_add_builds_with_plain_env_vars() {
     let fixture = test_fixture();
     let sealed = encrypt(&fixture.cipher, "s3cret");
-    let source = serde_json::json!({
-        "server_id": "srv-1",
-        "transport": "http",
-        "url": "https://mcp.test",
-        "env_vars": [{"name": "TOKEN", "value": sealed.clone()}],
-    })
-    .to_string();
+    let value = serde_json::to_string(&sealed).unwrap();
+    let source = format!(
+        r#"{{"server_id":"srv-1","transport":"http","url":"https://mcp.test","env_vars":[{{"name":"TOKEN","value":{value}}}]}}"#
+    );
     let table = row(&source);
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);

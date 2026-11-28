@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::sync::Arc;
+
 use betterlite_http::user_url::validate::Resolve;
 use betterlite_prompts::arguments::json::Object;
 
@@ -56,8 +59,16 @@ where
     }
 }
 
-impl<D, F, S, R, C, Rows, H, L, T, I, X, U>
-    RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
+// LiteLLM's _maybe_register_openapi_tools, on a trait because the workspace denies multiple_inherent_impl
+pub(super) trait OpenApiRegistration {
+    fn register_openapi_tools(
+        &self,
+        server: &MCPServer,
+    ) -> impl Future<Output = Result<bool, MutationError>> + Send;
+}
+
+impl<D, F, S, R, C, Rows, H, L, T, I, X, U> OpenApiRegistration
+    for RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
 where
     D: Decryptor,
     F: MetadataFetcher + 'static,
@@ -72,17 +83,9 @@ where
     X: CacheInvalidator,
     U: Resolve,
 {
-    // LiteLLM's _maybe_register_openapi_tools: true when a spec was registered
-    pub(super) async fn register_openapi_tools(
-        &self,
-        server: &MCPServer,
-    ) -> Result<bool, MutationError> {
-        if server
-            .fields
-            .spec_path
-            .as_deref()
-            .is_none_or(|path| path.is_empty())
-        {
+    // true when a spec was registered
+    async fn register_openapi_tools(&self, server: &MCPServer) -> Result<bool, MutationError> {
+        if server.fields.spec_path.as_deref().is_none_or(str::is_empty) {
             return Ok(false);
         }
         let sink = RegistrationSink { inner: self.tools };
@@ -100,7 +103,7 @@ where
         let loader = ConfigLoader {
             builder: &builder,
             slots: &self.slots,
-            registry: self.registry.clone(),
+            registry: Arc::clone(&self.registry),
             dcr: self.dcr,
             tools: &sink,
             instructions: self.instructions,

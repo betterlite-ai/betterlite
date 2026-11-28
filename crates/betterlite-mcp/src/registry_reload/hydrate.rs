@@ -28,4 +28,6 @@ where
             "hydrated persisted DCR client onto config MCP server server_id={server_id}"
         );
     }
+    // significant_drop_tightening cannot see that the loop's next pass needs the guard
+    drop(held);
 }

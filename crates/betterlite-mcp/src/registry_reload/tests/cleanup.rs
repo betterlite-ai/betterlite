@@ -23,8 +23,8 @@ async fn cleanup_removes_openapi_tools_by_prefix_and_owned_mapping_rows() {
             .insert(String::from("named"), String::from("Server One"));
         owners
             .mapping
-            .insert(String::from("other"), String::from("Other"));
-    }
+            .insert(String::from("other"), String::from("Other"))
+    };
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.cleanup_tool_routing_artifacts(&subject);
@@ -52,8 +52,8 @@ async fn cleanup_skips_unregister_without_spec_path() {
         let mut owners = fixture.owners.write().unwrap();
         owners
             .mapping
-            .insert(String::from("echo"), String::from("Prefix One"));
-    }
+            .insert(String::from("echo"), String::from("Prefix One"))
+    };
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.cleanup_tool_routing_artifacts(&subject);
@@ -76,8 +76,8 @@ async fn cleanup_skips_unregister_without_a_prefix() {
         owners.mapping.insert(String::from("blank"), String::new());
         owners
             .mapping
-            .insert(String::from("echo"), String::from("Some Server"));
-    }
+            .insert(String::from("echo"), String::from("Some Server"))
+    };
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);
     mutator.cleanup_tool_routing_artifacts(&subject);

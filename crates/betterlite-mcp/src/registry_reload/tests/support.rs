@@ -51,14 +51,6 @@ struct FakeFetcher {
 }
 
 impl FakeFetcher {
-    fn route(&self, url: &str, status: u16, body: &str) {
-        self.state
-            .lock()
-            .unwrap()
-            .routes
-            .insert(url.to_owned(), (status, body.to_owned()));
-    }
-
     fn calls(&self) -> Vec<String> {
         self.state.lock().unwrap().calls.clone()
     }
@@ -199,6 +191,8 @@ impl ToolRegistrySink for FakeSink {
         for name in &doomed {
             state.tools.remove(name);
         }
+        // significant_drop_tightening cannot see that the loop needs the guard
+        drop(state);
         doomed.len()
     }
 }

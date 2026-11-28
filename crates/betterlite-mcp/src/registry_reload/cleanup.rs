@@ -12,8 +12,15 @@ use crate::server_build::{Decryptor, DeferredSlots, StdioPolicy};
 use crate::server_record::MCPServer;
 use crate::server_utils::prefixes::{get_server_prefix, iter_known_server_prefixes};
 
-impl<D, F, S, R, C, Rows, H, L, T, I, X, U>
-    RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
+// LiteLLM's _cleanup_server_tool_routing_artifacts and _owned_mapping_values, on a trait because the workspace denies multiple_inherent_impl
+pub trait ToolRoutingCleanup {
+    fn cleanup_tool_routing_artifacts(&self, server: &MCPServer);
+
+    fn owned_mapping_values(&self, server: &MCPServer) -> BTreeSet<String>;
+}
+
+impl<D, F, S, R, C, Rows, H, L, T, I, X, U> ToolRoutingCleanup
+    for RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
 where
     D: Decryptor,
     F: MetadataFetcher + 'static,
@@ -29,7 +36,7 @@ where
     U: Resolve,
 {
     // LiteLLM's _cleanup_server_tool_routing_artifacts
-    pub fn cleanup_tool_routing_artifacts(&self, server: &MCPServer) {
+    fn cleanup_tool_routing_artifacts(&self, server: &MCPServer) {
         self.caches.invalidate_server(&server.fields.server_id);
         let prefix_root = get_server_prefix(server, &self.builder.prefixes).replace(' ', "_");
         let has_spec = server
@@ -50,12 +57,12 @@ where
     }
 
     // LiteLLM's _owned_mapping_values: every mapping value a tool of this server may carry
-    pub fn owned_mapping_values(&self, server: &MCPServer) -> BTreeSet<String> {
+    fn owned_mapping_values(&self, server: &MCPServer) -> BTreeSet<String> {
+        // iter_known_server_prefixes already drops empty prefixes, so no filter is needed here
         let mut owned: BTreeSet<String> =
             iter_known_server_prefixes(server, &self.builder.prefixes)
                 .into_iter()
                 .map(|prefix| prefix.replace(' ', "_"))
-                .filter(|value| !value.is_empty())
                 .collect();
         let name = server.fields.name.replace(' ', "_");
         if !name.is_empty() {

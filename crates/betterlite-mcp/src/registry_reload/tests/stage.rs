@@ -195,13 +195,10 @@ async fn stage_assigns_prefixes_across_full_staged_set() {
 async fn stage_decrypts_encrypted_env_vars_on_reload() {
     let fixture = test_fixture();
     let sealed = encrypt(&fixture.cipher, "s3cret");
-    let source = serde_json::json!({
-        "server_id": "srv-1",
-        "transport": "http",
-        "url": "https://mcp.test",
-        "env_vars": [{"name": "TOKEN", "value": sealed}],
-    })
-    .to_string();
+    let value = serde_json::to_string(&sealed).unwrap();
+    let source = format!(
+        r#"{{"server_id":"srv-1","transport":"http","url":"https://mcp.test","env_vars":[{{"name":"TOKEN","value":{value}}}]}}"#
+    );
     fixture.rows.set(vec![row(&source)]);
     let builder = fixture.builder();
     let mutator = fixture.mutator(&builder);

@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::future::Future;
 
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_http::user_url::validate::Resolve;
@@ -7,8 +8,10 @@ use indexmap::IndexMap;
 
 use super::error::MutationError;
 use super::hydrate::hydrate_config_servers;
+use super::owners::ToolOwnerInitialization as _;
 use super::ports::{CacheInvalidator, ServerRows, ToolLister, ToolRegistrySink};
 use super::prefix_owners::prefix_owners;
+use super::registration::OpenApiRegistration as _;
 use super::{ENCRYPTED_DB_ENV_VARS, RegistryMutator};
 use crate::config_loader::checks::config_ids_taken_by_db;
 use crate::config_loader::ports::{DcrHydrator, InstructionsCache};
@@ -24,8 +27,41 @@ use crate::server_oauth::trust::carry_forward_endpoints;
 use crate::server_oauth::unresolved::endpoints_unresolved;
 use crate::server_record::MCPServer;
 
-impl<D, F, S, R, C, Rows, H, L, T, I, X, U>
-    RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
+// LiteLLM's reload_servers_from_database, on a trait because the workspace denies multiple_inherent_impl
+pub trait RegistryReload {
+    fn reload(&self) -> impl Future<Output = Result<(), MutationError>> + Send;
+
+    fn stage_rows(
+        &self,
+        rows: &[McpServerTable],
+        previous: &IndexMap<String, MCPServer>,
+    ) -> impl Future<Output = IndexMap<String, MCPServer>> + Send;
+
+    fn stage_row(
+        &self,
+        row: &McpServerTable,
+        previous: &IndexMap<String, MCPServer>,
+    ) -> impl Future<Output = Result<MCPServer, MutationError>> + Send;
+
+    fn reusable(&self, server: &MCPServer, row: &McpServerTable) -> bool;
+
+    fn register_staged(
+        &self,
+        staged: &mut IndexMap<String, MCPServer>,
+    ) -> impl Future<Output = (IndexMap<String, MCPServer>, bool)> + Send;
+
+    fn publish(
+        &self,
+        previous: IndexMap<String, MCPServer>,
+        registered: IndexMap<String, MCPServer>,
+        openapi_tools: bool,
+    ) -> impl Future<Output = ()> + Send;
+
+    fn warn_reload_sets(&self, servers: &[MCPServer]) -> impl Future<Output = ()> + Send;
+}
+
+impl<D, F, S, R, C, Rows, H, L, T, I, X, U> RegistryReload
+    for RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
 where
     D: Decryptor,
     F: MetadataFetcher + 'static,
@@ -40,7 +76,7 @@ where
     X: CacheInvalidator,
     U: Resolve,
 {
-    pub async fn reload(&self) -> Result<(), MutationError> {
+    async fn reload(&self) -> Result<(), MutationError> {
         tracing::debug!("Loading MCP servers from database into registry...");
         self.instructions.clear();
         let rows = self.rows.find_active().await?;
@@ -100,7 +136,7 @@ where
             .build_from_table(row, ENCRYPTED_DB_ENV_VARS)
             .await?;
         if let Some(prefix) = existing
-            .and_then(|server| server.fields.short_prefix.as_deref())
+            .and_then(|prior| prior.fields.short_prefix.as_deref())
             .filter(|text| !text.is_empty())
         {
             server.fields.short_prefix = Some(prefix.to_owned());
@@ -189,12 +225,8 @@ where
             .iter()
             .map(|server| server.fields.server_id.clone())
             .collect();
-        let mut shadowed = BTreeSet::new();
-        for server_id in &config_ids {
-            if registered_ids.contains(server_id) {
-                shadowed.insert(server_id.clone());
-            }
-        }
+        let shadowed: BTreeSet<String> =
+            config_ids.intersection(&registered_ids).cloned().collect();
         if self.warned_shadowed.record(&shadowed) {
             tracing::warn!(
                 "config.yaml MCP server_id(s) {} are also database-backed MCP servers. The database entry takes precedence, so the config.yaml server is unreachable. Give the config entry a different server_id.",

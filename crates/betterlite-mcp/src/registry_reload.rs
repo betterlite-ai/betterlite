@@ -1,12 +1,12 @@
-mod cleanup;
+pub mod cleanup;
 pub mod error;
 mod hydrate;
-mod mutation;
-mod owners;
+pub mod mutation;
+pub mod owners;
 pub mod ports;
 mod prefix_owners;
 mod registration;
-mod reload;
+pub mod reload;
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};

@@ -18,8 +18,13 @@ use crate::server_utils::prefixes::{
 };
 use crate::tools::schemas::McpTool;
 
-impl<D, F, S, R, C, Rows, H, L, T, I, X, U>
-    RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
+// LiteLLM's initialize_tool_name_to_mcp_server_name_mapping, on a trait because the workspace denies multiple_inherent_impl
+pub trait ToolOwnerInitialization {
+    fn initialize_tool_owners(&self);
+}
+
+impl<D, F, S, R, C, Rows, H, L, T, I, X, U> ToolOwnerInitialization
+    for RegistryMutator<'_, D, F, S, R, C, Rows, H, L, T, I, X, U>
 where
     D: Decryptor,
     F: MetadataFetcher + 'static,
@@ -34,11 +39,11 @@ where
     X: CacheInvalidator,
     U: Resolve,
 {
-    // LiteLLM's initialize_tool_name_to_mcp_server_name_mapping: fire and forget, never awaited
-    pub fn initialize_tool_owners(&self) {
+    // fire and forget, never awaited
+    fn initialize_tool_owners(&self) {
         self.tasks.spawn(
             ToolOwnerInitializer {
-                registry: self.registry.clone(),
+                registry: Arc::clone(&self.registry),
                 slots: Arc::clone(&self.slots),
                 owners: Arc::clone(&self.owners),
                 lister: Arc::clone(&self.lister),
