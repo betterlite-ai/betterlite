@@ -9,7 +9,8 @@ use crate::jwt_verification::keys::PublicKey;
 
 use super::fixtures;
 use super::support::{
-    Harness, ScriptedSource, SourceReply, audience_one, claim_fields, harness, settings, text_claim,
+    Harness, ScriptedSource, SourceReply, audience_one, capture_logs, claim_fields, harness,
+    settings, text_claim,
 };
 
 fn scoped() -> Harness {
@@ -42,6 +43,22 @@ async fn valid_signature() {
     assert_eq!(text_claim(&fields, "sub"), Some("user-1"));
     assert_eq!(text_claim(&fields, "aud"), Some("litellm-proxy"));
     assert_eq!(source.calls(), vec!["lookup:rsa-key".to_owned()]);
+}
+
+#[tokio::test]
+async fn header_is_debug_logged_before_verification() {
+    let (logs, _guard) = capture_logs();
+    let h = scoped();
+    let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
+    h.verifier
+        .auth_jwt(fixtures::TOKEN_RS256, &source)
+        .await
+        .unwrap();
+    let expected = "DEBUG LiteLLM Proxy header: alg=Some(\"RS256\") kid=Some(\"rsa-key\")";
+    assert!(
+        logs.take().iter().any(|line| line.as_str() == expected),
+        "the unverified header was not debug-logged"
+    );
 }
 
 #[tokio::test]
