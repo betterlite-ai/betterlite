@@ -2,11 +2,11 @@ use std::io::Error as IoError;
 use std::time::TryFromFloatSecsError;
 
 use betterlite_http::tls::TlsError;
+use betterlite_http::websocket_client::error::WebSocketClientError;
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 use tokio::task::JoinError;
-use tokio_tungstenite::tungstenite;
 
 // the failure the model stream ended with, filled by the proxy from its own typed stream error
 #[derive(Debug, Error)]
@@ -81,7 +81,7 @@ pub enum CatoError {
     #[error("the Cato Networks upstream websocket failed")]
     WebSocket {
         #[source]
-        source: tungstenite::Error,
+        source: WebSocketClientError,
     },
     #[error("the Cato Networks upstream websocket did not complete its handshake in time")]
     ConnectTimeout,
@@ -164,6 +164,23 @@ impl CatoError {
             | Self::StreamSenderFailed { .. }
             | Self::ModelStream { .. }
             | Self::StreamTask { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+// websockets waits `open` for the handshake and the old connector answered a slower one as a connect timeout
+impl From<WebSocketClientError> for CatoError {
+    fn from(error: WebSocketClientError) -> Self {
+        match error {
+            WebSocketClientError::Timeout => Self::ConnectTimeout,
+            other @ (WebSocketClientError::Io(_)
+            | WebSocketClientError::Tls
+            | WebSocketClientError::Status { .. }
+            | WebSocketClientError::ProxyStatus { .. }
+            | WebSocketClientError::Capacity { .. }
+            | WebSocketClientError::Url
+            | WebSocketClientError::KeepaliveTimeout
+            | WebSocketClientError::Protocol) => Self::WebSocket { source: other },
         }
     }
 }

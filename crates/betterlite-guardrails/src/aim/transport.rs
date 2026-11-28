@@ -1,16 +1,16 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures_util::SinkExt as _;
-use futures_util::stream::{SplitSink, SplitStream, StreamExt as _};
+use betterlite_http::websocket_client::connect;
+use betterlite_http::websocket_client::connection::{
+    WebSocketConnection, WebSocketReceive, WebSocketReceiver, WebSocketSender,
+};
+use betterlite_http::websocket_client::error::WebSocketClientError;
+use betterlite_http::websocket_client::request::WebSocketRequest;
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap};
-use tokio::net::TcpStream;
 use tokio::time;
-use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
-use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_config};
+use url::Url;
 
 use super::error::AimError;
 use super::stream::{
@@ -81,8 +81,6 @@ fn request_error(source: reqwest::Error) -> AimError {
     }
 }
 
-type SocketStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
 pub struct AimWebSocketConnector;
 
 #[async_trait]
@@ -94,65 +92,64 @@ impl AimSocketConnector for AimWebSocketConnector {
         open: Duration,
         read: Duration,
     ) -> Result<AimSocket, AimError> {
-        let mut request = url.into_client_request().map_err(AimError::WebSocket)?;
-        request.headers_mut().extend(headers.clone());
-        let config = WebSocketConfig::default()
-            .max_message_size(Some(MAX_STREAM_FRAME_BYTES))
-            .max_frame_size(Some(MAX_STREAM_FRAME_BYTES));
-        let opening = connect_async_with_config(request, Some(config), false);
-        let (socket, _answer) = time::timeout(open, opening)
-            .await
-            .map_err(|_elapsed| AimError::ConnectTimeout)?
-            .map_err(AimError::WebSocket)?;
-        let (writer, reader) = socket.split();
+        let parsed =
+            Url::parse(url).map_err(|_error| AimError::WebSocket(WebSocketClientError::Url))?;
+        let mut pairs = Vec::with_capacity(headers.len());
+        for (name, value) in headers {
+            pairs.push((name.clone(), value.clone()));
+        }
+        let connection = connect(WebSocketRequest {
+            url: parsed,
+            headers: &pairs,
+            tls: None,
+            max_message_size: MAX_STREAM_FRAME_BYTES,
+            open_timeout: open,
+            keepalive: None,
+            proxy: None,
+        })
+        .await
+        .map_err(AimError::from)?;
+        let WebSocketConnection { sender, receiver } = connection;
         Ok(AimSocket {
-            reader: Box::new(TungsteniteReader {
-                stream: reader,
+            reader: Box::new(ClientFrameReader {
+                receiver,
                 read_timeout: read,
             }),
-            writer: Box::new(TungsteniteWriter { sink: writer }),
+            writer: Box::new(ClientFrameWriter { sender }),
         })
     }
 }
 
-struct TungsteniteReader {
-    stream: SplitStream<SocketStream>,
+struct ClientFrameReader {
+    receiver: WebSocketReceiver,
     read_timeout: Duration,
 }
 
 #[async_trait]
-impl AimFrameReader for TungsteniteReader {
+impl AimFrameReader for ClientFrameReader {
     async fn recv_text(&mut self) -> Result<Option<String>, AimError> {
-        loop {
-            let next = time::timeout(self.read_timeout, self.stream.next())
-                .await
-                .map_err(|_elapsed| AimError::StreamTimeout)?;
-            let Some(message) = next else {
-                return Ok(None);
-            };
-            match message.map_err(AimError::WebSocket)? {
-                Message::Text(text) => return Ok(Some(text.as_str().to_owned())),
-                Message::Binary(bytes) => {
-                    return String::from_utf8(bytes.to_vec())
-                        .map(Some)
-                        .map_err(AimError::FrameUtf8);
-                }
-                Message::Close(_) => return Ok(None),
-                Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
-            }
+        let next = time::timeout(self.read_timeout, self.receiver.recv())
+            .await
+            .map_err(|_elapsed| AimError::StreamTimeout)?;
+        match next.map_err(AimError::WebSocket)? {
+            WebSocketReceive::Text(text) => Ok(Some(text)),
+            WebSocketReceive::Binary(bytes) => String::from_utf8(bytes.to_vec())
+                .map(Some)
+                .map_err(AimError::FrameUtf8),
+            WebSocketReceive::Close(_) | WebSocketReceive::End => Ok(None),
         }
     }
 }
 
-struct TungsteniteWriter {
-    sink: SplitSink<SocketStream, Message>,
+struct ClientFrameWriter {
+    sender: WebSocketSender,
 }
 
 #[async_trait]
-impl AimFrameWriter for TungsteniteWriter {
+impl AimFrameWriter for ClientFrameWriter {
     async fn send_text(&mut self, text: String) -> Result<(), AimError> {
-        self.sink
-            .send(Message::Text(Utf8Bytes::from(text)))
+        self.sender
+            .send_text(&text)
             .await
             .map_err(AimError::WebSocket)
     }

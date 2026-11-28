@@ -1,9 +1,9 @@
 use std::string::FromUtf8Error;
 
+use betterlite_http::websocket_client::error::WebSocketClientError;
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
-use tokio_tungstenite::tungstenite;
 
 pub const CONTENT_POLICY_VIOLATION: &str = "content_policy_violation";
 pub const BAD_REQUEST_CODE: &str = "400";
@@ -29,7 +29,7 @@ pub enum AimError {
     #[error("{message}")]
     Rejected { message: String, code: &'static str },
     #[error("the Aim websocket failed")]
-    WebSocket(#[source] tungstenite::Error),
+    WebSocket(#[source] WebSocketClientError),
     #[error("the Aim websocket did not open in time")]
     ConnectTimeout,
     #[error("an Aim stream frame is not UTF-8")]
@@ -50,6 +50,23 @@ impl AimError {
         Self::Rejected {
             message: message.to_owned(),
             code: BAD_REQUEST_CODE,
+        }
+    }
+}
+
+// websockets waits `open` for the handshake and the old connector answered a slower one as a connect timeout
+impl From<WebSocketClientError> for AimError {
+    fn from(error: WebSocketClientError) -> Self {
+        match error {
+            WebSocketClientError::Timeout => Self::ConnectTimeout,
+            other @ (WebSocketClientError::Io(_)
+            | WebSocketClientError::Tls
+            | WebSocketClientError::Status { .. }
+            | WebSocketClientError::ProxyStatus { .. }
+            | WebSocketClientError::Capacity { .. }
+            | WebSocketClientError::Url
+            | WebSocketClientError::KeepaliveTimeout
+            | WebSocketClientError::Protocol) => Self::WebSocket(other),
         }
     }
 }

@@ -108,6 +108,61 @@ fn http_proxies_proxy_policy_tests_behavior(
     assert!(!format!("{policy:?}").contains("secret"));
 }
 
+fn render_websocket(policy: &ProxyPolicy, target: &str) -> String {
+    let url = Url::parse(target).unwrap();
+    match policy.websocket_route(&url) {
+        None => "direct".to_owned(),
+        Some(ProxyRoute::Forward(server)) => format!("{}:{}", server.host, server.port),
+        Some(ProxyRoute::Unsupported { scheme }) => format!("unsupported {scheme}"),
+        Some(ProxyRoute::Invalid { name }) => format!("invalid {name}"),
+    }
+}
+
+fn policy_from(settings: &str, variables: &[(&str, &str)]) -> ProxyPolicy {
+    let environment: BTreeMap<String, String> = variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(settings)
+    .unwrap();
+    ProxyPolicy::resolve(&config.litellm_settings.proxy_trust, &environment).unwrap()
+}
+
+#[rstest]
+#[case::wss_prefers_wss("", &[("WSS_PROXY", "http://wss.local:1"), ("SOCKS_PROXY", "socks5://socks.local:2"), ("HTTPS_PROXY", "http://https.local:3")], "wss://api.example.com", "wss.local:1")]
+#[case::wss_socks_before_https("", &[("SOCKS_PROXY", "socks5://socks.local:2"), ("HTTPS_PROXY", "http://https.local:3")], "wss://api.example.com", "unsupported socks5")]
+#[case::wss_https("", &[("HTTPS_PROXY", "http://https.local:3")], "wss://api.example.com", "https.local:3")]
+#[case::wss_ignores_ws_and_http("", &[("WS_PROXY", "http://ws.local:4"), ("HTTP_PROXY", "http://http.local:5")], "wss://api.example.com", "direct")]
+#[case::ws_prefers_ws("", &[("WS_PROXY", "http://ws.local:4"), ("SOCKS_PROXY", "socks5://socks.local:2"), ("HTTPS_PROXY", "http://https.local:3"), ("HTTP_PROXY", "http://http.local:5")], "ws://api.example.com", "ws.local:4")]
+#[case::ws_socks_before_https("", &[("SOCKS_PROXY", "socks5h://socks.local:2"), ("HTTPS_PROXY", "http://https.local:3")], "ws://api.example.com", "unsupported socks5h")]
+#[case::ws_https_before_http("", &[("HTTPS_PROXY", "http://https.local:3"), ("HTTP_PROXY", "http://http.local:5")], "ws://api.example.com", "https.local:3")]
+#[case::ws_http("", &[("HTTP_PROXY", "http://http.local:5")], "ws://api.example.com", "http.local:5")]
+#[case::ws_ignores_wss("", &[("WSS_PROXY", "http://wss.local:1")], "ws://api.example.com", "direct")]
+#[case::all_proxy_ignored("", &[("ALL_PROXY", "http://all.local:8080")], "wss://api.example.com", "direct")]
+#[case::socks_http_value_rewritten("", &[("SOCKS_PROXY", "http://proxy.local:1080")], "wss://api.example.com", "unsupported socks5h")]
+#[case::socks_bare_value_rewritten("", &[("SOCKS_PROXY", "proxy.local:1080")], "wss://api.example.com", "unsupported socks5h")]
+#[case::no_proxy_exact("", &[("HTTPS_PROXY", "http://https.local:3"), ("NO_PROXY", "example.com")], "wss://example.com", "direct")]
+#[case::no_proxy_default_port("", &[("HTTPS_PROXY", "http://https.local:3"), ("NO_PROXY", "example.com:443")], "wss://example.com", "direct")]
+#[case::no_proxy_other_port("", &[("HTTPS_PROXY", "http://https.local:3"), ("NO_PROXY", "example.com:8443")], "wss://example.com", "https.local:3")]
+#[case::no_proxy_ws_default_port("", &[("WS_PROXY", "http://ws.local:4"), ("NO_PROXY", "example.com:80")], "ws://example.com", "direct")]
+#[case::no_proxy_star("", &[("HTTPS_PROXY", "http://https.local:3"), ("NO_PROXY", "*")], "wss://api.example.com", "direct")]
+#[case::disabled_by_environment("", &[("DISABLE_AIOHTTP_TRUST_ENV", " TRUE "), ("HTTPS_PROXY", "http://https.local:3")], "wss://api.example.com", "direct")]
+#[case::disabled_by_setting(DISABLED, &[("HTTPS_PROXY", "http://https.local:3")], "wss://api.example.com", "direct")]
+#[case::invalid_proxy("", &[("HTTPS_PROXY", "http://user:secret@proxy.local:99999")], "wss://api.example.com", "invalid https")]
+fn websocket_route_behavior(
+    #[case] settings: &str,
+    #[case] variables: &[(&str, &str)],
+    #[case] target: &str,
+    #[case] expected: &str,
+) {
+    let policy = policy_from(settings, variables);
+    assert_eq!(render_websocket(&policy, target), expected);
+    assert!(!format!("{policy:?}").contains("secret"));
+}
+
 #[rstest]
 #[case::disable("DISABLE_AIOHTTP_TRUST_ENV")]
 #[case::enable("AIOHTTP_TRUST_ENV")]

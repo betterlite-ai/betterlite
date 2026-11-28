@@ -58,7 +58,6 @@ strfmt = "0.2.6"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
-tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 tree-sitter = "0.27.1"
@@ -79,6 +78,7 @@ temp-env = "0.3.6"
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "macros", "test-util"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 tracing-subscriber.workspace = true
 
 [[test]]

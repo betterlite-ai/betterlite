@@ -64,7 +64,15 @@ impl ProxyPolicy {
         let mut primary = BTreeMap::new();
         for (name, value) in &proxies {
             let prefix = if value.contains("://") { "" } else { "http://" };
-            let route = parse_route(name, &format!("{prefix}{value}"), None);
+            let route = match parse_route(name, &format!("{prefix}{value}"), None) {
+                // websockets rewrites an http:// SOCKS_PROXY value to socks5h://, which it cannot dial without python-socks
+                ProxyRoute::Forward(_) if name == "socks" => ProxyRoute::Unsupported {
+                    scheme: "socks5h".to_owned(),
+                },
+                other @ (ProxyRoute::Forward(_)
+                | ProxyRoute::Unsupported { .. }
+                | ProxyRoute::Invalid { .. }) => other,
+            };
             primary.insert(name.clone(), route);
         }
         if trust.disable_aiohttp_trust_env || disable {
@@ -88,13 +96,51 @@ impl ProxyPolicy {
     pub fn route(&self, url: &Url) -> Option<&ProxyRoute> {
         // httpx hands LiteLLM an IPv6 host without its brackets
         let host = url.host_str().unwrap_or_default();
-        if bypasses(&self.no_proxy, host.trim_matches(['[', ']'])) {
+        self.lookup(
+            Some(host.trim_matches(['[', ']'])),
+            &[
+                (&self.primary, url.scheme()),
+                (&self.primary, "all"),
+                (&self.fallback, url.scheme()),
+            ],
+        )
+    }
+
+    // websockets' get_proxy: NO_PROXY on "host:port", then one scheme order, and never ALL_PROXY or the netrc fallback
+    #[must_use]
+    pub fn websocket_route(&self, url: &Url) -> Option<&ProxyRoute> {
+        let host = url.host_str().unwrap_or_default();
+        let bypass_target = url
+            .port_or_known_default()
+            .map(|port| format!("{}:{port}", host.trim_matches(['[', ']'])));
+        let candidates: &[(&BTreeMap<String, ProxyRoute>, &str)] = if url.scheme() == "wss" {
+            &[
+                (&self.primary, "wss"),
+                (&self.primary, "socks"),
+                (&self.primary, "https"),
+            ]
+        } else {
+            &[
+                (&self.primary, "ws"),
+                (&self.primary, "socks"),
+                (&self.primary, "https"),
+                (&self.primary, "http"),
+            ]
+        };
+        self.lookup(bypass_target.as_deref(), candidates)
+    }
+
+    fn lookup<'policy>(
+        &'policy self,
+        bypass_target: Option<&str>,
+        candidates: &[(&'policy BTreeMap<String, ProxyRoute>, &str)],
+    ) -> Option<&'policy ProxyRoute> {
+        if bypass_target.is_some_and(|target| bypasses(&self.no_proxy, target)) {
             return None;
         }
-        self.primary
-            .get(url.scheme())
-            .or_else(|| self.primary.get("all"))
-            .or_else(|| self.fallback.get(url.scheme()))
+        candidates
+            .iter()
+            .find_map(|(routes, scheme)| routes.get(*scheme))
     }
 }
 

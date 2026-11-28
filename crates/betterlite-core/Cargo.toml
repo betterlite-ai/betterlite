@@ -87,6 +87,7 @@ betterlite-test-ports = { path = "../betterlite-test-ports" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres = { workspace = true }
 futures-executor = "0.3.34"
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
 mutants = "0.0.4"
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
@@ -94,5 +95,6 @@ rstest = "=0.27.0"
 stats_alloc = "0.1.10"
 tokio = { workspace = true, features = ["test-util"] }
 tokio-postgres = { workspace = true }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 tracing-subscriber.workspace = true
 uuid.workspace = true

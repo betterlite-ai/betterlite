@@ -1,0 +1,30 @@
+task: B10211
+deviations:
+  - what: Realtime, Aim and Cato sockets offer no permessage-deflate extension, where websockets 15.0.1 offers it by default.
+    why: tungstenite has no deflate support; a provider that requires compression answers the upgrade as it would to any client without it.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L304
+  - what: The upgrade and the proxy CONNECT carry no `User-Agent` header, where websockets sends `Python/3.x websockets/15.0.1`.
+    why: The text names Python's runtime version, and no provider at the pin reads it.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L307
+  - what: SSL_ECDH_CURVE and litellm.ssl_ecdh_curve are not applied to realtime sockets; ssl_verify, SSL_CERT_FILE and the CA bundle are.
+    why: RealtimeSsl carries only a Verification, and websocket_client_config builds the shared config without a curve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L406
+  - what: An https:// proxy URL in WSS_PROXY, WS_PROXY, HTTPS_PROXY or HTTP_PROXY fails the realtime connection with an error naming the scheme, where websockets opens TLS to the proxy.
+    why: betterlite-config parses only http:// proxies; the realtime client sees the same close as any other connection error.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L800-L812
+  - what: DISABLE_AIOHTTP_TRUST_ENV (or general_settings.disable_aiohttp_trust_env) also turns off environment proxies for realtime sockets, where websockets reads them regardless.
+    why: websocket_route reads the same primary routes the HTTP clients use, and ProxyPolicy::resolve clears them under that flag.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/uri.py#L192-L225
+  - what: A ws:// realtime URL with RealtimeSsl::Disabled opens a plain socket, where the pin passes ssl=False to websockets and websockets raises ValueError("ssl argument is incompatible with a ws:// URI") for any non-None ssl.
+    why: The pin's generic realtime handler always passes the shared ssl context, False included, so its ws:// path never opens at all (llm_http_handler.py L6205-L6210 passes it to websockets.connect, asyncio/client.py L396-L398 rejects it); a working setup cannot rely on that failure, and the dialer's Disabled means no TLS for the plain ws:// socket.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6205-L6216
+  - what: An explicitly written default port (wss://host:443, ws://host:80) stays in the upgrade's Host header, where websockets' build_host drops the port that equals the scheme's default.
+    why: tungstenite builds Host from the URL authority verbatim; the proxy CONNECT's Host already drops the default port as websockets does, but the upgrade request keeps it.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/headers.py#L62-L63
+  - what: Closing a realtime backend or a probed socket sends the close frame and returns, where websockets' close() waits up to close_timeout for the peer's close frame and the TCP close.
+    why: The sender's close reports the frame write and the socket is dropped right after, so a peer that never answers cannot hold the session for websockets' 10 second close timeout.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/connection.py#L617-L646
+  - what: Two or more caller headers reach the upgrade in the http HeaderMap's order, where websockets appends them in the order of the additional_headers mapping.
+    why: tungstenite removes its own five default headers from the same HeaderMap before it writes the rest, and that removal reorders the entries the client appended; every header and every value is still sent once.
+    link: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/asyncio/client.py#L98-L99
+kept_bugs: []
