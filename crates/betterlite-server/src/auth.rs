@@ -95,7 +95,7 @@ pub(crate) async fn authenticate(
     match pre_stage {
         oauth_tokens::PreStage::Skipped => {}
         oauth_tokens::PreStage::Authenticated(context) => {
-            request.extensions_mut().insert(context);
+            request.extensions_mut().insert(*context);
             return next.run(request).await;
         }
         oauth_tokens::PreStage::Rejected(failure) => {

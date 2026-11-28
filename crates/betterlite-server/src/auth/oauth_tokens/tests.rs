@@ -73,7 +73,7 @@ async fn downstream(
     Extension(identity): Extension<AuthContext>,
 ) -> String {
     reached.store(true, Ordering::Release);
-    identity.principal.subject.clone()
+    identity.principal.subject
 }
 
 fn request_from(

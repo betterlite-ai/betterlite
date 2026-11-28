@@ -30,7 +30,7 @@ mod tests;
 
 pub(crate) enum PreStage {
     Skipped,
-    Authenticated(AuthContext),
+    Authenticated(Box<AuthContext>),
     Rejected(StageFailure),
 }
 
@@ -89,7 +89,7 @@ where
         Err(error) => return PreStage::Rejected(value_error(&error)),
     };
     let hashed = token.map(|value| safe_hash_api_key(value.expose_secret()));
-    PreStage::Authenticated(context_for(auth, method, hashed))
+    PreStage::Authenticated(Box::new(context_for(auth, method, hashed)))
 }
 
 // auth_exception_handler._as_proxy_exception: an unhandled ValueError is this public 401 auth_error
