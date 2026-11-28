@@ -160,7 +160,7 @@ impl Scenario {
             .block_on(aggregate_token(setup, &form, &ports, now)))
     }
 
-    fn setup(&self, mode: MasterMode) -> &SigningSetup {
+    const fn setup(&self, mode: MasterMode) -> &SigningSetup {
         match mode {
             MasterMode::Present => &self.present,
             MasterMode::Absent => &self.absent,
@@ -168,10 +168,10 @@ impl Scenario {
         }
     }
 
-    fn session_keys(&self) -> Option<&SessionSigningKeys> {
+    const fn session_keys(&self) -> Option<&SessionSigningKeys> {
         match &self.present {
             SigningSetup::Ready(keys) => Some(keys),
-            SigningSetup::NoMasterKey | SigningSetup::Invalid(_error) => None,
+            SigningSetup::NoMasterKey | SigningSetup::Invalid(_) => None,
         }
     }
 
