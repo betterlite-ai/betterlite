@@ -81,7 +81,7 @@ fn editing<'call, 'cost, 'context>(
 
 // One Canvas generation round trip: the leaf's body, endpoint, base64 images and creation time
 async fn canvas_generation() {
-    let fixture = scripted(&[Reply::ok(r#"{"images": ["bm92YQ=="]}"#)]);
+    let fixture = scripted(&[Reply::status(200, r#"{"images": ["bm92YQ=="]}"#)]);
     let outcome = run(&fixture, generation("a cat", GENERATION)).await;
     assert_eq!(outcome.requests.len(), 1);
     assert_eq!(
@@ -109,7 +109,7 @@ async fn canvas_generation() {
 
 // One Canvas edit round trip: only the first image reaches the variation body, and the reply keeps its cost
 async fn canvas_edit() {
-    let fixture = scripted(&[Reply::ok(r#"{"images": ["b3V0"]}"#)]);
+    let fixture = scripted(&[Reply::status(200, r#"{"images": ["b3V0"]}"#)]);
     let model_cost: ParamMap = serde_json::from_str(MODEL_COST).expect("the model cost map");
     let catalog = Catalog::empty().expect("the empty catalog parses");
     let context = catalog.context();

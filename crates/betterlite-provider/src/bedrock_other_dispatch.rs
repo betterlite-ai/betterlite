@@ -13,7 +13,6 @@ pub mod execute;
 #[cfg(any(test, feature = "testing"))]
 pub mod test_support;
 
-#[cfg(test)]
 mod tests;
 
 // B010's arm carries no data because OperationRequest is built before a non-chat call reaches its leaf

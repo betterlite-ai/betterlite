@@ -128,10 +128,8 @@ fn encode<T>(value: &T) -> Result<Json, CallError>
 where
     T: serde::Serialize,
 {
-    let text = serde_json::to_string(value).map_err(encode_failure)?;
-    serde_json::from_str(&text).map_err(encode_failure)
-}
-
-fn encode_failure(source: serde_json::Error) -> CallError {
-    CallError::Transcription(TranscriptionError::Encode(source))
+    let text = serde_json::to_string(value)
+        .map_err(|source| CallError::Transcription(TranscriptionError::Encode(source)))?;
+    serde_json::from_str(&text)
+        .map_err(|source| CallError::Transcription(TranscriptionError::Encode(source)))
 }

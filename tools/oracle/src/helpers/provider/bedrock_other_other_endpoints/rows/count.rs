@@ -6,10 +6,12 @@ use betterlite_bedrock::transcription::error::CallError;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::{BedrockOtherOperation, CountOperation};
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
+use betterlite_provider::bedrock_other_dispatch::test_support::client::FixtureClient;
+use betterlite_provider::bedrock_other_dispatch::test_support::{NOW_SECONDS, instant};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange, now};
+use super::super::harness::{Harness, Outcome, exchange};
 use super::super::model::{Failed, Probe, param_map};
 use super::row;
 use crate::openai_media_dispatch::failure;
@@ -17,7 +19,10 @@ use crate::openai_media_dispatch::failure;
 pub(super) async fn count_row(probe: &Probe) -> Result<Value, Failed> {
     let harness = Harness::new(probe)?;
     let handler = BedrockCountTokensHandler {
-        transport: harness.client(),
+        transport: FixtureClient {
+            replies: harness.replies.clone(),
+            seen: harness.seen.clone(),
+        },
         credentials: harness.source.clone(),
         environment: environment(probe),
     };
@@ -35,7 +40,7 @@ pub(super) async fn count_row(probe: &Probe) -> Result<Value, Failed> {
         request_model: &request_model,
         tools: None,
         system: None,
-        now: now()?,
+        now: instant(NOW_SECONDS).map_err(|error| failure("Instant", error))?,
     };
     let operation = BedrockOtherOperation::Count(CountOperation {
         call,

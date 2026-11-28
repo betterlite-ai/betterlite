@@ -55,79 +55,63 @@ fn native(fixture: &Fixture, environment: BTreeMap<String, String>) -> super::fi
     native_binding(fixture.client(), fixture.source().clone(), environment)
 }
 
-// A byte slice reaches the NO_PYTHON seam as a wav file with the timeout it was given
-async fn bytes_file_seam() {
-    let fixture = scripted(&[]);
-    let optional = transcription_params(r#"{"language": "en"}"#);
-    let timeout = Timeout::Seconds(2.5);
-    let recording = Recording::new("transcribed");
-    let observer = recording.clone();
-    let outcome = run_transcription(
-        &fixture,
-        operation(
-            Call {
-                model: "amazon.nova-2-sonic-v1:0",
-                audio: AudioFile::Bytes(AUDIO),
-                optional: &optional,
-                timeout: Some(&timeout),
-                asynchronous: false,
-            },
-            recording,
+// A byte slice reaches the NO_PYTHON seam as a wav file, and a typed tuple keeps its own filename
+// and format; a phased timeout hands over its read phase, and the timeout decides the deadline
+async fn file_seams() {
+    let cases = [
+        (
+            AudioFile::Bytes(AUDIO),
+            Some(Timeout::Seconds(2.5)),
+            false,
+            "transcribed",
+            r#"{"language": "en"}"#,
+            r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "aGk=", "format": "wav", "filename": "audio.wav"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {"language": "en"}, "timeout_seconds": 2.5}"#,
         ),
-    )
-    .await;
-    assert_eq!(outcome.transcription().text.as_deref(), Some("transcribed"));
-    assert_eq!(
-        observer.seen.values(),
-        vec![value(
-            r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "aGk=", "format": "wav", "filename": "audio.wav"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {"language": "en"}, "timeout_seconds": 2.5}"#
-        )]
-    );
-    assert!(outcome.requests.is_empty());
-}
-
-// A typed tuple keeps its own filename and format, and a phased timeout hands over its read phase
-async fn tuple_file_seam() {
-    let fixture = scripted(&[]);
-    let tuple = AudioFile::Tuple(AudioTuple {
-        filename: "voice.mp3",
-        content: Some(TupleContent::Bytes(b"ID3".as_slice())),
-    });
-    let phase_timeout = Timeout::Phases(TimeoutPhases {
-        connect: Some(1.0),
-        read: Some(600.0),
-        write: Some(30.0),
-        pool: Some(5.0),
-    });
-    let empty = transcription_params("{}");
-    let recording = Recording::new("tuple text");
-    let observer = recording.clone();
-    let outcome = run_transcription(
-        &fixture,
-        operation(
-            Call {
-                model: "amazon.nova-2-sonic-v1:0",
-                audio: tuple,
-                optional: &empty,
-                timeout: Some(&phase_timeout),
-                asynchronous: true,
-            },
-            recording,
+        (
+            AudioFile::Tuple(AudioTuple {
+                filename: "voice.mp3",
+                content: Some(TupleContent::Bytes(b"ID3".as_slice())),
+            }),
+            Some(Timeout::Phases(TimeoutPhases {
+                connect: Some(1.0),
+                read: Some(600.0),
+                write: Some(30.0),
+                pool: Some(5.0),
+            })),
+            true,
+            "tuple text",
+            "{}",
+            r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "SUQz", "format": "mp3", "filename": "voice.mp3"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {}, "timeout_seconds": 600.0}"#,
         ),
-    )
-    .await;
-    assert_eq!(outcome.transcription().text.as_deref(), Some("tuple text"));
-    assert_eq!(
-        observer.seen.values(),
-        vec![value(
-            r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "SUQz", "format": "mp3", "filename": "voice.mp3"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {}, "timeout_seconds": 600.0}"#
-        )]
-    );
+    ];
+    for (audio, timeout, asynchronous, text, optional, expected) in cases {
+        let fixture = scripted(&[]);
+        let params = transcription_params(optional);
+        let recording = Recording::new(text);
+        let observer = recording.clone();
+        let outcome = run_transcription(
+            &fixture,
+            operation(
+                Call {
+                    model: "amazon.nova-2-sonic-v1:0",
+                    audio,
+                    optional: &params,
+                    timeout: timeout.as_ref(),
+                    asynchronous,
+                },
+                recording,
+            ),
+        )
+        .await;
+        assert_eq!(outcome.transcription().text.as_deref(), Some(text));
+        assert_eq!(observer.seen.values(), vec![value(expected)]);
+        assert!(outcome.requests.is_empty());
+    }
 }
 
 // The native binding sends the request its own url and model policy name and decodes the reply
 async fn native_signed_round_trip() {
-    let fixture = scripted(&[Reply::ok(REPLY)]);
+    let fixture = scripted(&[Reply::status(200, REPLY)]);
     let optional = transcription_params(r#"{"language": "en"}"#);
     let timeout = Timeout::Seconds(2.5);
     let outcome = run_transcription(
@@ -167,7 +151,7 @@ async fn native_signed_round_trip() {
 
 // An explicit aws_region_name beats the environment, and the default deadline is ten minutes
 async fn native_region_override() {
-    let fixture = scripted(&[Reply::ok(REPLY)]);
+    let fixture = scripted(&[Reply::status(200, REPLY)]);
     let explicit =
         transcription_params(r#"{"aws_region_name": "ap-south-1", "prompt": "a meeting"}"#);
     let environment = BTreeMap::from([(String::from("AWS_REGION"), String::from("us-west-2"))]);
@@ -273,8 +257,7 @@ async fn failed_binding() {
 }
 
 pub(super) async fn case() {
-    bytes_file_seam().await;
-    tuple_file_seam().await;
+    file_seams().await;
     native_signed_round_trip().await;
     native_region_override().await;
     blocking_native_call().await;

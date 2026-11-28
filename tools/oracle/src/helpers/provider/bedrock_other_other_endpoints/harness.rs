@@ -1,24 +1,28 @@
+use std::collections::VecDeque;
 use std::error::Error as StdError;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::count_call::handler::CountTokensHandler;
 use betterlite_bedrock::embedding_call::Clock;
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_bedrock::transcription::binding::TranscriptionBinding;
-use betterlite_provider::bedrock_image_dispatch::test_support::Catalog;
+use betterlite_provider::bedrock_other_dispatch::BedrockOtherRequest;
+use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::BedrockOtherOperation;
 use betterlite_provider::bedrock_other_dispatch::error::BedrockOtherError;
 use betterlite_provider::bedrock_other_dispatch::execute::{LogContext, Services, dispatch};
-use betterlite_provider::bedrock_other_dispatch::test_support::client::{FixtureClient, Replies};
+use betterlite_provider::bedrock_other_dispatch::test_support::client::{
+    FixtureClient, Replies, Reply,
+};
 use betterlite_provider::bedrock_other_dispatch::test_support::factory::Factory;
 use betterlite_provider::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
 use betterlite_provider::bedrock_other_dispatch::test_support::source::Source;
 use betterlite_provider::bedrock_other_dispatch::test_support::{
     Counting, DiscardingSink, Files, FixedClock, NOW_SECONDS, instant, logging_state, prepost_env,
-    redactor, region_worker, secret_lookup,
+    secret_lookup,
 };
-use betterlite_provider::bedrock_other_dispatch::{BedrockOtherRequest, BedrockOtherResult};
 use betterlite_provider::operation::{OperationRequest, OperationResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
@@ -30,19 +34,24 @@ pub(super) struct Harness {
     pub(super) factory: Factory,
     pub(super) transport: FixtureClient,
     pub(super) source: Source,
-    replies: Replies,
-    seen: Seen,
+    pub(super) replies: Replies,
+    pub(super) seen: Seen,
 }
 
 impl Harness {
     pub(super) fn new(probe: &Probe) -> Result<Self, Failed> {
         let answers = replies(probe);
-        let replies = Replies::queue(&answers);
+        let replies = Replies(Arc::new(Mutex::new(
+            answers.iter().cloned().collect::<VecDeque<Reply>>(),
+        )));
         let seen = Seen::default();
         let mut factory = Factory::queued(&answers);
         factory.replies = replies.clone();
         factory.seen = seen.clone();
-        let transport = FixtureClient::new(replies.clone(), seen.clone());
+        let transport = FixtureClient {
+            replies: replies.clone(),
+            seen: seen.clone(),
+        };
         Ok(Self {
             factory,
             transport,
@@ -50,10 +59,6 @@ impl Harness {
             replies,
             seen,
         })
-    }
-
-    pub(super) fn client(&self) -> FixtureClient {
-        FixtureClient::new(self.replies.clone(), self.seen.clone())
     }
 }
 
@@ -78,7 +83,7 @@ where
     let sink = DiscardingSink;
     let env = prepost_env(&state, &redactor, &sink);
     let secrets = secret_lookup();
-    let workers = region_worker().map_err(|error| failure("RegionWorker", error))?;
+    let workers = ManagedRegionWorker::new().map_err(|error| failure("RegionWorker", error))?;
     let signing = AwsSigningExecutor::default();
     let encoding = Counting;
     let files = Files;
@@ -109,7 +114,7 @@ where
     .await;
     Ok(Outcome {
         result: outcome(dispatched)?,
-        requests: harness.factory.requests(),
+        requests: harness.factory.seen.requests(),
         regions: harness.source.regions(),
     })
 }
@@ -125,12 +130,4 @@ where
         Ok(_other) => Err(failure("Variant", OTHER_OUTCOME)),
         Err(error) => Ok(Err(error)),
     }
-}
-
-pub(super) fn now() -> Result<SystemTime, Failed> {
-    instant(NOW_SECONDS).map_err(|error| failure("Instant", error))
-}
-
-pub(super) fn empty_catalog() -> Result<Catalog, Failed> {
-    Catalog::empty().map_err(|error| failure("Catalog", error))
 }

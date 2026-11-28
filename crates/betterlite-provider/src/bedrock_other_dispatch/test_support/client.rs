@@ -18,7 +18,7 @@ use betterlite_bedrock::rerank::transport::{
     RerankHttpReply, RerankHttpRequest, RerankTransport, TransferError as RerankTransferError,
 };
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
@@ -39,11 +39,6 @@ pub enum Reply {
 }
 
 impl Reply {
-    #[must_use]
-    pub fn ok(body: &str) -> Self {
-        Self::status(200, body)
-    }
-
     #[must_use]
     pub fn status(status: u16, body: &str) -> Self {
         Self::Answer {
@@ -68,20 +63,15 @@ impl Reply {
 
 impl Default for Reply {
     fn default() -> Self {
-        Self::ok("{}")
+        Self::status(200, "{}")
     }
 }
 
 // A scripted queue: each request takes the next answer, and an exhausted queue answers an empty 200
 #[derive(Clone, Default)]
-pub struct Replies(Arc<Mutex<VecDeque<Reply>>>);
+pub struct Replies(pub Arc<Mutex<VecDeque<Reply>>>);
 
 impl Replies {
-    #[must_use]
-    pub fn queue(replies: &[Reply]) -> Self {
-        Self(Arc::new(Mutex::new(replies.iter().cloned().collect())))
-    }
-
     fn take(&self) -> Reply {
         self.0
             .lock()
@@ -98,22 +88,63 @@ pub struct FixtureClient {
 }
 
 impl FixtureClient {
-    #[must_use]
-    pub fn new(replies: Replies, seen: Seen) -> Self {
-        Self { replies, seen }
+    // The embedding leaf's signed POST: its reply echoes the URL the request was built for
+    fn embedding_exchange(
+        &self,
+        request: EmbeddingRequest,
+    ) -> Result<EmbeddingReply, EmbeddingTransferError> {
+        let EmbeddingRequest { url, headers, body } = request;
+        self.seen.push(Recorded {
+            method: String::from("POST"),
+            url: url.clone(),
+            headers,
+            body,
+            deadline: None,
+        });
+        match self.replies.take() {
+            Reply::Answer {
+                status,
+                headers: reply_headers,
+                body: reply_body,
+            } => Ok(EmbeddingReply {
+                status,
+                headers: reply_headers,
+                body: reply_body,
+                request: ReplyRequest {
+                    method: String::from("POST"),
+                    url,
+                },
+            }),
+            Reply::Timeout => Err(EmbeddingTransferError::Timeout {
+                elapsed: Duration::from_millis(125),
+            }),
+            Reply::Failed => Err(EmbeddingTransferError::Failed(TransportError::Closed)),
+        }
     }
 
-    #[must_use]
-    pub fn requests(&self) -> Vec<Recorded> {
-        self.seen.requests()
-    }
-
-    fn answer(&self) -> Reply {
-        self.replies.take()
+    // The async-invoke status lookup is a GET with no body at all
+    fn status_exchange(
+        &self,
+        request: StatusWireRequest,
+    ) -> Result<StatusReply, EmbeddingTransferError> {
+        self.seen.push(Recorded {
+            method: String::from("GET"),
+            url: request.url,
+            headers: request.headers,
+            body: Vec::new(),
+            deadline: None,
+        });
+        match self.replies.take() {
+            Reply::Answer { status, body, .. } => Ok(StatusReply { status, body }),
+            Reply::Timeout => Err(EmbeddingTransferError::Timeout {
+                elapsed: Duration::from_millis(125),
+            }),
+            Reply::Failed => Err(EmbeddingTransferError::Failed(TransportError::Closed)),
+        }
     }
 
     fn upstream(&self) -> Result<UpstreamResponse, TransportError> {
-        match self.answer() {
+        match self.replies.take() {
             Reply::Answer {
                 status,
                 headers,
@@ -140,7 +171,7 @@ impl FixtureClient {
             body: request.body.clone(),
             deadline: request.timeout,
         });
-        match self.answer() {
+        match self.replies.take() {
             Reply::Answer {
                 status,
                 headers,
@@ -154,6 +185,30 @@ impl FixtureClient {
             Reply::Failed => Err(RerankTransferError::Failed(TransportError::Closed)),
         }
     }
+
+    // The image leaf's POST: a timeout and a closed transport differ, so the image error names both
+    fn image_exchange(&self, request: ImageRequest) -> Result<ImageReply, ImageTransferError> {
+        self.seen.push(Recorded {
+            method: String::from("POST"),
+            url: request.url,
+            headers: request.headers,
+            body: request.body,
+            deadline: None,
+        });
+        match self.replies.take() {
+            Reply::Answer {
+                status,
+                headers,
+                body,
+            } => Ok(ImageReply {
+                status,
+                headers,
+                body,
+            }),
+            Reply::Timeout => Err(ImageTransferError::Timeout),
+            Reply::Failed => Err(ImageTransferError::Failed(TransportError::Closed)),
+        }
+    }
 }
 
 impl EmbeddingTransport for FixtureClient {
@@ -161,34 +216,7 @@ impl EmbeddingTransport for FixtureClient {
         &self,
         request: EmbeddingRequest,
     ) -> impl Future<Output = Result<EmbeddingReply, EmbeddingTransferError>> + Send {
-        let EmbeddingRequest { url, headers, body } = request;
-        self.seen.push(Recorded {
-            method: String::from("POST"),
-            url: url.clone(),
-            headers,
-            body,
-            deadline: None,
-        });
-        let reply = match self.answer() {
-            Reply::Answer {
-                status,
-                headers: reply_headers,
-                body: reply_body,
-            } => Ok(EmbeddingReply {
-                status,
-                headers: reply_headers,
-                body: reply_body,
-                request: ReplyRequest {
-                    method: String::from("POST"),
-                    url,
-                },
-            }),
-            Reply::Timeout => Err(EmbeddingTransferError::Timeout {
-                elapsed: Duration::from_millis(125),
-            }),
-            Reply::Failed => Err(EmbeddingTransferError::Failed(TransportError::Closed)),
-        };
-        ready(reply)
+        ready(self.embedding_exchange(request))
     }
 }
 
@@ -206,22 +234,7 @@ impl StatusTransport for FixtureClient {
         &self,
         request: StatusWireRequest,
     ) -> impl Future<Output = Result<StatusReply, EmbeddingTransferError>> + Send {
-        let StatusWireRequest { url, headers } = request;
-        self.seen.push(Recorded {
-            method: String::from("GET"),
-            url,
-            headers,
-            body: Vec::new(),
-            deadline: None,
-        });
-        let reply = match self.answer() {
-            Reply::Answer { status, body, .. } => Ok(StatusReply { status, body }),
-            Reply::Timeout => Err(EmbeddingTransferError::Timeout {
-                elapsed: Duration::from_millis(125),
-            }),
-            Reply::Failed => Err(EmbeddingTransferError::Failed(TransportError::Closed)),
-        };
-        ready(reply)
+        ready(self.status_exchange(request))
     }
 }
 
@@ -247,28 +260,7 @@ impl ImageTransport for FixtureClient {
         &self,
         request: ImageRequest,
     ) -> impl Future<Output = Result<ImageReply, ImageTransferError>> + Send {
-        let ImageRequest { url, headers, body } = request;
-        self.seen.push(Recorded {
-            method: String::from("POST"),
-            url,
-            headers,
-            body,
-            deadline: None,
-        });
-        let reply = match self.answer() {
-            Reply::Answer {
-                status,
-                headers: reply_headers,
-                body: reply_body,
-            } => Ok(ImageReply {
-                status,
-                headers: reply_headers,
-                body: reply_body,
-            }),
-            Reply::Timeout => Err(ImageTransferError::Timeout),
-            Reply::Failed => Err(ImageTransferError::Failed(TransportError::Closed)),
-        };
-        ready(reply)
+        ready(self.image_exchange(request))
     }
 }
 

@@ -49,7 +49,7 @@ fn embedding_operation<'call>(
 async fn signed(access: &str, secret: &str) -> (String, Vec<String>) {
     let environment = BTreeMap::new();
     let input = vec![String::from("hello")];
-    let fixture = Fixture::new(&[Reply::ok(REPLY)], credentials(access, secret));
+    let fixture = Fixture::new(&[Reply::status(200, REPLY)], credentials(access, secret));
     let outcome = run(
         &fixture,
         embedding_operation(&input, IDENTITY, &environment),

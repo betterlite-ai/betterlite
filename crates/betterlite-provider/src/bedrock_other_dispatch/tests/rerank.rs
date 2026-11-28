@@ -84,7 +84,7 @@ fn number_of_results(body: &Json) -> i64 {
 
 // The model arn names the agent-runtime endpoint and signs with the runtime's bedrock service
 async fn agent_runtime_and_documents() {
-    let fixture = scripted(&[Reply::ok(ANONYMOUS_REPLY)]);
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
     let mut documented = request(
         MODEL_ARN,
         Some(2),
@@ -149,7 +149,7 @@ fn agent_runtime_reply(outcome: &Outcome<CallError>) {
 // top_n picks the result count and both absent and zero fall back to the document count
 async fn top_n_and_region() {
     for (top_n, expected) in [(None, 3_i64), (Some(0), 3), (Some(1), 1)] {
-        let fixture = scripted(&[Reply::ok(ANONYMOUS_REPLY)]);
+        let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
         let outcome = run(
             &fixture,
             operation(request(MODEL_ARN, top_n, documents(3)), CREDENTIALS, None),
@@ -164,7 +164,7 @@ async fn top_n_and_region() {
     }
 
     let identity = r#"{"aws_access_key_id": "AKIAIOSFODNN7EXAMPLE", "aws_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "aws_region_name": "eu-west-1"}"#;
-    let fixture = scripted(&[Reply::ok(ANONYMOUS_REPLY)]);
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
     let outcome = run(
         &fixture,
         operation(request("rerank-model", None, documents(2)), identity, None),
@@ -178,7 +178,8 @@ async fn top_n_and_region() {
 
 // The reply keeps its id and indices, and return_documents changes neither the body nor the results
 async fn reply_shape() {
-    let fixture = scripted(&[Reply::ok(
+    let fixture = scripted(&[Reply::status(
+        200,
         r#"{"id": "reply-id", "results": [{"index": 2, "relevanceScore": 0.125}, {"index": 0, "relevanceScore": -0.5}], "usage": {"search_units": 5, "total_tokens": 9, "input_tokens": 1, "output_tokens": 2}}"#,
     )]);
     let mut documented = request(MODEL_ARN, Some(2), documents(2));
@@ -230,7 +231,7 @@ async fn provider_failure() {
 // The caller's extra headers reach the signed agent-runtime request
 async fn extra_headers_forwarded() {
     let headers = vec![(String::from("x-trace"), String::from("t1"))];
-    let fixture = scripted(&[Reply::ok(ANONYMOUS_REPLY)]);
+    let fixture = scripted(&[Reply::status(200, ANONYMOUS_REPLY)]);
     let outcome = run(
         &fixture,
         BedrockOtherOperation::Rerank(RerankOperation {

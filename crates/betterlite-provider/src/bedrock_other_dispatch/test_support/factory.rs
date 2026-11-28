@@ -1,4 +1,5 @@
-use std::sync::{Mutex, PoisonError};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_bedrock::bedrock_embedding_io::transport::ClientFactory as EmbeddingClientFactory;
@@ -7,7 +8,7 @@ use betterlite_bedrock::image_call::transport::ClientFactory as ImageClientFacto
 use betterlite_bedrock::rerank::transport::ClientFactory as RerankClientFactory;
 
 use super::client::{FixtureClient, Replies, Reply};
-use super::record::{Recorded, Seen};
+use super::record::Seen;
 
 // Which handler kind the factory was asked for, so a test can prove the leaf's own selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,22 +32,14 @@ pub struct Factory {
 
 impl Factory {
     #[must_use]
-    pub fn new(reply: Reply) -> Self {
-        Self::queued(&[reply])
-    }
-
-    #[must_use]
     pub fn queued(replies: &[Reply]) -> Self {
         Self {
-            replies: Replies::queue(replies),
+            replies: Replies(Arc::new(Mutex::new(
+                replies.iter().cloned().collect::<VecDeque<Reply>>(),
+            ))),
             calls: Mutex::new(Vec::new()),
             seen: Seen::default(),
         }
-    }
-
-    #[must_use]
-    pub fn requests(&self) -> Vec<Recorded> {
-        self.seen.requests()
     }
 
     #[must_use]
@@ -58,7 +51,10 @@ impl Factory {
     }
 
     fn client(&self) -> FixtureClient {
-        FixtureClient::new(self.replies.clone(), self.seen.clone())
+        FixtureClient {
+            replies: self.replies.clone(),
+            seen: self.seen.clone(),
+        }
     }
 
     fn add(&self, kind: Kind, provider: Option<&str>) {

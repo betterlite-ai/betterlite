@@ -40,6 +40,15 @@ impl Source {
             .unwrap_or_else(PoisonError::into_inner)
             .push(region);
     }
+
+    // Every leaf but the token counter ignores its settings and gets the recorded identity back
+    fn resolved(
+        &self,
+        region: String,
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
+        self.record(region);
+        ready(Ok(self.credentials.clone()))
+    }
 }
 
 impl EmbeddingCredentials for Source {
@@ -48,8 +57,7 @@ impl EmbeddingCredentials for Source {
         _settings: AwsSettings,
         region: String,
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
-        self.record(region);
-        ready(Ok(self.credentials.clone()))
+        self.resolved(region)
     }
 }
 
@@ -59,8 +67,7 @@ impl ImageCredentials for Source {
         _settings: AwsSettings,
         region: String,
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
-        self.record(region);
-        ready(Ok(self.credentials.clone()))
+        self.resolved(region)
     }
 }
 
@@ -70,8 +77,7 @@ impl RerankCredentials for Source {
         _settings: AwsSettings,
         region: String,
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
-        self.record(region);
-        ready(Ok(self.credentials.clone()))
+        self.resolved(region)
     }
 }
 
@@ -100,7 +106,6 @@ impl ChainCredentials for Source {
         &self,
         settings: &AwsSettings,
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
-        self.record(settings.region_name.clone().unwrap_or_default());
-        ready(Ok(self.credentials.clone()))
+        self.resolved(settings.region_name.clone().unwrap_or_default())
     }
 }

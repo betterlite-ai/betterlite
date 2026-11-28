@@ -10,12 +10,12 @@ use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::{
     BedrockOtherOperation, TranscriptionOperation,
 };
-use betterlite_provider::bedrock_other_dispatch::error::BedrockOtherError;
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
+use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::super::harness::{Harness, Outcome, exchange};
-use super::super::model::{Failed, File, Probe, Unavailable, api_key, from_params};
+use super::super::model::{Failed, File, Probe, Unavailable, from_params};
 use super::row;
 use crate::openai_media_dispatch::failure;
 
@@ -29,7 +29,7 @@ pub(super) async fn transcription_row(probe: &Probe) -> Result<Value, Failed> {
     let params: Params = from_params(probe)?;
     let headers = extra_headers(probe);
     let timeout = probe.timeout.map(OpenAiTimeout::Seconds);
-    let key = api_key(probe);
+    let key = probe.api_key.clone().map(SecretString::from);
     let text = probe.reply_text.clone().unwrap_or_default();
     let recording = Recording::new(&text);
     let observer = recording.clone();
@@ -90,14 +90,9 @@ where
 {
     match &outcome.result {
         Ok(_ok) => None,
-        Err(reported) if is_unsupported(reported) => Some("unsupported_format"),
+        Err(reported) if reported.to_string().starts_with(UNSUPPORTED_PREFIX) => {
+            Some("unsupported_format")
+        }
         Err(_reported) => Some("binding"),
     }
-}
-
-fn is_unsupported<E>(reported: &BedrockOtherError<E>) -> bool
-where
-    E: StdError + 'static,
-{
-    reported.to_string().starts_with(UNSUPPORTED_PREFIX)
 }

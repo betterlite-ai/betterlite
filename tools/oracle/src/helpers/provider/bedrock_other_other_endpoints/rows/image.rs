@@ -10,31 +10,59 @@ use betterlite_provider::bedrock_image_dispatch::BedrockImageResult;
 use betterlite_provider::bedrock_image_dispatch::call::{
     BedrockImageOperation, EditOperation, GenerateOperation,
 };
+use betterlite_provider::bedrock_image_dispatch::test_support::Catalog;
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::BedrockOtherOperation;
-use betterlite_provider::bedrock_other_dispatch::test_support::NOW_SECONDS;
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
+use betterlite_provider::bedrock_other_dispatch::test_support::{NOW_SECONDS, instant};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::super::harness::{Harness, Outcome, empty_catalog, exchange, now};
-use super::super::model::{Failed, Input, Probe, Unavailable, api_key, extra_pairs, from_params};
+use super::super::harness::{Harness, Outcome, exchange};
+use super::super::model::{Failed, Input, Probe, Unavailable, extra_pairs, from_params};
 use super::row;
+use crate::openai_media_dispatch::failure;
 
 pub(super) async fn image_row(input: &Input, probe: &Probe, edit: bool) -> Result<Value, Failed> {
     let extra = extra_pairs(probe);
-    let key = api_key(probe);
+    let key = probe.api_key.clone().map(SecretString::from);
     let images: Vec<EditImage> = probe.images.iter().cloned().map(EditImage::Text).collect();
-    let catalog = empty_catalog()?;
+    let catalog = Catalog::empty().map_err(|error| failure("Catalog", error))?;
     let context = catalog.context();
     let plan = EditPlan {
         model_cost: &input.model_cost,
         resolution: &context,
     };
+    let now = instant(NOW_SECONDS).map_err(|error| failure("Instant", error))?;
     let operation = if edit {
-        edit_operation(probe, &images, plan, extra.as_deref(), key.as_ref())?
+        BedrockOtherOperation::Image(BedrockImageOperation::Edit(EditOperation {
+            model: Some(&probe.model),
+            prompt: probe.prompt.as_deref(),
+            images: &images,
+            optional_params: from_params::<ImageParams>(probe)?,
+            extra_headers: extra.as_deref(),
+            api_base: probe.api_base.as_deref(),
+            api_key: key.as_ref(),
+            timeout: None,
+            aimage_edit: false,
+            environment: EditEnvironment::default(),
+            now,
+            plan,
+        }))
     } else {
-        generation_operation(probe, extra.as_deref(), key.as_ref())?
+        BedrockOtherOperation::Image(BedrockImageOperation::Generate(GenerateOperation {
+            model: Some(&probe.model),
+            prompt: probe.prompt.as_deref().unwrap_or_default(),
+            optional_params: from_params::<Params>(probe)?,
+            extra_headers: extra.as_deref(),
+            api_base: probe.api_base.as_deref(),
+            api_key: key.as_ref(),
+            timeout: None,
+            aimg_generation: false,
+            environment: ImageEnvironment::default(),
+            now,
+            created: NOW_SECONDS,
+        }))
     };
     let harness = Harness::new(probe)?;
     let outcome: Outcome<CallError> =
@@ -45,56 +73,6 @@ pub(super) async fn image_row(input: &Input, probe: &Probe, edit: bool) -> Resul
         Err(_reported) => Value::Null,
     };
     row(&outcome, value, None)
-}
-
-fn edit_operation<'call, 'cost, 'context>(
-    probe: &'call Probe,
-    images: &'call [EditImage],
-    plan: EditPlan<'cost, 'context>,
-    extra: Option<&'call [(String, String)]>,
-    key: Option<&'call SecretString>,
-) -> Result<BedrockOtherOperation<'call, 'cost, 'context, Unavailable, Recording>, Failed> {
-    let optional_params: ImageParams = from_params(probe)?;
-    Ok(BedrockOtherOperation::Image(BedrockImageOperation::Edit(
-        EditOperation {
-            model: Some(&probe.model),
-            prompt: probe.prompt.as_deref(),
-            images,
-            optional_params,
-            extra_headers: extra,
-            api_base: probe.api_base.as_deref(),
-            api_key: key,
-            timeout: None,
-            aimage_edit: false,
-            environment: EditEnvironment::default(),
-            now: now()?,
-            plan,
-        },
-    )))
-}
-
-fn generation_operation<'call>(
-    probe: &'call Probe,
-    extra: Option<&'call [(String, String)]>,
-    key: Option<&'call SecretString>,
-) -> Result<BedrockOtherOperation<'call, 'call, 'call, Unavailable, Recording>, Failed> {
-    let optional_params: Params = from_params(probe)?;
-    let prompt = probe.prompt.as_deref().unwrap_or_default();
-    Ok(BedrockOtherOperation::Image(
-        BedrockImageOperation::Generate(GenerateOperation {
-            model: Some(&probe.model),
-            prompt,
-            optional_params,
-            extra_headers: extra,
-            api_base: probe.api_base.as_deref(),
-            api_key: key,
-            timeout: None,
-            aimg_generation: false,
-            environment: ImageEnvironment::default(),
-            now: now()?,
-            created: NOW_SECONDS,
-        }),
-    ))
 }
 
 // Both arms answer base64 images; only an edit reply carries the cost header

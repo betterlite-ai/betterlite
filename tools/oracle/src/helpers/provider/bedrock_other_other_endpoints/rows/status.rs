@@ -4,9 +4,10 @@ use betterlite_provider::bedrock_other_dispatch::call::{
     BedrockOtherOperation, EmbeddingStatusOperation,
 };
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
+use betterlite_provider::bedrock_other_dispatch::test_support::{NOW_SECONDS, instant};
 use serde_json::{Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange, now};
+use super::super::harness::{Harness, Outcome, exchange};
 use super::super::model::{Failed, Probe, Unavailable, param_map};
 use super::row;
 use crate::openai_media_dispatch::failure;
@@ -23,7 +24,7 @@ pub(super) async fn status_row(probe: &Probe) -> Result<Value, Failed> {
         region,
         optional_params: &mut params,
         environment: &probe.environment,
-        now: now()?,
+        now: instant(NOW_SECONDS).map_err(|error| failure("Instant", error))?,
     });
     let harness = Harness::new(probe)?;
     let outcome: Outcome<CallError> =

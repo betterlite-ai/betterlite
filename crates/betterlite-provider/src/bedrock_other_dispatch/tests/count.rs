@@ -69,7 +69,7 @@ fn success_fields(response: &TokenCountResponse) -> (&str, &str, &str) {
 
 // The resolved model reaches the CountTokens endpoint and its reply becomes the caller's token count
 async fn counted_tokens() {
-    let fixture = scripted(&[Reply::ok(r#"{"inputTokens": 42}"#)]);
+    let fixture = scripted(&[Reply::status(200, r#"{"inputTokens": 42}"#)]);
     let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
     let deployment = deployment();
     let outcome = run_count(
@@ -150,7 +150,7 @@ async fn provider_refusal() {
 
 // A transport failure and an unparsable reply are reported as 500 records, never counted locally
 async fn unreadable_replies() {
-    for reply in [Reply::Failed, Reply::ok("not json")] {
+    for reply in [Reply::Failed, Reply::status(200, "not json")] {
         let fixture = scripted(&[reply]);
         let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
         let count_deployment = deployment();

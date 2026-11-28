@@ -206,10 +206,6 @@ pub(super) fn extra_pairs(probe: &Probe) -> Option<Vec<(String, String)>> {
     })
 }
 
-pub(super) fn api_key(probe: &Probe) -> Option<SecretString> {
-    probe.api_key.clone().map(SecretString::from)
-}
-
 pub(super) fn replies(probe: &Probe) -> Vec<Reply> {
     if probe.replies.is_empty() {
         return vec![probe.reply.answer()];

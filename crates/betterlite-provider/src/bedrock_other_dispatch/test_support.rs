@@ -6,7 +6,6 @@ use std::time::{Duration, Instant, SystemTime};
 
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_bedrock::aws_settings::sources::Credentials;
-use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
 use betterlite_bedrock::embedding_call::Clock;
 use betterlite_bedrock::transcription::call::NativeTranscription;
@@ -21,7 +20,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateE
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_redact::error::RedactionError;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::secret::Redactor;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
@@ -69,10 +68,6 @@ pub fn credentials(access_key_id: &str, secret_access_key: &str) -> Credentials 
         secret_access_key: SecretString::from(secret_access_key.to_owned()),
         session_token: None,
     }
-}
-
-pub fn region_worker() -> Result<ManagedRegionWorker, FixtureError> {
-    Ok(ManagedRegionWorker::new()?)
 }
 
 // The clock every composition row signs at; a family that reads the clock twice sees the same instant
@@ -162,10 +157,6 @@ pub fn logging_state(redactor: &Redactor) -> Result<LoggingState, FixtureError> 
         || "generated".to_owned(),
         Duration::default,
     )?)
-}
-
-pub fn redactor() -> Result<Redactor, FixtureError> {
-    Ok(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?)
 }
 
 // The native transcription binding the composition reaches, over the fixture transport and a fixed clock

@@ -12,12 +12,12 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::super::harness::{Harness, Outcome, exchange};
-use super::super::model::{Failed, Probe, Unavailable, api_key, extra_pairs, param_map};
+use super::super::model::{Failed, Probe, Unavailable, extra_pairs, param_map};
 use super::row;
 
 pub(super) async fn embedding_row(probe: &Probe) -> Result<Value, Failed> {
     let extra = extra_pairs(probe);
-    let key = api_key(probe);
+    let key = probe.api_key.clone().map(SecretString::from);
     let operation = BedrockOtherOperation::Embedding(EmbeddingOperation {
         model: &probe.model,
         input: EmbeddingInput::Multiple(&probe.input),

@@ -7,10 +7,12 @@ use betterlite_openai::api::rerank_contracts::records::{RerankRequest, RerankRes
 use betterlite_provider::bedrock_other_dispatch::BedrockOtherResult;
 use betterlite_provider::bedrock_other_dispatch::call::{BedrockOtherOperation, RerankOperation};
 use betterlite_provider::bedrock_other_dispatch::test_support::binding::Recording;
+use betterlite_provider::bedrock_other_dispatch::test_support::{NOW_SECONDS, instant};
+use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
-use super::super::harness::{Harness, Outcome, exchange, now};
-use super::super::model::{Failed, Probe, Unavailable, api_key, extra_pairs, param_map};
+use super::super::harness::{Harness, Outcome, exchange};
+use super::super::model::{Failed, Probe, Unavailable, extra_pairs, param_map};
 use super::row;
 use crate::openai_media_dispatch::failure;
 
@@ -18,7 +20,7 @@ const GENERATED_ID: &str = "00000000-0000-4000-8000-000000000000";
 
 pub(super) async fn rerank_row(probe: &Probe) -> Result<Value, Failed> {
     let extra = extra_pairs(probe);
-    let key = api_key(probe);
+    let key = probe.api_key.clone().map(SecretString::from);
     let operation = BedrockOtherOperation::Rerank(RerankOperation {
         request: request(probe),
         optional_params: param_map(probe)?,
@@ -28,7 +30,7 @@ pub(super) async fn rerank_row(probe: &Probe) -> Result<Value, Failed> {
         timeout: probe.timeout_ms.map(Duration::from_millis),
         is_async: false,
         environment: RerankEnvironment::default(),
-        now: now()?,
+        now: instant(NOW_SECONDS).map_err(|error| failure("Instant", error))?,
         generated_id: GENERATED_ID,
     });
     let harness = Harness::new(probe)?;

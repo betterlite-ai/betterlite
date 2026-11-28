@@ -92,7 +92,8 @@ fn operation<'call>(
 async fn titan_vectors() {
     let env = environment("{}");
     let single = vec![String::from("hello")];
-    let g1 = scripted(&[Reply::ok(
+    let g1 = scripted(&[Reply::status(
+        200,
         r#"{"embedding": [0.5, 0.25], "inputTextTokenCount": 2}"#,
     )]);
     let g1_outcome = run(
@@ -113,7 +114,8 @@ async fn titan_vectors() {
     );
     assert_eq!(g1_outcome.regions, [String::from("us-east-1")]);
 
-    let binary = scripted(&[Reply::ok(
+    let binary = scripted(&[Reply::status(
+        200,
         r#"{"embeddingsByType": {"binary": "QUJD"}, "inputTextTokenCount": 2}"#,
     )]);
     let binary_outcome = run(
@@ -138,9 +140,9 @@ async fn sequential_successes() {
         String::from("three"),
     ];
     let fixture = scripted(&[
-        Reply::ok(r#"{"embedding": [1.5], "inputTextTokenCount": 3}"#),
-        Reply::ok(r#"{"embedding": [2.5], "inputTextTokenCount": 5}"#),
-        Reply::ok(r#"{"embedding": [3.5], "inputTextTokenCount": 1}"#),
+        Reply::status(200, r#"{"embedding": [1.5], "inputTextTokenCount": 3}"#),
+        Reply::status(200, r#"{"embedding": [2.5], "inputTextTokenCount": 5}"#),
+        Reply::status(200, r#"{"embedding": [3.5], "inputTextTokenCount": 1}"#),
     ]);
     let outcome = run(
         &fixture,
@@ -163,7 +165,7 @@ async fn sequential_successes() {
 async fn sequential_failure() {
     let env = environment("{}");
     let failing = scripted(&[
-        Reply::ok(r#"{"embedding": [1.0], "inputTextTokenCount": 1}"#),
+        Reply::status(200, r#"{"embedding": [1.0], "inputTextTokenCount": 1}"#),
         Reply::status(500, r#"{"message": "the model failed"}"#),
     ]);
     let inputs = vec![
@@ -189,7 +191,8 @@ async fn sequential_failure() {
 async fn cohere_input_type() {
     let env = environment("{}");
     let inputs = vec![String::from("one"), String::from("two")];
-    let fixture = scripted(&[Reply::ok(
+    let fixture = scripted(&[Reply::status(
+        200,
         r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]], "meta": {"billed_units": {"input_tokens": 7}}}"#,
     )]);
     let outcome = run(
@@ -225,7 +228,8 @@ async fn cohere_input_type() {
 async fn nova_text_payload() {
     let env = environment("{}");
     let text = String::from("hello");
-    let fixture = scripted(&[Reply::ok(
+    let fixture = scripted(&[Reply::status(
+        200,
         r#"{"embeddings": [{"embedding": [1, 2, 3, 4]}]}"#,
     )]);
     let outcome = run(
@@ -252,7 +256,10 @@ async fn nova_media_payloads() {
         ("data:video/mp4;base64,BBBB", "video", "BBBB", "mp4"),
     ] {
         let media = String::from(url);
-        let fixture = scripted(&[Reply::ok(r#"{"embeddings": [{"embedding": [0.5]}]}"#)]);
+        let fixture = scripted(&[Reply::status(
+            200,
+            r#"{"embeddings": [{"embedding": [0.5]}]}"#,
+        )]);
         let outcome = run(
             &fixture,
             operation(NOVA, EmbeddingInput::Text(&media), IDENTITY, &env),
@@ -282,7 +289,10 @@ async fn nova_media_payloads() {
 async fn marengo_payloads() {
     let env = environment("{}");
     let image = String::from("data:image/png;base64,CCCC");
-    let two_seven = scripted(&[Reply::ok(r#"{"data": [{"embedding": [0.5, 0.25]}]}"#)]);
+    let two_seven = scripted(&[Reply::status(
+        200,
+        r#"{"data": [{"embedding": [0.5, 0.25]}]}"#,
+    )]);
     let outcome = run(
         &two_seven,
         operation(MARENGO, EmbeddingInput::Text(&image), MARENGO_IMAGE, &env),
@@ -297,7 +307,7 @@ async fn marengo_payloads() {
         [0.5_f64, 0.25_f64]
     );
 
-    let three = scripted(&[Reply::ok(r#"{"data": [{"embedding": [0.5]}]}"#)]);
+    let three = scripted(&[Reply::status(200, r#"{"data": [{"embedding": [0.5]}]}"#)]);
     let three_outcome = run(
         &three,
         operation(MARENGO3, EmbeddingInput::Text(&image), MARENGO_IMAGE, &env),
@@ -311,7 +321,8 @@ async fn marengo_payloads() {
 
 // B632's status lookup reads the arn it was handed and never starts a job, reads S3 or polls
 async fn async_status() {
-    let fixture = scripted(&[Reply::ok(
+    let fixture = scripted(&[Reply::status(
+        200,
         r#"{"status": "Completed", "outputDataConfig": {"s3OutputDataConfig": {"s3Uri": "s3://bucket/out"}}}"#,
     )]);
     let arn = "arn:aws:bedrock:us-east-1:123456789012:async-invoke/abc";
@@ -351,7 +362,8 @@ async fn extra_headers_forwarded() {
     let env = environment("{}");
     let text = String::from("hello");
     let headers = vec![(String::from("x-trace"), String::from("t1"))];
-    let fixture = scripted(&[Reply::ok(
+    let fixture = scripted(&[Reply::status(
+        200,
         r#"{"embeddings": [{"embedding": [1, 2, 3, 4]}]}"#,
     )]);
     let outcome = run(

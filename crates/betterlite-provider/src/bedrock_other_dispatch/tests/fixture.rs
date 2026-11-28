@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::error::Error as StdError;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::count_call::counter::TokenCountResponse;
 use betterlite_bedrock::count_call::handler::{
     BedrockCountTokensHandler, CountTokensHandler, CountTokensHandlerError,
@@ -21,7 +22,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
-use betterlite_redact::secret::Redactor;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde_json::Number;
 
@@ -37,7 +38,7 @@ use crate::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
 use crate::bedrock_other_dispatch::test_support::source::Source;
 use crate::bedrock_other_dispatch::test_support::{
     Counting, DiscardingSink, Files, FixedClock, NOW_SECONDS, instant, logging_state, prepost_env,
-    redactor, region_worker, secret_lookup,
+    secret_lookup,
 };
 use crate::operation::{OperationRequest, OperationResult};
 
@@ -71,7 +72,12 @@ impl Fixture {
         factory.seen = seen.clone();
         Self {
             factory,
-            transport: FixtureClient::new(Replies::queue(replies), seen),
+            transport: FixtureClient {
+                replies: Replies(Arc::new(Mutex::new(
+                    replies.iter().cloned().collect::<VecDeque<Reply>>(),
+                ))),
+                seen,
+            },
             source: Source::new(credentials),
         }
     }
@@ -81,7 +87,10 @@ impl Fixture {
     }
 
     pub(crate) fn client(&self) -> FixtureClient {
-        FixtureClient::new(self.factory.replies.clone(), self.factory.seen.clone())
+        FixtureClient {
+            replies: self.factory.replies.clone(),
+            seen: self.factory.seen.clone(),
+        }
     }
 }
 
@@ -267,13 +276,14 @@ struct Prepared {
 
 impl Prepared {
     fn new() -> Self {
-        let redactor = redactor().expect("the fixture redactor builds");
+        let redactor =
+            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the fixture redactor builds");
         let state = logging_state(&redactor).expect("the fixture logging state builds");
         Self {
             redactor,
             state,
             secrets: secret_lookup(),
-            workers: region_worker().expect("the fixture region worker builds"),
+            workers: ManagedRegionWorker::new().expect("the fixture region worker builds"),
             signing: AwsSigningExecutor::default(),
             encoding: Counting,
             files: Files,
@@ -281,43 +291,6 @@ impl Prepared {
                 instant(NOW_SECONDS).expect("the fixture instant builds"),
             )),
         }
-    }
-
-    async fn dispatch<H, B>(
-        &mut self,
-        fixture: &Fixture,
-        operation: BedrockOtherOperation<'_, '_, '_, H, B>,
-    ) -> Result<BedrockOtherResult, BedrockOtherError<B::Error>>
-    where
-        H: CountTokensHandler,
-        B: TranscriptionBinding + Sync,
-    {
-        let sink = DiscardingSink;
-        let env = prepost_env(&self.state, &self.redactor, &sink);
-        let services = Services {
-            secrets: &self.secrets,
-            region_worker: &self.workers,
-            source: &fixture.source,
-            factory: &fixture.factory,
-            transport: &fixture.transport,
-            encoding: &self.encoding,
-            signing: &self.signing,
-            clock: Arc::clone(&self.clock),
-            files: &self.files,
-        };
-        let mut log = LogContext {
-            state: &mut self.state,
-            env: &env,
-        };
-        outcome(
-            dispatch(
-                OperationRequest::BedrockOther(BedrockOtherRequest),
-                operation,
-                &services,
-                &mut log,
-            )
-            .await,
-        )
     }
 }
 
@@ -330,10 +303,35 @@ where
     B: TranscriptionBinding + Sync,
 {
     let mut prepared = Prepared::new();
-    let result = prepared.dispatch(fixture, operation).await;
+    let sink = DiscardingSink;
+    let env = prepost_env(&prepared.state, &prepared.redactor, &sink);
+    let services = Services {
+        secrets: &prepared.secrets,
+        region_worker: &prepared.workers,
+        source: &fixture.source,
+        factory: &fixture.factory,
+        transport: &fixture.transport,
+        encoding: &prepared.encoding,
+        signing: &prepared.signing,
+        clock: Arc::clone(&prepared.clock),
+        files: &prepared.files,
+    };
+    let mut log = LogContext {
+        state: &mut prepared.state,
+        env: &env,
+    };
+    let result = outcome(
+        dispatch(
+            OperationRequest::BedrockOther(BedrockOtherRequest),
+            operation,
+            &services,
+            &mut log,
+        )
+        .await,
+    );
     Outcome {
         result,
-        requests: fixture.factory.requests(),
+        requests: fixture.factory.seen.requests(),
         calls: fixture.factory.calls(),
         regions: fixture.source.regions(),
         state: prepared.state,
