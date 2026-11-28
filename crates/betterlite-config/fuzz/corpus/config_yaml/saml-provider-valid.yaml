@@ -1,0 +1,10 @@
+environment_variables:
+  SAML_IDP_METADATA_URL: os.environ/SAML_IDP_METADATA_URL
+  SAML_STRICT: "false"
+  SAML_WANT_ASSERTIONS_SIGNED: "true"
+  SAML_AUTHN_REQUESTS_SIGNED: "false"
+  SAML_IDP_METADATA_VALIDATE_CERT: "true"
+model_list:
+  - model_name: saml-proxy
+    litellm_params:
+      model: openai/gpt-4o-mini

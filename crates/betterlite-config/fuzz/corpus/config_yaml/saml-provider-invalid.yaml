@@ -1,0 +1,4 @@
+environment_variables:
+  SAML_SP_ENTITY_ID: os.environ/SAML_SP_ENTITY_ID
+  SAML_IDP_METADATA_XML: "<md:EntityDescriptor/>"
+  SAML_SP_NAME_ID_FORMAT: urn:oasis:names:tc:SAML:2.0:nameid-format:persistent
