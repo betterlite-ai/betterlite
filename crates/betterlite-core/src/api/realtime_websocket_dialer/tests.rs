@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::future::pending;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::websocket_client::request::{Keepalive, WebSocketRequest};
+use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
@@ -46,21 +48,30 @@ const AT_LIMIT_FRAME: usize = 9;
 const OVER_LIMIT_FRAME: usize = 64;
 const ATTEMPTS: usize = 3;
 
-struct Rejector {
-    status: StatusCode,
+// the upgrade callback: it records the request's headers when the test asks and rejects when it asks
+struct UpgradeRecorder {
+    seen: Option<Arc<Mutex<Vec<(String, String)>>>>,
+    rejection: Option<StatusCode>,
 }
 
-impl Callback for Rejector {
-    fn on_request(
-        self,
-        _request: &Request,
-        _response: Response,
-    ) -> Result<Response, ErrorResponse> {
-        let rejection = Response::builder()
-            .status(self.status)
-            .body(Some("rejected".to_owned()))
-            .expect("rejection");
-        Err(rejection)
+impl Callback for UpgradeRecorder {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        if let Some(seen) = &self.seen {
+            let mut recorded = seen.lock().expect("recorded headers");
+            for (name, value) in request.headers() {
+                recorded.push((
+                    name.as_str().to_owned(),
+                    value.to_str().expect("header text").to_owned(),
+                ));
+            }
+        }
+        match self.rejection {
+            Some(status) => Err(Response::builder()
+                .status(status)
+                .body(Some("rejected".to_owned()))
+                .expect("rejection")),
+            None => Ok(response),
+        }
     }
 }
 
@@ -110,7 +121,16 @@ async fn serve_attempts(
         attempts.fetch_add(1, Ordering::SeqCst);
         match rejection {
             Some(status) => {
-                drop(tokio_tungstenite::accept_hdr_async(stream, Rejector { status }).await);
+                drop(
+                    tokio_tungstenite::accept_hdr_async(
+                        stream,
+                        UpgradeRecorder {
+                            seen: None,
+                            rejection: Some(status),
+                        },
+                    )
+                    .await,
+                );
             }
             None => {
                 held.push(stream);
@@ -158,6 +178,31 @@ async fn serve_silent(listener: TcpListener) -> (u16, String) {
 async fn serve_end(listener: TcpListener) {
     let (stream, _peer) = listener.accept().await.expect("accept");
     drop(accept_async(stream).await);
+}
+
+// a server that records the upgrade's headers before it answers the handshake
+async fn serve_with_headers(listener: TcpListener, seen: Arc<Mutex<Vec<(String, String)>>>) {
+    let (stream, _peer) = listener.accept().await.expect("accept");
+    drop(
+        tokio_tungstenite::accept_hdr_async(
+            stream,
+            UpgradeRecorder {
+                seen: Some(seen),
+                rejection: None,
+            },
+        )
+        .await,
+    );
+}
+
+// a server that reads the three frames the sender writes: text, binary and the normal close
+async fn serve_sent_frames(listener: TcpListener) -> (Message, Message, Message) {
+    let (stream, _peer) = listener.accept().await.expect("accept");
+    let mut socket = accept_async(stream).await.expect("handshake");
+    let text = socket.next().await.expect("text").expect("frame");
+    let binary = socket.next().await.expect("binary").expect("frame");
+    let close = socket.next().await.expect("close").expect("frame");
+    (text, binary, close)
 }
 
 #[tokio::test]
@@ -522,6 +567,91 @@ async fn source_applies_the_decode_flag_to_frames() {
 }
 
 #[tokio::test]
+async fn dialer_sends_the_backend_headers_in_order() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_with_headers(listener, Arc::clone(&seen)));
+    let url = format!("ws://{address}/realtime");
+    let ssl = RealtimeSsl::Disabled;
+    let mut headers = HeaderMap::new();
+    drop(headers.insert("x-request-id".to_owned(), Json::Text("one".to_owned())));
+    drop(headers.insert(
+        "authorization".to_owned(),
+        Json::Text("Bearer two".to_owned()),
+    ));
+    let dialer = web_dialer(no_proxy());
+    let backend = timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, 1024)),
+    )
+    .await
+    .expect("deadline")
+    .expect("opened");
+    drop(backend);
+    timeout(TEST_TIMEOUT, tasks.join_next())
+        .await
+        .expect("server")
+        .expect("server")
+        .expect("server task");
+    let recorded = seen.lock().expect("recorded headers");
+    let custom: Vec<(&str, &str)> = recorded
+        .iter()
+        .filter(|(name, _value)| {
+            name.as_str() == "x-request-id" || name.as_str() == "authorization"
+        })
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    assert_eq!(
+        custom,
+        [("authorization", "Bearer two"), ("x-request-id", "one")]
+    );
+}
+
+#[tokio::test]
+async fn sender_writes_text_binary_and_a_normal_close() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_sent_frames(listener));
+    let url = format!("ws://{address}/realtime");
+    let ssl = RealtimeSsl::Disabled;
+    let headers = HeaderMap::new();
+    let dialer = web_dialer(no_proxy());
+    let mut backend = timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, 1024)),
+    )
+    .await
+    .expect("deadline")
+    .expect("opened");
+    backend
+        .sender
+        .send(RealtimeMessage::Text("hello".to_owned()))
+        .await
+        .expect("text");
+    backend
+        .sender
+        .send(RealtimeMessage::Binary(b"raw".to_vec()))
+        .await
+        .expect("binary");
+    backend.sender.close().await.expect("close");
+    let (text, binary, close) = timeout(TEST_TIMEOUT, tasks.join_next())
+        .await
+        .expect("server")
+        .expect("server")
+        .expect("server task");
+    assert_eq!(text, Message::Text(Utf8Bytes::from("hello")));
+    assert_eq!(binary, Message::Binary(Bytes::from_static(b"raw")));
+    let Message::Close(Some(frame)) = close else {
+        panic!("expected a close frame");
+    };
+    assert_eq!(u16::from(frame.code), 1000);
+    assert_eq!(frame.reason.as_str(), "");
+}
+
+#[tokio::test]
 async fn probe_answers_ok_on_an_accepted_upgrade_and_closes_1000() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
@@ -597,5 +727,42 @@ fn close_texts_match_websockets() {
         super::halves::close_text(4000, "bye"),
         "4000 (private use) bye"
     );
+    assert_eq!(super::halves::close_text(1001, ""), "1001 (going away)");
+    assert_eq!(super::halves::close_text(1002, ""), "1002 (protocol error)");
+    assert_eq!(
+        super::halves::close_text(1003, ""),
+        "1003 (unsupported data)"
+    );
+    assert_eq!(
+        super::halves::close_text(1006, ""),
+        "1006 (abnormal closure [internal])"
+    );
+    assert_eq!(
+        super::halves::close_text(1007, ""),
+        "1007 (invalid frame payload data)"
+    );
+    assert_eq!(
+        super::halves::close_text(1008, ""),
+        "1008 (policy violation)"
+    );
+    assert_eq!(
+        super::halves::close_text(1010, ""),
+        "1010 (mandatory extension)"
+    );
+    assert_eq!(
+        super::halves::close_text(1012, ""),
+        "1012 (service restart)"
+    );
+    assert_eq!(
+        super::halves::close_text(1013, ""),
+        "1013 (try again later)"
+    );
+    assert_eq!(super::halves::close_text(1014, ""), "1014 (bad gateway)");
+    assert_eq!(
+        super::halves::close_text(1015, ""),
+        "1015 (TLS handshake failure [internal])"
+    );
+    assert_eq!(super::halves::close_text(3999, ""), "3999 (registered)");
+    assert_eq!(super::halves::close_text(4999, ""), "4999 (private use)");
     assert_eq!(super::halves::close_text(7, ""), "7 (unknown)");
 }
