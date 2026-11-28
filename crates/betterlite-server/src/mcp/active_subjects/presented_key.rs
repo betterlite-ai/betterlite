@@ -14,6 +14,17 @@ const fn is_text_space(letter: char) -> bool {
     }
 }
 
+// http's HeaderValue rejects the C1 controls, so the strip is a text step of its own
+fn stripped_key_text(text: &str) -> String {
+    let stripped = text.trim_matches(is_text_space);
+    if stripped.to_lowercase().starts_with("bearer ") {
+        let remainder: String = stripped.chars().skip(BEARER_PREFIX_CHARS).collect();
+        remainder.trim_matches(is_text_space).to_owned()
+    } else {
+        stripped.to_owned()
+    }
+}
+
 // Starlette decodes header bytes as Latin-1, one char per byte, then strips and drops a bearer prefix
 #[must_use]
 pub fn litellm_key_from_request(headers: &HeaderMap) -> Option<String> {
@@ -25,13 +36,7 @@ pub fn litellm_key_from_request(headers: &HeaderMap) -> Option<String> {
             continue;
         }
         let text: String = value.as_bytes().iter().copied().map(char::from).collect();
-        let stripped = text.trim_matches(is_text_space);
-        let token = if stripped.to_lowercase().starts_with("bearer ") {
-            let remainder: String = stripped.chars().skip(BEARER_PREFIX_CHARS).collect();
-            remainder.trim_matches(is_text_space).to_owned()
-        } else {
-            stripped.to_owned()
-        };
+        let token = stripped_key_text(&text);
         if !token.is_empty() {
             return Some(token);
         }
