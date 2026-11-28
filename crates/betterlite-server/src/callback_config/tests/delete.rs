@@ -4,10 +4,12 @@ use axum::body::Body;
 use axum::http::{HeaderValue, Request, StatusCode, header};
 use rstest::rstest;
 
+use betterlite_auth::auth_identity::records::UserIdentity;
+use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::sections::settings::JsonValue;
 
 use super::support::{
-    Harness, admin_user, internal_key, json, master_key, object, request_with_body,
+    Harness, internal_key, json, master_key, object, principal, request_with_body,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::config_overlay_port::ConfigOverlayPortError;
@@ -171,9 +173,16 @@ async fn audits_the_success_callback_before_and_after() {
 #[tokio::test]
 async fn audits_the_caller_user_id_as_changed_by() {
     let harness = Harness::new(success_config(r#"["langfuse"]"#));
-    let (status, _body) = harness
-        .call(delete_call("langfuse"), Some(admin_user()))
-        .await;
+    let mut caller = principal("key-2");
+    caller.user = Some(UserIdentity {
+        id: "admin-user".to_owned(),
+        external_id: None,
+        user_name: None,
+        email: None,
+        display_name: None,
+    });
+    caller.roles = vec![Role::PlatformAdmin];
+    let (status, _body) = harness.call(delete_call("langfuse"), Some(caller)).await;
     assert_eq!(status, StatusCode::OK);
     let records = harness.audit_records();
     assert_eq!(records.len(), 1);
