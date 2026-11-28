@@ -22,7 +22,7 @@ call:
         code_challenge_method: S256
         response_type: code
         user: alice
-        resource: 'https://proxy.test:8443/srv-a/mcp'
+        resource: 'https://proxy.test:8443/alpha/mcp'
         tokens: [handle-1, jti-1]
         handle: ''
         delivery: null
@@ -72,7 +72,7 @@ call:
         code_challenge_method: S256
         response_type: code
         user: alice
-        resource: 'https://proxy.test:8443/srv-c/mcp'
+        resource: 'https://proxy.test:8443/gamma/mcp'
         tokens: [handle-1, jti-1]
         handle: ''
         delivery: null

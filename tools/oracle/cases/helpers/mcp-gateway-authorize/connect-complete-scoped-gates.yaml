@@ -21,7 +21,7 @@ call:
         code_challenge_method: S256
         response_type: code
         user: alice
-        resource: 'https://proxy.test:8443/srv-a/mcp'
+        resource: 'https://proxy.test:8443/alpha/mcp'
         tokens: [handle-1, jti-1]
         handle: ''
         delivery: null
@@ -37,7 +37,7 @@ call:
         now: 1700000000
         path: /authorize/complete
         query: null
-        cookie_from: 1
+        cookie_from: 0
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'
@@ -54,7 +54,7 @@ call:
         decision: approve
         teams: []
         teams_failure: null
-        vendor: unavailable
+        vendor: absent
         reachable: true
         token_exchange: false
       - name: deny-still-works
@@ -62,7 +62,7 @@ call:
         now: 1700000000
         path: /authorize/complete
         query: null
-        cookie_from: 1
+        cookie_from: 0
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'
@@ -87,7 +87,7 @@ call:
         now: 1700000000
         path: /ui/connect
         query: null
-        cookie_from: 1
+        cookie_from: 0
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'

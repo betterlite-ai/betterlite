@@ -220,7 +220,7 @@ fn the_flow_cookie_opens_as_the_connect_flow() {
 fn a_scoped_resource_seals_the_server_into_the_flow() {
     let tokens = ScriptedTokens::new(&["handle-1", "jti-1"]);
     let servers = registry(&[OAUTH_SERVER]);
-    let resource = format!("{BASE}/srv-a/mcp");
+    let resource = format!("{BASE}/alpha/mcp");
     let reply = signed_in_reply(Some(&resource), &servers, &tokens);
     let GatewayReply::Redirect { set_cookie, .. } = reply else {
         panic!("expected a redirect");

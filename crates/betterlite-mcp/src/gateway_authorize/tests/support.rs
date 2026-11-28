@@ -210,3 +210,5 @@ pub(crate) fn registry(servers: &[&str]) -> ServerRegistry {
 pub(crate) const OAUTH_SERVER: &str = r#"{"server_id":"srv-a","name":"alpha","transport":"sse","auth_type":"oauth2","oauth2_flow":"authorization_code"}"#;
 pub(crate) const M2M_SERVER: &str = r#"{"server_id":"srv-b","name":"beta","transport":"sse","auth_type":"oauth2","oauth2_flow":"client_credentials"}"#;
 pub(crate) const DELEGATED_SERVER: &str = r#"{"server_id":"srv-c","name":"gamma","transport":"sse","auth_type":"oauth2","oauth2_flow":"authorization_code","delegate_auth_to_upstream":true}"#;
+pub(crate) const RELAY_SERVER: &str = r#"{"server_id":"srv-r","name":"relay","transport":"sse","auth_type":"oauth2","oauth2_flow":"authorization_code","per_server_oauth_discovery":true}"#;
+pub(crate) const PREFIX_SERVER: &str = r#"{"server_id":"srv-x","name":"x","transport":"sse","auth_type":"oauth2","oauth2_flow":"authorization_code"}"#;

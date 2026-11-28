@@ -36,7 +36,7 @@ call:
         now: 1700000000
         path: /authorize/complete
         query: null
-        cookie_from: 1
+        cookie_from: 0
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'
@@ -61,7 +61,7 @@ call:
         now: 1700000000
         path: /authorize/complete
         query: null
-        cookie_from: 1
+        cookie_from: 0
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'

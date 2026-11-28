@@ -4,7 +4,8 @@ use rstest::rstest;
 
 use super::*;
 use crate::gateway_authorize::tests::support::{
-    BASE, DELEGATED_SERVER, M2M_SERVER, OAUTH_SERVER, Reach, flow, registry,
+    BASE, DELEGATED_SERVER, M2M_SERVER, OAUTH_SERVER, PREFIX_SERVER, RELAY_SERVER, Reach, flow,
+    registry,
 };
 
 #[test]
@@ -18,20 +19,37 @@ fn the_base_url_alone_is_the_proxy_api_resource() {
 #[test]
 fn a_server_resource_selects_the_gateway_server() {
     let registry = registry(&[OAUTH_SERVER, DELEGATED_SERVER]);
-    let resource = format!("{BASE}/srv-a/mcp");
+    let resource = format!("{BASE}/alpha/mcp");
     let scoped = resolve_scoped_resource_server(&registry, BASE, Some(&resource)).unwrap();
     assert_eq!(scoped.fields.server_id, "srv-a");
+}
+
+#[test]
+fn a_relayed_gateway_server_is_still_scoped() {
+    let registry = registry(&[RELAY_SERVER]);
+    let resource = format!("{BASE}/relay/mcp");
+    let scoped = resolve_scoped_resource_server(&registry, BASE, Some(&resource)).unwrap();
+    assert_eq!(scoped.fields.server_id, "srv-r");
+}
+
+#[test]
+fn a_resource_sharing_only_the_base_path_prefix_stays_unscoped() {
+    let registry = registry(&[PREFIX_SERVER]);
+    let resource = "https://proxy.test/tenantx/mcp";
+    let scoped =
+        resolve_scoped_resource_server(&registry, "https://proxy.test/tenant", Some(resource));
+    assert!(scoped.is_none());
 }
 
 #[rstest]
 #[case::absent(None)]
 #[case::aggregate(Some("https://proxy.test:8443/mcp"))]
 #[case::proxy_api(Some("https://proxy.test:8443"))]
-#[case::foreign_host(Some("https://other.test/srv-a/mcp"))]
-#[case::several_servers(Some("https://proxy.test:8443/srv-a/srv-c/mcp"))]
+#[case::foreign_host(Some("https://other.test/alpha/mcp"))]
+#[case::several_servers(Some("https://proxy.test:8443/alpha/gamma/mcp"))]
 #[case::unknown_server(Some("https://proxy.test:8443/unknown/mcp"))]
-#[case::delegated_only(Some("https://proxy.test:8443/srv-c/mcp"))]
-#[case::without_suffix(Some("https://proxy.test:8443/srv-a"))]
+#[case::delegated_only(Some("https://proxy.test:8443/gamma/mcp"))]
+#[case::without_suffix(Some("https://proxy.test:8443/alpha"))]
 fn every_other_resource_shape_stays_unscoped(#[case] resource: Option<&'static str>) {
     let registry = registry(&[OAUTH_SERVER, DELEGATED_SERVER]);
     let scoped = resolve_scoped_resource_server(&registry, BASE, resource);
@@ -40,7 +58,7 @@ fn every_other_resource_shape_stays_unscoped(#[case] resource: Option<&'static s
 
 #[tokio::test]
 async fn flow_target_reports_its_state() {
-    let registry = registry(&[OAUTH_SERVER, M2M_SERVER, DELEGATED_SERVER]);
+    let registry = registry(&[OAUTH_SERVER, M2M_SERVER, DELEGATED_SERVER, RELAY_SERVER]);
     assert!(matches!(
         flow_target(&registry, &flow(), &Reach(true)).await,
         FlowTarget::Unscoped
@@ -52,6 +70,10 @@ async fn flow_target_reports_its_state() {
     assert!(matches!(
         flow_target(&registry, &scoped_flow("srv-b"), &Reach(true)).await,
         FlowTarget::M2m(_)
+    ));
+    assert!(matches!(
+        flow_target(&registry, &scoped_flow("srv-r"), &Reach(true)).await,
+        FlowTarget::Interactive(_)
     ));
     assert!(matches!(
         flow_target(&registry, &scoped_flow("srv-c"), &Reach(true)).await,

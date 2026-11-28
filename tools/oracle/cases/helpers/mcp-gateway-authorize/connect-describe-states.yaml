@@ -72,7 +72,7 @@ call:
         code_challenge_method: S256
         response_type: code
         user: alice
-        resource: 'https://proxy.test:8443/srv-a/mcp'
+        resource: 'https://proxy.test:8443/alpha/mcp'
         tokens: [handle-1, jti-1]
         handle: ''
         delivery: null
@@ -147,7 +147,7 @@ call:
         code_challenge_method: S256
         response_type: code
         user: alice
-        resource: 'https://proxy.test:8443/srv-b/mcp'
+        resource: 'https://proxy.test:8443/beta/mcp'
         tokens: [handle-1, jti-1]
         handle: ''
         delivery: null
@@ -163,7 +163,7 @@ call:
         now: 1700000000
         path: /ui/connect
         query: null
-        cookie_from: 4
+        cookie_from: 5
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'
@@ -197,7 +197,7 @@ call:
         code_challenge_method: S256
         response_type: code
         user: alice
-        resource: 'https://proxy.test:8443/srv-a/mcp'
+        resource: 'https://proxy.test:8443/alpha/mcp'
         tokens: [handle-1, jti-1]
         handle: ''
         delivery: null
@@ -213,7 +213,7 @@ call:
         now: 1700000000
         path: /ui/connect
         query: null
-        cookie_from: 6
+        cookie_from: 7
         client: 0
         client_id: ''
         redirect_uri: 'http://127.0.0.1:8080/callback'
