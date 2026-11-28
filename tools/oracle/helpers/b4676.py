@@ -10,8 +10,10 @@ from litellm.proxy import proxy_server
 from litellm.proxy._experimental.mcp_server import gateway_dcr_flow
 from litellm.proxy._experimental.mcp_server.gateway_dcr_flow import register_aggregate_client
 from litellm.proxy._experimental.mcp_server.mcp_server_manager import global_mcp_server_manager
-from litellm.proxy._experimental.mcp_server.outbound_credentials import session_credentials
-from litellm.proxy._experimental.mcp_server.outbound_credentials import session_token
+from litellm.proxy._experimental.mcp_server.outbound_credentials import (
+    session_credentials,
+    session_token,
+)
 from litellm.proxy._experimental.mcp_server.outbound_credentials.session_token import (
     NotASessionToken,
     SessionBadSignature,
@@ -136,25 +138,23 @@ class Answers(NamedTuple):
     async def exchange(
         self, _subject_token: str, _request: Request, /
     ) -> gateway_dcr_flow.SubjectIdentity | gateway_dcr_flow.SubjectTokenRefusal:
-        if self.step["exchange_failure"] is not None:
-            return gateway_dcr_flow.SubjectTokenRefusal(**self.step["exchange_failure"])
+        refusal = self.step["exchange_failure"]
+        if refusal is not None:
+            return gateway_dcr_flow.SubjectTokenRefusal(
+                error=refusal["error"], description=refusal["description"]
+            )
         answer = self.step["exchange"]
         if answer is None:
             raise ValueError("the case lists no exchange answer")
         return gateway_dcr_flow.SubjectIdentity(**answer)
 
 
-def entry(entries: list[str], index: int) -> str:
-    return entries[index] if 0 <= index < len(entries) else ""
-
-
 def register_clients(seeds: list[ClientSeed]) -> list[str]:
     clients: list[str] = []
     for seed in seeds:
-        body: dict[str, object] = {"redirect_uris": seed["redirect_uris"]}
         scope: dict[str, str] = {"type": "http", "path": "/register"}
         response = asyncio.run(
-            register_aggregate_client(Request(scope), body, token_exchange_available=False)
+            register_aggregate_client(Request(scope), seed, token_exchange_available=False)
         )
         clients.append(TEXT.validate_python(BODY.validate_json(bytes(response.body))["client_id"]))
     return clients
@@ -182,10 +182,9 @@ def claims(token: str, kind: str, context: Context) -> JsonValue:
 
 
 def body_value(step: Step, body: dict[str, JsonValue], context: Context) -> JsonValue:
-    kind = step["kind"]
-    if "error" in body or kind == "revoke":
+    if "error" in body or step["kind"] == "revoke":
         return body
-    if kind == "introspect":
+    if step["kind"] == "introspect":
         value = dict(body)
         if "jti" in value:
             value["jti"] = "<jti>"
@@ -194,24 +193,24 @@ def body_value(step: Step, body: dict[str, JsonValue], context: Context) -> Json
             value["client_id"] = {"sealed_client": context.clients.index(sealed)}
         return value
     refresh = claims(TEXT.validate_python(body["refresh_token"]), "session_refresh", context)
-    value: dict[str, JsonValue] = {
+    pair: dict[str, JsonValue] = {
         "refresh_token": refresh, "token_type": body["token_type"],
         "expires_in": body["expires_in"],
     }
     if "user_id" in body:
-        value["access_token"] = body["access_token"]
-        value["user_id"] = body["user_id"]
-        value["team_id"] = body["team_id"]
+        pair["access_token"] = body["access_token"]
+        pair["user_id"] = body["user_id"]
+        pair["team_id"] = body["team_id"]
         if "issued_token_type" in body:
-            value["issued_token_type"] = body["issued_token_type"]
+            pair["issued_token_type"] = body["issued_token_type"]
     else:
         access = claims(TEXT.validate_python(body["access_token"]), "session", context)
-        value["access_token"] = access
-    return value
+        pair["access_token"] = access
+    return pair
 
 
 def run_setup(step: SetupStep, context: Context) -> str:
-    client = entry(context.clients, step["client"])
+    client = context.clients[step["client"]] if 0 <= step["client"] < len(context.clients) else ""
     if step["kind"] == "mint_code":
         code = gateway_dcr_flow._GatewayAuthCode(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L307
             user_id=step["user_id"], client_id=client,
@@ -235,9 +234,9 @@ def run_setup(step: SetupStep, context: Context) -> str:
     match minted:
         case session_token.MintedSessionToken():
             token = minted.token.get_secret_value()
+            return ("Bearer " if step["bearer"] else "") + token + ("x" if step["tamper"] else "")
         case session_token.SessionTokenTooLarge():
             raise ValueError("the setup token is too large")
-    return ("Bearer " if step["bearer"] else "") + token + ("x" if step["tamper"] else "")
 
 
 async def run_step(step: Step, context: Context) -> dict[str, JsonValue]:
@@ -247,26 +246,28 @@ async def run_step(step: Step, context: Context) -> dict[str, JsonValue]:
             step["code_verifier"], step["code_challenge"],
         )
         return {"name": step["name"], "status": 200, "headers": [], "body": {"matches": matched}}
-    signing = {"mcp_session_token_signing": {"algorithm": "HS256"}}
-    proxy_server.general_settings = signing if step["master"] == "invalid" else {}
+    signing: dict[str, JsonValue] = {"mcp_session_token_signing": {"algorithm": "HS256"}}
+    settings: dict[str, JsonValue] = signing if step["master"] == "invalid" else {}
+    proxy_server.general_settings = settings
     master = None if step["master"] == "absent" else MASTER
     answers = Answers(step)
-    token = entry(context.products, step["token"])
-    client = entry(context.clients, step["client"])
+    products = context.products
+    token = products[step["token"]] if 0 <= step["token"] < len(products) else ""
+    client = context.clients[step["client"]] if 0 <= step["client"] < len(context.clients) else ""
     if step["kind"] == "token":
         parsed = urlparse(context.base_url)
         scope: dict[str, str | bytes | list[tuple[bytes, bytes]]] = {
             "type": "http", "method": "POST", "scheme": parsed.scheme, "path": "/token",
             "query_string": b"", "headers": [(b"host", parsed.netloc.encode())],
         }
+        code = products[step["code"]] if 0 <= step["code"] < len(products) else ""
+        refresh = products[step["refresh"]] if 0 <= step["refresh"] < len(products) else ""
+        subject = products[step["subject"]] if 0 <= step["subject"] < len(products) else ""
         response = await gateway_dcr_flow.aggregate_token(
-            Request(scope), step["grant_type"],
-            entry(context.products, step["code"]), step["redirect_uri"],
-            client, step["code_verifier"],
-            entry(context.products, step["refresh"]), master,
+            Request(scope), step["grant_type"], code, step["redirect_uri"],
+            client, step["code_verifier"], refresh, master,
             answers.reload, context.cache, step["resource"], answers.mint,
-            entry(context.products, step["subject"]),
-            step["subject_token_type"], step["requested_token_type"], answers.exchange,
+            subject, step["subject_token_type"], step["requested_token_type"], answers.exchange,
         )
     elif step["kind"] == "revoke":
         response = await gateway_dcr_flow.revoke_refresh_token(token, client, master, context.cache)
