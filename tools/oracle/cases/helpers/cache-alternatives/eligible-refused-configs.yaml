@@ -1,0 +1,63 @@
+kind: helper
+name: cache-alternatives-eligible-refused-configs
+call:
+  b3124:
+    config:
+      tiers: {SIMPLE: cheap, MEDIUM: strong}
+    decision: {tier: SIMPLE, cause: keyword}
+calls:
+  - b3124:
+      config:
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {tier: TURBO, cause: heuristic_scorer}
+  - b3124:
+      config:
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {cause: heuristic_scorer}
+  - b3124:
+      config:
+        classifier_type: llm
+        classifier_llm_config: {model: classifier}
+        fallback_tier: fast
+        tier_definitions:
+          - {name: fast, description: quick answers}
+          - {name: deep, description: slow answers}
+        tiers: {fast: cheap, deep: strong}
+      decision: {tier: fast, cause: llm_classifier}
+  - b3124:
+      config:
+        adaptive: true
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        session_affinity: true
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        plugins: [{}]
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        classification_mode: user_turn
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        tiers: {SIMPLE: cheap, MEDIUM: [strong, bigger]}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        tiers:
+          SIMPLE: cheap
+          MEDIUM: {model_name: strong, litellm_params: {temperature: 0.2}}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        classification_mode: every_request
+        tiers: {SIMPLE: cheap, MEDIUM: strong}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+env: {}
+compare: {ignore: []}
