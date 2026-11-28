@@ -75,6 +75,7 @@ pub mod jwt_team_authorization;
 pub mod jwt_team_selection;
 pub mod jwt_verification;
 pub mod key_context;
+pub mod known_proxy_routes;
 pub mod managed_admission;
 pub mod management_routes;
 pub mod master_database_auth;

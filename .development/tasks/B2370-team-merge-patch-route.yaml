@@ -75,6 +75,7 @@ out_of_scope:
   - B8231 owns apply_json_merge_patch and B2400 (proxy/utils.py) handle_exception_on_proxy; B1231 owns PatchTeamRequest and UpdateTeamRequest decoding.
   - The remaining team_endpoints.py functions retain the ownership partition enumerated in B1205 out_of_scope; this adapter moves only patch_team.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - A patch without metadata does not perform this adapter's missing-team lookup; its error comes from update_team.
   - The merge depth limit counts dictionary recursion; replacing with an array is not recursive array patching.
 budget:
