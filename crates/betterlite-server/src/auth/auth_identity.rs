@@ -22,6 +22,7 @@ use crate::auth::entity_model_access::EntityModelStageInput;
 pub(crate) use crate::auth::failures::StageFailure;
 use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
+use crate::auth::jwt_team_selection::{self, JwtTeamSelectionStageInput};
 use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
@@ -35,6 +36,7 @@ use crate::error_body::AuthenticationFailure;
 pub enum AuthBackend {
     AuthKeyLookup,
     JwtKeys,
+    JwtTeamSelection,
     MasterKey,
     TrustedNetwork,
     AuthRequestPolicy,
@@ -61,6 +63,7 @@ pub enum AuthBackend {
 // B052 owns the stage order; the JWT fetch runs before the master-key comparison, as in LiteLLM.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::JwtKeys,
+    AuthBackend::JwtTeamSelection,
     AuthBackend::AuthKeyLookup,
     MasterKey,
     AuthBackend::TrustedNetwork,
@@ -91,6 +94,7 @@ pub enum StageInput {
     AuthIdentity(Box<IdentityStageInput>),
     Authenticated(Box<AuthContext>),
     JwtKeys(Box<JwtKeyStageInput>),
+    JwtTeamSelection(Box<JwtTeamSelectionStageInput>),
     MasterKey(Option<SecretString>),
     TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
@@ -152,6 +156,7 @@ impl StageInput {
                 AuthBackend::AuthKeyLookup
             }
             Self::JwtKeys(_) => AuthBackend::JwtKeys,
+            Self::JwtTeamSelection(_) => AuthBackend::JwtTeamSelection,
             Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
@@ -208,6 +213,9 @@ pub(crate) fn dispatch(
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
+        StageInput::JwtTeamSelection(stage) => {
+            jwt_team_selection::run_stage(stage).map_err(StageFailure::JwtTeamSelection)
+        }
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {

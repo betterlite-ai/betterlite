@@ -1,12 +1,19 @@
-use crate::state::shared::Shared;
+use betterlite_auth::jwt_team_selection::settings::SelectionSettings;
 use betterlite_config::types::Config;
 
-pub struct Slot;
+use crate::state::shared::Shared;
+
+// the typed litellm_jwtauth values the JWT team selection stage reads, parsed once with the section
+#[derive(Clone, Debug)]
+pub struct Slot {
+    pub settings: SelectionSettings,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub fn new(config: &Config, _shared: &Shared) -> Self {
+        Self {
+            settings: SelectionSettings::from_section(&config.sections.jwt_settings),
+        }
     }
 }
