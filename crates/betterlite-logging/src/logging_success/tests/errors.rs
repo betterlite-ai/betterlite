@@ -8,6 +8,7 @@ use super::support::{
     CallLog, FakeLogger, Fixture, RecordingCounter, chat_result, correlation, payload, request,
     state,
 };
+use crate::callback_logger::CallbackLogger;
 use crate::logging_success::dispatch::dispatch_success_handlers;
 use crate::logging_success::payload_state::standard_logging_object;
 use crate::registry::Registration;
@@ -159,4 +160,17 @@ async fn a_registry_without_a_counting_logger_counts_nothing(#[case] asynchronou
     assert_eq!(calls.events().len(), 1);
     let stored = standard_logging_object(&state).unwrap().unwrap();
     assert_eq!(stored.model, payload().model);
+}
+
+struct PlainLogger;
+
+impl CallbackLogger for PlainLogger {
+    fn callback_name(&self) -> &'static str {
+        "plain"
+    }
+}
+
+#[test]
+fn a_logger_without_a_counter_answers_none() {
+    assert!(PlainLogger.failure_counter().is_none());
 }
