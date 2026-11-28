@@ -76,8 +76,6 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        // get_secret_str reads the provider variables; an empty one counts as unset
-        let read = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
         let mut headers = Headers::new();
         for (name, value) in self.litellm_settings.headers {
             let resolved = resolve_string(value, "litellm_settings.headers", lookup)?;
@@ -104,35 +102,44 @@ impl Section for Raw {
                 lookup,
             )?
             .filter(|value| !value.expose_secret().is_empty()),
-            environment: Environment {
-                gigachat_api_key: read("GIGACHAT_API_KEY").map(SecretString::from),
-                gigachat_credentials: read("GIGACHAT_CREDENTIALS").map(SecretString::from),
-                nlp_cloud_api_key: read("NLP_CLOUD_API_KEY").map(SecretString::from),
-                nlp_cloud_api_base: read("NLP_CLOUD_API_BASE"),
-                minimax_api_key: read("MINIMAX_API_KEY").map(SecretString::from),
-                minimax_api_base: read("MINIMAX_API_BASE"),
-                ark_api_key: read("ARK_API_KEY").map(SecretString::from),
-                volcengine_api_key: read("VOLCENGINE_API_KEY").map(SecretString::from),
-                volcengine_api_base: read("VOLCENGINE_API_BASE"),
-                ark_api_base: read("ARK_API_BASE"),
-                dashscope_api_key: read("DASHSCOPE_API_KEY").map(SecretString::from),
-                dashscope_base: read("DASHSCOPE_API_BASE"),
-                dashscope_rerank_base: read("DASHSCOPE_API_BASE_RERANK"),
-                dashscope_image_base: read("DASHSCOPE_API_BASE_IMAGE"),
-                qwencloud_key: read("QWENCLOUD_API_KEY").map(SecretString::from),
-                qwencloud_base: read("QWENCLOUD_API_BASE"),
-                qwencloud_rerank_base: read("QWENCLOUD_API_BASE_RERANK"),
-                qwencloud_image_base: read("QWENCLOUD_API_BASE_IMAGE"),
-                qwen_ai_platform_key: read("QWEN_AI_PLATFORM_API_KEY").map(SecretString::from),
-                qwen_ai_platform_base: read("QWEN_AI_PLATFORM_API_BASE"),
-                qwen_ai_platform_rerank_base: read("QWEN_AI_PLATFORM_API_BASE_RERANK"),
-                qwen_ai_platform_image_base: read("QWEN_AI_PLATFORM_API_BASE_IMAGE"),
-                modelscope_api_base: read("MODELSCOPE_API_BASE"),
-                modelscope_api_key: read("MODELSCOPE_API_KEY").map(SecretString::from),
-                tencent_api_base: read("TENCENT_API_BASE"),
-                tencent_api_key: read("TENCENT_API_KEY").map(SecretString::from),
-            },
+            environment: read_environment(lookup),
         })
+    }
+}
+
+// get_secret_str reads the provider variables; an empty one counts as unset
+fn read_environment<L>(lookup: &L) -> Environment
+where
+    L: EnvironmentLookup,
+{
+    let read = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
+    Environment {
+        gigachat_api_key: read("GIGACHAT_API_KEY").map(SecretString::from),
+        gigachat_credentials: read("GIGACHAT_CREDENTIALS").map(SecretString::from),
+        nlp_cloud_api_key: read("NLP_CLOUD_API_KEY").map(SecretString::from),
+        nlp_cloud_api_base: read("NLP_CLOUD_API_BASE"),
+        minimax_api_key: read("MINIMAX_API_KEY").map(SecretString::from),
+        minimax_api_base: read("MINIMAX_API_BASE"),
+        ark_api_key: read("ARK_API_KEY").map(SecretString::from),
+        volcengine_api_key: read("VOLCENGINE_API_KEY").map(SecretString::from),
+        volcengine_api_base: read("VOLCENGINE_API_BASE"),
+        ark_api_base: read("ARK_API_BASE"),
+        dashscope_api_key: read("DASHSCOPE_API_KEY").map(SecretString::from),
+        dashscope_base: read("DASHSCOPE_API_BASE"),
+        dashscope_rerank_base: read("DASHSCOPE_API_BASE_RERANK"),
+        dashscope_image_base: read("DASHSCOPE_API_BASE_IMAGE"),
+        qwencloud_key: read("QWENCLOUD_API_KEY").map(SecretString::from),
+        qwencloud_base: read("QWENCLOUD_API_BASE"),
+        qwencloud_rerank_base: read("QWENCLOUD_API_BASE_RERANK"),
+        qwencloud_image_base: read("QWENCLOUD_API_BASE_IMAGE"),
+        qwen_ai_platform_key: read("QWEN_AI_PLATFORM_API_KEY").map(SecretString::from),
+        qwen_ai_platform_base: read("QWEN_AI_PLATFORM_API_BASE"),
+        qwen_ai_platform_rerank_base: read("QWEN_AI_PLATFORM_API_BASE_RERANK"),
+        qwen_ai_platform_image_base: read("QWEN_AI_PLATFORM_API_BASE_IMAGE"),
+        modelscope_api_base: read("MODELSCOPE_API_BASE"),
+        modelscope_api_key: read("MODELSCOPE_API_KEY").map(SecretString::from),
+        tencent_api_base: read("TENCENT_API_BASE"),
+        tencent_api_key: read("TENCENT_API_KEY").map(SecretString::from),
     }
 }
 
@@ -144,7 +151,7 @@ where
     match value {
         Some(text) => Ok(
             Some(resolve_string(text, "litellm_settings.api_base", lookup)?)
-                .filter(|value| !value.is_empty()),
+                .filter(|resolved| !resolved.is_empty()),
         ),
         None => Ok(None),
     }
