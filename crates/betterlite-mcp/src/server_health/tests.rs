@@ -568,14 +568,17 @@ async fn openapi_local_spec_reports_no_protocol_probe() {
     assert!(log.calls().is_empty());
 }
 
+#[rstest]
+#[case::https(SPEC)]
+#[case::http("http://up.example/spec.json")]
 #[tokio::test]
-async fn openapi_success_reports_healthy_and_limits_the_spec_size() {
+async fn openapi_success_reports_healthy_and_limits_the_spec_size(#[case] spec_path: &str) {
     let (loader, log) = fake_loader();
-    let (status, error) = openapi_spec_health(&loader, SPEC, Duration::from_secs(10)).await;
+    let (status, error) = openapi_spec_health(&loader, spec_path, Duration::from_secs(10)).await;
     assert_eq!(status, McpStatus::Healthy);
     assert_eq!(error, None);
     let calls = log.calls();
-    assert_eq!(calls[0].spec_path, SPEC);
+    assert_eq!(calls[0].spec_path, spec_path);
     assert_eq!(calls[0].max_bytes, MAX_SPEC_BYTES);
 }
 
