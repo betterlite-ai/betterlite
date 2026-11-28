@@ -7,7 +7,6 @@ use std::time::Duration;
 use betterlite_bedrock::count_call::handler::CountTokensTransport;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
-use betterlite_secret_managers::secret_lookup::ports::{AzureOidcTokens, OidcClock};
 use http::{HeaderMap, Method};
 use url::Url;
 
@@ -57,10 +56,21 @@ async fn fixture_reply_headers_reach_the_transport() {
 #[test]
 fn fixture_ports_refuse_external_reads() {
     let path = Path::new("clip.mp3");
-    let read_error = Files.read(path).expect_err("the fixture reads no file");
-    assert_eq!(read_error.kind(), io::ErrorKind::NotFound);
-    let open_error = Files.open(path).expect_err("the fixture opens no file");
-    assert_eq!(open_error.kind(), io::ErrorKind::NotFound);
+    assert_eq!(
+        Files
+            .read(path)
+            .expect_err("the fixture reads no file")
+            .kind(),
+        io::ErrorKind::NotFound
+    );
+    assert_eq!(
+        Files
+            .open(path)
+            .err()
+            .expect("the fixture opens no file")
+            .kind(),
+        io::ErrorKind::NotFound
+    );
     let lookup = secret_lookup();
     let token = lookup
         .azure_tokens
