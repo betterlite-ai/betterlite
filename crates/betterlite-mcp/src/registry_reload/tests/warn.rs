@@ -33,18 +33,36 @@ async fn warn_shadowed_config_id_logs_once_and_again_after_change() {
     )]);
     mutator.reload().await.unwrap();
     assert_eq!(occurrences(&captured.text(), SHADOW_WARNING), 2);
+}
+
+#[tokio::test]
+async fn warn_shadowed_config_id_logs_a_growing_set_sorted() {
+    let fixture = test_fixture();
+    fixture
+        .put_config_server(server(
+            r#"{"server_id":"srv-shared","name":"srv-shared","transport":"http"}"#,
+        ))
+        .await;
     fixture
         .put_config_server(server(
             r#"{"server_id":"srv-other","name":"srv-other","transport":"http"}"#,
         ))
         .await;
+    fixture.rows.set(vec![row(
+        r#"{"server_id":"srv-shared","transport":"http"}"#,
+    )]);
+    let (captured, _guard) = capture();
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    mutator.reload().await.unwrap();
+    assert_eq!(occurrences(&captured.text(), SHADOW_WARNING), 1);
     fixture.rows.set(vec![
         row(r#"{"server_id":"srv-shared","transport":"http"}"#),
         row(r#"{"server_id":"srv-other","transport":"http"}"#),
     ]);
     mutator.reload().await.unwrap();
     let text = captured.text();
-    assert_eq!(occurrences(&text, SHADOW_WARNING), 3);
+    assert_eq!(occurrences(&text, SHADOW_WARNING), 2);
     assert!(text.contains("config.yaml MCP server_id(s) srv-other, srv-shared are also"));
 }
 
