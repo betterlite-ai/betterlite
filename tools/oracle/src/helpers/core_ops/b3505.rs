@@ -75,17 +75,7 @@ impl Helper for Op {
             .build()
             .map_err(|error| failed(&error))?;
         let kwargs = kwargs_of(input, &serving.address);
-        let request = AgentItemRequest {
-            name: &input.name,
-            custom_llm_provider: input.provider.as_deref(),
-            extra_headers: input.extra_headers.clone(),
-            timeout: None,
-            request_timeout: RequestTimeout {
-                seconds: 6000.0,
-                explicitly_set: false,
-            },
-            kwargs: &kwargs,
-        };
+        let request = request_of(input, &kwargs);
         let deps = AgentItemDeps {
             clients: &mut harness.clients,
             logging: &mut harness.state,
@@ -105,6 +95,23 @@ impl Helper for Op {
             Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
         };
         Ok(Value::Object(answer))
+    }
+}
+
+fn request_of<'call>(
+    input: &'call Input,
+    kwargs: &'call IndexMap<String, Json>,
+) -> AgentItemRequest<'call> {
+    AgentItemRequest {
+        name: &input.name,
+        custom_llm_provider: input.provider.as_deref(),
+        extra_headers: input.extra_headers.clone(),
+        timeout: None,
+        request_timeout: RequestTimeout {
+            seconds: 6000.0,
+            explicitly_set: false,
+        },
+        kwargs,
     }
 }
 
