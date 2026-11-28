@@ -12,7 +12,7 @@ use betterlite_db::mcp_stored_contracts::MCPTransport;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::UserUrlError;
 use rstest::rstest;
-use tracing::subscriber::with_default;
+use tracing::subscriber::{set_default, with_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::openapi::{MAX_SPEC_BYTES, openapi_spec_health};
@@ -45,6 +45,13 @@ fn spec_error() -> OpenApiError {
 #[derive(Clone, Default)]
 struct CapturedLog(Arc<Mutex<Vec<u8>>>);
 
+impl CapturedLog {
+    fn text(&self) -> String {
+        let bytes = self.0.lock().unwrap().clone();
+        String::from_utf8(bytes).expect("the log is utf-8")
+    }
+}
+
 impl io::Write for CapturedLog {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.0.lock().unwrap().extend_from_slice(bytes);
@@ -74,8 +81,7 @@ where
         .with_writer(log.clone())
         .finish();
     with_default(subscriber, run);
-    let bytes = log.0.lock().unwrap().clone();
-    String::from_utf8(bytes).expect("the log is utf-8")
+    log.text()
 }
 
 #[tokio::test]
@@ -910,6 +916,30 @@ async fn instructions_prefetch_keeps_the_cooldown_after_a_failure() {
     rig.clock.advance(Duration::from_millis(100));
     rig.service.ensure_instructions_cached(&server).await;
     assert_eq!(rig.session.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn instructions_prefetch_logs_a_failed_probe_at_debug() {
+    let log = CapturedLog::default();
+    let writer = log.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .with_writer(writer)
+        .finish();
+    let guard = set_default(subscriber);
+    let rig = rig(&[], &[]);
+    rig.session
+        .script(Err(SessionError::Failed("upstream is down".to_owned())));
+    rig.service.ensure_instructions_cached(&plain("a")).await;
+    drop(guard);
+    let text = log.text();
+    assert!(
+        text.contains(
+            "Upstream initialize instructions prefetch failed for Name a: upstream is down"
+        )
+    );
+    assert!(!text.contains("WARN"));
 }
 
 #[tokio::test]
