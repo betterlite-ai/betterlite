@@ -20,18 +20,31 @@ use crate::eval_runs::transport::HttpRunTransport;
 
 // Each arm's payload stays on the heap, so the enum holds one word plus its tag.
 pub(super) enum RunCall {
-    Create(Box<CreateRunPayload>),
-    List(Box<ListRunPayload>),
+    CreateList(Box<CreateListCall>),
     Get(Box<RunIdPayload>),
     Cancel(Box<RunIdPayload>),
     Delete(Box<RunIdPayload>),
 }
 
+// create_run and list_runs share the create/list service; each arm is one of the argument types it takes.
+pub(super) enum CreateListCall {
+    Create(CreateRunPayload),
+    List(ListRunPayload),
+}
+
+impl CreateListCall {
+    const fn label(&self) -> (FailureGroup, &'static str, &Params) {
+        match self {
+            Self::Create(payload) => (FailureGroup::CreateList, "create_run", &payload.params),
+            Self::List(payload) => (FailureGroup::CreateList, "list_runs", &payload.params),
+        }
+    }
+}
+
 impl EvalCore {
     pub(super) async fn execute(&self, call: RunCall) -> Result<String, EvalOperationFailure> {
         match call {
-            RunCall::Create(payload) => self.create(&payload).await,
-            RunCall::List(payload) => self.list(&payload).await,
+            RunCall::CreateList(request) => self.request(&request).await,
             RunCall::Get(payload) => self.lifecycle(RunAction::Get, &payload).await,
             RunCall::Cancel(payload) => self.lifecycle(RunAction::Cancel, &payload).await,
             RunCall::Delete(payload) => self.lifecycle(RunAction::Delete, &payload).await,
@@ -54,46 +67,29 @@ impl EvalCore {
         Ok((state, logging::env(&self.redactor, &SILENT_SINK)))
     }
 
-    // LiteLLM's create_run: the provider, the logging update, the transform, then the handler the async flag picks.
-    async fn create(&self, payload: &CreateRunPayload) -> Result<String, EvalOperationFailure> {
-        let (mut state, env) =
-            self.started(FailureGroup::CreateList, "create_run", &payload.params)?;
+    // LiteLLM's create_run and list_runs share one driver; each arm builds the arguments its service method takes.
+    async fn request(&self, call: &CreateListCall) -> Result<String, EvalOperationFailure> {
+        let (group, call_type, params) = call.label();
+        let (mut state, env) = self.started(group, call_type, params)?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SessionError::from)?;
         #[rustfmt::skip]
         let service = EvalRunCreateList { providers: EvalConfigs::new(self.settings.clone(), &self.environment), transport: HttpRunTransport { client: &self.client }, redactor, request_timeout: self.request_timeout };
-        #[rustfmt::skip]
-        let request = CreateRunArgs { eval_id: &payload.eval_id, data_source: &payload.data_source, name: payload.name.as_deref(), metadata: payload.metadata.as_ref(), extra_headers: payload.params.extra_headers.as_ref(), extra_query: payload.params.extra_query.as_ref(), extra_body: payload.extra_body.as_ref(), timeout: payload.params.timeout, custom_llm_provider: payload.params.custom_llm_provider.as_deref(), kwargs: &payload.params.kwargs };
-        let reply = service
-            .acreate_run(
-                request,
-                EvalLogging {
-                    state: &mut state,
-                    env: &env,
-                },
-            )
-            .await;
-        EvalOperationFailure::reply(reply, payload.params.provider())
-    }
-
-    // LiteLLM's list_runs: the pagination values, extra_query's overrides, then the GET handler.
-    async fn list(&self, payload: &ListRunPayload) -> Result<String, EvalOperationFailure> {
-        let (mut state, env) =
-            self.started(FailureGroup::CreateList, "list_runs", &payload.params)?;
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SessionError::from)?;
-        #[rustfmt::skip]
-        let service = EvalRunCreateList { providers: EvalConfigs::new(self.settings.clone(), &self.environment), transport: HttpRunTransport { client: &self.client }, redactor, request_timeout: self.request_timeout };
-        #[rustfmt::skip]
-        let request = ListRunsArgs { eval_id: &payload.eval_id, limit: payload.limit, after: payload.after.as_deref(), before: payload.before.as_deref(), order: payload.order.as_deref(), extra_headers: payload.params.extra_headers.as_ref(), extra_query: payload.params.extra_query.as_ref(), timeout: payload.params.timeout, custom_llm_provider: payload.params.custom_llm_provider.as_deref(), kwargs: &payload.params.kwargs };
-        let reply = service
-            .alist_runs(
-                request,
-                EvalLogging {
-                    state: &mut state,
-                    env: &env,
-                },
-            )
-            .await;
-        EvalOperationFailure::reply(reply, payload.params.provider())
+        match call {
+            CreateListCall::Create(payload) => {
+                #[rustfmt::skip]
+                let request = CreateRunArgs { eval_id: &payload.eval_id, data_source: &payload.data_source, name: payload.name.as_deref(), metadata: payload.metadata.as_ref(), extra_headers: payload.params.extra_headers.as_ref(), extra_query: payload.params.extra_query.as_ref(), extra_body: payload.extra_body.as_ref(), timeout: payload.params.timeout, custom_llm_provider: payload.params.custom_llm_provider.as_deref(), kwargs: &payload.params.kwargs };
+                #[rustfmt::skip]
+                let reply = service.acreate_run(request, EvalLogging { state: &mut state, env: &env }).await;
+                EvalOperationFailure::reply(reply, payload.params.provider())
+            }
+            CreateListCall::List(payload) => {
+                #[rustfmt::skip]
+                let request = ListRunsArgs { eval_id: &payload.eval_id, limit: payload.limit, after: payload.after.as_deref(), before: payload.before.as_deref(), order: payload.order.as_deref(), extra_headers: payload.params.extra_headers.as_ref(), extra_query: payload.params.extra_query.as_ref(), timeout: payload.params.timeout, custom_llm_provider: payload.params.custom_llm_provider.as_deref(), kwargs: &payload.params.kwargs };
+                #[rustfmt::skip]
+                let reply = service.alist_runs(request, EvalLogging { state: &mut state, env: &env }).await;
+                EvalOperationFailure::reply(reply, payload.params.provider())
+            }
+        }
     }
 
     // get_run, cancel_run and delete_run share the lifecycle preparation and differ in the transform and handler.

@@ -66,15 +66,24 @@ where
         .map_err(|_wrong| field_error(provider, name))
 }
 
-// A field LiteLLM declares required: absent or null is the same 400 a value of the wrong type gets.
-fn required<T>(fields: &mut Fields, name: &'static str, provider: &str) -> Result<T, ConvertError>
-where
-    T: DeserializeOwned,
-{
-    let Some(value) = read(fields, name, provider)? else {
-        return Err(field_error(provider, name));
+// One run payload's parse body, generated once: the shared parameters first, then its own fields in the order the errors name them.
+macro_rules! parse_payload {
+    ($payload:ident, required { $($required:ident),* $(,)? } optional { $($optional:ident),* $(,)? }) => {
+        impl $payload {
+            pub(crate) fn parse(text: &str) -> Result<Self, ConvertError> {
+                let mut fields: Fields = parse(text)?;
+                let params = Params::split(&mut fields)?;
+                let provider = params.provider().to_owned();
+                $(let $required = read(&mut fields, stringify!($required), &provider)?.ok_or_else(|| field_error(&provider, stringify!($required)))?;)*
+                $(let $optional = read(&mut fields, stringify!($optional), &provider)?;)*
+                Ok(Self {
+                    $($required,)*
+                    $($optional,)*
+                    params: params.keywords(&mut fields),
+                })
+            }
+        }
     };
-    Ok(value)
 }
 
 // Python sends the caller's timeout in seconds; null leaves it unset and zero is kept for the core to read as unset.
@@ -137,26 +146,11 @@ pub(crate) struct CreateRunPayload {
     pub(crate) params: Params,
 }
 
-impl CreateRunPayload {
-    pub(crate) fn parse(text: &str) -> Result<Self, ConvertError> {
-        let mut fields: Fields = parse(text)?;
-        let params = Params::split(&mut fields)?;
-        let provider = params.provider().to_owned();
-        let eval_id = required(&mut fields, "eval_id", &provider)?;
-        let data_source = required(&mut fields, "data_source", &provider)?;
-        let name = read(&mut fields, "name", &provider)?;
-        let metadata = read(&mut fields, "metadata", &provider)?;
-        let extra_body = read(&mut fields, "extra_body", &provider)?;
-        Ok(Self {
-            eval_id,
-            data_source,
-            name,
-            metadata,
-            extra_body,
-            params: params.keywords(&mut fields),
-        })
-    }
-}
+parse_payload!(
+    CreateRunPayload,
+    required { eval_id, data_source }
+    optional { name, metadata, extra_body }
+);
 
 // list_runs' pagination arguments, each None when the caller did not pass it.
 pub(crate) struct ListRunPayload {
@@ -168,26 +162,11 @@ pub(crate) struct ListRunPayload {
     pub(crate) params: Params,
 }
 
-impl ListRunPayload {
-    pub(crate) fn parse(text: &str) -> Result<Self, ConvertError> {
-        let mut fields: Fields = parse(text)?;
-        let params = Params::split(&mut fields)?;
-        let provider = params.provider().to_owned();
-        let eval_id = required(&mut fields, "eval_id", &provider)?;
-        let limit = read(&mut fields, "limit", &provider)?;
-        let after = read(&mut fields, "after", &provider)?;
-        let before = read(&mut fields, "before", &provider)?;
-        let order = read(&mut fields, "order", &provider)?;
-        Ok(Self {
-            eval_id,
-            limit,
-            after,
-            before,
-            order,
-            params: params.keywords(&mut fields),
-        })
-    }
-}
+parse_payload!(
+    ListRunPayload,
+    required { eval_id }
+    optional { limit, after, before, order }
+);
 
 // get_run, cancel_run and delete_run's arguments: both ids the path is built from and the shared parameters.
 pub(crate) struct RunIdPayload {
@@ -196,17 +175,4 @@ pub(crate) struct RunIdPayload {
     pub(crate) params: Params,
 }
 
-impl RunIdPayload {
-    pub(crate) fn parse(text: &str) -> Result<Self, ConvertError> {
-        let mut fields: Fields = parse(text)?;
-        let params = Params::split(&mut fields)?;
-        let provider = params.provider().to_owned();
-        let eval_id = required(&mut fields, "eval_id", &provider)?;
-        let run_id = required(&mut fields, "run_id", &provider)?;
-        Ok(Self {
-            eval_id,
-            run_id,
-            params: params.keywords(&mut fields),
-        })
-    }
-}
+parse_payload!(RunIdPayload, required { eval_id, run_id } optional {});

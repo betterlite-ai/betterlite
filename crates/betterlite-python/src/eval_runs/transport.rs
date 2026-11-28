@@ -11,43 +11,46 @@ pub(super) struct HttpRunTransport<'client> {
     pub(super) client: &'client ProxiedClient,
 }
 
+// The two handlers differ only in their call, the timeout create sends, and the body or query it carries.
+macro_rules! run_handler {
+    ($method:ident, $call:ident, $pending:ident, $handler:ident, payload $payload:ident $(, timeout $timeout:ident)?) => {
+        fn $method<'call>(
+            &'call self,
+            log: EvalLogging<'call, '_>,
+            call: $call<'call>,
+        ) -> $pending<'call> {
+            Box::pin(async move {
+                let connection = EvalConnection {
+                    config: call.config,
+                    client: self.client,
+                    url: &call.url,
+                    headers: &call.headers,
+                };
+                let mut logging = log;
+                $handler(&connection, &mut logging, $(Some(call.$timeout),)? &call.$payload)
+                    .await
+                    .map_err(EvalRunCallError::Transport)
+            })
+        }
+    };
+}
+
 impl RunTransport for HttpRunTransport<'_> {
-    fn create_run<'call>(
-        &'call self,
-        log: EvalLogging<'call, '_>,
-        call: CreateRunCall<'call>,
-    ) -> PendingCreateRun<'call> {
-        Box::pin(async move {
-            let connection = EvalConnection {
-                config: call.config,
-                client: self.client,
-                url: &call.url,
-                headers: &call.headers,
-            };
-            let mut logging = log;
-            create_run_handler(&connection, &mut logging, Some(call.timeout), &call.body)
-                .await
-                .map_err(EvalRunCallError::Transport)
-        })
-    }
+    run_handler!(
+        create_run,
+        CreateRunCall,
+        PendingCreateRun,
+        create_run_handler,
+        payload body,
+        timeout timeout
+    );
 
     // LiteLLM's list GET sends no timeout, so the handler leaves the client's own deadline in place.
-    fn list_runs<'call>(
-        &'call self,
-        log: EvalLogging<'call, '_>,
-        call: ListRunsCall<'call>,
-    ) -> PendingListRuns<'call> {
-        Box::pin(async move {
-            let connection = EvalConnection {
-                config: call.config,
-                client: self.client,
-                url: &call.url,
-                headers: &call.headers,
-            };
-            let mut logging = log;
-            list_runs_handler(&connection, &mut logging, &call.query)
-                .await
-                .map_err(EvalRunCallError::Transport)
-        })
-    }
+    run_handler!(
+        list_runs,
+        ListRunsCall,
+        PendingListRuns,
+        list_runs_handler,
+        payload query
+    );
 }

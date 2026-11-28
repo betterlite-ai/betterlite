@@ -328,7 +328,7 @@ fn error_a_wrong_typed_field_is_a_bad_request() {
     let error = ListRunPayload::parse(r#"{"eval_id": "eval_1", "limit": "many"}"#)
         .err()
         .unwrap();
-    let raised = PyErr::from(error);
+    let raised = PyErr::from(EvalOperationFailure::from(error));
     Python::attach(|py| {
         let message = raised.value(py).to_string();
         assert!(message.contains(r#""type":"BadRequestError""#), "{message}");
@@ -348,7 +348,7 @@ fn error_a_missing_required_field_is_a_bad_request() {
     let error = RunIdPayload::parse(r#"{"eval_id": "eval_1"}"#)
         .err()
         .unwrap();
-    let raised = PyErr::from(error);
+    let raised = PyErr::from(EvalOperationFailure::from(error));
     Python::attach(|py| {
         let message = raised.value(py).to_string();
         assert!(message.contains(r#""type":"BadRequestError""#), "{message}");
@@ -360,7 +360,7 @@ fn error_a_missing_required_field_is_a_bad_request() {
 fn error_bad_json_is_a_value_error() {
     Python::initialize();
     let error = RunIdPayload::parse("not json").err().unwrap();
-    let raised = PyErr::from(error);
+    let raised = PyErr::from(EvalOperationFailure::from(error));
     Python::attach(|py| assert!(raised.is_instance_of::<PyValueError>(py)));
 }
 

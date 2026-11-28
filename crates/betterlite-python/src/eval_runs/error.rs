@@ -50,15 +50,10 @@ pub(crate) enum SessionError {
 
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
-        let message = error.to_string();
-        match &error {
-            SessionError::Json(_) => PyValueError::new_err(message),
-            SessionError::Client(_)
-            | SessionError::Timeout(_)
-            | SessionError::Duration { .. }
-            | SessionError::Redaction(_)
-            | SessionError::Encode { .. } => PyRuntimeError::new_err(message),
+        if let SessionError::Json(inner) = &error {
+            return PyValueError::new_err(inner.to_string());
         }
+        PyRuntimeError::new_err(error.to_string())
     }
 }
 
@@ -75,29 +70,34 @@ impl From<SessionError> for EvalOperationFailure {
     }
 }
 
-// docs/compatibility.md reads a request value outside its declared type as a 400 that names the field.
-impl From<ConvertError> for PyErr {
+impl From<ConvertError> for EvalOperationFailure {
     fn from(error: ConvertError) -> Self {
         let message = error.to_string();
         match error {
-            ConvertError::Json { .. } => PyValueError::new_err(message),
-            ConvertError::FieldType { provider, name } => {
-                let context = ErrorContext {
-                    message,
-                    model: None,
-                    provider: Some(provider.clone()),
-                    max_retries: None,
-                    num_retries: None,
-                    body_type: None,
-                    body_param: Some(name.to_owned()),
-                    body_code: None,
-                };
-                let class =
-                    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)));
-                native_error(&class, &provider)
+            ConvertError::Json { source } => {
+                Self::Session(SessionError::Json(ConvertError::Json { source }))
             }
+            ConvertError::FieldType { provider, name } => Self::Mapped {
+                class: field_class(message, name, &provider),
+                provider,
+            },
         }
     }
+}
+
+// docs/compatibility.md reads a request value outside its declared type as a 400 that names the field
+fn field_class(message: String, name: &str, provider: &str) -> ErrorClass {
+    let context = ErrorContext {
+        message,
+        model: None,
+        provider: Some(provider.to_owned()),
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: Some(name.to_owned()),
+        body_code: None,
+    };
+    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }
 
 // Which core service a call's logging state belongs to, so its failure is mapped the way that service maps it.

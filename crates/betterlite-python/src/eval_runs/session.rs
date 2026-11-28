@@ -9,10 +9,10 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
-use self::operations::RunCall;
+use self::operations::{CreateListCall, RunCall};
 use super::configs::{ModuleSettings, SessionWire};
 use super::convert::{CreateRunPayload, ListRunPayload, RunIdPayload, parse};
-use super::error::SessionError;
+use super::error::{EvalOperationFailure, SessionError};
 use crate::completion::setup::outbound_client;
 
 mod logging;
@@ -70,61 +70,61 @@ impl NativeEvalRunSession {
     }
 
     fn create_run(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let payload = CreateRunPayload::parse(request)?;
-        let call = RunCall::Create(Box::new(payload));
+        let payload = CreateRunPayload::parse(request).map_err(EvalOperationFailure::from)?;
+        let call = RunCall::CreateList(Box::new(CreateListCall::Create(payload)));
         run_blocking(py, &self.core, call)
     }
 
     fn acreate_run<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let payload = CreateRunPayload::parse(request)?;
-        let call = RunCall::Create(Box::new(payload));
+        let payload = CreateRunPayload::parse(request).map_err(EvalOperationFailure::from)?;
+        let call = RunCall::CreateList(Box::new(CreateListCall::Create(payload)));
         run_spawned(py, &self.core, call)
     }
 
     fn list_runs(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let payload = ListRunPayload::parse(request)?;
-        let call = RunCall::List(Box::new(payload));
+        let payload = ListRunPayload::parse(request).map_err(EvalOperationFailure::from)?;
+        let call = RunCall::CreateList(Box::new(CreateListCall::List(payload)));
         run_blocking(py, &self.core, call)
     }
 
     fn alist_runs<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let payload = ListRunPayload::parse(request)?;
-        let call = RunCall::List(Box::new(payload));
+        let payload = ListRunPayload::parse(request).map_err(EvalOperationFailure::from)?;
+        let call = RunCall::CreateList(Box::new(CreateListCall::List(payload)));
         run_spawned(py, &self.core, call)
     }
 
     fn get_run(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let payload = RunIdPayload::parse(request)?;
+        let payload = RunIdPayload::parse(request).map_err(EvalOperationFailure::from)?;
         let call = RunCall::Get(Box::new(payload));
         run_blocking(py, &self.core, call)
     }
 
     fn aget_run<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let payload = RunIdPayload::parse(request)?;
+        let payload = RunIdPayload::parse(request).map_err(EvalOperationFailure::from)?;
         let call = RunCall::Get(Box::new(payload));
         run_spawned(py, &self.core, call)
     }
 
     fn cancel_run(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let payload = RunIdPayload::parse(request)?;
+        let payload = RunIdPayload::parse(request).map_err(EvalOperationFailure::from)?;
         let call = RunCall::Cancel(Box::new(payload));
         run_blocking(py, &self.core, call)
     }
 
     fn acancel_run<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let payload = RunIdPayload::parse(request)?;
+        let payload = RunIdPayload::parse(request).map_err(EvalOperationFailure::from)?;
         let call = RunCall::Cancel(Box::new(payload));
         run_spawned(py, &self.core, call)
     }
 
     fn delete_run(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let payload = RunIdPayload::parse(request)?;
+        let payload = RunIdPayload::parse(request).map_err(EvalOperationFailure::from)?;
         let call = RunCall::Delete(Box::new(payload));
         run_blocking(py, &self.core, call)
     }
 
     fn adelete_run<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let payload = RunIdPayload::parse(request)?;
+        let payload = RunIdPayload::parse(request).map_err(EvalOperationFailure::from)?;
         let call = RunCall::Delete(Box::new(payload));
         run_spawned(py, &self.core, call)
     }
