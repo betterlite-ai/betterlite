@@ -120,7 +120,9 @@ impl SamlCache for FakeCache {
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
         let entry = (cache_key.to_owned(), settings.clone(), ttl_seconds);
-        self.state().idp_writes.push(entry);
+        let mut state = self.state();
+        state.idp_writes.push(entry);
+        drop(state);
         Ok(())
     }
 
