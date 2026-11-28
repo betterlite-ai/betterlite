@@ -78,13 +78,11 @@ where
     #[must_use]
     pub const fn status(&self) -> StatusCode {
         match self {
-            Self::Body(_) | Self::Request(RequestError::Shape(_)) => {
-                StatusCode::UNPROCESSABLE_ENTITY
-            }
+            Self::Body(_) | Self::Request(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Payload(PayloadError::UnknownRequiredFields { .. }) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::Request(RequestError::Value(_)) | Self::Payload(_) => StatusCode::BAD_REQUEST,
+            Self::Payload(_) => StatusCode::BAD_REQUEST,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
@@ -99,30 +97,36 @@ where
             | Self::Caching { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-
-    // the HTTPException detail LiteLLM's route raises: a fixed map, else {"error": str(e)}
-    fn detail(&self) -> BTreeMap<String, String> {
-        match self {
-            Self::NotFound(detail) | Self::Forbidden(detail) => detail.clone(),
-            other @ Self::Body(_)
-            | other @ Self::Request(_)
-            | other @ Self::Payload(_)
-            | other @ Self::Record(_)
-            | other @ Self::Table(_)
-            | other @ Self::Write(_)
-            | other @ Self::Build(_)
-            | other @ Self::Resolve(_)
-            | other @ Self::CredentialView(_)
-            | other @ Self::Access(_)
-            | other @ Self::MissingRuntime { .. }
-            | other @ Self::Caching { .. }
-            | other @ Self::Unauthenticated => {
-                BTreeMap::from([("error".to_owned(), other.to_string())])
-            }
-        }
-    }
 }
 
+const JSON_DECODE_ERROR: &str = "JSON decode error";
+
+// FastAPI's RequestValidationError sends only type, loc and msg, without input or ctx
+#[derive(Serialize)]
+struct ValidationIssue {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    loc: Vec<&'static str>,
+    msg: String,
+}
+
+#[derive(Serialize)]
+struct ValidationBody {
+    detail: Vec<ValidationIssue>,
+}
+
+fn validation_response(status: StatusCode, kind: &'static str, msg: String) -> Response {
+    let body = ValidationBody {
+        detail: vec![ValidationIssue {
+            kind,
+            loc: vec!["body"],
+            msg,
+        }],
+    };
+    (status, Json(body)).into_response()
+}
+
+// the HTTPException detail LiteLLM raises for everything but a body-validation failure
 #[derive(Serialize)]
 struct DetailBody {
     detail: BTreeMap<String, String>,
@@ -137,13 +141,34 @@ where
             return unauthenticated();
         }
         let status = self.status();
-        (
-            status,
-            Json(DetailBody {
-                detail: self.detail(),
-            }),
-        )
-            .into_response()
+        match self {
+            Self::Body(_) => {
+                validation_response(status, "json_invalid", JSON_DECODE_ERROR.to_owned())
+            }
+            Self::Request(error) => {
+                validation_response(status, "value_error", format!("Value error, {error}"))
+            }
+            Self::NotFound(detail) | Self::Forbidden(detail) => {
+                (status, Json(DetailBody { detail })).into_response()
+            }
+            other @ (Self::Payload(_)
+            | Self::Record(_)
+            | Self::Table(_)
+            | Self::Write(_)
+            | Self::Build(_)
+            | Self::Resolve(_)
+            | Self::CredentialView(_)
+            | Self::Access(_)
+            | Self::MissingRuntime { .. }
+            | Self::Caching { .. }
+            | Self::Unauthenticated) => (
+                status,
+                Json(DetailBody {
+                    detail: BTreeMap::from([("error".to_owned(), other.to_string())]),
+                }),
+            )
+                .into_response(),
+        }
     }
 }
 

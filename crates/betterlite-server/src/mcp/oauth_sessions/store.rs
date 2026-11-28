@@ -11,7 +11,7 @@ use betterlite_mcp::registry::resolution::{
     AuthorizeDetails, AuthorizeOptions, LookupFuture, NonAdminMissing, ResolveError, ResolveTarget,
     ResolvedServer, ServerAccessCheck, TempLookup, authorize_server, resolve_server,
 };
-use betterlite_mcp::registry::servers::ServerRegistry;
+use betterlite_mcp::registry::servers::{ServerRegistry, SharedRegistry};
 use betterlite_mcp::server_payload::RequestError;
 use betterlite_mcp::server_payload::request::NewMCPServerRequest;
 use betterlite_mcp::server_record::MCPServer;
@@ -173,7 +173,7 @@ where
     pub async fn resolve_session_id(
         &self,
         request: &NewMCPServerRequest,
-        registry: &ServerRegistry,
+        registry: &SharedRegistry,
     ) -> Result<String, SessionError<Access::Error>> {
         let requested = request
             .server_id
@@ -182,7 +182,12 @@ where
         let Some(supplied) = requested else {
             return Ok(self.ids.fresh_id());
         };
-        if registry.server_by_id(supplied, None).is_some() {
+        // the registry read ends before the database await, so a config reload never waits on it
+        let saved = {
+            let guard = registry.read().await;
+            guard.server_by_id(supplied, None).is_some()
+        };
+        if saved {
             return Ok(supplied.to_owned());
         }
         let Some(database) = self.database.as_deref() else {

@@ -287,28 +287,24 @@ fn uuid_session_ids_mint_distinct_v4_ids() {
 #[tokio::test]
 async fn resolve_session_id_mints_a_fresh_id_when_none_is_supplied() {
     let harness = harness(HarnessConfig::new());
-    let registry = harness.registry.read().await;
     let body = r#"{"url":"https://mcp.example.test/sse","transport":"sse"}"#;
     let id = harness
         .store
-        .resolve_session_id(&request(body), &registry)
+        .resolve_session_id(&request(body), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
 #[tokio::test]
 async fn resolve_session_id_mints_a_fresh_id_for_an_empty_id() {
     let harness = harness(HarnessConfig::new());
-    let registry = harness.registry.read().await;
     let body = r#"{"server_id":"","url":"https://mcp.example.test/sse","transport":"sse"}"#;
     let id = harness
         .store
-        .resolve_session_id(&request(body), &registry)
+        .resolve_session_id(&request(body), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
@@ -321,26 +317,22 @@ async fn resolve_session_id_keeps_an_id_the_registry_knows() {
     );
     let database = harness.database.as_ref().expect("the database is set");
     database.put_draft(draft_row("saved-1"));
-    let registry = harness.registry.read().await;
     let id = harness
         .store
-        .resolve_session_id(&request(r#"{"server_id":"saved-1"}"#), &registry)
+        .resolve_session_id(&request(r#"{"server_id":"saved-1"}"#), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "saved-1");
 }
 
 #[tokio::test]
 async fn resolve_session_id_keeps_the_supplied_id_without_a_database() {
     let harness = harness(HarnessConfig::new());
-    let registry = harness.registry.read().await;
     let id = harness
         .store
-        .resolve_session_id(&request(SESSION), &registry)
+        .resolve_session_id(&request(SESSION), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "test-session-1");
 }
 
@@ -349,13 +341,11 @@ async fn resolve_session_id_keeps_an_id_that_names_a_saved_row() {
     let harness = harness(HarnessConfig::new().with_database(DatabaseFault::None));
     let database = harness.database.as_ref().expect("the database is set");
     database.put_server(row("test-session-1"));
-    let registry = harness.registry.read().await;
     let id = harness
         .store
-        .resolve_session_id(&request(SESSION), &registry)
+        .resolve_session_id(&request(SESSION), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "test-session-1");
 }
 
@@ -364,38 +354,32 @@ async fn resolve_session_id_mints_a_fresh_id_for_a_draft_row() {
     let harness = harness(HarnessConfig::new().with_database(DatabaseFault::None));
     let database = harness.database.as_ref().expect("the database is set");
     database.put_draft(draft_row("test-session-1"));
-    let registry = harness.registry.read().await;
     let id = harness
         .store
-        .resolve_session_id(&request(SESSION), &registry)
+        .resolve_session_id(&request(SESSION), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
 #[tokio::test]
 async fn resolve_session_id_mints_a_fresh_id_for_a_missing_row() {
     let harness = harness(HarnessConfig::new().with_database(DatabaseFault::None));
-    let registry = harness.registry.read().await;
     let id = harness
         .store
-        .resolve_session_id(&request(SESSION), &registry)
+        .resolve_session_id(&request(SESSION), &harness.registry)
         .await
         .expect("the id resolves");
-    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
 #[tokio::test]
 async fn resolve_session_id_returns_the_database_error() {
     let harness = harness(HarnessConfig::new().with_database(DatabaseFault::ServerRead));
-    let registry = harness.registry.read().await;
     let outcome = harness
         .store
-        .resolve_session_id(&request(SESSION), &registry)
+        .resolve_session_id(&request(SESSION), &harness.registry)
         .await;
-    drop(registry);
     assert!(matches!(
         outcome,
         Err(SessionError::Table(McpTableError::MissingServerId))

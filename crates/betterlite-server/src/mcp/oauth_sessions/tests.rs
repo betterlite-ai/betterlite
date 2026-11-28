@@ -40,6 +40,19 @@ struct RenderedDetail {
 }
 
 #[derive(Deserialize)]
+struct RenderedIssues {
+    detail: Vec<RenderedIssue>,
+}
+
+#[derive(Deserialize)]
+struct RenderedIssue {
+    #[serde(rename = "type")]
+    kind: String,
+    loc: Vec<String>,
+    msg: String,
+}
+
+#[derive(Deserialize)]
 struct AuthErrorBody {
     error: AuthErrorDetail,
 }
@@ -57,6 +70,17 @@ async fn body_of(response: Response) -> Vec<u8> {
     body.to_vec()
 }
 
+async fn rendered_single_issue(error: SessionError<AccessGone>) -> (StatusCode, RenderedIssue) {
+    let response = error.into_response();
+    let status = response.status();
+    let body = body_of(response).await;
+    let rendered: RenderedIssues =
+        serde_json::from_slice(&body).expect("the body is the issue list");
+    assert_eq!(rendered.detail.len(), 1, "one issue is rendered");
+    let issue = rendered.detail.into_iter().next().expect("one issue");
+    (status, issue)
+}
+
 #[test]
 fn request_and_body_failures_map_to_their_statuses() {
     let body = SessionError::<AccessGone>::Body(shape_error());
@@ -64,7 +88,7 @@ fn request_and_body_failures_map_to_their_statuses() {
     let value = SessionError::<AccessGone>::Request(RequestError::Value(
         "url or spec_path is required for HTTP/SSE transport".to_owned(),
     ));
-    assert_eq!(value.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(value.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let shape = SessionError::<AccessGone>::Request(RequestError::Shape(shape_error()));
     assert_eq!(shape.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
@@ -207,8 +231,44 @@ async fn a_caching_response_renders_the_wrapped_message() {
         serde_json::from_slice(&body).expect("the body is the detail map");
     assert_eq!(
         rendered.detail.get("error"),
-        Some(&"Error caching temporary mcp server: the access check is unavailable".to_owned())
+        Some(&"Error caching temporary mcp server: the MCP server access check failed".to_owned())
     );
+}
+
+#[tokio::test]
+async fn an_undecodable_body_renders_the_json_invalid_issue() {
+    let (status, issue) = rendered_single_issue(SessionError::Body(shape_error())).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(issue.kind, "json_invalid");
+    assert_eq!(issue.loc, vec!["body".to_owned()]);
+    assert_eq!(issue.msg, "JSON decode error");
+}
+
+#[tokio::test]
+async fn a_before_validator_failure_renders_the_value_error_issue() {
+    let error = SessionError::Request(RequestError::Value(
+        "url or spec_path is required for HTTP/SSE transport".to_owned(),
+    ));
+    let (status, issue) = rendered_single_issue(error).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(issue.kind, "value_error");
+    assert_eq!(issue.loc, vec!["body".to_owned()]);
+    assert_eq!(
+        issue.msg,
+        "Value error, url or spec_path is required for HTTP/SSE transport"
+    );
+}
+
+#[tokio::test]
+async fn a_shape_failure_renders_the_value_error_issue() {
+    let shape = shape_error();
+    let message = shape.to_string();
+    let error = SessionError::Request(RequestError::Shape(shape));
+    let (status, issue) = rendered_single_issue(error).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(issue.kind, "value_error");
+    assert_eq!(issue.loc, vec!["body".to_owned()]);
+    assert_eq!(issue.msg, format!("Value error, {message}"));
 }
 
 #[test]

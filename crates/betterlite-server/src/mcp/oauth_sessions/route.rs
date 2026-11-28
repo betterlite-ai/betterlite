@@ -90,10 +90,10 @@ where
         auth: &UserAPIKeyAuth,
     ) -> Result<McpServerTable, SessionError<Access::Error>> {
         let (payload, created_by) = session_payload(self, body, auth).await?;
-        let server_id = {
-            let registry = self.registry.read().await;
-            self.store.resolve_session_id(&payload, &registry).await?
-        };
+        let server_id = self
+            .store
+            .resolve_session_id(&payload, &self.registry)
+            .await?;
         let now = self.store.clock.now().with_timezone(&Utc);
         let record = build_temporary_record(&payload, Some(created_by.as_str()), &server_id, now)?;
         cache_session(self, &record, &payload, &server_id, &created_by).await?;
