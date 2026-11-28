@@ -80,7 +80,22 @@ impl Scenario {
         let now = timestamp(step.now)?;
         let reply = match step.kind {
             StepKind::Token => self.token(step, now)?,
-            StepKind::Revoke => self.revoke(step, now),
+            StepKind::Revoke => {
+                let token = entry(&self.products, step.token, &step.token_text);
+                let client = entry(&self.clients, step.client, &step.client_id);
+                let request = RevokeRequest {
+                    token: &token,
+                    client_id: Some(&client),
+                };
+                let setup = self.setup(step.master);
+                self.runtime.block_on(revoke_refresh_token(
+                    &request,
+                    setup,
+                    &self.guard,
+                    &self.cipher,
+                    now,
+                ))
+            }
             StepKind::Introspect => self.introspect(step, now)?,
             StepKind::Pkce => {
                 let matched = pkce_verifier_matches(&step.code_verifier, &step.code_challenge);
@@ -93,23 +108,6 @@ impl Scenario {
             self.session_keys(),
             now,
             &self.clients,
-        ))
-    }
-
-    fn revoke(&self, step: &Step, now: DateTime<Utc>) -> TokenReply {
-        let token = entry(&self.products, step.token, &step.token_text);
-        let client = entry(&self.clients, step.client, &step.client_id);
-        let request = RevokeRequest {
-            token: &token,
-            client_id: Some(&client),
-        };
-        let setup = self.setup(step.master);
-        self.runtime.block_on(revoke_refresh_token(
-            &request,
-            setup,
-            &self.guard,
-            &self.cipher,
-            now,
         ))
     }
 
