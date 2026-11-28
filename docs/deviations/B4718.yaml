@@ -1,0 +1,48 @@
+task: B4718
+deviations:
+  - what: >-
+      The Redis copy is skipped when no backend is configured, like LiteLLM when litellm.cache is
+      None, but there is no check for a missing hasattr method on the backend.
+    why: >-
+      A backend is a typed CacheBackend value in betterlite, so a backend without async_set_cache or
+      async_get_cache cannot exist and the hasattr guards LiteLLM needs for duck typing have nothing
+      to guard.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L493-L502
+  - what: >-
+      Redis payloads written by betterlite are not guaranteed to be readable by a LiteLLM process,
+      and the reverse is also not promised.
+    why: >-
+      The payload is MCPServer serialized with serde and then encrypted, while LiteLLM encrypts
+      server.model_dump(mode="json"); the field sets differ in detail and neither model accepts the
+      other's extra keys. Both sides only ever read their own copy during the five-minute life of a
+      session, and a deployment that switches implementations mid-session only loses an unsaved
+      temporary server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L504-L521
+  - what: >-
+      A resolution without a runtime server returns a typed error variant and the route layer
+      answers 500, where LiteLLM's assert authorizes and then asserts authorized.runtime is not None.
+    why: >-
+      Production code in betterlite carries no assert. The case cannot occur when the temp lookup and
+      the registry are the only two resolution sources, so the typed error only documents the state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2205
+  - what: >-
+      A request body whose declared field has the wrong JSON type answers 422 with one value_error
+      issue at loc ["body"] carrying serde_json's message, where FastAPI answers with pydantic's
+      per-field type (such as string_type) and loc ["body", "<field>"].
+    why: >-
+      NewMCPServerRequest is built by B4716 and reports a shape failure as RequestError::Shape,
+      which carries only the serde_json error; the field path is gone before the route sees it, so
+      the route cannot put the field in loc or tell pydantic's type names apart. The status, the
+      issue-list shape and the value_error and json_invalid cases match FastAPI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2049
+kept_bugs:
+  - what: >-
+      A session is cached in the process-local table before the shared draft row is written, so when
+      the draft write fails the route answers 500 but the session stays servable from this worker for
+      its full 300 seconds.
+    why: >-
+      LiteLLM runs the same order and its local cache is the documented fallback for single-process
+      deployments; a retried /session call refreshes the same id, and only PROXY_ADMIN can create or
+      read a session, so betterlite copies the order instead of evicting a session the client may
+      already be using.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2053-L2076
