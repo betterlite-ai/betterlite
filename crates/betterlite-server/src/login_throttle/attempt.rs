@@ -40,8 +40,8 @@ impl LoginRefused {
 
 // LiteLLM's LoginAttempt: the credential check's two endings, both no-ops for a disabled throttle
 pub struct LoginAttempt<'throttle> {
-    throttle: &'throttle LoginThrottle,
-    username: String,
+    pub throttle: &'throttle LoginThrottle,
+    pub username: String,
 }
 
 impl LoginAttempt<'_> {

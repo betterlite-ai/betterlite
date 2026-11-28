@@ -70,7 +70,9 @@ impl FakeLocalStore {
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
-        state.values.contains_key(key)
+        let contains = state.values.contains_key(key);
+        drop(guard);
+        contains
     }
 
     #[must_use]
@@ -79,7 +81,9 @@ impl FakeLocalStore {
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
-        state.values.get(key).copied()
+        let value = state.values.get(key).copied();
+        drop(guard);
+        value
     }
 }
 
@@ -106,7 +110,9 @@ impl LocalStore for FakeLocalStore {
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
-        Ok(state.values.get(key).map(|value| CacheValue::Float(*value)))
+        let value = state.values.get(key).map(|value| CacheValue::Float(*value));
+        drop(guard);
+        Ok(value)
     }
 
     fn set(&self, key: &str, value: CacheValue, seconds: i64) -> Result<(), LoginThrottleError> {
@@ -203,7 +209,9 @@ impl FakeRedis {
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let state = &mut *guard;
         purge_expired(&mut state.counters, &mut state.expiries, now);
-        state.counters.get(key).copied()
+        let counter = state.counters.get(key).copied();
+        drop(guard);
+        counter
     }
 
     pub fn block(&self, key: &str, seconds: i64) {
@@ -673,8 +681,8 @@ async fn attempt_step<'throttle>(
     }
 }
 
-async fn settle_step(attempt: Option<LoginAttempt<'_>>, kind: &str) -> StepView {
-    let Some(attempt) = attempt else {
+async fn settle_step(pending: Option<LoginAttempt<'_>>, kind: &str) -> StepView {
+    let Some(attempt) = pending else {
         return StepView::of(kind, "no_attempt");
     };
     let settled = if kind == "succeeded" {

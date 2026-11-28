@@ -224,7 +224,7 @@ fn odd_limit_floor() {
 
 #[test]
 fn unicode_pair_hash() {
-    let folded = LoginKeys::of("10.1.1.1", "Straße");
+    let folded = LoginKeys::of("10.1.1.1", "Stra\u{df}e");
     assert_eq!(folded, LoginKeys::of("10.1.1.1", "STRASSE"));
     assert_eq!(folded, LoginKeys::of("10.1.1.1", "strasse"));
     assert_ne!(folded, LoginKeys::of("10.1.1.1", "Strasse!"));
@@ -327,14 +327,18 @@ async fn local_shared_maximum() {
         }
         Attempt::Allowed(_) => panic!("shared block should refuse"),
     }
+    shared_ttls_track_the_window(&built, &shared, &keys).await;
+}
+
+async fn shared_ttls_track_the_window(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
     assert_eq!(shared.counter(&keys.pair_counter), Some(1));
-    assert_eq!(shared.counter(&keys_of(&built, "dave").pair_counter), None);
+    assert_eq!(shared.counter(&keys_of(built, "dave").pair_counter), None);
     built.clock.set(1061.0);
     assert_eq!(shared.counter(&keys.pair_counter), None);
-    let live = shared.block_ttls(&keys).await.expect("the live ttls");
+    let live = shared.block_ttls(keys).await.expect("the live ttls");
     assert_eq!(live.user, 839);
     built.clock.set(1900.0);
-    let expired = shared.block_ttls(&keys).await.expect("the expired ttls");
+    let expired = shared.block_ttls(keys).await.expect("the expired ttls");
     assert_eq!(expired.user, -2);
 }
 
@@ -596,9 +600,8 @@ async fn malformed_store_reply_propagates() {
         1000.0,
         Some(&[("block_ttls", "malformed")]),
     );
-    let error = match built.throttle.attempt("bob").await {
-        Err(error) => error,
-        Ok(_) => panic!("a malformed reply must propagate"),
+    let Err(error) = built.throttle.attempt("bob").await else {
+        panic!("a malformed reply must propagate");
     };
     assert!(matches!(error, LoginThrottleError::Shared(_)));
     let built_record = fixture_request(
@@ -607,9 +610,8 @@ async fn malformed_store_reply_propagates() {
         1000.0,
         Some(&[("record_failure", "malformed")]),
     );
-    let record_error = match built_record.throttle.record_failure("bob").await {
-        Err(failure) => failure,
-        Ok(_) => panic!("a malformed reply must propagate"),
+    let Err(record_error) = built_record.throttle.record_failure("bob").await else {
+        panic!("a malformed reply must propagate");
     };
     assert!(matches!(
         record_error,
@@ -795,11 +797,18 @@ async fn shared_source_counts_when_declared() {
     );
     let keys = keys_of(&built, "bob");
     let shared = Arc::clone(built.redis.as_ref().expect("shared"));
-    assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
+    bob_reaches_his_pair_block(&built, &shared, &keys).await;
+    a_blocked_pair_counts_nothing(&built, &shared, &keys).await;
+    a_shared_source_blocks_users(&built, &shared, &keys).await;
+    source_refusal_and_expiry(&built, &shared, &keys).await;
+}
+
+async fn bob_reaches_his_pair_block(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
+    assert_eq!(fail(built, "bob").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(fail(built, "bob").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(fail(built, "bob").await, BlockTtls { user: 0, source: 0 });
     assert_eq!(
-        fail(&built, "bob").await,
+        fail(built, "bob").await,
         BlockTtls {
             user: 300,
             source: 0
@@ -807,42 +816,42 @@ async fn shared_source_counts_when_declared() {
     );
     assert_eq!(shared.counter(&keys.pair_counter), Some(4));
     assert_eq!(shared.counter(&keys.source_counter), Some(3));
+}
+
+async fn a_blocked_pair_counts_nothing(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
     built.clock.set(1005.0);
     assert_eq!(
-        fail(&built, "bob").await,
+        fail(built, "bob").await,
         BlockTtls {
             user: 295,
             source: 0
         }
     );
     assert_eq!(shared.counter(&keys.pair_counter), Some(4));
+}
+
+async fn a_shared_source_blocks_users(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
+    assert_eq!(fail(built, "carol").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(fail(built, "carol").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(fail(built, "carol").await, BlockTtls { user: 0, source: 0 });
     assert_eq!(
-        fail(&built, "carol").await,
-        BlockTtls { user: 0, source: 0 }
-    );
-    assert_eq!(
-        fail(&built, "carol").await,
-        BlockTtls { user: 0, source: 0 }
-    );
-    assert_eq!(
-        fail(&built, "carol").await,
-        BlockTtls { user: 0, source: 0 }
-    );
-    assert_eq!(
-        fail(&built, "carol").await,
+        fail(built, "carol").await,
         BlockTtls {
             user: 300,
             source: 0
         }
     );
     assert_eq!(
-        fail(&built, "dave").await,
+        fail(built, "dave").await,
         BlockTtls {
             user: 0,
             source: 300
         }
     );
     assert_eq!(shared.counter(&keys.source_counter), Some(7));
+}
+
+async fn source_refusal_and_expiry(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
     match built.throttle.attempt("dave").await.expect("attempt") {
         Attempt::Refused(refused) => {
             assert_eq!(refused.scope, Scope::Source);
@@ -904,11 +913,17 @@ async fn failed_attempt_records_and_warns() {
     assert_eq!(bob.len(), 1);
     assert!(bob[0].contains("for 300 seconds"), "{bob:?}");
     assert!(bob[0].contains("scope=user username=\"bob\""), "{bob:?}");
-    built.warnings.drain_classified();
+    assert_eq!(
+        built.warnings.drain_classified(),
+        vec!["blocked".to_owned()]
+    );
     fail_attempt(&built, "carol").await;
     fail_attempt(&built, "carol").await;
     fail_attempt(&built, "carol").await;
-    built.warnings.drain_classified();
+    assert_eq!(
+        built.warnings.drain_classified(),
+        vec!["blocked".to_owned()]
+    );
     fail_attempt(&built, "dave").await;
     let dave = built.warnings.messages();
     assert_eq!(dave.len(), 1);
@@ -917,17 +932,21 @@ async fn failed_attempt_records_and_warns() {
         dave[0].contains("scope=source username=\"dave\""),
         "{dave:?}"
     );
-    built.warnings.drain_classified();
-    match built.throttle.attempt("bob").await.expect("attempt") {
+    assert_eq!(
+        built.warnings.drain_classified(),
+        vec!["blocked".to_owned()]
+    );
+    assert_blocked(&built, "bob", Scope::User).await;
+    assert_blocked(&built, "dave", Scope::Source).await;
+}
+
+async fn assert_blocked(built: &Fixture, username: &str, scope: Scope) {
+    match built.throttle.attempt(username).await.expect("attempt") {
         Attempt::Refused(refused) => {
-            assert_eq!(refused.scope, Scope::User);
+            assert_eq!(refused.scope, scope);
             assert_eq!(refused.retry_after, 300);
         }
-        Attempt::Allowed(_) => panic!("bob's pair block should refuse"),
-    }
-    match built.throttle.attempt("dave").await.expect("attempt") {
-        Attempt::Refused(refused) => assert_eq!(refused.scope, Scope::Source),
-        Attempt::Allowed(_) => panic!("dave's source should refuse"),
+        Attempt::Allowed(_) => panic!("{username} should be refused"),
     }
 }
 

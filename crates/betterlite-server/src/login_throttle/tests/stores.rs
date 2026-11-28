@@ -19,7 +19,7 @@ use redis::{Client, cmd};
 
 use crate::login_throttle::keys::LoginKeys;
 use crate::login_throttle::local::{
-    LocalStore, MAX_TRACKED_BLOCKS, MAX_TRACKED_COUNTERS, local_stores_with_limits,
+    LocalStore, MAX_TRACKED_BLOCKS, MAX_TRACKED_COUNTERS, ThrottleStores, local_stores_with_limits,
 };
 use crate::login_throttle::redis::{FailureLimits, LoginRedis as _, RedisLogin};
 use crate::login_throttle::support::FakeClock;
@@ -201,97 +201,63 @@ fn bounded_local_stores_evict_at_the_documented_capacities() {
     assert_eq!(MAX_TRACKED_BLOCKS, 10_000);
     let clock = FakeClock::at(1000.0);
     let stores = local_stores_with_limits(clock.clock(), 2, 1).expect("the local stores");
-    LocalStore::set(
-        stores.counters.as_ref(),
-        "first",
-        CacheValue::Float(1.0),
-        60,
-    )
-    .expect("the first count");
+    evict_counters(&stores, &clock);
+    evict_blocks(&stores, &clock);
+    increment_expire_and_delete(&stores, &clock);
+}
+
+fn evict_counters(stores: &ThrottleStores, clock: &FakeClock) {
+    let counters = stores.counters.as_ref();
+    set_float(counters, "first", 1.0, 60);
     clock.set(1001.0);
-    LocalStore::set(
-        stores.counters.as_ref(),
-        "second",
-        CacheValue::Float(2.0),
-        60,
-    )
-    .expect("the second count");
+    set_float(counters, "second", 2.0, 60);
     clock.set(1002.0);
-    LocalStore::set(
-        stores.counters.as_ref(),
-        "third",
-        CacheValue::Float(3.0),
-        60,
-    )
-    .expect("the third count");
-    assert!(
-        LocalStore::get(stores.counters.as_ref(), "first")
-            .expect("the first read")
-            .is_none()
-    );
-    assert!(
-        LocalStore::get(stores.counters.as_ref(), "second")
-            .expect("the second read")
-            .is_some()
-    );
-    assert!(
-        LocalStore::get(stores.counters.as_ref(), "third")
-            .expect("the third read")
-            .is_some()
-    );
-    LocalStore::set(
-        stores.blocks.as_ref(),
-        "block-one",
-        CacheValue::Float(1.0),
-        60,
-    )
-    .expect("the first block");
+    set_float(counters, "third", 3.0, 60);
+    assert_absent(counters, "first");
+    assert_present(counters, "second");
+    assert_present(counters, "third");
+}
+
+fn evict_blocks(stores: &ThrottleStores, clock: &FakeClock) {
+    let blocks = stores.blocks.as_ref();
+    set_float(blocks, "block-one", 1.0, 60);
     clock.set(1003.0);
-    LocalStore::set(
-        stores.blocks.as_ref(),
-        "block-two",
-        CacheValue::Float(2.0),
-        60,
-    )
-    .expect("the second block");
-    assert!(
-        LocalStore::get(stores.blocks.as_ref(), "block-one")
-            .expect("the first block read")
-            .is_none()
-    );
-    assert!(
-        LocalStore::get(stores.blocks.as_ref(), "block-two")
-            .expect("the second block read")
-            .is_some()
-    );
+    set_float(blocks, "block-two", 2.0, 60);
+    assert_absent(blocks, "block-one");
+    assert_present(blocks, "block-two");
+}
+
+fn increment_expire_and_delete(stores: &ThrottleStores, clock: &FakeClock) {
+    let counters = stores.counters.as_ref();
+    let blocks = stores.blocks.as_ref();
     // the store's own counter and expiry, not just this crate's fake: an increment adds one
-    assert_eq!(
-        LocalStore::increment(stores.counters.as_ref(), "inc", 60)
-            .expect("the first increment")
-            .to_bits(),
-        1.0_f64.to_bits()
-    );
-    assert_eq!(
-        LocalStore::increment(stores.counters.as_ref(), "inc", 60)
-            .expect("the second increment")
-            .to_bits(),
-        2.0_f64.to_bits()
-    );
+    let first = LocalStore::increment(counters, "inc", 60).expect("the first increment");
+    let second = LocalStore::increment(counters, "inc", 60).expect("the second increment");
+    assert_eq!(first.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(second.to_bits(), 2.0_f64.to_bits());
     // a zero-second ttl has already expired once the clock moves past it
-    LocalStore::set(stores.blocks.as_ref(), "short", CacheValue::Float(9.0), 0)
-        .expect("the short block");
+    set_float(blocks, "short", 9.0, 0);
     clock.set(1003.5);
+    assert_absent(blocks, "short");
+    set_float(blocks, "doomed", 1.0, 60);
+    LocalStore::delete(blocks, "doomed").expect("the block delete");
+    assert_absent(blocks, "doomed");
+}
+
+fn set_float(store: &dyn LocalStore, key: &str, value: f64, seconds: i64) {
+    LocalStore::set(store, key, CacheValue::Float(value), seconds).expect("the set");
+}
+
+fn assert_present(store: &dyn LocalStore, key: &str) {
     assert!(
-        LocalStore::get(stores.blocks.as_ref(), "short")
-            .expect("the short read")
-            .is_none()
+        LocalStore::get(store, key).expect("the read").is_some(),
+        "{key} should still be stored"
     );
-    LocalStore::set(stores.blocks.as_ref(), "doomed", CacheValue::Float(1.0), 60)
-        .expect("the doomed block");
-    LocalStore::delete(stores.blocks.as_ref(), "doomed").expect("the block delete");
+}
+
+fn assert_absent(store: &dyn LocalStore, key: &str) {
     assert!(
-        LocalStore::get(stores.blocks.as_ref(), "doomed")
-            .expect("the deleted read")
-            .is_none()
+        LocalStore::get(store, key).expect("the read").is_none(),
+        "{key} should be gone"
     );
 }

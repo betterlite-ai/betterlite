@@ -46,9 +46,8 @@ fn throttle(client_ip: &str, source_limit: &str) -> String {
     )
 }
 
-#[test]
-fn oracle_replays_every_step_with_a_shared_store() {
-    let input = OracleInput {
+fn replay_input() -> OracleInput {
+    OracleInput {
         config: config(
             r#"{"general_settings": {"max_failed_login_attempts_per_source": 4, "trusted_proxy_ranges": [], "failed_login_window_seconds": 60, "failed_login_block_seconds": 300}}"#,
         ),
@@ -83,9 +82,12 @@ fn oracle_replays_every_step_with_a_shared_store() {
                 ],
             },
         ],
-    };
+    }
+}
+
+fn replay_expected() -> Json {
     let throttle_view = r#"{"client_ip": "10.1.2.3", "source_limit": 4, "user_limit": 2, "window_seconds": 60, "block_seconds": 300, "enabled": true}"#;
-    let expected = json_of(&format!(
+    json_of(&format!(
         r#"{{"phases": [
             {{
                 "throttle": {throttle_view},
@@ -114,8 +116,12 @@ fn oracle_replays_every_step_with_a_shared_store() {
                 "warnings": ["blocked", "refused"]
             }}
         ]}}"#
-    ));
-    assert_eq!(rendered(&input), expected);
+    ))
+}
+
+#[test]
+fn oracle_replays_every_step_with_a_shared_store() {
+    assert_eq!(rendered(&replay_input()), replay_expected());
 }
 
 #[test]

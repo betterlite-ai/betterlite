@@ -19,9 +19,7 @@ pub fn declared_proxy_ranges(topology: &ProxyTopology) -> Option<Vec<String>> {
         return None;
     };
     for entry in entries {
-        if parse_network(entry, TRUSTED_PROXY_RANGES_KEY).is_none() {
-            return None;
-        }
+        parse_network(entry, TRUSTED_PROXY_RANGES_KEY)?;
     }
     Some(entries.clone())
 }
