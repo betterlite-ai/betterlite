@@ -786,6 +786,27 @@ fn record_failures_name_the_option() {
 }
 
 #[test]
+fn a_non_string_function_id_names_the_field() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    let setup = Setup::new(r#"{"nvcf_function_id":5}"#);
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    let error = outcome.unwrap_err();
+    assert!(matches!(error, RivaCallError::Records(_)));
+    assert_eq!(
+        error.to_string(),
+        "the nvcf_function_id option must be a string"
+    );
+    assert_eq!(error.status_code(), Some(400));
+    let recorded = probe(&host);
+    assert!(recorded.events.is_empty());
+}
+
+#[test]
 fn a_named_audio_file_is_logged_unchanged() {
     let _guard = PYTHON.blocking_lock();
     let Some(host) = audio_host() else {
