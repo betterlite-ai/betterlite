@@ -554,6 +554,7 @@ fn output_element_append_order() {
     let fetched: Vec<Json> = vec![
         parse(r#"{"type":"mcp","server_label":"weather"}"#),
         parse(r#"{"type":"mcp","server_label":"time"}"#),
+        parse(r#"{"type":"mcp","server_label":"clock","retries":2,"ratio":0.5}"#),
     ];
     let results = vec![
         McpToolResult {
@@ -600,6 +601,12 @@ fn output_element_append_order() {
   {
     "type": "mcp",
     "server_label": "time"
+  },
+  {
+    "type": "mcp",
+    "server_label": "clock",
+    "retries": 2,
+    "ratio": 0.5
   }
 ]"#
         )
