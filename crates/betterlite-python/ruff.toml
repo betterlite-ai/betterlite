@@ -19,4 +19,5 @@ per-file-target-version = { "tests/*" = "py311" }
 "python/betterlite/_completion/errors.py" = ["C901", "PLR0912", "PLR0915"] # one dispatch over the native error types, as the task requires, is over ruff's default branch, complexity and statement limits
 "python/betterlite/_embeddings/*" = ["A002", "B006", "FBT001", "FBT002", "PLR0913", "PLR0917"] # LiteLLM's 14-parameter embedding keeps its bool caching parameter, its input=[] and caching=False defaults and its parameter names
 "python/betterlite/vector_stores/_create_search.py" = ["ARG001", "ASYNC109", "FBT001", "FBT002", "PLR0913", "PLR0917"] # LiteLLM's create and search keep their ten to thirteen parameters, the unused extra_query, rewrite_query's bool default and the async twins' timeout
+"python/betterlite/vector_stores/_manage.py" = ["A001", "E501", "PLR0913", "PLR0917"] # LiteLLM's list keeps its builtin name, and its one-line signatures keep their ten to twelve parameters
 "python/betterlite/containers/*" = ["ASYNC109", "PLR0913", "PLR0917"] # LiteLLM's eight container functions keep their declared parameters, and the async twin keeps the timeout parameter its signature carries
