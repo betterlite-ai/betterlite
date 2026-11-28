@@ -37,6 +37,7 @@ description: >-
   and 160 oracle lines, capped at 800.
 scope:
   paths:
+    - "tools/oracle/helpers/riva_call_fakes.py"
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/api/riva/call.rs
     - crates/betterlite-core/src/api/riva/call/**
