@@ -246,13 +246,13 @@ impl LockCache for FakeCache {
         &self,
         _key: &str,
     ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
-        ready(
-            self.owner
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
-                .map(String::into_bytes),
-        )
+        let owner = self
+            .owner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .map(String::into_bytes);
+        ready(Ok(owner))
     }
 
     fn set_owner_if_absent(
