@@ -9,7 +9,7 @@ mod tests;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_events::ResponsesReply;
 
-use crate::api::responses_compact_http::service::{ClientSource, LogContext};
+use crate::api::responses_compact_http::service::{ClientSource, CompactTransport, LogContext};
 
 use self::call::CompactResponsesCall;
 use self::deps::{CompactConfigFactory, CompactResponsesDeps};
@@ -22,7 +22,7 @@ pub async fn compact_responses<S, F>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<ResponsesReply, CompactResponsesError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
     F: CompactConfigFactory,
 {
     execute::run(
@@ -42,7 +42,7 @@ pub async fn acompact_responses<S, F>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<ResponsesReply, CompactResponsesError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
     F: CompactConfigFactory,
 {
     let provider = match &call.custom_llm_provider {

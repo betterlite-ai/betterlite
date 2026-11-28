@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-key-active-unparseable-expiry
+call:
+  b4658:
+    operation: key_is_active
+    key:
+      token: sk-text
+      expires: "not-a-date"
+env: {}
+compare: {ignore: []}

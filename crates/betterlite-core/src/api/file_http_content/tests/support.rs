@@ -173,7 +173,7 @@ impl Fixture {
     ) -> Result<BinaryContent, ContentError>
     where
         C: FileContentConfig,
-        S: ClientSource,
+        S: ClientSource<Client: ContentTransport>,
     {
         let prepared = self.prepare(deps, call, events)?;
         retrieve_file_content(prepared, &mut self.state).await

@@ -5,7 +5,21 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::ConfigLoader;
-use crate::tls::{TlsPolicy, Verification, resolve_ca_file};
+use crate::tls::{TlsPolicy, Verification, resolve_ca_file, user_agent};
+
+#[test]
+fn user_agent_reads_the_environment() {
+    let environment = BTreeMap::from([("LITELLM_USER_AGENT".to_owned(), "probe/1".to_owned())]);
+    assert_eq!(user_agent(&environment), "probe/1");
+}
+
+#[test]
+fn user_agent_falls_back_to_the_crate_name() {
+    assert_eq!(
+        user_agent(&BTreeMap::new()),
+        format!("betterlite/{}", env!("CARGO_PKG_VERSION"))
+    );
+}
 
 #[rstest]
 #[case::defaults("", BTreeMap::new(), None, Verification::Enabled)]

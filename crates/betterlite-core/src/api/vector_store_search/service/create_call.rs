@@ -17,7 +17,7 @@ use crate::api::vector_store_http_create_read::service::{
     prepare as prepare_create, send as send_create,
 };
 use crate::api::vector_store_http_write::config::WriteParams;
-use crate::api::vector_store_http_write::service::{ClientSource, LogContext};
+use crate::api::vector_store_http_write::service::{ClientSource, LogContext, WriteTransport};
 use crate::api::vector_store_search::error::VectorStoreSearchError;
 use crate::api::vector_store_search::mock;
 use crate::api::vector_store_search::provider::{ResolvedProvider, resolve_provider};
@@ -29,7 +29,7 @@ pub async fn create<S>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<Json, VectorStoreSearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let mut kwargs = call.kwargs.clone();
     kwargs.remove("acreate");
@@ -82,7 +82,7 @@ async fn create_send<S>(
     parts: &CreateParts<'_>,
 ) -> Result<Json, VectorStoreSearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let (config, provider) = create_config(deps, parts.resolved)?;
     let params = create_params(parts.filtered)?;

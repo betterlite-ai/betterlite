@@ -16,8 +16,8 @@ use betterlite_openai::containers::container_file_http::request::{
 };
 use betterlite_openai::containers::container_file_http::response::raise_for_error_status;
 use betterlite_openai::containers::container_file_http::transport::{
-    AsyncClient as _, ClientSource, ContainerHttpReply, ContainerHttpRequest, ContainerMethod,
-    Selected, TransferError,
+    AsyncClient, BlockingClient, ClientSource, ContainerHttpReply, ContainerHttpRequest,
+    ContainerMethod, Selected, TransferError,
 };
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
@@ -50,7 +50,7 @@ pub async fn async_container_file_list_handler<Source, Hook>(
     call: &ContainerFileListCall<'_, Source>,
 ) -> Result<ContainerFileListResponse, FileListHandlerError>
 where
-    Source: ClientSource,
+    Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>,
     Hook: PreCallHook,
 {
     let params = read_params(call.litellm_params)?;

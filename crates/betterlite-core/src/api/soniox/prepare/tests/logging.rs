@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -19,8 +20,8 @@ use chrono::DateTime;
 use rstest::rstest;
 
 use super::super::logging::{
-    PrePostLogger, REDACTED_VALUE, SECRET_FIELD, SonioxEvent, SonioxLogger, SonioxPostCall,
-    SonioxPreCall, log_post_call, log_pre_call, redacted_body,
+    REDACTED_VALUE, SECRET_FIELD, SonioxEvent, SonioxLogger, SonioxPostCall, SonioxPreCall,
+    log_post_call, log_pre_call, redacted_body,
 };
 
 #[derive(Default)]
@@ -304,7 +305,7 @@ fn records_the_pre_call_through_b249() {
     let body = object(r#"{"model": "stt-async-v4", "webhook_auth_header_value": "secret"}"#);
 
     {
-        let mut logger = PrePostLogger {
+        let mut logger = LogContext {
             state: &mut state,
             env: &env,
         };
@@ -342,7 +343,7 @@ fn records_the_post_call_through_b249() {
     let response = object(r#"{"transcription": {"status": "completed"}}"#);
 
     {
-        let mut logger = PrePostLogger {
+        let mut logger = LogContext {
             state: &mut state,
             env: &env,
         };

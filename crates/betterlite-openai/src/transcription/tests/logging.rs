@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -23,7 +24,6 @@ use crate::transcription::call::{
     finish_transcription,
 };
 use crate::transcription::config::TranscriptionFamily;
-use crate::transcription::logging::PrePostLogger;
 use crate::transcription::request::prepare_data;
 use crate::transcription::transport::TranscriptionTransport as _;
 
@@ -107,7 +107,7 @@ fn pre_call_additional_args(is_async: bool) -> Json {
     let (redactor, mut state) = state();
     let sink = Sink::default();
     let env = env(&redactor, &sink);
-    let mut logger = PrePostLogger {
+    let mut logger = LogContext {
         state: &mut state,
         env: &env,
     };
@@ -150,7 +150,7 @@ async fn records_the_transcription_post_call() {
     let sink = Sink::default();
     let env = env(&redactor, &sink);
     let fixture = Fixture::new(Reply::json(r#"{"text":"hi","language":"en"}"#));
-    let mut logger = PrePostLogger {
+    let mut logger = LogContext {
         state: &mut state,
         env: &env,
     };

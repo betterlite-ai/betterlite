@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_prompts::arguments::json::Json;
@@ -11,7 +12,7 @@ use serde_json::Number;
 use crate::petals::error::{ENGINE_MISSING_MESSAGE, PetalsSetupError};
 use crate::self_hosted_dispatch::call::{CompletionCall, SelfHostedConfig};
 use crate::self_hosted_dispatch::chat::{complete_lemonade, dispatch};
-use crate::self_hosted_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
+use crate::self_hosted_dispatch::context::{DispatchContext, DispatchSettings};
 use crate::self_hosted_dispatch::error::DispatchError;
 use crate::self_hosted_dispatch::handler::HandlerError;
 use crate::vllm::completion::ENGINE_ERROR;
@@ -46,7 +47,7 @@ fn run(
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
     let outcome = {
-        let mut log = CallLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &env,
         };

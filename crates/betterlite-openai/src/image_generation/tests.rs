@@ -13,6 +13,7 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
@@ -40,7 +41,6 @@ use super::family::{
     DALL_E_2_PARAMS, DALL_E_3_PARAMS, GPT_IMAGE_PARAMS, ImageFamily, ImageParamError,
     map_openai_params, select_image_family,
 };
-use super::logging::PrePostLogger;
 use super::reply::{ImageGenerationReply, ImageReplyError, ImageUsage};
 use super::request::{
     ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
@@ -129,7 +129,7 @@ impl Runner {
     {
         let prepared = {
             let env = logging_env(&self.redactor, &self.sink, None);
-            let mut logger = PrePostLogger {
+            let mut logger = LogContext {
                 state: &mut self.state,
                 env: &env,
             };
@@ -137,7 +137,7 @@ impl Runner {
         };
         let sent = send_image_generation(&prepared, transport).await;
         let env = logging_env(&self.redactor, &self.sink, None);
-        let mut logger = PrePostLogger {
+        let mut logger = LogContext {
             state: &mut self.state,
             env: &env,
         };
@@ -678,7 +678,7 @@ async fn image_generation_logs_the_pre_call_then_the_post_call() {
             Ok(())
         };
         let env = logging_env(&redactor, &sink, Some(&logger));
-        let mut hooks = PrePostLogger {
+        let mut hooks = LogContext {
             state: &mut state,
             env: &env,
         };
@@ -694,7 +694,7 @@ async fn image_generation_logs_the_pre_call_then_the_post_call() {
             Ok(())
         };
         let env = logging_env(&redactor, &sink, Some(&logger));
-        let mut hooks = PrePostLogger {
+        let mut hooks = LogContext {
             state: &mut state,
             env: &env,
         };

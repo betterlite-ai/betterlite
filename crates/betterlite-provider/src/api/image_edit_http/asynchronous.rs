@@ -1,6 +1,8 @@
+use betterlite_core::api::vector_store_http_write::service::{ClientSource, WriteTransport};
+
 use super::error::ImageEditHttpError;
 use super::service::{
-    ClientKind, ClientSource, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext, prepare,
+    ClientKind, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext, prepare,
 };
 use crate::api::image_contracts::edit::BaseImageEditConfig;
 
@@ -12,7 +14,7 @@ pub async fn async_image_edit_handler<C, S>(
 ) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>>
 where
     C: BaseImageEditConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport + Clone>,
 {
     let prepared = prepare(ClientKind::Asynchronous, deps, call)?;
     let request = prepared.request();

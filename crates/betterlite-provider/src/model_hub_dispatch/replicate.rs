@@ -1,10 +1,11 @@
 use super::credentials::{REPLICATE_KEY, Sources, resolve};
 use super::json::log_opened_stream;
-use super::{CallLogging, ChatContext, DispatchDeps, HubDispatchError};
+use super::{ChatContext, DispatchDeps, HubDispatchError};
 use crate::replicate::poll::ReplicateCompletion;
 use crate::replicate::poll::completion::{Replicate, ReplicateCall};
 use crate::replicate::poll::{OutputPolicy, ReplicatePolling};
 use crate::replicate::request::ReplicateDefaults;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use secrecy::ExposeSecret;
 use std::collections::BTreeMap;
@@ -37,7 +38,7 @@ where
 pub async fn complete<'call>(
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> Result<Completion, HubDispatchError> {
     let sources = Sources {
         call: call.api_key.map(ExposeSecret::expose_secret),

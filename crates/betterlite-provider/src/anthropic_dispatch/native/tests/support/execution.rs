@@ -3,7 +3,7 @@ use super::{
     services::Services,
 };
 use crate::anthropic_dispatch::{
-    CallLogging, dispatch,
+    dispatch,
     fixtures::runtime::logging,
     native::{Native, Runtime, legacy::Legacy, preparation::Preparation},
     operations::{DispatchDeps, Operation},
@@ -16,6 +16,7 @@ use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
@@ -129,7 +130,7 @@ impl<'deps> Invocation<'deps> {
     {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
         let (mut state, env) = logging(&redactor).unwrap();
-        let mut log = CallLogging {
+        let mut log = LogContext {
             state: &mut state,
             env: &env,
         };
