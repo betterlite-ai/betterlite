@@ -1,4 +1,4 @@
-use betterlite_mcp::gateway_dcr::oauth_error::{OauthError, OauthErrorResponse as _};
+use betterlite_mcp::gateway_dcr::oauth_error::OauthErrorResponse as _;
 use betterlite_mcp::gateway_token::support::reply::{
     IntrospectionBody, ProxyCredentialBody, SessionPairBody, TokenBody, TokenReply,
 };
@@ -32,7 +32,7 @@ pub(super) fn token_report(
         TokenReply::Error(error) => (
             error.status,
             serde_json::to_value(error.body()).unwrap_or_default(),
-            error_pairs(error),
+            error.headers().into_iter().collect(),
         ),
     };
     json!({
@@ -57,11 +57,6 @@ fn string_pairs(headers: &[(String, String)]) -> Vec<(&str, &str)> {
         .iter()
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect()
-}
-
-fn error_pairs(error: &OauthError) -> Vec<(&str, &str)> {
-    let headers = error.headers();
-    headers.into_iter().collect()
 }
 
 fn header_pairs(headers: &[(&str, &str)]) -> Value {
