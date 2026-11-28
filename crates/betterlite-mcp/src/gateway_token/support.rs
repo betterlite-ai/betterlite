@@ -115,28 +115,37 @@ pub fn subject_refusal_error(refusal: SubjectTokenRefusal) -> OauthError {
     }
 }
 
+enum MintFailure {
+    Direct(&'static str),
+    Reload(ReloadUserFailure),
+}
+
 #[must_use]
 pub fn mint_failure_error(failure: ProxyCredentialMintFailure) -> OauthError {
-    match mint_reload_failure(failure) {
-        Ok(reason) => reload_failure_error(reason),
-        Err(description) => oauth_error(400, OauthErrorCode::InvalidGrant, description),
+    match mint_failure(failure) {
+        MintFailure::Direct(text) => oauth_error(400, OauthErrorCode::InvalidGrant, text),
+        MintFailure::Reload(reason) => reload_failure_error(reason),
     }
 }
 
-const fn mint_reload_failure(
-    failure: ProxyCredentialMintFailure,
-) -> Result<ReloadUserFailure, &'static str> {
+const fn mint_failure(failure: ProxyCredentialMintFailure) -> MintFailure {
     match failure {
-        ProxyCredentialMintFailure::NotAMember => {
-            Err("the user is no longer a member of the team this grant was issued for")
+        ProxyCredentialMintFailure::NotAMember => MintFailure::Direct(
+            "the user is no longer a member of the team this grant was issued for",
+        ),
+        ProxyCredentialMintFailure::TeamRequired => MintFailure::Direct(
+            "this user belongs to a team; sign in again and pick the team for this credential",
+        ),
+        ProxyCredentialMintFailure::Unresolvable => {
+            MintFailure::Reload(ReloadUserFailure::Unresolvable)
         }
-        ProxyCredentialMintFailure::TeamRequired => {
-            Err("this user belongs to a team; sign in again and pick the team for this credential")
+        ProxyCredentialMintFailure::Unavailable => {
+            MintFailure::Reload(ReloadUserFailure::Unavailable)
         }
-        ProxyCredentialMintFailure::Unresolvable => Ok(ReloadUserFailure::Unresolvable),
-        ProxyCredentialMintFailure::Unavailable => Ok(ReloadUserFailure::Unavailable),
-        ProxyCredentialMintFailure::Faulted => Ok(ReloadUserFailure::Faulted),
-        ProxyCredentialMintFailure::NoActiveKey => Ok(ReloadUserFailure::NoActiveKey),
+        ProxyCredentialMintFailure::Faulted => MintFailure::Reload(ReloadUserFailure::Faulted),
+        ProxyCredentialMintFailure::NoActiveKey => {
+            MintFailure::Reload(ReloadUserFailure::NoActiveKey)
+        }
     }
 }
 
