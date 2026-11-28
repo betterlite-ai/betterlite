@@ -11,6 +11,7 @@ use betterlite_error::normalize::class::Class;
 use betterlite_logging::prometheus::failure::RequestedModelCatalog;
 use betterlite_logging::prometheus::failure::exception::LabelException;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_prometheus::label_sanitization::sanitize_label_name;
 use rust_decimal::Decimal;
 
 use super::super::tests::support::{
@@ -107,15 +108,29 @@ fn logged_key(auth: &UserAPIKeyAuth) -> String {
 }
 
 fn catalog_fixture(names: &[&str]) -> Fixture {
-    let catalog: Arc<dyn RequestedModelCatalog + Send + Sync> =
-        Arc::new(RecordingCatalog::new(names));
+    catalog_ports(RecordingCatalog::new(names))
+}
+
+fn catalog_ports(catalog: RecordingCatalog) -> Fixture {
+    let port: Arc<dyn RequestedModelCatalog + Send + Sync> = Arc::new(catalog);
     fixture_with_ports(
         labelled_settings(),
         PrometheusHookPorts {
             router_usage: None,
-            requested_models: Some(catalog),
+            requested_models: Some(port),
         },
     )
+}
+
+async fn failed_call(fixture: &Fixture, model: &str) {
+    fixture
+        .hooks
+        .async_post_call_failure_hook(
+            &request_data(model),
+            &exception(Some("500")),
+            &auth("sk-secret"),
+        )
+        .await;
 }
 
 #[tokio::test]
@@ -382,4 +397,82 @@ async fn the_stream_label_is_opt_in() {
         .label_names
         .clone();
     assert!(!names.contains(&"stream".to_owned()));
+}
+
+#[tokio::test]
+async fn a_recognized_model_keeps_its_name() {
+    let fixture = catalog_ports(RecordingCatalog::from_sets(&["known-model"], &[], &[]));
+    failed_call(&fixture, "known-model").await;
+    assert_eq!(
+        series_label(&fixture.registry, PROXY_FAILED, "requested_model"),
+        "known-model"
+    );
+}
+
+#[tokio::test]
+async fn a_team_public_model_keeps_its_name() {
+    let fixture = catalog_ports(RecordingCatalog::from_sets(&[], &["shared-model"], &[]));
+    failed_call(&fixture, "shared-model").await;
+    assert_eq!(
+        series_label(&fixture.registry, PROXY_FAILED, "requested_model"),
+        "shared-model"
+    );
+}
+
+#[tokio::test]
+async fn a_pattern_route_model_keeps_its_name() {
+    let fixture = catalog_ports(RecordingCatalog::from_sets(&[], &[], &["wild-model"]));
+    failed_call(&fixture, "wild-model").await;
+    assert_eq!(
+        series_label(&fixture.registry, PROXY_FAILED, "requested_model"),
+        "wild-model"
+    );
+}
+
+#[tokio::test]
+async fn an_empty_litellm_params_model_uses_the_request_model() {
+    let fixture = fixture();
+    let data: JsonMap =
+        serde_json::from_str(r#"{"model": "openai/gpt-4o", "litellm_params": {"model": ""}}"#)
+            .unwrap();
+    fixture
+        .hooks
+        .async_post_call_failure_hook(&data, &exception(Some("500")), &auth("sk-secret"))
+        .await;
+    assert_eq!(
+        series_label(&fixture.registry, PROXY_FAILED, "api_provider"),
+        "openai"
+    );
+}
+
+#[tokio::test]
+async fn a_configured_header_tag_reaches_the_series() {
+    let mut settings = labelled_settings();
+    settings.labels.custom_tags = vec!["x-env: prod".to_owned()];
+    settings.tags.extra_spend_tag_headers = vec!["x-env".to_owned()];
+    let catalog: Arc<dyn RequestedModelCatalog + Send + Sync> =
+        Arc::new(RecordingCatalog::new(&["gpt-4o"]));
+    let fixture = fixture_with_ports(
+        settings,
+        PrometheusHookPorts {
+            router_usage: None,
+            requested_models: Some(catalog),
+        },
+    );
+    let data: JsonMap = serde_json::from_str(
+        r#"{
+            "model": "gpt-4o",
+            "proxy_server_request": {"headers": {"x-env": "prod"}}
+        }"#,
+    )
+    .unwrap();
+    fixture
+        .hooks
+        .async_post_call_failure_hook(&data, &exception(Some("500")), &auth("sk-secret"))
+        .await;
+    let label = sanitize_label_name("tag_x-env: prod");
+    assert_eq!(
+        series_label(&fixture.registry, PROXY_FAILED, &label),
+        "true"
+    );
 }
