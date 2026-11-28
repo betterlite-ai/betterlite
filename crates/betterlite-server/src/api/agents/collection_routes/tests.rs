@@ -31,7 +31,7 @@ fn only_the_proxy_admin_role_passes_the_key_gate(#[case] roles: &[Role], #[case]
 }
 
 #[test]
-fn the_master_key_record_passes_the_key_gate_without_a_role() {
+fn the_master_key_record_passes_the_key_gate() {
     enforce_provider_key(&JsonMap::new(), &master_caller().principal).unwrap();
 }
 
