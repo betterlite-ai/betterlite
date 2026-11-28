@@ -59,6 +59,7 @@ fn volcengine_without_a_key_names_both_environment_variables() {
 #[test]
 fn volcengine_passes_extra_headers_and_an_empty_litellm_params() {
     let mut fixture = EmbeddingFixture::new();
+    fixture.api_key = Some(secret("sk-request"));
     fixture.extra_headers = Some(headers(&[("x-scope", "tenant")]));
     fixture.api_base = Some(String::from("https://ark.example/v1"));
     fixture.optional_params =
@@ -72,7 +73,8 @@ fn volcengine_passes_extra_headers_and_an_empty_litellm_params() {
 
 #[test]
 fn volcengine_without_extra_headers_passes_an_empty_map() {
-    let fixture = EmbeddingFixture::new();
+    let mut fixture = EmbeddingFixture::new();
+    fixture.api_key = Some(secret("sk-request"));
     let call = call_for(ProviderId::Volcengine, &fixture).expect("the arm answers");
     assert_eq!(call.headers, Some(headers(&[])));
 }

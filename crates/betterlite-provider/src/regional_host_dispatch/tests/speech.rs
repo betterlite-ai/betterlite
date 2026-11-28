@@ -39,6 +39,7 @@ async fn minimax_speech_reads_the_voice_map_in_litellm_order(
     let selected = MinimaxSpeechConfig { env_base: None };
     let config: &dyn TextToSpeechConfig = &selected;
     let mut fixture = SpeechFixture::new();
+    fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(voice_map(voice));
     let handler = SpeechRecorder::new();
     speech::minimax(Some(config), &fixture.context(), &handler)
@@ -52,6 +53,7 @@ async fn minimax_speech_keeps_a_string_voice() {
     let selected = MinimaxSpeechConfig { env_base: None };
     let config: &dyn TextToSpeechConfig = &selected;
     let mut fixture = SpeechFixture::new();
+    fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(SpeechVoice::Name(String::from("female-shaonv")));
     let handler = SpeechRecorder::new();
     speech::minimax(Some(config), &fixture.context(), &handler)
@@ -64,6 +66,7 @@ async fn minimax_speech_keeps_a_string_voice() {
 #[tokio::test]
 async fn minimax_speech_maps_the_voice_without_a_selected_config() {
     let mut fixture = SpeechFixture::new();
+    fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(voice_map(r#"{"id":"v-2"}"#));
     fixture.optional_params = params(r#"{"speed":3.0}"#);
     let handler = SpeechRecorder::new();
@@ -86,6 +89,7 @@ async fn minimax_speech_maps_the_voice_without_a_selected_config() {
 #[tokio::test]
 async fn minimax_speech_reads_the_voice_id_option_without_a_voice() {
     let mut fixture = SpeechFixture::new();
+    fixture.api_key = Some(secret("sk-fixture"));
     fixture.optional_params = params(r#"{"voice_id":"v-9"}"#);
     let handler = SpeechRecorder::new();
     speech::minimax(None, &fixture.context(), &handler)
@@ -101,7 +105,8 @@ async fn minimax_speech_reads_the_voice_id_option_without_a_voice() {
 
 #[tokio::test]
 async fn minimax_speech_without_a_voice_uses_the_minimax_default() {
-    let fixture = SpeechFixture::new();
+    let mut fixture = SpeechFixture::new();
+    fixture.api_key = Some(secret("sk-fixture"));
     let handler = SpeechRecorder::new();
     speech::minimax(None, &fixture.context(), &handler)
         .await
@@ -119,6 +124,7 @@ async fn minimax_speech_with_a_selected_config_passes_the_options_unmapped() {
     let selected = MinimaxSpeechConfig { env_base: None };
     let config: &dyn TextToSpeechConfig = &selected;
     let mut fixture = SpeechFixture::new();
+    fixture.api_key = Some(secret("sk-fixture"));
     fixture.voice = Some(SpeechVoice::Name(String::from("v-1")));
     fixture.optional_params = params(r#"{"response_format":"wav"}"#);
     let handler = SpeechRecorder::new();
@@ -144,6 +150,7 @@ async fn minimax_speech_writes_the_base_and_key_into_litellm_params_only_when_se
     #[case] key_present: bool,
 ) {
     let mut fixture = SpeechFixture::new();
+    fixture.settings.api_key = Some(secret("sk-global"));
     fixture.api_base = api_base.map(str::to_owned);
     fixture.api_key = api_key.map(secret);
     fixture.litellm_params = params(r#"{"user":"oracle"}"#);
