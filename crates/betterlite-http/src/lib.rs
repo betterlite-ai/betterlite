@@ -1,5 +1,6 @@
 pub mod aws_duplex;
 pub mod aws_sources;
+pub mod client_kind;
 pub mod error;
 pub mod gigachat_tokens;
 pub mod health_probe;
@@ -12,6 +13,7 @@ pub mod openai_mock_transport;
 pub mod otlp_client;
 pub mod passthrough;
 pub mod proxy;
+pub mod selected_client;
 pub mod skill_archive;
 pub mod tls;
 pub mod url_path;

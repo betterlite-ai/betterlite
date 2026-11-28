@@ -1,0 +1,18 @@
+kind: helper
+name: vector-file-resolution-restore-overlay
+call:
+  vector_file_resolution:
+    calls:
+      - function: restore_file_identifiers
+        original_file_id: litellm_proxy:managed
+        response: {kind: object, id: litellm_proxy:managed, file_id: file-b}
+      - function: unified_store_and_registry_overlay
+        data: {vector_store_id: vs_request}
+        vector_store_id: "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCx1aWQtNTttb2RlbF9pZCxzdG9yZV9tb2RlbDtyZXNvdXJjZV9pZCx2c19wcm92aWRlcjs"
+      - function: unified_store_and_registry_overlay
+        data: {custom_llm_provider: openai}
+        vector_store_id: vs_registry
+        registry:
+          - {vector_store_id: vs_registry, custom_llm_provider: azure, litellm_params: {api_key: sk-registry}}
+env: {}
+compare: {ignore: []}
