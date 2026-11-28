@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+aws-lc-rs = "1.19.0"
 base64 = "0.23.1"
 betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
@@ -29,9 +30,11 @@ hex.workspace = true
 http = "1.5.0"
 indexmap = "2.14.2"
 ipnet = "2.12.2"
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 lru = "0.18.4"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 pcre2 = "0.2.11"
+pem = "4.0.0"
 regex.workspace = true
 regex-syntax = "0.8.11"
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
@@ -53,6 +56,7 @@ unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.26"
 url = "2.5.8"
 uuid = { version = "1.29.0", features = ["serde", "v4"] }
+x509-parser = "0.18.1"
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }

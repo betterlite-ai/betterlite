@@ -1,0 +1,18 @@
+task: B762
+deviations:
+  - what: 'The successful OIDC UserInfo fetch DEBUG-logs that the response arrived without the decoded identity document, where LiteLLM logs the whole document on its "Received OIDC UserInfo" line.'
+    why: The document carries the caller's identity claims and this task's review level is security; userinfo_logs_exclude_response_values proves the values stay out of the logs, while the cache-hit and fetch-start DEBUG lines are kept as they carry no values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1053-L1055
+  - what: decode_signed_jwt, this task's otherwise unbounded byte decoder, rejects an input over 1048576 bytes or nesting deeper than 64 JSON levels with a typed DecodeError, where LiteLLM hands the token to PyJWT and Python's json module with no bound.
+    why: The task bounds the specific outside-byte decoder it adds; an unbounded decoder lets one signed token exhaust memory or the stack, and signed_token_byte_depth_limits_return_401 proves both the exact limit and the value one past it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1217-L1261
+  - what: JWT_AUDIENCE and JWT_ISSUER are read once at config load into the jwt_verification section, where LiteLLM calls os.getenv on every _build_decode_kwargs, so changing a variable in a running process changes LiteLLM's next decode and not betterlite's.
+    why: betterlite reads configuration only through the config crate, and the task's own jwt_verification section is the one place these variables are read; a per-call environment read would put configuration outside the loader. An empty value is still kept as configured, so only absence disables a check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1085-L1086
+  - what: A cached OIDC UserInfo value that is not a JSON object is treated as a miss and fetched again, where LiteLLM returns any non-null cached value.
+    why: get_oidc_userinfo returns the typed identity document, and only this path writes the oidc_userinfo_<sha256> key, so a non-object can only come from a foreign writer; returning it would break the typed contract of the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1033-L1035
+  - what: The verifier closes its OIDC UserInfo handler when the verifier is dropped instead of exposing LiteLLM's explicit close(), and the production handler's close is a no-op because its HTTP client is the server's shared outbound client, where LiteLLM's close closes the handler's own httpx client.
+    why: B1100 builds the verifier over a clone of the shared proxy client; closing that clone would tear down connections other proxy paths use, so the verifier closes only handlers it owns and the server's shutdown owns the shared client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1337-L1338
+kept_bugs: []

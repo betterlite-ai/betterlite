@@ -69,6 +69,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "jwt_verification"
+path = "fuzz_targets/jwt_verification.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "oidc_token_response"
 path = "fuzz_targets/oidc_token_response.rs"
 test = false

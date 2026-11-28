@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-verification-expired-token
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        userinfo_ttl: 300.0
+        issuers: []
+        audience: litellm-proxy
+        key: {"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1rZXkiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjE1Nzc4MzY4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.N58QzUE9S0vNsCWu93JpKyY7heEg3K1-1nsziBLJqr6L0Zf8XCBrhWC3UAa87aQqnjcs6GZF6wXFDEN2nMa8tYJQHFGirwuByrUf92q98UY6VfsT8fL9O90pHISLFwATFVDQA-cTJOKX_obOGPw45gv4tKJx1UeLN7QYw4G3jv6igm7x1Lhcwgy5b8vK9a1spUJ8aMdBZr4Q989yBGoMKoEx0X16LQtISYDXJmLDyJteQhcwCR06YVGKET8piQMnX4ba4tPg3wmNBg4zPs6cp9quldpNTnbL2ZsWo0T2aRnrCY6sudW08hq0Kh397D50EhSgELShbtDqAxFoVT-eoA"
+env: {}
+compare: {ignore: []}

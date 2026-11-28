@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-verification-pem-certificate
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        userinfo_ttl: 300.0
+        issuers: []
+        audience: litellm-proxy
+        key: "-----BEGIN CERTIFICATE-----\nMIICtDCCAZygAwIBAgIUK5JgScixpm0rp6nWfqENRJeMfKgwDQYJKoZIhvcNAQEL\nBQAwEzERMA8GA1UEAwwIaXNzdWVyLWEwIBcNMjMwMTAxMDAwMDAwWhgPMjEwMDAx\nMDEwMDAwMDBaMBMxETAPBgNVBAMMCGlzc3Vlci1hMIIBIjANBgkqhkiG9w0BAQEF\nAAOCAQ8AMIIBCgKCAQEAqBV4uuD4ho4EljGE/P0Mkeu4ez/KwlFScpDLtRQDxOg8\nXmq+QcuML77h593QZ+K/rbWxHqD/VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFB\nr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l/b2NuJvKPB7\nqmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNb\nGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU/DjXvxhIoBSZH\n9b1F0mrBdejxM3rP8BZPPpcZPC/sKzMyNwxTeRJQhwIDAQABMA0GCSqGSIb3DQEB\nCwUAA4IBAQBlSKch3bpz0V/nAnbku4mTZhVgP9Dl3N0vUyYwZeLuuHa5KjiZKYm9\nkRNi4p1vcC45jcLubTC0Jyxm+DJexzrsaOxur8NkGtltfnuVofNOI6BKvdg9+Pvp\nS0hMfQ7LLJKZ+mvGOwPLE9cgKYP9jBti3uCaZrKzJMB173hxLZqghDLl3zS3hJ1z\nAiC/Z+HTYVGEYdAyYZuEft79AzInJc4TaArQg+NL6rwJPPpr5Awr6YDwa8juPPic\nJ6GV9QnHIqKWwtLSKhHn1xpQ6tQxMEYQsCObrHoyvzWZHaNmI6Mr0gKpydkum2ed\nBBTfYFLN/3Ywpt2C4/jzHax12iob/VUc\n-----END CERTIFICATE-----\n"
+        steps:
+          - op: decode
+            token: "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1rZXkiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.lmtuoI42BHAJO7eRUfyQuRDrqtqFJFvh7El5zvxfuAmysIPQOgKKwU029eH27EJxdk_-EZbcT8u-HzBaJODYSA_4YtzFcmK32xZSoGNDfXykWXAxEg_5EdGZ6f22mUnR3ANFa2-mx4RbOa0pdYXv6QVhqUL1nlDesO5NABl18M2b3xrhDF93Qi0-ebKzNg7FBbTF6wTox6Q8xUuw4jbZjxFEYe6523OPMDfBd4qRn0tEmDjzmFncEz08CkJY7gtGI30mBBt_Y_XtROy0ix9ayJOvRnH_9CTR_sgHb0EkIQGtIONz9egztReqqSxt2TrI_G8ymZpKpENjf3pC_h0Mfw"
+env: {}
+compare: {ignore: []}

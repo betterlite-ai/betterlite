@@ -1157,6 +1157,7 @@ name = "betterlite-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-lc-rs",
  "base64 0.23.1",
  "betterlite-cache",
  "betterlite-config",
@@ -1182,10 +1183,12 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "ipnet",
+ "jsonwebtoken",
  "lru",
  "mutants",
  "opentelemetry",
  "pcre2",
+ "pem",
  "redis",
  "regex",
  "regex-syntax",
@@ -1210,6 +1213,7 @@ dependencies = [
  "unicode-normalization",
  "url",
  "uuid",
+ "x509-parser",
 ]
 
 [[package]]

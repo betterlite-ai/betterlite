@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-verification-injected-litellm-team-id-stripped
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        userinfo_ttl: 300.0
+        issuers: []
+        audience: litellm-proxy
+        key: {"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS1rZXkiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5IiwiX2xpdGVsbG1fdGVhbV9pZCI6ImF0dGFja2VyLXRlYW0iLCJfbGl0ZWxsbV91c2VyX2lkIjoiYXR0YWNrZXItdXNlciIsIl9saXRlbGxtX3VzZXJfZW1haWwiOiJhdHRhY2tlckBleGFtcGxlLmNvbSIsIl9saXRlbGxtX3RlYW1faWRzIjpbImF0dGFja2VyLXRlYW0iXSwiX2xpdGVsbG1fb3JnX2lkIjoiYXR0YWNrZXItb3JnIiwiX2xpdGVsbG1fZW5kX3VzZXJfaWQiOiJhdHRhY2tlci1lbmQtdXNlciIsIl9saXRlbGxtX2p3dF9pc3N1ZXIiOiJhdHRhY2tlci1pc3N1ZXIiLCJfbGl0ZWxsbV9vdGhlciI6ImtlcHQifQ.k1blsjQbDYZ5nuP51MiQSk7qhx9X0gk-w7SDa1g_V7UzN8PAMyhNGvvhv4GPNh7gUk8meCDeRcMr64vZEyBWdRZU-B3D5mmxFgjSqKkCxrX-_qaIB2eT6rjeW8gS8OuEoiCwwBJKWmAal5dVrTjdJkBBzvHFtWCdGdA8HdZzTEeTP-FbqQdjNmQLtfZ3w2rtlPreRysC5Qbnl0blHXP4zpzi-sTM9Qu6xQWCH-G5I9s1rbxYmcoLWnUPzfYfICSIzFVxTOZZGT7e4XS2Q97DR1NJcuJ7eUkR1nIyoy_mIFHTliuQyw12TMrZaKICIGrHiDuEZM6L0oqH042n6EsgEw"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+# JWT_AUDIENCE and JWT_ISSUER are environment variables read by the jwt_verification section.
+# This seed keeps the surrounding litellm_jwtauth object valid and resolves an unrelated value from the env.
+model_list: []
+general_settings:
+  litellm_jwtauth:
+    oidc_userinfo_endpoint: "os.environ/OIDC_USERINFO_ENDPOINT"

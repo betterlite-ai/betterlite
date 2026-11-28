@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-verification-eddsa
+call:
+  jwt_verification:
+    scenarios:
+      - now: 1700000000.0
+        userinfo_ttl: 300.0
+        issuers: []
+        audience: litellm-proxy
+        key: {"kty":"OKP","kid":"ed-key","crv":"Ed25519","x":"15TENy6ilHNfx88MosTTckA_OCT10heTZeqt5v-2Xwk"}
+        steps:
+          - op: auth_jwt
+            token: "eyJhbGciOiJFZERTQSIsImtpZCI6ImVkLWtleSIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEiLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTYwMDAwMDAwMCwibmJmIjoxNjAwMDAwMDAwLCJhdWQiOiJsaXRlbGxtLXByb3h5In0.EZQniSTNjzfXSfHdSZ7RESRHKkT_HVqUXQ_i2qESusx5sOndoq9JStjk2H9_EsXm0xH4PJ5C2bGu0BdmFTtaAw"
+env: {}
+compare: {ignore: []}

@@ -165,6 +165,7 @@ fn stage_input(
         AuthBackend::AuthKeyLookup => Ok(identity_store::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
+        AuthBackend::JwtVerification => Ok(jwt_verification::stage_input(request)),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
@@ -243,6 +244,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
         StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
+        StageInput::JwtVerification(stage) => Box::pin(jwt_verification::prefetched(*stage)),
         StageInput::AuthOrgLookup(stage) => Box::pin(auth_org_lookup::prefetched(stage)),
         StageInput::AuthEndUserIdentity(stage) => {
             Box::pin(StageInput::prefetch_end_user_identity(stage))
@@ -274,7 +276,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
     };
     stage_future.await
 }
-
 fn master_key_stage(
     input: &StageInput,
     master_key: &SecretString,
