@@ -40,13 +40,14 @@ async fn consent_team_list<S>(
 where
     S: SubjectStore,
 {
-    let user = match active.load_active_user(user_id, UserRowSource::Cache).await {
-        Ok(user) => user,
-        Err(failure) => return Err(failure),
-    };
-    let Some(details) = active.store.team_details(&user.teams).await else {
-        return Err(ReloadUserFailure::Unavailable);
-    };
+    let user = active
+        .load_active_user(user_id, UserRowSource::Cache)
+        .await?;
+    let details = active
+        .store
+        .team_details(&user.teams)
+        .await
+        .ok_or(ReloadUserFailure::Unavailable)?;
     Ok(details
         .into_iter()
         .filter_map(|detail| {
@@ -108,13 +109,14 @@ where
     {
         return Err(ProxyCredentialMintFailure::NotAMember);
     }
-    let fetched = if user.teams.is_empty() {
-        Some(Vec::new())
+    let details = if user.teams.is_empty() {
+        Vec::new()
     } else {
-        active.store.team_details(&user.teams).await
-    };
-    let Some(details) = fetched else {
-        return Err(ProxyCredentialMintFailure::Unavailable);
+        active
+            .store
+            .team_details(&user.teams)
+            .await
+            .ok_or(ProxyCredentialMintFailure::Unavailable)?
     };
     if team_id.is_none() && details.iter().any(|detail| detail.team_id.is_some()) {
         return Err(ProxyCredentialMintFailure::TeamRequired);
