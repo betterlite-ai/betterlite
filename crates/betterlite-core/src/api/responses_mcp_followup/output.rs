@@ -52,7 +52,7 @@ fn output_item(kind: &str, prefix: &str, text: &str, ids: &IdSource) -> GenericR
     }
 }
 
-// the producer's ToolResult dicts as json.dumps receives them, keys in tool_call_id, result, name order
+// the producer's ToolResult fields as json.dumps receives them; betterlite's JSON maps sort keys, so name, result, tool_call_id
 fn tool_results_value(tool_results: &[McpToolResult]) -> Json {
     Json::List(
         tool_results
@@ -60,19 +60,19 @@ fn tool_results_value(tool_results: &[McpToolResult]) -> Json {
             .map(|result| {
                 Json::Object(IndexMap::from([
                     (
-                        String::from("tool_call_id"),
-                        result
-                            .tool_call_id
-                            .as_ref()
-                            .map_or(Json::Null, |id| Json::Text(id.clone())),
-                    ),
-                    (String::from("result"), Json::Text(result.result.clone())),
-                    (
                         String::from("name"),
                         result
                             .name
                             .as_ref()
                             .map_or(Json::Null, |name| Json::Text(name.clone())),
+                    ),
+                    (String::from("result"), Json::Text(result.result.clone())),
+                    (
+                        String::from("tool_call_id"),
+                        result
+                            .tool_call_id
+                            .as_ref()
+                            .map_or(Json::Null, |id| Json::Text(id.clone())),
                     ),
                 ]))
             })

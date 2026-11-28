@@ -9,4 +9,7 @@ deviations:
   - what: The resolved user_api_key_auth travels beside the request parameter map rather than inside it.
     why: The auth object is a typed principal, not a JSON call parameter; LiteLLM's kwargs merge would also copy it into the provider request, and the streaming plan keeps it where MCPEnhancedStreamingIterator reads it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1185-L1186
+  - what: The tool results text lists its keys as name, result, tool_call_id, where LiteLLM's json.dumps keeps the tool_call_id, result, name order its producer builds.
+    why: The oracle serializes a case as serde_json without preserve_order, so the result objects reach both sides with sorted keys; betterlite's typed result fields carry no received order, and its writer emits name, result, tool_call_id. A JSON reader does not depend on object key order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L898-L904
 kept_bugs: []

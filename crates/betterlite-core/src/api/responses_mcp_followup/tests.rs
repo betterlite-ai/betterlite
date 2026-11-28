@@ -648,14 +648,14 @@ fn output_element_append_order() {
                 text: Some(String::from(
                     r#"[
   {
-    "tool_call_id": "call_1",
+    "name": "get_weather",
     "result": "sunny and warm, \u4e2d",
-    "name": "get_weather"
+    "tool_call_id": "call_1"
   },
   {
-    "tool_call_id": null,
+    "name": null,
     "result": "",
-    "name": null
+    "tool_call_id": null
   }
 ]"#
                 )),
@@ -754,6 +754,7 @@ async fn provider_call_error() {
 async fn completed_response_appends_output_elements_in_place() {
     let mut input = sample_input();
     input.previous_response_id = None;
+    input.follow_up_response_id = None;
     input.tools = None;
     let provider = FakeProvider::answering(
         r#"{"id":"resp_final","created_at":2,"status":"completed","output":[{"type":"previous_item","id":"prev_final"}]}"#,

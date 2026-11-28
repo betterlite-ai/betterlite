@@ -17,8 +17,6 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 FORWARDED: Final = ("input", "model", "tools", "previous_response_id")
-ToolList = Sequence[ResponsesToolParam] | None
-EventList = list[ResponsesAPIStreamingResponse]
 
 
 class RequestSpec(TypedDict):
@@ -42,14 +40,11 @@ class _AuthMetadata(TypedDict):
     user_id: str | None
 
 
-_AuthSpec = _AuthNone | _AuthDirect | _AuthMetadata
-
-
 class RequestScenario(TypedDict):
     request: RequestSpec
     call_params: dict[str, JsonValue]
     kwargs: dict[str, JsonValue]
-    auth: NotRequired[_AuthSpec]
+    auth: NotRequired[_AuthNone | _AuthDirect | _AuthMetadata]
     mcp_tools: list[dict[str, JsonValue]]
     mcp_events: list[dict[str, JsonValue]]
     tool_server_map: dict[str, str]
@@ -148,7 +143,7 @@ def _streaming_iterator(scenario: RequestScenario) -> MCPEnhancedStreamingIterat
         model=request["model"],
         all_tools=request["tools"],
         mcp_tools_with_litellm_proxy=cast(list[Mapping[str, object]], scenario["mcp_tools"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1145-L1188
-        mcp_discovery_events=cast(EventList, scenario["mcp_events"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1145-L1188
+        mcp_discovery_events=cast(list[ResponsesAPIStreamingResponse], scenario["mcp_events"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1145-L1188
         call_params=scenario["call_params"],
         previous_response_id=request["previous_response_id"],
         tool_server_map=scenario["tool_server_map"],
@@ -226,7 +221,7 @@ def _provider_call_error(value: ProviderCallErrorCase) -> JsonValue:
             Proxy._make_follow_up_call(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1103-L1118
                 follow_up_input=value["follow_up_input"],
                 model=request["model"],
-                all_tools=cast(ToolList, request["tools"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L61
+                all_tools=cast(Sequence[ResponsesToolParam] | None, request["tools"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L61
                 response_id=request["previous_response_id"],
                 **call_params,
             )
