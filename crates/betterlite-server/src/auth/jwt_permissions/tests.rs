@@ -10,6 +10,7 @@ use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::auth_user_lookup::RbacRole;
 use betterlite_config::types::Config;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
@@ -22,6 +23,7 @@ use crate::routes;
 use crate::routes::tests::state_for;
 
 const CHAT_ROUTE: &str = "/v1/chat/completions";
+const USER_ROUTE: &str = "/user/new";
 const MASTER_KEY: &str = "secret-master-key";
 
 fn loaded() -> Config {
@@ -57,6 +59,26 @@ fn admin_rule() -> JwtPermissionRule {
     }
 }
 
+// enforce_rbac and the role mapping both come from general_settings in this config
+fn role_config() -> Config {
+    let source = format!(
+        "general_settings:\n  master_key: {MASTER_KEY}\n  litellm_jwtauth:\n    enforce_rbac: true\n  \
+         role_permissions:\n    - role: internal_user\n      models: ['gpt-4o']\n      routes: ['/user/new']\n"
+    );
+    ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(&source)
+    .unwrap()
+}
+
+fn internal_rule() -> JwtPermissionRule {
+    JwtPermissionRule {
+        role: Some(RbacRole::InternalUser),
+        ..JwtPermissionRule::default()
+    }
+}
+
 fn stage_from(rule: JwtPermissionRule, uri: &str, body: &'static str) -> JwtPermissionStageInput {
     let mut request = Request::builder()
         .method("POST")
@@ -80,21 +102,26 @@ async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static
 }
 
 // the real router with its auth chain, a handler that records whether it ran, and the rule the auth service inserts
-async fn run_request(config: &Config, rule: JwtPermissionRule) -> (StatusCode, String, bool) {
+async fn run_request(
+    config: &Config,
+    rule: JwtPermissionRule,
+    route: &str,
+    body: &'static str,
+) -> (StatusCode, String, bool) {
     let application = routes::router(
         state_for(config),
         Arc::new(AtomicBool::new(false)),
-        Router::new().route(CHAT_ROUTE, post(mark_called)),
+        Router::new().route(route, post(mark_called)),
         Router::new(),
     )
     .layer(Extension(Arc::new(rule)));
     let reached = Arc::new(AtomicBool::new(false));
     let mut request = Request::builder()
         .method("POST")
-        .uri(CHAT_ROUTE)
+        .uri(route)
         .header(header::AUTHORIZATION, "Bearer secret-master-key")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(r#"{"model":"gpt-4o"}"#))
+        .body(Body::from(body))
         .unwrap();
     request.extensions_mut().insert(Arc::clone(&reached));
     let response = application.oneshot(request).await.unwrap();
@@ -140,10 +167,41 @@ fn stage_is_registered() {
 #[tokio::test]
 async fn failure_stops_downstream() {
     let configuration = loaded();
-    let (status, body, reached) = run_request(&configuration, admin_rule()).await;
+    let (status, body, reached) = run_request(
+        &configuration,
+        admin_rule(),
+        CHAT_ROUTE,
+        r#"{"model":"gpt-4o"}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
     assert!(body.contains("\"type\":\"auth_error\""), "{body}");
     assert!(body.contains("\"param\":\"None\""), "{body}");
     assert!(body.contains("\"code\":\"401\""), "{body}");
+    assert!(!reached);
+}
+
+// the configured enforce_rbac, role mapping, request model and route all reach the decision
+#[tokio::test]
+async fn role_permissions_from_config() {
+    let configuration = role_config();
+    let (status, body, reached) = run_request(
+        &configuration,
+        internal_rule(),
+        USER_ROUTE,
+        r#"{"model":"gpt-4o"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+    let (status, body, reached) = run_request(
+        &configuration,
+        internal_rule(),
+        USER_ROUTE,
+        r#"{"model":"gpt-4o-mini"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(body.contains("gpt-4o-mini"), "{body}");
     assert!(!reached);
 }

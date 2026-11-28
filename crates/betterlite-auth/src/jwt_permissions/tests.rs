@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_config::sections::auth_user_lookup::RbacRole;
+use betterlite_config::sections::auth_user_lookup::{RbacRole, RoleBasedPermissions};
 use betterlite_config::sections::jwt_settings::Settings;
 use betterlite_config::sections::jwt_settings::records::ScopeMapping;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -8,7 +8,9 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::ExposeSecret as _;
 
 use super::admin::{AdminIdentity, check_admin_access};
-use super::role::{can_rbac_role_call_model, can_rbac_role_call_route, check_rbac_role};
+use super::role::{
+    can_rbac_role_call_model, can_rbac_role_call_route, check_rbac_role, role_permissions,
+};
 use super::scope::check_scope_based_access;
 use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use crate::auth_user_lookup::roles::RolePermissions;
@@ -272,6 +274,33 @@ fn role_model_denial() {
     let failure =
         can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("gpt-4o-mini"))
             .unwrap_err();
+    assert_model_denial(&failure);
+}
+
+// general_settings.role_permissions reaches the checks through the same conversion the server uses
+#[test]
+fn configured_role_permissions() {
+    let entries: Vec<RoleBasedPermissions> = serde_json::from_str(
+        r#"[{"role":"internal_user","models":["gpt-4o"],"routes":["/user/info"]}]"#,
+    )
+    .unwrap();
+    let permissions = role_permissions(Some(&entries)).unwrap();
+    check_rbac_role(
+        &enforced(),
+        &permissions,
+        Some(RbacRole::InternalUser),
+        Some("gpt-4o"),
+        "/user/info",
+    )
+    .unwrap();
+    let failure = check_rbac_role(
+        &enforced(),
+        &permissions,
+        Some(RbacRole::InternalUser),
+        Some("gpt-4o-mini"),
+        "/user/info",
+    )
+    .unwrap_err();
     assert_model_denial(&failure);
 }
 
