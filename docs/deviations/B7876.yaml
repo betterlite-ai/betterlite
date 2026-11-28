@@ -34,6 +34,9 @@ kept_bugs:
   - what: retrieve, list, update and delete accept extra_query and never send it to the provider.
     why: LiteLLM's signatures carry the argument and no handler forwards it, so a working setup may pass it and get no error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L547
+  - what: retrieve, list and delete accept extra_body and never send it to the provider, while update merges it into the request body as LiteLLM does.
+    why: LiteLLM's retrieve, list and delete handlers take extra_body and send their GET and DELETE requests without it, so a working setup may pass it and get no error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10280
   - what: retrieve and list return the reply body for a provider error status instead of raising, because LiteLLM's GET handlers never call raise_for_status, while update and delete raise the mapped exception.
     why: A working LiteLLM setup can observe the returned body, so betterlite copies the GET handlers instead of raising where the reference does not.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10344
