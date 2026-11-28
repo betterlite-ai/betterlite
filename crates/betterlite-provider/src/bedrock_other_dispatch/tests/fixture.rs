@@ -28,7 +28,9 @@ use crate::bedrock_other_dispatch::test_support::client::{FixtureClient, Replies
 use crate::bedrock_other_dispatch::test_support::factory::{ClientCall, Factory};
 use crate::bedrock_other_dispatch::test_support::record::{Recorded, Seen};
 use crate::bedrock_other_dispatch::test_support::source::Source;
-use crate::bedrock_other_dispatch::test_support::{DiscardingSink, Prepared, prepost_env};
+use crate::bedrock_other_dispatch::test_support::{
+    Capture, DiscardingSink, Prepared, capturing_env,
+};
 use crate::operation::{OperationRequest, OperationResult};
 
 pub(crate) type Handler = BedrockCountTokensHandler<FixtureClient, Source>;
@@ -70,7 +72,7 @@ impl Fixture {
     }
 }
 
-// What one dispatch observed: its outcome, every posted request, and the logging state it wrote
+// What one dispatch observed: its outcome, every posted request, the phases it logged, and the logging state it wrote
 pub(crate) struct Outcome<E>
 where
     E: StdError + 'static,
@@ -79,6 +81,7 @@ where
     pub(crate) requests: Vec<Recorded>,
     pub(crate) calls: Vec<ClientCall>,
     pub(crate) regions: Vec<String>,
+    pub(crate) phases: Vec<String>,
     pub(crate) state: LoggingState,
 }
 
@@ -249,7 +252,9 @@ where
 {
     let mut prepared = Prepared::new().expect("the fixture dependencies build");
     let sink = DiscardingSink;
-    let env = prepost_env(&prepared.state, &prepared.redactor, &sink);
+    let capture = Capture::default();
+    let logger = |details: &Json| capture.record(details);
+    let env = capturing_env(&prepared.state, &prepared.redactor, &sink, &logger);
     let services = Services {
         secrets: &prepared.secrets,
         region_worker: &prepared.workers,
@@ -283,6 +288,7 @@ where
         requests: fixture.factory.seen.requests(),
         calls: fixture.factory.calls(),
         regions: fixture.source.regions(),
+        phases: capture.phases(),
         state: prepared.state,
     }
 }

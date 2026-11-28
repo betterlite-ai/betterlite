@@ -162,6 +162,11 @@ fn agent_runtime_reply(outcome: &Outcome<CallError>) {
         "an absent usage takes the default search unit"
     );
     assert!(outcome.post_call());
+    assert_eq!(
+        outcome.phases,
+        [String::from("pre_api_call"), String::from("post_api_call")],
+        "the sync rerank logs its request and its reply"
+    );
 }
 
 // top_n picks the result count and both absent and zero fall back to the document count
@@ -305,6 +310,11 @@ async fn async_rerank() {
     assert!(
         !outcome.post_call(),
         "the async rerank does not log the raw reply"
+    );
+    assert_eq!(
+        outcome.phases,
+        [String::from("pre_api_call")],
+        "the async rerank logs only its request"
     );
     let results = outcome
         .rerank()

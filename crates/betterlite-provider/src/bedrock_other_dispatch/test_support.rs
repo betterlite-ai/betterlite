@@ -210,29 +210,7 @@ impl Prepared {
     }
 }
 
-#[must_use]
-pub fn prepost_env<'env>(
-    state: &LoggingState,
-    redactor: &'env Redactor,
-    sink: &'env DiscardingSink,
-) -> PrePostEnv<'env> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: state.start_time,
-    }
-}
-
-// The same environment with a logger callback, so a row can compare the phases a family logged
+// The environment every fixture runs with, and the logger callback that lets a row compare the phases a family logged
 #[must_use]
 pub fn capturing_env<'env>(
     state: &LoggingState,

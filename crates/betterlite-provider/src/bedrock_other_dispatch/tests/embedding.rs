@@ -167,6 +167,11 @@ async fn titan_g1_vector() {
         "the non-async embedding leaf asks for the sync client"
     );
     assert!(g1_outcome.post_call(), "the leaf logs its reply");
+    assert_eq!(
+        g1_outcome.phases,
+        [String::from("pre_api_call"), String::from("post_api_call")],
+        "one input logs its request and its reply"
+    );
 }
 
 // Titan V2 answers an encoded binary vector when it is asked for one
@@ -281,6 +286,11 @@ async fn cohere_input_type() {
     assert_eq!(legacy_floats(&reply.data[1].embedding), [0.3_f64, 0.4_f64]);
     assert_eq!(reply.usage.prompt_tokens, 7);
     assert_eq!(reply.usage.total_tokens, 7);
+    assert_eq!(
+        outcome.phases,
+        [String::from("pre_api_call")],
+        "the legacy sync transport logs its request and not its reply"
+    );
 }
 
 // Nova embeds text with its schema version, purpose and the default dimension
@@ -416,6 +426,11 @@ async fn async_status() {
     assert!(optional.is_empty());
     assert!(outcome.pre_call(), "the status lookup logs its request");
     assert!(outcome.post_call(), "the status lookup logs its reply");
+    assert_eq!(
+        outcome.phases,
+        [String::from("pre_api_call"), String::from("post_api_call")],
+        "the dispatcher's own context records both status phases"
+    );
 }
 
 // The caller's extra headers reach the signed embedding request
