@@ -1,0 +1,12 @@
+kind: helper
+name: reasoning-input-item
+call:
+  b10153:
+    state: armed
+    payload:
+      input:
+        - type: reasoning
+          id: rs_1
+          summary: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: vector-file-resolution-hints-permissions
+call:
+  vector_file_resolution:
+    calls:
+      - function: model_hint_precedence
+        data: {model: m1}
+        caller: {team_id: team-1}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: provider_and_index_permissions
+        data: {custom_llm_provider: openai}
+        vector_store_id: vs_allowed
+        caller:
+          metadata:
+            allowed_vector_store_indexes:
+              - {index_name: vs_allowed, index_permissions: [read]}
+env: {}
+compare: {ignore: []}

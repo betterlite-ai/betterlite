@@ -71,6 +71,7 @@ use crate::auth::auth_model_patterns::{
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
 use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
@@ -165,6 +166,7 @@ fn stage_input(
         TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => org_route_stage_input(request, authenticated, body),
+        AuthBackend::AuthRoutePolicy => route_policy_stage_input(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
@@ -203,9 +205,7 @@ fn model_pattern_input(
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
     let stage = model_stage_input(request, context.clone(), resolver);
-    if backend == AuthBackend::AuthRequestModels {
-        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-    }
+    // the request model stage only resolves, so it runs in the shared input builder
     let requested = match resolve(&stage) {
         Ok(requested) => requested,
         Err(error) => {
@@ -213,6 +213,9 @@ fn model_pattern_input(
             return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
     };
+    if backend == AuthBackend::AuthRequestModels {
+        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+    }
     let rule = rule_for_request(request);
     let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
@@ -257,7 +260,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
-        | StageInput::AuthPolicySupport(_)) => Ok(other),
+        | StageInput::AuthPolicySupport(_)
+        | StageInput::AuthRoutePolicy(_)) => Ok(other),
     }
 }
 

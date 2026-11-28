@@ -1,0 +1,5 @@
+kind: helper
+name: "gateway-challenge-invalid-token"
+call: {"b7490":{"function":"gateway_challenge","route":"/mcp","base_url":"http://testserver/","path":"/mcp","server_root_path":"/","invalid_token":true}}
+env: {}
+compare: {"ignore":[]}
