@@ -131,36 +131,20 @@ fn assert_non_compact_edits() {
     );
 }
 
-// an edit with no string type predicts nothing, and an OpenAI list without compaction maps to no edits
+// an edit with no string type, a list without compaction and a spec the normalizer refuses predict no edits
 fn assert_untyped_edits() {
-    assert_eq!(
-        prediction(Some(&parse(r#"{"edits":[{}]}"#)), None),
-        (false, false)
-    );
-    assert_eq!(
-        prediction(Some(&parse(r#"{"edits":[{"type":7}]}"#)), None),
-        (false, false)
-    );
-    assert_eq!(
-        prediction(
-            Some(&parse(r#"[{"type":"clear_tool_uses_20250919"}]"#)),
-            None
-        ),
-        (false, false)
-    );
+    for spec in [
+        r#"{"edits":[{}]}"#,
+        r#"{"edits":[{"type":7}]}"#,
+        r#"[{"type":"clear_tool_uses_20250919"}]"#,
+        "[7]",
+        r#"[{"type":"compaction","compact_threshold":1e400}]"#,
+    ] {
+        assert_eq!(prediction(Some(&parse(spec)), None), (false, false));
+    }
+    // a compaction entry ahead of a malformed one still maps to one edit
     assert_eq!(
         prediction(Some(&parse(r#"[{"type":"compaction"},7]"#)), None),
         (true, false)
-    );
-    assert_eq!(prediction(Some(&parse("[7]")), None), (false, false));
-    // a spec the normalizer refuses is swallowed to no edits, so the wrapper falls back to history
-    assert_eq!(
-        prediction(
-            Some(&parse(
-                r#"[{"type":"compaction","compact_threshold":1e400}]"#
-            )),
-            None
-        ),
-        (false, false)
     );
 }
