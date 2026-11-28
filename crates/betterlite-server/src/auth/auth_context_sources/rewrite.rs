@@ -21,7 +21,7 @@ use secrecy::SecretString;
 
 use crate::api::request_body::read_request_body;
 use crate::auth::auth_errors::FailureContext;
-use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, dispatch};
+use crate::auth::auth_identity::{AuthBackend, StageFailure, dispatch};
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
 use crate::auth::jwt_keys;
@@ -71,8 +71,15 @@ pub(crate) async fn prepare(
     if !is_llm_api_route(&RouteValue::Text(request.uri().path())) {
         return Ok(request);
     }
+    // The JWT key fetch is the stage loop's first stage, and its dispatch only yields a placeholder the key lookup replaces.
+    let early = match prefetch_stage(jwt_keys::stage_input(&request)).await {
+        Ok(_) => prefetch_stage(key_lookup_stage_input(&request))
+            .await
+            .and_then(|input| dispatch(AuthBackend::AuthKeyLookup, &input, master_key)),
+        Err(failure) => Err(failure),
+    };
     // Authenticate before buffering with the same stages the stage loop runs first, and let the lookup stage forward this identity.
-    let context = match early_context(&request, master_key).await {
+    let context = match early {
         Ok(context) => context,
         // the stage loop answers its failures through the auth error hook, so this early lookup does the same
         Err(failure) => {
@@ -90,18 +97,6 @@ pub(crate) async fn prepare(
     };
     buffered(&mut request, &state, failure_response).await?;
     Ok(request)
-}
-
-// The JWT key fetch is the stage loop's first stage, and its dispatch only yields a placeholder the key lookup replaces.
-async fn early_context(
-    request: &Request<Body>,
-    master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
-    if let Err(failure) = prefetch_stage(jwt_keys::stage_input(request)).await {
-        return Err(failure);
-    }
-    let input = prefetch_stage(key_lookup_stage_input(request)).await?;
-    dispatch(AuthBackend::AuthKeyLookup, &input, master_key)
 }
 
 async fn buffered(
