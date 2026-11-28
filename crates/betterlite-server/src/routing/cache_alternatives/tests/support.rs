@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::{Future, pending, ready};
-use std::str::FromStr as _;
+use std::str::{FromStr as _, from_utf8};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -457,7 +457,10 @@ impl PriceLookup for NoLimits {
     }
 }
 
-// Counts by shape, as LiteLLM's _Counts does: the full body carries max_tokens, the prefix body does not.
+// The question the fixture appends after the cache breakpoint; the prefix body cuts it off.
+const FULL_PROMPT_TEXT: &str = "What is 2 + 2?";
+
+// Counts by shape: the full prompt, the one carrying the question, is the total and the cut prefix is the prefix.
 pub(super) struct ScriptedTransport {
     pub(super) total: Option<i64>,
     pub(super) prefix: Option<i64>,
@@ -481,14 +484,14 @@ impl ScriptedTransport {
     }
 }
 
-// the scripted transport answers the total only when the request carries max_tokens, as its counts do
+// the scripted transport answers the total for the full prompt and the prefix for the body cut at the breakpoint
 fn counted_tokens(bytes: &[u8], total: Option<i64>, prefix: Option<i64>) -> Option<i64> {
-    let fields = serde_json::from_slice::<JsonObject>(bytes).ok()?;
-    if fields.contains_key("max_tokens") {
+    let body = from_utf8(bytes).ok()?;
+    Some(if body.contains(FULL_PROMPT_TEXT) {
         total
     } else {
         prefix
-    }
+    })
 }
 
 impl CountTokensTransport for ScriptedTransport {
