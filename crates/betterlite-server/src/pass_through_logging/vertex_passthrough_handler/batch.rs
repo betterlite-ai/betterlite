@@ -18,7 +18,7 @@ pub(super) fn batch_prediction_jobs(
     input: VertexPassthroughInput<'_>,
 ) -> Result<HandlerOutcome, VertexPassthroughError> {
     let request_metadata = request_metadata(&input.kwargs)?;
-    let logged = logger.batch_prediction_jobs_handler(
+    let written = logger.batch_prediction_jobs_handler(
         VertexBatchInput {
             status_code: input.status.as_u16(),
             body: input.response_body,
@@ -28,10 +28,10 @@ pub(super) fn batch_prediction_jobs(
         },
         input.call_log,
     );
-    let record = batch_record(&logged.result)?;
+    let record = batch_record(&written.result)?;
     Ok(HandlerOutcome {
         result: Some(PassThroughResponse::VertexBatchRecord(record)),
-        kwargs: batch_kwargs(input.kwargs, &logged.kwargs),
+        kwargs: batch_kwargs(input.kwargs, &written.kwargs),
     })
 }
 

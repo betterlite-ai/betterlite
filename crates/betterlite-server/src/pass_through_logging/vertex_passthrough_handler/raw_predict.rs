@@ -5,7 +5,6 @@ use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
-use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use betterlite_vertex::partner_response_config::{
@@ -52,7 +51,7 @@ struct PartnerReply<'reply> {
     status: u16,
     headers: &'reply HeaderMap,
     body: &'reply [u8],
-    now: i64,
+    now: DateTime<FixedOffset>,
     call_log: &'reply mut LoggingState,
 }
 
@@ -81,7 +80,7 @@ pub(super) fn raw_predict(
                 status: input.status.as_u16(),
                 headers: input.response_headers,
                 body: input.response_body,
-                now: input.end_time.timestamp(),
+                now: input.end_time,
                 call_log: input.call_log,
             },
         )?,
@@ -121,7 +120,7 @@ fn partner_body(
                 optional_params: &optional_params,
                 litellm_params: &litellm_params,
                 json_mode: None,
-                now: reply.now,
+                now: reply.now.timestamp(),
                 identifier: Uuid::new_v4,
                 disable_add_prefix_to_prompt: false,
                 state: reply.call_log,
@@ -205,7 +204,7 @@ pub(super) fn completion_response(body: &Json) -> CompletionResponse {
     };
     let model = match fields.get("model") {
         Some(Json::Text(name)) if !name.is_empty() => Some(name.clone()),
-        None | Some(Json::Null) | Some(Json::Text(_)) => None,
+        None | Some(Json::Null | Json::Text(_)) => None,
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => None,
     };
     let usage = match fields.get("usage") {

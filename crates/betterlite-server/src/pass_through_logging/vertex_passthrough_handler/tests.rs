@@ -855,7 +855,9 @@ fn error_search_body_is_not_an_object() {
     let error = passthrough
         .vertex_passthrough_handler(input(&mut fixture))
         .expect_err("a list is not a search page");
-    let VertexPassthroughError::Search(VertexDiscoverySearchError::Provider(provider)) = error
+    let VertexPassthroughError::Search {
+        source: VertexDiscoverySearchError::Provider(provider),
+    } = error
     else {
         panic!("a body that does not decode is a provider error");
     };
