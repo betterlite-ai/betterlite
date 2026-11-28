@@ -51,6 +51,25 @@ fn undefined_entity_is_a_parse_failure() {
 }
 
 #[test]
+fn declared_entity_is_not_expanded() {
+    // A DOCTYPE's internal declarations are ignored, so the reference reaches unescape unknown.
+    let xml = "<!DOCTYPE rss [<!ENTITY e \"x\">]>\
+        <rss><channel><item><title>A &e; B</title>\
+        <link>https://x</link></item></channel></rss>";
+    let error = parse_rss_to_posts(xml, 1, 64).unwrap_err();
+    assert!(matches!(error, ParseFailure::Escape(_)));
+}
+
+#[test]
+fn invalid_character_reference_is_accepted() {
+    // quick-xml resolves a numeric reference to any Rust char, not to XML 1.0's Char production.
+    let xml = "<rss><channel><item><title>A&#8;B</title>\
+        <link>https://x</link></item></channel></rss>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, vec![post("A\u{8}B", "", "", "https://x")]);
+}
+
+#[test]
 fn empty_self_closing_fields_are_present_but_blank() {
     let xml = "<rss><channel><item><title/><link/><description/><pubDate/></item></channel></rss>";
     let posts = parse_rss_to_posts(xml, 1, 64).unwrap();

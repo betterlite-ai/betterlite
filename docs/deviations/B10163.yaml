@@ -6,4 +6,10 @@ deviations:
   - what: A feed that uses a namespace prefix it never declares parses instead of failing, so betterlite returns its posts where LiteLLM's ElementTree raises ParseError("unbound prefix") and falls back to the local posts.
     why: quick-xml does no namespace resolution, and the moved parser only asks whether a name contains ':' or inherits a non-empty default xmlns. Refusing an unbound prefix would need a namespace-binding check the task does not ask for, and no blog_feed case sends a prefixed name.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L75
+  - what: A feed whose internal DTD declares an entity, such as <!ENTITY e "x"> used as &e; in a title, fails the parse, so the endpoint serves the bundled posts where LiteLLM's ElementTree expands the declaration and returns the feed's posts.
+    why: Bounded parsing must not expand declarations an upstream endpoint supplies; Event::DocType is ignored and the reference reaches unescape as an unknown entity, and the rejection is not claimed as Python equivalence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L75
+  - what: A character reference such as &#8; that XML 1.0's Char production excludes is accepted and kept in the field's text, where ElementTree's ET.fromstring raises ParseError and LiteLLM serves the bundled posts.
+    why: quick-xml resolves a numeric reference to any Rust char, not to XML 1.0's Char production, so U+0008 and its kin survive; refusing them would need a range check the moved parser does not make.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L75
 kept_bugs: []
