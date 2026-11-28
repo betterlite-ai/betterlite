@@ -10,7 +10,7 @@ use betterlite_reporting::bug_report::record::{Deployment, Surface};
 use betterlite_reporting::safe_proxy_config::{ProxyCall, ProxyConfigSnapshot};
 
 use super::BugReportNotices;
-use crate::api::proxy_endpoint_support::{FailureFacts, ProxyDiagnostics};
+use crate::api::proxy_endpoint_support::{FailureFacts, ProxyDiagnostics as _};
 
 const CONFIG_LINES: [&str; 2] = [
     "general_settings.store_model_in_db = true",
@@ -61,21 +61,21 @@ fn call() -> ProxyCall {
 #[case::internal_server_error(Some(500))]
 #[case::bad_request(Some(400))]
 fn report_answers_none_when_the_failure_carries_a_status(#[case] status_code: Option<u16>) {
-    let notices = notices(true, missing_docker());
-    assert_eq!(notices.report(&failure(status_code), call()), None);
+    let diagnostics = notices(true, missing_docker());
+    assert_eq!(diagnostics.report(&failure(status_code), call()), None);
 }
 
 #[test]
 fn report_answers_none_when_the_link_is_disabled() {
-    let notices = notices(false, missing_docker());
-    assert_eq!(notices.report(&failure(None), call()), None);
+    let diagnostics = notices(false, missing_docker());
+    assert_eq!(diagnostics.report(&failure(None), call()), None);
 }
 
 #[test]
 fn report_builds_the_proxy_record_from_the_failure_and_the_snapshot() {
     let (facts, call_line) = (failure(None), line!());
-    let notices = notices(true, missing_docker());
-    let report = notices.report(&facts, call()).unwrap();
+    let diagnostics = notices(true, missing_docker());
+    let report = diagnostics.report(&facts, call()).unwrap();
     assert_eq!(report.environment.surface, Surface::Proxy);
     assert_eq!(report.environment.deployment, None);
     assert_eq!(report.environment.config_lines, CONFIG_LINES);
@@ -98,8 +98,8 @@ fn report_reads_the_deployment_from_the_dockerenv_path(
     #[case] dockerenv: PathBuf,
     #[case] deployment: Option<Deployment>,
 ) {
-    let notices = notices(true, dockerenv);
-    let report = notices
+    let diagnostics = notices(true, dockerenv);
+    let report = diagnostics
         .report(&failure(None), ProxyCall::default())
         .unwrap();
     assert_eq!(report.environment.deployment, deployment);
@@ -108,22 +108,21 @@ fn report_reads_the_deployment_from_the_dockerenv_path(
 #[test]
 fn the_trait_impl_answers_the_notice_with_no_call_fields() {
     let (facts, call_line) = (failure(None), line!());
-    let notices = notices(true, missing_docker());
-    let report = notices.report(&facts, ProxyCall::default()).unwrap();
-    assert_eq!(
-        (report.call_type, report.custom_llm_provider, report.stream),
-        (None, None, None)
-    );
+    let diagnostics = notices(true, missing_docker());
+    let report = diagnostics.report(&facts, ProxyCall::default()).unwrap();
+    assert_eq!(report.call_type, None);
+    assert_eq!(report.custom_llm_provider, None);
+    assert_eq!(report.stream, None);
     assert_eq!(report.litellm_frames, [format!("{}:{call_line}", file!())]);
-    let notice = notices.bug_report_notice(&facts).unwrap();
+    let notice = diagnostics.bug_report_notice(&facts).unwrap();
     assert!(notice.starts_with(NOTICE_PREFIX), "{notice}");
     assert_eq!(notice, bug_report_notice(&report));
 }
 
 #[test]
 fn the_trait_impl_answers_none_where_report_does() {
-    let notices = notices(true, missing_docker());
-    assert_eq!(notices.bug_report_notice(&failure(Some(500))), None);
+    let diagnostics = notices(true, missing_docker());
+    assert_eq!(diagnostics.bug_report_notice(&failure(Some(500))), None);
     let disabled = notices(false, missing_docker());
     assert_eq!(disabled.bug_report_notice(&failure(None)), None);
 }

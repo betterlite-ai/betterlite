@@ -14,7 +14,7 @@ use super::{known_proxy_route, known_proxy_routes};
 #[case::mcp_management("/v1/mcp/sessions")]
 #[case::agent_inference("/a2a/{agent_id}/message/send")]
 #[case::agent_management("/v1/agents/make_public")]
-#[case::google("/v1beta/models/{model_name:path}:countTokens")]
+#[case::google("/interactions")]
 #[case::apply_guardrail("/guardrails/apply_guardrail")]
 #[case::model_info("/model_group/info")]
 #[case::info("/key/health")]

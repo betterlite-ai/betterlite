@@ -12,7 +12,7 @@ fn convert(variables: &[(&str, &str)]) -> Result<bool, String> {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    let raw: Raw = serde_saphyr::from_str("{}").unwrap();
+    let raw: Raw = serde_saphyr::from_str("{}").map_err(|error| error.to_string())?;
     raw.convert(&environment)
         .map(|settings| settings.disabled)
         .map_err(|error| error.to_string())
