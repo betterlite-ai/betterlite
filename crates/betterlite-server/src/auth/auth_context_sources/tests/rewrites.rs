@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -8,18 +9,25 @@ use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
+use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_context_sources::claude::RouterNames as _;
 use betterlite_auth::auth_context_sources::router_settings::TeamRouterSettings;
 use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_auth::auth_model_patterns::grant::ModelGrantPattern;
 use betterlite_auth::auth_team_lookup::error::TeamLookupError;
+use betterlite_auth::jwt_keys::cache::KeyCache;
+use betterlite_auth::jwt_keys::clock::Clock;
+use betterlite_auth::jwt_keys::http::{FetchError, HttpReply, JwksHttp};
+use betterlite_auth::jwt_keys::resolver::JwksResolver;
+use betterlite_auth::jwt_keys::settings::JwtKeySettings;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::proxy_error_types::ModelAccessObject;
+use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
@@ -228,6 +236,87 @@ async fn virtual_key_on_llm_route_authenticates_before_rewrite() {
         to_bytes(response.into_body(), 4096).await.unwrap().as_ref(),
         br#"{"model":"group-one","user":"kept"}"#
     );
+}
+
+const SIGNED_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiJ1c2VyLTEifQ.c2ln";
+
+struct NoKeys;
+
+#[async_trait]
+impl KeyCache for NoKeys {
+    async fn read_value(&self, _key: &str) -> Result<Option<Json>, AuthCacheError> {
+        Ok(None)
+    }
+
+    async fn write_value(
+        &self,
+        _key: &str,
+        _value: &Json,
+        _ttl_seconds: f64,
+    ) -> Result<(), AuthCacheError> {
+        Ok(())
+    }
+}
+
+struct UnreachableKeys;
+
+#[async_trait]
+impl JwksHttp for UnreachableKeys {
+    async fn get(&self, _url: &str) -> Result<HttpReply, FetchError> {
+        Err(FetchError::Transport(HttpError::Timeout))
+    }
+}
+
+struct FrozenClock;
+
+#[async_trait]
+impl Clock for FrozenClock {
+    fn now(&self) -> f64 {
+        1_700_000_000.0
+    }
+
+    async fn sleep(&self, _delay: Duration) {}
+}
+
+fn unreachable_resolver() -> Arc<JwksResolver> {
+    let settings = JwtKeySettings::new(
+        Some("https://idp.example.com/jwks".to_owned()),
+        600.0,
+        3_600.0,
+        None,
+        None,
+    )
+    .unwrap();
+    Arc::new(JwksResolver::new(
+        Arc::new(settings),
+        Arc::new(NoKeys),
+        Arc::new(UnreachableKeys),
+        Arc::new(FrozenClock),
+    ))
+}
+
+// prepare fetches the JWT signing key before its key lookup, so an unavailable IdP answers 503 instead of the lookup's 400.
+#[tokio::test]
+async fn unavailable_signing_key_answers_before_the_early_lookup() {
+    let app = routes::router(
+        state_for(&model_config()),
+        Arc::new(AtomicBool::new(false)),
+        Router::new().route("/v1/chat/completions", post(echo)),
+        Router::new(),
+    );
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(header::AUTHORIZATION, format!("Bearer {SIGNED_TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .extension(unreachable_resolver())
+        .body(Body::from(r#"{"model":"group-one"}"#))
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), 4096).await.unwrap();
+    let text = String::from_utf8(body.to_vec()).unwrap();
+    assert!(text.contains("auth_provider_unavailable"), "{text}");
 }
 
 fn model_config() -> Config {
