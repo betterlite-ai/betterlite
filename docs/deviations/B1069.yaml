@@ -36,10 +36,10 @@ deviations:
       catch-all does not log it, as LiteLLM rethrows its own HTTPException without logging.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L339-L341
   - what: >-
-      On POST /vector_store/new a litellm_params drop_params text of y, t, n or f, in any case, is stored
-      and answered as sent. LiteLLM's coerce_drop_params normalizes the text with pydantic's
-      TypeAdapter(bool), which accepts those single-letter spellings, so the same input stores and answers
-      true or false.
+      On POST /vector_store/new a litellm_params drop_params text of y, t, n or f, in any case and with
+      surrounding whitespace, is stored and answered as sent. LiteLLM's coerce_drop_params normalizes the
+      text with pydantic's TypeAdapter(bool), which accepts those single-letter spellings, so the same
+      input stores and answers true or false.
     why: >-
       B206's shared text-to-bool parser owns the accepted spellings (true, false, 1, 0, yes, no, on, off),
       and docs/compatibility.md gives every text flag that one parser. A text neither parser reads stays
