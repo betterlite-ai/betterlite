@@ -1,14 +1,15 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use async_trait::async_trait;
 use betterlite_config::sections::user_url_policy::Settings as UserUrlPolicy;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_openai::gigachat_chat::config::{GigachatBearer, GigachatImageUploader as _};
+use betterlite_openai::gigachat_chat::config::{GigachatBearer, GigachatImageUploader};
 use betterlite_openai::gigachat_files::{GigachatFileUploader, GigachatFilesConfig};
 use betterlite_openai::gigachat_utils::UuidIds;
 use secrecy::ExposeSecret as _;
 
-use crate::regional_host_dispatch::gigachat::{GigachatTokenBearer, image_downloader};
+use crate::regional_host_dispatch::gigachat::{GigachatTokenBearer, chat_config, image_downloader};
 
 use super::support::{FailingTokens, FakeTokens, FakeTransport, proxy_policy, secret, secret_text};
 
@@ -94,4 +95,33 @@ fn the_image_downloader_reads_a_policy_with_validation_on() {
     let (client, policy) = outbound_client();
     let downloader = image_downloader(&client, &policy);
     assert!(downloader.urls.validation);
+}
+
+struct RecordingUploader;
+
+#[async_trait]
+impl GigachatImageUploader for RecordingUploader {
+    async fn upload(&self, _image_url: &str) -> Option<String> {
+        Some(String::from("file-from-uploader"))
+    }
+}
+
+// the chat path gets B8177's config with the token adapter and the uploader the caller keeps alive
+#[tokio::test]
+async fn chat_config_carries_the_bearer_and_the_uploader() {
+    let bearer = GigachatTokenBearer {
+        tokens: Arc::new(FakeTokens::new()),
+    };
+    let uploader = RecordingUploader;
+    let config = chat_config(&bearer, &uploader);
+    let token = config
+        .bearer
+        .access_token(None)
+        .await
+        .expect("the bearer answers");
+    assert_eq!(token.expose_secret(), "token-1");
+    assert_eq!(
+        config.uploader.upload(IMAGE).await,
+        Some(String::from("file-from-uploader"))
+    );
 }
