@@ -521,8 +521,8 @@ fn audio_is_streamed_in_3200_byte_slices(#[case] samples: usize, #[case] expecte
 #[rstest]
 #[case::timeout_kwarg("timeout", "30.0", None)]
 #[case::variadic("variadic", "30.0", Some(r#"["timeout"]"#))]
-#[case::plain("plain", "absent", None)]
-#[case::broken("broken", "absent", None)]
+#[case::plain("plain", r#""absent""#, None)]
+#[case::broken("broken", r#""absent""#, None)]
 fn timeout_is_sent_only_when_the_generator_takes_it(
     #[case] kind: &str,
     #[case] expected: &str,
@@ -580,6 +580,14 @@ fn provider_failures_map_through_the_grpc_table() {
         attribute_error.to_string(),
         "NVIDIA Riva error: attribute results failed"
     );
+    let timing_error = failure(
+        &host,
+        &[],
+        None,
+        r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": "w", "start_time": "x"}]}]}]}]"#,
+    );
+    assert!(matches!(timing_error, RivaCallError::Provider(_)));
+    assert_eq!(timing_error.status_code(), Some(500));
 }
 
 #[test]
@@ -673,7 +681,7 @@ fn malformed_stream_values_are_rejected() {
         &host,
         &[],
         None,
-        r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": "w", "start_time": "x"}]}]}]}]"#,
+        r#"[{"results": [{"is_final": true, "alternatives": [{"transcript": "x", "words": [{"word": "w", "start_time": 9223372036854775808}]}]}]}]"#,
     );
     assert!(matches!(timing_error, RivaCallError::Malformed { .. }));
 }
@@ -714,7 +722,7 @@ fn a_missing_client_returns_the_install_hint() {
     stage(&host, FINAL_SPEC);
     host.attach(|py| {
         let registered = modules(py);
-        drop(registered.del_item("riva"));
+        // the venv has the real riva package, so the stub parent keeps riva.client missing
         drop(registered.del_item("riva.client"));
         drop(registered.del_item("riva.client.proto"));
         drop(registered.del_item("riva.client.proto.riva_asr_pb2"));

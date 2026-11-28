@@ -150,8 +150,11 @@ class Auth:
     def __init__(self, *args, **kwargs):
         probe.events.append('auth')
         probe.auth_ids.append(str(id(self)))
-        probe.record('auth.kwargs', kwargs)
-        probe.record('auth.args', list(args))
+        # a retry's empty keyword form must not hide the first call's recorded arguments
+        if kwargs or 'auth.kwargs' not in probe.values:
+            probe.record('auth.kwargs', kwargs)
+        if args or 'auth.args' not in probe.values:
+            probe.record('auth.args', list(args))
         if probe.flags.get('auth_legacy') and kwargs:
             raise TypeError('legacy signature is positional')
         if probe.flags.get('auth_legacy'):
