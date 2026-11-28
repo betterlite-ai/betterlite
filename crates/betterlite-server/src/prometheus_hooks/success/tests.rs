@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::ptr::eq;
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger as _;
@@ -543,11 +544,11 @@ fn the_metrics_adapter_forwards_the_configured_ports() {
         DeploymentMetrics::limits(&metrics),
         &fixture.hooks.settings.limits
     );
-    assert!(std::ptr::eq(
+    assert!(eq(
         UsageCounters::tracker(&metrics),
         &fixture.hooks.collectors.bounded_series_tracker
     ));
-    assert!(std::ptr::eq(
+    assert!(eq(
         RateLimitGauges::tracker(&metrics),
         &fixture.hooks.collectors.bounded_series_tracker
     ));
