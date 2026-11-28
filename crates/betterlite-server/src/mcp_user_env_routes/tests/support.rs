@@ -507,8 +507,10 @@ impl Harness {
     }
 
     pub(crate) fn router(&self) -> Router {
-        let store: Arc<dyn UserEnvVarsStore> = Arc::clone(&self.store);
-        let cache: Arc<dyn UserEnvVarsCache> = Arc::clone(&self.cache);
+        let store_copy: Arc<FakeStore> = Arc::clone(&self.store);
+        let cache_copy: Arc<RecordingCache> = Arc::clone(&self.cache);
+        let store: Arc<dyn UserEnvVarsStore> = store_copy;
+        let cache: Arc<dyn UserEnvVarsCache> = cache_copy;
         let state = UserEnvRoutesState {
             database: self
                 .database
