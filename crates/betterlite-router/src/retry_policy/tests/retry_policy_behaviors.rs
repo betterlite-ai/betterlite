@@ -417,6 +417,7 @@ fn a_retry_after_value_is_seconds_or_a_date(#[case] bytes: &[u8], #[case] expect
 #[case::year_100(b"21 Oct 100 07:28:00 GMT", -58_986_117_120)]
 #[case::year_9999(b"31 Dec 9999 23:59:59 GMT", 253_402_300_799)]
 #[case::day_and_clock_roll_over(b"31 Feb 2015 25:61:61 GMT", 1_425_434_521)]
+#[case::underscore_in_year(b"21 Oct 2_015 07:28:00 GMT", 1_445_412_480)]
 fn the_date_forms_parsedate_tz_reads_parse(#[case] bytes: &[u8], #[case] expected: i64) {
     assert_eq!(
         parse_retry_after(bytes).unwrap(),

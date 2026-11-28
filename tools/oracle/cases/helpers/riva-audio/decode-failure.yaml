@@ -1,0 +1,19 @@
+kind: helper
+name: riva-audio-decode-failure
+call:
+  riva_audio:
+    calls:
+      - file_hex: "6e6f7420617564696f"
+        soundfile_error: "cannot decode this audio"
+        audioread: null
+        resamplers: []
+      - file_hex: "737461676564206279746573"
+        soundfile_error: "cannot open sound file"
+        audioread: {chunks: [], samplerate: 8000, channels: 1, failure: "open"}
+        resamplers: []
+      - file_hex: "737461676564206279746573"
+        soundfile_error: "cannot open sound file"
+        audioread: {chunks: ["0000"], samplerate: 8000, channels: 1, failure: "iteration"}
+        resamplers: []
+compare: {ignore: []}
+env: {}

@@ -18,7 +18,7 @@ description: >-
   --config, 1 on a bad file), `--health`, `--test`, `--setup` (B8542 adds run_setup_wizard later; until then `--setup` prints "the setup wizard is not installed" to stderr and exits 1), then the ollama check when needs_ollama is
   true. Then decode `--headers`, build the worker config the way save_worker_config does (JSON of the initialize arguments,
   stored in WORKER_CONFIG for the child workers) and select the server kind. Then the database block: the
-  `--iam_token_db_auth` and `--azure_postgresql_auth` flags and their env vars through B712, USE_AWS_KMS, the config's
+  `--iam_token_db_auth` and `--azure_postgresql_auth` flags and their env vars through B712, USE_AWS_KMS (B4412's `decrypt_env_var` with `Some(chain.kms_credentials())`, B10195's provider over a chain built from the process environment, the CLI's proxied client and `SecretLookup::environment_only()`), the config's
   database_url and connection settings through B710's DatabaseURLSettings, the unsupported-scheme exit 1, and B051's
   migration and readiness with `--use_prisma_db_push`, `--enforce_prisma_migration_check` and B717's resolver flags
   (`--use_v2_migration_resolver` is deprecated and prints LiteLLM's yellow notice when passed). Then choose_port (port 4000
