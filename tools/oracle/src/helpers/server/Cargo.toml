@@ -55,7 +55,7 @@ hex = "0.4.3"
 http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
-jsonwebtoken = { version = "12.0.0", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 quick-xml.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }

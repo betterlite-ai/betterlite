@@ -25,7 +25,7 @@ hex.workspace = true
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jsonschema = { version = "0.60.2", default-features = false, features = ["arbitrary-precision"] }
-jsonwebtoken = { version = "12.0.0", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 pem = "4.0.0"
 percent-encoding.workspace = true
 regex.workspace = true

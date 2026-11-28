@@ -1,13 +1,12 @@
 use std::fmt::Display;
 use std::str::FromStr as _;
 
+use aws_lc_rs::signature::{ECDSA_P521_SHA512_FIXED, UnparsedPublicKey};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use jsonwebtoken::{Algorithm, DecodingKey, crypto};
-use p521::ecdsa::signature::Verifier as _;
-use p521::ecdsa::{Signature as P521Signature, VerifyingKey as P521VerifyingKey};
 use x509_parser::public_key::PublicKey as CertificateKey;
 
 use super::algorithms::{Family, JwtAlgorithm};
@@ -117,7 +116,7 @@ fn verify_with_library(
     }
 }
 
-// ES512 has no jsonwebtoken verifier, so the JWK's affine coordinates become a SEC1 point for RustCrypto.
+// ES512 has no jsonwebtoken verifier, so the JWK's affine coordinates become a SEC1 point for aws-lc-rs.
 fn verify_p521_point(
     abscissa: &str,
     ordinate: &str,
@@ -141,12 +140,10 @@ fn verify_with_p521(
     signing_input: &[u8],
     signature: &str,
 ) -> Result<(), VerificationError> {
-    let key = P521VerifyingKey::from_sec1_bytes(point).map_err(|error| unusable_key(&error))?;
     let signature_bytes =
         decode_segment(signature.as_bytes()).map_err(|error| unusable_key(&error))?;
-    let parsed =
-        P521Signature::from_slice(&signature_bytes).map_err(|error| unusable_key(&error))?;
-    key.verify(signing_input, &parsed)
+    UnparsedPublicKey::new(&ECDSA_P521_SHA512_FIXED, point)
+        .verify(signing_input, &signature_bytes)
         .map_err(|error| unusable_key(&error))
 }
 

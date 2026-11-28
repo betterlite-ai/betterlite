@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+aws-lc-rs = "1.19.0"
 base64 = "0.23.1"
 betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
@@ -29,10 +30,9 @@ hex.workspace = true
 http = "1.5.0"
 indexmap = "2.14.2"
 ipnet = "2.12.2"
-jsonwebtoken = { version = "12.0.0", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 lru = "0.18.4"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
-p521 = { version = "0.14.0", default-features = false, features = ["ecdsa"] }
 pcre2 = "0.2.11"
 pem = "4.0.0"
 regex.workspace = true
