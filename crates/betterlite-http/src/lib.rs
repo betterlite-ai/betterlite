@@ -1,5 +1,6 @@
 pub mod aws_duplex;
 pub mod aws_sources;
+pub mod client_kind;
 pub mod error;
 pub mod gigachat_tokens;
 pub mod health_probe;
