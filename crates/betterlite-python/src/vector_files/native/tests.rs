@@ -285,10 +285,9 @@ fn a_provider_error_keeps_its_class_and_cause() {
         let error = py.run(INVOKE, Some(&globals), None).unwrap_err();
         let class = module.getattr("NativeVectorFileError").unwrap();
         assert!(error.get_type(py).is(&class));
+        // LiteLLM's invalid_request_error branch runs before its 401 fallback and raises BadRequestError
         assert!(
-            error
-                .to_string()
-                .contains(r#""type":"AuthenticationError""#),
+            error.to_string().contains(r#""type":"BadRequestError""#),
             "{error}"
         );
     });
