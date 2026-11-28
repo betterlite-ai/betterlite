@@ -172,7 +172,7 @@ def _tool_execution_events(value: ToolExecutionEventsCase) -> JsonValue:
         value["tool_calls"],
         value["tool_results"],
     )
-    dumps: list[JsonValue] = [cast(JsonValue, event.model_dump(mode="json")) for event in events]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1889
+    dumps: list[JsonValue] = [cast(JsonValue, event.model_dump(mode="json")) for event in events]  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1889
     view: dict[str, JsonValue] = {"events": dumps}
     return JSON.validate_python(view)
 
