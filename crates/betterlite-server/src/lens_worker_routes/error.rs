@@ -104,29 +104,20 @@ impl LensWorkerError {
     }
 
     pub(crate) fn detail(&self) -> String {
-        match self {
-            Self::Access(error) => failure_text(error),
-            Self::Repository(error) => failure_text(error),
-            Self::Source(error) => failure_text(error.as_ref()),
-            Self::Analyze(error) => error.detail(),
-            Self::NotAuthenticated
-            | Self::InvalidCredential
-            | Self::Body(_)
-            | Self::Query(_)
-            | Self::NotOwned
-            | Self::JobMoved
-            | Self::SampleNotFrozen
-            | Self::OutsideSample
-            | Self::UpgradeWorker
-            | Self::NoAnalysisKey
-            | Self::DuplicateRun
-            | Self::RunOutside
-            | Self::CheckUnknown
-            | Self::FindingOutside
-            | Self::ExistingCheck
-            | Self::EvidenceMismatch
-            | Self::MissingRun => self.to_string(),
+        // a wrapped failure names its own cause chain; every other refusal is its own text
+        if let Self::Access(error) = self {
+            return failure_text(error);
         }
+        if let Self::Repository(error) = self {
+            return failure_text(error);
+        }
+        if let Self::Source(error) = self {
+            return failure_text(error.as_ref());
+        }
+        if let Self::Analyze(error) = self {
+            return error.detail();
+        }
+        self.to_string()
     }
 }
 
