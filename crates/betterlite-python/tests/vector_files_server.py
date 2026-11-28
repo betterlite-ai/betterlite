@@ -174,6 +174,8 @@ class _Handler(BaseHTTPRequestHandler):
     def read_body(self) -> dict[str, JsonValue]:
         declared = self.headers.get("Content-Length")
         raw = b"{}" if declared is None else self.rfile.read(int(declared))
+        if not raw:
+            return {}
         return BODY.validate_json(raw)
 
     def reply_error(self, status: int, message: str) -> None:
