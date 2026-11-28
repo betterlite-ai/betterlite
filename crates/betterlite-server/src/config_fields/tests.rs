@@ -759,6 +759,12 @@ async fn list_returns_the_catalog_then_the_ui_fields() {
     let rollover = listed_entry(&listed, "budget_rollover");
     assert_eq!(rollover.stored_in_db, Some(true));
     assert_eq!(rollover.field_default_value, json!(false));
+    let budget = listed_entry(&listed, "max_ui_session_budget");
+    assert!(
+        budget
+            .field_description
+            .contains("playground and auto router Test Connection")
+    );
 }
 
 #[tokio::test]
