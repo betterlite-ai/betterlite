@@ -1,11 +1,21 @@
+mod input;
+mod normalize;
+mod scenario;
+mod support;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde_json::Value;
+
+use self::input::Input;
+use self::scenario::Scenario;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b4676")
+    fn run(input: &Self::Input) -> HelperResult {
+        let scenario = Scenario::new(input)?;
+        Ok(Value::Array(scenario.reports()?))
     }
 }
