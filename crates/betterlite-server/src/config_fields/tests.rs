@@ -9,11 +9,12 @@ use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_config::sections::audit_events::Settings;
-use betterlite_config::sections::settings::{FieldSource, JsonValue, Section};
+use betterlite_config::sections::settings::{FieldSource, JsonValue};
+use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use secrecy::SecretString;
 use serde_json::json;
 
-use super::error::{ConfigFieldError, DB_NOT_CONNECTED, NOT_ALLOWED};
+use super::error::ConfigFieldError;
 use super::litellm_fields::UiLitellmField;
 use super::ports::{
     ConfigFieldCaller, ConfigFieldDatabase, ConfigFieldRowError, ConfigFieldRows,
@@ -366,7 +367,8 @@ fn audit_sink(repository: &Arc<RecordingRepository>) -> AuditEventSink {
         callbacks: Vec::new(),
     };
     let dispatcher = AuditCallbackDispatcher::new(Arc::new(NoCallbacks), Arc::new(DroppingSpawner));
-    let repository_port: Arc<dyn AuditLogRepository> = Arc::clone(repository);
+    let repository_port: Arc<dyn AuditLogRepository> =
+        Arc::<RecordingRepository>::clone(repository);
     AuditEventSink {
         settings: Arc::new(settings),
         callbacks: Arc::new(dispatcher),
@@ -390,8 +392,8 @@ struct Fakes {
 fn fixtures() -> Fakes {
     let rows = Arc::new(StoredRows::default());
     let store = Arc::new(Store::default());
-    let rows_port: Arc<dyn ConfigFieldRows> = Arc::clone(&rows);
-    let store_port: Arc<dyn ConfigStateDatabase> = Arc::clone(&store);
+    let rows_port: Arc<dyn ConfigFieldRows> = Arc::<StoredRows>::clone(&rows);
+    let store_port: Arc<dyn ConfigStateDatabase> = Arc::<Store>::clone(&store);
     let repository = Arc::new(RecordingRepository::default());
     let sink = audit_sink(&repository);
     Fakes {
@@ -629,7 +631,10 @@ async fn gates_name_the_role_only_on_delete_and_list() {
     )
     .await
     .expect_err("a viewer cannot update");
-    assert_eq!(bad_request(update_refusal), NOT_ALLOWED);
+    assert_eq!(
+        bad_request(update_refusal),
+        CommonProxyErrors::NotAllowedAccess.as_str()
+    );
     let delete_refusal = delete_config_general_settings(
         services!(fakes, state),
         &caller(VIEWER),
@@ -639,7 +644,10 @@ async fn gates_name_the_role_only_on_delete_and_list() {
     .expect_err("a viewer cannot delete");
     assert_eq!(
         bad_request(delete_refusal),
-        "Admin-only endpoint. Not allowed to access., your role=proxy_admin_viewer"
+        format!(
+            "{}, your role=proxy_admin_viewer",
+            CommonProxyErrors::NotAllowedAccess.as_str()
+        )
     );
     let list_refusal =
         list_config_general_settings(services!(fakes, state), &caller("internal_user"))
@@ -647,7 +655,10 @@ async fn gates_name_the_role_only_on_delete_and_list() {
             .expect_err("an internal user cannot list");
     assert_eq!(
         bad_request(list_refusal),
-        "Admin-only endpoint. Not allowed to access., your role=internal_user"
+        format!(
+            "{}, your role=internal_user",
+            CommonProxyErrors::NotAllowedAccess.as_str()
+        )
     );
 }
 
@@ -708,7 +719,10 @@ async fn a_missing_database_answers_db_not_connected() {
     let refusal = list_config_general_settings(services, &caller(ADMIN))
         .await
         .expect_err("no database");
-    assert_eq!(bad_request(refusal), DB_NOT_CONNECTED);
+    assert_eq!(
+        bad_request(refusal),
+        CommonProxyErrors::DbNotConnectedError.as_str()
+    );
 }
 
 #[tokio::test]
@@ -833,7 +847,7 @@ async fn pass_through_reserve_database_unavailable_answers_503_without_an_audit(
 async fn pass_through_reserve_row_unavailable_answers_503_without_an_audit() {
     let mut fakes = fixtures();
     fakes.rows = Arc::new(StoredRows::unavailable());
-    let rows_port: Arc<dyn ConfigFieldRows> = Arc::clone(&fakes.rows);
+    let rows_port: Arc<dyn ConfigFieldRows> = Arc::<StoredRows>::clone(&fakes.rows);
     fakes.database.rows = rows_port;
     let mut state = state_with_general("{}");
     let refusal = update_config_general_settings(
@@ -853,142 +867,6 @@ async fn pass_through_reserve_row_unavailable_answers_503_without_an_audit() {
     assert!(fakes.audit_rows().is_empty());
 }
 
-#[tokio::test]
-async fn ui_field_reload_persist_sets_the_litellm_attribute_and_saves_the_section() {
-    let mut fakes = fixtures();
-    fakes.overlay = Overlay::with_values(object(
-        r#"{"litellm_settings": {"openai_system_messages_first": true}}"#,
-    ));
-    let mut state = state_with_general("{}");
-    let written = update_config_general_settings(
-        services!(fakes, state),
-        &caller(ADMIN),
-        &update("budget_rollover", json!(true)),
-    )
-    .await
-    .expect("the UI persist");
-    match written {
-        ConfigFieldUpdateResponse::Ui(body) => {
-            assert_eq!(body.message, "Field budget_rollover updated");
-            assert_eq!(body.status, "success");
-        }
-        ConfigFieldUpdateResponse::Row(row) => panic!("a UI answer, got {row:?}"),
-    }
-    assert_eq!(fakes.runtime.ui_value("budget_rollover"), json!(true));
-    let writes = fakes.store.section_writes();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].section, Section::LitellmSettings);
-    assert_eq!(writes[0].changed.get("budget_rollover"), Some(&json!(true)));
-    let audit = fakes.audit_rows();
-    assert_eq!(audit[0].action, AuditAction::Updated);
-    assert_eq!(audit[0].object_id, "budget_rollover");
-}
-
-#[tokio::test]
-async fn ui_field_reload_reset_sets_the_default_and_pops_the_stored_key() {
-    let mut fakes = fixtures();
-    fakes.overlay = Overlay::with_values(object(
-        r#"{"litellm_settings": {"max_ui_session_budget": 5.0}}"#,
-    ));
-    let mut state = state_with_general("{}");
-    state.replace_snapshot(&object(
-        r#"{"litellm_settings": {"max_ui_session_budget": 5.0}}"#,
-    ));
-    let written = delete_config_general_settings(
-        services!(fakes, state),
-        &caller(ADMIN),
-        &delete("max_ui_session_budget"),
-    )
-    .await
-    .expect("the UI reset");
-    match written {
-        ConfigFieldUpdateResponse::Ui(body) => {
-            assert_eq!(body.message, "Field max_ui_session_budget reset");
-        }
-        ConfigFieldUpdateResponse::Row(row) => panic!("a UI answer, got {row:?}"),
-    }
-    assert_eq!(fakes.runtime.ui_value("max_ui_session_budget"), json!(1.0));
-    let writes = fakes.store.section_writes();
-    assert_eq!(writes.len(), 1);
-    assert!(writes[0].removed.contains("max_ui_session_budget"));
-    assert_eq!(fakes.audit_rows()[0].action, AuditAction::Deleted);
-}
-
-#[tokio::test]
-async fn ui_field_reload_reset_without_a_section_keeps_it_absent() {
-    let fakes = fixtures();
-    let mut state = state_with_general("{}");
-    delete_config_general_settings(
-        services!(fakes, state),
-        &caller(ADMIN),
-        &delete("budget_rollover"),
-    )
-    .await
-    .expect("the UI reset");
-    assert_eq!(fakes.runtime.ui_value("budget_rollover"), json!(false));
-    assert!(fakes.store.section_writes().is_empty());
-    assert_eq!(fakes.audit_rows()[0].action, AuditAction::Deleted);
-}
-
-#[tokio::test]
-async fn ui_field_reload_validates_before_it_reloads() {
-    let fakes = fixtures();
-    let mut state = state_with_general("{}");
-    let refusal = update_config_general_settings(
-        services!(fakes, state),
-        &caller(ADMIN),
-        &update("budget_exceeded_throttle_percentage", json!(2.0)),
-    )
-    .await
-    .expect_err("a fraction above one");
-    assert_eq!(
-        bad_request(refusal),
-        "budget_exceeded_throttle_percentage must be a number in (0, 1] or empty"
-    );
-    assert!(fakes.store.section_writes().is_empty());
-    assert!(fakes.audit_rows().is_empty());
-    assert_eq!(
-        fakes
-            .runtime
-            .ui_value("budget_exceeded_throttle_percentage"),
-        JsonValue::Null
-    );
-}
-
-#[tokio::test]
-async fn ui_field_reload_reload_failure_leaves_the_runtime_untouched() {
-    let mut fakes = fixtures();
-    fakes.overlay.reload_error = Some(ConfigOverlayPortError::Reload);
-    let mut state = state_with_general("{}");
-    let refusal = update_config_general_settings(
-        services!(fakes, state),
-        &caller(ADMIN),
-        &update("budget_rollover", json!(true)),
-    )
-    .await
-    .expect_err("the reload failed");
-    let response = refusal.into_response();
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(fakes.runtime.ui_value("budget_rollover"), JsonValue::Null);
-    assert!(fakes.store.section_writes().is_empty());
-    assert!(fakes.audit_rows().is_empty());
-}
-
-#[tokio::test]
-async fn ui_field_reload_database_unavailable_answers_503() {
-    let mut fakes = fixtures();
-    fakes.overlay.reload_error = Some(ConfigOverlayPortError::DatabaseUnavailable);
-    let mut state = state_with_general("{}");
-    let refusal = delete_config_general_settings(
-        services!(fakes, state),
-        &caller(ADMIN),
-        &delete("budget_rollover"),
-    )
-    .await
-    .expect_err("the reload is unavailable");
-    let response = refusal.into_response();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body_text(response).await.contains("no_db_connection"));
-    assert_eq!(fakes.runtime.ui_value("budget_rollover"), JsonValue::Null);
-    assert!(fakes.audit_rows().is_empty());
-}
+mod corpus;
+mod ui_reload;
+mod validators;
