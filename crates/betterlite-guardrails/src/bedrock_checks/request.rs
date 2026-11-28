@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
-use betterlite_bedrock_guardrails::bedrock_credentials::{CredentialLoadError, CredentialSource};
+use betterlite_bedrock::credentials::CredentialSource;
+use betterlite_bedrock_guardrails::bedrock_credentials::CredentialLoadError;
 use betterlite_bedrock_guardrails::bedrock_post::{GuardrailTransport, PostError, sign_and_post};
 use betterlite_bedrock_guardrails::bedrock_request::PrepareError;
 use betterlite_bedrock_guardrails::bedrock_transport::BedrockGuardrail;
