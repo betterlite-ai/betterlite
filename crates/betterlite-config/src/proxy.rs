@@ -131,7 +131,7 @@ impl ProxyPolicy {
     fn lookup<'policy>(
         &'policy self,
         bypass_target: Option<&str>,
-        candidates: &[(&'policy BTreeMap<String, ProxyRoute>, &'policy str)],
+        candidates: &[(&'policy BTreeMap<String, ProxyRoute>, &str)],
     ) -> Option<&'policy ProxyRoute> {
         if bypass_target.is_some_and(|target| bypasses(&self.no_proxy, target)) {
             return None;
