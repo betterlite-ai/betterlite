@@ -21,7 +21,7 @@ fn issuer_harness(config: IssuerConfig) -> Harness {
 
 fn mapped_config() -> IssuerConfig {
     let mut config = issuer_config(fixtures::ISSUER_A);
-    config.audience = audience_one("litellm-proxy");
+    config.audience = Some(audience_one("litellm-proxy"));
     config.user_id_jwt_field = Some("user.id".to_owned());
     config.user_email_jwt_field = Some("user.email".to_owned());
     config.team_id_jwt_field = Some("team.id".to_owned());
@@ -106,7 +106,7 @@ async fn issuer_claim_map() {
 #[tokio::test]
 async fn issuer_mapping_missing_empty_false_zero_collections() {
     let mut config = issuer_config(fixtures::ISSUER_A);
-    config.audience = audience_one("litellm-proxy");
+    config.audience = Some(audience_one("litellm-proxy"));
     config.user_id_jwt_field = Some("profile.absent".to_owned());
     config.user_email_jwt_field = Some("profile.empty_text".to_owned());
     config.team_id_jwt_field = Some("profile.flag".to_owned());
@@ -130,7 +130,7 @@ async fn issuer_mapping_missing_empty_false_zero_collections() {
     assert_eq!(fields.get("_litellm_end_user_id"), Some(&parse_json("0")));
 
     let mut null_config = issuer_config(fixtures::ISSUER_A);
-    null_config.audience = audience_one("litellm-proxy");
+    null_config.audience = Some(audience_one("litellm-proxy"));
     null_config.user_id_jwt_field = Some("profile.null_value".to_owned());
     let null_h = issuer_harness(null_config);
     let null_source =
@@ -146,7 +146,7 @@ async fn issuer_mapping_missing_empty_false_zero_collections() {
 #[tokio::test]
 async fn mappings_read_original_payload() {
     let mut config = issuer_config(fixtures::ISSUER_A);
-    config.audience = audience_one("litellm-proxy");
+    config.audience = Some(audience_one("litellm-proxy"));
     config.user_id_jwt_field = Some("_litellm_team_id".to_owned());
     config.team_id_jwt_field = Some("_litellm_user_id".to_owned());
     config.user_email_jwt_field = Some("nested.id".to_owned());
@@ -192,7 +192,7 @@ fn validation_detail(payload: &str, checks: &ClaimChecks<'_>) -> String {
 
 #[test]
 fn temporal_claims_use_zero_leeway() {
-    let audience = audience_one("litellm-proxy");
+    let audience = Some(audience_one("litellm-proxy"));
     let checks = ClaimChecks {
         audience: audience.as_ref(),
         issuer: None,
@@ -230,7 +230,7 @@ fn temporal_claims_use_zero_leeway() {
 
 #[test]
 fn expiration_uses_zero_leeway_and_requires_an_integer() {
-    let audience = audience_one("litellm-proxy");
+    let audience = Some(audience_one("litellm-proxy"));
     let checks = ClaimChecks {
         audience: audience.as_ref(),
         issuer: None,
@@ -365,7 +365,7 @@ fn many_audience_details(many_checks: &ClaimChecks<'_>) {
 
 #[test]
 fn configured_audience_requires_a_matching_token_value() {
-    let audience = audience_one("litellm-proxy");
+    let audience = Some(audience_one("litellm-proxy"));
     let checks = ClaimChecks {
         audience: audience.as_ref(),
         issuer: None,
@@ -391,7 +391,7 @@ fn configured_audience_requires_a_matching_token_value() {
 
 #[test]
 fn subject_and_jwt_id_must_be_strings() {
-    let audience = audience_one("litellm-proxy");
+    let audience = Some(audience_one("litellm-proxy"));
     let checks = ClaimChecks {
         audience: audience.as_ref(),
         issuer: None,

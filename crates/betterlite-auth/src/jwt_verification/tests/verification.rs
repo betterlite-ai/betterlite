@@ -206,7 +206,7 @@ async fn expired_token() {
 fn pem_certificate() {
     let harness = scoped();
     let key = PublicKey::Certificate(fixtures::RSA_CERTIFICATE);
-    let audience = audience_one("litellm-proxy");
+    let audience = Some(audience_one("litellm-proxy"));
     let params = DecodeParams {
         audience: audience.as_ref(),
         issuer: None,
@@ -223,7 +223,7 @@ fn pem_certificate() {
 #[test]
 fn raw_pem_rejected_x509_accepted() {
     let harness = scoped();
-    let audience = audience_one("litellm-proxy");
+    let audience = Some(audience_one("litellm-proxy"));
     let params = DecodeParams {
         audience: audience.as_ref(),
         issuer: None,

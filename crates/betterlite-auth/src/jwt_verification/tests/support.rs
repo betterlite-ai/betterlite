@@ -239,7 +239,8 @@ impl UserinfoHttp for TestHttp {
             authorization: authorization.to_owned(),
             accept: accept.to_owned(),
         });
-        match lock(&self.replies).pop_front() {
+        let reply = lock(&self.replies).pop_front();
+        match reply {
             Some(FakeReply::Answer { status, body }) => Ok(UserinfoReply {
                 status,
                 body: body.into_bytes(),
@@ -478,8 +479,8 @@ pub(super) fn issuer_config(issuer: &str) -> IssuerConfig {
     }
 }
 
-pub(super) fn audience_one(value: &str) -> Option<Selector> {
-    Some(Selector::One(value.to_owned()))
+pub(super) fn audience_one(value: &str) -> Selector {
+    Selector::One(value.to_owned())
 }
 
 pub(super) fn harness(settings: JwtVerificationSettings) -> Harness {

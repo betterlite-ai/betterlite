@@ -114,7 +114,7 @@ fn first_matching_issuer_decides(issuer: &Json) {
             with_audience(issuer_config(fixtures::ISSUER_A), None),
             with_audience(
                 issuer_config(fixtures::ISSUER_A),
-                audience_one("litellm-proxy")
+                Some(audience_one("litellm-proxy"))
             ),
         ],
         None,
@@ -124,7 +124,7 @@ fn first_matching_issuer_decides(issuer: &Json) {
     assert!(trust_of(
         vec![with_audience(
             issuer_config(fixtures::ISSUER_A),
-            audience_one("litellm-proxy")
+            Some(audience_one("litellm-proxy"))
         )],
         None,
         None,
@@ -135,7 +135,7 @@ fn first_matching_issuer_decides(issuer: &Json) {
 fn audience_selector_details(issuer: &Json) {
     let mut disabled = with_audience(
         issuer_config(fixtures::ISSUER_A),
-        audience_one("litellm-proxy"),
+        Some(audience_one("litellm-proxy")),
     );
     disabled.disable_audience_validation = true;
     assert!(!trust_of(vec![disabled], None, None, issuer));

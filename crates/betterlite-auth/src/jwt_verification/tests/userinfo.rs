@@ -195,7 +195,7 @@ async fn userinfo_cache_before_return_and_ttl() {
             format!("write:{key}")
         ]
     );
-    let writes = lock(&harness.cache.writes);
+    let writes = lock(&harness.cache.writes).clone();
     assert_eq!(writes.len(), 1);
     let record = writes.first().unwrap();
     assert_eq!(record.key, key);
