@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -27,7 +28,7 @@ use crate::lens_worker_routes::lease::assigned;
 
 // the analysis ports owned together, because InferencePorts only borrows and the state must be Clone
 #[derive(Clone)]
-pub(crate) struct Inference {
+pub struct Inference {
     pub(crate) billing: Arc<Billing>,
     pub(crate) keys: Arc<dyn KeyResolver>,
     pub(crate) models: Arc<dyn ModelCatalog>,
@@ -63,7 +64,10 @@ where
 {
     type Rejection = Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         let authorization = parts.headers.get(header::AUTHORIZATION).cloned();
         let incoming = Incoming {
             scheme: parts.uri.scheme_str().map(str::to_owned),
@@ -76,10 +80,10 @@ where
             host: header_text(&parts.headers, header::HOST.as_str()),
             privacy: MessagePrivacy::default(),
         };
-        Ok(Self {
+        ready(Ok(Self {
             authorization,
             incoming,
-        })
+        }))
     }
 }
 

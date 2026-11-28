@@ -133,6 +133,7 @@ async fn freeze<Db, Store>(
 ) -> Result<Json<Sample>, LensWorkerError>
 where
     Db: LensDatabase,
+    Store: LensStorage,
 {
     let freeze = |lens: Lens| -> Result<Lens, JobMoved> { frozen(lens, job_id, &worker.id, built) };
     let updated = lens_repository(state)?

@@ -86,19 +86,20 @@ impl LensWorkerError {
                 Ok(status) => status,
                 Err(_invalid) => StatusCode::INTERNAL_SERVER_ERROR,
             },
-            Self::Body(_) | Self::Query(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Body(_)
+            | Self::Query(_)
+            | Self::DuplicateRun
+            | Self::RunOutside
+            | Self::CheckUnknown
+            | Self::FindingOutside
+            | Self::ExistingCheck
+            | Self::EvidenceMismatch => StatusCode::UNPROCESSABLE_ENTITY,
             Self::OutsideSample => StatusCode::NOT_FOUND,
             Self::NotOwned
             | Self::JobMoved
             | Self::SampleNotFrozen
             | Self::UpgradeWorker
             | Self::NoAnalysisKey => StatusCode::CONFLICT,
-            Self::DuplicateRun
-            | Self::RunOutside
-            | Self::CheckUnknown
-            | Self::FindingOutside
-            | Self::ExistingCheck
-            | Self::EvidenceMismatch => StatusCode::UNPROCESSABLE_ENTITY,
         }
     }
 
@@ -108,7 +109,23 @@ impl LensWorkerError {
             Self::Repository(error) => failure_text(error),
             Self::Source(error) => failure_text(error.as_ref()),
             Self::Analyze(error) => error.detail(),
-            other => other.to_string(),
+            Self::NotAuthenticated
+            | Self::InvalidCredential
+            | Self::Body(_)
+            | Self::Query(_)
+            | Self::NotOwned
+            | Self::JobMoved
+            | Self::SampleNotFrozen
+            | Self::OutsideSample
+            | Self::UpgradeWorker
+            | Self::NoAnalysisKey
+            | Self::DuplicateRun
+            | Self::RunOutside
+            | Self::CheckUnknown
+            | Self::FindingOutside
+            | Self::ExistingCheck
+            | Self::EvidenceMismatch
+            | Self::MissingRun => self.to_string(),
         }
     }
 }
@@ -149,7 +166,24 @@ impl IntoResponse for LensWorkerError {
             Self::NotAuthenticated => return bearer_refusal(),
             Self::Body(error) => return error.into_response(),
             Self::Query(error) => return error.into_response(),
-            other => (other.status(), other.detail()),
+            other @ (Self::InvalidCredential
+            | Self::Access(_)
+            | Self::Repository(_)
+            | Self::Source(_)
+            | Self::Analyze(_)
+            | Self::NotOwned
+            | Self::JobMoved
+            | Self::SampleNotFrozen
+            | Self::OutsideSample
+            | Self::UpgradeWorker
+            | Self::NoAnalysisKey
+            | Self::DuplicateRun
+            | Self::RunOutside
+            | Self::CheckUnknown
+            | Self::FindingOutside
+            | Self::ExistingCheck
+            | Self::EvidenceMismatch
+            | Self::MissingRun) => (other.status(), other.detail()),
         };
         (status, Json(DetailBody { detail })).into_response()
     }

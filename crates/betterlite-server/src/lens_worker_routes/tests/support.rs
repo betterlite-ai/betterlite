@@ -675,10 +675,10 @@ impl Clock for AnalysisClock {
 }
 
 fn inference(billing: &Arc<FakeBilling>, instant: DateTime<Utc>) -> Inference {
-    let authorizer: Arc<dyn InternalAuthorizer> = Arc::clone(billing);
-    let runner: Arc<dyn ChatRunner> = Arc::clone(billing);
-    let releaser: Arc<dyn ReservationRelease> = Arc::clone(billing);
-    let client_ip: Arc<dyn ClientIp> = Arc::clone(billing);
+    let authorizer: Arc<dyn InternalAuthorizer> = Arc::<FakeBilling>::clone(billing);
+    let runner: Arc<dyn ChatRunner> = Arc::<FakeBilling>::clone(billing);
+    let releaser: Arc<dyn ReservationRelease> = Arc::<FakeBilling>::clone(billing);
+    let client_ip: Arc<dyn ClientIp> = Arc::<FakeBilling>::clone(billing);
     let keys: Arc<Resolver> = Arc::new(Resolver::new());
     let models: Arc<dyn ModelCatalog> = Arc::new(DeploymentCatalog::current());
     let prices: Arc<dyn ModelInfoSource> = Arc::new(NoPrices);

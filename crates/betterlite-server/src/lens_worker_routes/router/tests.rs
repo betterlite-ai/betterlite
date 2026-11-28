@@ -31,7 +31,7 @@ async fn the_router_mounts_no_admin_route() {
     let reply = worker_call(harness.app(), authorized("GET", "/lens", None)).await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     let worker_root = worker_call(harness.app(), authorized("GET", "/lens/worker", None)).await;
-    assert_eq!(worker_root.status(), StatusCode::NOT_FOUND);
+    assert_eq!(worker_root.status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -44,11 +44,11 @@ async fn the_worker_routes_keep_their_methods() {
         authorized("GET", "/lens/worker/claim?protocol_version=2", None),
     )
     .await;
-    assert_eq!(wrong_method.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(wrong_method.status, StatusCode::METHOD_NOT_ALLOWED);
     let wrong_path = worker_call(
         harness.app(),
         authorized("POST", "/lens/worker/l1/j1/sample", None),
     )
     .await;
-    assert_eq!(wrong_path.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(wrong_path.status, StatusCode::METHOD_NOT_ALLOWED);
 }

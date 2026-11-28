@@ -49,12 +49,13 @@ async fn carried<Db, Store>(
 ) -> Result<Progress, LensWorkerError>
 where
     Db: LensDatabase,
+    Store: LensStorage,
 {
     let now = state.clock.now();
     let (_, job) = assigned(state, lens_id, job_id, worker, now).await?;
     Ok(Progress {
-        stage: job.stage.clone(),
-        coverage: job.coverage.clone(),
+        stage: job.stage,
+        coverage: job.coverage,
     })
 }
 
@@ -68,6 +69,7 @@ async fn apply<Db, Store>(
 ) -> Result<(), LensWorkerError>
 where
     Db: LensDatabase,
+    Store: LensStorage,
 {
     let now = state.clock.now();
     assigned(state, lens_id, job_id, worker, now).await?;

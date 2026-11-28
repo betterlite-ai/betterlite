@@ -3,7 +3,7 @@ use betterlite_lens::models::job::Worker;
 use sha2::{Digest as _, Sha256};
 
 use crate::lens_access::lookup::lens_repository;
-use crate::lens_access::state::{LensDatabase, LensRoutesState};
+use crate::lens_access::state::{LensDatabase, LensRoutesState, LensStorage};
 use crate::lens_worker_routes::error::LensWorkerError;
 
 // worker_auth: HTTPBearer's parse, then the SHA-256 of the token looked up in LiteLLM_LensWorker
@@ -13,6 +13,7 @@ pub(crate) async fn worker_auth<Db, Store>(
 ) -> Result<Worker, LensWorkerError>
 where
     Db: LensDatabase,
+    Store: LensStorage,
 {
     let token = bearer_token(header)?;
     let worker = lens_repository(state)?

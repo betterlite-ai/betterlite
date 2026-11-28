@@ -5,7 +5,7 @@ mod error;
 mod evidence;
 mod lease;
 mod merge;
-mod model;
+pub mod model;
 mod progress;
 mod result;
 mod router;
@@ -19,7 +19,7 @@ use crate::lens_access::state::{LensDatabase, LensRoutesState, LensStorage, NoSt
 use crate::lens_worker_routes::model::Inference;
 
 // B4503's routes state plus the analysis bundle lens_inference::analyze reaches, both injected by the mount
-pub(crate) struct WorkerRoutesState<Db, Store = NoStorage> {
+pub struct WorkerRoutesState<Db, Store = NoStorage> {
     pub(crate) routes: LensRoutesState<Db, Store>,
     pub(crate) inference: Inference,
 }
@@ -34,7 +34,7 @@ impl<Db, Store: Clone> Clone for WorkerRoutesState<Db, Store> {
 }
 
 // LiteLLM's APIRouter(prefix="/lens") worker routes, none of them behind user_api_key_auth
-pub(crate) fn router<Db, Store>(state: WorkerRoutesState<Db, Store>) -> Router
+pub fn router<Db, Store>(state: WorkerRoutesState<Db, Store>) -> Router
 where
     Db: LensDatabase,
     Store: LensStorage,

@@ -97,9 +97,9 @@ where
         return Ok(None);
     }
     Ok(Some(Claim {
-        lens_id: changed.id.clone(),
+        lens_id: changed.id,
         job,
-        findings: changed.findings.clone(),
+        findings: changed.findings,
     }))
 }
 

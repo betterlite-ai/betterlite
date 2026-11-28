@@ -2,7 +2,7 @@ use betterlite_lens::models::job::{Job, JobStatus, Lens, Worker};
 use chrono::{DateTime, Utc};
 
 use crate::lens_access::lookup::{get_lens, lens_repository};
-use crate::lens_access::state::{LensDatabase, LensRoutesState};
+use crate::lens_access::state::{LensDatabase, LensRoutesState, LensStorage};
 use crate::lens_inference::jobs::current_job;
 use crate::lens_worker_routes::error::LensWorkerError;
 
@@ -16,6 +16,7 @@ pub(crate) async fn assigned<Db, Store>(
 ) -> Result<(Lens, Job), LensWorkerError>
 where
     Db: LensDatabase,
+    Store: LensStorage,
 {
     let lens = get_lens(lens_repository(state)?, lens_id, &worker.scope).await?;
     let owned = current_job(&lens).filter(|job| {
