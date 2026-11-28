@@ -6,6 +6,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::studio_identity;
 use betterlite_core::api::agents::item::error::AgentItemFailureError;
 use betterlite_core::api::agents::item::{
     AgentItemDeps, AgentItemRequest, adelete, aget, alist_versions, delete, get, list_versions,
@@ -21,10 +23,9 @@ use tokio::runtime::{Builder, Runtime};
 use betterlite_http_fixture::error::FixtureError as FixtureThreadError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::{Serving, serve};
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use super::b3504::support;
 use harness::Harness;
 use std::fmt::Display;
 
@@ -75,44 +76,49 @@ impl Helper for Op {
             .build()
             .map_err(|error| failed(&error))?;
         let kwargs = kwargs_of(input, &serving.address);
-        let request = request_of(input, &kwargs);
+        let request = AgentItemRequest {
+            name: &input.name,
+            custom_llm_provider: input.provider.as_deref(),
+            extra_headers: input.extra_headers.clone(),
+            timeout: None,
+            request_timeout: RequestTimeout {
+                seconds: 6000.0,
+                explicitly_set: false,
+            },
+            kwargs: &kwargs,
+        };
         let deps = AgentItemDeps {
             clients: &mut harness.clients,
             logging: &mut harness.state,
             http: &mut harness.record,
             redactor: &harness.redactor,
         };
-        let settings = support::settings(&input.environment);
+        let settings = studio_identity::Raw::default()
+            .convert(&input.environment)
+            .or_value_error()?;
         let config = GeminiAgentsConfig { settings };
         let outcome = operate(input.operation, &config, deps, &request, &runtime);
         let head = finish_head(serving)?;
-        let mut answer = Map::new();
-        let sent_report = projection::request(&head, &wanted(input));
-        answer.insert("request".to_owned(), sent_report);
-        answer.insert("logging".to_owned(), projection::logging(&harness));
-        match outcome {
-            Ok(value) => answer.insert("response".to_owned(), value),
-            Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
-        };
-        Ok(Value::Object(answer))
+        compared_answer(input, &harness, &head, outcome)
     }
 }
 
-fn request_of<'call>(
-    input: &'call Input,
-    kwargs: &'call IndexMap<String, Json>,
-) -> AgentItemRequest<'call> {
-    AgentItemRequest {
-        name: &input.name,
-        custom_llm_provider: input.provider.as_deref(),
-        extra_headers: input.extra_headers.clone(),
-        timeout: None,
-        request_timeout: RequestTimeout {
-            seconds: 6000.0,
-            explicitly_set: false,
-        },
-        kwargs,
-    }
+// the request, logging and response keys every item case compares
+fn compared_answer(
+    input: &Input,
+    harness: &Harness,
+    head: &str,
+    outcome: Result<Value, AgentItemFailureError<GeminiAgentError>>,
+) -> HelperResult {
+    let mut answer = Map::new();
+    let sent_report = projection::request(head, &wanted(input));
+    answer.insert("request".to_owned(), sent_report);
+    answer.insert("logging".to_owned(), projection::logging(harness));
+    match outcome {
+        Ok(value) => answer.insert("response".to_owned(), value),
+        Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
+    };
+    Ok(Value::Object(answer))
 }
 
 fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {

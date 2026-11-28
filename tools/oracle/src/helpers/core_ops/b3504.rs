@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::studio_identity;
 use betterlite_core::api::agents::collection::creation::{acreate, create};
 use betterlite_core::api::agents::collection::listing::{alist, list};
 use betterlite_core::api::agents::collection::{
@@ -11,7 +13,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) mod support;
@@ -63,7 +65,10 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let server = Server::start(&input.reply)?;
         let kwargs = injected(input, &server);
-        let mut fixture = Fixture::new(support::settings(&input.environment))?;
+        let settings = studio_identity::Raw::default()
+            .convert(&input.environment)
+            .or_value_error()?;
+        let mut fixture = Fixture::new(settings)?;
         let result = answer(input, &kwargs, &mut fixture)?;
         Ok(support::answer_value(
             &server,
