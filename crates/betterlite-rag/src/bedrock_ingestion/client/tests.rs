@@ -42,7 +42,7 @@ use crate::bedrock_ingestion::client::{
 use crate::bedrock_ingestion::error::BedrockIngestionError;
 use crate::bedrock_ingestion::tests::support::{
     FakeTransport, FakeTransportError, NOW_SECONDS, RecordedRequest, StaticResolver, TEST_KEY,
-    clients, fixed_now, json_response, settings, status_response,
+    TEST_SECRET, clients, fixed_now, json_response, settings, status_response,
 };
 use crate::bedrock_ingestion::wire::{
     AossConfiguration, AossFieldMapping, CreateDataSourceRequest, CreateKnowledgeBaseRequest,
