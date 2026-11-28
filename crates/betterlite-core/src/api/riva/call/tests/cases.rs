@@ -580,6 +580,14 @@ fn provider_failures_map_through_the_grpc_table() {
         attribute_error.to_string(),
         "NVIDIA Riva error: attribute results failed"
     );
+}
+
+#[test]
+fn a_non_numeric_word_timing_maps_to_a_provider_error() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
     let timing_error = failure(
         &host,
         &[],
