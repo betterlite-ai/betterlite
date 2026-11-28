@@ -5,6 +5,7 @@ pub mod request;
 
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind as CallKind;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::InvalidUrl;
@@ -12,7 +13,6 @@ use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::files::error::StatusError;
-use betterlite_openai::transcription::client::ClientKind as CallKind;
 use betterlite_openai::transcription::decode::{ReplyFormat, reply_format};
 use betterlite_openai::transcription::error::TranscriptionError as ReplyError;
 use betterlite_openai::transcription::request::{TranscriptionData, logged_data};
@@ -162,7 +162,7 @@ pub fn async_audio_transcriptions(
     wiring: &mut ClientWiring<'_, '_>,
     logger: &mut dyn AzureTranscriptionLogger,
 ) -> Result<(OutboundRequest, Pending), AzureTranscriptionError> {
-    begin(call, data, CallKind::Async, wiring, logger)
+    begin(call, data, CallKind::Asynchronous, wiring, logger)
         .inspect_err(|error| log_failure(&call.input, error, logger))
 }
 

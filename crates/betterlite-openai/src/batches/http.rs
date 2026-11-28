@@ -13,7 +13,8 @@ use url::Url;
 
 use crate::batches::error::SdkError;
 use crate::batches::records::{BatchCreate, BatchPage, BatchQuery};
-use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout};
+use crate::batches::sdk::{BatchesSdk, ClientConstructor, SdkArguments, Timeout};
+use betterlite_http::client_kind::ClientKind;
 
 use self::timeouts::phase_names;
 

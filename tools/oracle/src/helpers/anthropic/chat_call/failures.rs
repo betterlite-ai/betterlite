@@ -2,9 +2,9 @@ use std::convert::Infallible;
 
 use betterlite_anthropic::chat_call::CallStyle;
 use betterlite_anthropic::chat_call::error::ChatCallError;
-use betterlite_anthropic::chat_call::transport::ClientKind;
 use betterlite_anthropic::headers::HeadersError;
 use betterlite_anthropic::response::error::ResponseError;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
@@ -71,7 +71,7 @@ pub(super) fn failed_call(input: &Input) -> HelperResult {
 }
 
 pub(super) fn chat_failure_projection(input: &Input) -> HelperResult {
-    let asynchronous = execute(input, CallStyle::Async, ClientKind::Async)?;
+    let asynchronous = execute(input, CallStyle::Async, ClientKind::Asynchronous)?;
     if asynchronous.failure.is_none() {
         return Err("the call was expected to fail and did not").or_value_error();
     }

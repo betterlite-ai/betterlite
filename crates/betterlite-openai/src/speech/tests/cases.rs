@@ -1,6 +1,7 @@
 use std::str::FromStr as _;
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -11,12 +12,12 @@ use serde_json::Number;
 use super::fixture::{Fixture, Recorded, Recorder, Reply, connection, header, sent_body};
 use crate::speech::call::{SpeechCall, audio_speech};
 use crate::speech::client::{
-    ClientKind, SharedSession, SpeechConnection, SuppliedClient, normalize_base, select_client,
+    SharedSession, SpeechConnection, SuppliedClient, normalize_base, select_client,
 };
 use crate::speech::error::SpeechError;
-use crate::speech::logging::PrePostLogger;
 use crate::speech::request::{SpeechFormat, SpeechOptions, SpeechRequest};
 use crate::speech::result::SpeechResponse;
+use betterlite_http::client_kind::ClientKind;
 
 #[derive(Debug, Clone, Copy)]
 enum Case {
@@ -272,7 +273,7 @@ async fn speech_error() {
 
 async fn speech_client_options() {
     assert_eq!(ClientKind::Sync.label(), "sync");
-    assert_eq!(ClientKind::Async.label(), "async");
+    assert_eq!(ClientKind::Asynchronous.label(), "async");
     assert_built_client_options();
     assert_environment_client_options().await;
     assert_supplied_client_options().await;
@@ -290,8 +291,8 @@ fn assert_built_client_options() {
     assert_eq!(sync.project, None);
     assert!(sync.shared_session.is_none());
     let async_client =
-        select_client(&settings, ClientKind::Async).expect("the async client resolves");
-    assert_eq!(async_client.kind, ClientKind::Async);
+        select_client(&settings, ClientKind::Asynchronous).expect("the async client resolves");
+    assert_eq!(async_client.kind, ClientKind::Asynchronous);
     assert_eq!(async_client.organization, None);
     assert_eq!(async_client.project, None);
     assert!(async_client.shared_session.is_none());
@@ -299,7 +300,7 @@ fn assert_built_client_options() {
     let mut shared = connection();
     shared.shared_session = Some(SharedSession);
     let async_shared =
-        select_client(&shared, ClientKind::Async).expect("the async client resolves");
+        select_client(&shared, ClientKind::Asynchronous).expect("the async client resolves");
     assert!(async_shared.shared_session.is_some());
     let sync_shared = select_client(&shared, ClientKind::Sync).expect("the sync client resolves");
     assert!(sync_shared.shared_session.is_none());
@@ -349,7 +350,7 @@ async fn assert_supplied_client_options() {
     assert_eq!(kept.organization.as_deref(), Some("org-supplied"));
     assert_eq!(kept.project.as_deref(), Some("proj-supplied"));
     assert!(matches!(
-        select_client(&settings, ClientKind::Async),
+        select_client(&settings, ClientKind::Asynchronous),
         Err(SpeechError::ClientKind { .. })
     ));
 
@@ -380,7 +381,7 @@ async fn assert_async_supplied_client() {
     let (first, _) = call(
         &fixture,
         &SpeechOptions::default(),
-        supplied_settings(ClientKind::Async),
+        supplied_settings(ClientKind::Asynchronous),
         true,
         "Hi",
     )
@@ -464,7 +465,7 @@ async fn wired_logging(options: &SpeechOptions) -> (Json, Json) {
                 connection: connection(),
                 aspeech: false,
             },
-            &mut PrePostLogger {
+            &mut LogContext {
                 state: &mut state,
                 env: &env,
             },

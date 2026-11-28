@@ -1,41 +1,15 @@
 use super::convert::{ConvertError, NativeErrorPayload};
 use betterlite_config::env_integer::timeout::TimeoutError as RequestTimeoutError;
 use betterlite_config::loader::ConfigError;
-use betterlite_config::sections::vertex_credential_sources::credential_source::CredentialDecodeError;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::error::RedactionError;
-use betterlite_vertex::google_native_content::error::NativeContentError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 // Every failure a generate content call raises comes back as this class, carrying the LiteLLM error payload as its text.
 create_exception!(betterlite_native, NativeGenaiError, PyException);
-// What the provider config reports while B3489 builds the body, the URL and the auth headers.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum GenaiConfigError {
-    #[error("the generate content request could not be built: {source}")]
-    Native {
-        #[source]
-        source: NativeContentError,
-    },
-    #[error("the generate content body could not be encoded: {source}")]
-    Body {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the vertex credentials could not be read: {source}")]
-    Credentials {
-        #[source]
-        source: CredentialDecodeError,
-    },
-}
-impl From<NativeContentError> for GenaiConfigError {
-    fn from(source: NativeContentError) -> Self {
-        Self::Native { source }
-    }
-}
 // What a session needs from the process before it can take a call.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
@@ -53,7 +27,7 @@ pub(crate) enum SessionError {
     },
     #[error("the google settings could not be read: {source}")]
     Settings {
-        #[source]
+        #[from]
         source: ConfigError,
     },
     #[error("the request timeout could not be read: {source}")]

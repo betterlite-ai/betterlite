@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use super::client::{ClientKind, ClientSettings, ImageVariationClient, select_client};
+use super::client::{ClientSettings, ImageVariationClient, select_client};
 use super::error::{ImageVariationResult, ImageVariationSource, OpenAiImageVariationError};
 use super::{ImageVariationData, ImageVariationRequest, OpenAiImageVariationConfig, PROVIDER};
 use crate::api::image_contracts::records::ImageHeaders;
+use betterlite_http::client_kind::ClientKind;
 
 // LiteLLM's None leaves a call unbounded; bounded-inputs caps it at the SDK default of 600 seconds
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -41,7 +42,7 @@ pub fn prepare_image_variation(
     };
     let settings = ClientSettings {
         kind: if request.params.async_call {
-            ClientKind::Async
+            ClientKind::Asynchronous
         } else {
             ClientKind::Sync
         },

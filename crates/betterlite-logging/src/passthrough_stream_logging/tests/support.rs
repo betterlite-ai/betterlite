@@ -15,8 +15,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use super::super::build::StreamLoggingInput;
 use super::super::object::{
-    StreamLoggingCallbacks, StreamLoggingObject, StreamLoggingState, StreamSuccessCall,
-    StreamSuccessDispatch,
+    StreamLoggingObject, StreamLoggingState, StreamSuccessCall, StreamSuccessDispatch,
 };
 use super::super::router::{AnthropicFrameProbe, StreamLoggingRouter};
 use super::super::tinyfish::{TinyfishCollectedChunks, TinyfishStreamBilling};
@@ -27,14 +26,13 @@ use super::super::types::{
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
-use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use crate::logging_state::types::{CallbackPolicy, DynamicCallbacks, RequestLoggingFlags};
 use crate::logging_state::{LoggingInit, LoggingState};
+use crate::logging_success::owned::OwnedSuccessHandler;
 use crate::logging_success::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use crate::logging_success::types::{SuccessMode, SuccessResult};
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
@@ -595,16 +593,10 @@ impl SuccessClock for FixedClock {
     }
 }
 
-pub(super) struct NoFailureCounter;
-
-impl CallbackFailureCounter for NoFailureCounter {
-    fn increment_callback_logging_failure(&self, _callback_name: &str) {}
-}
-
 pub(super) fn callbacks(
     logger: Arc<RecordingLogger>,
     mut registry: CallbackRegistry,
-) -> StreamLoggingCallbacks {
+) -> Arc<OwnedSuccessHandler> {
     let sink = CallbackSink::Logger(logger);
     let identity = CallbackIdentity {
         class_name: "recording".to_owned(),
@@ -612,20 +604,15 @@ pub(super) fn callbacks(
     };
     let registration = registry.register(identity, sink, CallbackList::Success);
     assert_ne!(registration, Registration::SkippedCapacity);
-    StreamLoggingCallbacks {
+    Arc::new(OwnedSuccessHandler {
         registry: Arc::new(registry),
         payload_builder: Arc::new(FixedBuilder),
         stream_assembler: Arc::new(NoAssembler),
         clock: Arc::new(FixedClock),
-        failure_counters: vec![Arc::new(NoFailureCounter)],
         excluded_fields: Vec::new(),
-        known_callback: Arc::new(|_name| false),
-        stamp: ResponseStamp {
-            id: "chatcmpl-placeholder".to_owned(),
-            created: 1_704_067_200,
-        },
+        known_callback: Arc::new(|_name: &str| false),
         privacy: Settings::default(),
-    }
+    })
 }
 
 #[derive(Clone, Default)]

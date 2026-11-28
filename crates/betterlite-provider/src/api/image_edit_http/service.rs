@@ -1,7 +1,9 @@
 use std::time::{Duration, Instant};
 
-use betterlite_core::api::vector_store_http_write::error::{ClientError, handle_error};
-use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
+use betterlite_core::api::vector_store_http_write::error::handle_error;
+use betterlite_core::api::vector_store_http_write::service::{
+    ClientSource, WriteRequest, WriteTransport,
+};
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
@@ -43,12 +45,6 @@ pub struct ImageEditCall<'call> {
     pub timeout: Duration,
 }
 
-pub trait ClientSource: Send + Sync {
-    type Client: WriteTransport + Clone;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
-}
-
 pub struct ImageEditDeps<'deps, C: BaseImageEditConfig, S: ClientSource> {
     pub config: &'deps C,
     pub source: &'deps S,
@@ -73,7 +69,7 @@ pub(super) fn prepare<'borrow, 'call, C, S>(
 ) -> Result<Prepared<'borrow, 'call, C, S::Client>, ImageEditHttpError<C::Error>>
 where
     C: BaseImageEditConfig,
-    S: ClientSource,
+    S: ClientSource<Client: Clone>,
 {
     let fields = request::fields(call.litellm_params)?;
     let caller = request::caller_headers(call.optional_params)?;

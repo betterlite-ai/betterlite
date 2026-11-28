@@ -1,5 +1,6 @@
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::speech::client::{
-    ClientKind, SharedSession, SpeechConnection, SuppliedClient, normalize_base,
+    SharedSession, SpeechConnection, SuppliedClient, normalize_base,
 };
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::{SpeechFormat, SpeechOptions};
@@ -38,16 +39,9 @@ pub(crate) struct ClientSpec {
     #[serde(default)]
     pub(crate) aspeech: bool,
     #[serde(default)]
-    pub(crate) supplied: Option<SuppliedKind>,
+    pub(crate) supplied: Option<ClientKind>,
     #[serde(default)]
     pub(crate) shared_session: bool,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum SuppliedKind {
-    Sync,
-    Async,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,10 +81,7 @@ pub(super) fn options(request: &Request) -> SpeechOptions {
 pub(super) fn connection(spec: &ClientSpec) -> Result<SpeechConnection, SpeechError> {
     let supplied = match spec.supplied {
         Some(kind) => Some(SuppliedClient {
-            kind: match kind {
-                SuppliedKind::Sync => ClientKind::Sync,
-                SuppliedKind::Async => ClientKind::Async,
-            },
+            kind,
             api_key: Some(SecretString::from("sk-supplied")),
             base_url: normalize_base("https://supplied.test/v1")?,
             timeout: Duration::from_secs(45),

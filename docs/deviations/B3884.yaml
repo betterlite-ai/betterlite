@@ -1,0 +1,33 @@
+task: B3884
+deviations:
+  - what: >-
+      The refresh reads rows through a BudgetPageSource trait and hands B3882 plain input records, not prisma models or LiteLLM_UserTable values.
+    why: >-
+      betterlite-logging cannot depend on the table crates, and the page walk is tested with a fake source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3617-L3656
+  - what: >-
+      PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES must be at least 1, and a malformed or non-positive value stops startup with a config error naming the variable.
+    why: >-
+      LiteLLM passes any int to its scheduler without a check, and a zero or negative interval has no useful meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1546-L1548
+  - what: >-
+      The job is a BudgetRefreshJob handle that B124's scheduler registers, not a call to AsyncIOScheduler.add_job.
+    why: >-
+      betterlite has no APScheduler; the scheduler belongs to the startup task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4536-L4563
+  - what: >-
+      Money values stay Decimal from the row to B3882's input records.
+    why: >-
+      money is never a float in betterlite.
+    link: ""
+  - what: >-
+      The refresh takes an injected BudgetGaugeClock instead of reading datetime.now() inside the customer and reset-hours code.
+    why: >-
+      tests need exact values, and B3882's setters already take the reset time as an argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3780-L3821
+kept_bugs:
+  - what: >-
+      get_paginated_teams turns a failed team query into (empty, 0) after logging "[Non-Blocking]", so a broken team page is an empty page for the walk rather than an error.
+    why: >-
+      B10152 keeps LiteLLM's behavior and a working deployment relies on the refresh carrying on past a team read failure, so the walk sees no error for teams.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965

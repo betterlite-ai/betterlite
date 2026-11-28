@@ -11,6 +11,7 @@ use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::user_url::validate::SystemResolver;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
@@ -26,6 +27,7 @@ use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::anthropic_dispatch::base::Surface;
+use crate::anthropic_dispatch::completion;
 use crate::anthropic_dispatch::completion::{CompletionCall, CompletionSettings};
 use crate::anthropic_dispatch::gateway::context;
 use crate::anthropic_dispatch::gateway::error;
@@ -37,7 +39,6 @@ use crate::anthropic_dispatch::gateway::{AnthropicUpstream, provider_headers};
 use crate::anthropic_dispatch::native::legacy::Legacy;
 use crate::anthropic_dispatch::native::preparation::Preparation;
 use crate::anthropic_dispatch::native::{ClientHandle, Counter, Native, Reply, Runtime};
-use crate::anthropic_dispatch::{CallLogging, completion};
 use crate::operation::OperationError;
 use crate::prepared::body::chat_request_fields;
 use crate::prepared::deployment::Deployment;
@@ -249,7 +250,7 @@ async fn send(
         Utc::now().fixed_offset(),
     )
     .map_err(|source| error::internal(source.to_string()))?;
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &env,
     };

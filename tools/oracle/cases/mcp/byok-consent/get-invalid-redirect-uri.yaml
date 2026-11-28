@@ -1,0 +1,22 @@
+kind: helper
+name: byok-consent-get-invalid-redirect-uri
+call:
+  b4677:
+    route: get
+    query:
+      response_type: code
+      client_id: client-1
+      redirect_uri: "https://example.com/cb"
+      code_challenge: challenge
+      state: state-1
+      server_id: ""
+    servers: null
+    form: null
+    cookie_header: null
+    master_key: null
+    now: 1700000000
+    prefill_live: 0
+    prefill_expired: 0
+env: {}
+compare:
+  ignore: []

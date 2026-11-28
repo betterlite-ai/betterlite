@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -14,9 +15,7 @@ use betterlite_openai::transcription::call::{
     Pending, TranscriptionCall, TranscriptionRequest, async_audio_transcriptions,
     audio_transcriptions, finish_transcription,
 };
-use betterlite_openai::transcription::client::{
-    ClientKind, TranscriptionConnection, select_client,
-};
+use betterlite_openai::transcription::client::{TranscriptionConnection, select_client};
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use betterlite_openai::transcription::duration::duration_number;
 use betterlite_openai::transcription::error::TranscriptionError;
@@ -164,7 +163,7 @@ fn client_view(connection: &TranscriptionConnection, kind: ClientKind) -> Value 
         .ok()
         .map_or(Value::Null, |client| {
             json!({
-                "kind": if matches!(client.kind, ClientKind::Async) { "async" } else { "sync" },
+                "kind": client.kind.label(),
                 "base_url": client.base_url.as_str(),
                 "max_retries": client.max_retries,
             })
@@ -193,7 +192,7 @@ pub(super) fn exchange(probe: &Probe) -> Result<Value, Box<HelperError>> {
     };
     let explicit = probe.data_model.is_some() || probe.data_model_null;
     let kind = if explicit || probe.atranscription {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };

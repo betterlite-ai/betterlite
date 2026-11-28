@@ -8,11 +8,11 @@ use rstest::rstest;
 use serde_json::Value;
 use tokio::time::{Instant, timeout};
 
-use crate::assistants::client::ClientKind;
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::operations::{RunCall, RunDispatch, RunInvocation};
 use crate::thread_runs::records::{RunEvent, RunReply, RunRequest};
 use crate::thread_runs::stream::RunEventHandler;
+use betterlite_http::client_kind::ClientKind;
 
 use super::support::{
     COMPLETED, FAILED, GatedHandler, IN_PROGRESS, KEY, QUEUED, REQUIRES_ACTION, Recorder,
@@ -110,7 +110,7 @@ async fn poll_state(state: &str, arun_thread: bool) -> (Vec<Seen>, RunReply) {
         panic!("expected a polled invocation");
     };
     let expected = if arun_thread {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };
@@ -790,9 +790,9 @@ async fn instructions_tools_overrides() {
 
 async fn dispatch_selections() {
     let selections = [
-        (Facade::AsyncRun, ClientKind::Async, false),
+        (Facade::AsyncRun, ClientKind::Asynchronous, false),
         (Facade::SyncRun, ClientKind::Sync, false),
-        (Facade::AsyncStream, ClientKind::Async, true),
+        (Facade::AsyncStream, ClientKind::Asynchronous, true),
         (Facade::SyncStream, ClientKind::Sync, true),
     ];
     for (facade, expected, streaming) in selections {
@@ -849,7 +849,7 @@ async fn stream_event_handler() {
         panic!("expected a stream manager");
     };
     assert!(sink_stream.handler.is_some());
-    assert_eq!(sink_stream.kind, ClientKind::Async);
+    assert_eq!(sink_stream.kind, ClientKind::Asynchronous);
     let sink_events = sink_stream.consume().await.unwrap();
     assert_eq!(sink_events.len(), 3);
     assert_eq!(

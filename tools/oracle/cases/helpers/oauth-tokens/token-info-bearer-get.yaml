@@ -1,0 +1,13 @@
+kind: helper
+name: oauth-tokens-token-info-bearer-get
+call:
+  oauth_tokens:
+    token: opaque-token-2
+    endpoint: https://idp.example/userinfo
+    client_id: betterlite-client
+    client_secret: betterlite-secret
+    response:
+      status: 200
+      body: '{"sub": "user-2", "role": "proxy_admin", "team_id": "team-2"}'
+env: {}
+compare: {ignore: []}

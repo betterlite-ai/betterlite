@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_openai::cohere_legacy_embedding::SYNC_CLIENT_TIMEOUT;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -10,13 +11,12 @@ use super::error::EmbeddingCallError;
 use super::hooks::{Event, Input, replay};
 use super::plan::EmbeddingPlan;
 use super::sign::{AsyncSigningInput, sign_owned};
-use super::{
-    Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext,
-};
+use super::{Clock, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext};
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingCall as IoCall, SuppliedClient, Timeout, post_embedding,
+    ClientFactory, EmbeddingCall as IoCall, Timeout, post_embedding,
 };
+use crate::credentials::CredentialSource;
 use crate::signing::executor::AwsSigningExecutor;
 
 mod bridge;
@@ -51,7 +51,7 @@ pub fn execute<'run, Source, Factory, Transport>(
     log: &'run mut LogContext<'_, '_>,
 ) -> BoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
     Factory::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,

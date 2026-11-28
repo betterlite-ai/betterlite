@@ -1,0 +1,48 @@
+task: B7886
+deviations:
+- what: "`client` or `shared_session` in kwargs raise `UnsupportedCallArgument` naming the argument, where LiteLLM passes both to its run HTTP handlers."
+  why: They are live Python HTTP clients; betterlite makes its own request through its Rust transport, so accepting one would silently ignore the client the caller gave.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1263-L1264
+- what: "A `litellm_logging_obj` in kwargs is dropped, so the caller's logging object, its `update_from_kwargs` call and its success and failure handlers never see a run call; the native session logs the call with its own logging state and a silent sink."
+  why: The object is Python state a Rust call cannot reach, and keeping it would promise records that never arrive; every run function builds the logging state the core service asks for instead.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1196
+- what: "`create_run` and `list_runs` with a provider that has no evals API config answer a `BadRequestError` (400), where LiteLLM's `ValueError` goes through `exception_type` and comes out as an `APIConnectionError` (500)."
+  why: "The provider name is the caller's input and the call can never succeed; B3424 made that call for the native create and list service, and these functions surface the class it chose."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1213
+- what: "`get_run`, `cancel_run` and `delete_run` with a provider that has no evals API config answer a `BadRequestError` (400), where LiteLLM's `ValueError` goes through `exception_type` and comes out as an `APIConnectionError` (500)."
+  why: "The provider name is the caller's input and the call can never succeed; B3425 made that call for the native lifecycle service, and these functions surface the class it chose."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1567
+- what: "The async twins set the async keyword and await the native async operation: acreate_run and acancel_run call their sync twin and await the coroutine it answers, while alist_runs, aget_run and adelete_run build the same payload and await the session's async method. LiteLLM instead runs every sync body through functools.partial, contextvars.copy_context and loop.run_in_executor."
+  why: The native operation is async end to end, so there is no blocking body to hand to an executor; the event loop stays free and both names return the same result or the same mapped error.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1094
+- what: "A declared field whose JSON value has the wrong type (limit as text, run_id as a number, extra_headers as anything but a string map, data_source as anything but an object) raises a 400 that names the field, where LiteLLM passes the value on and httpx or the provider fails later; a value that is not JSON at all fails the Python payload conversion before the call."
+  why: "docs/compatibility.md reads a value outside the declared type as an error naming the field; the typed request model cannot carry the wrong shape, and the payload builder cannot serialize a Python object the caller passed in a JSON position."
+  link: ""
+- what: "A timeout that cannot be a std Duration is refused before the provider call: a negative or too-large number is a 400 that names timeout, and a non-finite timeout fails the payload parse as a ValueError, where LiteLLM's `timeout or request_timeout` hands the float to httpx and reports whatever it raises through exception_type as a 500-class APIConnectionError."
+  why: "betterlite carries the timeout as a typed Duration and refuses the value it cannot represent at the parameter, so the failure names the value instead of inventing a provider status; JSON has no non-finite numbers, so those stop at the parse."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1261
+- what: "A call's `ssl_verify` (a bool or a CA bundle path, an extra in `GenericLiteLLMParams`) and the module `betterlite.ssl_verify` are ignored: every run request verifies TLS with the session client's default policy, where LiteLLM builds each run client with `params={\"ssl_verify\": litellm_params.get(\"ssl_verify\", None)}` for create, list, cancel and delete."
+  why: "The native run session builds one client from the environment's proxy policy and the run transport carries no per-call TLS policy, so a call against a self-signed or custom-CA endpoint fails the handshake here where LiteLLM accepts it; B7880 records the same gap for containers."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13169
+- what: "A structured `httpx.Timeout` passed as `timeout` becomes one number before the native call: `to_call_payload` keeps the largest of its set phases, so connect, read, write and pool all get that one deadline, where LiteLLM hands the object to httpx and each phase applies to its own stage."
+  why: "The native run request carries a single timeout in seconds and its transport has one deadline, so a short connect phase with a long read phase waits on connect for the read's length; the cancel and delete handlers apply the phases the same way (llm_http_handler.py#L13496 and #L13597)."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13186
+- what: "The ten run functions run their bodies directly instead of through LiteLLM's `@client` wrapper, so the wrapper's `max_budget` guard, per-request retry check, cache lookup, success and failure handler dispatch and cost tracking do not run for a run call; `litellm_credential_name` is resolved from `betterlite.credential_list` in `_runs.py` before the payload is built, which is the wrapper's credential step, except that a name matching no entry is dropped without the loader's warning `litellm_credential_name=... matched none of the ... loaded credentials; the request runs without it`."
+  why: "The wrapper's work is Python bookkeeping around a call the native core makes; a setup that relies on those guards around evals runs gets the request without them, while the stored credential still supplies its api_key and api_base. An unmatched name still runs the request without the credential, and only the log line is lost (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L710-L716)."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1163
+- what: "`betterlite.evals` exports the ten run names as well as the twelve eval names, where `litellm.evals` exports only the eval names and LiteLLM reaches the run functions from the top-level `litellm` package."
+  why: "The task's definition of done requires the package to export every name of both evals parts, so a caller can reach a run function through the package; the names are LiteLLM's own, imported from the module the top-level package imports them from."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/__init__.py#L5-L33
+kept_bugs:
+- what: "create_run accepts `metadata` and never puts it on the request; only extra_body can add a metadata body field."
+  why: "LiteLLM comments the metadata assignment out and builds the create request from data_source, name and extra_body, so a working setup that passes metadata today sees it ignored; changing that would change the wire body against LiteLLM."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1221-L1222
+- what: "create_run, get_run, cancel_run and delete_run accept `extra_query` and never put it on the request; only list_runs reads it, and there it overrides the named pagination values."
+  why: "LiteLLM declares the parameter on all five and merges it only into the list parameters, so a working caller that sets it on the other four relies on it being ignored, and a caller that sets it on list_runs relies on the override."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1410-L1412
+- what: "list_runs sends limit, after, before and order only when they are truthy, so an explicit limit of 0 or an empty cursor string is dropped, where docs/compatibility.md would use an explicit 0 or \"\" as given."
+  why: "LiteLLM's list transform skips every falsy value, so a setup switching from LiteLLM keeps the query it sent before; sending limit=0 would change the request that setup relies on."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L309-L316
+- what: "get_run and list_runs never raise for a non-2xx status: a 404 body fails the reply parse and comes out as an APIConnectionError (500), while cancel_run and delete_run raise NotFoundError (404) for the same reply."
+  why: "LiteLLM's get and list handlers never call raise_for_status, so a setup switching from LiteLLM sees the same parse failure; changing the class to NotFoundError would change what that setup catches."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13394-L13405

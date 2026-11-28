@@ -1,7 +1,8 @@
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
-use betterlite_openai::text_completion_transport::logging::{CompletionLogger, PrePostLogger};
+use betterlite_openai::text_completion_transport::logging::CompletionLogger;
 use indexmap::IndexMap;
 use serde::Serialize;
 
@@ -33,7 +34,7 @@ pub trait OpenAiLogger {
 
 // B249's logging state and environment, serving the dispatch hooks and the text transport at once
 pub struct B249Logger<'call, 'env> {
-    pub completion: PrePostLogger<'call, 'env>,
+    pub completion: LogContext<'call, 'env>,
 }
 
 impl OpenAiLogger for B249Logger<'_, '_> {

@@ -1,18 +1,14 @@
-use betterlite_core::api::api_boundaries::{
-    ApiBoundariesInput, ApiLimits, ItemsBoundary, JsonBoundary,
-};
+use axum::body::to_bytes;
+use axum::extract::Request;
+use axum::http::{HeaderMap, header};
+use betterlite_core::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use betterlite_core::api::request_body::{
     DecodedJson, MediaTypeKind, RequestBodyError, classify_media_type,
 };
-use betterlite_core::api::request_form::values::{
-    FormFields, FormPart, FormParts, PartValue, UploadFile, get_form_data,
-};
+use betterlite_core::api::request_form::values::{FormFields, FormParts, PartValue, get_form_data};
+use serde::Serialize;
 use std::str;
 use thiserror::Error;
-
-use crate::api::ocr_request::multipart_form::charset::decode_part;
-use crate::api::ocr_request::multipart_form::disposition::disposition_param_bytes;
-use crate::api::ocr_request::multipart_form::raw_split::{RawItem, split_items};
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RequestFormError {
@@ -84,138 +80,127 @@ pub fn decode_request_form(
         str::from_utf8(content_type).map_err(|_error| RequestFormError::ContentType)?;
     let media_type = header_text.split(';').next().unwrap_or(header_text);
     match media_type.trim().to_ascii_lowercase().as_str() {
-        "application/x-www-form-urlencoded" => decode_urlencoded(bytes, limits),
-        "multipart/form-data" => decode_multipart(bytes, header_text, limits),
+        "application/x-www-form-urlencoded" => decode::urlencoded(bytes, limits),
+        "multipart/form-data" => decode::multipart(bytes, header_text, limits),
         _other => Err(RequestFormError::ContentType),
     }
 }
 
-fn decode_urlencoded(bytes: &[u8], limits: &ApiLimits) -> Result<FormParts, RequestFormError> {
-    let part_count = if bytes.is_empty() {
-        0
-    } else {
-        bytes.split(|byte| *byte == b'&').count()
+// FastAPI's Form(...) reads a body of either form encoding; the routes differ on which ones they declare.
+pub(crate) const FORM_CONTENT_TYPES: &[&str] =
+    &["application/x-www-form-urlencoded", "multipart/form-data"];
+pub(crate) const URLENCODED_FORM_CONTENT_TYPES: &[&str] = &["application/x-www-form-urlencoded"];
+// LiteLLM caps one form field at 1 MiB but leaves the total unbounded; one MiB for the whole body closes that.
+const FORM_BODY_LIMIT_BYTES: usize = 0x0010_0000;
+pub(crate) const MAX_FORM_FIELDS: usize = 1000;
+// The shared decoder caps ampersand-separated parts, and Starlette counts only fields, so an empty segment spends one of the 1000.
+const FORM_LIMITS: ApiLimits = ApiLimits {
+    max_json_bytes: FORM_BODY_LIMIT_BYTES,
+    max_event_bytes: FORM_BODY_LIMIT_BYTES,
+    max_items: MAX_FORM_FIELDS,
+};
+const UNREADABLE_BODY: &str = "There was an error parsing the body";
+const TOO_MANY_FIELDS: &str = "Too many fields. Maximum number of fields is 1000.";
+
+pub(crate) async fn read_form(
+    request: Request,
+    accepted_content_types: &[&str],
+) -> Result<FormParts, FormError> {
+    let (parts, body) = request.into_parts();
+    let Some(content_type) = form_content_type(&parts.headers, accepted_content_types) else {
+        return Ok(FormParts::default());
     };
-    check_part_count(part_count, limits)?;
-    let mut items = Vec::with_capacity(part_count);
-    for part in bytes
-        .split(|byte| *byte == b'&')
-        .filter(|part| !part.is_empty())
-    {
-        let mut fields = part.splitn(2, |byte| *byte == b'=');
-        let name = fields.next().unwrap_or_default();
-        let value = fields.next().unwrap_or_default();
-        items.push(FormPart {
-            name: unquote_plus_latin1(name),
-            value: PartValue::Text(unquote_plus_latin1(value)),
-        });
+    let Ok(bytes) = to_bytes(body, FORM_BODY_LIMIT_BYTES).await else {
+        return Err(FormError::UnreadableBody);
+    };
+    match decode_request_form(&bytes, content_type.as_bytes(), &FORM_LIMITS) {
+        Ok(form_parts) => Ok(form_parts),
+        Err(RequestFormError::TooManyParts) => Err(FormError::TooManyFields),
+        Err(
+            RequestFormError::BodyTooLarge
+            | RequestFormError::ContentType
+            | RequestFormError::InvalidBody
+            | RequestFormError::MissingName
+            | RequestFormError::UnsupportedContentType(_)
+            | RequestFormError::RequestBody(_),
+        ) => Err(FormError::UnreadableBody),
     }
-    Ok(FormParts { items })
 }
 
-// Starlette reads each field via unquote_plus(bytes.decode("latin-1")): raw bytes stay latin-1 characters and percent escapes decode as UTF-8 runs with one U+FFFD per invalid sequence
-fn unquote_plus_latin1(bytes: &[u8]) -> String {
-    let mut decoded = String::with_capacity(bytes.len());
-    let mut escaped = Vec::with_capacity(bytes.len());
-    let mut remainder = bytes;
-    while let Some((byte, rest)) = remainder.split_first() {
-        remainder = rest;
-        if *byte >= 0x80_u8 {
-            push_replaced_utf8(&mut decoded, &escaped);
-            escaped.clear();
-            decoded.push(char::from(*byte));
-        } else if *byte == b'+' {
-            escaped.push(b' ');
-        } else if *byte == b'%' {
-            match rest {
-                [high, low, tail @ ..] if high.is_ascii_hexdigit() && low.is_ascii_hexdigit() => {
-                    escaped.push(
-                        hex_value(*high)
-                            .wrapping_shl(4_u32)
-                            .wrapping_add(hex_value(*low)),
-                    );
-                    remainder = tail;
-                }
-                _ => escaped.push(b'%'),
-            }
-        } else {
-            escaped.push(*byte);
-        }
-    }
-    push_replaced_utf8(&mut decoded, &escaped);
-    decoded
+#[derive(Debug, Error)]
+pub(crate) enum FormError {
+    #[error("There was an error parsing the body")]
+    UnreadableBody,
+    #[error("Too many fields. Maximum number of fields is 1000.")]
+    TooManyFields,
 }
 
-// Python's errors="replace" decodes each maximal invalid subsequence as one U+FFFD
-fn push_replaced_utf8(decoded: &mut String, bytes: &[u8]) {
-    for chunk in bytes.utf8_chunks() {
-        decoded.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            decoded.push(char::REPLACEMENT_CHARACTER);
+impl FormError {
+    pub(crate) const fn detail(self) -> &'static str {
+        match self {
+            Self::UnreadableBody => UNREADABLE_BODY,
+            Self::TooManyFields => TOO_MANY_FIELDS,
         }
     }
 }
 
-const fn hex_value(byte: u8) -> u8 {
-    match byte {
-        b'0'..=b'9' => byte.wrapping_sub(b'0'),
-        b'a'..=b'f' => byte.wrapping_sub(b'a').wrapping_add(10_u8),
-        _ => byte.wrapping_sub(b'A').wrapping_add(10_u8),
+fn form_content_type<'headers>(
+    headers: &'headers HeaderMap,
+    accepted_content_types: &[&str],
+) -> Option<&'headers str> {
+    let value = headers.get(header::CONTENT_TYPE)?;
+    let text = value.to_str().ok()?;
+    let media_type = text.split(';').next().unwrap_or_default().trim();
+    accepted_content_types
+        .iter()
+        .copied()
+        .any(|accepted| media_type.eq_ignore_ascii_case(accepted))
+        .then_some(text)
+}
+
+pub(crate) fn last_value<'parts>(parts: &'parts FormParts, field: &str) -> Option<&'parts str> {
+    parts.items.iter().rev().find_map(|part| match &part.value {
+        PartValue::Text(value) if part.name == field => Some(value.as_str()),
+        PartValue::Text(_) | PartValue::Upload(_) => None,
+    })
+}
+
+pub(crate) fn validation_body(missing: &[&'static str]) -> ValidationBody {
+    ValidationBody {
+        detail: missing
+            .iter()
+            .map(|field| ValidationDetail {
+                kind: "missing",
+                loc: ["body", *field],
+                msg: "Field required",
+                input: NullInput,
+            })
+            .collect(),
     }
 }
 
-fn decode_multipart(
-    bytes: &[u8],
-    content_type: &str,
-    limits: &ApiLimits,
-) -> Result<FormParts, RequestFormError> {
-    let boundary_bytes = disposition_param_bytes(content_type.as_bytes(), "boundary")
-        .filter(|value| !value.is_empty())
-        .ok_or(RequestFormError::ContentType)?;
-    let boundary =
-        str::from_utf8(&boundary_bytes).map_err(|_error| RequestFormError::ContentType)?;
-    let charset = disposition_param_bytes(content_type.as_bytes(), "charset")
-        .map_or_else(|| "utf-8".to_owned(), |value| decode_part(&value, "latin1"));
-    if bytes.is_empty() {
-        return Ok(FormParts { items: Vec::new() });
-    }
-    let mut items = Vec::new();
-    for item in split_items(bytes, boundary).map_err(|_error| RequestFormError::InvalidBody)? {
-        let raw_item = item.map_err(|_error| RequestFormError::InvalidBody)?;
-        check_part_count(items.len().saturating_add(1), limits)?;
-        items.push(read_part(&raw_item, &charset)?);
-    }
-    Ok(FormParts { items })
+#[derive(Debug, Serialize)]
+pub(crate) struct DetailBody {
+    pub(crate) detail: &'static str,
 }
 
-fn read_part(item: &RawItem<'_>, charset: &str) -> Result<FormPart, RequestFormError> {
-    let disposition = item
-        .content_disposition
-        .ok_or(RequestFormError::InvalidBody)?;
-    let name_bytes =
-        disposition_param_bytes(disposition, "name").ok_or(RequestFormError::MissingName)?;
-    let name = decode_part(&name_bytes, charset);
-    let value = match disposition_param_bytes(disposition, "filename") {
-        Some(filename) => PartValue::Upload(UploadFile {
-            filename: decode_part(&filename, charset),
-            content_type: item.content_type.map(|value| decode_part(value, "latin1")),
-            content: item.data.to_vec(),
-            size: Some(
-                u64::try_from(item.data.len()).map_err(|_error| RequestFormError::BodyTooLarge)?,
-            ),
-        }),
-        None => PartValue::Text(decode_part(item.data, charset)),
-    };
-    Ok(FormPart { name, value })
+#[derive(Debug, Serialize)]
+pub(crate) struct ValidationBody {
+    detail: Vec<ValidationDetail>,
 }
 
-fn check_part_count(count: usize, limits: &ApiLimits) -> Result<(), RequestFormError> {
-    limits
-        .check(ApiBoundariesInput::Items(ItemsBoundary {
-            known_count: count,
-        }))
-        .map_err(|_error| RequestFormError::TooManyParts)?;
-    Ok(())
+// FastAPI 0.162's RequestValidationError for a missing Form(...) field.
+#[derive(Debug, Serialize)]
+struct ValidationDetail {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    loc: [&'static str; 2],
+    msg: &'static str,
+    input: NullInput,
 }
 
+#[derive(Debug, Serialize)]
+struct NullInput;
+
+mod decode;
 mod tests;

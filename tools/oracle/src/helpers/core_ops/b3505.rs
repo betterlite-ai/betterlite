@@ -1,18 +1,20 @@
-mod fixture;
 mod harness;
 mod projection;
-mod records;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::studio_identity;
 use betterlite_core::api::agents::item::error::AgentItemFailureError;
 use betterlite_core::api::agents::item::{
     AgentItemDeps, AgentItemRequest, adelete, aget, alist_versions, delete, get, list_versions,
 };
 use betterlite_models::decisions::Json;
+use betterlite_vertex::studio_agents::config::GeminiAgentsConfig;
+use betterlite_vertex::studio_agents::config::error::GeminiAgentError;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Number, Value, json};
@@ -21,10 +23,9 @@ use tokio::runtime::{Builder, Runtime};
 use betterlite_http_fixture::error::FixtureError as FixtureThreadError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::{Serving, serve};
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use fixture::{FixtureConfig, FixtureError};
 use harness::Harness;
 use std::fmt::Display;
 
@@ -53,6 +54,9 @@ pub(crate) struct Input {
     extra_headers: BTreeMap<String, String>,
     page_size: Option<i64>,
     page_token: Option<String>,
+    // the case's own environment, so a key set there reaches the settings instead of the process env
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
 }
 
 pub(crate) struct Op;
@@ -89,18 +93,32 @@ impl Helper for Op {
             http: &mut harness.record,
             redactor: &harness.redactor,
         };
-        let outcome = operate(input.operation, &FixtureConfig, deps, &request, &runtime);
+        let settings = studio_identity::Raw::default()
+            .convert(&input.environment)
+            .or_value_error()?;
+        let config = GeminiAgentsConfig { settings };
+        let outcome = operate(input.operation, &config, deps, &request, &runtime);
         let head = finish_head(serving)?;
-        let mut answer = Map::new();
-        let sent_report = projection::request(&head, &wanted(input));
-        answer.insert("request".to_owned(), sent_report);
-        answer.insert("logging".to_owned(), projection::logging(&harness));
-        match outcome {
-            Ok(value) => answer.insert("response".to_owned(), value),
-            Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
-        };
-        Ok(Value::Object(answer))
+        Ok(compared_answer(input, &harness, &head, outcome))
     }
+}
+
+// the request, logging and response keys every item case compares
+fn compared_answer(
+    input: &Input,
+    harness: &Harness,
+    head: &str,
+    outcome: Result<Value, AgentItemFailureError<GeminiAgentError>>,
+) -> Value {
+    let mut answer = Map::new();
+    let sent_report = projection::request(head, &wanted(input));
+    answer.insert("request".to_owned(), sent_report);
+    answer.insert("logging".to_owned(), projection::logging(harness));
+    match outcome {
+        Ok(value) => answer.insert("response".to_owned(), value),
+        Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
+    };
+    Value::Object(answer)
 }
 
 fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {
@@ -113,11 +131,11 @@ fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {
 
 fn operate(
     operation: Operation,
-    config: &FixtureConfig,
+    config: &GeminiAgentsConfig,
     deps: AgentItemDeps<'_>,
     request: &AgentItemRequest<'_>,
     runtime: &Runtime,
-) -> Result<Value, AgentItemFailureError<FixtureError>> {
+) -> Result<Value, AgentItemFailureError<GeminiAgentError>> {
     match operation {
         Operation::Get => get(config, deps, request)
             .map(|value| json!({"id": &value.id, "name": &value.name})),

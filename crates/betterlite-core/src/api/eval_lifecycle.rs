@@ -5,6 +5,7 @@ mod tests;
 use std::time::Duration;
 
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::transformation::BaseEvalsAPIConfig;
@@ -16,7 +17,7 @@ use indexmap::IndexMap;
 use self::error::{EvalLifecycleError, EvalLifecycleFailure, failure};
 use self::prepare::{EvalAction, Prepared, prepare};
 use crate::api::eval_http::error::EvalHttpError;
-use crate::api::eval_http::exchange::{EvalConnection, EvalLogging};
+use crate::api::eval_http::exchange::EvalConnection;
 use crate::api::eval_http::handlers::{cancel_eval_handler, delete_eval_handler};
 
 pub const DEFAULT_OPENAI_API_BASE: &str = "https://api.openai.com";
@@ -60,7 +61,7 @@ pub type EvalCancelResult = Result<CancelEvalResponse, EvalLifecycleFailure>;
 // delete/cancel and their async wrappers: the provider factory and the logging state are passed once
 pub struct EvalLifecycles<'deps, 'state, 'env, Configs: ?Sized> {
     pub deps: &'deps EvalLifecycleDeps<'deps, Configs>,
-    pub log: &'deps mut EvalLogging<'state, 'env>,
+    pub log: &'deps mut LogContext<'state, 'env>,
 }
 
 impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Configs> {

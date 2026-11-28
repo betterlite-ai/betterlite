@@ -11,11 +11,11 @@ use betterlite_bedrock::batch_call::transport::{
 use betterlite_bedrock::bedrock_embedding_io::transport::{
     ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
 };
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::embedding_jobs::transport::{
     StatusReply, StatusTransport, StatusWireRequest,
 };
-use betterlite_bedrock::image_call::plan::CredentialSource;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
 use secrecy::ExposeSecret as _;

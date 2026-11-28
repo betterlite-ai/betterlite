@@ -16,7 +16,8 @@ use betterlite_azure::endpoints::projection::{AzureClientInputs, HttpClient, Ses
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings as AzureSettings;
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use betterlite_http::client_kind::ClientKind;
+use betterlite_openai::assistants::client::{ClientOptions, SdkClient};
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::assistants::records::ListParams;
@@ -133,7 +134,7 @@ where
             .map(|client| self.supplied_openai(client));
         let azure = matches!(&call.provider, AssistantProviderCall::Azure(_));
         // the Azure API calls the supplied client's list() bare, so its entry never takes the async defaults
-        let asynchronous = call.kind == ClientKind::Async && !azure;
+        let asynchronous = call.kind == ClientKind::Asynchronous && !azure;
         let sdk_defaults = ListParams::default();
         let params = if azure { UNPAGED } else { sdk_defaults };
         let reply = match call.operation {
@@ -191,7 +192,7 @@ where
                 DefinitionCall::Delete(call.assistant_id.as_deref().unwrap_or_default())
             }
         };
-        let flag = Some(call.kind == ClientKind::Async);
+        let flag = Some(call.kind == ClientKind::Asynchronous);
         let reply = api.call(&request, supplied, flag, definition).await?;
         Ok(match reply.reply {
             DefinitionReply::Page(page) => AssistantReply::Page(*page),
@@ -223,7 +224,7 @@ where
             max_retries: 0,
             timeout: None,
             http_client: HttpClient {
-                is_async: kind == ClientKind::Async,
+                is_async: kind == ClientKind::Asynchronous,
                 shared: false,
             },
         };

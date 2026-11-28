@@ -27,11 +27,8 @@ use axum::{Extension, Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
-use betterlite_logging::logging_service_events::clock::SystemClock;
 use betterlite_logging::logging_service_events::middleware::{ServiceEventState, service_events};
 use betterlite_logging::logging_service_events::pipeline::PipelineError;
-use betterlite_logging::logging_service_events::sink::TracingSink;
-use betterlite_logging::logging_service_events::wiring::LoggingWiring;
 use betterlite_logging::logging_streams::assembler::ChatStreamAssembler;
 use betterlite_logging::registry::CallbackRegistry;
 use betterlite_openai::chat::deployment::ChatDeployment;
@@ -40,6 +37,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_prometheus::collector_registry::CollectorRegistry;
 use chat_setup::vertex_embedding::{VertexEmbeddingSetupError, vertex_embedding_calls};
 use error::ChatCallsError;
+use logging_start::{SuccessInputsError, start_logging};
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -84,6 +82,8 @@ pub enum ServerError {
     VertexEmbedding(#[from] VertexEmbeddingSetupError),
     #[error(transparent)]
     Logging(#[from] PipelineError),
+    #[error(transparent)]
+    SuccessInputs(#[from] SuccessInputsError),
 }
 pub async fn run(
     config: Config,
@@ -106,14 +106,10 @@ pub async fn run_with_listener(
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
     let tasks = TaskTracker::new();
+    let registry = CallbackRegistry::new(config.sections.callback_settings.max_callbacks);
+    let stream_assembler = Arc::new(ChatStreamAssembler);
     // the one place the logging parts are built, with the stream assembler B8610 later replaces
-    let logging = LoggingWiring::start(
-        &config.sections.service_callback,
-        Arc::new(SystemClock),
-        Arc::new(TracingSink),
-        CallbackRegistry::new(config.sections.callback_settings.max_callbacks),
-        Arc::new(ChatStreamAssembler),
-    )?;
+    let logging = start_logging(&config, registry, stream_assembler)?;
     let events = ServiceEventState {
         pipeline: Arc::clone(&logging.pipeline),
         call_id: resolve_call_id,
@@ -201,7 +197,9 @@ pub(crate) fn application(
     let endpoints = chat_routes_with_call_id(calls, include_call_id)?;
     let embeddings = embedding_routes(executor, vertex, read_through, &azure.composition);
     // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
-    let routed = router(state, shutting_down, endpoints, embeddings).layer(Extension(counter));
+    let routed = router(state, shutting_down, endpoints, embeddings)
+        .layer(Extension(counter))
+        .layer(Extension(tasks.clone()));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),
@@ -217,8 +215,7 @@ pub(crate) fn application(
         in_flight: Arc::new(InFlightRequests::new(registry)),
     };
     let application = stack.wrap(stacked);
-    let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);
-    let root_wrapped = match prefixed {
+    let root_wrapped = match RootPaths::from_settings(&config.sections.request_root_paths) {
         Some(paths) => paths.wrap(application),
         None => application,
     };
@@ -289,6 +286,7 @@ pub mod error;
 pub mod filter;
 pub mod inputs;
 pub mod listener;
+pub mod logging_start;
 pub(crate) mod render;
 #[cfg(any(test, feature = "testing"))]
 pub mod test_support;

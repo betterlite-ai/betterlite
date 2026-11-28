@@ -1,7 +1,6 @@
 use std::future::ready;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_interactions::polling::host::{SettlementFuture, SettlementHost};
 use betterlite_interactions::types::response::InteractionsApiResponse;
 use betterlite_models::call_helpers::metadata::MetadataMap;
@@ -12,14 +11,11 @@ use thiserror::Error;
 
 use super::dedupe::reset_success_emission_dedupe;
 use super::reservation::{ReservationRelease, reservation_from_params};
-use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::logging_state::LoggingState;
 use crate::logging_state::correlation::CorrelationContext;
 use crate::logging_success::handler::{SuccessHandler, async_success_handler};
-use crate::logging_success::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
+use crate::logging_success::owned::OwnedSuccessHandler;
 use crate::logging_success::types::{SuccessRequest, SuccessResult};
-use crate::registry::CallbackRegistry;
 
 const HIDDEN_PARAMS_KEY: &str = "_hidden_params";
 const POLL_SCOPED_HIDDEN_PARAMS: [&str; 3] = ["response_cost", "model_id", "litellm_model_name"];
@@ -40,25 +36,11 @@ pub struct InteractionLoggingState {
     pub correlation: CorrelationContext,
 }
 
-// everything B250's SuccessHandler borrows, owned so the completion outlives the create's request
-#[derive(Clone)]
-pub struct InteractionLoggingCallbacks {
-    pub registry: Arc<CallbackRegistry>,
-    pub payload_builder: Arc<dyn StandardPayloadBuilder>,
-    pub stream_assembler: Arc<dyn StreamAssembler>,
-    pub clock: Arc<dyn SuccessClock>,
-    pub failure_counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    pub excluded_fields: Vec<String>,
-    pub known_callback: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    pub stamp: ResponseStamp,
-    pub privacy: Settings,
-}
-
 // the poll registry clones its host into the context, so every clone settles the same logging state
 #[derive(Clone)]
 pub struct InteractionLoggingObject<Release> {
     pub state: Arc<Mutex<Option<InteractionLoggingState>>>,
-    pub callbacks: InteractionLoggingCallbacks,
+    pub callbacks: Arc<OwnedSuccessHandler>,
     pub release: Release,
 }
 
@@ -108,17 +90,7 @@ where
                 standard_logging_object: None,
                 guardrail_snapshot: None,
             };
-            let handler = SuccessHandler {
-                registry: self.callbacks.registry.as_ref(),
-                payload_builder: self.callbacks.payload_builder.as_ref(),
-                stream_assembler: self.callbacks.stream_assembler.as_ref(),
-                clock: self.callbacks.clock.as_ref(),
-                failure_counters: &self.callbacks.failure_counters,
-                excluded_fields: &self.callbacks.excluded_fields,
-                known_callback: self.callbacks.known_callback.as_ref(),
-                stamp: &self.callbacks.stamp,
-                privacy: self.callbacks.privacy,
-            };
+            let handler = SuccessHandler::from(self.callbacks.as_ref());
             async_success_handler(&handler, &mut held.logging, &mut held.correlation, &request)
                 .await;
             *self.state.lock().unwrap_or_else(PoisonError::into_inner) = Some(held);

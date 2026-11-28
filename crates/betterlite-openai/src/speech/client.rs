@@ -1,27 +1,12 @@
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use secrecy::SecretString;
 use url::Url;
 
 use crate::speech::error::SpeechError;
 
 const DEFAULT_API_BASE: &str = "https://api.openai.com/v1";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-
-impl ClientKind {
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Sync => "sync",
-            Self::Async => "async",
-        }
-    }
-}
 
 // LiteLLM builds the async transport on this shared aiohttp session; betterlite's pooled client plays that part.
 #[derive(Debug, Clone)]
@@ -86,7 +71,7 @@ pub fn select_client(
             .clone()
             .ok_or(SpeechError::MissingApiKey)?;
         let base_url = normalize_base(connection.api_base.as_deref().unwrap_or(DEFAULT_API_BASE))?;
-        let shared_session = if kind == ClientKind::Async {
+        let shared_session = if kind == ClientKind::Asynchronous {
             connection.shared_session.clone()
         } else {
             None

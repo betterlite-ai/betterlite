@@ -1,11 +1,10 @@
 use betterlite_config::sections::gateway_provider_keys::Settings as SectionSettings;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::gateway_provider_dispatch::chat::dispatch;
-use betterlite_provider::gateway_provider_dispatch::context::{
-    CallLogging, DispatchContext, DispatchSettings,
-};
+use betterlite_provider::gateway_provider_dispatch::context::{DispatchContext, DispatchSettings};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::json;
 
@@ -41,7 +40,7 @@ pub(super) fn run(case: &Case) -> HelperResult {
         ),
     };
     let (mut state, prepost) = logging(&redactor)?;
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };

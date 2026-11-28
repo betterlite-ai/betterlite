@@ -7,10 +7,10 @@ use crate::api::response_id_traversal::metadata::AffinityMetadata;
 use crate::api::response_id_traversal::response_id::{rewrite_typed_response, transcode};
 use crate::api::response_id_traversal::restore::restore_input_item_ids;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
-use crate::api::responses_compact_http::service::{ClientKind, SuppliedClient};
+use crate::api::responses_compact_http::service::{ClientKind, ClientSource, SuppliedClient};
 use crate::api::responses_create_http::config::{CreateParams, Params as HttpParams};
 use crate::api::responses_create_http::service::{
-    ClientSource, CreateCall, CreateDeps, CreateOutcome, LogContext, run,
+    CreateCall, CreateDeps, CreateOutcome, CreateTransport, LogContext, run,
 };
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
 use crate::api::responses_json::{decision_json, object_from_params, object_value};
@@ -50,7 +50,7 @@ pub(super) async fn native<S, F, D, E, Context>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<Created<Context>, CreateError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     F: CreateConfigFactory,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,
@@ -160,7 +160,7 @@ pub(super) async fn bridge<S, F, D, E, Context>(
     context: Context,
 ) -> Result<Created<Context>, CreateError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     F: CreateConfigFactory,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,

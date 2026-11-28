@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::threads::error::{ReplyFault, ThreadsError};
 use betterlite_openai::threads::records::{ThreadCreate, ThreadRecord};
 
@@ -40,7 +40,7 @@ async fn create_bodies() {
         ("{}", PLAIN_THREAD, None, ClientKind::Sync),
         (CREATE_BODY, THREAD, Some(false), ClientKind::Sync),
         (EMPTY_CONTAINERS, THREAD, None, ClientKind::Sync),
-        (CREATE_BODY, THREAD, Some(true), ClientKind::Async),
+        (CREATE_BODY, THREAD, Some(true), ClientKind::Asynchronous),
     ] {
         let create = data(body);
         let (api, transport) = harness(200, reply);

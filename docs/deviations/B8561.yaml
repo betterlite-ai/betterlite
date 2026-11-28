@@ -1,0 +1,18 @@
+task: B8561
+deviations:
+  - what: A missing standard_logging_object in the success hook is PrometheusHookError::MissingPayload, whose text is the ValueError's ("standard_logging_object is required, got=None"), not a Python ValueError.
+    why: betterlite raises typed errors; the hook still stops before any metric, as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1345-L1356
+  - what: api_call_start_time is the payload's start_time, because LoggerEvent carries no API-call start; the api latency and time-to-first-token histograms therefore begin at the request start instead of after auth and the pre-call hooks.
+    why: This module may not reach the logging layer's kwargs, and the typed event has no field for the API-call start; the stand-in adds the pre-call time to both histograms.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2272-L2293
+  - what: The failure event cannot see litellm_params.proxy_rejected_before_routing, since the proxy stamps it on litellm_params while LoggerEvent keeps only the payload and litellm_metadata; the flag reaches B3881's emitter only when a producer copies it into the metadata.
+    why: B3881 keys the partial-outage suppression on that flag, so a request the proxy rejected before routing can still mark a deployment unhealthy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2365-L2424
+  - what: The caught-error log line says "Exception occurred", where LiteLLM's line misspells "occurred" in both hooks; the repository's typos check rejects that misspelling.
+    why: Only the spelling of the log text differs; the same caught error is logged in the same catch-all and stays swallowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2424
+kept_bugs:
+  - what: The proxy failure hook writes the text None into status_code and exception_status when the exception carries no status code, exactly as LiteLLM's str(status_code) does.
+    why: LiteLLM dashboards and alerts query those literal series, so dropping or renaming the label would break every existing query.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2648-L2665

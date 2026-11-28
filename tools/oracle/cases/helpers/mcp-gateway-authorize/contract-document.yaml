@@ -1,0 +1,60 @@
+kind: helper
+name: mcp-gateway-authorize-contract-document
+call:
+  b4675:
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback', 'https://claude.ai/api/mcp/auth_callback']
+    servers: []
+    steps:
+      - name: with-token-exchange
+        kind: contract
+        now: 1700000000
+        path: /.well-known/litellm-cli-auth
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: null
+        resource: null
+        tokens: []
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: true
+      - name: without-token-exchange
+        kind: contract
+        now: 1700000000
+        path: /.well-known/litellm-cli-auth
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: null
+        resource: null
+        tokens: []
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+env: {}
+compare: {ignore: []}

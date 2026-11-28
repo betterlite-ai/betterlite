@@ -1,3 +1,4 @@
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
 use serde::Deserialize;
 
@@ -12,13 +13,6 @@ pub(crate) enum Function {
     BinaryFileDescriptor,
     VariationMissingConfigData,
     VariationReplyIdentity,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Kind {
-    Sync,
-    Async,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -58,7 +52,7 @@ pub(crate) struct Probe {
     pub(crate) api_base: Option<String>,
     pub(crate) organization: Option<String>,
     pub(crate) timeout: Option<i64>,
-    pub(crate) client: Option<Kind>,
+    pub(crate) client: Option<ClientKind>,
     #[serde(default)]
     pub(crate) reply: Reply,
     pub(crate) failure: Option<Failure>,

@@ -1,0 +1,24 @@
+task: B6592
+deviations:
+  - what: HealthService takes its collaborators through its constructor (SharedRegistry, ProbeClient, SessionProbe, EnvVarCheck, AllowedServers, Clock, a SpecLoader for B4683's loader and a tokio_util CancellationToken) and keeps the OpenAPI probe map and both instruction maps as its own fields; LiteLLM keeps one global MCPServerManager whose probes are module functions and whose instructions maps are manager attributes.
+    why: betterlite passes dependencies through constructors and keeps no module-level state, and the task asks for the maps inside HealthService.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1950
+  - what: asyncio task cancellation becomes an injected CancellationToken in HealthDeps. The reachability, session and OpenAPI checks run under run_until_cancelled and return the same "was cancelled" results LiteLLM returns from its CancelledError arms; an already cancelled token skips the probe call entirely, as asyncio.wait_for does.
+    why: LiteLLM's cancels arrive as asyncio.CancelledError from the task running the check; the replacement is a library feature rather than a hand-written select, and an injected token is the only way a test can reach those arms.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L943-L946
+  - what: asyncio.gather over one batch becomes futures_util::future::join_all over the same batch of 10, awaited batch after batch; the concurrency bound and the returned order are unchanged.
+    why: same concurrency bound and no behaviour change; the task names join_all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7418-L7431
+  - what: last_health_check is the clock's aware UTC time written as RFC 3339, where health_check_server writes a naive datetime.now(). The OpenAPI probe's checked time is aware in both.
+    why: the row's timestamp text is RFC 3339 with Z in betterlite; a naive local time has no faithful text form there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7242
+  - what: LITELLM_MCP_HEALTH_CHECK_TIMEOUT is read through betterlite's EnvironmentLookup. A blank value is unset, and a value that is not a positive finite number falls back to 10 seconds with a warning, where LiteLLM parses it once at import with float() and the proxy fails to start.
+    why: docs/compatibility.md makes an empty environment string count as unset and a bad value take the default; an import-time crash is not a behaviour a working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L204
+  - what: The per-spec_path probe map has no eviction, where LiteLLM wraps _OpenAPIHealthProbe in lru_cache(maxsize=128) so the 129th distinct spec_path evicts the first. Both keep one cached result for 30 seconds.
+    why: the task asks for a map inside HealthService; the eviction bound is an implementation detail LiteLLM does not document, and a bounded map would need an LRU dependency.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1950
+  - what: Loader failures are named through betterlite's OpenApiError variants, which print JSONDecodeError, FileNotFoundError, OSError, RequestError and ReadError; a size refusal prints betterlite's TransportError text ("the response body is larger than 10485760 bytes") where LiteLLM prints "Response exceeds the configured size limit". The status-code message, the non-http message, the timeout text and the success path match LiteLLM exactly.
+    why: B4683's loader reports typed errors, and its size error carries the limit; the task asks for the error text in both messages rather than the Python exception str.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L952-L967
+kept_bugs: []

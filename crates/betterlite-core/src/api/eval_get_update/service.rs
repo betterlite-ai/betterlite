@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_context::core_settings::CoreSettings;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -14,7 +15,7 @@ use indexmap::IndexMap;
 use crate::api::eval_create_list::call::EvalsCallParams;
 use crate::api::eval_create_list::config::EvalsConfigLookup;
 use crate::api::eval_create_list::logging::log_pre_call;
-use crate::api::eval_http::exchange::{EvalConnection, EvalLogging};
+use crate::api::eval_http::exchange::EvalConnection;
 use crate::api::passthrough_call::logging::json_object;
 
 use super::call::{EvalRetrieval, EvalUpdate, GetEvalCall, UpdateEvalCall};
@@ -168,7 +169,7 @@ where
             url: &wire.url,
             headers: &wire.headers,
         };
-        let logging = EvalLogging {
+        let logging = LogContext {
             state: wire.logging,
             env: wire.env,
         };
@@ -180,7 +181,7 @@ where
     async fn deliver(
         &self,
         connection: EvalConnection<'_>,
-        logging: EvalLogging<'_, '_>,
+        logging: LogContext<'_, '_>,
         timeout: Duration,
         call: HandlerCall,
     ) -> Result<Eval, EvalsGetUpdateError> {

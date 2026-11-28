@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::threads::error::{ReplyFault, ThreadsError};
 use betterlite_openai::threads::records::ThreadRecord;
 
@@ -71,7 +71,7 @@ async fn async_retrieve() {
         )
         .await
         .unwrap();
-    assert_eq!(retrieved.kind, ClientKind::Async);
+    assert_eq!(retrieved.kind, ClientKind::Asynchronous);
     assert_eq!(
         transport.requests(),
         vec![wire("GET", THREAD_URL, None, Auth::Key(KEY))]

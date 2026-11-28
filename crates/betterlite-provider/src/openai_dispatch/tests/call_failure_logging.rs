@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -10,7 +11,6 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::text_completion_transport::logging::PrePostLogger;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
@@ -229,7 +229,7 @@ pub(super) fn check_b249_logger() {
     let mut state = logging_state(&redactor);
     let env = logging_env(&redactor);
     let mut logger = B249Logger {
-        completion: PrePostLogger {
+        completion: LogContext {
             state: &mut state,
             env: &env,
         },
