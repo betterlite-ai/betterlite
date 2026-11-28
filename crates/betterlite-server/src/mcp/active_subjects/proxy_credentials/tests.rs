@@ -72,7 +72,7 @@ async fn consent_reads_the_cache_source() {
 #[rstest]
 #[case::missing(UserAnswer::Missing, ReloadUserFailure::NoActiveKey)]
 #[case::unavailable(
-    UserAnswer::Failed(SubjectReadError::Unavailable),
+    UserAnswer::Failed(Box::new(SubjectReadError::Unavailable)),
     ReloadUserFailure::Unavailable
 )]
 #[tokio::test]
@@ -138,7 +138,7 @@ async fn consent_drops_details_without_a_team_id() {
 #[tokio::test]
 async fn mint_refusal_reads_the_database_source_and_returns_the_user_failure() {
     let store = FakeStore {
-        user: UserAnswer::Failed(SubjectReadError::Unavailable),
+        user: UserAnswer::Failed(Box::new(SubjectReadError::Unavailable)),
         ..FakeStore::new()
     };
     let calls = store.calls();

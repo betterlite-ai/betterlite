@@ -83,7 +83,7 @@ async fn reload_key_failures_keep_their_names(
     #[case] expected: ReloadUserFailure,
 ) {
     let store = FakeStore {
-        key: KeyAnswer::Failed(answer),
+        key: KeyAnswer::Failed(Box::new(answer)),
         ..FakeStore::new()
     };
     let active = subjects(store);

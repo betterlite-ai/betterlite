@@ -43,7 +43,7 @@ async fn load_failures_keep_their_names(
     #[case] expected: ReloadUserFailure,
 ) {
     let store = FakeStore {
-        user: UserAnswer::Failed(answer),
+        user: UserAnswer::Failed(Box::new(answer)),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -171,7 +171,7 @@ async fn owner_without_a_database_is_false() {
 #[tokio::test]
 async fn owner_read_error_fails_open() {
     let store = FakeStore {
-        user: UserAnswer::Failed(SubjectReadError::Faulted),
+        user: UserAnswer::Failed(Box::new(SubjectReadError::Faulted)),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -191,7 +191,7 @@ async fn owner_missing_row_fails_open() {
 #[tokio::test]
 async fn reload_user_keeps_only_the_failure() {
     let store = FakeStore {
-        user: UserAnswer::Failed(SubjectReadError::Unavailable),
+        user: UserAnswer::Failed(Box::new(SubjectReadError::Unavailable)),
         ..FakeStore::new()
     };
     let active = subjects(store);

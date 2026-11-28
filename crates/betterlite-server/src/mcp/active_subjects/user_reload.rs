@@ -31,8 +31,9 @@ impl<S: SubjectStore> ActiveUserLoad for ActiveSubjects<S> {
         }
         let user = match self.store.user_by_id(user_id, source).await {
             Ok(Some(user)) => user,
-            Ok(None) => return Err(ReloadUserFailure::NoActiveKey),
-            Err(SubjectReadError::Refused) => return Err(ReloadUserFailure::NoActiveKey),
+            Ok(None) | Err(SubjectReadError::Refused) => {
+                return Err(ReloadUserFailure::NoActiveKey);
+            }
             Err(SubjectReadError::Unavailable) => return Err(ReloadUserFailure::Unavailable),
             Err(SubjectReadError::Faulted) => return Err(ReloadUserFailure::Faulted),
             Err(SubjectReadError::Other) => {

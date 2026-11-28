@@ -104,9 +104,7 @@ impl SubjectStore for LiveSubjectStore {
 
     #[cfg_attr(test, mutants::skip)]
     async fn team_details(&self, teams: &[String]) -> Option<Vec<CliSsoTeamDetail>> {
-        let Some(store) = self.database.as_ref() else {
-            return None;
-        };
+        let store = self.database.as_ref()?;
         fetch_cli_sso_team_details(store.as_ref(), teams).await
     }
 }

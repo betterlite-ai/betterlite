@@ -48,7 +48,7 @@ async fn revalidate_live_key_is_none() {
 #[tokio::test]
 async fn revalidate_key_failure_returns_it() {
     let store = FakeStore {
-        key: KeyAnswer::Failed(SubjectReadError::Faulted),
+        key: KeyAnswer::Failed(Box::new(SubjectReadError::Faulted)),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -107,7 +107,7 @@ async fn revalidate_live_user_is_none() {
 #[tokio::test]
 async fn revalidate_user_failure_returns_it() {
     let store = FakeStore {
-        user: UserAnswer::Failed(SubjectReadError::Unavailable),
+        user: UserAnswer::Failed(Box::new(SubjectReadError::Unavailable)),
         ..FakeStore::new()
     };
     let active = subjects(store);

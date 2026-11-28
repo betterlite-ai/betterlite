@@ -76,14 +76,14 @@ pub(crate) fn session_codec() -> SessionTokenCodec<CountingNonces, TracingDiagno
 #[derive(Clone)]
 pub(crate) enum KeyAnswer {
     Found(Box<UserAPIKeyAuth>),
-    Failed(SubjectReadError),
+    Failed(Box<SubjectReadError>),
 }
 
 #[derive(Clone)]
 pub(crate) enum UserAnswer {
     Found(Box<LiteLLMUserTable>),
     Missing,
-    Failed(SubjectReadError),
+    Failed(Box<SubjectReadError>),
 }
 
 #[derive(Default)]
@@ -108,7 +108,7 @@ impl FakeStore {
     pub(crate) fn new() -> Self {
         Self {
             has_database: true,
-            key: KeyAnswer::Failed(SubjectReadError::Other),
+            key: KeyAnswer::Failed(Box::new(SubjectReadError::Other)),
             user: UserAnswer::Missing,
             identity: IdentityLookup::NotFound,
             details: Some(Vec::new()),
@@ -143,7 +143,7 @@ impl SubjectStore for FakeStore {
         self.calls.lock().unwrap().keys.push(key_hash.to_owned());
         let answer = match &self.key {
             KeyAnswer::Found(key) => Ok((**key).clone()),
-            KeyAnswer::Failed(error) => Err(*error),
+            KeyAnswer::Failed(error) => Err(**error),
         };
         ready(answer)
     }
@@ -161,7 +161,7 @@ impl SubjectStore for FakeStore {
         let answer = match &self.user {
             UserAnswer::Found(row) => Ok(Some((**row).clone())),
             UserAnswer::Missing => Ok(None),
-            UserAnswer::Failed(error) => Err(*error),
+            UserAnswer::Failed(error) => Err(**error),
         };
         ready(answer)
     }
