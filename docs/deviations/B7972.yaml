@@ -25,4 +25,13 @@ deviations:
       response either, so accepting it would only move the failure past the fetch.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2452-L2463
+  - what: >-
+      The fetch warnings carry the failure text in the message where LiteLLM names the Python exception class
+      first ("TransportError: ...", "JSONDecodeError: ..."), and the pass-through warnings name the server in a
+      tracing field instead of the %r-quoted text.
+    why: >-
+      GetFailure crosses the UpstreamGet port as one string, so the class that raised is no longer known at the
+      fetch site; the facts logged are the same.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2440-L2462
 kept_bugs: []

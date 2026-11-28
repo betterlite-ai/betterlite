@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -76,11 +75,7 @@ impl FakeUpstream {
 }
 
 impl UpstreamGet for FakeUpstream {
-    fn get(
-        &self,
-        url: &str,
-        accept: &str,
-    ) -> impl Future<Output = Result<UpstreamReply, GetFailure>> + Send {
+    async fn get(&self, url: &str, accept: &str) -> Result<UpstreamReply, GetFailure> {
         self.calls
             .lock()
             .expect("the fake upstream lock")
@@ -93,10 +88,8 @@ impl UpstreamGet for FakeUpstream {
                 "the fake has no reply for {url}"
             )))
         });
-        async move {
-            yield_now().await;
-            reply
-        }
+        yield_now().await;
+        reply
     }
 }
 
