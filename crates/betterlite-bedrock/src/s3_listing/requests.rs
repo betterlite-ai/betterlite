@@ -5,9 +5,9 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_context::cloud_storage::{Encoding, encode_object_name, split_bucket_name};
-use betterlite_logging::s3_transport::signing::{
-    Credentials as SigningCredentials, RequestToSign, sign_request,
-};
+use betterlite_logging::s3_transport::error::S3TransportError;
+use betterlite_logging::s3_transport::signing::S3_SERVICE;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_encode};
 use sha2::{Digest as _, Sha256};
 
@@ -137,25 +137,25 @@ pub(crate) fn sign_without_body(
 ) -> Result<Vec<(String, String)>, S3ListingError> {
     let empty_body_hash = hex::encode(Sha256::digest(b""));
     let initial = [(CONTENT_SHA256.to_owned(), empty_body_hash.clone())];
-    let mut computed = sign_request(
-        &RequestToSign {
-            method,
-            url: api_base,
-            headers: &initial,
-            content_sha256: &empty_body_hash,
-            region: &target.aws_region_name,
-            now,
-        },
-        &SigningCredentials {
-            access_key_id: credentials.access_key_id.clone(),
-            secret_access_key: credentials.secret_access_key.clone(),
-            session_token: credentials.session_token.clone(),
-        },
-    )?;
+    let mut computed = sign_request(&Signable {
+        method,
+        url: api_base,
+        headers: &initial,
+        body: &[],
+        service: S3_SERVICE,
+        region: &target.aws_region_name,
+        credentials,
+        mode: SigningMode::S3SigV4Auth,
+        now,
+    })
+    .map_err(S3TransportError::from)?;
     computed.push((CONTENT_SHA256.to_owned(), empty_body_hash));
     let mut headers = Vec::with_capacity(SIGNED_HEADERS.len());
     for (name, botocore_name) in SIGNED_HEADERS {
-        if let Some((_, value)) = computed.iter().find(|(header, _)| header == name) {
+        if let Some((_, value)) = computed
+            .iter()
+            .find(|(header, _)| header.eq_ignore_ascii_case(name))
+        {
             headers.push((botocore_name.to_owned(), value.clone()));
         }
     }
