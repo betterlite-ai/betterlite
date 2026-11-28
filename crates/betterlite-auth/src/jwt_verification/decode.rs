@@ -2,7 +2,6 @@ use std::str;
 use std::str::Utf8Error;
 
 use betterlite_models::controls::json_value::JsonValue;
-use serde::Deserialize;
 use thiserror::Error;
 
 use super::TypedValue;
@@ -11,7 +10,7 @@ use crate::jwt_claims::decode::{
 };
 
 // The bounded outside-byte decoder this task owns: a compact token, a JWK or a signed claim document.
-pub const MAX_SIGNED_JWT_BYTES: usize = 1_048_576;
+pub const MAX_SIGNED_JWT_BYTES: usize = 0x0010_0000;
 pub const MAX_SIGNED_JWT_DEPTH: usize = 64;
 
 #[derive(Debug, Error)]
@@ -41,14 +40,6 @@ pub struct JwtHeader {
     pub kid: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct RawHeader {
-    alg: Option<JsonValue>,
-    b64: Option<JsonValue>,
-    crit: Option<JsonValue>,
-    kid: Option<JsonValue>,
-}
-
 impl JwtHeader {
     #[must_use]
     pub fn parse(token: &str) -> Result<Self, DecodeError> {
@@ -65,10 +56,12 @@ impl JwtHeader {
             return Err(DecodeError::Segments);
         };
         let header_bytes = decode_segment(header_segment.as_bytes())?;
-        let header: RawHeader =
-            serde_json::from_slice(&header_bytes).map_err(|_| DecodeError::Header)?;
+        let Ok(JsonValue::Object(fields)) = serde_json::from_slice::<JsonValue>(&header_bytes)
+        else {
+            return Err(DecodeError::Header);
+        };
         // pyjwt rejects a detached payload that still carries base64url text, then decodes the rest
-        let detached = matches!(header.b64, Some(JsonValue::Bool(false)));
+        let detached = matches!(fields.get("b64"), Some(JsonValue::Bool(false)));
         if detached && !payload_segment.is_empty() {
             return Err(DecodeError::Header);
         }
@@ -76,23 +69,22 @@ impl JwtHeader {
             decode_segment(payload_segment.as_bytes())?;
         }
         decode_segment(signature.as_bytes())?;
-        let kid_is_text = header
-            .kid
-            .as_ref()
-            .is_none_or(|kid| matches!(kid, JsonValue::Null | JsonValue::Text(_)));
-        if !kid_is_text {
+        // pyjwt reads a present null as a value: a null kid is not a string, so the header is invalid
+        if let Some(kid) = fields.get("kid")
+            && !matches!(kid, JsonValue::Text(_))
+        {
             return Err(DecodeError::Header);
         }
-        validate_crit(header.crit, header.b64.is_some())?;
+        validate_crit(fields.get("crit"), fields.contains_key("b64"))?;
         Ok(Self {
-            algorithm: text_of(header.alg),
-            kid: text_of(header.kid),
+            algorithm: text_of(fields.get("alg")),
+            kid: text_of(fields.get("kid")),
         })
     }
 }
 
 // pyjwt's _validate_crit accepts only a non-empty list naming "b64", and that parameter must be present
-fn validate_crit(crit: Option<JsonValue>, b64_present: bool) -> Result<(), DecodeError> {
+fn validate_crit(crit: Option<&JsonValue>, b64_present: bool) -> Result<(), DecodeError> {
     let Some(crit) = crit else {
         return Ok(());
     };
@@ -113,11 +105,16 @@ fn validate_crit(crit: Option<JsonValue>, b64_present: bool) -> Result<(), Decod
     Ok(())
 }
 
-fn text_of(value: Option<JsonValue>) -> Option<String> {
+fn text_of(value: Option<&JsonValue>) -> Option<String> {
     match value {
-        Some(JsonValue::Text(text)) => Some(text),
-        Some(JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_))
-        | Some(JsonValue::Object(_))
+        Some(JsonValue::Text(text)) => Some(text.clone()),
+        Some(
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_),
+        )
         | None => None,
     }
 }

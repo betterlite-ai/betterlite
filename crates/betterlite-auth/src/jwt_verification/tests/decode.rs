@@ -159,6 +159,30 @@ fn critical_headers_name_only_a_present_b64_parameter() {
 }
 
 #[test]
+fn a_present_null_kid_or_crit_is_rejected() {
+    // pyjwt reads a present null as a value: a null kid is not a string, and a null crit is not a list
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","kid":null}"#, &encoded("{}")),
+        Err(DecodeError::Header)
+    ));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","kid":7}"#, &encoded("{}")),
+        Err(DecodeError::Header)
+    ));
+    assert!(matches!(
+        header_of(r#"{"alg":"RS256","crit":null}"#, &encoded("{}")),
+        Err(DecodeError::Header)
+    ));
+    // a present b64 satisfies pyjwt's crit check even when its value is null
+    let accepted = header_of(
+        r#"{"alg":"RS256","b64":null,"crit":["b64"]}"#,
+        &encoded("{}"),
+    )
+    .unwrap();
+    assert_eq!(accepted.algorithm.as_deref(), Some("RS256"));
+}
+
+#[test]
 fn an_invalid_payload_segment_fails_the_header_parse() {
     let error = header_of(r#"{"alg":"RS256"}"#, "!!!").unwrap_err();
     assert!(matches!(error, DecodeError::Claims(_)));
