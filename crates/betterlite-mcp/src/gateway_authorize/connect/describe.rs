@@ -24,21 +24,7 @@ where
     let origin = origin_only(&flow.redirect_uri)?;
     match target {
         FlowTarget::Interactive(server) => {
-            let connected = match ports
-                .vendor
-                .lookup(&flow.user_id, &server.fields.server_id)
-                .await
-            {
-                VendorCredentialState::Unavailable => {
-                    return Err(oauth_error(
-                        503,
-                        TemporarilyUnavailable,
-                        DB_UNAVAILABLE_DESCRIPTION,
-                    ));
-                }
-                VendorCredentialState::Present => true,
-                VendorCredentialState::Absent => false,
-            };
+            let connected = vendor_connected(ports.vendor, flow, server).await?;
             Ok(flow_description(
                 ConnectFlowState::Interactive,
                 origin,
@@ -64,6 +50,25 @@ where
             None,
             None,
         )),
+    }
+}
+
+async fn vendor_connected<V>(
+    vendor: &V,
+    flow: &ConnectFlow,
+    server: &MCPServer,
+) -> Result<bool, OauthError>
+where
+    V: LookupVendorCredential + ?Sized,
+{
+    match vendor.lookup(&flow.user_id, &server.fields.server_id).await {
+        VendorCredentialState::Unavailable => Err(oauth_error(
+            503,
+            TemporarilyUnavailable,
+            DB_UNAVAILABLE_DESCRIPTION,
+        )),
+        VendorCredentialState::Present => Ok(true),
+        VendorCredentialState::Absent => Ok(false),
     }
 }
 

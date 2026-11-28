@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_mcp::gateway_authorize::reply::{FlowTokenSource, RenderConsentPage};
+use betterlite_mcp::gateway_authorize::reply::{ConsentPage, FlowTokenSource, RenderConsentPage};
 use betterlite_mcp::gateway_dcr::ports::{
     ConsentTeam, LookupConsentTeams, LookupServerReachability, LookupVendorCredential,
     ReloadUserFailure, VendorCredentialState,
@@ -40,21 +40,19 @@ impl LookupConsentTeams for Answers {
 }
 
 impl RenderConsentPage for Answers {
-    fn render(
-        &self,
-        client_origin: &str,
-        user_id: &str,
-        teams: &[(String, String)],
-        flow_handle: &str,
-        complete_url: &str,
-    ) -> String {
-        let named: Vec<String> = teams
+    fn render(&self, page: ConsentPage<'_>) -> String {
+        let named: Vec<String> = page
+            .teams
             .iter()
             .map(|(id, alias)| format!("[\"{id}\",\"{alias}\"]"))
             .collect();
         format!(
-            "{{\"client_origin\":\"{client_origin}\",\"complete_url\":\"{complete_url}\",\"flow_handle\":\"{flow_handle}\",\"teams\":[{}],\"user_id\":\"{user_id}\"}}",
-            named.join(",")
+            "{{\"client_origin\":\"{}\",\"complete_url\":\"{}\",\"flow_handle\":\"{}\",\"teams\":[{}],\"user_id\":\"{}\"}}",
+            page.client_origin,
+            page.complete_url,
+            page.flow_handle,
+            named.join(","),
+            page.user_id
         )
     }
 }

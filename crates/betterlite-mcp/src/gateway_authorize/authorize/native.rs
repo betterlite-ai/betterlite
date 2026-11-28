@@ -6,13 +6,14 @@ use super::{
 };
 use crate::gateway_authorize::oauth_error;
 use crate::gateway_authorize::reply::{
-    FlowTokenSource, GatewayReply, RenderConsentPage, RequestView,
+    ConsentPage, FlowTokenSource, GatewayReply, RenderConsentPage, RequestView,
 };
 use crate::gateway_authorize::url_parts::origin_only;
 use crate::gateway_authorize::{is_loopback_uri, no_cache_headers};
 use crate::gateway_dcr::contracts::{
     DB_FAULTED_DESCRIPTION, DB_UNAVAILABLE_DESCRIPTION, PROXY_API_AUDIENCE,
 };
+use crate::gateway_dcr::models::ConnectFlow;
 use crate::gateway_dcr::oauth_error::OauthError;
 use crate::gateway_dcr::oauth_error::OauthErrorCode::{
     AccessDenied, InvalidRequest, ServerError, TemporarilyUnavailable,
@@ -54,11 +55,8 @@ async fn native_authorize<T>(
 where
     T: LookupConsentTeams + ?Sized,
 {
-    if let Some(error) = rejected_authorize_request(call.request, cipher) {
+    if let Some(error) = native_request_error(call, cipher) {
         return Err(error);
-    }
-    if !is_loopback_uri(call.request.redirect_uri) {
-        return Err(oauth_error(400, InvalidRequest, LOOPBACK_DESCRIPTION));
     }
     let Some(user_id) = call.session_user_id else {
         return login_redirect(
@@ -71,6 +69,40 @@ where
         Ok(consent) => consent,
         Err(failure) => return Err(consent_lookup_failure(failure)),
     };
+    let (handle, flow) = native_flow(call, user_id, tokens);
+    let client_origin = origin_only(call.request.redirect_uri)?;
+    let complete_url = format!("{}/authorize/complete", call.view.base_url);
+    let body = page.render(ConsentPage {
+        client_origin: &client_origin,
+        user_id,
+        teams: &team_labels(&consent),
+        flow_handle: &handle,
+        complete_url: &complete_url,
+    });
+    let cookie = set_flow_cookie(&handle, &flow, &call.view.base_url, cipher)?;
+    Ok(GatewayReply::Html {
+        body,
+        headers: consent_headers(),
+        set_cookie: Some(Box::new(cookie)),
+        delete_cookie: None,
+    })
+}
+
+fn native_request_error(call: &NativeClientAuthorize<'_>, cipher: &DbCipher) -> Option<OauthError> {
+    if let Some(error) = rejected_authorize_request(call.request, cipher) {
+        return Some(error);
+    }
+    if is_loopback_uri(call.request.redirect_uri) {
+        return None;
+    }
+    Some(oauth_error(400, InvalidRequest, LOOPBACK_DESCRIPTION))
+}
+
+fn native_flow(
+    call: &NativeClientAuthorize<'_>,
+    user_id: &str,
+    tokens: &dyn FlowTokenSource,
+) -> (String, ConnectFlow) {
     let handle = tokens.fresh_token();
     let flow = new_connect_flow(
         NewConnectFlow {
@@ -85,22 +117,7 @@ where
         tokens,
         call.now,
     );
-    let client_origin = origin_only(call.request.redirect_uri)?;
-    let complete_url = format!("{}/authorize/complete", call.view.base_url);
-    let body = page.render(
-        &client_origin,
-        user_id,
-        &team_labels(&consent),
-        &handle,
-        &complete_url,
-    );
-    let cookie = set_flow_cookie(&handle, &flow, &call.view.base_url, cipher)?;
-    Ok(GatewayReply::Html {
-        body,
-        headers: consent_headers(),
-        set_cookie: Some(Box::new(cookie)),
-        delete_cookie: None,
-    })
+    (handle, flow)
 }
 
 fn consent_lookup_failure(failure: ReloadUserFailure) -> OauthError {

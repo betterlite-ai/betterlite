@@ -57,7 +57,7 @@ pub struct ConnectFlowDescription {
     pub connected: Option<bool>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GatewayReply {
     Redirect {
         location: String,
@@ -79,7 +79,7 @@ pub enum GatewayReply {
 
 impl GatewayReply {
     #[must_use]
-    pub fn redirect(location: String) -> Self {
+    pub const fn redirect(location: String) -> Self {
         Self::Redirect {
             location,
             set_cookie: None,
@@ -88,8 +88,8 @@ impl GatewayReply {
     }
 }
 
-impl From<Result<GatewayReply, OauthError>> for GatewayReply {
-    fn from(outcome: Result<GatewayReply, OauthError>) -> Self {
+impl From<Result<Self, OauthError>> for GatewayReply {
+    fn from(outcome: Result<Self, OauthError>) -> Self {
         match outcome {
             Ok(reply) => reply,
             Err(error) => Self::Error(error),
@@ -101,13 +101,15 @@ pub trait FlowTokenSource: Send + Sync {
     fn fresh_token(&self) -> String;
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ConsentPage<'page> {
+    pub client_origin: &'page str,
+    pub user_id: &'page str,
+    pub teams: &'page [(String, String)],
+    pub flow_handle: &'page str,
+    pub complete_url: &'page str,
+}
+
 pub trait RenderConsentPage: Send + Sync {
-    fn render(
-        &self,
-        client_origin: &str,
-        user_id: &str,
-        teams: &[(String, String)],
-        flow_handle: &str,
-        complete_url: &str,
-    ) -> String;
+    fn render(&self, page: ConsentPage<'_>) -> String;
 }

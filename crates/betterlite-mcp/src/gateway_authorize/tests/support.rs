@@ -9,7 +9,9 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use secrecy::SecretString;
 
-use crate::gateway_authorize::reply::{FlowTokenSource, RenderConsentPage, RequestView};
+use crate::gateway_authorize::reply::{
+    ConsentPage, FlowTokenSource, RenderConsentPage, RequestView,
+};
 use crate::gateway_authorize::url_parts::flow_cookie_name;
 use crate::gateway_dcr::contracts::GATEWAY_DCR_CLIENT_ID_PREFIX;
 use crate::gateway_dcr::models::{ConnectFlow, GatewayDcrClient};
@@ -114,15 +116,11 @@ impl FlowTokenSource for ScriptedTokens {
 pub(crate) struct Page;
 
 impl RenderConsentPage for Page {
-    fn render(
-        &self,
-        client_origin: &str,
-        user_id: &str,
-        teams: &[(String, String)],
-        flow_handle: &str,
-        complete_url: &str,
-    ) -> String {
-        format!("{client_origin}|{user_id}|{teams:?}|{flow_handle}|{complete_url}")
+    fn render(&self, page: ConsentPage<'_>) -> String {
+        format!(
+            "{}|{}|{:?}|{}|{}",
+            page.client_origin, page.user_id, page.teams, page.flow_handle, page.complete_url
+        )
     }
 }
 

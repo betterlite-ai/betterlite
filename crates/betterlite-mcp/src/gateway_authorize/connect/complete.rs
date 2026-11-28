@@ -198,7 +198,7 @@ fn approved_reply(
     Ok(GatewayReply::redirect(callback_url))
 }
 
-fn code_ttl(manual: bool) -> i64 {
+const fn code_ttl(manual: bool) -> i64 {
     if manual {
         // ast-grep-ignore: no-long-names
         MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS
@@ -238,9 +238,7 @@ fn code_team_id(flow: &ConnectFlow, team_id: Option<&str>) -> Option<String> {
     if flow.audience != Some(PROXY_API_AUDIENCE) {
         return None;
     }
-    team_id
-        .filter(|team_id| !team_id.is_empty())
-        .map(str::to_owned)
+    team_id.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 fn state_param(flow: &ConnectFlow) -> Vec<(String, String)> {
