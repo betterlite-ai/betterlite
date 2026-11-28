@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
-use std::future::Future;
-use std::pin::Pin;
 
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_logging::registry::phases::CallbackSelection;
+use futures_util::future::BoxFuture;
 use rstest::rstest;
 
 use super::support::{Harness, get_request, internal_key, json, master_key, object};
@@ -13,8 +12,6 @@ use crate::callback_config::ports::RuntimeCallback;
 use crate::config_overlay_port::ConfigOverlayPortError;
 
 const CALLBACKS_URI: &str = "/get/config/callbacks";
-
-type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 fn selection(success: &[&str], failure: &[&str], both: &[&str]) -> CallbackSelection {
     CallbackSelection {
@@ -53,15 +50,15 @@ fn litellm_config(settings: &str) -> BTreeMap<String, JsonValue> {
 fn get_callbacks(
     harness: &Harness,
     caller: Option<Principal>,
-) -> BoxedFuture<'_, (StatusCode, JsonValue)> {
+) -> BoxFuture<'_, (StatusCode, JsonValue)> {
     Box::pin(harness.call(get_request(CALLBACKS_URI), caller))
 }
 
-fn runtime_rows_for<'a>(
-    configured: &'a str,
-    classes: &'a [(&'a str, &'a str)],
+fn runtime_rows_for<'config>(
+    configured: &'config str,
+    classes: &'config [(&'config str, &'config str)],
     callback: RuntimeCallback,
-) -> BoxedFuture<'a, Vec<JsonValue>> {
+) -> BoxFuture<'config, Vec<JsonValue>> {
     Box::pin(async move {
         let mut harness = Harness::new(litellm_config(&format!(
             r#"{{"success_callback": {configured}}}"#
