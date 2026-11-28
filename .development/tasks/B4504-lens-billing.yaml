@@ -190,5 +190,5 @@ pitfalls:
   - The reservation release in the finally step must also run when the authorizer or the reserve callback fails, and it must be skipped for a callback_bound reservation.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0

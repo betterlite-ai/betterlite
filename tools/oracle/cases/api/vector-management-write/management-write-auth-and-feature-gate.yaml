@@ -1,0 +1,40 @@
+kind: helper
+name: management-write-auth-and-feature-gate
+call:
+  b1069:
+    calls:
+      # the disabled switch refuses every write route before the database is consulted
+      - route: new
+        body: {vector_store_id: vs_a, custom_llm_provider: openai}
+        database: null
+        registry: []
+        caller: &user {user_id: u1, user_role: internal_user, team_id: null}
+        disabled: true
+      - route: delete
+        body: {vector_store_id: vs_a}
+        database: null
+        registry: []
+        caller: *user
+        disabled: true
+      - route: update
+        body: {vector_store_id: vs_a, vector_store_description: x}
+        database: null
+        registry: []
+        caller: *user
+        disabled: true
+      # the proxy admin keeps its access with the switch on
+      - route: new
+        body: {vector_store_id: vs_admin, custom_llm_provider: openai}
+        database: []
+        registry: []
+        caller: {user_id: admin1, user_role: proxy_admin, team_id: null}
+        disabled: true
+      # the switch defaults to false and an internal user is served
+      - route: new
+        body: {vector_store_id: vs_open, custom_llm_provider: openai}
+        database: []
+        registry: []
+        caller: *user
+        disabled: false
+env: {}
+compare: {ignore: []}

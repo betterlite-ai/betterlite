@@ -1,13 +1,13 @@
 id: B10221
 milestone: R2 bug fixes
 title: One ClientKind and SuppliedClient in betterlite-http for the OpenAI SDK, anthropic and foundry client class copies
-status: todo
+status: done
 depends_on: []
 file: tasks/B10221-sdk-client-kind-copies.yaml
 covers: []
 parent: null
 split_from: B10220
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3438

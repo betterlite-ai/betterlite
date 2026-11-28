@@ -13,6 +13,7 @@ use super::arithmetic::{safe_divide, safe_divide_seconds};
 use super::drop_params::{drop_params_env_flag, drop_params_flag, normalize_drop_params};
 use super::expected_error::{ClientErrorFacts, is_expected_client_error};
 use super::finish_reason::{FinishReason, map_finish_reason};
+use super::generic_params::{GenericParamsError, normalize_generic_params};
 use super::headers::{
     AdditionalHeaders, HeaderSource, TrustedHeaders, process_response_headers,
     provider_response_headers, proxy_server_request_headers, set_provider_response_headers,
@@ -27,8 +28,14 @@ use super::stream_attributes::preserve_upstream_attributes;
 use super::token_limit::coerce_token_limit;
 use super::tool_calls::{remove_index_from_tool_calls, remove_items_at_indices};
 use crate::decisions::Json;
+use crate::headers::affinity::AffinityError;
+use crate::model_registration::JsonObject;
 
 fn value(source: &str) -> Json {
+    serde_json::from_str(source).unwrap()
+}
+
+fn object(source: &str) -> JsonObject {
     serde_json::from_str(source).unwrap()
 }
 
@@ -793,6 +800,89 @@ fn upstream_attributes_copy_only_non_openai_keys() {
     );
 }
 
+fn generic_params_drop_reserved_keys_and_fill_false_defaults() {
+    let raw = object(
+        r#"{"self":"s","params":"p","__class__":"c","use_litellm_proxy":true,"allow_client_keepalive_override":null,"left_out":null}"#,
+    );
+    let dumped = normalize_generic_params(&raw).expect("the params are generic");
+    for reserved in ["self", "params", "__class__"] {
+        assert_eq!(None, dumped.get(reserved), "{reserved}");
+    }
+    assert_eq!(Some(&value("true")), dumped.get("use_litellm_proxy"));
+    assert_eq!(None, dumped.get("allow_client_keepalive_override"));
+    assert_eq!(None, dumped.get("left_out"));
+    for flag in [
+        "use_in_pass_through",
+        "use_xai_oauth",
+        "merge_reasoning_content_in_choices",
+    ] {
+        assert_eq!(Some(&value("false")), dumped.get(flag), "{flag}");
+    }
+}
+
+fn generic_params_coerce_a_text_max_retries() {
+    for (given, expected) in [(" 3 ", "3"), ("-3", "-3"), ("+5", "5")] {
+        let raw = object(&format!(r#"{{"max_retries":"{given}"}}"#));
+        let dumped = normalize_generic_params(&raw).expect("a whole number is a retry count");
+        assert_eq!(Some(&value(expected)), dumped.get("max_retries"), "{given}");
+    }
+    let number = normalize_generic_params(&object(r#"{"max_retries":0}"#)).expect("a number stays");
+    assert_eq!(Some(&value("0")), number.get("max_retries"));
+    for bad in ["abc", "9223372036854775808"] {
+        let raw = object(&format!(r#"{{"max_retries":"{bad}"}}"#));
+        let GenericParamsError::MaxRetries { value: text, .. } =
+            normalize_generic_params(&raw).expect_err("not a whole number")
+        else {
+            panic!("{bad} is not a whole number");
+        };
+        assert_eq!(bad, text);
+    }
+}
+
+fn generic_params_normalize_drop_params() {
+    let cases = [
+        ("true", Some("true")),
+        ("0", Some("false")),
+        ("\"yes\"", Some("true")),
+        ("\"0\"", Some("false")),
+        ("\"maybe\"", Some("\"maybe\"")),
+        ("\"y\"", Some("\"y\"")),
+        ("[\"a\"]", None),
+    ];
+    for (given, expected) in cases {
+        let raw = object(&format!(r#"{{"drop_params":{given}}}"#));
+        let dumped = normalize_generic_params(&raw).expect("drop_params never fails");
+        assert_eq!(
+            expected.map(value).as_ref(),
+            dumped.get("drop_params"),
+            "{given}"
+        );
+    }
+}
+
+fn generic_params_validate_the_affinity_header() {
+    let kept = normalize_generic_params(&object(
+        r#"{"provider_affinity_header":"x-session-affinity"}"#,
+    ))
+    .expect("a header name is valid");
+    assert_eq!(
+        Some(&value("\"x-session-affinity\"")),
+        kept.get("provider_affinity_header")
+    );
+    for (given, expected) in [
+        ("bad header", AffinityError::InvalidHeaderName),
+        ("authorization", AffinityError::ForbiddenHeader),
+    ] {
+        let raw = object(&format!(r#"{{"provider_affinity_header":"{given}"}}"#));
+        let GenericParamsError::Affinity(error) =
+            normalize_generic_params(&raw).expect_err("the header is refused")
+        else {
+            panic!("{given} is refused");
+        };
+        assert_eq!(expected, error);
+    }
+}
+
 fn trusted_flags_cannot_be_forged() {
     let trusted = TrustedHeaders {
         entries: additional_headers(r#"{"x-litellm-model-group":"g"}"#),
@@ -896,6 +986,12 @@ fn trusted_flags_cannot_be_forged() {
 #[case::upstream_attributes_copy_only_non_openai_keys(
     upstream_attributes_copy_only_non_openai_keys
 )]
+#[case::generic_params_drop_reserved_keys_and_fill_false_defaults(
+    generic_params_drop_reserved_keys_and_fill_false_defaults
+)]
+#[case::generic_params_coerce_a_text_max_retries(generic_params_coerce_a_text_max_retries)]
+#[case::generic_params_normalize_drop_params(generic_params_normalize_drop_params)]
+#[case::generic_params_validate_the_affinity_header(generic_params_validate_the_affinity_header)]
 fn call_helpers_call_helper_tests_behavior(#[case] scenario: fn()) {
     scenario();
 }

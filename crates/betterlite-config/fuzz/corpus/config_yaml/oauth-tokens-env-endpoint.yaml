@@ -1,0 +1,8 @@
+general_settings:
+  environment_variables:
+    OAUTH_TOKEN_INFO_ENDPOINT: https://idp.example/introspect
+    OAUTH_CLIENT_ID: betterlite-client
+    OAUTH_CLIENT_SECRET: os.environ/IDP_CLIENT_SECRET
+  enable_oauth2_auth: true
+  oauth2_config_mappings:
+    models: os.environ/OAUTH_MODELS_HEADER

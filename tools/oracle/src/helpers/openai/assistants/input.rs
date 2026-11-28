@@ -1,3 +1,4 @@
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::records::{AssistantCreate, ListParams};
 use serde::Deserialize;
 
@@ -51,24 +52,17 @@ pub(crate) struct DeleteFields {
     pub(super) reply: Option<Reply>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum KindName {
-    Sync,
-    Async,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Supplied {
-    pub(super) kind: KindName,
+    pub(super) kind: ClientKind,
     pub(super) organization: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ClientFields {
-    pub(super) kind: KindName,
+    pub(super) kind: ClientKind,
     pub(super) options: OptionFields,
     pub(super) supplied: Option<Supplied>,
 }

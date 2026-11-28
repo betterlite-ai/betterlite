@@ -5,9 +5,9 @@ use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::AwsCredentialResolver;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::signing::error::SigningError;
-use betterlite_bedrock::signing::sigv4::{Signable, sign_request};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::header::InvalidHeaderValue;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;
@@ -213,8 +213,10 @@ where
             service: "sts",
             region,
             credentials: &credentials,
+            mode: SigningMode::SigV4Auth,
             now,
         })
+        .map_err(SigningError::from)
         .map_err(FederationError::Signing)?;
         let headers = subject_token_headers(&computed, self.audience.as_deref(), region);
         let request = SubjectTokenRequest {

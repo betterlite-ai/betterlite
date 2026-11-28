@@ -75,6 +75,25 @@ async fn posts_a_signed_put_item() {
 }
 
 #[tokio::test]
+async fn signs_the_put_item_for_the_dynamodb_service_and_region() {
+    let delivery = RecordingDelivery::delivering();
+    let records = Arc::clone(&delivery.records);
+    let client = client(delivery, credentials());
+    let record = projection::item(&payload()).expect("the item builds");
+    client
+        .put_item("logs", &record)
+        .await
+        .expect("the put succeeds");
+    let recorded = records.snapshot();
+    let authorization = recorded[0].headers["authorization"]
+        .to_str()
+        .expect("the signature is text");
+    assert!(authorization.starts_with(
+        "AWS4-HMAC-SHA256 Credential=access/20260102/us-east-1/dynamodb/aws4_request"
+    ));
+}
+
+#[tokio::test]
 async fn reports_a_rejected_status() {
     let client = client(RecordingDelivery::answering(400, ""), credentials());
     let record = projection::item(&payload()).expect("the item builds");
