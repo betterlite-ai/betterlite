@@ -110,7 +110,8 @@ impl Section for Raw {
             DEFAULT_SOURCE_LIMIT,
             lookup,
         );
-        let source_limit_overrides = overrides(general.source_limit_overrides, lookup);
+        let source_limit_overrides =
+            overrides(general.source_limit_overrides, source_limit, lookup);
         let window_seconds = positive_int(
             general.failed_login_window_seconds,
             WINDOW_KEY,
@@ -200,10 +201,10 @@ fn positive_int<L>(raw: Option<Json>, key: &str, default: i64, lookup: &L) -> i6
 where
     L: EnvironmentLookup,
 {
-    let Some(value) = raw else {
+    let Some(value) = resolved(raw, lookup) else {
         return default;
     };
-    let text = text_of(&resolved_environment(value, lookup));
+    let text = text_of(&value);
     match int_of(&text) {
         Some(value) if value >= 1 => value,
         Some(value) => {
@@ -218,7 +219,7 @@ where
 }
 
 // _source_limit keeps the mapping order; the throttle only evaluates a value whose range matches
-fn overrides<L>(raw: Option<Json>, lookup: &L) -> SourceOverrides
+fn overrides<L>(raw: Option<Json>, default: i64, lookup: &L) -> SourceOverrides
 where
     L: EnvironmentLookup,
 {
@@ -236,15 +237,18 @@ where
             .into_iter()
             .map(|(range, value)| SourceOverride {
                 range,
-                limit: override_limit(&resolved_environment(value, lookup)),
+                limit: override_limit(resolved_environment(value, lookup), default),
             })
             .collect(),
     )
 }
 
-// _override_limit: only a stripped 0 exempts, otherwise the value must be a positive integer
-fn override_limit(raw: &Json) -> OverrideLimit {
-    let text = text_of(raw);
+// _override_limit: a null value silently keeps the source default; only a stripped 0 exempts, otherwise the value must be a positive integer
+fn override_limit(raw: Json, default: i64) -> OverrideLimit {
+    let text = match raw {
+        Json::Null => return OverrideLimit::Limit(default),
+        other => text_of(&other),
+    };
     if text.trim() == "0" {
         return OverrideLimit::Exempt;
     }

@@ -248,10 +248,12 @@ fn environment_references_resolve_and_a_missing_one_reads_as_absent() {
     ]
     .into_iter()
     .collect();
-    let configured = converted(
-        "general_settings:\n  max_failed_login_attempts_per_source: os.environ/LIMIT\n  failed_login_window_seconds: os.environ/WINDOW\n  failed_login_block_seconds: os.environ/ABSENT\n",
-        &environment,
-    );
+    let (configured, output) = logged(|| {
+        converted(
+            "general_settings:\n  max_failed_login_attempts_per_source: os.environ/LIMIT\n  failed_login_window_seconds: os.environ/WINDOW\n  failed_login_block_seconds: os.environ/ABSENT\n",
+            &environment,
+        )
+    });
     assert_eq!(
         (
             configured.source_limit,
@@ -261,6 +263,29 @@ fn environment_references_resolve_and_a_missing_one_reads_as_absent() {
         (7, 30, DEFAULT_BLOCK_SECONDS)
     );
     assert_eq!(environment.lookup("ABSENT"), None);
+    assert!(
+        !output.contains(super::SOURCE_LIMIT_KEY)
+            && !output.contains(super::WINDOW_KEY)
+            && !output.contains(super::BLOCK_KEY),
+        "{output}"
+    );
+}
+
+#[test]
+fn null_override_uses_the_source_default_silently() {
+    let source = "general_settings:\n  max_failed_login_attempts_per_source: 6\n  max_failed_login_attempts_per_source_overrides:\n    \"10.0.0.0/8\": null\n";
+    let (configured, output) = logged(|| loaded(source));
+    assert_eq!(
+        configured.source_limit_overrides,
+        SourceOverrides::Mapping(vec![SourceOverride {
+            range: "10.0.0.0/8".to_owned(),
+            limit: OverrideLimit::Limit(6),
+        }])
+    );
+    assert!(
+        !output.contains(super::SOURCE_LIMIT_OVERRIDES_KEY),
+        "{output}"
+    );
 }
 
 #[test]
