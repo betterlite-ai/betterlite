@@ -70,12 +70,16 @@ pub fn eligible_models(
     kept_tiers(config.tiers, order.get(floor..).unwrap_or_default())
 }
 
-// the eligible tiers in severity order, a model repeated across tiers keeping only its first tier
+// the eligible tiers in the order of the config's tier map, which LiteLLM's config.tiers.items() walks,
+// a model repeated across tiers keeping only its first tier
 fn kept_tiers(tiers: &TierSet, order: &[&str]) -> Vec<(String, String)> {
     let mut kept: Vec<(String, String)> = Vec::new();
-    for name in order {
+    for (name, pool) in &tiers.pools {
+        if !order.contains(&name.as_str()) {
+            continue;
+        }
         // a pool was refused before this runs, so only a single plain model name is left to keep
-        let Some(TierPool::Single(entry)) = tiers.pools.get(*name) else {
+        let TierPool::Single(entry) = pool else {
             continue;
         };
         if kept
@@ -84,7 +88,7 @@ fn kept_tiers(tiers: &TierSet, order: &[&str]) -> Vec<(String, String)> {
         {
             continue;
         }
-        kept.push(((*name).to_owned(), entry.model_name.clone()));
+        kept.push((name.clone(), entry.model_name.clone()));
     }
     kept
 }

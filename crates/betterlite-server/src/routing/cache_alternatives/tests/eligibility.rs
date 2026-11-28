@@ -61,16 +61,16 @@ fn eligible_models_keeps_tiers_at_or_above_the_decision_tier() {
     assert_eq!(
         top,
         pairs(&[
-            ("SIMPLE", "cheap"),
+            ("COMPLEX", "strong"),
             ("MEDIUM", "cold"),
-            ("COMPLEX", "strong")
+            ("SIMPLE", "cheap")
         ])
     );
     let floor = eligible_models(
         &config,
         &decision(&[("tier", "MEDIUM"), ("cause", "heuristic_scorer")]),
     );
-    assert_eq!(floor, pairs(&[("MEDIUM", "cold"), ("COMPLEX", "strong")]));
+    assert_eq!(floor, pairs(&[("COMPLEX", "strong"), ("MEDIUM", "cold")]));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn every_classified_cause_may_compare_cache_costs(#[case] cause: &str) {
     let got = eligible_models(&config, &decision(&[("tier", "SIMPLE"), ("cause", cause)]));
     assert_eq!(
         got,
-        pairs(&[("SIMPLE", "cheap"), ("COMPLEX", "strong")]),
+        pairs(&[("COMPLEX", "strong"), ("SIMPLE", "cheap")]),
         "cause {cause}"
     );
 }
@@ -158,7 +158,7 @@ fn repeated_model_in_multiple_tiers_is_only_considered_once() {
         features: &[],
     };
     let got = eligible_models(&config, &classified());
-    assert_eq!(got, pairs(&[("SIMPLE", "cheap"), ("MEDIUM", "strong")]));
+    assert_eq!(got, pairs(&[("COMPLEX", "strong"), ("SIMPLE", "cheap")]));
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn unrelated_features_do_not_keep_cache_costs_out() {
     };
     assert_eq!(
         eligible_models(&config, &classified()),
-        pairs(&[("SIMPLE", "cheap"), ("COMPLEX", "strong")])
+        pairs(&[("COMPLEX", "strong"), ("SIMPLE", "cheap")])
     );
 }
 

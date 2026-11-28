@@ -19,7 +19,8 @@ calls:
         tiers: {SIMPLE: cheap, MEDIUM: mid, COMPLEX: mid, REASONING: deep}
       decision: {tier: MEDIUM, cause: heuristic_scorer}
   - b3124:
-      config: {}
+      config:
+        tiers: {SIMPLE: gpt-4o-mini, MEDIUM: gpt-4o, COMPLEX: claude-sonnet-4-20250514, REASONING: claude-sonnet-4-20250514}
       decision: {tier: SIMPLE, cause: heuristic_scorer}
   - b3124:
       config:
