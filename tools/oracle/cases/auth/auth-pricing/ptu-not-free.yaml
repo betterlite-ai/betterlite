@@ -1,0 +1,48 @@
+kind: helper
+name: auth-pricing-auth-ptu-not-free
+call:
+  auth_pricing:
+    calls:
+      # a PTU deployment with explicit zero token rates is not a free model
+      - function: zero_cost
+        router:
+          groups:
+            ptu: {input: 0.0, output: 0.0}
+          deployments:
+            ptu:
+              - model_info: {id: dep-ptu, ptu_count: 250, cost_per_ptu_per_hour: 3.0}
+          costs:
+            dep-ptu: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: ptu
+      # the same model in a list poisons the free verdict for the whole request
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+            ptu: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+            ptu:
+              - model_info: {id: dep-ptu, ptu_count: 250, cost_per_ptu_per_hour: 3.0}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+            dep-ptu: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: [free, ptu]
+      # a null hourly cost leaves the model free
+      - function: zero_cost
+        router:
+          groups:
+            ptu-null: {input: 0.0, output: 0.0}
+          deployments:
+            ptu-null:
+              - model_info: {id: dep-ptu-null, ptu_count: 250, cost_per_ptu_per_hour: null}
+          costs:
+            dep-ptu-null: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+          cache: {}
+        model: ptu-null
+env: {}
+compare:
+  ignore: []

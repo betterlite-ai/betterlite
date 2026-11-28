@@ -1,0 +1,84 @@
+kind: helper
+name: auth-pricing-pricing-metric-presence
+call:
+  auth_pricing:
+    calls:
+      # tiered pricing on the resolved info counts as a price even without a token rate
+      - function: unpriced
+        router:
+          groups:
+            tiered: {input: 0.0, output: 0.0}
+          deployments:
+            tiered:
+              - model_info: {id: dep-tiered}
+          resolved:
+            dep-tiered: {tiered_pricing: [{input: 0.0}]}
+          costs: {}
+          cache: {}
+        model: tiered
+      # a positive price on a non-token metric counts
+      - function: unpriced
+        router:
+          groups:
+            audio: {input: 0.0, output: 0.0}
+          deployments:
+            audio:
+              - model_info: {id: dep-audio}
+          resolved:
+            dep-audio: {cost_per_second: 0.0002}
+          costs: {}
+          cache: {}
+        model: audio
+      # a zero, negative, string or bool cost is not a positive price
+      - function: unpriced
+        router:
+          groups:
+            zero-metric: {input: 0.0, output: 0.0}
+            negative-metric: {input: 0.0, output: 0.0}
+            string-metric: {input: 0.0, output: 0.0}
+            bool-metric: {input: 0.0, output: 0.0}
+          deployments:
+            zero-metric:
+              - model_info: {id: dep-zero}
+            negative-metric:
+              - model_info: {id: dep-negative}
+            string-metric:
+              - model_info: {id: dep-string}
+            bool-metric:
+              - model_info: {id: dep-bool}
+          resolved:
+            dep-zero: {cost_per_image: 0.0}
+            dep-negative: {cost_per_image: -1.0}
+            dep-string: {cost_per_image: "0.5"}
+            dep-bool: {cost_per_image: true}
+          costs: {}
+          cache: {}
+        model: [zero-metric, negative-metric, string-metric, bool-metric]
+      # a nested cost map prices the group when any leaf is positive
+      - function: unpriced
+        router:
+          groups:
+            nested: {input: 0.0, output: 0.0}
+          deployments:
+            nested:
+              - model_info: {id: dep-nested}
+          resolved:
+            dep-nested: {cost_per_token: {input: 0.0, output: 0.25}}
+          costs: {}
+          cache: {}
+        model: nested
+      # a null tiered_pricing on the deployment params still declares a price at the group level
+      - function: unpriced
+        router:
+          groups:
+            declared: {input: 0.0, output: 0.0}
+          deployments:
+            declared:
+              - litellm_params: {tiered_pricing: null}
+                model_info: {id: dep-declared}
+          costs: {}
+          cache: {}
+        model: declared
+env: {}
+compare:
+  ignore: []

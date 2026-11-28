@@ -1,12 +1,19 @@
-use crate::state::shared::Shared;
+use std::sync::Arc;
+
+use betterlite_config::sections::auth_pricing::Settings;
 use betterlite_config::types::Config;
 
-pub struct Slot;
+use crate::state::shared::Shared;
+
+pub struct Slot {
+    pub settings: Arc<Settings>,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub fn new(config: &Config, _shared: &Shared) -> Self {
+        Self {
+            settings: Arc::new(config.sections.auth_pricing),
+        }
     }
 }

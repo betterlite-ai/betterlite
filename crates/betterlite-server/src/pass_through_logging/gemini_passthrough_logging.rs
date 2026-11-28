@@ -3,7 +3,7 @@ pub mod cost;
 pub(crate) mod counter;
 mod payload;
 pub(crate) mod relay;
-mod reply;
+pub(crate) mod reply;
 mod routes;
 pub(crate) mod tests;
 

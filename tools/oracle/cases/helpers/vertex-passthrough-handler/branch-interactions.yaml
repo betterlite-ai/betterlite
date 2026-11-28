@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-passthrough-handler-branch-interactions
+call:
+  b3642:
+    url_route: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/interactions"
+env: {}
+compare: {ignore: []}

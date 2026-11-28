@@ -177,6 +177,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
+        | StageFailure::Pricing(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)

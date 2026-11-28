@@ -1,0 +1,61 @@
+kind: helper
+name: auth-pricing-auth-missing-price-denial
+call:
+  auth_pricing:
+    calls:
+      # only the unpriced candidate is reported, in request order
+      - function: unpriced
+        router:
+          groups:
+            priced: {input: 0.0, output: 0.0}
+            noprice: {input: 0.0, output: 0.0}
+          deployments:
+            priced:
+              - litellm_params: {input_cost_per_token: 0.0}
+                model_info: {id: dep-priced}
+            noprice:
+              - model_info: {id: dep-noprice}
+          costs: {}
+          cache: {}
+        model: [priced, noprice]
+      # two unpriced candidates share one message naming both
+      - function: unpriced
+        router:
+          groups:
+            alpha: {input: 0.0, output: 0.0}
+            beta: {input: 0.0, output: 0.0}
+          deployments:
+            alpha:
+              - model_info: {id: dep-alpha}
+            beta:
+              - model_info: {id: dep-beta}
+          costs: {}
+          cache: {}
+        model: [alpha, beta]
+      # a priced metric on the resolved info keeps the model out of the block
+      - function: unpriced
+        router:
+          groups:
+            metric: {input: 0.0, output: 0.0}
+          deployments:
+            metric:
+              - model_info: {id: dep-metric}
+          resolved:
+            dep-metric: {cost_per_query: 0.01}
+          costs: {}
+          cache: {}
+        model: metric
+      # an unknown group is left to the request's own model resolution
+      - function: unpriced
+        router:
+          groups: {}
+          cache: {}
+        model: ghost
+      # the message for a missing model carries no names
+      - function: unpriced
+        router:
+          groups: {}
+          cache: {}
+env: {}
+compare:
+  ignore: []
