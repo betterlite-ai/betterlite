@@ -75,19 +75,16 @@ fn validate_not_in_future(
     Ok(())
 }
 
+// pyjwt runs the exp check only when the claim is present, so a signed token without exp has no expiry
 fn validate_expiration(payload: &Document, now: f64) -> Result<(), VerificationError> {
-    let expiration = match payload.json.get("exp") {
-        None => {
-            return Err(VerificationError::Validation {
-                detail: "Token is missing the \"exp\" claim".to_owned(),
-            });
-        }
-        Some(value) => value
-            .as_f64()
-            .ok_or_else(|| VerificationError::Validation {
-                detail: "Expiration Time claim (exp) must be an integer.".to_owned(),
-            })?,
+    let Some(value) = payload.json.get("exp") else {
+        return Ok(());
     };
+    let expiration = value
+        .as_f64()
+        .ok_or_else(|| VerificationError::Validation {
+            detail: "Expiration Time claim (exp) must be an integer.".to_owned(),
+        })?;
     // leeway is zero: a token is expired from the instant its exp passes
     if expiration <= now {
         return Err(VerificationError::Expired);

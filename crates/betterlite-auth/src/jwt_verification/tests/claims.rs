@@ -238,10 +238,12 @@ fn expiration_uses_zero_leeway_and_requires_an_integer() {
         verify_iss: false,
         now: 100.0,
     };
-    assert_eq!(
-        validation_detail(r#"{"iat":99,"nbf":99,"aud":"litellm-proxy"}"#, &checks),
-        "Token is missing the \"exp\" claim"
-    );
+    // pyjwt validates exp only when the claim is present, so an exp-less token has no expiry
+    validate_claims(
+        &document(r#"{"iat":99,"nbf":99,"aud":"litellm-proxy"}"#),
+        &checks,
+    )
+    .unwrap();
     assert_eq!(
         validation_detail(r#"{"exp":"soon","aud":"litellm-proxy"}"#, &checks),
         "Expiration Time claim (exp) must be an integer."
