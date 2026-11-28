@@ -60,12 +60,9 @@ where
         cache_key: &str,
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
-        self.async_set(
-            Some(cache_key),
-            &AUTHN_REQUEST_MARKER,
-            write_options(ttl_seconds),
-        )
-        .await
+        let marker = AUTHN_REQUEST_MARKER;
+        let options = write_options(ttl_seconds);
+        self.async_set(Some(cache_key), &marker, options).await
     }
 }
 

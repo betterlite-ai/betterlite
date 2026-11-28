@@ -74,12 +74,12 @@ fn provider_urls(custom_urls: &CustomUrls, request: &Request) -> (ProviderUrls, 
 
 // Starlette's request.base_url: the scheme, the host and the root path, ending in a slash
 fn request_base_url(request: &Request, root_path: &str) -> String {
-    let host = request
-        .uri()
-        .authority()
-        .map(Authority::as_str)
-        .or_else(|| header_text(request, header::HOST.as_str()))
-        .unwrap_or_default();
+    let authority = request.uri().authority().map(Authority::as_str);
+    let host_header = request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok());
+    let host = authority.or(host_header).unwrap_or_default();
     let scheme = request.uri().scheme_str().unwrap_or("http");
     format!("{scheme}://{host}{root_path}/")
 }
@@ -97,18 +97,20 @@ fn secure_request(state: &SamlEntrypointsState, request: &Request) -> bool {
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0.ip().to_string());
+    let text = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+    };
     let network = NetworkRequest {
         peer: peer.as_deref(),
-        x_forwarded_for: header_text(request, "x-forwarded-for"),
-        x_forwarded_proto: header_text(request, "x-forwarded-proto"),
-        host: header_text(request, header::HOST.as_str()),
+        x_forwarded_for: text("x-forwarded-for"),
+        x_forwarded_proto: text("x-forwarded-proto"),
+        host: text(header::HOST.as_str()),
         scheme: request.uri().scheme_str().unwrap_or_default(),
     };
     is_request_https(&network, &state.trusted_network)
-}
-
-fn header_text<'request>(request: &'request Request, name: &str) -> Option<&'request str> {
-    request.headers().get(name)?.to_str().ok()
 }
 
 // LiteLLM's str_to_bool: only a trimmed "true" disables the UI, and every other value leaves it on

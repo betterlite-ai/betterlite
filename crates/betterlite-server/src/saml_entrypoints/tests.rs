@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, to_bytes};
-use axum::http::{HeaderMap, Request, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, Request, StatusCode, header};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_auth::auth_cache::AuthCacheError;
@@ -95,7 +95,9 @@ impl SamlCache for FakeCache {
         cache_key: &str,
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
-        lock(&self.authn_requests).push((cache_key.to_owned(), ttl_seconds));
+        let request = (cache_key.to_owned(), ttl_seconds);
+        let mut writes = lock(&self.authn_requests);
+        writes.push(request);
         Ok(())
     }
 }
@@ -191,22 +193,8 @@ async fn call(router: Router, request: Request<Body>) -> (StatusCode, HeaderMap,
     (status, headers, body.to_vec())
 }
 
-fn location_of(headers: &HeaderMap) -> String {
-    headers
-        .get(header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned()
-}
-
-fn cookie_of(headers: &HeaderMap) -> String {
-    headers
-        .get(header::SET_COOKIE)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned()
+fn header_of(headers: &HeaderMap, name: HeaderName) -> String {
+    headers.get(name).unwrap().to_str().unwrap().to_owned()
 }
 
 fn request_id_of(cookie: &str) -> String {
@@ -262,7 +250,7 @@ async fn login_redirects_to_the_idp_with_the_state_cookie() {
     let request = get("/sso/saml/login?return_to=https%3A%2F%2Fapp.example%2Fafter");
     let (status, headers, _body) = call(router, request).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    let location = location_of(&headers);
+    let location = header_of(&headers, header::LOCATION);
     assert!(
         location.starts_with("https://idp.example/sso?SAMLRequest="),
         "{location}"
@@ -284,7 +272,7 @@ async fn login_redirects_to_the_idp_with_the_state_cookie() {
         xml.contains("<saml:Issuer>http://proxy.test/sso/saml/metadata</saml:Issuer>"),
         "{xml}"
     );
-    let cookie = cookie_of(&headers);
+    let cookie = header_of(&headers, header::SET_COOKIE);
     let request_id = request_id_of(&cookie);
     assert_eq!(
         cookie,
@@ -301,7 +289,7 @@ async fn login_relay_state_defaults_to_the_callback_url() {
     let router = routes(configured_state(IDP_XML, &[]));
     let (status, headers, _body) = call(router, get("/sso/saml/login")).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    let location = location_of(&headers);
+    let location = header_of(&headers, header::LOCATION);
     assert_eq!(
         relay_state_of(&location),
         "http%3A%2F%2Fproxy.test%2Fsso%2Fsaml%2Fcallback"
@@ -317,7 +305,10 @@ async fn login_keeps_the_last_repeated_return_to() {
     )
     .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    assert_eq!(relay_state_of(&location_of(&headers)), "second");
+    assert_eq!(
+        relay_state_of(&header_of(&headers, header::LOCATION)),
+        "second"
+    );
 }
 
 #[tokio::test]
@@ -329,7 +320,7 @@ async fn login_builds_the_urls_from_the_public_base_url() {
     let router = routes(state);
     let (status, headers, _body) = call(router, get("/sso/saml/login")).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    let location = location_of(&headers);
+    let location = header_of(&headers, header::LOCATION);
     assert_eq!(
         relay_state_of(&location),
         "https%3A%2F%2Fpublic.example%2Fsso%2Fsaml%2Fcallback"
@@ -352,7 +343,7 @@ async fn login_with_a_secure_request_sets_the_none_same_site_cookie() {
         .unwrap();
     let (status, headers, _body) = call(router, request).await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    let cookie = cookie_of(&headers);
+    let cookie = header_of(&headers, header::SET_COOKIE);
     let request_id = request_id_of(&cookie);
     assert_eq!(
         cookie,
