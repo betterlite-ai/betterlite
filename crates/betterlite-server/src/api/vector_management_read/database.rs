@@ -31,7 +31,7 @@ impl PostgresVectorDatabase {
     }
 
     #[cfg_attr(test, mutants::skip)]
-    fn client(&self) -> PrismaClient<'_> {
+    pub(crate) fn client(&self) -> PrismaClient<'_> {
         PrismaClient {
             writer: self.store.as_ref(),
             reader: self.store.as_ref(),

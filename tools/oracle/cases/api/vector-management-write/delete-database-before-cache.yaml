@@ -1,0 +1,89 @@
+kind: helper
+name: delete-database-before-cache
+call:
+  b1069:
+    calls:
+      # both stores hold the row: the database row is deleted first, then the registry copy
+      - route: delete
+        body: {vector_store_id: vs_a}
+        database:
+          - {vector_store_id: vs_a, custom_llm_provider: openai, user_id: u1}
+        registry:
+          - {vector_store_id: vs_a, custom_llm_provider: openai, user_id: u1}
+        caller: &user {user_id: u1, user_role: internal_user, team_id: null}
+        disabled: false
+      # neither store holds it
+      - route: delete
+        body: {vector_store_id: vs_missing}
+        database: []
+        registry: []
+        caller: *user
+        disabled: false
+      # a config-owned row is refused before access and mutation
+      - route: delete
+        body: {vector_store_id: vs_c}
+        database:
+          - {vector_store_id: vs_c, custom_llm_provider: openai, user_id: u1}
+        registry:
+          - {vector_store_id: vs_c, custom_llm_provider: openai, is_config: true}
+        caller: *user
+        disabled: false
+      # a row belonging to another team is refused
+      - route: delete
+        body: {vector_store_id: vs_t}
+        database:
+          - {vector_store_id: vs_t, custom_llm_provider: openai, team_id: t2}
+        registry: []
+        caller: {user_id: u1, user_role: internal_user, team_id: t1}
+        disabled: false
+      # only the registry holds it: no database delete is issued
+      - route: delete
+        body: {vector_store_id: vs_m}
+        database: []
+        registry:
+          - {vector_store_id: vs_m, custom_llm_provider: openai}
+        caller: *user
+        disabled: false
+      # only the database holds it: no registry delete is issued
+      - route: delete
+        body: {vector_store_id: vs_b}
+        database:
+          - {vector_store_id: vs_b, custom_llm_provider: openai, user_id: u1}
+        registry: []
+        caller: *user
+        disabled: false
+      # no registry at all: only the database calls are made
+      - route: delete
+        body: {vector_store_id: vs_r}
+        database:
+          - {vector_store_id: vs_r, custom_llm_provider: openai, user_id: u1}
+        registry: null
+        caller: *user
+        disabled: false
+      # a cache-only store still needs a database to answer
+      - route: delete
+        body: {vector_store_id: vs_n}
+        database: null
+        registry:
+          - {vector_store_id: vs_n, custom_llm_provider: openai}
+        caller: *user
+        disabled: false
+      # the database row decides access when both stores hold the id
+      - route: delete
+        body: {vector_store_id: vs_w}
+        database:
+          - {vector_store_id: vs_w, custom_llm_provider: openai, team_id: t2}
+        registry:
+          - {vector_store_id: vs_w, custom_llm_provider: openai}
+        caller: {user_id: u1, user_role: internal_user, team_id: t1}
+        disabled: false
+      # a row under the caller's team is deleted
+      - route: delete
+        body: {vector_store_id: vs_ok}
+        database:
+          - {vector_store_id: vs_ok, custom_llm_provider: openai, team_id: t1}
+        registry: []
+        caller: {user_id: u1, user_role: internal_user, team_id: t1}
+        disabled: false
+env: {}
+compare: {ignore: []}
