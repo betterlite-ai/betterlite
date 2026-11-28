@@ -35,7 +35,7 @@ fn page_size(params: &Params) -> Result<Option<i64>, GeminiAgentError> {
     let Some(value) = params.get("page_size") else {
         return Ok(None);
     };
-    if let JsonValue::Null = value {
+    if matches!(value, JsonValue::Null) {
         return Ok(None);
     }
     let JsonValue::Number(number) = value else {

@@ -54,10 +54,10 @@ fn secret(text: &str) -> SecretString {
 }
 
 fn config(environment_key: Option<&str>) -> GeminiAgentsConfig {
-    let environment_key = environment_key.map(secret);
+    let key = environment_key.map(secret);
     GeminiAgentsConfig {
         settings: Settings {
-            environment_key,
+            environment_key: key,
             generic_api_key: None,
             api_base: DEFAULT_API_BASE.to_owned(),
         },
