@@ -302,6 +302,33 @@ async fn cohere_input_type() {
     );
 }
 
+// A Cohere reply that bills nothing has its inputs counted through the encoding service
+async fn cohere_counted_usage() {
+    let env = environment("{}");
+    let inputs = vec![String::from("one"), String::from("two")];
+    let fixture = scripted(&[Reply::status(
+        200,
+        r#"{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}"#,
+    )]);
+    let outcome = run(
+        &fixture,
+        operation(
+            COHERE,
+            EmbeddingInput::Multiple(&inputs),
+            COHERE_QUERY,
+            &env,
+        ),
+    )
+    .await;
+    let reply = legacy(outcome.embedding());
+    assert_eq!(
+        reply.usage.prompt_tokens, 6,
+        "the fixture encoding counts the input characters"
+    );
+    assert_eq!(reply.usage.total_tokens, 6);
+    assert!(reply.usage.prompt_tokens_details.is_none());
+}
+
 // Nova embeds text with its schema version, purpose and the default dimension
 async fn nova_text_payload() {
     let env = environment("{}");
@@ -600,6 +627,7 @@ async fn titan_payloads() {
 
 async fn cohere_and_nova_payloads() {
     cohere_input_type().await;
+    cohere_counted_usage().await;
     nova_text_payload().await;
     nova_media_payloads().await;
 }

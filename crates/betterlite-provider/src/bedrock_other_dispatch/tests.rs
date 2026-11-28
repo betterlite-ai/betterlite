@@ -5,6 +5,7 @@ mod embedding;
 mod fixture;
 mod image;
 mod invariants;
+mod ports;
 mod rerank;
 mod transcription;
 
