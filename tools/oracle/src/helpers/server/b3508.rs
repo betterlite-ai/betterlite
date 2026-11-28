@@ -4,7 +4,7 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, map_role};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::api::agents::collection_routes::guards::{
-    CallerKeyMissing, enforce_provider_key, is_proxy_admin,
+    CallerKeyMissing, enforce_provider_key,
 };
 use betterlite_server::api::agents::collection_routes::merge::{
     merge_query_params_into_data, query_values,
@@ -73,9 +73,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let answer = match input {
-            Input::IsAdmin { user_role } => {
-                Value::Bool(is_proxy_admin(&caller(user_role.as_deref())))
-            }
+            Input::IsAdmin { user_role } => Value::Bool(
+                enforce_provider_key(&Map::new(), &caller(user_role.as_deref())).is_ok(),
+            ),
             Input::EnforceKey { user_role, data } => enforce_key(user_role.as_deref(), data),
             Input::MergeQuery { data, query } => merge_query(data, query),
         };
