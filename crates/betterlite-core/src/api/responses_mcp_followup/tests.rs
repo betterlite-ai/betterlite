@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 
 use super::error::{McpFollowupError, ToolExecutionEventError};
 use super::events::{EventToolResult, LiteLlmCallEvents, ToolCallId, create_tool_execution_events};
-use super::output::add_mcp_output_elements_to_response;
+use super::output::append_mcp_output_items;
 use super::records::{
     FollowUpCall, IdSource, MetadataAuth, ResponsesMcpFollowupInput, StreamingAuth,
 };
@@ -559,7 +559,7 @@ fn output_element_append_order() {
     let results = vec![
         McpToolResult {
             tool_call_id: Some(String::from("call_1")),
-            result: String::from("sunny and warm, café"),
+            result: String::from("sunny and warm, 中"),
             name: Some(String::from("get_weather")),
         },
         McpToolResult {
@@ -625,7 +625,7 @@ fn output_element_append_order() {
             r#"[
   {
     "tool_call_id": "call_1",
-    "result": "sunny and warm, caf\u00e9",
+    "result": "sunny and warm, \u4e2d",
     "name": "get_weather"
   },
   {
