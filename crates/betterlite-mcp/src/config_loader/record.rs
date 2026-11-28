@@ -203,8 +203,15 @@ fn apply_switches(
     fields.oauth_passthrough = config.oauth_passthrough.unwrap_or(false);
     fields.dcr_bridge = dcr_bridge;
     fields.per_server_oauth_discovery = per_server_oauth_discovery;
-    fields.token_validation =
-        config_token_validation(config.token_validation.as_ref(), server_name)?;
+    fields.token_validation = match config.token_validation.as_ref() {
+        None | Some(Json::Null) => None,
+        Some(Json::Object(entries)) => Some(stored_entries(entries)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(ConfigError::TokenValidation {
+                server_ref: server_name.to_owned(),
+            });
+        }
+    };
     fields
         .oauth_identity_binding
         .clone_from(&config.oauth_identity_binding);
@@ -254,21 +261,6 @@ fn config_pinned_tools(
         server_ref: server_ref.to_owned(),
         source,
     })
-}
-
-fn config_token_validation(
-    value: Option<&Json>,
-    server_ref: &str,
-) -> Result<Option<BTreeMap<String, JsonValue>>, ConfigError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(entries)) => Ok(Some(stored_entries(entries))),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(ConfigError::TokenValidation {
-                server_ref: server_ref.to_owned(),
-            })
-        }
-    }
 }
 
 fn config_env_vars(config: &McpServerConfig) -> Option<Vec<BTreeMap<String, JsonValue>>> {
