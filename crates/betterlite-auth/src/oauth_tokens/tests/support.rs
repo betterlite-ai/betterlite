@@ -348,11 +348,11 @@ async fn read_body(
     head_end: usize,
     length: usize,
 ) -> io::Result<String> {
-    let buffered = buffer.len().saturating_sub(head_end).min(length);
+    let carried = buffer.len().saturating_sub(head_end).min(length);
     let mut body = vec![0_u8; length];
-    body[..buffered].copy_from_slice(&buffer[head_end..head_end.saturating_add(buffered)]);
-    let tail_read = stream.read_exact(&mut body[buffered..]).await?;
-    body.truncate(buffered.saturating_add(tail_read));
+    body[..carried].copy_from_slice(&buffer[head_end..head_end.saturating_add(carried)]);
+    let tail_read = stream.read_exact(&mut body[carried..]).await?;
+    body.truncate(carried.saturating_add(tail_read));
     Ok(from_utf8(&body).unwrap_or_default().to_owned())
 }
 
