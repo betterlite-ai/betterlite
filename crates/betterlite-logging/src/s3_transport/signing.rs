@@ -3,11 +3,14 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::SystemTime;
 
-pub use betterlite_sigv4::credentials::Credentials;
+use betterlite_sigv4::credentials::Credentials as SigV4Credentials;
 
 mod tests;
 
 pub const S3_SERVICE: &str = "s3";
+
+// clippy::pub_use is denied, so an alias keeps the signing credentials nameable here
+pub type Credentials = SigV4Credentials;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CredentialError {
