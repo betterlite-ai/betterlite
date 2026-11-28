@@ -179,6 +179,17 @@ async fn a_caller_without_a_user_id_is_created_by_the_default_name() {
 }
 
 #[tokio::test]
+async fn an_empty_user_id_is_created_by_the_default_name() {
+    let harness = harness(HarnessConfig::new());
+    let route = session_route(&harness);
+    let auth = auth_with(Some(""), "proxy_admin");
+    let Ok(record) = route.create_session(SESSION_BODY.as_bytes(), &auth).await else {
+        panic!("the admin creates the session");
+    };
+    assert_eq!(record.created_by.as_deref(), Some("default_user_id"));
+}
+
+#[tokio::test]
 async fn a_draft_write_failure_answers_500_and_keeps_the_local_copy() {
     let harness = harness(HarnessConfig::new().with_database(DatabaseFault::DraftWrite));
     let database = harness.database.as_ref().expect("the database is set");
