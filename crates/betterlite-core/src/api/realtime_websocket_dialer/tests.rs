@@ -11,6 +11,7 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http::websocket_client::connect;
 use betterlite_http::websocket_client::request::{Keepalive, WebSocketRequest};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -35,7 +36,7 @@ use crate::api::realtime_backend_transport::dial::{
 };
 use crate::api::realtime_backend_transport::error::DialError;
 use crate::api::realtime_connection_plan::{ProbeConnection, RealtimeProbeDialer};
-use crate::api::realtime_contracts::close::{CloseFrame, backend_close_from};
+use crate::api::realtime_contracts::close::{CloseFrame, ConnectionClosed, backend_close_from};
 use crate::api::realtime_contracts::error::HeaderMap;
 use crate::api::realtime_contracts::transport::RealtimeMessage;
 
@@ -263,10 +264,10 @@ fn custom_headers(recorded: &[(String, String)]) -> Vec<(&str, &str)> {
 }
 
 // the three frames a normal session writes, as the server read them
-fn assert_sent_frames(text: Message, binary: Message, close: Message) {
-    assert_eq!(text, Message::Text(Utf8Bytes::from("hello")));
-    assert_eq!(binary, Message::Binary(Bytes::from_static(b"raw")));
-    let Message::Close(Some(frame)) = close else {
+fn assert_sent_frames(text: &Message, binary: &Message, close: &Message) {
+    assert_eq!(text, &Message::Text(Utf8Bytes::from("hello")));
+    assert_eq!(binary, &Message::Binary(Bytes::from_static(b"raw")));
+    let Message::Close(Some(ref frame)) = *close else {
         panic!("expected a close frame");
     };
     assert_eq!(u16::from(frame.code), 1000);
@@ -458,7 +459,7 @@ async fn dialer_closes_a_frame_over_its_own_cap_with_1009() {
 async fn keepalive_source(address: SocketAddr) -> super::halves::DialedSource {
     let connection = timeout(
         TEST_TIMEOUT,
-        betterlite_http::websocket_client::connect(WebSocketRequest {
+        connect(WebSocketRequest {
             url: Url::parse(&format!("ws://{address}/realtime")).expect("url"),
             headers: &[],
             tls: None,
@@ -626,7 +627,7 @@ async fn sender_writes_text_binary_and_a_normal_close() {
         .expect("server")
         .expect("server")
         .expect("server task");
-    assert_sent_frames(text, binary, close);
+    assert_sent_frames(&text, &binary, &close);
 }
 
 #[tokio::test]

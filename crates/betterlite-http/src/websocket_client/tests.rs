@@ -18,7 +18,8 @@ use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{ClientConfig, ServerConfig};
 use secrecy::SecretString;
-use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
+use tempfile::NamedTempFile;
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
@@ -166,12 +167,11 @@ async fn serve_silent(listener: TcpListener) -> (u16, String) {
     let ping = socket.next().await.expect("ping").expect("frame");
     assert!(matches!(ping, Message::Ping(_)));
     let frame = socket.next().await.expect("close").expect("frame");
-    let close = match frame {
-        Message::Close(close) => close,
-        other => panic!("frame: {other:?}"),
+    let Message::Close(close) = frame else {
+        panic!("expected a close frame");
     };
-    let close = close.expect("close code");
-    (u16::from(close.code), close.reason.as_str().to_owned())
+    let code = close.expect("close code");
+    (u16::from(code.code), code.reason.as_str().to_owned())
 }
 
 async fn read_head(stream: &mut TcpStream) -> String {
@@ -208,7 +208,7 @@ async fn serve_proxy(listener: TcpListener, forward: Option<SocketAddr>) -> Stri
                 .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await
                 .expect("response");
-            drop(tokio::io::copy_bidirectional(&mut downstream, &mut upstream).await);
+            drop(copy_bidirectional(&mut downstream, &mut upstream).await);
         }
     }
     head
@@ -362,7 +362,7 @@ async fn websocket_client_tests_exchange_frames_over_tls() {
     let address = server.listener.local_addr().expect("address");
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_tls(server.listener, server.config));
-    let mut ca_file = tempfile::NamedTempFile::new().expect("ca file");
+    let mut ca_file = NamedTempFile::new().expect("ca file");
     ca_file.write_all(server.ca_pem.as_bytes()).expect("ca pem");
     let ca_path = ca_file.path().to_str().expect("ca path").to_owned();
     let config = websocket_client_config(&Verification::CaFile(ca_path)).expect("tls config");
