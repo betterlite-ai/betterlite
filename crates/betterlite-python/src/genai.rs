@@ -1,5 +1,4 @@
 mod answer;
-mod client;
 mod convert;
 mod error;
 mod logging;

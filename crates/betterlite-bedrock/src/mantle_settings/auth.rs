@@ -9,9 +9,9 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::{RawValue, to_raw_value};
 
+use crate::aws_settings::or_bearer_token;
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
-use crate::mantle_inputs::credentials::resolve_bearer_token;
 use crate::mantle_inputs::records::MantleGlobals;
 use crate::mantle_inputs::region::{region_from_host, resolve_region};
 use crate::signing::error::SigningError;
@@ -48,11 +48,11 @@ where
     Resolve: FnOnce(&AwsSettings, &str) -> Fut,
     Fut: Future<Output = Result<Credentials, CredentialError>>,
 {
-    let bearer = resolve_bearer_token(
+    let bearer = or_bearer_token(&[
         request.api_key,
         request.globals.mantle_api_key.as_ref(),
         request.globals.aws_bearer_token.as_ref(),
-    )
+    ])
     .filter(|token| !token.expose_secret().is_empty());
     let (params, filtered, token) = match bearer {
         Some(token) => (raw_params(request.optional_params)?, None, Some(token)),
