@@ -28,6 +28,15 @@ pub struct DecodeKwargs {
     pub options: Option<DecodeOptions>,
 }
 
+// Every input one decode needs beyond the token and key, so each caller names only the policy it scopes.
+#[derive(Clone, Copy, Debug)]
+pub struct DecodeParams<'config> {
+    pub audience: Option<&'config Selector>,
+    pub issuer: Option<&'config str>,
+    pub options: Option<DecodeOptions>,
+    pub disable_audience_validation: bool,
+}
+
 // JWTHandler: verification, trusted-issuer selection, claim normalization and the OIDC UserInfo path.
 pub struct JwtVerifier {
     settings: Arc<JwtVerificationSettings>,
@@ -81,14 +90,13 @@ impl JwtVerifier {
             .audience
             .as_deref()
             .map(|text| Selector::One(text.to_owned()));
-        let payload = self.decode_with_public_key(
-            token,
-            &public_key,
-            env_audience.as_ref(),
-            kwargs.issuer.as_deref(),
-            kwargs.options,
-            false,
-        )?;
+        let params = DecodeParams {
+            audience: env_audience.as_ref(),
+            issuer: kwargs.issuer.as_deref(),
+            options: kwargs.options,
+            disable_audience_validation: false,
+        };
+        let payload = self.decode_with_public_key(token, &public_key, &params)?;
         Ok(strip_internal_claims(&payload)?)
     }
 
@@ -105,14 +113,13 @@ impl JwtVerifier {
         let Some(public_key) = PublicKey::from_resolved(&resolved) else {
             return Err(VerificationError::InvalidJwt);
         };
-        let payload = self.decode_with_public_key(
-            token,
-            &public_key,
-            config.audience.as_ref(),
-            Some(config.issuer.as_str()),
-            None,
-            config.disable_audience_validation,
-        )?;
+        let params = DecodeParams {
+            audience: config.audience.as_ref(),
+            issuer: Some(config.issuer.as_str()),
+            options: None,
+            disable_audience_validation: config.disable_audience_validation,
+        };
+        let payload = self.decode_with_public_key(token, &public_key, &params)?;
         Ok(normalize_with_issuer(&payload, config)?)
     }
 
@@ -147,11 +154,11 @@ impl JwtVerifier {
     // managed_issuer_is_trusted: the first matching configured issuer decides, and the env pair is the fallback.
     #[must_use]
     pub fn managed_issuer_is_trusted(&self, issuer: &Json) -> bool {
-        let Json::Text(issuer) = issuer else {
+        let Json::Text(claimed) = issuer else {
             return false;
         };
         for config in self.settings.jwt.routing.issuers.iter().flatten() {
-            if config.issuer == *issuer {
+            if config.issuer == *claimed {
                 let scoped = match config.audience.as_ref() {
                     Some(Selector::One(value)) => !value.is_empty(),
                     Some(Selector::Many(values)) => !values.is_empty(),
@@ -160,7 +167,7 @@ impl JwtVerifier {
                 return scoped && !config.disable_audience_validation;
             }
         }
-        self.settings.issuer.as_deref() == Some(issuer.as_str())
+        self.settings.issuer.as_deref() == Some(claimed.as_str())
             && self
                 .settings
                 .audience
@@ -222,19 +229,19 @@ impl JwtVerifier {
         &self,
         token: &str,
         public_key: &PublicKey<'_>,
-        audience: Option<&Selector>,
-        issuer: Option<&str>,
-        options: Option<DecodeOptions>,
-        disable_audience_validation: bool,
+        params: &DecodeParams<'_>,
     ) -> Result<TypedValue, VerificationError> {
-        let checks_on = match options {
+        let checks_on = match params.options {
             Some(explicit) => explicit,
-            None => Self::decode_options(audience, issuer, disable_audience_validation)?.unwrap_or(
-                DecodeOptions {
-                    verify_aud: None,
-                    verify_iss: None,
-                },
-            ),
+            None => Self::decode_options(
+                params.audience,
+                params.issuer,
+                params.disable_audience_validation,
+            )?
+            .unwrap_or(DecodeOptions {
+                verify_aud: None,
+                verify_iss: None,
+            }),
         };
         let header = JwtHeader::parse(token)?;
         let Some(name) = header.algorithm.as_deref() else {
@@ -249,8 +256,8 @@ impl JwtVerifier {
         verify_signature(public_key, algorithm, signing_input.as_bytes(), signature)?;
         let payload = decode_signed_jwt(token.as_bytes())?;
         let checks = ClaimChecks {
-            audience,
-            issuer,
+            audience: params.audience,
+            issuer: params.issuer,
             verify_aud: checks_on.verify_aud.unwrap_or(true),
             verify_iss: checks_on.verify_iss.unwrap_or(true),
             now: self.clock.now(),

@@ -1,3 +1,5 @@
+use betterlite_paths::paths::Document;
+
 pub mod algorithms;
 pub mod claims;
 pub mod decode;
@@ -9,6 +11,6 @@ pub mod source;
 pub mod userinfo;
 pub mod verifier;
 
-pub type TypedValue = betterlite_paths::paths::Document;
+pub type TypedValue = Document;
 
 mod tests;

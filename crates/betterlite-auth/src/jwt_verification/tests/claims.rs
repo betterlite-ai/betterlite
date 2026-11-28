@@ -52,13 +52,13 @@ fn exactly_seven_internal_claims_removed() {
 
 #[tokio::test]
 async fn injected_litellm_team_id_stripped() {
-    let h = harness(settings(
+    let harness = harness(settings(
         Some("litellm-proxy"),
         None,
         JwtAuthSettings::default(),
     ));
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let payload = h
+    let payload = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_INJECTED_CLAIMS, &source)
         .await
@@ -75,10 +75,10 @@ async fn injected_litellm_team_id_stripped() {
 
 #[tokio::test]
 async fn issuer_claim_map() {
-    let h = issuer_harness(mapped_config());
+    let harness = issuer_harness(mapped_config());
     let source =
         ScriptedSource::with_url(DISCOVERY, SourceReply::Key(fixtures::RSA_JWK.to_owned()));
-    let payload = h
+    let payload = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_CLAIM_MAP, &source)
         .await
@@ -113,10 +113,10 @@ async fn issuer_mapping_missing_empty_false_zero_collections() {
     config.team_ids_jwt_field = Some("profile.empty_list".to_owned());
     config.org_id_jwt_field = Some("profile.empty_object".to_owned());
     config.end_user_id_jwt_field = Some("profile.count".to_owned());
-    let h = issuer_harness(config);
+    let harness = issuer_harness(config);
     let source =
         ScriptedSource::with_url(DISCOVERY, SourceReply::Key(fixtures::RSA_JWK.to_owned()));
-    let payload = h
+    let payload = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_CLAIM_MAP, &source)
         .await
@@ -151,10 +151,10 @@ async fn mappings_read_original_payload() {
     config.team_id_jwt_field = Some("_litellm_user_id".to_owned());
     config.user_email_jwt_field = Some("nested.id".to_owned());
     config.team_ids_jwt_field = Some("_litellm_team_ids".to_owned());
-    let h = issuer_harness(config);
+    let harness = issuer_harness(config);
     let source =
         ScriptedSource::with_url(DISCOVERY, SourceReply::Key(fixtures::RSA_JWK.to_owned()));
-    let payload = h
+    let payload = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_INJECTED_ISSUER, &source)
         .await
@@ -314,6 +314,55 @@ fn unconfigured_audience_rejects_only_a_truthy_claim() {
     );
 }
 
+fn single_audience_details(checks: &ClaimChecks<'_>) {
+    assert_eq!(
+        validation_detail(r#"{"exp":101}"#, checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":null}"#, checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":""}"#, checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":[]}"#, checks),
+        "Token is missing the \"aud\" claim"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":[1]}"#, checks),
+        "Invalid claim format in token"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":1}"#, checks),
+        "Invalid claim format in token"
+    );
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"other"}"#, checks),
+        "Invalid audience"
+    );
+    validate_claims(&document(r#"{"exp":101,"aud":"litellm-proxy"}"#), checks).unwrap();
+    validate_claims(
+        &document(r#"{"exp":101,"aud":["litellm-proxy","other"]}"#),
+        checks,
+    )
+    .unwrap();
+}
+
+fn many_audience_details(many_checks: &ClaimChecks<'_>) {
+    validate_claims(
+        &document(r#"{"exp":101,"aud":"litellm-proxy"}"#),
+        many_checks,
+    )
+    .unwrap();
+    assert_eq!(
+        validation_detail(r#"{"exp":101,"aud":"other"}"#, many_checks),
+        "Invalid audience"
+    );
+}
+
 #[test]
 fn configured_audience_requires_a_matching_token_value() {
     let audience = audience_one("litellm-proxy");
@@ -324,40 +373,7 @@ fn configured_audience_requires_a_matching_token_value() {
         verify_iss: false,
         now: 100.0,
     };
-    assert_eq!(
-        validation_detail(r#"{"exp":101}"#, &checks),
-        "Token is missing the \"aud\" claim"
-    );
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":null}"#, &checks),
-        "Token is missing the \"aud\" claim"
-    );
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":""}"#, &checks),
-        "Token is missing the \"aud\" claim"
-    );
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":[]}"#, &checks),
-        "Token is missing the \"aud\" claim"
-    );
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":[1]}"#, &checks),
-        "Invalid claim format in token"
-    );
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":1}"#, &checks),
-        "Invalid claim format in token"
-    );
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":"other"}"#, &checks),
-        "Invalid audience"
-    );
-    validate_claims(&document(r#"{"exp":101,"aud":"litellm-proxy"}"#), &checks).unwrap();
-    validate_claims(
-        &document(r#"{"exp":101,"aud":["litellm-proxy","other"]}"#),
-        &checks,
-    )
-    .unwrap();
+    single_audience_details(&checks);
 
     let many = Some(Selector::Many(vec![
         "first".to_owned(),
@@ -370,15 +386,7 @@ fn configured_audience_requires_a_matching_token_value() {
         verify_iss: false,
         now: 100.0,
     };
-    validate_claims(
-        &document(r#"{"exp":101,"aud":"litellm-proxy"}"#),
-        &many_checks,
-    )
-    .unwrap();
-    assert_eq!(
-        validation_detail(r#"{"exp":101,"aud":"other"}"#, &many_checks),
-        "Invalid audience"
-    );
+    many_audience_details(&many_checks);
 }
 
 #[test]

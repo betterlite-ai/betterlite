@@ -41,7 +41,6 @@ pub struct JwtHeader {
 }
 
 impl JwtHeader {
-    #[must_use]
     pub fn parse(token: &str) -> Result<Self, DecodeError> {
         if token.len() > MAX_SIGNED_JWT_BYTES {
             return Err(DecodeError::TooLarge {
@@ -85,10 +84,10 @@ impl JwtHeader {
 
 // pyjwt's _validate_crit accepts only a non-empty list naming "b64", and that parameter must be present
 fn validate_crit(crit: Option<&JsonValue>, b64_present: bool) -> Result<(), DecodeError> {
-    let Some(crit) = crit else {
+    let Some(list) = crit else {
         return Ok(());
     };
-    let JsonValue::Array(extensions) = crit else {
+    let JsonValue::Array(extensions) = list else {
         return Err(DecodeError::Header);
     };
     if extensions.is_empty() {

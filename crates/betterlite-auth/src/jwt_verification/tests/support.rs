@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
+use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -12,12 +13,13 @@ use betterlite_config::sections::jwt_settings::groups::{
     TeamFields, UserinfoFields, VirtualKeyFields,
 };
 use betterlite_config::sections::jwt_settings::records::{IssuerConfig, Selector};
+use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_paths::paths::Document;
 use indexmap::IndexMap;
 use tracing::Subscriber;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{self, DefaultGuard};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
@@ -76,7 +78,7 @@ impl Events {
     }
 
     pub(super) fn take(&self) -> Vec<String> {
-        std::mem::take(&mut *lock(&self.lines))
+        mem::take(&mut *lock(&self.lines))
     }
 }
 
@@ -223,9 +225,7 @@ impl UserinfoHttp for TestHttp {
                 status,
                 body: body.into_bytes(),
             }),
-            Some(FakeReply::Transport) | None => Err(FetchError::Transport(
-                betterlite_http::error::HttpError::Timeout,
-            )),
+            Some(FakeReply::Transport) | None => Err(FetchError::Transport(HttpError::Timeout)),
         }
     }
 
@@ -327,7 +327,7 @@ pub(super) struct CapturedLogs {
 
 impl CapturedLogs {
     pub(super) fn take(&self) -> Vec<String> {
-        std::mem::take(&mut *lock(&self.lines))
+        mem::take(&mut *lock(&self.lines))
     }
 
     pub(super) fn warnings(&self) -> usize {
@@ -380,7 +380,7 @@ impl<S: Subscriber> Layer<S> for CaptureLayer {
 pub(super) fn capture_logs() -> (CapturedLogs, DefaultGuard) {
     let logs = CapturedLogs::default();
     let subscriber = registry().with(CaptureLayer { logs: logs.clone() });
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = subscriber::set_default(subscriber);
     (logs, guard)
 }
 
@@ -469,15 +469,20 @@ pub(super) fn harness(settings: JwtVerificationSettings) -> Harness {
 
 pub(super) fn harness_with(
     settings: JwtVerificationSettings,
-    cache: TestCache,
-    http: TestHttp,
+    cache_state: TestCache,
+    http_state: TestHttp,
 ) -> Harness {
-    let cache = Arc::new(cache);
-    let http = Arc::new(http);
+    let cache = Arc::new(cache_state);
+    let http = Arc::new(http_state);
     let clock = Arc::new(TestClock::default());
-    let cache_tier: Arc<dyn KeyCache> = Arc::clone(&cache);
-    let http_tier: Arc<dyn UserinfoHttp> = Arc::clone(&http);
-    let verifier = JwtVerifier::new(Arc::new(settings), cache_tier, http_tier, clock);
+    let cache_for_verifier = Arc::clone(&cache);
+    let http_for_verifier = Arc::clone(&http);
+    let verifier = JwtVerifier::new(
+        Arc::new(settings),
+        cache_for_verifier,
+        http_for_verifier,
+        clock,
+    );
     Harness {
         verifier,
         cache,

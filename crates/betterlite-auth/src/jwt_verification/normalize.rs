@@ -82,11 +82,12 @@ pub fn normalize_with_issuer(
             continue;
         };
         // every mapping reads the original payload, so one mapped field never feeds another
-        let found = find(&CLAIM_PATH_LIMITS, payload, path).map_err(|source| ClaimError::Path {
-            claim: path.to_owned(),
-            source,
-        })?;
-        let Some(found) = found else {
+        let resolved =
+            find(&CLAIM_PATH_LIMITS, payload, path).map_err(|source| ClaimError::Path {
+                claim: path.to_owned(),
+                source,
+            })?;
+        let Some(found) = resolved else {
             continue;
         };
         if found.json.is_null() || found.json.as_str() == Some("") {

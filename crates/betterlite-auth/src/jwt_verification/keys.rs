@@ -1,10 +1,11 @@
+use std::fmt::Display;
 use std::str::FromStr as _;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use jsonwebtoken::{Algorithm, DecodingKey};
+use jsonwebtoken::{Algorithm, DecodingKey, crypto};
 use p521::ecdsa::signature::Verifier as _;
 use p521::ecdsa::{Signature as P521Signature, VerifyingKey as P521VerifyingKey};
 use x509_parser::public_key::PublicKey as CertificateKey;
@@ -69,26 +70,13 @@ fn verify_with_jwk(
             if Some(curve.as_str()) != algorithm.curve() {
                 return Err(incompatible_key());
             }
-            let x = required_text(fields, "x")?;
-            let y = required_text(fields, "y")?;
+            let abscissa = required_text(fields, "x")?;
+            let ordinate = required_text(fields, "y")?;
             if Algorithm::from_str(algorithm.wire_name()).is_err() {
-                // ES512 has no jsonwebtoken verifier, so the point goes to RustCrypto's P-521 instead
-                let mut point = Vec::with_capacity(133);
-                point.push(4_u8);
-                point.extend_from_slice(
-                    &URL_SAFE_NO_PAD
-                        .decode(&x)
-                        .map_err(|error| unusable_key(&error))?,
-                );
-                point.extend_from_slice(
-                    &URL_SAFE_NO_PAD
-                        .decode(&y)
-                        .map_err(|error| unusable_key(&error))?,
-                );
-                return verify_with_p521(&point, signing_input, signature);
+                return verify_p521_point(&abscissa, &ordinate, signing_input, signature);
             }
-            let key =
-                DecodingKey::from_ec_components(&x, &y).map_err(|error| unusable_key(&error))?;
+            let key = DecodingKey::from_ec_components(&abscissa, &ordinate)
+                .map_err(|error| unusable_key(&error))?;
             verify_with_library(&key, algorithm, signing_input, signature)
         }
         (Family::Ed, "OKP") => {
@@ -96,8 +84,9 @@ fn verify_with_jwk(
             if curve != "Ed25519" {
                 return Err(incompatible_key());
             }
-            let x = required_text(fields, "x")?;
-            let key = DecodingKey::from_ed_components(&x).map_err(|error| unusable_key(&error))?;
+            let key_text = required_text(fields, "x")?;
+            let key =
+                DecodingKey::from_ed_components(&key_text).map_err(|error| unusable_key(&error))?;
             verify_with_library(&key, algorithm, signing_input, signature)
         }
         (Family::Rsa | Family::Ec | Family::Ed, _) => Err(incompatible_key()),
@@ -121,11 +110,30 @@ fn verify_with_library(
     let Ok(library) = Algorithm::from_str(algorithm.wire_name()) else {
         return Err(incompatible_key());
     };
-    match jsonwebtoken::crypto::verify(signature, signing_input, key, library) {
+    match crypto::verify(signature, signing_input, key, library) {
         Ok(true) => Ok(()),
         Ok(false) => Err(invalid_signature()),
         Err(error) => Err(unusable_key(&error)),
     }
+}
+
+// ES512 has no jsonwebtoken verifier, so the JWK's affine coordinates become a SEC1 point for RustCrypto.
+fn verify_p521_point(
+    abscissa: &str,
+    ordinate: &str,
+    signing_input: &[u8],
+    signature: &str,
+) -> Result<(), VerificationError> {
+    let mut point = Vec::with_capacity(133);
+    point.push(4_u8);
+    for coordinate in [abscissa, ordinate] {
+        point.extend_from_slice(
+            &URL_SAFE_NO_PAD
+                .decode(coordinate)
+                .map_err(|error| unusable_key(&error))?,
+        );
+    }
+    verify_with_p521(&point, signing_input, signature)
 }
 
 fn verify_with_p521(
@@ -134,9 +142,11 @@ fn verify_with_p521(
     signature: &str,
 ) -> Result<(), VerificationError> {
     let key = P521VerifyingKey::from_sec1_bytes(point).map_err(|error| unusable_key(&error))?;
-    let signature = decode_segment(signature.as_bytes()).map_err(|error| unusable_key(&error))?;
-    let signature = P521Signature::from_slice(&signature).map_err(|error| unusable_key(&error))?;
-    key.verify(signing_input, &signature)
+    let signature_bytes =
+        decode_segment(signature.as_bytes()).map_err(|error| unusable_key(&error))?;
+    let parsed =
+        P521Signature::from_slice(&signature_bytes).map_err(|error| unusable_key(&error))?;
+    key.verify(signing_input, &parsed)
         .map_err(|error| unusable_key(&error))
 }
 
@@ -183,7 +193,7 @@ fn verify_with_certificate(
 }
 
 // x509-parser keeps DER INTEGER bytes as written, and a leading zero only pads the unsigned value.
-pub(super) fn unsigned(bytes: &[u8]) -> &[u8] {
+pub(super) const fn unsigned(bytes: &[u8]) -> &[u8] {
     match bytes {
         [0_u8, rest @ ..] if !rest.is_empty() => rest,
         _ => bytes,
@@ -214,7 +224,7 @@ fn unusable_certificate() -> VerificationError {
     }
 }
 
-fn unusable_key(error: &dyn std::fmt::Display) -> VerificationError {
+fn unusable_key(error: &dyn Display) -> VerificationError {
     VerificationError::Validation {
         detail: format!("the configured key is not usable: {error}"),
     }

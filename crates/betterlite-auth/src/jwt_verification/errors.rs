@@ -31,7 +31,7 @@ impl From<DecodeError> for VerificationError {
 }
 
 // PyJWT's own wording for a token whose segments or header never parse, which the mapper prefixes unchanged.
-fn pyjwt_message(error: &DecodeError) -> &'static str {
+const fn pyjwt_message(error: &DecodeError) -> &'static str {
     match error {
         DecodeError::TooLarge { .. } => "the signed token is over the 1048576-byte limit",
         DecodeError::TooDeep { .. } => "the signed token nests deeper than 64 JSON levels",

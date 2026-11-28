@@ -6,7 +6,7 @@ use betterlite_auth::jwt_verification::errors::{VerificationError, into_proxy_ex
 use betterlite_auth::jwt_verification::keys::PublicKey;
 use betterlite_auth::jwt_verification::settings::JwtVerificationSettings;
 use betterlite_auth::jwt_verification::userinfo::UserinfoHttp;
-use betterlite_auth::jwt_verification::verifier::JwtVerifier;
+use betterlite_auth::jwt_verification::verifier::{DecodeParams, JwtVerifier};
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
 use betterlite_config::sections::jwt_settings::groups::{
     ClaimFields, KeyFields, RbacFields, RouteFields, RoutingFields, ScopeFields, SyncFields,
@@ -152,14 +152,16 @@ fn decode_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) 
             Some(auth_failure(&VerificationError::InvalidJwt)),
         );
     };
-    match fixture.verifier.decode_with_public_key(
-        token,
-        &key,
-        fixture.audience,
-        fixture.issuer,
-        None,
-        false,
-    ) {
+    let params = DecodeParams {
+        audience: fixture.audience,
+        issuer: fixture.issuer,
+        options: None,
+        disable_audience_validation: false,
+    };
+    match fixture
+        .verifier
+        .decode_with_public_key(token, &key, &params)
+    {
         Ok(payload) => (json_value(payload.json), None),
         Err(error) => (Json::Null, Some(auth_failure(&error))),
     }

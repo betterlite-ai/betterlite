@@ -6,6 +6,7 @@ use crate::jwt_verification::decode::JwtHeader;
 use crate::jwt_verification::errors::VerificationError;
 use crate::jwt_verification::errors::into_proxy_exception;
 use crate::jwt_verification::keys::PublicKey;
+use crate::jwt_verification::verifier::DecodeParams;
 
 use super::fixtures;
 use super::support::{
@@ -24,17 +25,17 @@ fn scoped() -> Harness {
 async fn verifies(algorithm: &str, token: &str, jwk: &str) {
     let header = JwtHeader::parse(token).unwrap();
     assert_eq!(header.algorithm.as_deref(), Some(algorithm));
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_keys(jwk);
-    let payload = h.verifier.auth_jwt(token, &source).await.unwrap();
+    let payload = harness.verifier.auth_jwt(token, &source).await.unwrap();
     assert_eq!(text_claim(&claim_fields(&payload), "sub"), Some("user-1"));
 }
 
 #[tokio::test]
 async fn valid_signature() {
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let payload = h
+    let payload = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &source)
         .await
@@ -48,9 +49,10 @@ async fn valid_signature() {
 #[tokio::test]
 async fn header_is_debug_logged_before_verification() {
     let (logs, _guard) = capture_logs();
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    h.verifier
+    harness
+        .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &source)
         .await
         .unwrap();
@@ -113,9 +115,9 @@ async fn eddsa() {
 
 #[tokio::test]
 async fn wrong_signature() {
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let error = h
+    let error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_WRONG_SIGNATURE, &source)
         .await
@@ -134,8 +136,8 @@ async fn wrong_signature() {
     );
 }
 
-async fn rejects_algorithm(h: &Harness, source: &ScriptedSource, token: &str) {
-    let error = h.verifier.auth_jwt(token, source).await.unwrap_err();
+async fn rejects_algorithm(harness: &Harness, source: &ScriptedSource, token: &str) {
+    let error = harness.verifier.auth_jwt(token, source).await.unwrap_err();
     assert_eq!(
         error.to_string(),
         "Validation fails: The specified alg value is not allowed"
@@ -145,13 +147,13 @@ async fn rejects_algorithm(h: &Harness, source: &ScriptedSource, token: &str) {
 
 #[tokio::test]
 async fn algorithm_confusion() {
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_global(vec![
         SourceReply::Key(fixtures::RSA_JWK.to_owned()),
         SourceReply::Key(fixtures::RSA_JWK.to_owned()),
     ]);
-    rejects_algorithm(&h, &source, fixtures::TOKEN_HS256).await;
-    rejects_algorithm(&h, &source, fixtures::TOKEN_NONE).await;
+    rejects_algorithm(&harness, &source, fixtures::TOKEN_HS256).await;
+    rejects_algorithm(&harness, &source, fixtures::TOKEN_NONE).await;
     assert_eq!(
         source.calls(),
         vec!["lookup:None".to_owned(), "lookup:None".to_owned()]
@@ -160,9 +162,9 @@ async fn algorithm_confusion() {
 
 #[tokio::test]
 async fn wrong_audience() {
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let error = h
+    let error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_WRONG_AUDIENCE, &source)
         .await
@@ -173,13 +175,13 @@ async fn wrong_audience() {
 
 #[tokio::test]
 async fn wrong_issuer() {
-    let h = harness(settings(
+    let harness = harness(settings(
         Some("litellm-proxy"),
         Some(fixtures::ISSUER_A),
         JwtAuthSettings::default(),
     ));
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let error = h
+    let error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_WRONG_ISSUER, &source)
         .await
@@ -189,9 +191,9 @@ async fn wrong_issuer() {
 
 #[tokio::test]
 async fn expired_token() {
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let error = h
+    let error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_EXPIRED, &source)
         .await
@@ -202,59 +204,51 @@ async fn expired_token() {
 
 #[test]
 fn pem_certificate() {
-    let h = scoped();
+    let harness = scoped();
     let key = PublicKey::Certificate(fixtures::RSA_CERTIFICATE);
     let audience = audience_one("litellm-proxy");
-    let payload = h
+    let params = DecodeParams {
+        audience: audience.as_ref(),
+        issuer: None,
+        options: None,
+        disable_audience_validation: false,
+    };
+    let payload = harness
         .verifier
-        .decode_with_public_key(
-            fixtures::TOKEN_RS256,
-            &key,
-            audience.as_ref(),
-            None,
-            None,
-            false,
-        )
+        .decode_with_public_key(fixtures::TOKEN_RS256, &key, &params)
         .unwrap();
     assert_eq!(text_claim(&claim_fields(&payload), "sub"), Some("user-1"));
 }
 
 #[test]
 fn raw_pem_rejected_x509_accepted() {
-    let h = scoped();
+    let harness = scoped();
     let audience = audience_one("litellm-proxy");
+    let params = DecodeParams {
+        audience: audience.as_ref(),
+        issuer: None,
+        options: None,
+        disable_audience_validation: false,
+    };
     let raw = PublicKey::Certificate(fixtures::RSA_PUBLIC_KEY);
-    let error = h
+    let error = harness
         .verifier
-        .decode_with_public_key(
-            fixtures::TOKEN_RS256,
-            &raw,
-            audience.as_ref(),
-            None,
-            None,
-            false,
-        )
+        .decode_with_public_key(fixtures::TOKEN_RS256, &raw, &params)
         .unwrap_err();
     assert_eq!(
         error.to_string(),
         "Validation fails: the configured public key is not a PEM X.509 certificate"
     );
     let certificate = PublicKey::Certificate(fixtures::RSA_CERTIFICATE);
-    h.verifier
-        .decode_with_public_key(
-            fixtures::TOKEN_RS256,
-            &certificate,
-            audience.as_ref(),
-            None,
-            None,
-            false,
-        )
+    harness
+        .verifier
+        .decode_with_public_key(fixtures::TOKEN_RS256, &certificate, &params)
         .unwrap();
 }
 
 #[tokio::test]
 async fn jwk_allowed_field_projection() {
-    let h = scoped();
+    let harness = scoped();
     let mut projected: IndexMap<String, Json> = serde_json::from_str(fixtures::RSA_JWK).unwrap();
     projected.insert("alg".to_owned(), Json::Text("HS256".to_owned()));
     projected.insert("use".to_owned(), Json::Text("encryption".to_owned()));
@@ -265,7 +259,8 @@ async fn jwk_allowed_field_projection() {
     let source = ScriptedSource::with_global(vec![SourceReply::Key(
         serde_json::to_string(&projected).unwrap(),
     )]);
-    h.verifier
+    harness
+        .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &source)
         .await
         .unwrap();
@@ -275,7 +270,7 @@ async fn jwk_allowed_field_projection() {
     let incomplete_source = ScriptedSource::with_global(vec![SourceReply::Key(
         serde_json::to_string(&incomplete).unwrap(),
     )]);
-    let error = h
+    let error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &incomplete_source)
         .await
@@ -288,9 +283,9 @@ async fn jwk_allowed_field_projection() {
 
 #[tokio::test]
 async fn fetch_errors_not_signature_wrapped() {
-    let h = scoped();
+    let harness = scoped();
     let outage_source = ScriptedSource::with_global(vec![SourceReply::Unreachable]);
-    let outage_error = h
+    let outage_error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &outage_source)
         .await
@@ -302,7 +297,7 @@ async fn fetch_errors_not_signature_wrapped() {
     assert_eq!(unavailable.param.as_deref(), Some("None"));
 
     let missing_source = ScriptedSource::with_global(vec![SourceReply::NoMatchingKey]);
-    let missing_error = h
+    let missing_error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &missing_source)
         .await
@@ -320,9 +315,9 @@ async fn fetch_errors_not_signature_wrapped() {
 
 #[tokio::test]
 async fn null_public_key_error() {
-    let h = scoped();
+    let harness = scoped();
     let source = ScriptedSource::with_global(vec![SourceReply::Null]);
-    let error = h
+    let error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_RS256, &source)
         .await
@@ -339,9 +334,9 @@ async fn null_public_key_error() {
 
 #[tokio::test]
 async fn expiry_error_fields_and_validation_prefix() {
-    let h = scoped();
+    let harness = scoped();
     let expired_source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let expired_error = h
+    let expired_error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_EXPIRED, &expired_source)
         .await
@@ -353,7 +348,7 @@ async fn expiry_error_fields_and_validation_prefix() {
     assert_eq!(expired.code, "401");
 
     let refused_source = ScriptedSource::with_keys(fixtures::RSA_JWK);
-    let refused_error = h
+    let refused_error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_WRONG_AUDIENCE, &refused_source)
         .await

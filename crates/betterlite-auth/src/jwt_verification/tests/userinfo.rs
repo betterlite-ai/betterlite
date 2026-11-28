@@ -118,8 +118,7 @@ async fn userinfo_cached_non_object_is_a_miss() {
     );
 }
 
-#[tokio::test]
-async fn userinfo_no_retry_status_json_write_error_wrapper() {
+async fn status_error_without_retry() {
     let status_http = TestHttp::with_replies(vec![
         FakeReply::Answer {
             status: 500,
@@ -141,7 +140,9 @@ async fn userinfo_no_retry_status_json_write_error_wrapper() {
         "Failed to fetch OIDC UserInfo: OIDC UserInfo endpoint returned status 500: boom"
     );
     assert_eq!(status_case.http.requests().len(), 1);
+}
 
+async fn json_error_wrapped_as_fetch_failure() {
     let json_http = TestHttp::with_replies(vec![FakeReply::Answer {
         status: 200,
         body: "not-json".to_owned(),
@@ -157,7 +158,9 @@ async fn userinfo_no_retry_status_json_write_error_wrapper() {
         "Failed to fetch OIDC UserInfo: the json document is not valid json"
     );
     assert_eq!(json_case.http.requests().len(), 1);
+}
 
+async fn write_error_wrapped_as_fetch_failure() {
     let write_http = TestHttp::with_replies(vec![FakeReply::Answer {
         status: 200,
         body: "{\"sub\":\"u\"}".to_owned(),
@@ -176,28 +179,39 @@ async fn userinfo_no_retry_status_json_write_error_wrapper() {
 }
 
 #[tokio::test]
+async fn userinfo_no_retry_status_json_write_error_wrapper() {
+    status_error_without_retry().await;
+    json_error_wrapped_as_fetch_failure().await;
+    write_error_wrapped_as_fetch_failure().await;
+}
+
+#[tokio::test]
 async fn userinfo_cache_read_error_unwrapped() {
-    let h = userinfo_harness(ENDPOINT, TestCache::failing_read(), TestHttp::default());
-    let error = h.verifier.get_oidc_userinfo("abc").await.unwrap_err();
+    let harness = userinfo_harness(ENDPOINT, TestCache::failing_read(), TestHttp::default());
+    let error = harness.verifier.get_oidc_userinfo("abc").await.unwrap_err();
     assert_eq!(error.to_string(), "the cache backend failed");
     assert!(!error.to_string().contains("Failed to fetch"));
-    assert!(h.http.requests().is_empty());
+    assert!(harness.http.requests().is_empty());
 }
 
 #[tokio::test]
 async fn userinfo_cache_before_return_and_ttl() {
     let events = Events::default();
-    let mut cache = TestCache::default();
-    cache.events = events.clone();
-    let mut http = TestHttp::with_replies(vec![FakeReply::Answer {
-        status: 200,
-        body: "{\"sub\":\"u\",\"email\":\"e\"}".to_owned(),
-    }]);
-    http.events = events.clone();
+    let cache = TestCache {
+        events: events.clone(),
+        ..TestCache::default()
+    };
+    let http = TestHttp {
+        events: events.clone(),
+        ..TestHttp::with_replies(vec![FakeReply::Answer {
+            status: 200,
+            body: "{\"sub\":\"u\",\"email\":\"e\"}".to_owned(),
+        }])
+    };
     let jwt = jwt_settings_with_userinfo(Some(ENDPOINT), 300.0);
-    let h = harness_with(settings(None, None, jwt), cache, http);
+    let harness = harness_with(settings(None, None, jwt), cache, http);
     let token = "token";
-    let userinfo = h.verifier.get_oidc_userinfo(token).await.unwrap();
+    let userinfo = harness.verifier.get_oidc_userinfo(token).await.unwrap();
     assert!(matches!(userinfo.get("sub"), Some(Json::Text(text)) if text == "u"));
     let key = expected_key(token);
     assert_eq!(
@@ -208,7 +222,7 @@ async fn userinfo_cache_before_return_and_ttl() {
             format!("write:{key}")
         ]
     );
-    let writes = lock(&h.cache.writes);
+    let writes = lock(&harness.cache.writes);
     assert_eq!(writes.len(), 1);
     let record = writes.first().unwrap();
     assert_eq!(record.key, key);
@@ -218,18 +232,18 @@ async fn userinfo_cache_before_return_and_ttl() {
 
 #[tokio::test]
 async fn close_http_handler() {
-    let h = harness(settings(None, None, JwtAuthSettings::default()));
-    assert!(!h.http.closed.load(Ordering::Acquire));
-    drop(h.verifier);
-    assert!(h.http.closed.load(Ordering::Acquire));
+    let harness = harness(settings(None, None, JwtAuthSettings::default()));
+    assert!(!harness.http.closed.load(Ordering::Acquire));
+    drop(harness.verifier);
+    assert!(harness.http.closed.load(Ordering::Acquire));
 }
 
 #[tokio::test]
 async fn userinfo_failure() {
     let (logs, _guard) = capture_logs();
     let http = TestHttp::with_replies(vec![FakeReply::Transport]);
-    let h = userinfo_harness(ENDPOINT, TestCache::default(), http);
-    let error = h
+    let harness = userinfo_harness(ENDPOINT, TestCache::default(), http);
+    let error = harness
         .verifier
         .get_oidc_userinfo("secret-token")
         .await
@@ -244,7 +258,7 @@ async fn userinfo_failure() {
             .iter()
             .any(|line| line.starts_with("ERROR") && line.contains("Error fetching OIDC UserInfo"))
     );
-    assert_eq!(h.http.requests().len(), 1);
+    assert_eq!(harness.http.requests().len(), 1);
 }
 
 #[tokio::test]
@@ -255,8 +269,8 @@ async fn userinfo_logs_exclude_response_values() {
         status: 200,
         body: body.to_owned(),
     }]);
-    let h = userinfo_harness(ENDPOINT, TestCache::default(), http);
-    let userinfo = h
+    let harness = userinfo_harness(ENDPOINT, TestCache::default(), http);
+    let userinfo = harness
         .verifier
         .get_oidc_userinfo("opaque-token-value")
         .await

@@ -17,7 +17,7 @@ use super::support::{ScriptedSource, claim_fields, harness, parse_json, settings
 
 #[tokio::test]
 async fn signed_token_byte_depth_limits_return_401() {
-    let h = harness(settings(
+    let harness = harness(settings(
         Some("litellm-proxy"),
         None,
         JwtAuthSettings::default(),
@@ -25,7 +25,11 @@ async fn signed_token_byte_depth_limits_return_401() {
     let source = ScriptedSource::with_keys(fixtures::RSA_JWK);
     let mut oversized = "a".repeat(MAX_SIGNED_JWT_BYTES);
     oversized.push('a');
-    let oversize_error = h.verifier.auth_jwt(&oversized, &source).await.unwrap_err();
+    let oversize_error = harness
+        .verifier
+        .auth_jwt(&oversized, &source)
+        .await
+        .unwrap_err();
     let oversize_exception = into_proxy_exception(&oversize_error);
     assert_eq!(oversize_exception.code, "401");
     assert_eq!(oversize_exception.error_type, "auth_error");
@@ -34,7 +38,11 @@ async fn signed_token_byte_depth_limits_return_401() {
         "Authentication Error, the signed token is over the 1048576-byte limit"
     );
     assert!(source.calls().is_empty());
+    byte_limit_boundaries();
+    depth_limit_boundaries();
+}
 
+fn byte_limit_boundaries() {
     let exact = vec![b'a'; MAX_SIGNED_JWT_BYTES];
     let exact_error = decode_signed_jwt(&exact).unwrap_err();
     assert_eq!(
@@ -51,7 +59,9 @@ async fn signed_token_byte_depth_limits_return_401() {
             past_len = past.len()
         )
     );
+}
 
+fn depth_limit_boundaries() {
     let depth = 65_usize;
     let deep = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
     let deep_error = decode_signed_jwt(deep.as_bytes()).unwrap_err();

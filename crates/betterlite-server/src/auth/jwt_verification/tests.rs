@@ -231,27 +231,18 @@ async fn stage_is_registered() {
     assert_eq!(exception.code, "401");
 }
 
-#[tokio::test]
-async fn failure_stops_downstream() {
-    let config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load("general_settings:\n  master_key: secret-master-key\n")
-    .unwrap();
-    let reached = Arc::new(AtomicBool::new(false));
-    let app = chat_application(&config);
-
+async fn refused_signature_stops_downstream(app: Router, reached: &Arc<AtomicBool>) {
     let refused = Request::get("/v1/chat/completions")
         .header(
             header::AUTHORIZATION,
             format!("Bearer {}", bad_signature_token()),
         )
-        .extension(Arc::clone(&reached))
+        .extension(Arc::clone(reached))
         .extension(verifier())
         .extension(source(SourceReply::Key(jwk())))
         .body(Body::empty())
         .unwrap();
-    let response = app.clone().oneshot(refused).await.unwrap();
+    let response = app.oneshot(refused).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let text = String::from_utf8(body.to_vec()).unwrap();
@@ -265,10 +256,12 @@ async fn failure_stops_downstream() {
         !reached.load(Ordering::Acquire),
         "an invalid signature must stop before the downstream handler"
     );
+}
 
+async fn unavailable_key_stops_downstream(app: Router, reached: &Arc<AtomicBool>) {
     let outage = Request::get("/v1/chat/completions")
         .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
-        .extension(Arc::clone(&reached))
+        .extension(Arc::clone(reached))
         .extension(verifier())
         .extension(source(SourceReply::Unreachable))
         .body(Body::empty())
@@ -283,4 +276,17 @@ async fn failure_stops_downstream() {
         !reached.load(Ordering::Acquire),
         "an unavailable key must stop before the downstream handler"
     );
+}
+
+#[tokio::test]
+async fn failure_stops_downstream() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings:\n  master_key: secret-master-key\n")
+    .unwrap();
+    let reached = Arc::new(AtomicBool::new(false));
+    let app = chat_application(&config);
+    refused_signature_stops_downstream(app.clone(), &reached).await;
+    unavailable_key_stops_downstream(app, &reached).await;
 }

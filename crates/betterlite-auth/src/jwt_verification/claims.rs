@@ -93,20 +93,20 @@ fn validate_expiration(payload: &Document, now: f64) -> Result<(), VerificationE
 }
 
 fn validate_issuer(payload: &Document, issuer: Option<&str>) -> Result<(), VerificationError> {
-    let Some(issuer) = issuer else {
+    let Some(expected) = issuer else {
         return Ok(());
     };
-    let Some(claim) = payload.json.get("iss") else {
+    let Some(value) = payload.json.get("iss") else {
         return Err(VerificationError::Validation {
             detail: "Token is missing the \"iss\" claim".to_owned(),
         });
     };
-    let Some(claim) = claim.as_str() else {
+    let Some(claim) = value.as_str() else {
         return Err(VerificationError::Validation {
             detail: "Issuer must be a string.".to_owned(),
         });
     };
-    if claim != issuer {
+    if claim != expected {
         return Err(VerificationError::Validation {
             detail: "Invalid issuer".to_owned(),
         });
@@ -118,24 +118,35 @@ fn validate_audience(
     payload: &Document,
     audience: Option<&Selector>,
 ) -> Result<(), VerificationError> {
-    let Some(audience) = audience else {
-        // pyjwt with verify_aud on but no audience rejects any token that carries a truthy aud claim
-        let Some(value) = payload.json.get("aud") else {
-            return Ok(());
-        };
-        let absent = value.is_null()
-            || value.as_str().is_some_and(str::is_empty)
-            || value.as_array().is_some_and(Vec::is_empty)
-            || matches!(value.as_bool(), Some(false))
-            || matches!(value.as_i64(), Some(0));
-        if absent {
-            return Ok(());
-        }
-        return Err(VerificationError::Validation {
-            detail: "Invalid audience".to_owned(),
-        });
+    let Some(configured) = audience else {
+        return validate_unscoped_audience(payload);
     };
-    let candidates = audience_candidates(audience);
+    validate_configured_audience(payload, configured)
+}
+
+// pyjwt with verify_aud on but no audience rejects any token that carries a truthy aud claim
+fn validate_unscoped_audience(payload: &Document) -> Result<(), VerificationError> {
+    let Some(value) = payload.json.get("aud") else {
+        return Ok(());
+    };
+    let absent = value.is_null()
+        || value.as_str().is_some_and(str::is_empty)
+        || value.as_array().is_some_and(Vec::is_empty)
+        || matches!(value.as_bool(), Some(false))
+        || matches!(value.as_i64(), Some(0));
+    if absent {
+        return Ok(());
+    }
+    Err(VerificationError::Validation {
+        detail: "Invalid audience".to_owned(),
+    })
+}
+
+fn validate_configured_audience(
+    payload: &Document,
+    configured: &Selector,
+) -> Result<(), VerificationError> {
+    let candidates = audience_candidates(configured);
     let Some(value) = payload.json.get("aud") else {
         return Err(missing_audience());
     };
@@ -145,23 +156,20 @@ fn validate_audience(
     {
         return Err(missing_audience());
     }
-    let audience_claims = match value.as_array() {
-        Some(items) => {
-            let mut claims = Vec::with_capacity(items.len());
-            for item in items {
-                let Some(text) = item.as_str() else {
-                    return Err(invalid_audience_format());
-                };
-                claims.push(text);
-            }
-            claims
-        }
-        None => {
-            let Some(text) = value.as_str() else {
+    let audience_claims = if let Some(items) = value.as_array() {
+        let mut claims = Vec::with_capacity(items.len());
+        for item in items {
+            let Some(text) = item.as_str() else {
                 return Err(invalid_audience_format());
             };
-            vec![text]
+            claims.push(text);
         }
+        claims
+    } else {
+        let Some(text) = value.as_str() else {
+            return Err(invalid_audience_format());
+        };
+        vec![text]
     };
     if !candidates
         .iter()

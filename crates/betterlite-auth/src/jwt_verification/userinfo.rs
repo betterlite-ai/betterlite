@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
+use http::header;
 use indexmap::IndexMap;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
@@ -67,55 +68,22 @@ pub async fn fetch_userinfo(
     http: &dyn UserinfoHttp,
     token: &str,
 ) -> Result<IndexMap<String, Json>, UserinfoError> {
-    let Some(endpoint) = settings.jwt.userinfo.oidc_userinfo_endpoint.as_deref() else {
-        return Err(UserinfoError::NotConfigured);
-    };
-    if endpoint.is_empty() {
-        return Err(UserinfoError::NotConfigured);
-    }
-    // oidc_userinfo_<sha256 token hex>, so the bearer credential itself never becomes a cache key
-    let key = format!(
-        "{USERINFO_CACHE_KEY_PREFIX}{}",
-        hex::encode(Sha256::digest(token.as_bytes()))
-    );
+    let endpoint = userinfo_endpoint(settings)?;
+    let key = userinfo_cache_key(token);
     // a cache read failure is the cache's own error, never wrapped as a fetch failure
-    if let Some(cached) = cache.read_value(&key).await? {
-        match cached {
-            Json::Object(fields) => {
-                tracing::debug!(
-                    target: "LiteLLM Proxy",
-                    "Returning cached OIDC UserInfo"
-                );
-                return Ok(fields);
-            }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {}
-        }
+    if let Some(cached) = cached_userinfo(cache, &key).await? {
+        tracing::debug!(
+            target: "LiteLLM Proxy",
+            "Returning cached OIDC UserInfo"
+        );
+        return Ok(cached);
     }
     tracing::debug!(
         target: "LiteLLM Proxy",
         "Calling OIDC UserInfo endpoint: {endpoint}"
     );
-    let fetched = async {
-        let authorization = format!("Bearer {token}");
-        let reply = http.get(endpoint, &authorization, USERINFO_ACCEPT).await?;
-        if reply.status != 200 {
-            let text = str::from_utf8(&reply.body).unwrap_or_default();
-            return Err(UserinfoFailure::Status {
-                status: reply.status,
-                text: text.to_owned(),
-            });
-        }
-        let userinfo = userinfo_document(&reply.body)?;
-        // a privacy deviation from LiteLLM: the outcome is logged, the identity document never is
-        tracing::debug!(target: "LiteLLM Proxy", "Received OIDC UserInfo");
-        let stored = Json::Object(userinfo.clone());
-        cache
-            .write_value(&key, &stored, settings.jwt.userinfo.oidc_userinfo_cache_ttl)
-            .await?;
-        Ok(userinfo)
-    }
-    .await;
-    match fetched {
+    let ttl = settings.jwt.userinfo.oidc_userinfo_cache_ttl;
+    match fetch_and_store(endpoint, cache, http, token, ttl).await {
         Ok(userinfo) => Ok(userinfo),
         Err(source) => {
             tracing::error!(
@@ -125,6 +93,63 @@ pub async fn fetch_userinfo(
             Err(UserinfoError::Failed { source })
         }
     }
+}
+
+fn userinfo_endpoint(settings: &JwtVerificationSettings) -> Result<&str, UserinfoError> {
+    let Some(endpoint) = settings.jwt.userinfo.oidc_userinfo_endpoint.as_deref() else {
+        return Err(UserinfoError::NotConfigured);
+    };
+    if endpoint.is_empty() {
+        return Err(UserinfoError::NotConfigured);
+    }
+    Ok(endpoint)
+}
+
+// oidc_userinfo_<sha256 token hex>, so the bearer credential itself never becomes a cache key
+fn userinfo_cache_key(token: &str) -> String {
+    format!(
+        "{USERINFO_CACHE_KEY_PREFIX}{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    )
+}
+
+async fn cached_userinfo(
+    cache: &dyn KeyCache,
+    key: &str,
+) -> Result<Option<IndexMap<String, Json>>, AuthCacheError> {
+    let Some(cached) = cache.read_value(key).await? else {
+        return Ok(None);
+    };
+    match cached {
+        Json::Object(fields) => Ok(Some(fields)),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Ok(None),
+    }
+}
+
+async fn fetch_and_store(
+    endpoint: &str,
+    cache: &dyn KeyCache,
+    http: &dyn UserinfoHttp,
+    token: &str,
+    ttl: f64,
+) -> Result<IndexMap<String, Json>, UserinfoFailure> {
+    let authorization = format!("Bearer {token}");
+    let reply = http.get(endpoint, &authorization, USERINFO_ACCEPT).await?;
+    if reply.status != 200 {
+        let text = str::from_utf8(&reply.body).unwrap_or_default();
+        return Err(UserinfoFailure::Status {
+            status: reply.status,
+            text: text.to_owned(),
+        });
+    }
+    let userinfo = userinfo_document(&reply.body)?;
+    // a privacy deviation from LiteLLM: the outcome is logged, the identity document never is
+    tracing::debug!(target: "LiteLLM Proxy", "Received OIDC UserInfo");
+    let stored = Json::Object(userinfo.clone());
+    cache
+        .write_value(&userinfo_cache_key(token), &stored, ttl)
+        .await?;
+    Ok(userinfo)
 }
 
 pub struct ProxiedUserinfoHttp {
@@ -143,8 +168,8 @@ impl UserinfoHttp for ProxiedUserinfoHttp {
             .client
             .client
             .get(url)
-            .header(http::header::AUTHORIZATION, authorization)
-            .header(http::header::ACCEPT, accept)
+            .header(header::AUTHORIZATION, authorization)
+            .header(header::ACCEPT, accept)
             .build()
             .map_err(|source| FetchError::Transport(HttpError::Request(source)))?;
         let body_limit = self.client.limits.body_bytes.min(MAX_DOCUMENT_BYTES);
