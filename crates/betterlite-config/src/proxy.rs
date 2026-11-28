@@ -64,13 +64,13 @@ impl ProxyPolicy {
         let mut primary = BTreeMap::new();
         for (name, value) in &proxies {
             let prefix = if value.contains("://") { "" } else { "http://" };
-            let mut route = parse_route(name, &format!("{prefix}{value}"), None);
-            // websockets rewrites an http:// SOCKS_PROXY value to socks5h://, which it cannot dial without python-socks
-            if name == "socks" && matches!(route, ProxyRoute::Forward(_)) {
-                route = ProxyRoute::Unsupported {
+            let route = match parse_route(name, &format!("{prefix}{value}"), None) {
+                // websockets rewrites an http:// SOCKS_PROXY value to socks5h://, which it cannot dial without python-socks
+                ProxyRoute::Forward(_) if name == "socks" => ProxyRoute::Unsupported {
                     scheme: "socks5h".to_owned(),
-                };
-            }
+                },
+                other => other,
+            };
             primary.insert(name.clone(), route);
         }
         if trust.disable_aiohttp_trust_env || disable {

@@ -28,7 +28,7 @@ http = "1.5.0"
 http-body = "1.1.0"
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1"] }
-hyper-util = { version = "0.1.21", features = ["client-legacy", "tokio"] }
+hyper-util = { workspace = true, features = ["client-legacy", "tokio"] }
 idna = "1.1.0"
 indexmap = "2.14.2"
 ipnet = "2.12.2"
