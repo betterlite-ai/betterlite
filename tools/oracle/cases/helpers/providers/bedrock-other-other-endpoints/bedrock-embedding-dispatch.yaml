@@ -1,0 +1,89 @@
+kind: helper
+name: bedrock-embedding-dispatch
+call:
+  bedrock_other_other_endpoints:
+    probes:
+      - case: embedding
+        model: amazon.titan-embed-text-v2:0
+        input: [alpha, beta]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          dimensions: 256
+        environment:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+        replies:
+          - status: 200
+            headers: {Content-Type: application/json}
+            body: '{"embedding":[0.5,0.25],"inputTextTokenCount":2}'
+          - status: 200
+            headers: {Content-Type: application/json}
+            body: '{"embedding":[1.5,1.25],"inputTextTokenCount":3}'
+      - case: embedding
+        model: cohere.embed-english-v3
+        input: [first, second]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          input_type: search_query
+          truncate: NONE
+          dimensions: 128
+        environment:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+        reply:
+          status: 200
+          headers: {Content-Type: application/json}
+          body: '{"embeddings":[[0.5,0.25],[1.5,1.75]],"meta":{"billed_units":{"input_tokens":7}}}'
+      - case: embedding
+        model: amazon.titan-embed-text-v1
+        input: [one, two, three]
+        timeout: 2.5
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        environment:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+        replies:
+          - status: 200
+            headers: {Content-Type: application/json}
+            body: '{"embedding":[0.5,0.25],"inputTextTokenCount":1}'
+          - status: 500
+            headers: {Content-Type: application/json}
+            body: '{"message":"boom"}'
+      - case: embedding
+        model: amazon.titan-embed-text-v2:0
+        input: [timed]
+        timeout: 2.5
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        environment:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+        reply:
+          status: 200
+          headers: {Content-Type: application/json}
+          body: '{"embedding":[0.5],"inputTextTokenCount":1}'
+      - case: embedding_status
+        model: amazon.titan-embed-text-v2:0
+        invocation_arn: arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1
+        region: us-west-2
+        logging: true
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_bedrock_runtime_endpoint: https://runtime.example///
+        environment:
+          AWS_REGION: eu-west-1
+        reply:
+          status: 200
+          body: '{"status":"InProgress"}'
+env: {}
+compare: {ignore: []}

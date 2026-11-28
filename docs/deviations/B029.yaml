@@ -1,0 +1,6 @@
+task: B029
+deviations:
+  - what: A non-200 GetAsyncInvoke reply keeps its upstream status (a 403 stays a 403) where LiteLLM raises a plain Exception with the status only in its message, so the proxy answers 500.
+    why: The status is the upstream's own refusal and every other Bedrock family in this composition reports it unchanged; turning a 403 into a 500 hides the cause from the caller, and no working Bedrock setup relies on a 500 for a refused GetAsyncInvoke.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L667
+kept_bugs: []

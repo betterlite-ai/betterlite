@@ -1,0 +1,33 @@
+kind: helper
+name: bedrock-other-other-endpoints-embedding
+call:
+  bedrock_other_other_endpoints:
+    probes:
+      - case: embedding
+        model: amazon.titan-embed-text-v2:0
+        input: [alpha]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        environment:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
+        reply:
+          status: 200
+          headers: {Content-Type: application/json}
+          body: '{"embedding":[0.5,0.25],"inputTextTokenCount":2}'
+      - case: embedding_status
+        model: amazon.titan-embed-text-v2:0
+        invocation_arn: arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1
+        region: us-west-2
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        environment:
+          AWS_REGION: eu-west-1
+        reply:
+          status: 200
+          body: '{"status":"InProgress"}'
+env: {}
+compare: {ignore: []}
