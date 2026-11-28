@@ -47,30 +47,31 @@ fn legacy(response: &EmbeddingCallResponse) -> &LegacyEmbeddingResponse {
 }
 
 fn floats(embedding: &EmbeddingVector) -> Vec<f64> {
-    match embedding {
-        EmbeddingVector::Floats(numbers) => numbers
-            .iter()
-            .filter_map(serde_json::Number::as_f64)
-            .collect(),
-        EmbeddingVector::Base64(_other) => panic!("the vector holds floats"),
-    }
+    let EmbeddingVector::Floats(numbers) = embedding else {
+        panic!("the vector holds floats");
+    };
+    numbers
+        .iter()
+        .filter_map(serde_json::Number::as_f64)
+        .collect()
 }
 
 fn legacy_floats(embedding: &PromptJson) -> Vec<f64> {
     let PromptJson::List(items) = embedding else {
         panic!("the legacy embedding is a JSON array");
     };
-    items
+    let numbers: Vec<serde_json::Number> = items
         .iter()
         .filter_map(|item| match item {
-            PromptJson::Number(number) => number.as_f64(),
+            PromptJson::Number(number) => Some(number.clone()),
             PromptJson::Null
             | PromptJson::Bool(_)
             | PromptJson::Text(_)
             | PromptJson::List(_)
             | PromptJson::Object(_) => None,
         })
-        .collect()
+        .collect();
+    floats(&EmbeddingVector::Floats(numbers))
 }
 
 fn operation<'call>(
