@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::MCPAuth;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::user_url::fetch::UserUrlFetcher;
+use betterlite_http::user_url::validate::Resolve;
 use secrecy::ExposeSecret as _;
 
 use super::error::ConfigError;
-use super::loader::ConfigLoader;
-use super::ports::{DcrHydrator, InstructionsCache, OpenApiToolSink, ServerDefinitionCaches};
+use super::ports::OpenApiToolSink;
 use crate::credentials::{McpAuthType, strip_auth_scheme, to_basic_credentials};
-use crate::discovery_slots::clock::Clock;
-use crate::oauth_discovery::fetch::MetadataFetcher;
 use crate::openapi_tools::base_url::get_base_url;
 use crate::openapi_tools::document::{Components, OpenApiDocument, Operation, PathItem};
 use crate::openapi_tools::error::OpenApiError;
@@ -16,13 +16,11 @@ use crate::openapi_tools::input_schema::build_input_schema;
 use crate::openapi_tools::parameters::resolve_operation_params;
 use crate::openapi_tools::spec_loading::load_openapi_spec_async;
 use crate::openapi_tools::tool::OpenApiToolConfig;
-use crate::server_build::{Decryptor, DeferredSlots, StdioPolicy};
 use crate::server_payload::quoted_list;
 use crate::server_record::MCPServer;
 use crate::server_utils::headers::merge_mcp_headers;
 use crate::server_utils::names::{add_server_prefix_to_name, openapi_tool_name};
-use crate::server_utils::prefixes::get_server_prefix;
-use betterlite_http::user_url::validate::Resolve;
+use crate::server_utils::prefixes::{PrefixPolicy, get_server_prefix};
 
 const OPENAPI_METHODS: [&str; 5] = ["get", "post", "put", "delete", "patch"];
 const AUTHORIZATION_HEADER: &str = "Authorization";
@@ -47,20 +45,19 @@ struct OperationContext<'operation> {
     server_prefix: &'operation str,
 }
 
-impl<D, F, S, R, C, H, T, I, X, U> ConfigLoader<'_, D, F, S, R, C, H, T, I, X, U>
+pub(super) struct OpenApiRegistrar<'register, T, U> {
+    pub(super) tools: &'register T,
+    pub(super) spec_fetcher: &'register UserUrlFetcher<U>,
+    pub(super) client: &'register ProxiedClient,
+    pub(super) prefixes: &'register PrefixPolicy,
+}
+
+impl<T, U> OpenApiRegistrar<'_, T, U>
 where
-    D: Decryptor,
-    F: MetadataFetcher + 'static,
-    S: StdioPolicy,
-    R: DeferredSlots,
-    C: Clock + Send + Sync + 'static,
-    H: DcrHydrator,
     T: OpenApiToolSink,
-    I: InstructionsCache,
-    X: ServerDefinitionCaches,
     U: Resolve,
 {
-    pub async fn register_openapi_tools(
+    pub(super) async fn register_openapi_tools(
         &self,
         spec_path: &str,
         server: &MCPServer,
@@ -79,29 +76,6 @@ where
         Ok(())
     }
 
-    pub async fn maybe_register_openapi_tools(
-        &self,
-        server: &MCPServer,
-    ) -> Result<(), ConfigError> {
-        let Some(spec_path) = server
-            .fields
-            .spec_path
-            .as_deref()
-            .filter(|path| !path.is_empty())
-        else {
-            return Ok(());
-        };
-        tracing::info!(
-            "Loading OpenAPI spec from {spec_path} for server {}",
-            server.fields.name
-        );
-        let base_url = server.fields.url.as_deref().unwrap_or("");
-        self.register_openapi_tools(spec_path, server, base_url)
-            .await?;
-        self.tools.rebuild_tool_name_mapping();
-        Ok(())
-    }
-
     async fn register_spec_tools(
         &self,
         spec_path: &str,
@@ -109,16 +83,16 @@ where
         base_url: &str,
     ) -> Result<(), OpenApiError> {
         let spec = load_openapi_spec_async(self.spec_fetcher, self.client, spec_path, None).await?;
-        let base_url = if base_url.is_empty() {
+        let resolved_base_url = if base_url.is_empty() {
             get_base_url(&spec, Some(spec_path))
         } else {
             base_url.to_owned()
         };
         tracing::info!(
-            "Registering OpenAPI tools for server {} with base URL: {base_url}",
+            "Registering OpenAPI tools for server {} with base URL: {resolved_base_url}",
             server.fields.name
         );
-        let server_prefix = get_server_prefix(server, &self.builder.prefixes);
+        let server_prefix = get_server_prefix(server, self.prefixes);
         let headers = openapi_headers(server);
         tracing::debug!(
             "Using headers for OpenAPI tools (excluding sensitive values): {}",
@@ -126,14 +100,14 @@ where
         );
         let context = SpecContext {
             spec: &spec,
-            base_url: &base_url,
+            base_url: &resolved_base_url,
             headers: &headers,
             server,
             server_prefix: &server_prefix,
         };
         let mut registered = 0_usize;
         for (path, path_item) in &spec.paths {
-            registered += self.register_path(&context, path, path_item);
+            registered = registered.saturating_add(self.register_path(&context, path, path_item));
         }
         tracing::info!(
             "Successfully registered {registered} OpenAPI tools for server {}",
@@ -159,7 +133,7 @@ where
                 server: context.server,
                 server_prefix: context.server_prefix,
             });
-            registered += 1;
+            registered = registered.saturating_add(1);
         }
         registered
     }
@@ -172,7 +146,7 @@ where
         let prefixed_tool_name = add_server_prefix_to_name(
             &base_tool_name,
             context.server_prefix,
-            &self.builder.prefixes.separator,
+            &self.prefixes.separator,
         );
         let description = operation_description(context);
         let input_schema = build_input_schema(&resolved);
@@ -191,22 +165,22 @@ where
 }
 
 fn operation_id(context: &OperationContext<'_>) -> String {
-    match context.operation.operation_id.as_deref() {
-        Some(operation_id) => operation_id.to_owned(),
-        None => format!("{}_{}", context.method, context.path.replace('/', "_")),
-    }
+    let Some(operation_id) = context.operation.operation_id.as_deref() else {
+        return format!("{}_{}", context.method, context.path.replace('/', "_"));
+    };
+    operation_id.to_owned()
 }
 
 fn operation_description(context: &OperationContext<'_>) -> String {
-    match context
+    let Some(description) = context
         .operation
         .summary
         .clone()
         .or_else(|| context.operation.description.clone())
-    {
-        Some(description) => description,
-        None => format!("{} {}", context.method.to_uppercase(), context.path),
-    }
+    else {
+        return format!("{} {}", context.method.to_uppercase(), context.path);
+    };
+    description
 }
 
 fn tool_config(context: &OperationContext<'_>, resolved: Operation) -> OpenApiToolConfig {
@@ -231,14 +205,20 @@ fn openapi_headers(server: &MCPServer) -> BTreeMap<String, String> {
         .as_ref()
         .map(|credential| credential.0.0.expose_secret())
         .filter(|token| !token.is_empty());
-    if let Some(token) = token {
-        let value = match server.fields.auth_type {
-            Some(MCPAuth::BearerToken) => {
-                Some(format!("Bearer {}", strip_auth_scheme(token, "Bearer")))
+    if let Some(token_text) = token {
+        let header = match server.fields.auth_type {
+            Some(MCPAuth::BearerToken) => Some(format!(
+                "Bearer {}",
+                strip_auth_scheme(token_text, "Bearer")
+            )),
+            Some(MCPAuth::ApiKey) => Some(format!(
+                "ApiKey {}",
+                strip_auth_scheme(token_text, "ApiKey")
+            )),
+            Some(MCPAuth::Basic) => Some(format!("Basic {}", to_basic_credentials(token_text))),
+            Some(MCPAuth::Token) => {
+                Some(format!("token {}", strip_auth_scheme(token_text, "token")))
             }
-            Some(MCPAuth::ApiKey) => Some(format!("ApiKey {}", strip_auth_scheme(token, "ApiKey"))),
-            Some(MCPAuth::Basic) => Some(format!("Basic {}", to_basic_credentials(token))),
-            Some(MCPAuth::Token) => Some(format!("token {}", strip_auth_scheme(token, "token"))),
             Some(
                 MCPAuth::None
                 | MCPAuth::Authorization
@@ -251,8 +231,8 @@ fn openapi_headers(server: &MCPServer) -> BTreeMap<String, String> {
             )
             | None => None,
         };
-        if let Some(value) = value {
-            headers.insert(String::from(AUTHORIZATION_HEADER), value);
+        if let Some(header_value) = header {
+            headers.insert(String::from(AUTHORIZATION_HEADER), header_value);
         }
     }
     merge_mcp_headers(Some(&headers), server.fields.static_headers.as_ref()).unwrap_or_default()

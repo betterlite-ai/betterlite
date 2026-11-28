@@ -35,7 +35,7 @@ struct FakeFetcher {
 }
 
 impl FakeFetcher {
-    fn route(&mut self, url: &str, status: u16, body: &str) {
+    fn route(&self, url: &str, status: u16, body: &str) {
         self.state
             .lock()
             .unwrap()
@@ -44,7 +44,7 @@ impl FakeFetcher {
     }
 
     fn with_metadata() -> Self {
-        let mut fetcher = Self::default();
+        let fetcher = Self::default();
         fetcher.route("https://mcp.test", 200, "{}");
         fetcher.route(
             "https://mcp.test/.well-known/oauth-protected-resource",
@@ -71,19 +71,19 @@ impl MetadataFetcher for FakeFetcher {
         _headers: &[(String, String)],
         _timeout: Duration,
     ) -> impl Future<Output = Result<FetchedDocument, FetchError>> + Send {
-        let document = {
+        let (status, body) = {
             let mut state = self.state.lock().unwrap();
             state.calls.push(url.to_owned());
-            let (status, body) = state
+            state
                 .routes
                 .get(url)
                 .cloned()
-                .unwrap_or((404_u16, String::new()));
-            FetchedDocument {
-                status: StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND),
-                headers: HeaderMap::new(),
-                body: body.into_bytes(),
-            }
+                .unwrap_or((404_u16, String::new()))
+        };
+        let document = FetchedDocument {
+            status: StatusCode::from_u16(status).unwrap_or(StatusCode::NOT_FOUND),
+            headers: HeaderMap::new(),
+            body: body.into_bytes(),
         };
         ready(Ok(document))
     }
@@ -109,7 +109,7 @@ impl FakeDcrHydrator {
 }
 
 impl DcrHydrator for FakeDcrHydrator {
-    async fn hydrate(&self, server: &mut MCPServer) -> bool {
+    fn hydrate(&self, server: &mut MCPServer) -> impl Future<Output = bool> + Send {
         self.hydrated
             .lock()
             .unwrap()
@@ -118,7 +118,7 @@ impl DcrHydrator for FakeDcrHydrator {
         if result {
             server.fields.instructions = Some(String::from("hydrated"));
         }
-        result
+        ready(result)
     }
 }
 
@@ -163,8 +163,15 @@ impl FakeToolSink {
 
     fn config_for(&self, name: &str) -> OpenApiToolConfig {
         let state = self.state.lock().unwrap();
-        let tool = state.tools.iter().find(|tool| tool.name == name).unwrap();
-        tool.config.clone()
+        let config = state
+            .tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap()
+            .config
+            .clone();
+        drop(state);
+        config
     }
 
     fn owners(&self) -> BTreeMap<String, String> {
@@ -200,7 +207,8 @@ impl OpenApiToolSink for FakeToolSink {
     }
 
     fn rebuild_tool_name_mapping(&self) {
-        self.state.lock().unwrap().rebuilds += 1;
+        let mut state = self.state.lock().unwrap();
+        state.rebuilds = state.rebuilds.saturating_add(1);
     }
 }
 
@@ -275,7 +283,7 @@ impl Fixture {
         )));
         let fetcher = FakeFetcher::default();
         let discovery = Arc::new(DiscoverySlots::new(
-            registry.clone(),
+            Arc::clone(&registry),
             fetcher.clone(),
             TokioClock,
             settings.clone(),
@@ -310,7 +318,7 @@ impl Fixture {
     fn mount_metadata(&mut self) {
         self.fetcher = FakeFetcher::with_metadata();
         self.discovery = Arc::new(DiscoverySlots::new(
-            self.registry.clone(),
+            Arc::clone(&self.registry),
             self.fetcher.clone(),
             TokioClock,
             self.settings.clone(),
@@ -343,7 +351,7 @@ impl Fixture {
         let loader = ConfigLoader {
             builder: &builder,
             slots: &self.discovery,
-            registry: self.registry.clone(),
+            registry: Arc::clone(&self.registry),
             dcr: &self.dcr,
             tools: &self.tools,
             instructions: &self.instructions,

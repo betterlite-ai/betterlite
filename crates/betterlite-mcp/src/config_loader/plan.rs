@@ -22,7 +22,6 @@ use crate::server_record::{MCPOAuthMetadata, OAuth2Flow, ServerFlag};
 pub(super) struct OAuthPlan {
     pub auth_type: Option<MCPAuth>,
     pub flow: Option<OAuth2Flow>,
-    pub raw_flow: Option<String>,
     pub manual_issuer: Option<String>,
     pub endpoints: EndpointPlan,
     pub is_discovery_auth_type: ServerFlag,
@@ -35,18 +34,18 @@ pub(super) struct OAuthPlan {
 }
 
 pub(super) struct EndpointPlan {
-    pub configured_authorization_url: Option<String>,
-    pub configured_token_url: Option<String>,
-    pub configured_registration_url: Option<String>,
-    pub manual_authorization_url: Option<String>,
-    pub manual_token_url: Option<String>,
-    pub manual_registration_url: Option<String>,
+    pub configured_authorization: Option<String>,
+    pub configured_token: Option<String>,
+    pub configured_registration: Option<String>,
+    pub manual_authorization: Option<String>,
+    pub manual_token: Option<String>,
+    pub manual_registration: Option<String>,
 }
 
 struct ResolvedEndpoints {
-    authorization_url: Option<String>,
-    token_url: Option<String>,
-    registration_url: Option<String>,
+    authorization: Option<String>,
+    token: Option<String>,
+    registration: Option<String>,
 }
 
 struct DiscoveryPlan {
@@ -85,7 +84,6 @@ pub(super) fn oauth_plan(
     OAuthPlan {
         auth_type: inputs.auth_type,
         flow: explicit_oauth2_flow(inputs.raw_flow.as_deref()),
-        raw_flow: inputs.raw_flow,
         manual_issuer: inputs.manual_issuer,
         endpoints,
         is_discovery_auth_type: inputs.is_discovery_auth_type,
@@ -132,11 +130,11 @@ fn discovery_plan(
     let warn_on_empty = discovery_leaves_unresolved(
         NeededEndpoint {
             needed: needs_authorization_url,
-            manual: endpoints.manual_authorization_url.as_deref(),
+            manual: endpoints.manual_authorization.as_deref(),
         },
         NeededEndpoint {
             needed: needs_token_url,
-            manual: endpoints.manual_token_url.as_deref(),
+            manual: endpoints.manual_token.as_deref(),
         },
     );
     DiscoveryPlan {
@@ -153,31 +151,31 @@ fn configured_endpoints(
     is_discovery_auth_type: bool,
     server_ref: &str,
 ) -> EndpointPlan {
-    let configured_authorization_url =
+    let configured_authorization =
         blank_to_none(config.authorization_url.as_deref()).map(str::to_owned);
-    let configured_token_url = blank_to_none(config.token_url.as_deref()).map(str::to_owned);
-    let configured_registration_url =
+    let configured_token = blank_to_none(config.token_url.as_deref()).map(str::to_owned);
+    let configured_registration =
         blank_to_none(config.registration_url.as_deref()).map(str::to_owned);
     let manual = endpoints_yield_to_issuer(
         manual_issuer,
         is_discovery_auth_type,
         ManualEndpoints {
-            authorization_url: configured_authorization_url.as_deref(),
-            token_url: configured_token_url.as_deref(),
-            registration_url: configured_registration_url.as_deref(),
+            authorization_url: configured_authorization.as_deref(),
+            token_url: configured_token.as_deref(),
+            registration_url: configured_registration.as_deref(),
         },
         server_ref,
     );
-    let manual_authorization_url = manual.authorization_url.map(str::to_owned);
-    let manual_token_url = manual.token_url.map(str::to_owned);
-    let manual_registration_url = manual.registration_url.map(str::to_owned);
+    let manual_authorization = manual.authorization_url.map(str::to_owned);
+    let manual_token = manual.token_url.map(str::to_owned);
+    let manual_registration = manual.registration_url.map(str::to_owned);
     EndpointPlan {
-        configured_authorization_url,
-        configured_token_url,
-        configured_registration_url,
-        manual_authorization_url,
-        manual_token_url,
-        manual_registration_url,
+        configured_authorization,
+        configured_token,
+        configured_registration,
+        manual_authorization,
+        manual_token,
+        manual_registration,
     }
 }
 
@@ -194,9 +192,7 @@ where
         return None;
     }
     if plan.use_issuer_anchor {
-        let Some(issuer) = plan.manual_issuer.as_deref() else {
-            return None;
-        };
+        let issuer = plan.manual_issuer.as_deref()?;
         let resource = (!server_url.is_empty()).then_some(server_url);
         let outcome = fetch_issuer_anchored_metadata(fetcher, issuer, resource, settings).await;
         return found_metadata(outcome);
@@ -228,7 +224,7 @@ pub(super) fn gate_metadata(
     if plan.is_discovery_auth_type {
         return restrict_to_corroborated(
             metadata,
-            plan.endpoints.manual_authorization_url.as_deref(),
+            plan.endpoints.manual_authorization.as_deref(),
             server_ref,
             matches!(dcr_bridge, Some(Json::Bool(true))),
         );
@@ -244,10 +240,11 @@ pub(super) fn resolved_oauth(
 ) -> ResolvedOAuth {
     let endpoints = resolved_endpoints(plan, metadata.as_ref());
     let issuer = plan.manual_issuer.clone().or_else(|| {
-        metadata
-            .as_ref()
-            .filter(|found| !found.from_origin_fallback)
-            .and_then(|found| found.discovered_issuer.clone())
+        let found = metadata.as_ref()?;
+        if found.from_origin_fallback {
+            return None;
+        }
+        found.discovered_issuer.clone()
     });
     ResolvedOAuth {
         flow: plan.flow,
@@ -255,12 +252,12 @@ pub(super) fn resolved_oauth(
         configured_scopes,
         issuer,
         issuer_is_anchored: plan.use_issuer_anchor,
-        authorization_url: endpoints.authorization_url,
-        token_url: endpoints.token_url,
-        registration_url: endpoints.registration_url,
-        configured_authorization_url: plan.endpoints.configured_authorization_url.clone(),
-        configured_token_url: plan.endpoints.configured_token_url.clone(),
-        configured_registration_url: plan.endpoints.configured_registration_url.clone(),
+        authorization_url: endpoints.authorization,
+        token_url: endpoints.token,
+        registration_url: endpoints.registration,
+        configured_authorization_url: plan.endpoints.configured_authorization.clone(),
+        configured_token_url: plan.endpoints.configured_token.clone(),
+        configured_registration_url: plan.endpoints.configured_registration.clone(),
         metadata,
     }
 }
@@ -268,17 +265,17 @@ pub(super) fn resolved_oauth(
 fn resolved_endpoints(plan: &OAuthPlan, metadata: Option<&MCPOAuthMetadata>) -> ResolvedEndpoints {
     let manual = &plan.endpoints;
     ResolvedEndpoints {
-        authorization_url: manual
-            .manual_authorization_url
+        authorization: manual
+            .manual_authorization
             .clone()
-            .or_else(|| metadata.and_then(|found| found.authorization_url.clone())),
-        token_url: manual
-            .manual_token_url
+            .or_else(|| metadata?.authorization_url.clone()),
+        token: manual
+            .manual_token
             .clone()
-            .or_else(|| metadata.and_then(|found| found.token_url.clone())),
-        registration_url: manual
-            .manual_registration_url
+            .or_else(|| metadata?.token_url.clone()),
+        registration: manual
+            .manual_registration
             .clone()
-            .or_else(|| metadata.and_then(|found| found.registration_url.clone())),
+            .or_else(|| metadata?.registration_url.clone()),
     }
 }

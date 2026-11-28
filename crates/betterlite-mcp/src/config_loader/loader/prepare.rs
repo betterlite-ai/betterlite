@@ -17,7 +17,7 @@ use crate::server_record::MCPOAuthMetadata;
 // get_server_prefix on a temporary server: the alias when non-empty, else the entry's name
 pub(super) fn display_name(server_name: &str, alias: Option<&str>) -> String {
     match alias {
-        Some(alias) if !alias.is_empty() => alias.to_owned(),
+        Some(candidate) if !candidate.is_empty() => candidate.to_owned(),
         Some(_) | None => server_name.to_owned(),
     }
 }
@@ -30,16 +30,18 @@ pub(super) fn resolve_server_id(
 ) -> Result<String, ConfigError> {
     let config = entry.config;
     let pinned = pinned_config_server_id(config.server_id.as_ref(), entry.server_name)?;
-    let server_id = match &pinned {
-        Some(pinned_id) => pinned_id.clone(),
-        None => generate_stable_server_id(
-            entry.server_name,
-            server_url,
-            config.transport,
-            config.auth_type,
-            alias,
-        ),
-    };
+    let server_id = pinned.as_ref().map_or_else(
+        || {
+            generate_stable_server_id(
+                entry.server_name,
+                server_url,
+                config.transport,
+                config.auth_type,
+                alias,
+            )
+        },
+        Clone::clone,
+    );
     reject_id_collision(CollisionCheck {
         assigned_server_ids: &state.assigned_server_ids,
         server_id: &server_id,
@@ -100,7 +102,7 @@ pub(super) fn warn_oauth_unresolved(
         metadata,
         needs_authorization_url: plan.needs_authorization_url,
         needs_token_url: plan.needs_token_url,
-        manual_authorization_url: plan.endpoints.manual_authorization_url.as_deref(),
-        manual_token_url: plan.endpoints.manual_token_url.as_deref(),
+        manual_authorization_url: plan.endpoints.manual_authorization.as_deref(),
+        manual_token_url: plan.endpoints.manual_token.as_deref(),
     });
 }

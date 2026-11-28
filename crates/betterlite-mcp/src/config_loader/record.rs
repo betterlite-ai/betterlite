@@ -72,8 +72,8 @@ pub(super) fn build_record(inputs: RecordInputs<'_>) -> Result<MCPServer, Config
 
 fn apply_identity(fields: &mut ServerFields, inputs: &RecordInputs<'_>) {
     let config = inputs.config;
-    fields.server_id = inputs.server_id.to_owned();
-    fields.name = inputs.name.to_owned();
+    inputs.server_id.clone_into(&mut fields.server_id);
+    inputs.name.clone_into(&mut fields.name);
     fields.alias = inputs.alias.map(str::to_owned);
     fields.server_name = Some(inputs.server_name.to_owned());
     fields.url = Some(inputs.server_url.to_owned());
@@ -222,10 +222,10 @@ pub(super) fn build_mcp_info(
     server_name: &str,
     config: &McpServerConfig,
 ) -> Result<MCPInfo, ConfigError> {
-    let mut info: BTreeMap<String, JsonValue> = match &config.mcp_info {
-        Some(entries) => stored_entries(entries),
-        None => BTreeMap::new(),
-    };
+    let mut info: BTreeMap<String, JsonValue> = config
+        .mcp_info
+        .as_ref()
+        .map_or_else(BTreeMap::new, stored_entries);
     if !info.contains_key("server_name") {
         info.insert(
             "server_name".to_owned(),
@@ -254,10 +254,10 @@ fn config_pinned_tools(
     value: Option<&Json>,
     server_ref: &str,
 ) -> Result<Option<BTreeMap<String, PinnedMCPTool>>, ConfigError> {
-    let Some(value) = value else {
+    let Some(raw) = value else {
         return Ok(None);
     };
-    parse_pinned_tools(stored_json(value)).map_err(|source| ConfigError::PinnedTools {
+    parse_pinned_tools(stored_json(raw)).map_err(|source| ConfigError::PinnedTools {
         server_ref: server_ref.to_owned(),
         source,
     })

@@ -20,6 +20,16 @@ async fn config_defaults_for_a_minimal_entry() {
     assert_eq!(server.fields.command, Some(String::new()));
     assert_eq!(server.fields.args, Some(Vec::new()));
     assert_eq!(server.fields.env, Some(BTreeMap::new()));
+}
+
+#[tokio::test]
+async fn config_defaults_leave_the_optional_fields_absent() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(r#"{"test_server": {"url": "https://mcp.test"}}"#))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
     assert!(!server.fields.allow_all_keys);
     assert!(server.fields.available_on_public_internet);
     assert!(!server.fields.delegate_auth_to_upstream);
@@ -91,11 +101,11 @@ async fn config_reads_the_catalog_fields() {
 }
 
 #[tokio::test]
-async fn config_reads_the_exchange_and_aws_fields() {
+async fn config_reads_the_exchange_fields() {
     let fixture = Fixture::new();
     fixture
         .load(&config(
-            r#"{"test_server": {"url": "https://mcp.test", "token_exchange_endpoint": "https://idp.test/token", "audience": "api", "subject_token_type": "urn:test:subject", "upstream_resource": "https://up.test", "upstream_token_header": "X-Upstream", "id_jag_resource_token_endpoint": "https://idp.test/jag", "id_jag_resource": "https://res.test", "client_private_key": "private-key", "client_private_key_id": "kid-1", "client_assertion_signing_alg": "ES256", "token_exchange_profile": "custom", "aws_access_key_id": "AKIA", "aws_secret_access_key": "secret", "aws_session_token": "session", "aws_region_name": "eu-west-1", "aws_service_name": "execute-api", "aws_role_name": "role", "aws_session_name": "session-name"}}"#,
+            r#"{"test_server": {"url": "https://mcp.test", "token_exchange_endpoint": "https://idp.test/token", "audience": "api", "subject_token_type": "urn:test:subject", "upstream_resource": "https://up.test", "upstream_token_header": "X-Upstream", "client_assertion_signing_alg": "ES256", "token_exchange_profile": "custom"}}"#,
         ))
         .await
         .unwrap();
@@ -114,14 +124,20 @@ async fn config_reads_the_exchange_and_aws_fields() {
         server.fields.upstream_token_header.as_deref(),
         Some("X-Upstream")
     );
-    assert_eq!(
-        server.fields.id_jag_resource_token_endpoint.as_deref(),
-        Some("https://idp.test/jag")
-    );
-    assert_eq!(
-        server.fields.id_jag_resource.as_deref(),
-        Some("https://res.test")
-    );
+    assert_eq!(server.fields.client_assertion_signing_alg, "ES256");
+    assert_eq!(server.fields.token_exchange_profile, "custom");
+}
+
+#[tokio::test]
+async fn config_reads_the_client_key_and_jag_fields() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "id_jag_resource_token_endpoint": "https://idp.test/jag", "id_jag_resource": "https://res.test", "client_private_key": "private-key", "client_private_key_id": "kid-1"}}"#,
+        ))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
     assert_eq!(
         secret_text(server.fields.client_private_key.as_ref().unwrap()),
         "private-key"
@@ -130,8 +146,26 @@ async fn config_reads_the_exchange_and_aws_fields() {
         server.fields.client_private_key_id.as_deref(),
         Some("kid-1")
     );
-    assert_eq!(server.fields.client_assertion_signing_alg, "ES256");
-    assert_eq!(server.fields.token_exchange_profile, "custom");
+    assert_eq!(
+        server.fields.id_jag_resource_token_endpoint.as_deref(),
+        Some("https://idp.test/jag")
+    );
+    assert_eq!(
+        server.fields.id_jag_resource.as_deref(),
+        Some("https://res.test")
+    );
+}
+
+#[tokio::test]
+async fn config_reads_the_aws_fields() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "aws_access_key_id": "AKIA", "aws_secret_access_key": "secret", "aws_session_token": "session", "aws_region_name": "eu-west-1", "aws_service_name": "execute-api", "aws_role_name": "role", "aws_session_name": "session-name"}}"#,
+        ))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
     assert_eq!(
         secret_text(server.fields.aws_access_key_id.as_ref().unwrap()),
         "AKIA"

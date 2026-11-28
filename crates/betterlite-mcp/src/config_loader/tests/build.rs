@@ -213,7 +213,7 @@ async fn build_pinned_tools_are_parsed() {
         .unwrap();
     let server = fixture.server_named("test_server").await.unwrap();
     let pinned = server.fields.pinned_tools.unwrap();
-    let tool = pinned.get("tool_a").unwrap();
+    let tool = &pinned["tool_a"];
     assert_eq!(tool.as_ref().description, "Describe");
 }
 

@@ -76,7 +76,7 @@ pub struct McpServerConfig {
     pub oauth_identity_binding: Option<MCPOAuthIdentityBinding>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum ScopesConfig {
     Text(String),

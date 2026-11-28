@@ -17,6 +17,7 @@ use self::state::{hydrate_dcr_clients, log_redacted_dump, prime_discovery, used_
 use super::checks::{config_identifier_owners, validate_config, validate_config_server_names};
 use super::config::McpServerConfig;
 use super::error::ConfigError;
+use super::openapi::OpenApiRegistrar;
 use super::plan::{self, OAuthPlan};
 use super::ports::{DcrHydrator, InstructionsCache, OpenApiToolSink, ServerDefinitionCaches};
 use super::record::{RecordInputs, ResolvedOAuth, build_mcp_info, build_record, config_scopes};
@@ -143,8 +144,8 @@ where
             per_server_oauth_discovery,
             dcr_bridge,
         })?;
-        let server = self.install_server(server, &plan).await?;
-        self.register_configured_spec(entry, &server).await
+        let installed = self.install_server(server, &plan).await?;
+        self.register_configured_spec(entry, &installed).await
     }
 
     fn prepare_entry(
@@ -205,7 +206,7 @@ where
         let configured_scopes = config_scopes(config);
         let scopes = configured_scopes
             .clone()
-            .or_else(|| gated.as_ref().and_then(|found| found.scopes.clone()));
+            .or_else(|| gated.as_ref()?.scopes.clone());
         plan::resolved_oauth(plan, scopes, configured_scopes, gated)
     }
 
@@ -254,7 +255,41 @@ where
             entry.server_name
         );
         let base_url = entry.config.url.as_deref().unwrap_or("");
-        self.register_openapi_tools(spec_path, server, base_url)
+        self.openapi_registration()
+            .register_openapi_tools(spec_path, server, base_url)
             .await
+    }
+
+    pub async fn maybe_register_openapi_tools(
+        &self,
+        server: &MCPServer,
+    ) -> Result<(), ConfigError> {
+        let Some(spec_path) = server
+            .fields
+            .spec_path
+            .as_deref()
+            .filter(|path| !path.is_empty())
+        else {
+            return Ok(());
+        };
+        tracing::info!(
+            "Loading OpenAPI spec from {spec_path} for server {}",
+            server.fields.name
+        );
+        let base_url = server.fields.url.as_deref().unwrap_or("");
+        self.openapi_registration()
+            .register_openapi_tools(spec_path, server, base_url)
+            .await?;
+        self.tools.rebuild_tool_name_mapping();
+        Ok(())
+    }
+
+    fn openapi_registration(&self) -> OpenApiRegistrar<'_, T, U> {
+        OpenApiRegistrar {
+            tools: self.tools,
+            spec_fetcher: self.spec_fetcher,
+            client: self.client,
+            prefixes: &self.builder.prefixes,
+        }
     }
 }

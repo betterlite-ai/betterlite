@@ -42,10 +42,10 @@ pub fn assigned_alias(
     config: &McpServerConfig,
     mcp_aliases: Option<&IndexMap<String, String>>,
 ) -> Option<String> {
-    match config.alias.as_ref() {
-        Some(alias) => Some(alias.clone()),
-        None => first_mapped_alias(server_name, mcp_aliases),
-    }
+    config.alias.as_ref().map_or_else(
+        || first_mapped_alias(server_name, mcp_aliases),
+        |alias| Some(alias.clone()),
+    )
 }
 
 #[must_use]
@@ -150,7 +150,7 @@ pub fn dcr_bridge_value(raw: Option<&Json>, server_ref: &str) -> Result<Option<b
     }
 }
 
-pub fn validate_config(
+pub(super) fn validate_config(
     config: &McpServerConfig,
     server_ref: &str,
     plan: &OAuthPlan,

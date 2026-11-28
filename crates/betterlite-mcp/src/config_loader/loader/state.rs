@@ -9,7 +9,10 @@ use crate::oauth_discovery::fetch::MetadataFetcher;
 use crate::registry::servers::SharedRegistry;
 use crate::server_record::MCPServer;
 
-pub(super) async fn hydrate_dcr_clients<H: DcrHydrator>(registry: &SharedRegistry, dcr: &H) {
+pub(super) async fn hydrate_dcr_clients<H>(registry: &SharedRegistry, dcr: &H)
+where
+    H: DcrHydrator,
+{
     let server_ids: Vec<String> = registry
         .read()
         .await
@@ -44,20 +47,22 @@ pub(super) async fn used_prefixes(
     registry: &SharedRegistry,
     server_id: &str,
 ) -> BTreeMap<String, String> {
-    let held = registry.read().await;
     let mut used = BTreeMap::new();
-    let servers = held.config_servers.values().chain(held.db_servers.values());
-    for server in servers {
-        if server.fields.server_id == server_id {
-            continue;
-        }
-        if let Some(prefix) = server
-            .fields
-            .short_prefix
-            .as_ref()
-            .filter(|prefix| !prefix.is_empty())
-        {
-            used.insert(prefix.clone(), server.fields.server_id.clone());
+    {
+        let held = registry.read().await;
+        let servers = held.config_servers.values().chain(held.db_servers.values());
+        for server in servers {
+            if server.fields.server_id == server_id {
+                continue;
+            }
+            if let Some(prefix) = server
+                .fields
+                .short_prefix
+                .as_ref()
+                .filter(|prefix| !prefix.is_empty())
+            {
+                used.insert(prefix.clone(), server.fields.server_id.clone());
+            }
         }
     }
     used

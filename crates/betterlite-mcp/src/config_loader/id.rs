@@ -13,14 +13,14 @@ pub fn generate_stable_server_id(
     auth_type: Option<MCPAuth>,
     alias: Option<&str>,
 ) -> String {
-    let transport = match transport {
+    let transport_text = match transport {
         None => "MCPTransport.http",
         Some(MCPTransport::Sse) => "sse",
         Some(MCPTransport::Http) => "http",
         Some(MCPTransport::Stdio) => "stdio",
     };
     let seed = format!(
-        "{server_name}|{url}|{transport}|{}|{}",
+        "{server_name}|{url}|{transport_text}|{}|{}",
         auth_type.map_or("", auth_text),
         alias.unwrap_or("")
     );

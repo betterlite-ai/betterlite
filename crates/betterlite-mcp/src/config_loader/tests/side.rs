@@ -121,10 +121,7 @@ async fn side_dcr_hydration_keeps_the_server_when_nothing_is_hydrated() {
         .unwrap();
     let server = fixture.server_named("test_server").await.unwrap();
     assert_eq!(server.fields.instructions.as_deref(), Some("original"));
-    assert_eq!(
-        fixture.dcr.hydrated(),
-        vec![server.fields.server_id.clone()]
-    );
+    assert_eq!(fixture.dcr.hydrated(), vec![server.fields.server_id]);
 }
 
 #[tokio::test]
