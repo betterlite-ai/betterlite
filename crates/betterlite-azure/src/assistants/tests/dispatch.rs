@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use secrecy::SecretString;
 
 use super::support::{self, COMPLETED, CREATED, Fixture, Recorder, STREAM_BODY, run_request};
@@ -14,13 +14,13 @@ use crate::assistants::operations::{RunCall, RunDispatch, RunInvocation};
 const PATHS: [(Option<bool>, Option<bool>, ClientKind, bool); 9] = [
     (None, None, ClientKind::Sync, false),
     (Some(false), None, ClientKind::Sync, false),
-    (Some(true), None, ClientKind::Async, false),
+    (Some(true), None, ClientKind::Asynchronous, false),
     (None, Some(false), ClientKind::Sync, false),
     (Some(false), Some(false), ClientKind::Sync, false),
-    (Some(true), Some(false), ClientKind::Async, false),
+    (Some(true), Some(false), ClientKind::Asynchronous, false),
     (None, Some(true), ClientKind::Sync, true),
     (Some(false), Some(true), ClientKind::Sync, true),
-    (Some(true), Some(true), ClientKind::Async, true),
+    (Some(true), Some(true), ClientKind::Asynchronous, true),
 ];
 
 pub(super) async fn check() {
@@ -55,7 +55,7 @@ async fn sends_the_provider_bearer_with_the_key_it_has() {
 
 fn expected_kind(arun_thread: Option<bool>) -> ClientKind {
     if arun_thread == Some(true) {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     }

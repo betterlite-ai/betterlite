@@ -1,0 +1,10 @@
+kind: helper
+name: quote-single-custom-rates
+call:
+  b4504:
+    operation: quote
+    prompt: hello
+    deployments:
+      - litellm_params: {model: lens-model, input_cost_per_token: 0.25, output_cost_per_token: 0.5}
+env: {}
+compare: {ignore: []}

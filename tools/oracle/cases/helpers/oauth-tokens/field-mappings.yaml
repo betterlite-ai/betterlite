@@ -1,0 +1,14 @@
+kind: helper
+name: oauth-tokens-field-mappings
+call:
+  oauth_tokens:
+    token: opaque-token-3
+    endpoint: https://idp.example/userinfo
+    user_id_field_name: username
+    user_role_field_name: user_role
+    user_team_id_field_name: team
+    response:
+      status: 200
+      body: '{"username": "mapped-user", "user_role": "proxy_admin_viewer", "team": "mapped-team"}'
+env: {}
+compare: {ignore: []}

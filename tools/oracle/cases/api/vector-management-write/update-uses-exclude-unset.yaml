@@ -1,0 +1,89 @@
+kind: helper
+name: update-uses-exclude-unset
+call:
+  b1069:
+    calls:
+      # explicit nulls are written; the request model has no litellm_params field, so the stored
+      # params survive the body's null and only an omitted name stays untouched
+      - route: update
+        body:
+          vector_store_id: vs_a
+          vector_store_description: null
+          litellm_params: null
+          vector_store_metadata: null
+        database: &row
+          - vector_store_id: vs_a
+            custom_llm_provider: openai
+            vector_store_name: db-vs_a
+            vector_store_description: before
+            vector_store_metadata: '{"env": "prod"}'
+            litellm_params: '{"api_key": "db-secret", "region": "us"}'
+            user_id: u1
+        registry: &cache
+          - vector_store_id: vs_a
+            custom_llm_provider: openai
+            vector_store_name: db-vs_a
+            litellm_params: {api_key: db-secret, region: us}
+            user_id: u1
+        caller: &user {user_id: u1, user_role: internal_user, team_id: null}
+        disabled: false
+      # an omitted field is not written, a given one is
+      - route: update
+        body: {vector_store_id: vs_b, vector_store_description: changed}
+        database:
+          - {vector_store_id: vs_b, custom_llm_provider: openai, vector_store_name: keep, user_id: u1}
+        registry:
+          - {vector_store_id: vs_b, custom_llm_provider: openai, vector_store_name: keep, user_id: u1}
+        caller: *user
+        disabled: false
+      # a metadata dict is stored as JSON text
+      - route: update
+        body: {vector_store_id: vs_c, vector_store_metadata: {x: 1}}
+        database:
+          - {vector_store_id: vs_c, custom_llm_provider: openai, user_id: u1}
+        registry:
+          - {vector_store_id: vs_c, custom_llm_provider: openai, user_id: u1}
+        caller: *user
+        disabled: false
+      # an empty metadata object serializes to {}
+      - route: update
+        body: {vector_store_id: vs_d, vector_store_metadata: {}}
+        database:
+          - {vector_store_id: vs_d, custom_llm_provider: openai, user_id: u1}
+        registry:
+          - {vector_store_id: vs_d, custom_llm_provider: openai, user_id: u1}
+        caller: *user
+        disabled: false
+      # a config-owned id is refused before the row is fetched
+      - route: update
+        body: {vector_store_id: vs_owned, vector_store_description: x}
+        database:
+          - {vector_store_id: vs_owned, custom_llm_provider: openai}
+        registry:
+          - {vector_store_id: vs_owned, custom_llm_provider: openai, is_config: true}
+        caller: *user
+        disabled: false
+      # a row the caller cannot see is refused
+      - route: update
+        body: {vector_store_id: vs_t, vector_store_description: x}
+        database:
+          - {vector_store_id: vs_t, custom_llm_provider: openai, team_id: t2}
+        registry: []
+        caller: {user_id: u1, user_role: internal_user, team_id: t1}
+        disabled: false
+      # a missing row is a 404 after the fetch
+      - route: update
+        body: {vector_store_id: vs_missing, vector_store_description: x}
+        database: []
+        registry: []
+        caller: *user
+        disabled: false
+      # no database answers 500
+      - route: update
+        body: {vector_store_id: vs_a, vector_store_description: x}
+        database: null
+        registry: []
+        caller: *user
+        disabled: false
+env: {}
+compare: {ignore: []}

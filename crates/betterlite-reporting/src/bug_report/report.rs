@@ -16,14 +16,9 @@ pub struct CallContext {
     pub config_lines: Vec<String>,
 }
 
-// The location is the one captured where the error was created, as Python keeps it on the exception
+// Python's type(exc).__name__ keeps the class name alone, without its module or generic arguments
 #[must_use]
-pub fn build_bug_report<E>(
-    exception: &E,
-    location: &Location<'_>,
-    context: CallContext,
-    host: Host<'_>,
-) -> BugReport
+pub fn exception_type_name<E>(exception: &E) -> &'static str
 where
     E: Error,
 {
@@ -31,7 +26,17 @@ where
     let path = full_name
         .split_once('<')
         .map_or(full_name, |(head, _)| head);
-    let exception_type = path.rsplit_once("::").map_or(path, |(_, name)| name);
+    path.rsplit_once("::").map_or(path, |(_, name)| name)
+}
+
+// The location is the one captured where the error was created, as Python keeps it on the exception
+#[must_use]
+pub fn build_bug_report(
+    exception_type: &str,
+    location: &Location<'_>,
+    context: CallContext,
+    host: Host<'_>,
+) -> BugReport {
     BugReport {
         environment: build_environment_report(context.surface, host, context.config_lines),
         exception_type: exception_type.to_owned(),
