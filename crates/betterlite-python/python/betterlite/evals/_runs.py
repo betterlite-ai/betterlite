@@ -2,8 +2,10 @@ import json
 from collections.abc import Awaitable
 from typing import Final, TypeAlias, TypeVar
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
+import betterlite
 from betterlite._completion.arguments import TimeoutValues
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
 from betterlite._endpoints.runner import AsyncNativeCall, NativeCall, acall_native, call_native
@@ -18,11 +20,20 @@ from betterlite.types.llms.openai_evals import (
 
 SETTINGS: Final[tuple[str, ...]] = ("api_key", "openai_key")
 LOGGING_OBJECT: Final = "litellm_logging_obj"
+CREDENTIAL_NAME: Final = "litellm_credential_name"
 
 Headers: TypeAlias = dict[str, str] | None
 Query: TypeAlias = dict[str, JsonValue] | None
 Body: TypeAlias = dict[str, JsonValue] | None
 Model = TypeVar("Model", bound=BaseModel)
+
+
+class CredentialEntry(TypedDict):
+    credential_name: str
+    credential_values: dict[str, JsonValue]
+
+
+CREDENTIALS: Final[TypeAdapter[list[CredentialEntry]]] = TypeAdapter(list[CredentialEntry])
 
 
 def _session() -> NativeEvalRunSession:
@@ -41,9 +52,25 @@ def _shared(
     }
 
 
+# LiteLLM's @client wrapper fills kwargs from a matching litellm_credential_name before the body runs
+def _with_credentials(values: dict[str, CallValue]) -> None:
+    name = values.get(CREDENTIAL_NAME)
+    match name:
+        case str() if name != "":
+            for entry in CREDENTIALS.validate_python(betterlite.credential_list):
+                if entry["credential_name"] != name:
+                    continue
+                for key, value in entry["credential_values"].items():
+                    values.setdefault(key, value)
+                return
+        case object():
+            return
+
+
 # LiteLLM's logging object belongs to its own runtime, so it never crosses into the payload
 def _payload(named: dict[str, CallValue], shared: dict[str, CallValue]) -> CallPayload:
     values = {name: value for name, value in named.items() if name != LOGGING_OBJECT}
+    _with_credentials(values)
     values.update(shared)
     return to_call_payload(values)
 
