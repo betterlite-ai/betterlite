@@ -118,24 +118,16 @@ fn observe<E>(
 where
     E: StdError + 'static,
 {
+    let result = match dispatched {
+        Ok(OperationResult::BedrockOther(result)) => Ok(Ok(result)),
+        Ok(_other) => Err(failure("Variant", OTHER_OUTCOME)),
+        Err(error) => Ok(Err(error)),
+    }?;
     Ok(Outcome {
-        result: outcome(dispatched)?,
+        result,
         requests: harness.factory.seen.requests(),
         calls: harness.factory.calls(),
         regions: harness.source.regions(),
         phases: capture.phases(),
     })
-}
-
-fn outcome<E>(
-    dispatched: Result<OperationResult, BedrockOtherError<E>>,
-) -> Result<Result<BedrockOtherResult, BedrockOtherError<E>>, Failed>
-where
-    E: StdError + 'static,
-{
-    match dispatched {
-        Ok(OperationResult::BedrockOther(result)) => Ok(Ok(result)),
-        Ok(_other) => Err(failure("Variant", OTHER_OUTCOME)),
-        Err(error) => Ok(Err(error)),
-    }
 }

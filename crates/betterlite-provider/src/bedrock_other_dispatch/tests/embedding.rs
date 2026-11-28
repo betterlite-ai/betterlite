@@ -578,28 +578,40 @@ async fn environment_region() {
     assert_eq!(outcome.regions, [String::from("eu-west-1")]);
 }
 
-async fn payloads() {
+async fn titan_payloads() {
     titan_g1_vector().await;
     titan_v2_binary_vector().await;
     sequential_successes().await;
     sequential_failure().await;
+}
+
+async fn cohere_and_nova_payloads() {
     cohere_input_type().await;
     nova_text_payload().await;
     nova_media_payloads().await;
+}
+
+async fn marengo_and_status() {
     marengo_payloads().await;
+    async_status().await;
 }
 
 async fn forwarding() {
-    async_status().await;
     extra_headers_forwarded().await;
     endpoint_overrides().await;
     async_client_timeout().await;
     bearer_api_key().await;
+}
+
+async fn credentials_and_environment() {
     drop_params_forwarded().await;
     environment_region().await;
 }
 
 pub(super) async fn case() {
-    payloads().await;
+    titan_payloads().await;
+    cohere_and_nova_payloads().await;
+    marengo_and_status().await;
     forwarding().await;
+    credentials_and_environment().await;
 }

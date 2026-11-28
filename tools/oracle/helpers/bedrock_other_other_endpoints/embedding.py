@@ -47,7 +47,7 @@ def embedding_reply(reply: Reply) -> dict[str, JsonValue]:
 
 
 def supplied_kind(probe: Probe) -> Literal["none", "sync"]:
-    # the cohere legacy transport is the supplied seam; every batch family builds its client through the factory
+    # cohere uses the legacy transport; the batch families ask the factory for a client
     if probe["model"].startswith("cohere."):
         return "sync"
     return "none"
@@ -131,8 +131,10 @@ def status_request(probe: Probe) -> dict[str, JsonValue]:
         "credentials": JSON.validate_python(keys_of(probe)),
         "status": reply_status(reply),
         "body": reply_body(reply),
-        "logging": probe.get("logging", False),
     }
+    logging = probe.get("logging")
+    if logging is not None:
+        raw["logging"] = logging
     endpoint = params_of(probe).get("aws_bedrock_runtime_endpoint")
     if endpoint is not None:
         raw["endpoint"] = endpoint
