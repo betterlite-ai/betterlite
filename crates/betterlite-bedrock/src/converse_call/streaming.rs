@@ -2,6 +2,7 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_redact::secret::Redactor;
 use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderName, HeaderValue};
@@ -14,7 +15,6 @@ use crate::bedrock_http_stream::stream::ChunkStream;
 use crate::bedrock_http_stream::{PendingOpen, StreamDeps, invoke};
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
-use crate::rerank::transport::ClientKind;
 
 use super::ConverseCall;
 use super::error::ConverseCallError;
@@ -69,7 +69,7 @@ where
         now: parts.now,
     };
     let wire = wire_call(call, plan)?;
-    let pending = if parts.route == ClientKind::Async {
+    let pending = if parts.route == ClientKind::Asynchronous {
         invoke::open_call(&invoke_call(&wire), &deps).await?
     } else {
         open_call(&wire, &deps).await?
@@ -88,7 +88,7 @@ pub(super) fn finish_stream<'deps>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<WrappedStream<'deps>, ConverseCallError> {
     let wire = wire_call(call, plan)?;
-    let opened = if pending.route == ClientKind::Async {
+    let opened = if pending.route == ClientKind::Asynchronous {
         invoke::make_call(&invoke_call(&wire), &pending.deps, pending.pending, log)?
     } else {
         make_sync_call(&wire, &pending.deps, pending.pending, log)?
@@ -109,13 +109,13 @@ where
     Factory: ConverseClientFactory,
 {
     match (parts.route, parts.supplied) {
-        (ClientKind::Async, Some(supplied)) if supplied.kind == ClientKind::Async => {
+        (ClientKind::Asynchronous, Some(supplied)) if supplied.kind == ClientKind::Asynchronous => {
             supplied.client.clone()
         }
         (ClientKind::Sync, Some(supplied)) if supplied.kind == ClientKind::Sync => {
             supplied.client.clone()
         }
-        (ClientKind::Async, _) => factory.stream(ClientKind::Async, None),
+        (ClientKind::Asynchronous, _) => factory.stream(ClientKind::Asynchronous, None),
         (ClientKind::Sync, _) => factory.stream(ClientKind::Sync, parts.timeout),
     }
 }

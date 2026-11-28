@@ -1,0 +1,10 @@
+kind: helper
+name: compaction-key
+call:
+  b10153:
+    state: armed
+    payload:
+      compaction:
+        type: compaction
+env: {}
+compare: {ignore: []}

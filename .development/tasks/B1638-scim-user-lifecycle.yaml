@@ -85,6 +85,7 @@ out_of_scope:
   - "scim_v2.py helper ownership: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
   - "Other function intervals in scim_v2.py: B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - POST accepts active=false but does not pass active to its metadata builder, so implementing immediate deactivation there would change the pinned response.
   - Empty groups on PUT preserve membership because identity providers update profile fields independently of group pushes.
 budget:

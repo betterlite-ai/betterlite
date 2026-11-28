@@ -1,0 +1,15 @@
+name: auth-route-policy-mit-admin-config-warning
+config: |
+  general_settings:
+    master_key: oracle-master
+    admin_only_routes: [/v1/models]
+  model_list:
+    - {model_name: route-policy-mit-model, litellm_params: {model: openai/route-policy-mit-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

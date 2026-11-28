@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_openai::cohere_legacy_embedding::SYNC_CLIENT_TIMEOUT;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -15,7 +16,7 @@ use super::{
 };
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingCall as IoCall, SuppliedClient, Timeout, post_embedding,
+    ClientFactory, EmbeddingCall as IoCall, Timeout, post_embedding,
 };
 use crate::signing::executor::AwsSigningExecutor;
 

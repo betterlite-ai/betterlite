@@ -11,7 +11,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::cache_lookup::transport::CacheTransport;
-use crate::gemini_http::call::{ClientKind, Clients};
+use crate::gemini_http::call::Clients;
 use crate::gemini_http::error::{GeminiHttpError, get_error_class};
 use crate::gemini_http::headers::request_headers;
 use crate::gemini_http::post::{GeminiPost, PostRequest};
@@ -22,6 +22,7 @@ use crate::gemini_response::complete::{CompleteRequest, RawResponse, transform_r
 use crate::gemini_stream::StreamOptions;
 use crate::token_refresh::ensure_access_token;
 use crate::vertex_embedding_call::post::ClientTimeout;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 use super::body::body_request;
 use super::error::GeminiCallError;

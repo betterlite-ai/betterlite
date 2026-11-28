@@ -1,9 +1,9 @@
 use serde_json::json;
 
 use super::support::{self, answer, call, params, pipeline_with, response, target};
-use crate::api::soniox::pipeline::client::{ClientKind, SuppliedClient};
 use crate::api::soniox::pipeline::error::PipelineError;
 use crate::api::soniox::records::auth::MISSING_KEY;
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 fn caller_file_answers() -> Vec<support::Reply> {
     vec![
@@ -64,7 +64,7 @@ async fn a_sync_call_replaces_a_supplied_async_client() {
     let mut response = response();
     let mut logger = support::Logger::new(&provider_effects, &book);
     let supplied_client = SuppliedClient {
-        kind: ClientKind::Async,
+        kind: ClientKind::Asynchronous,
         transport: &supplied,
     };
     let outcome = pipeline
@@ -98,7 +98,7 @@ async fn an_async_call_keeps_a_supplied_async_client() {
     let mut response = response();
     let mut logger = support::Logger::new(&supplied_effects, &book);
     let supplied_client = SuppliedClient {
-        kind: ClientKind::Async,
+        kind: ClientKind::Asynchronous,
         transport: &supplied,
     };
     let outcome = pipeline
