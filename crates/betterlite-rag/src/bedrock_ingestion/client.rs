@@ -1,9 +1,10 @@
 use std::error::Error as StdError;
 
 use async_trait::async_trait;
+use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::headers::{merge_computed, prepare, without_computed};
 use betterlite_bedrock::signing::request::AwsSignedRequest;
-use betterlite_bedrock::signing::sigv4::{Signable, sign_request};
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use serde::de::DeserializeOwned;
 
 use super::error::BedrockIngestionError;
@@ -144,8 +145,10 @@ where
             service: request.service,
             region: request.signing_region,
             credentials: &credentials,
+            mode: SigningMode::SigV4Auth,
             now: self.clock.now(),
-        })?;
+        })
+        .map_err(SigningError::from)?;
         let signed = AwsSignedRequest {
             method: request.method.to_owned(),
             url: request.url.to_owned(),

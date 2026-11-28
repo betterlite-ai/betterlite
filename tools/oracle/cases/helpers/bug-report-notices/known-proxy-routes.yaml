@@ -1,0 +1,20 @@
+kind: helper
+name: bug-report-notices-known-proxy-routes
+call:
+  b10218:
+    env: {}
+    calls:
+      # betterlite's anthropic table also lists the two plugin enable/disable routes LiteLLM serves but omits from LiteLLMRoutes (docs/deviations/B10218.yaml)
+      - function: routes
+        excluded:
+          - "/claude-code/plugins/{plugin_name}/enable"
+          - "/claude-code/plugins/{plugin_name}/disable"
+      - {function: route, path: "/chat/completions"}
+      - {function: route, path: "/v1/chat/completions"}
+      - {function: route, path: "/key/generate"}
+      - {function: route, path: "/key/{key_id}"}
+      - {function: route, path: "chat_completion"}
+      - {function: route, path: "/chat/completions/"}
+      - {function: route, path: "/not/a/route"}
+env: {}
+compare: {ignore: []}
