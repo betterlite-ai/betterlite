@@ -11,16 +11,19 @@ use betterlite_router::cache_cost_routing::{CacheAwareChoice, PreRoutingResponse
 use betterlite_router::complexity_config::checks::Feature;
 use betterlite_router::router_predicates::JsonMap;
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use crate::routing::cache_alternatives::error::CacheAlternativesError;
 use crate::routing::cache_alternatives::selection::{SelectionRequest, select_cached_model};
 use crate::routing::cache_alternatives::tests::support::{
     CALLER, CHEAP_ID, CHEAP_MODEL, FakeHost, FakeTierParams, Fixture, NOW, Observation, Rates,
     STRONG_ID, STRONG_MODEL, ScriptedTransport, body, body_with_max_tokens, caller, caller_key,
-    decimal, decision, json, request_kwargs, response, seed, seed_observation, tier_limits,
+    decimal, decision, json, ladder, request_kwargs, response, seed, seed_observation,
+    strong_deployment, tier_limits,
 };
 
 const CONTEXT: &str = "You are a helpful assistant.";
+const BIGGER_ID: &str = "test-cache-bigger";
 
 fn selection_case(request_body: &Json) -> SelectionCase {
     SelectionCase {
@@ -104,7 +107,7 @@ async fn a_warm_stronger_model_wins_with_its_exact_costs() {
         .await
         .unwrap()
         .expect("the warm alternative wins");
-    assert_eq!(choice.model, STRONG_MODEL);
+    assert_eq!(choice.model, "strong");
     assert_eq!(choice.tier, "COMPLEX");
     assert_eq!(choice.deployment_id, STRONG_ID);
     assert_eq!(choice.original_cost, decimal("0.067596"));
@@ -176,7 +179,11 @@ async fn an_observation_for_another_caller_does_not_count() {
 async fn a_caller_without_a_key_keeps_the_classified_model() {
     let fixture = Fixture::new();
     let mut case = selection_case(&body(CONTEXT));
-    seed(&fixture.cache, &case.body, 1290.0);
+    seed_observation(
+        &fixture.cache,
+        &caller_key(""),
+        &strong_observation(&case.body),
+    );
     case.caller = caller("");
     let context = fixture.context();
     let host = fixture.host(&context);
@@ -291,7 +298,14 @@ async fn equal_costs_keep_the_classified_model() {
     let fixture = Fixture::new();
     let case = selection_case(&body(CONTEXT));
     seed(&fixture.cache, &case.body, 1290.0);
-    fixture.cost.set(STRONG_MODEL, Rates::cheap());
+    let free = Rates {
+        input: Decimal::ZERO,
+        output: Decimal::ZERO,
+        read: Decimal::ZERO,
+        creation: Decimal::ZERO,
+    };
+    fixture.cost.set(CHEAP_MODEL, free);
+    fixture.cost.set(STRONG_MODEL, free);
     let context = fixture.context();
     let host = fixture.host(&context);
     assert!(case.run(&host).await.unwrap().is_none());
@@ -323,7 +337,7 @@ async fn every_classified_cause_may_switch_models(#[case] cause: &str) {
         .await
         .unwrap()
         .expect("a classified cause may switch");
-    assert_eq!(choice.model, STRONG_MODEL);
+    assert_eq!(choice.model, "strong");
 }
 
 #[tokio::test]
@@ -396,7 +410,7 @@ async fn evidence_that_expires_during_the_counts_is_dropped() {
     let fixture = Fixture::new();
     let mut case = selection_case(&body(CONTEXT));
     case.now = None;
-    seed(&fixture.cache, &case.body, 1000.4);
+    seed(&fixture.cache, &case.body, 1000.5);
     let context = fixture.context();
     let mut host = fixture.host(&context);
     host.clock = Mutex::new(VecDeque::from([NOW, NOW + 0.5]));
@@ -497,4 +511,94 @@ async fn an_absent_original_deployment_keeps_the_classified_model() {
     assert!(host.deployments.remove("cheap").is_some());
     assert!(case.run(&host).await.unwrap().is_none());
     assert_eq!(host.requests(), 0);
+}
+
+#[tokio::test]
+async fn the_only_eligible_tier_still_reaches_the_candidate_lookup() {
+    let fixture = Fixture::new();
+    let case = selection_case(&body(CONTEXT));
+    let context = fixture.context();
+    let mut host = fixture.host(&context);
+    host.tiers = ladder(&[("SIMPLE", "cheap")]);
+    host.missing.push("cheap".to_owned());
+    let error = case.run(&host).await.unwrap_err();
+    assert!(matches!(error, CacheAlternativesError::Deployments { .. }));
+}
+
+// a second alternative above strong: the same underlying model, its own deployment and a higher tier
+fn add_bigger_deployment(host: &mut FakeHost<'_>) {
+    let mut bigger = strong_deployment(30_000);
+    bigger.model_name = "bigger".to_owned();
+    bigger
+        .model_info
+        .insert("id".to_owned(), Json::Text(BIGGER_ID.to_owned()));
+    host.deployments.insert("bigger".to_owned(), vec![bigger]);
+    host.authorized.push("bigger".to_owned());
+    host.tiers = ladder(&[
+        ("SIMPLE", "cheap"),
+        ("COMPLEX", "strong"),
+        ("REASONING", "bigger"),
+    ]);
+}
+
+#[tokio::test]
+async fn a_cost_tie_between_alternatives_keeps_the_earlier_tier() {
+    let fixture = Fixture::new();
+    let case = selection_case(&body(CONTEXT));
+    seed(&fixture.cache, &case.body, 1290.0);
+    seed_observation(
+        &fixture.cache,
+        &caller_key(CALLER),
+        &Observation {
+            deployment: BIGGER_ID,
+            model: STRONG_MODEL,
+            body: &case.body,
+            tokens: 50_000,
+            observed_at: 990.0,
+            expires_at: 1290.0,
+        },
+    );
+    let context = fixture.context();
+    let mut host = fixture.host(&context);
+    add_bigger_deployment(&mut host);
+    let choice = case
+        .run(&host)
+        .await
+        .unwrap()
+        .expect("the tie keeps the earlier tier");
+    assert_eq!(choice.model, "strong");
+    assert_eq!(choice.tier, "COMPLEX");
+    assert_eq!(choice.deployment_id, STRONG_ID);
+    assert_eq!(choice.estimated_cost, decimal("0.03336"));
+}
+
+#[tokio::test]
+async fn a_cheaper_later_alternative_replaces_the_earlier_one() {
+    let fixture = Fixture::new();
+    let case = selection_case(&body(CONTEXT));
+    seed(&fixture.cache, &case.body, 1290.0);
+    seed_observation(
+        &fixture.cache,
+        &caller_key(CALLER),
+        &Observation {
+            deployment: BIGGER_ID,
+            model: STRONG_MODEL,
+            body: &case.body,
+            tokens: 51_000,
+            observed_at: 990.0,
+            expires_at: 1290.0,
+        },
+    );
+    let context = fixture.context();
+    let mut host = fixture.host(&context);
+    add_bigger_deployment(&mut host);
+    let choice = case
+        .run(&host)
+        .await
+        .unwrap()
+        .expect("the cheaper alternative wins");
+    assert_eq!(choice.model, "bigger");
+    assert_eq!(choice.tier, "REASONING");
+    assert_eq!(choice.deployment_id, BIGGER_ID);
+    assert_eq!(choice.estimated_cost, decimal("0.03066"));
 }

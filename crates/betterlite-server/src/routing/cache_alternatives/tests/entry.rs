@@ -5,18 +5,20 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_config::sections::cache_cost_routing as section;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
-use betterlite_router::cache_cost_routing::{CacheAwareChoice, ChooseCached, PreRoutingResponse};
+use betterlite_router::cache_cost_routing::{
+    CacheAwareChoice, CachedModelChooser, ChooseCached, PreRoutingResponse,
+};
 use betterlite_router::router_predicates::JsonMap;
 use rstest::rstest;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
+use crate::routing::cache_alternatives::CacheAlternatives;
 use crate::routing::cache_alternatives::entry::choose_cached_model;
 use crate::routing::cache_alternatives::tests::support::{
-    CALLER, FakeHost, FakeLimiter, FakeTierParams, Fixture, Refusal, STRONG_ID, STRONG_MODEL,
-    UNAVAILABLE_LOG, body, decimal, json, marker_deployment, messages, request_kwargs, response,
-    seed, tier_limits,
+    CALLER, FakeHost, FakeLimiter, FakeTierParams, Fixture, Refusal, STRONG_ID, UNAVAILABLE_LOG,
+    body, decimal, json, marker_deployment, messages, request_kwargs, response, seed, tier_limits,
 };
 
 const CONTEXT: &str = "You are a helpful assistant.";
@@ -115,7 +117,7 @@ async fn a_warm_stronger_model_wins_through_the_entry_point() {
     let context = fixture.context();
     let host = fixture.host(&context);
     let choice = case.run(&host).await.expect("the warm alternative wins");
-    assert_eq!(choice.model, STRONG_MODEL);
+    assert_eq!(choice.model, "strong");
     assert_eq!(choice.deployment_id, STRONG_ID);
     assert_eq!(choice.original_cost, decimal("0.067596"));
     assert_eq!(choice.estimated_cost, decimal("0.03336"));
@@ -124,6 +126,30 @@ async fn a_warm_stronger_model_wins_through_the_entry_point() {
         host.authorization_calls(),
         vec!["cheap".to_owned(), "strong".to_owned()]
     );
+}
+
+#[tokio::test]
+async fn the_trait_choose_runs_the_entry_point() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let case = entry_case(&request_body);
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    let chooser = CacheAlternatives { host };
+    let choice = chooser
+        .choose(ChooseCached {
+            config: case.config,
+            params_for_model: &case.params,
+            response: &case.response,
+            request_kwargs: &case.request_kwargs,
+            messages: Some(case.messages.as_slice()),
+        })
+        .await
+        .expect("the warm alternative wins through the trait");
+    assert_eq!(choice.model, "strong");
+    assert_eq!(choice.deployment_id, STRONG_ID);
+    assert_eq!(choice.estimated_cost, decimal("0.03336"));
 }
 
 #[tokio::test]
@@ -139,6 +165,22 @@ async fn a_disabled_setting_touches_nothing() {
     assert!(case.run(&host).await.is_none());
     assert_eq!(host.requests(), 0);
     assert!(host.authorization_calls().is_empty());
+    assert!(!logs.contents().contains(UNAVAILABLE_LOG));
+}
+
+#[tokio::test]
+async fn a_disabled_setting_does_not_even_read_the_router() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    case.config.enabled = false;
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let mut host = fixture.host(&context);
+    host.missing.push("smart".to_owned());
+    let (logs, _guard) = capture_logs(Level::DEBUG);
+    assert!(case.run(&host).await.is_none());
+    assert_eq!(host.requests(), 0);
     assert!(!logs.contents().contains(UNAVAILABLE_LOG));
 }
 
@@ -236,6 +278,102 @@ async fn a_per_key_config_of_another_type_logs_once() {
 }
 
 #[tokio::test]
+async fn an_empty_per_key_config_still_compares() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    let Some(Json::Object(metadata)) = case.request_kwargs.get_mut("litellm_metadata") else {
+        panic!("the metadata bucket is an object");
+    };
+    let Some(Json::Object(auth)) = metadata.get_mut("user_api_key_auth") else {
+        panic!("the caller entry is an object");
+    };
+    auth.insert("config".to_owned(), json(r#"{}"#));
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    let choice = case.run(&host).await.expect("an empty config passes");
+    assert_eq!(choice.model, "strong");
+}
+
+#[tokio::test]
+async fn a_metadata_bucket_of_another_type_logs_once() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    case.request_kwargs.insert(
+        "litellm_metadata".to_owned(),
+        Json::Text("a caller".to_owned()),
+    );
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    let (logs, _guard) = capture_logs(Level::DEBUG);
+    assert!(case.run(&host).await.is_none());
+    assert_eq!(host.requests(), 0);
+    assert_eq!(logs.contents().matches(UNAVAILABLE_LOG).count(), 1);
+}
+
+#[tokio::test]
+async fn an_empty_metadata_bucket_logs_nothing() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    case.request_kwargs
+        .insert("litellm_metadata".to_owned(), Json::Text(String::new()));
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    let (logs, _guard) = capture_logs(Level::DEBUG);
+    assert!(case.run(&host).await.is_none());
+    assert_eq!(host.requests(), 0);
+    assert!(!logs.contents().contains(UNAVAILABLE_LOG));
+}
+
+// the proxy headers a case rebuilds its prediction body from
+fn proxy_headers<'case>(case: &'case mut EntryCase) -> &'case mut JsonMap {
+    let Some(Json::Object(proxy)) = case.request_kwargs.get_mut("proxy_server_request") else {
+        panic!("the proxy request is an object");
+    };
+    let Some(Json::Object(headers)) = proxy.get_mut("headers") else {
+        panic!("the proxy headers are an object");
+    };
+    headers
+}
+
+#[tokio::test]
+async fn an_invalid_prediction_header_value_refuses_the_comparison() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    proxy_headers(&mut case).insert(
+        "anthropic-beta".to_owned(),
+        Json::Text("prompt-caching\r\n".to_owned()),
+    );
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    assert!(case.run(&host).await.is_none());
+    assert_eq!(host.requests(), 0);
+}
+
+#[tokio::test]
+async fn an_invalid_other_header_value_is_skipped() {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    proxy_headers(&mut case).insert(
+        "x-request-id".to_owned(),
+        Json::Text("request\r\n".to_owned()),
+    );
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    let choice = case.run(&host).await.expect("the other header is skipped");
+    assert_eq!(choice.model, "strong");
+}
+
+#[tokio::test]
 async fn a_bad_proxy_request_keeps_the_classified_model() {
     let fixture = Fixture::new();
     let request_body = body(CONTEXT);
@@ -262,18 +400,40 @@ async fn a_refused_request_field_keeps_the_classified_model() {
     assert_eq!(host.requests(), 0);
 }
 
+#[rstest]
+#[case::number(json("5"))]
+#[case::text(json(r#""deny""#))]
+#[case::list(json(r#"["deny"]"#))]
+#[case::object(json(r#"{"deny":true}"#))]
 #[tokio::test]
-async fn an_empty_refused_field_still_compares() {
+async fn a_set_refused_field_value_keeps_the_classified_model(#[case] value: Json) {
     let fixture = Fixture::new();
     let request_body = body(CONTEXT);
     let mut case = entry_case(&request_body);
-    case.request_kwargs
-        .insert("guardrails".to_owned(), Json::List(Vec::new()));
+    case.request_kwargs.insert("guardrails".to_owned(), value);
     seed(&fixture.cache, &request_body, 1290.0);
     let context = fixture.context();
     let host = fixture.host(&context);
-    let choice = case.run(&host).await.expect("an empty list passes");
-    assert_eq!(choice.model, STRONG_MODEL);
+    assert!(case.run(&host).await.is_none());
+    assert_eq!(host.requests(), 0);
+}
+
+#[rstest]
+#[case::zero(json("0"))]
+#[case::empty_text(json(r#""""#))]
+#[case::empty_list(json("[]"))]
+#[case::empty_object(json("{}"))]
+#[tokio::test]
+async fn an_empty_refused_field_value_still_compares(#[case] value: Json) {
+    let fixture = Fixture::new();
+    let request_body = body(CONTEXT);
+    let mut case = entry_case(&request_body);
+    case.request_kwargs.insert("guardrails".to_owned(), value);
+    seed(&fixture.cache, &request_body, 1290.0);
+    let context = fixture.context();
+    let host = fixture.host(&context);
+    let choice = case.run(&host).await.expect("an empty value passes");
+    assert_eq!(choice.model, "strong");
 }
 
 #[tokio::test]
@@ -304,7 +464,10 @@ async fn a_denied_capacity_yields_no_estimate() {
         .limiter
         .as_ref()
         .expect("the limiter stays on the host");
-    assert_eq!(limiter.grants(), vec![STRONG_MODEL.to_owned()]);
+    assert_eq!(
+        limiter.grants(),
+        vec!["cheap".to_owned(), "strong".to_owned()]
+    );
 }
 
 #[tokio::test(start_paused = true)]

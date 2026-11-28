@@ -263,6 +263,10 @@ fn supported_router_marker_rejects_foreign_options_or_models() {
     host.deployments
         .insert("smart".to_owned(), vec![marker_deployment(extra)]);
     assert!(!supported_router_marker(&host, "smart", &JsonMap::new()).unwrap());
+    let proxy_flag = r#"{"model":"auto_router/complexity_router","complexity_router_config":{"tiers":{"SIMPLE":"cheap"}},"use_litellm_proxy":true}"#;
+    host.deployments
+        .insert("smart".to_owned(), vec![marker_deployment(proxy_flag)]);
+    assert!(!supported_router_marker(&host, "smart", &JsonMap::new()).unwrap());
     let foreign = marker_params().replace(
         "auto_router/complexity_router",
         "anthropic/claude-haiku-4-5",
