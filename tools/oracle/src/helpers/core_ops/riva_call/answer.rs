@@ -200,5 +200,8 @@ fn encoded<T>(value: &T) -> Result<Value, Box<HelperError>>
 where
     T: Serialize + ?Sized,
 {
-    serde_json::to_value(value).map_err(|error| helper_error("JsonError", error.to_string()))
+    match serde_json::to_value(value) {
+        Ok(converted) => Ok(converted),
+        Err(error) => Err(helper_error("JsonError", error.to_string())),
+    }
 }
