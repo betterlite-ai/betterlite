@@ -37,8 +37,8 @@ fn stored_plugin_keys(existing: Option<&JsonValue>) -> BTreeMap<String, JsonValu
         let Some(key) = object.get("plugin_key").filter(|key| kept_value(key)) else {
             continue;
         };
-        if let Some(name) = name.as_str() {
-            stored.insert(name.to_owned(), key.clone());
+        if let Some(plugin_name) = name.as_str() {
+            stored.insert(plugin_name.to_owned(), key.clone());
         }
     }
     stored
@@ -80,7 +80,7 @@ fn kept_value(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|numeric| numeric != 0.0),
+        JsonValue::Number(number) => number.as_f64().is_some_and(|numeric| numeric != 0.0_f64),
         JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(entries) => !entries.is_empty(),

@@ -69,7 +69,10 @@ async fn ui_field_reload_reset_sets_the_default_and_pops_the_stored_key() {
         }
         ConfigFieldUpdateResponse::Row(row) => panic!("a UI answer, got {row:?}"),
     }
-    assert_eq!(fakes.runtime.ui_value("max_ui_session_budget"), json!(1.0));
+    assert_eq!(
+        fakes.runtime.ui_value("max_ui_session_budget"),
+        json!(1.0_f64)
+    );
     let writes = fakes.store.section_writes();
     assert_eq!(writes.len(), 1);
     assert!(writes[0].removed.contains("max_ui_session_budget"));
@@ -99,7 +102,7 @@ async fn ui_field_reload_validates_before_it_reloads() {
     let refusal = update_config_general_settings(
         services!(fakes, state),
         &caller(ADMIN),
-        &update("budget_exceeded_throttle_percentage", json!(2.0)),
+        &update("budget_exceeded_throttle_percentage", json!(2.0_f64)),
     )
     .await
     .expect_err("a fraction above one");

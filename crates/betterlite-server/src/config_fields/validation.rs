@@ -50,29 +50,31 @@ const KINDS: [(&str, Check, bool); 32] = [
     (INT, is_integer, true),
     (
         INT_POSITIVE,
-        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0_f64),
         true,
     ),
     (
         INT_NON_NEGATIVE,
-        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 0.0_f64),
         true,
     ),
     (
         INT_AT_LEAST_ONE,
-        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 1.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 1.0_f64),
         true,
     ),
     (INT_REQUIRED, is_integer, false),
     (
         INT_REQUIRED_POSITIVE,
-        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0_f64),
         false,
     ),
     (FLOAT, JsonValue::is_number, true),
     (
         FLOAT_REQUIRED,
-        |value| JsonValue::is_number(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0),
+        |value| {
+            JsonValue::is_number(value) && value.as_f64().is_some_and(|numeric| numeric > 0.0_f64)
+        },
         false,
     ),
     (BOOL, JsonValue::is_boolean, true),
@@ -218,7 +220,7 @@ fn invalid_type(value: &JsonValue) -> ConfigFieldError {
 pub fn is_integer(value: &JsonValue) -> bool {
     value
         .as_f64()
-        .is_some_and(|numeric| numeric.is_finite() && numeric.fract() == 0.0)
+        .is_some_and(|numeric| numeric.is_finite() && numeric.fract() == 0.0_f64)
 }
 
 #[must_use]

@@ -124,15 +124,10 @@ pub async fn list_config_general_settings(
         litellm: object_entries(database.rows.config_param(LITELLM_SETTINGS).await?.as_ref())?,
         is_full_admin: caller.user_role.as_deref() == Some(PROXY_ADMIN_ROLE),
     };
-    let mut entries = Vec::with_capacity(LIST_FIELDS.len() + UI_FIELDS.len());
-    for ((name, field_type, default), description) in LIST_FIELDS.iter().zip(LIST_DESCRIPTIONS) {
-        entries.push(list_entry(
-            &context,
-            *name,
-            *field_type,
-            *default,
-            description,
-        ));
+    let mut entries = Vec::with_capacity(LIST_FIELDS.len().saturating_add(UI_FIELDS.len()));
+    for ((name, field_type, default), description) in LIST_FIELDS.into_iter().zip(LIST_DESCRIPTIONS)
+    {
+        entries.push(list_entry(&context, name, field_type, default, description));
     }
     for field in UI_FIELDS {
         entries.push(ui_entry(&context, field));
@@ -201,15 +196,15 @@ fn stored_in_db(
 
 fn nested_fields(store: &SettingsStore, is_full_admin: bool) -> Vec<FieldDetail> {
     NESTED_FIELDS
-        .iter()
+        .into_iter()
         .zip(NESTED_DESCRIPTIONS)
         .map(|((name, field_type), description)| {
-            let stored = store.get(*name).cloned().unwrap_or(JsonValue::Null);
+            let stored = store.get(name).cloned().unwrap_or(JsonValue::Null);
             FieldDetail {
-                field_name: *name,
-                field_type: *field_type,
+                field_name: name,
+                field_type,
                 field_description: description,
-                field_default_value: redact_setting_value(*name, &stored, is_full_admin),
+                field_default_value: redact_setting_value(name, &stored, is_full_admin),
                 stored_in_db: None,
             }
         })

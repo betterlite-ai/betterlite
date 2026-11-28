@@ -64,6 +64,10 @@ fn object(source: &str) -> BTreeMap<String, JsonValue> {
     serde_json::from_str(source).expect("a JSON object")
 }
 
+fn value(source: &str) -> JsonValue {
+    serde_json::from_str(source).expect("a JSON value")
+}
+
 fn caller(role: &str) -> ConfigFieldCaller {
     ConfigFieldCaller {
         user_id: Some("admin-user".to_owned()),
@@ -434,7 +438,7 @@ async fn info_reports_the_value_source_and_redaction() {
     )
     .await
     .expect("the field info");
-    assert_eq!(info.field_value, json!(5));
+    assert_eq!(info.field_value, json!(5_i32));
     assert_eq!(info.source, FieldSource::Config);
     assert!(!info.editable);
     let secret =
@@ -453,7 +457,9 @@ async fn info_reads_a_resource_list_from_the_writer_row() {
     let fakes = fixtures();
     fakes.rows.set(
         "general_settings",
-        json!({"pass_through_endpoints": [{"path": "/bria", "target": "https://example.test"}]}),
+        value(
+            r#"{"pass_through_endpoints": [{"path": "/bria", "target": "https://example.test"}]}"#,
+        ),
     );
     let mut state = state_with_general("{}");
     let info = get_config_general_settings(services!(fakes, state), &caller(ADMIN), PASSTHROUGH)
@@ -491,14 +497,14 @@ async fn update_writes_the_field_applies_ssrf_and_audits() {
     let written = update_config_general_settings(
         services!(fakes, state),
         &caller(ADMIN),
-        &update("max_parallel_requests", json!(7)),
+        &update("max_parallel_requests", json!(7_i32)),
     )
     .await
     .expect("the update");
     match written {
         ConfigFieldUpdateResponse::Row(row) => {
             assert_eq!(row.param_name, "general_settings");
-            assert_eq!(row.param_value["max_parallel_requests"], json!(7));
+            assert_eq!(row.param_value["max_parallel_requests"], json!(7_i32));
         }
         ConfigFieldUpdateResponse::Ui(body) => panic!("a row write, got {body:?}"),
     }
@@ -517,7 +523,7 @@ async fn update_refuses_an_unknown_field_and_a_wrong_type() {
     let unknown = update_config_general_settings(
         services!(fakes, state),
         &caller(ADMIN),
-        &update("not_a_field", json!(1)),
+        &update("not_a_field", json!(1_i32)),
     )
     .await
     .expect_err("an unknown field");
@@ -541,7 +547,9 @@ async fn update_preserves_the_stored_plugin_key() {
     let fakes = fixtures();
     fakes.rows.set(
         "general_settings",
-        json!({"plugins": [{"name": "p", "url": "https://one.test", "plugin_key": "sk-stored"}]}),
+        value(
+            r#"{"plugins": [{"name": "p", "url": "https://one.test", "plugin_key": "sk-stored"}]}"#,
+        ),
     );
     let mut state = state_with_general("{}");
     update_config_general_settings(
@@ -549,10 +557,9 @@ async fn update_preserves_the_stored_plugin_key() {
         &caller(ADMIN),
         &update(
             "plugins",
-            json!([
-                {"name": "p", "url": "https://one.test", "plugin_key": "***"},
-                {"name": "q", "url": "https://two.test"}
-            ]),
+            value(
+                r#"[{"name": "p", "url": "https://one.test", "plugin_key": "***"}, {"name": "q", "url": "https://two.test"}]"#,
+            ),
         ),
     )
     .await
@@ -576,7 +583,7 @@ async fn update_refuses_a_config_owned_field() {
     let refusal = update_config_general_settings(
         services!(fakes, state),
         &caller(ADMIN),
-        &update("max_parallel_requests", json!(7)),
+        &update("max_parallel_requests", json!(7_i32)),
     )
     .await
     .expect_err("a config-owned field");
@@ -593,7 +600,7 @@ async fn alerting_args_reports_every_invalid_argument() {
         &caller(ADMIN),
         &update(
             "alerting_args",
-            json!({"daily_report_frequency": 1.5, "spend_anomaly_multiplier": 0}),
+            value(r#"{"daily_report_frequency": 1.5, "spend_anomaly_multiplier": 0}"#),
         ),
     )
     .await
@@ -613,7 +620,7 @@ async fn alerting_args_accepts_a_whole_float_for_an_int_field() {
         &caller(ADMIN),
         &update(
             "alerting_args",
-            json!({"daily_report_frequency": 2.0, "spend_anomaly_multiplier": 3.0}),
+            value(r#"{"daily_report_frequency": 2.0, "spend_anomaly_multiplier": 3.0}"#),
         ),
     )
     .await
@@ -627,7 +634,7 @@ async fn gates_name_the_role_only_on_delete_and_list() {
     let update_refusal = update_config_general_settings(
         services!(fakes, state),
         &caller(VIEWER),
-        &update("max_parallel_requests", json!(1)),
+        &update("max_parallel_requests", json!(1_i32)),
     )
     .await
     .expect_err("a viewer cannot update");
@@ -667,7 +674,7 @@ async fn delete_pops_the_field_and_audits_deleted() {
     let fakes = fixtures();
     fakes
         .rows
-        .set("general_settings", json!({"max_parallel_requests": 5}));
+        .set("general_settings", value(r#"{"max_parallel_requests": 5}"#));
     let mut state = state_with_general("{}");
     let written = delete_config_general_settings(
         services!(fakes, state),
@@ -730,10 +737,10 @@ async fn list_returns_the_catalog_then_the_ui_fields() {
     let fakes = fixtures();
     fakes
         .rows
-        .set("general_settings", json!({"store_model_in_db": true}));
+        .set("general_settings", value(r#"{"store_model_in_db": true}"#));
     fakes
         .rows
-        .set("litellm_settings", json!({"budget_rollover": true}));
+        .set("litellm_settings", value(r#"{"budget_rollover": true}"#));
     let mut state = state_with_general(r#"{"max_parallel_requests": 5}"#);
     let listed = list_config_general_settings(services!(fakes, state), &caller(ADMIN))
         .await
@@ -742,7 +749,7 @@ async fn list_returns_the_catalog_then_the_ui_fields() {
     assert_eq!(listed[0].field_name, "max_in_flight_requests_per_worker");
     assert_eq!(listed[34].field_name, "budget_exceeded_throttle_percentage");
     let parallel = listed_entry(&listed, "max_parallel_requests");
-    assert_eq!(parallel.field_value, json!(5));
+    assert_eq!(parallel.field_value, json!(5_i32));
     assert_eq!(parallel.stored_in_db, Some(false));
     let pass_through = listed_entry(&listed, PASSTHROUGH);
     assert_eq!(
@@ -784,7 +791,7 @@ async fn pass_through_reserve_update_serves_the_written_list() {
         &caller(ADMIN),
         &update(
             PASSTHROUGH,
-            json!([{"path": "/bria", "target": "https://example.test"}]),
+            value(r#"[{"path": "/bria", "target": "https://example.test"}]"#),
         ),
     )
     .await
@@ -800,10 +807,9 @@ async fn pass_through_reserve_delete_serves_the_remaining_list() {
     let fakes = fixtures();
     fakes.rows.set(
         "general_settings",
-        json!({
-            "max_parallel_requests": 5,
-            "pass_through_endpoints": [{"path": "/bria", "target": "https://example.test"}]
-        }),
+        value(
+            r#"{"max_parallel_requests": 5, "pass_through_endpoints": [{"path": "/bria", "target": "https://example.test"}]}"#,
+        ),
     );
     let mut state = state_with_general("{}");
     delete_config_general_settings(
@@ -831,7 +837,7 @@ async fn pass_through_reserve_database_unavailable_answers_503_without_an_audit(
         &caller(ADMIN),
         &update(
             PASSTHROUGH,
-            json!([{"path": "/bria", "target": "https://example.test"}]),
+            value(r#"[{"path": "/bria", "target": "https://example.test"}]"#),
         ),
     )
     .await
@@ -847,13 +853,13 @@ async fn pass_through_reserve_database_unavailable_answers_503_without_an_audit(
         &caller(ADMIN),
         &update(
             PASSTHROUGH,
-            json!([{"path": "/bria", "target": "https://example.test"}]),
+            value(r#"[{"path": "/bria", "target": "https://example.test"}]"#),
         ),
     )
     .await
     .expect_err("the re-serve failed");
-    let response = serve_failure.into_response();
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let failed = serve_failure.into_response();
+    assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert!(fakes.audit_rows().is_empty());
 }
 
@@ -869,7 +875,7 @@ async fn pass_through_reserve_row_unavailable_answers_503_without_an_audit() {
         &caller(ADMIN),
         &update(
             PASSTHROUGH,
-            json!([{"path": "/bria", "target": "https://example.test"}]),
+            value(r#"[{"path": "/bria", "target": "https://example.test"}]"#),
         ),
     )
     .await

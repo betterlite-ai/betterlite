@@ -69,7 +69,7 @@ pub(super) const STAGGER_RULES: [Rule; 4] = [
     ("enabled", JsonValue::is_boolean, Presence::Optional),
     (
         "window_seconds",
-        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 0.0),
+        |value| is_integer(value) && value.as_f64().is_some_and(|numeric| numeric >= 0.0_f64),
         Presence::Optional,
     ),
     ("identity", JsonValue::is_string, Presence::Nullable),

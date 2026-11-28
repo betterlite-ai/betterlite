@@ -7,7 +7,7 @@ use crate::audit_events::sink::AuditEventSink;
 use crate::config_audit::{ConfigChange, config_audit_log};
 
 use super::error::ConfigFieldError;
-use super::litellm_fields::{UI_FIELDS, UiLitellmField};
+use super::litellm_fields::UI_FIELDS;
 use super::plugin_keys::preserve_redacted_plugin_keys;
 use super::ports::{
     AdminGate, ConfigFieldCaller, ConfigFieldDatabase, ConfigFieldServices, object_entries,
@@ -69,7 +69,10 @@ async fn edit_config_general_settings(
         ConfigFieldEdit::Delete => AdminGate::ProxyWithRole,
     };
     require_admin(caller, gate)?;
-    if let Some(field) = ui_field(field_name) {
+    if let Some(field) = UI_FIELDS
+        .into_iter()
+        .find(|&field| field.name == field_name)
+    {
         let ui_edit = match edit {
             ConfigFieldEdit::Update(value) => UiFieldEdit::Persist(value),
             ConfigFieldEdit::Delete => UiFieldEdit::Reset,
@@ -88,15 +91,6 @@ async fn edit_config_general_settings(
         ConfigFieldEdit::Delete => delete_field(services, database, caller, field_name).await?,
     };
     Ok(ConfigFieldUpdateResponse::Row(row))
-}
-
-fn ui_field(name: &str) -> Option<UiLitellmField> {
-    for field in UI_FIELDS {
-        if field.name == name {
-            return Some(field);
-        }
-    }
-    None
 }
 
 // the row edit, upsert and in-memory apply the two routes share

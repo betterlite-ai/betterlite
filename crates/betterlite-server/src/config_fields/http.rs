@@ -31,12 +31,12 @@ pub(super) struct HttpState {
 }
 
 #[derive(Deserialize)]
-struct InfoQuery {
+pub(super) struct InfoQuery {
     field_name: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct ListQuery {
+pub(super) struct ListQuery {
     config_type: Option<String>,
 }
 
@@ -57,9 +57,10 @@ pub(super) async fn update(
 ) -> Result<Json<ConfigFieldUpdateResponse>, ConfigFieldError> {
     let update = decode_body::<ConfigFieldUpdate>(&body)?;
     let client = caller_of(caller.as_ref())?;
-    let mut config = state.fields.config.lock().await;
-    let services = services(&state, &mut config);
-    let row = update_config_general_settings(services, &client, &update).await?;
+    let row = {
+        let mut config = state.fields.config.lock().await;
+        update_config_general_settings(services(&state, &mut config), &client, &update).await?
+    };
     Ok(Json(row))
 }
 
@@ -95,10 +96,12 @@ pub(super) async fn info(
     };
     match caller_of(caller.as_ref()) {
         Ok(client) => {
-            let mut config = state.fields.config.lock().await;
-            let info =
-                get_config_general_settings(services(&state, &mut config), &client, &field_name);
-            respond(info.await)
+            let info = {
+                let mut config = state.fields.config.lock().await;
+                get_config_general_settings(services(&state, &mut config), &client, &field_name)
+                    .await
+            };
+            respond(info)
         }
         Err(error) => error.into_response(),
     }
@@ -120,8 +123,10 @@ pub(super) async fn list(
         });
     }
     let client = caller_of(caller.as_ref())?;
-    let mut config = state.fields.config.lock().await;
-    let fields = list_config_general_settings(services(&state, &mut config), &client).await?;
+    let fields = {
+        let mut config = state.fields.config.lock().await;
+        list_config_general_settings(services(&state, &mut config), &client).await?
+    };
     Ok(Json(fields))
 }
 

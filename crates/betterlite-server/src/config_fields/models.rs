@@ -122,14 +122,16 @@ pub fn spend_capture(value: &JsonValue) -> bool {
     let Some(entries) = value.as_object() else {
         return false;
     };
-    let threshold = entries
-        .get("threshold")
-        .is_none_or(|entry| entry.as_f64().is_some_and(|rate| rate > 0.0 && rate <= 1.0));
+    let threshold = entries.get("threshold").is_none_or(|entry| {
+        entry
+            .as_f64()
+            .is_some_and(|rate| rate > 0.0_f64 && rate <= 1.0_f64)
+    });
     let lookback = entries.get("lookback_days").is_none_or(|entry| {
         is_integer(entry)
             && entry
                 .as_f64()
-                .is_some_and(|days| (1.0..=180.0).contains(&days))
+                .is_some_and(|days| (1.0_f64..=180.0_f64).contains(&days))
     });
     entries.keys().all(|key| SPEND_KEYS.contains(&key.as_str()))
         && check_fields(entries, &SPEND_RULES)

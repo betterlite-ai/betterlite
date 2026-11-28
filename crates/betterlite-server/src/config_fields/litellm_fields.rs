@@ -163,9 +163,9 @@ fn numeric_value(
         return Err(ConfigFieldError::BadRequest { detail: message });
     };
     let allowed = if dollar {
-        numeric > 0.0
+        numeric > 0.0_f64
     } else {
-        numeric > 0.0 && numeric <= 1.0
+        numeric > 0.0_f64 && numeric <= 1.0_f64
     };
     if !allowed {
         return Err(ConfigFieldError::BadRequest { detail: message });

@@ -31,7 +31,9 @@ const ALERTING_ARGS: [(&str, ArgKind); 15] = [
 ];
 
 fn integer_message(value: &JsonValue) -> String {
-    let fractional = value.as_f64().is_some_and(|numeric| numeric.fract() != 0.0);
+    let fractional = value
+        .as_f64()
+        .is_some_and(|numeric| numeric.fract() != 0.0_f64);
     if fractional {
         return "Input should be a valid integer, got a number with a fractional part".to_owned();
     }
@@ -59,7 +61,7 @@ fn arg_error(name: &str, kind: ArgKind, value: &JsonValue) -> Option<String> {
             Some(format!("{name}: Input should be a valid number"))
         }
         ArgKind::Float | ArgKind::FloatNullable
-            if value.as_f64().is_none_or(|numeric| numeric <= 0.0) =>
+            if value.as_f64().is_none_or(|numeric| numeric <= 0.0_f64) =>
         {
             Some(format!("{name}: Input should be greater than 0"))
         }
