@@ -40,7 +40,7 @@ impl EmbeddingInput<'_> {
     }
 }
 
-// The call the embedding arm hands its leaf; the arm reads extra_headers and forwards neither it nor headers
+// The call the embedding arm hands its leaf; the caller's headers, identity, timeout, async flag and environment all travel unchanged
 pub struct EmbeddingOperation<'call> {
     pub model: &'call str,
     pub input: EmbeddingInput<'call>,
