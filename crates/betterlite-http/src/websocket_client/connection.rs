@@ -109,21 +109,9 @@ pub struct WebSocketReceiver {
 impl WebSocketReceiver {
     pub async fn recv(&mut self) -> Result<WebSocketReceive, WebSocketClientError> {
         loop {
-            self.keepalive_step().await?;
-            let deadline = self.pong_deadline.or(self.next_ping);
-            let message = match deadline {
-                Some(deadline) => match timeout_at(deadline, self.stream.next()).await {
-                    Ok(Some(message)) => message,
-                    Ok(None) => return Ok(WebSocketReceive::End),
-                    Err(_elapsed) => continue,
-                },
-                None => match self.stream.next().await {
-                    Some(message) => message,
-                    None => return Ok(WebSocketReceive::End),
-                },
-            };
-            if let Some(receive) = self.receive(message)? {
-                return Ok(receive);
+            let next = self.receive().await?;
+            if let Some(message) = next {
+                return Ok(message);
             }
         }
     }
@@ -152,27 +140,22 @@ impl WebSocketReceiver {
         Ok(())
     }
 
-    // one frame from the peer, or nothing for a frame the keepalive task answers or one that carries no message
-    fn receive(
-        &mut self,
-        message: Result<Message, TungsteniteError>,
-    ) -> Result<Option<WebSocketReceive>, WebSocketClientError> {
+    // one message from the peer, waiting up to the keepalive deadline and skipping frames that carry none
+    async fn receive(&mut self) -> Result<Option<WebSocketReceive>, WebSocketClientError> {
+        self.keepalive_step().await?;
+        let waited = match self.pong_deadline.or(self.next_ping) {
+            Some(deadline) => timeout_at(deadline, self.stream.next()).await,
+            None => Ok(self.stream.next().await),
+        };
+        let message = match waited {
+            Ok(Some(message)) => message,
+            Ok(None) => return Ok(Some(WebSocketReceive::End)),
+            Err(_elapsed) => return Ok(None),
+        };
         match message {
             Ok(Message::Text(text)) => Ok(Some(WebSocketReceive::Text(text.as_str().to_owned()))),
             Ok(Message::Binary(bytes)) => Ok(Some(WebSocketReceive::Binary(bytes))),
-            Ok(Message::Close(frame)) => {
-                let close = match frame {
-                    Some(frame) => PeerClose {
-                        code: u16::from(frame.code),
-                        reason: frame.reason.as_str().to_owned(),
-                    },
-                    None => PeerClose {
-                        code: EMPTY_CLOSE_CODE,
-                        reason: String::new(),
-                    },
-                };
-                Ok(Some(WebSocketReceive::Close(close)))
-            }
+            Ok(Message::Close(frame)) => Ok(Some(WebSocketReceive::Close(peer_close(frame)))),
             Ok(Message::Pong(_)) => {
                 self.pong_received();
                 Ok(None)
@@ -192,5 +175,19 @@ impl WebSocketReceiver {
         };
         self.pong_deadline = None;
         self.next_ping = Some(Instant::now() + options.interval);
+    }
+}
+
+// websockets' Close, with 1005 and an empty reason when the peer sent no code
+fn peer_close(frame: Option<CloseFrame>) -> PeerClose {
+    let Some(close) = frame else {
+        return PeerClose {
+            code: EMPTY_CLOSE_CODE,
+            reason: String::new(),
+        };
+    };
+    PeerClose {
+        code: u16::from(close.code),
+        reason: close.reason.as_str().to_owned(),
     }
 }

@@ -118,14 +118,14 @@ fn decode_binary(
     bytes: Vec<u8>,
     decode: Option<bool>,
 ) -> Result<RealtimeMessage, RelayReceiveError> {
-    match decode {
-        Some(true) => match String::from_utf8(bytes) {
-            Ok(text) => Ok(RealtimeMessage::Text(text)),
-            Err(_error) => Err(RelayReceiveError::Failed(WebSocketError {
-                message: "the realtime backend sent a binary frame that is not UTF-8".to_owned(),
-            })),
-        },
-        None | Some(false) => Ok(RealtimeMessage::Binary(bytes)),
+    if decode != Some(true) {
+        return Ok(RealtimeMessage::Binary(bytes));
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(RealtimeMessage::Text(text)),
+        Err(_error) => Err(RelayReceiveError::Failed(WebSocketError {
+            message: "the realtime backend sent a binary frame that is not UTF-8".to_owned(),
+        })),
     }
 }
 

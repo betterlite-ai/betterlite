@@ -243,8 +243,12 @@ struct TlsServer {
     ca_pem: String,
 }
 
-// a client opened over a plain ws URL with the given ordered headers
-async fn plain_connection(url: &str, headers: &[(HeaderName, HeaderValue)]) -> WebSocketConnection {
+// a client opened over a plain ws URL with the given ordered headers, through the proxy when one is given
+async fn plain_connection(
+    url: &str,
+    headers: &[(HeaderName, HeaderValue)],
+    proxy: Option<&ProxyServer>,
+) -> WebSocketConnection {
     let request = WebSocketRequest {
         url: Url::parse(url).expect("url"),
         headers,
@@ -252,7 +256,7 @@ async fn plain_connection(url: &str, headers: &[(HeaderName, HeaderValue)]) -> W
         max_message_size: 1024,
         open_timeout: TEST_TIMEOUT,
         keepalive: None,
-        proxy: None,
+        proxy,
     };
     timeout(TEST_TIMEOUT, connect(request))
         .await
@@ -269,23 +273,6 @@ async fn tls_connection(url: Url, tls: Arc<ClientConfig>) -> WebSocketConnection
         open_timeout: TEST_TIMEOUT,
         keepalive: None,
         proxy: None,
-    };
-    timeout(TEST_TIMEOUT, connect(request))
-        .await
-        .expect("deadline")
-        .expect("connect")
-}
-
-// the tunnel test's client, dialled through the CONNECT proxy in front of the backend
-async fn proxied_connection(proxy: &ProxyServer, url: &str) -> WebSocketConnection {
-    let request = WebSocketRequest {
-        url: Url::parse(url).expect("url"),
-        headers: &[],
-        tls: None,
-        max_message_size: 1024,
-        open_timeout: TEST_TIMEOUT,
-        keepalive: None,
-        proxy: Some(proxy),
     };
     timeout(TEST_TIMEOUT, connect(request))
         .await
@@ -356,7 +343,7 @@ async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
         ),
     ];
     let url = format!("ws://{address}/realtime?model=x");
-    let mut connection = plain_connection(&url, &headers).await;
+    let mut connection = plain_connection(&url, &headers, None).await;
     connection.sender.send_text("hello").await.expect("send");
     assert_text_then_binary(&mut connection.receiver).await;
     assert_peer_close(&mut connection.receiver, 4000, "bye").await;
@@ -581,7 +568,7 @@ async fn websocket_client_tests_tunnel_through_a_connect_proxy() {
         credentials: None,
     };
     let url = format!("ws://{backend_address}/realtime");
-    let mut connection = proxied_connection(&proxy, &url).await;
+    let mut connection = plain_connection(&url, &[], Some(&proxy)).await;
     connection.sender.send_text("hello").await.expect("send");
     assert_text_then_binary(&mut connection.receiver).await;
     assert_peer_close(&mut connection.receiver, 4000, "bye").await;

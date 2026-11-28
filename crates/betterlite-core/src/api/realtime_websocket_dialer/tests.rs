@@ -17,6 +17,7 @@ use betterlite_openai::openai_base_config::Headers;
 use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http::StatusCode;
+use rstest::rstest;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
@@ -683,36 +684,32 @@ fn dialer_timeouts_match_websockets() {
     assert_eq!(super::PROBE_OPEN_TIMEOUT, Duration::from_secs(10));
 }
 
-#[test]
-fn close_texts_match_websockets() {
-    let cases = [
-        (1000, "", "1000 (OK)"),
-        (1000, "bye", "1000 (OK) bye"),
-        (1001, "", "1001 (going away)"),
-        (1002, "", "1002 (protocol error)"),
-        (1003, "", "1003 (unsupported data)"),
-        (1005, "", "1005 (no status received [internal])"),
-        (1006, "", "1006 (abnormal closure [internal])"),
-        (1007, "", "1007 (invalid frame payload data)"),
-        (1008, "", "1008 (policy violation)"),
-        (1009, "too big", "1009 (message too big) too big"),
-        (1010, "", "1010 (mandatory extension)"),
-        (
-            1011,
-            "keepalive ping timeout",
-            "1011 (internal error) keepalive ping timeout",
-        ),
-        (1012, "", "1012 (service restart)"),
-        (1013, "", "1013 (try again later)"),
-        (1014, "", "1014 (bad gateway)"),
-        (1015, "", "1015 (TLS handshake failure [internal])"),
-        (3000, "", "3000 (registered)"),
-        (3999, "", "3999 (registered)"),
-        (4000, "bye", "4000 (private use) bye"),
-        (4999, "", "4999 (private use)"),
-        (7, "", "7 (unknown)"),
-    ];
-    for (code, reason, expected) in cases {
-        assert_eq!(super::halves::close_text(code, reason), expected);
-    }
+#[rstest]
+#[case::ok(1000, "", "1000 (OK)")]
+#[case::ok_with_a_reason(1000, "bye", "1000 (OK) bye")]
+#[case::going_away(1001, "", "1001 (going away)")]
+#[case::protocol_error(1002, "", "1002 (protocol error)")]
+#[case::unsupported_data(1003, "", "1003 (unsupported data)")]
+#[case::no_status(1005, "", "1005 (no status received [internal])")]
+#[case::abnormal_closure(1006, "", "1006 (abnormal closure [internal])")]
+#[case::invalid_payload(1007, "", "1007 (invalid frame payload data)")]
+#[case::policy_violation(1008, "", "1008 (policy violation)")]
+#[case::message_too_big(1009, "too big", "1009 (message too big) too big")]
+#[case::mandatory_extension(1010, "", "1010 (mandatory extension)")]
+#[case::internal_error(
+    1011,
+    "keepalive ping timeout",
+    "1011 (internal error) keepalive ping timeout"
+)]
+#[case::service_restart(1012, "", "1012 (service restart)")]
+#[case::try_again_later(1013, "", "1013 (try again later)")]
+#[case::bad_gateway(1014, "", "1014 (bad gateway)")]
+#[case::tls_handshake(1015, "", "1015 (TLS handshake failure [internal])")]
+#[case::registered_low(3000, "", "3000 (registered)")]
+#[case::registered_high(3999, "", "3999 (registered)")]
+#[case::private_use(4000, "bye", "4000 (private use) bye")]
+#[case::private_use_high(4999, "", "4999 (private use)")]
+#[case::unknown(7, "", "7 (unknown)")]
+fn close_texts_match_websockets(#[case] code: u16, #[case] reason: &str, #[case] expected: &str) {
+    assert_eq!(super::halves::close_text(code, reason), expected);
 }
