@@ -283,7 +283,7 @@ fn absent_credentials_are_not_a_credential() {
 #[case::admin_config_and_scopes(
     r#"{"upstream_resource": "https://resource.test", "upstream_token_header": "X-Token", "scopes": ["read"]}"#
 )]
-#[case::empty(r#"{}"#)]
+#[case::empty("{}")]
 #[case::explicit_null(r#"{"auth_value": null, "client_id": null}"#)]
 #[case::empty_string(r#"{"client_id": "", "aws_region_name": ""}"#)]
 #[case::empty_list(r#"{"scopes": [], "redirect_uris": []}"#)]

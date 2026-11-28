@@ -5,28 +5,28 @@ use betterlite_mcp::server_record::{SecretCredential, ServerFields};
 use secrecy::ExposeSecret as _;
 
 // LiteLLM reads a credential value as supplied only when it is truthy, so a null and an empty value are both absent
-fn secret_supplied(value: Option<&Option<StoredSecret>>) -> bool {
+pub(super) fn secret_supplied(value: Option<&Option<StoredSecret>>) -> bool {
     let Some(Some(secret)) = value else {
         return false;
     };
     !secret.0.expose_secret().is_empty()
 }
 
-const fn text_supplied(value: Option<&Option<String>>) -> bool {
+pub(super) const fn text_supplied(value: Option<&Option<String>>) -> bool {
     let Some(Some(text)) = value else {
         return false;
     };
     !text.is_empty()
 }
 
-const fn texts_supplied(value: Option<&Option<Vec<String>>>) -> bool {
+pub(super) const fn texts_supplied(value: Option<&Option<Vec<String>>>) -> bool {
     let Some(Some(texts)) = value else {
         return false;
     };
     !texts.is_empty()
 }
 
-const fn method_supplied(value: Option<&Option<MCPTokenEndpointAuthMethod>>) -> bool {
+pub(super) const fn method_supplied(value: Option<&Option<MCPTokenEndpointAuthMethod>>) -> bool {
     let Some(method) = value else {
         return false;
     };

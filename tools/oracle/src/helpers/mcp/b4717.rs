@@ -114,32 +114,28 @@ impl Helper for Op {
         match input {
             Input::RedactList { registry, servers } => redacted_list(registry, servers),
             Input::NonAdmin { registry, server } => {
-                let Fixture {
-                    registry: resolved,
-                    public_ids,
-                } = registry.fixture();
-                serialized(non_admin(server, &resolved, &public_ids))
+                let fixture = registry.fixture();
+                serialized(non_admin(server, &fixture.registry, &fixture.public_ids))
             }
             Input::NonAdminList { registry, servers } => {
-                let Fixture {
-                    registry: resolved,
-                    public_ids,
-                } = registry.fixture();
-                serialized(non_admin_list(servers, &resolved, &public_ids))
+                let fixture = registry.fixture();
+                serialized(non_admin_list(
+                    servers,
+                    &fixture.registry,
+                    &fixture.public_ids,
+                ))
             }
             Input::VirtualKey { registry, server } => {
-                let Fixture {
-                    registry: resolved,
-                    public_ids,
-                } = registry.fixture();
-                serialized(virtual_key(server, &resolved, &public_ids))
+                let fixture = registry.fixture();
+                serialized(virtual_key(server, &fixture.registry, &fixture.public_ids))
             }
             Input::VirtualKeyList { registry, servers } => {
-                let Fixture {
-                    registry: resolved,
-                    public_ids,
-                } = registry.fixture();
-                serialized(virtual_key_list(servers, &resolved, &public_ids))
+                let fixture = registry.fixture();
+                serialized(virtual_key_list(
+                    servers,
+                    &fixture.registry,
+                    &fixture.public_ids,
+                ))
             }
             Input::FullAdmin { auth } => full_admin(auth),
             Input::CredentialTarget {

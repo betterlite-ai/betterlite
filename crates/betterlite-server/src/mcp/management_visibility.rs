@@ -159,30 +159,30 @@ pub fn sanitize_mcp_server_list_for_virtual_key(
 #[must_use]
 // ast-grep-ignore: no-long-names - LiteLLM's name for the guard that keeps admin config from reading as a supplied credential
 pub fn has_non_admin_config_credentials(credentials: Option<&MCPCredentials>) -> bool {
-    let Some(credentials) = credentials else {
+    let Some(stored) = credentials else {
         return false;
     };
-    secret_supplied(credentials.auth_value.as_ref())
-        || text_supplied(credentials.client_id.as_ref())
-        || secret_supplied(credentials.client_secret.as_ref())
-        || secret_supplied(credentials.aws_access_key_id.as_ref())
-        || secret_supplied(credentials.aws_secret_access_key.as_ref())
-        || secret_supplied(credentials.aws_session_token.as_ref())
-        || text_supplied(credentials.aws_region_name.as_ref())
-        || text_supplied(credentials.aws_service_name.as_ref())
-        || text_supplied(credentials.aws_role_name.as_ref())
-        || text_supplied(credentials.aws_session_name.as_ref())
-        || text_supplied(credentials.audience.as_ref())
-        || text_supplied(credentials.token_exchange_endpoint.as_ref())
-        || text_supplied(credentials.subject_token_type.as_ref())
-        || text_supplied(credentials.id_jag_resource_token_endpoint.as_ref())
-        || text_supplied(credentials.id_jag_resource.as_ref())
-        || secret_supplied(credentials.client_private_key.as_ref())
-        || text_supplied(credentials.client_private_key_id.as_ref())
-        || text_supplied(credentials.client_assertion_signing_alg.as_ref())
-        || method_supplied(credentials.token_endpoint_auth_method.as_ref())
-        || texts_supplied(credentials.redirect_uris.as_ref())
-        || text_supplied(credentials.token_exchange_profile.as_ref())
+    secret_supplied(stored.auth_value.as_ref())
+        || text_supplied(stored.client_id.as_ref())
+        || secret_supplied(stored.client_secret.as_ref())
+        || secret_supplied(stored.aws_access_key_id.as_ref())
+        || secret_supplied(stored.aws_secret_access_key.as_ref())
+        || secret_supplied(stored.aws_session_token.as_ref())
+        || text_supplied(stored.aws_region_name.as_ref())
+        || text_supplied(stored.aws_service_name.as_ref())
+        || text_supplied(stored.aws_role_name.as_ref())
+        || text_supplied(stored.aws_session_name.as_ref())
+        || text_supplied(stored.audience.as_ref())
+        || text_supplied(stored.token_exchange_endpoint.as_ref())
+        || text_supplied(stored.subject_token_type.as_ref())
+        || text_supplied(stored.id_jag_resource_token_endpoint.as_ref())
+        || text_supplied(stored.id_jag_resource.as_ref())
+        || secret_supplied(stored.client_private_key.as_ref())
+        || text_supplied(stored.client_private_key_id.as_ref())
+        || text_supplied(stored.client_assertion_signing_alg.as_ref())
+        || method_supplied(stored.token_endpoint_auth_method.as_ref())
+        || texts_supplied(stored.redirect_uris.as_ref())
+        || text_supplied(stored.token_exchange_profile.as_ref())
 }
 
 #[must_use]
