@@ -7,14 +7,14 @@ use betterlite_models::decisions::Json;
 
 use self::config::ReadConfig;
 use self::error::ReadError;
-use self::service::{ClientSource, LogContext, ReadCall, ReadDeps, prepare, send};
+use self::service::{ClientSource, LogContext, ReadCall, ReadDeps, ReadTransport, prepare, send};
 
 // The four attached-file GET handlers share one read: the mode picks the client, the operation picks the transforms
 pub struct VectorFileReadTransport<Source: ClientSource> {
     pub source: Source,
 }
 
-impl<Source: ClientSource> VectorFileReadTransport<Source> {
+impl<Source: ClientSource<Client: ReadTransport>> VectorFileReadTransport<Source> {
     // vector_store_file_retrieve_handler, async_vector_store_file_retrieve_handler, vector_store_file_content_handler and async_vector_store_file_content_handler; a sync handler's _is_async hand-off keeps only an async client, which is the same kind filter that picks the async handlers' pool client
     pub async fn read<C>(
         &self,
