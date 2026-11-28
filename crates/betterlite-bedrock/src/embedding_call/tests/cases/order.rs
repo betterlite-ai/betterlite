@@ -3,7 +3,8 @@ use std::time::Duration;
 use super::super::fixture::{ClientCall, Reply, fixture_probe, now, run};
 use super::super::support::{batch, titan_body, vector};
 use crate::bedrock_embedding_io::response::EmbeddingReply;
-use crate::bedrock_embedding_io::transport::{ClientKind, Timeout};
+use crate::bedrock_embedding_io::transport::Timeout;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 pub(super) fn ordered_multi_input_result() {
     sync_orders_replies();
@@ -80,12 +81,12 @@ fn async_keeps_its_timeout() {
         outcome.calls,
         vec![
             ClientCall {
-                kind: ClientKind::Async,
+                kind: ClientKind::Asynchronous,
                 provider: Some(String::from("bedrock")),
                 timeout: Some(Timeout::Seconds(2.5)),
             },
             ClientCall {
-                kind: ClientKind::Async,
+                kind: ClientKind::Asynchronous,
                 provider: Some(String::from("bedrock")),
                 timeout: Some(Timeout::Seconds(2.5)),
             },
@@ -146,7 +147,7 @@ fn supplied_client_needs_the_matching_kind() {
     assert!(matching.factory_requests.is_empty());
     assert!(matching.calls.is_empty());
     let mut other_kind_probe = fixture_probe();
-    other_kind_probe.supplied = Some(ClientKind::Async);
+    other_kind_probe.supplied = Some(ClientKind::Asynchronous);
     other_kind_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
     let other_kind = run(&other_kind_probe);
     assert!(other_kind.supplied_requests.is_empty());
@@ -154,7 +155,7 @@ fn supplied_client_needs_the_matching_kind() {
     assert_eq!(other_kind.calls[0].kind, ClientKind::Sync);
     let mut async_matching_probe = fixture_probe();
     async_matching_probe.aembedding = true;
-    async_matching_probe.supplied = Some(ClientKind::Async);
+    async_matching_probe.supplied = Some(ClientKind::Asynchronous);
     async_matching_probe.replies = vec![Reply::ok(&titan_body("[1.0]", 1))];
     let async_matching = run(&async_matching_probe);
     assert_eq!(async_matching.supplied_requests.len(), 1);

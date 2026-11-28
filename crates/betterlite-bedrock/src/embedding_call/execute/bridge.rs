@@ -1,5 +1,6 @@
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -18,8 +19,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 
 use super::{Item, cohere_timeout};
 use crate::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport,
-    SuppliedClient, Timeout, TransferError,
+    ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
 };
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::hooks::{Event, Input, Recorder, log_event, replay};
@@ -61,7 +61,7 @@ where
 {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
         match (self.asynchronous, self.supplied.as_ref()) {
-            (true, Some(client)) if client.kind == ClientKind::Async => {
+            (true, Some(client)) if client.kind == ClientKind::Asynchronous => {
                 post(client.transport, request, self.headers, &self.timed_out).await
             }
             (true, _) => {
