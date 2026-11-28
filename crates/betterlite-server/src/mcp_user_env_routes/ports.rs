@@ -6,7 +6,7 @@ use betterlite_db::mcp_user_env_vars::store::UserEnvVars;
 
 // B4714's store as these routes read and write it; the mount task delegates each call one to one
 #[async_trait]
-pub(crate) trait UserEnvVarsStore: Send + Sync {
+pub trait UserEnvVarsStore: Send + Sync {
     async fn get_user_env_vars(
         &self,
         user_id: &str,
@@ -35,6 +35,6 @@ pub(crate) trait UserEnvVarsStore: Send + Sync {
 }
 
 // LiteLLM's invalidate_user_env_vars_cache: one entry dropped after a write, never before it
-pub(crate) trait UserEnvVarsCache: Send + Sync {
+pub trait UserEnvVarsCache: Send + Sync {
     fn invalidate(&self, user_id: &str, server_id: &str);
 }

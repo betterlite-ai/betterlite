@@ -172,10 +172,10 @@ fn values_from_body(
 
 // FastAPI's test: an absent or empty header parses JSON, and so does an application/*+json subtype
 fn is_json_media_type(content_type: Option<&HeaderValue>) -> bool {
-    let Some(content_type) = content_type else {
+    let Some(header) = content_type else {
         return true;
     };
-    let Ok(value) = content_type.to_str() else {
+    let Ok(value) = header.to_str() else {
         return false;
     };
     if value.is_empty() {

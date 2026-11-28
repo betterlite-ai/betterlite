@@ -30,7 +30,7 @@ const CLEAR_USER_ENV_VARS: &str = "clear_mcp_user_env_vars";
 const LIST_USER_ENV_VAR_STATUS: &str = "list_mcp_user_env_var_status";
 
 // LiteLLM mounts the management router at /v1/mcp only, so these paths carry the whole prefix
-pub(crate) fn routes<Access, Sources>(state: UserEnvRoutesState<Access, Sources>) -> Router
+pub fn routes<Access, Sources>(state: UserEnvRoutesState<Access, Sources>) -> Router
 where
     Access: ServerAccessCheck + 'static,
     Sources: AccessibleServerSources + 'static,

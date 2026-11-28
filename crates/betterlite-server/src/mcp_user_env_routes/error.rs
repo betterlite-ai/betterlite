@@ -47,7 +47,7 @@ impl HttpRefusal {
         }
     }
 
-    pub(crate) fn from_database(error: ProxyCheckError) -> Self {
+    pub(crate) fn from_database(error: &ProxyCheckError) -> Self {
         let detail = error.detail().unwrap_or_else(|| {
             BTreeMap::from([("error".to_owned(), JsonValue::Text(error.to_string()))])
         });

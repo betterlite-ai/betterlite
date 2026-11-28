@@ -6,7 +6,7 @@ use betterlite_db::mcp_user_env_vars::store::UserEnvVars;
 use betterlite_mcp::server_utils::env_vars::{
     UserEnvSpec, build_env_var_setup_url, collect_env_var_references, parse_admin_env_vars,
 };
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use thiserror::Error;
 
 use super::types::{MCPUserEnvVarSpec, MCPUserEnvVarsStatus};
@@ -55,7 +55,7 @@ fn referenced_names(server: &McpServerTable) -> BTreeSet<String> {
             .static_headers
             .iter()
             .flat_map(|headers| headers.0.values())
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
     )
 }
 

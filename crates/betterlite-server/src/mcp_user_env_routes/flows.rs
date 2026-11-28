@@ -129,6 +129,7 @@ where
         server_id,
     )
     .await;
+    drop(registry);
     match resolved {
         Ok(server) => Ok((user_id, server)),
         Err(ManagementAccessError::NotFound(detail)) => Err(UserEnvRouteError::Refusal(
@@ -151,7 +152,7 @@ where
     Sources: AccessibleServerSources,
 {
     let _database = get_prisma_client_or_throw(state.database.as_deref(), DATABASE_NOT_CONNECTED)
-        .map_err(HttpRefusal::from_database)
+        .map_err(|error| HttpRefusal::from_database(&error))
         .map_err(UserEnvRouteError::Refusal)?;
     Ok(())
 }

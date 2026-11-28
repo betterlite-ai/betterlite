@@ -2,8 +2,8 @@ pub mod body;
 pub(crate) mod error;
 pub(crate) mod flows;
 pub(crate) mod management;
-pub(crate) mod ports;
-pub(crate) mod router;
+pub mod ports;
+pub mod router;
 pub(crate) mod status;
 pub mod types;
 
@@ -19,20 +19,20 @@ use betterlite_mcp::registry::servers::SharedRegistry;
 use crate::mcp::management_server_access::AccessibleServerSources;
 
 // The ports the mount task fills: no route reads a global, and the store and the cache are only contracts here
-pub(crate) struct UserEnvRoutesState<Access, Sources>
+pub struct UserEnvRoutesState<Access, Sources>
 where
     Access: ServerAccessCheck,
     Sources: AccessibleServerSources,
 {
-    pub(crate) database: Option<Arc<PostgresStore>>,
-    pub(crate) store: Arc<dyn ports::UserEnvVarsStore>,
-    pub(crate) cache: Arc<dyn ports::UserEnvVarsCache>,
-    pub(crate) registry: SharedRegistry,
-    pub(crate) db_lookup: Arc<dyn DbLookup>,
-    pub(crate) access: Arc<Access>,
-    pub(crate) sources: Arc<Sources>,
-    pub(crate) mode: ManagementMode,
-    pub(crate) proxy_base_url: Option<String>,
+    pub database: Option<Arc<PostgresStore>>,
+    pub store: Arc<dyn ports::UserEnvVarsStore>,
+    pub cache: Arc<dyn ports::UserEnvVarsCache>,
+    pub registry: SharedRegistry,
+    pub db_lookup: Arc<dyn DbLookup>,
+    pub access: Arc<Access>,
+    pub sources: Arc<Sources>,
+    pub mode: ManagementMode,
+    pub proxy_base_url: Option<String>,
 }
 
 impl<Access, Sources> Clone for UserEnvRoutesState<Access, Sources>
