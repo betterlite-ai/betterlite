@@ -88,7 +88,9 @@ where
 {
     create_key_deleted_audit_logs(
         audit,
-        event.rows.iter().map(audit_key),
+        event.rows.iter().map(|row| {
+            serde_json::from_value::<LiteLLMVerificationToken>(serde_json::to_value(row)?)
+        }),
         caller,
         litellm_changed_by,
     )?;
@@ -103,11 +105,6 @@ where
         .await
         .map_err(|source| KeyEventError::Sink { source })?;
     Ok(())
-}
-
-fn audit_key(row: &JsonData) -> Result<LiteLLMVerificationToken, serde_json::Error> {
-    let value = serde_json::to_value(row)?;
-    serde_json::from_value(value)
 }
 
 // the secret manager reads only the alias, team and token, so a malformed row it never needs still deletes
