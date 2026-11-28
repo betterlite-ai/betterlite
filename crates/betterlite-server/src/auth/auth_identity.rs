@@ -242,7 +242,7 @@ pub(crate) fn master_key_context(
     presented: Option<&SecretString>,
     master_key: &SecretString,
 ) -> Option<AuthContext> {
-    auth_key_lookup::master_key_context(presented, Some(master_key)).unwrap_or_default()
+    auth_key_lookup::master_key_context(presented, master_key).unwrap_or_default()
 }
 
 mod tests;
