@@ -79,6 +79,26 @@ fn internal_rule() -> JwtPermissionRule {
     }
 }
 
+// enforce_scope_based_access and its scope_mappings come from litellm_jwtauth in this config
+fn scope_config() -> Config {
+    let source = format!(
+        "general_settings:\n  master_key: {MASTER_KEY}\n  litellm_jwtauth:\n    enforce_scope_based_access: true\n    \
+         scope_mappings:\n      - scope: chat\n        models: ['gpt-4o']\n"
+    );
+    ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(&source)
+    .unwrap()
+}
+
+fn scoped_rule() -> JwtPermissionRule {
+    JwtPermissionRule {
+        scopes: vec!["chat".to_owned()],
+        ..JwtPermissionRule::default()
+    }
+}
+
 fn stage_from(rule: JwtPermissionRule, uri: &str, body: &'static str) -> JwtPermissionStageInput {
     let mut request = Request::builder()
         .method("POST")
@@ -249,6 +269,31 @@ async fn role_permissions_from_config() {
     let (status, body, reached) = run_request(
         &configuration,
         internal_rule(),
+        USER_ROUTE,
+        r#"{"model":"gpt-4o-mini"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(body.contains("gpt-4o-mini"), "{body}");
+    assert!(!reached);
+}
+
+// the configured scope mappings reach the stage's scope gate with the token's scopes and the request model
+#[tokio::test]
+async fn scope_mappings_from_config() {
+    let configuration = scope_config();
+    let (status, body, reached) = run_request(
+        &configuration,
+        scoped_rule(),
+        USER_ROUTE,
+        r#"{"model":"gpt-4o"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+    let (status, body, reached) = run_request(
+        &configuration,
+        scoped_rule(),
         USER_ROUTE,
         r#"{"model":"gpt-4o-mini"}"#,
     )
