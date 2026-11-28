@@ -575,7 +575,7 @@ async fn frames_http_error_keeps_the_anthropic_bytes_frame() {
         translation: fake(KeyMode::Texts, vec![Ok(()), http(405)]),
         chat_completions: false,
     });
-    harness.error_items(frames.clone());
+    harness.error_items(&frames);
     harness.route = Some("/v1/messages");
     let outputs = harness
         .run_frames(vec![

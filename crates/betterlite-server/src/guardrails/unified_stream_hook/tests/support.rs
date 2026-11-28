@@ -394,15 +394,15 @@ impl Harness {
         self.registry.get(call_type).unwrap().translation.calls()
     }
 
-    pub(crate) fn error_items(&mut self, items: Vec<StreamItem>) {
+    pub(crate) fn error_items(&mut self, items: &[StreamItem]) {
         for entry in &mut self.registry.entries {
-            entry.translation.error_items = Some(items.clone());
+            entry.translation.error_items = Some(items.to_owned());
         }
     }
 
     pub(crate) async fn run(&mut self, items: Vec<GuardrailValue>) -> Outputs {
-        let items = items.into_iter().map(StreamItem::Json);
-        self.run_frames_source(items.map(Ok).collect()).await
+        let stream_items = items.into_iter().map(StreamItem::Json);
+        self.run_frames_source(stream_items.map(Ok).collect()).await
     }
 
     pub(crate) async fn run_frames(&mut self, items: Vec<StreamItem>) -> Outputs {

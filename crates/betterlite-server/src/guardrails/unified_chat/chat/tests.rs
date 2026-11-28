@@ -95,9 +95,9 @@ fn assert_error_frame(items: &[StreamItem], code: &str, message: &str) {
     let [StreamItem::Bytes(frame)] = items else {
         panic!("expected one error frame, got {items:?}");
     };
-    let frame = String::from_utf8(frame.clone()).unwrap();
-    assert!(frame.contains(&format!("\"code\":\"{code}\"")));
-    assert!(frame.contains(&format!("\"message\":\"{message}\"")));
+    let text = String::from_utf8(frame.clone()).unwrap();
+    assert!(text.contains(&format!("\"code\":\"{code}\"")));
+    assert!(text.contains(&format!("\"message\":\"{message}\"")));
 }
 
 #[tokio::test]

@@ -278,7 +278,7 @@ async fn stream_raw_frame_json_text_is_neither_scanned_nor_changed() {
         .unwrap();
     assert_eq!(
         fake.calls()[0].inputs.texts.as_ref().unwrap(),
-        &[String::from("")]
+        &[String::new()]
     );
     assert_eq!(stream, vec![StreamItem::Json(GuardrailValue::Text(frame))]);
 }
