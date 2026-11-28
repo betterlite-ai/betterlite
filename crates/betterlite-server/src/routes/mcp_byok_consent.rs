@@ -65,7 +65,7 @@ async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -
     let cookie_header = cookie_header(request.headers());
     let user_id = match session_user(&state, cookie_header).await {
         Ok(user_id) => user_id,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let form_parts = match read_form(request, FORM_CONTENT_TYPES).await {
         Ok(form_parts) => form_parts,
@@ -82,7 +82,7 @@ async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -
 async fn session_user(
     state: &ConsentState,
     cookie_header: Option<&str>,
-) -> Result<String, Response> {
+) -> Result<String, Box<Response>> {
     let authenticated = authenticate_session(
         cookie_header,
         state.master_key.as_ref(),
@@ -94,11 +94,15 @@ async fn session_user(
         Ok(user_id) => Ok(user_id),
         Err(SessionAuthError::LoginRequired) => {
             let error = ConsentError::LoginRequired;
-            Err((error.status(), Json(error.body())).into_response())
+            Err(Box::new(
+                (error.status(), Json(error.body())).into_response(),
+            ))
         }
         Err(error @ SessionAuthError::Construct(_)) => {
             tracing::error!("mcp byok consent: the session principal did not construct: {error}");
-            Err((StatusCode::INTERNAL_SERVER_ERROR, INTERNAL_ERROR).into_response())
+            Err(Box::new(
+                (StatusCode::INTERNAL_SERVER_ERROR, INTERNAL_ERROR).into_response(),
+            ))
         }
     }
 }
@@ -130,9 +134,8 @@ fn query_from(query: Option<&str>) -> GetQuery {
 }
 
 fn cookie_header(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::COOKIE)
-        .and_then(|value| value.to_str().ok())
+    let value = headers.get(header::COOKIE)?;
+    value.to_str().ok()
 }
 
 fn post_form(parts: &FormParts) -> Result<PostForm, ValidationBody> {

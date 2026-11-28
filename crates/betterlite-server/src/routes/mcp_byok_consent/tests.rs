@@ -89,9 +89,8 @@ impl KeyAuthenticator for Keys {
     }
 }
 
-fn keyring(accepts: bool) -> Option<Arc<dyn KeyAuthenticator>> {
-    let keys: Arc<dyn KeyAuthenticator> = Arc::new(Keys { accepts });
-    Some(keys)
+fn keyring(accepts: bool) -> Arc<dyn KeyAuthenticator> {
+    Arc::new(Keys { accepts })
 }
 
 fn app(
@@ -107,7 +106,7 @@ fn app(
 }
 
 fn signed_in(codes: AuthCodeStore) -> Router {
-    app(codes, Some(MASTER_KEY), keyring(true))
+    app(codes, Some(MASTER_KEY), Some(keyring(true)))
 }
 
 fn authorize_uri(query: &str) -> String {
@@ -324,7 +323,7 @@ async fn the_stored_code_belongs_to_the_cookie_user() {
     let consent = Arc::new(ConsentState {
         codes: AuthCodeStore::new(),
         master_key: Some(SecretString::from(MASTER_KEY)),
-        authenticator: keyring(true),
+        authenticator: Some(keyring(true)),
     });
     let cookies = cookie(&ui_claims(), MASTER_KEY);
     let response = send(
@@ -408,7 +407,7 @@ async fn the_post_refuses_a_revoked_session_key() {
     };
     let cookies = cookie(&claims, MASTER_KEY);
     let response = send(
-        app(AuthCodeStore::new(), Some(MASTER_KEY), keyring(false)),
+        app(AuthCodeStore::new(), Some(MASTER_KEY), Some(keyring(false))),
         post(AUTHORIZE_PATH, &valid_form(), FORM_TYPE, Some(&cookies)),
     )
     .await;
