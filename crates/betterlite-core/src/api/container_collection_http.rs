@@ -146,7 +146,7 @@ async fn create_body<Client, Source>(
 ) -> Result<records::ContainerObject, ContainerCollectionError>
 where
     Client: CollectionTransport,
-    Source: ClientSource,
+    Source: ClientSource<Blocking: CollectionTransport, Asynchronous: CollectionTransport>,
 {
     let config = call.base.config;
     let extra = call.base.extra_headers.cloned().unwrap_or_default();
@@ -195,7 +195,7 @@ async fn list_body<Client, Source>(
 ) -> Result<records::ContainerListResponse, ContainerCollectionError>
 where
     Client: CollectionTransport,
-    Source: ClientSource,
+    Source: ClientSource<Blocking: CollectionTransport, Asynchronous: CollectionTransport>,
 {
     let config = call.base.config;
     let headers =

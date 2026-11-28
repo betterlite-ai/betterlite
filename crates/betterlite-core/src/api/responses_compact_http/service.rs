@@ -128,7 +128,7 @@ pub async fn prepare<'deps, C, S>(
 ) -> Result<PreparedCompact<'deps, C, S>, CompactError>
 where
     C: CompactConfig,
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
 {
     let client = select_client(deps, mode, call)?;
     let (headers, api_base) = validated_environment(deps.config, call)?;

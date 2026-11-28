@@ -99,7 +99,7 @@ fn mock_created<Context>(prep: &Prepared<'_>) -> Result<Option<Created<Context>>
 }
 impl<S, F, D, E, Context> ResponsesCreateDeps<'_, S, F, D, E, Context>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     F: CreateConfigFactory,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,

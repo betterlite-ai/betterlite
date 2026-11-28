@@ -160,7 +160,7 @@ pub(super) async fn bridge<S, F, D, E, Context>(
     context: Context,
 ) -> Result<Created<Context>, CreateError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     F: CreateConfigFactory,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,
