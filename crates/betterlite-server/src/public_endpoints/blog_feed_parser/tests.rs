@@ -106,6 +106,15 @@ fn namespaced_field_does_not_shadow_a_plain_one() {
 }
 
 #[test]
+fn undeclared_prefix_is_not_a_parse_failure() {
+    // ElementTree refuses an unbound prefix; the port treats any prefixed name as qualified.
+    let xml = "<x:rss><channel><item><title>T</title>\
+        <link>https://t</link></item></channel></x:rss>";
+    let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
+    assert_eq!(posts, vec![post("T", "", "", "https://t")]);
+}
+
+#[test]
 fn malformed_document_boundaries_are_rejected() {
     drop(parse_rss_to_posts("<rss><channel/></rss>tail", 1, 64).unwrap_err());
     drop(parse_rss_to_posts("<rss><channel/></rss><extra/>", 1, 64).unwrap_err());
