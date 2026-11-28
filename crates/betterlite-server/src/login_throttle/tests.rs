@@ -52,14 +52,13 @@ fn fixture_request(
     let counters = Arc::new(FakeLocalStore::new(clock.clock()));
     let blocks = Arc::new(FakeLocalStore::new(clock.clock()));
     let stores = ThrottleStores {
-        counters: Arc::clone(&counters),
-        blocks: Arc::clone(&blocks),
+        counters: Arc::<FakeLocalStore>::clone(&counters),
+        blocks: Arc::<FakeLocalStore>::clone(&blocks),
     };
     let redis = faults.map(|entries| Arc::new(FakeRedis::new(clock.clock(), entries)));
-    let shared: Option<Arc<dyn LoginRedis>> = redis.as_ref().map(|value| {
-        let handle: Arc<dyn LoginRedis> = Arc::clone(value);
-        handle
-    });
+    let shared: Option<Arc<dyn LoginRedis>> = redis
+        .as_ref()
+        .map(|value| -> Arc<dyn LoginRedis> { Arc::<FakeRedis>::clone(value) });
     let runtime = ThrottleRuntime {
         stores,
         clock: clock.clock(),
@@ -671,6 +670,11 @@ fn scoped_addresses() {
     assert_eq!(source_group("fe80::1%"), "fe80::1%");
     assert_eq!(source_group("::%a%b"), "::%a%b");
     assert_eq!(source_group("::%"), "::%");
+    // ipaddress prints the scope back only when the address is its own /64
+    assert_eq!(source_group("fe80::%eth0"), "fe80::%eth0/64");
+    assert_eq!(source_group("::%a"), "::%a/64");
+    assert_eq!(source_group("2001:db8::%x"), "2001:db8::%x/64");
+    assert_eq!(source_group("::1%a"), "::/64");
 }
 
 #[test]

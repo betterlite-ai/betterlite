@@ -48,10 +48,10 @@ pub struct LoginThrottle {
     pub window_seconds: i64,
     pub block_seconds: i64,
     pub enabled: bool,
-    counters: Arc<dyn LocalStore>,
-    blocks: Arc<dyn LocalStore>,
-    clock: Clock,
-    redis: Option<Arc<dyn LoginRedis>>,
+    pub counters: Arc<dyn LocalStore>,
+    pub blocks: Arc<dyn LocalStore>,
+    pub clock: Clock,
+    pub redis: Option<Arc<dyn LoginRedis>>,
 }
 
 impl LoginThrottle {

@@ -29,16 +29,24 @@ pub fn declared_proxy_ranges(topology: &ProxyTopology) -> Option<Vec<String>> {
 // source_group: IPv4 as is, IPv6 by its /64, an unparsable address by its literal text
 #[must_use]
 pub fn source_group(client_ip: &str) -> String {
-    let Some(parsed) = parse_address(client_ip) else {
+    let Some((address, scope)) = parse_address(client_ip) else {
         return client_ip.to_owned();
     };
-    match parsed.to_canonical() {
+    match address.to_canonical() {
         IpAddr::V4(version_four) => version_four.to_string(),
-        IpAddr::V6(version_six) => IpNet::new(IpAddr::V6(version_six), IPV6_SOURCE_PREFIX_LENGTH)
-            .map_or_else(
-                |_error| client_ip.to_owned(),
-                |network| network.trunc().to_string(),
-            ),
+        IpAddr::V6(version_six) => {
+            let Ok(network) = IpNet::new(IpAddr::V6(version_six), IPV6_SOURCE_PREFIX_LENGTH) else {
+                return client_ip.to_owned();
+            };
+            let network_address = network.network();
+            // ipaddress keeps an IPv6 scope id on the network address when the /64 leaves every host bit zero
+            let suffix = if network_address == IpAddr::V6(version_six) {
+                scope.map_or_else(String::new, |id| format!("%{id}"))
+            } else {
+                String::new()
+            };
+            format!("{network_address}{suffix}/{IPV6_SOURCE_PREFIX_LENGTH}")
+        }
     }
 }
 
@@ -55,7 +63,7 @@ pub fn source_limit(settings: &Settings, client_ip: &str) -> i64 {
 
 // only a matching range evaluates its value, so an invalid one warns once that address reaches it
 fn source_override(entries: &[SourceOverride], client_ip: &str, default: i64) -> i64 {
-    let Some(parsed) = parse_address(client_ip) else {
+    let Some((parsed, _scope)) = parse_address(client_ip) else {
         return default;
     };
     let address = parsed.to_canonical();
@@ -95,17 +103,20 @@ fn parse_network(text: &str, setting_name: &str) -> Option<IpNet> {
     networks.pop()
 }
 
-// ipaddress.ip_address, including one non-empty IPv6 scope id and no slash anywhere
-fn parse_address(text: &str) -> Option<IpAddr> {
+// ipaddress.ip_address, including one non-empty IPv6 scope id and no slash anywhere; the scope comes back because a /64 network address prints it
+fn parse_address(text: &str) -> Option<(IpAddr, Option<String>)> {
     if text.contains('/') {
         return None;
     }
     match text.split_once('%') {
-        None => text.parse().ok(),
+        None => text.parse().ok().map(|address| (address, None)),
         Some((address, scope))
             if address.contains(':') && !scope.is_empty() && !scope.contains('%') =>
         {
-            address.parse().ok()
+            address
+                .parse()
+                .ok()
+                .map(|parsed| (parsed, Some(scope.to_owned())))
         }
         Some(_) => None,
     }

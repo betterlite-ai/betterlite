@@ -128,7 +128,7 @@ fn oracle_reports_shared_store_faults() {
     .into_iter()
     .collect();
     let input = OracleInput {
-        config: config(r#"{}"#),
+        config: config("{}"),
         redis: Some(RedisSpec { faults }),
         phases: vec![Phase {
             request: request(Some("10.1.2.3"), None),
@@ -158,7 +158,7 @@ fn oracle_reports_shared_store_faults() {
 #[test]
 fn oracle_without_a_shared_store() {
     let input = OracleInput {
-        config: config(r#"{}"#),
+        config: config("{}"),
         redis: None,
         phases: vec![Phase {
             request: RequestSpec::default(),

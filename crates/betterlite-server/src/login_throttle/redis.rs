@@ -6,7 +6,7 @@ use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_counters::scripts::RegisteredScript;
-use redis::{Value, from_redis_value};
+use redis::{Value, from_redis_value_ref};
 use thiserror::Error;
 
 use super::keys::LoginKeys;
@@ -149,8 +149,9 @@ impl LoginRedis for RedisLogin {
 
 // _LUA_BLOCK_TTLS validates a two-element sequence of ints; anything else is a malformed reply
 fn parse_block_ttls(reply: &Value) -> Result<BlockTtls, ThrottleRedisError> {
-    let values: Vec<i64> =
-        from_redis_value(reply).map_err(|_error| ThrottleRedisError::MalformedBlockTtls)?;
+    let Ok(values) = from_redis_value_ref::<Vec<i64>>(reply) else {
+        return Err(ThrottleRedisError::MalformedBlockTtls);
+    };
     let [user, source] = values.as_slice() else {
         return Err(ThrottleRedisError::MalformedBlockTtls);
     };

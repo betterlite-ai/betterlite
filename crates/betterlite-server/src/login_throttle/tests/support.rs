@@ -67,7 +67,8 @@ impl FakeLocalStore {
     #[must_use]
     pub fn contains(&self, key: &str) -> bool {
         let now = (*self.clock)();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
         state.values.contains_key(key)
     }
@@ -75,7 +76,8 @@ impl FakeLocalStore {
     #[must_use]
     pub fn value(&self, key: &str) -> Option<f64> {
         let now = (*self.clock)();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
         state.values.get(key).copied()
     }
@@ -101,7 +103,8 @@ fn purge_expired<T>(
 impl LocalStore for FakeLocalStore {
     fn get(&self, key: &str) -> Result<Option<CacheValue>, LoginThrottleError> {
         let now = (*self.clock)();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
         Ok(state.values.get(key).map(|value| CacheValue::Float(*value)))
     }
@@ -145,7 +148,7 @@ impl LocalStore for FakeLocalStore {
             Some(CacheValue::Integer(value)) => {
                 num_traits::cast::<i64, f64>(value).unwrap_or_default()
             }
-            Some(_other) | None => 0.0_f64,
+            Some(_) | None => 0.0_f64,
         };
         let next = current.mul_add(1.0_f64, 1.0_f64);
         self.set(key, CacheValue::Float(next), seconds)?;
@@ -197,7 +200,8 @@ impl FakeRedis {
     #[must_use]
     pub fn counter(&self, key: &str) -> Option<i64> {
         let now = (*self.clock)();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let state = &mut *guard;
         purge_expired(&mut state.counters, &mut state.expiries, now);
         state.counters.get(key).copied()
     }
@@ -549,21 +553,21 @@ fn network_request(spec: &RequestSpec) -> NetworkRequest<'_> {
 fn oracle_runtime(input: &OracleInput, clock: &FakeClock) -> ThrottleRuntime {
     let counters = Arc::new(FakeLocalStore::new(clock.clock()));
     let blocks = Arc::new(FakeLocalStore::new(clock.clock()));
-    let counters_store: Arc<dyn LocalStore> = Arc::clone(&counters);
-    let blocks_store: Arc<dyn LocalStore> = Arc::clone(&blocks);
+    let counters_store: Arc<dyn LocalStore> = Arc::<FakeLocalStore>::clone(&counters);
+    let blocks_store: Arc<dyn LocalStore> = Arc::<FakeLocalStore>::clone(&blocks);
     let stores = ThrottleStores {
         counters: counters_store,
         blocks: blocks_store,
     };
-    let shared: Option<Arc<dyn LoginRedis>> = input.redis.as_ref().map(|spec| {
-        let faults: Vec<(&str, &str)> = spec
-            .faults
-            .iter()
-            .map(|(operation, fault)| (operation.as_str(), fault.as_str()))
-            .collect();
-        let handle: Arc<dyn LoginRedis> = Arc::new(FakeRedis::new(clock.clock(), &faults));
-        handle
-    });
+    let shared: Option<Arc<dyn LoginRedis>> =
+        input.redis.as_ref().map(|spec| -> Arc<dyn LoginRedis> {
+            let faults: Vec<(&str, &str)> = spec
+                .faults
+                .iter()
+                .map(|(operation, fault)| (operation.as_str(), fault.as_str()))
+                .collect();
+            Arc::new(FakeRedis::new(clock.clock(), &faults))
+        });
     ThrottleRuntime {
         stores,
         clock: clock.clock(),
