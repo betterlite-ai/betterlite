@@ -2,6 +2,7 @@ mod page;
 mod tests;
 
 use std::collections::BTreeMap;
+use std::ops::{Add as _, Sub as _};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_key_lookup::error::KeyLookupError;
@@ -10,7 +11,7 @@ use betterlite_mcp::byok_consent::ConsentError;
 use betterlite_mcp::byok_consent::get::{GetQuery, authorize_get};
 use betterlite_mcp::byok_consent::post::{Accepted, PostForm, authorize_post};
 use betterlite_mcp::byok_consent::session::authenticate_session;
-use betterlite_mcp::byok_consent::store::AuthCodeStore;
+use betterlite_mcp::byok_consent::store::{AUTH_CODE_TTL_SECONDS, AuthCodeStore};
 use betterlite_mcp::byok_token_exchange::ports::{AuthCodeLookup as _, AuthCodeRecord};
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry};
 use betterlite_mcp::server_record::MCPServer;
@@ -74,14 +75,7 @@ impl Helper for Op {
             Route::Get => get_report(input.query.as_ref(), input.servers.as_deref()),
             Route::Post => {
                 let Some(form) = input.form.as_ref() else {
-                    return Err(Box::new(HelperError {
-                        class: "ValueError".to_owned(),
-                        status: None,
-                        error_type: None,
-                        param: None,
-                        code: None,
-                        message: "a post case needs a form".to_owned(),
-                    }));
+                    return Err(value_error("a post case needs a form"));
                 };
                 post_report(&PostCall {
                     form,
@@ -109,12 +103,8 @@ fn get_report(
     fields: Option<&BTreeMap<String, String>>,
     servers: Option<&[serde_json::Value]>,
 ) -> HelperResult {
-    let fields = fields.cloned().unwrap_or_default();
-    let registry = match servers {
-        Some(servers) => Some(registry_of(servers)?),
-        None => None,
-    };
-    match authorize_get(&query_of(&fields), registry.as_ref()) {
+    let registry = servers.map(registry_of).transpose()?;
+    match authorize_get(&query_of(fields), registry.as_ref()) {
         Ok(html) => Ok(json!({
             "status": 200_u16,
             "content_type": HTML_CONTENT_TYPE,
@@ -129,9 +119,12 @@ fn get_report(
     }
 }
 
-fn query_of(fields: &BTreeMap<String, String>) -> GetQuery {
+fn query_of(fields: Option<&BTreeMap<String, String>>) -> GetQuery {
     let mut query = GetQuery::default();
-    for (name, value) in fields {
+    let Some(entries) = fields else {
+        return query;
+    };
+    for (name, value) in entries {
         query.set(name, value.clone());
     }
     query
@@ -139,8 +132,8 @@ fn query_of(fields: &BTreeMap<String, String>) -> GetQuery {
 
 fn registry_of(servers: &[serde_json::Value]) -> Result<ServerRegistry, Box<HelperError>> {
     let mut parsed = Vec::with_capacity(servers.len());
-    for server in servers {
-        parsed.push(serde_json::from_value::<MCPServer>(server.clone()).or_value_error()?);
+    for row in servers {
+        parsed.push(serde_json::from_value::<MCPServer>(row.clone()).or_value_error()?);
     }
     Ok(ServerRegistry::new(
         RegistrySettings {
@@ -193,14 +186,7 @@ fn admitted_user(call: &PostCall<'_>) -> Result<Option<String>, Box<HelperError>
     match result {
         Ok(user_id) => Ok(Some(user_id)),
         Err(SessionAuthError::LoginRequired) => Ok(None),
-        Err(SessionAuthError::Construct(error)) => Err(Box::new(HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })),
+        Err(SessionAuthError::Construct(error)) => Err(value_error(&error.to_string())),
     }
 }
 
@@ -218,14 +204,7 @@ fn post_form(form: &FormInput) -> PostForm {
 
 fn accepted_report(codes: &AuthCodeStore, accepted: &Accepted, now: f64) -> HelperResult {
     let Some(record) = codes.get(&accepted.code) else {
-        return Err(Box::new(HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: "the accepted code was not stored".to_owned(),
-        }));
+        return Err(value_error("the accepted code was not stored"));
     };
     Ok(json!({
         "status": 302_u16,
@@ -241,7 +220,7 @@ fn accepted_report(codes: &AuthCodeStore, accepted: &Accepted, now: f64) -> Help
             "redirect_uri": record.redirect_uri,
             "client_id": record.client_id,
             "user_id": record.user_id,
-            "expires_in": record.expires_at - now,
+            "expires_in": record.expires_at.sub(now),
         },
         "store_size": codes.count(),
     }))
@@ -249,10 +228,16 @@ fn accepted_report(codes: &AuthCodeStore, accepted: &Accepted, now: f64) -> Help
 
 fn prefill(codes: &AuthCodeStore, now: f64, live: usize, expired: usize) {
     for index in 0..live {
-        codes.insert(format!("live-{index}"), prefill_record(now + 300.0));
+        codes.insert(
+            format!("live-{index}"),
+            prefill_record(now.add(f64::from(AUTH_CODE_TTL_SECONDS))),
+        );
     }
     for index in 0..expired {
-        codes.insert(format!("expired-{index}"), prefill_record(now - 1000.0));
+        codes.insert(
+            format!("expired-{index}"),
+            prefill_record(now.sub(1000.0_f64)),
+        );
     }
 }
 
@@ -275,6 +260,17 @@ fn is_uuid4(code: &str) -> bool {
             14 => byte == b'4',
             _ => matches!(byte, b'0'..=b'9' | b'a'..=b'f'),
         })
+}
+
+fn value_error(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "ValueError".to_owned(),
+        status: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message: message.to_owned(),
+    })
 }
 
 struct MissingKeys;
