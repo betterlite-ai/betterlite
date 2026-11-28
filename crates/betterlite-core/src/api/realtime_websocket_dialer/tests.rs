@@ -19,7 +19,7 @@ use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http::StatusCode;
 use rstest::rstest;
-use tokio::io::AsyncReadExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
@@ -39,7 +39,7 @@ use crate::api::realtime_backend_transport::error::DialError;
 use crate::api::realtime_connection_plan::{ProbeConnection, RealtimeProbeDialer};
 use crate::api::realtime_contracts::close::{CloseFrame, ConnectionClosed, backend_close_from};
 use crate::api::realtime_contracts::error::HeaderMap;
-use crate::api::realtime_contracts::transport::RealtimeMessage;
+use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
 
 use super::WebSocketDialer;
 
@@ -192,6 +192,24 @@ async fn record_first_byte(listener: TcpListener, seen: Arc<Mutex<Vec<u8>>>) {
             seen.lock().expect("seen").extend_from_slice(&byte[..read]);
         }
     }
+}
+
+// a proxy that reads the CONNECT and answers it with one status
+async fn serve_proxy_status(listener: TcpListener, status: u16) {
+    let (mut stream, _peer) = listener.accept().await.expect("accept");
+    let mut head = Vec::new();
+    let mut buffer = [0_u8; 256];
+    while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut buffer).await.expect("read");
+        if read == 0 {
+            break;
+        }
+        head.extend_from_slice(&buffer[..read]);
+    }
+    stream
+        .write_all(format!("HTTP/1.1 {status} rejected\r\ncontent-length: 0\r\n\r\n").as_bytes())
+        .await
+        .expect("response");
 }
 
 // a server that records the upgrade's headers before it answers the handshake
@@ -382,6 +400,32 @@ async fn dialer_rejects_an_ssl_argument_on_a_ws_url_without_connecting() {
 }
 
 #[tokio::test]
+async fn dialer_reports_a_scheme_that_is_not_ws_as_invalid_uri() {
+    let ssl = RealtimeSsl::Disabled;
+    let headers = HeaderMap::new();
+    let dialer = web_dialer(no_proxy());
+    let outcome = timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(
+            &dialer,
+            &request("https://example.test/realtime", &ssl, &headers, 1024),
+        ),
+    )
+    .await
+    .expect("deadline");
+    let error = match outcome {
+        Err(error) => error,
+        Ok(_backend) => panic!("the https URL opened"),
+    };
+    assert_eq!(
+        error,
+        DialError::WebSocket {
+            message: "scheme isn't ws or wss: 'https'".to_owned(),
+        }
+    );
+}
+
+#[tokio::test]
 async fn dialer_reports_a_socks_proxy_as_the_import_error() {
     let environment =
         BTreeMap::from([("SOCKS_PROXY".to_owned(), "socks5h://127.0.0.1:9".to_owned())]);
@@ -441,6 +485,26 @@ async fn dialer_reports_a_https_proxy_as_invalid_proxy() {
     );
 }
 
+#[tokio::test]
+async fn probe_reports_a_rejected_proxy_as_invalid_proxy_status() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_proxy_status(listener, 407));
+    let environment = BTreeMap::from([("WS_PROXY".to_owned(), format!("http://{address}"))]);
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).expect("policy");
+    let dialer = web_dialer(Arc::new(policy));
+    let connection = probe_connection("ws://example.test/realtime".to_owned());
+    let error = timeout(TEST_TIMEOUT, dialer.probe(&connection))
+        .await
+        .expect("deadline")
+        .expect_err("the rejected proxy opened");
+    assert_eq!(error.class, "InvalidProxyStatus");
+    assert_eq!(error.status, None);
+    assert_eq!(error.message, "proxy rejected connection: HTTP 407");
+    tasks.join_next().await.expect("proxy").expect("proxy task");
+}
+
 // SSL_VERIFY=false on a wss URL keeps TLS, as llm_http_handler.py builds a context with CERT_NONE there
 #[tokio::test]
 async fn dialer_keeps_tls_for_a_wss_url_when_verification_is_disabled() {
@@ -474,6 +538,33 @@ async fn dialer_keeps_tls_for_a_wss_url_when_verification_is_disabled() {
         "the first byte was not a TLS handshake record"
     );
     tasks.abort_all();
+}
+
+#[tokio::test]
+async fn dialer_reports_a_ca_file_that_cannot_be_read() {
+    let missing = "/nonexistent-b10211/missing-ca.pem".to_owned();
+    let ssl = RealtimeSsl::Shared(Verification::CaFile(missing));
+    let headers = HeaderMap::new();
+    let dialer = web_dialer(no_proxy());
+    let outcome = timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(
+            &dialer,
+            &request("wss://example.test/realtime", &ssl, &headers, 1024),
+        ),
+    )
+    .await
+    .expect("deadline");
+    let error = match outcome {
+        Err(error) => error,
+        Ok(_backend) => panic!("the unreadable ca file opened"),
+    };
+    assert_eq!(
+        error,
+        DialError::Other {
+            message: "cannot read SSL_CERT_FILE".to_owned(),
+        }
+    );
 }
 
 #[tokio::test]
@@ -706,6 +797,25 @@ async fn sender_writes_text_binary_and_a_normal_close() {
         .expect("server")
         .expect("server task");
     assert_sent_frames(&text, &binary, &close);
+}
+
+#[tokio::test]
+async fn sender_reports_that_the_source_owns_receiving() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_end(listener));
+    let mut backend = dialed_backend(address, 1024).await;
+    let error = backend
+        .sender
+        .recv(None)
+        .await
+        .expect_err("the sender received a frame");
+    assert_eq!(
+        error.message,
+        "the realtime backend websocket receiving half is the relay's source"
+    );
+    tasks.abort_all();
 }
 
 #[tokio::test]
