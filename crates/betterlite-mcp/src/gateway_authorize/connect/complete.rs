@@ -141,7 +141,7 @@ fn finish(
 }
 
 fn with_deletion(reply: GatewayReply, deletion: FlowCookieDeletion) -> GatewayReply {
-    let deletion = Some(Box::new(deletion));
+    let delete_cookie = Some(Box::new(deletion));
     match reply {
         GatewayReply::Redirect {
             location,
@@ -150,7 +150,7 @@ fn with_deletion(reply: GatewayReply, deletion: FlowCookieDeletion) -> GatewayRe
         } => GatewayReply::Redirect {
             location,
             set_cookie,
-            delete_cookie: deletion,
+            delete_cookie,
         },
         GatewayReply::Html {
             body,
@@ -161,7 +161,7 @@ fn with_deletion(reply: GatewayReply, deletion: FlowCookieDeletion) -> GatewayRe
             body,
             headers,
             set_cookie,
-            delete_cookie: deletion,
+            delete_cookie,
         },
         other @ (GatewayReply::Json { .. } | GatewayReply::Error(_)) => other,
     }

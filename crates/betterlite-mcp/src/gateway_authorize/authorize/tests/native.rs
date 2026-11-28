@@ -3,6 +3,7 @@
 use rstest::rstest;
 
 use super::super::*;
+use crate::gateway_authorize::authorize::native::{NativeClientAuthorize, native_client_authorize};
 use crate::gateway_authorize::reply::{GatewayReply, RequestView};
 use crate::gateway_authorize::tests::support::{
     BASE, CALLBACK, Page, SALT, ScriptedTokens, Teams, cipher, client_id, view,
@@ -93,7 +94,7 @@ async fn a_hosted_callback_is_refused_for_a_proxy_grant() {
         panic!("expected an error");
     };
     assert_eq!(error.status, 400);
-    assert_eq!(error.error, OauthErrorCode::InvalidRequest);
+    assert_eq!(error.error, InvalidRequest);
     assert_eq!(
         error.description,
         "a proxy-API grant may only redirect to a loopback address"
@@ -118,7 +119,7 @@ async fn an_unreadable_redirect_is_not_a_loopback() {
         panic!("expected an error");
     };
     assert_eq!(error.status, 400);
-    assert_eq!(error.error, OauthErrorCode::InvalidRequest);
+    assert_eq!(error.error, InvalidRequest);
     assert_eq!(
         error.description,
         "a proxy-API grant may only redirect to a loopback address"
@@ -164,7 +165,7 @@ async fn a_signed_out_native_request_goes_to_the_login_page() {
 #[case::unresolvable(
     ReloadUserFailure::Unresolvable,
     500,
-    OauthErrorCode::ServerError,
+    ServerError,
     "the gateway is not configured to resolve users"
 )]
 #[case::no_active_key(

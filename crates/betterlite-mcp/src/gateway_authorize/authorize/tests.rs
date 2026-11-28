@@ -15,7 +15,6 @@ use crate::gateway_dcr::contracts::{
     CONNECT_FLOW_DEBUG_KEY, CONNECT_FLOW_TTL_SECONDS, MAX_STATE_LENGTH,
 };
 use crate::gateway_dcr::models::ConnectFlow;
-use crate::gateway_dcr::oauth_error::OauthErrorCode;
 use crate::gateway_dcr::sealed::open_sealed;
 
 struct Case {
@@ -39,7 +38,7 @@ impl Case {
         }
     }
 
-    const fn request(&self) -> AuthorizeRequest<'_> {
+    fn request(&self) -> AuthorizeRequest<'_> {
         AuthorizeRequest {
             client_id: &self.client,
             redirect_uri: self.redirect_uri,
@@ -79,7 +78,7 @@ fn an_unknown_client_is_refused_before_any_redirect() {
     case.client = "llm_dcrc_bogus".to_owned();
     let error = rejected_authorize_request(&case.request(), &cipher(SALT)).unwrap();
     assert_eq!(error.status, 400);
-    assert_eq!(error.error, OauthErrorCode::InvalidClient);
+    assert_eq!(error.error, InvalidClient);
     assert_eq!(error.description, "unknown or malformed client_id");
 }
 
@@ -89,7 +88,7 @@ fn a_redirect_uri_must_be_registered() {
     case.redirect_uri = "https://evil.test/cb";
     let error = rejected_authorize_request(&case.request(), &cipher(SALT)).unwrap();
     assert_eq!(error.status, 400);
-    assert_eq!(error.error, OauthErrorCode::InvalidRequest);
+    assert_eq!(error.error, InvalidRequest);
     assert_eq!(
         error.description,
         "redirect_uri is not registered for this client"
@@ -101,7 +100,7 @@ fn response_type_must_be_code() {
     let mut case = Case::valid();
     case.response_type = Some("token");
     let error = rejected_authorize_request(&case.request(), &cipher(SALT)).unwrap();
-    assert_eq!(error.error, OauthErrorCode::UnsupportedResponseType);
+    assert_eq!(error.error, UnsupportedResponseType);
     assert_eq!(error.description, "response_type must be 'code'");
 }
 
@@ -118,7 +117,7 @@ fn pkce_is_required_with_s256(
     case.method = method;
     let error = rejected_authorize_request(&case.request(), &cipher(SALT)).unwrap();
     assert_eq!(error.status, 400);
-    assert_eq!(error.error, OauthErrorCode::InvalidRequest);
+    assert_eq!(error.error, InvalidRequest);
     assert_eq!(error.description, PKCE_DESCRIPTION);
 }
 
@@ -256,13 +255,14 @@ fn a_cipher_without_a_key_refuses_to_seal_the_flow() {
     };
     let error = set_flow_cookie("h-1", &flow(), BASE, &keyless).unwrap_err();
     assert_eq!(error.status, 500);
-    assert_eq!(error.error, OauthErrorCode::ServerError);
+    assert_eq!(error.error, ServerError);
     assert_eq!(error.description, CONNECT_FLOW_SEAL_DESCRIPTION);
 }
 
 #[test]
 fn login_redirect_encodes_the_relative_return_to() {
-    let GatewayReply::Redirect { location, .. } = login_redirect(BASE, "/authorize", None) else {
+    let GatewayReply::Redirect { location, .. } = login_redirect(BASE, "/authorize", None).unwrap()
+    else {
         panic!("expected a redirect");
     };
     assert_eq!(

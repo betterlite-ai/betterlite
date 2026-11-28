@@ -53,11 +53,9 @@ fn a_piece_without_equals_keeps_a_blank_value() {
 
 #[test]
 fn quote_plus_leaves_only_the_python_safe_characters() {
-    assert_eq!(
-        urlencode(&[("q".to_owned(), "a b*~_.-".to_owned())]),
-        "q=a+b%2A~_.-"
-    );
-    assert_eq!(urlencode(&[]), "");
+    let url =
+        append_query_params("http://h/cb", &[("q".to_owned(), "a b*~_.-".to_owned())]).unwrap();
+    assert_eq!(url, "http://h/cb?q=a+b%2A~_.-");
 }
 
 #[test]

@@ -5,9 +5,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use super::*;
 use crate::gateway_authorize::no_cache_headers;
+use crate::gateway_authorize::reply::{ConnectFlowDescription, ConnectFlowState};
 use crate::gateway_authorize::tests::support::{
     CALLBACK, M2M_SERVER, NoBackend, OAUTH_SERVER, Reach, SALT, ScriptedTokens, Vendor, cipher,
-    guard, registry, sealed_view, view,
+    flow, guard, registry, sealed_view, view,
 };
 use crate::gateway_authorize::url_parts::UNREADABLE_URL_DESCRIPTION;
 use crate::gateway_dcr::contracts::{
@@ -17,6 +18,7 @@ use crate::gateway_dcr::contracts::{
 };
 use crate::gateway_dcr::models::{ConnectFlow, GatewayAuthCode};
 use crate::gateway_dcr::oauth_error::OauthErrorCode;
+use crate::gateway_dcr::ports::VendorCredentialState;
 use crate::gateway_dcr::sealed::open_sealed;
 use crate::gateway_dcr::single_use::{
     CLAIM_UNAVAILABLE_DESCRIPTION, ClaimAuthority, ClaimBackendError,
@@ -178,14 +180,14 @@ fn an_open_flow_needs_its_cookie() {
     check_error(
         &open_flow_for(&sealed, "handle-9", Some("alice"), 1_000, &db_cipher).unwrap_err(),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         UNKNOWN_FLOW,
     );
     let no_cookie = view("/authorize/complete", None, &[]);
     check_error(
         &open_flow_for(&no_cookie, "handle-1", Some("alice"), 1_000, &db_cipher).unwrap_err(),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         UNKNOWN_FLOW,
     );
     let junk = view(
@@ -196,7 +198,7 @@ fn an_open_flow_needs_its_cookie() {
     check_error(
         &open_flow_for(&junk, "handle-1", Some("alice"), 1_000, &db_cipher).unwrap_err(),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         UNKNOWN_FLOW,
     );
 }
@@ -217,7 +219,7 @@ fn an_open_flow_expires_at_its_exact_second() {
     check_error(
         &open_flow_for(&sealed, "handle-1", Some("alice"), 1_600, &db_cipher).unwrap_err(),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         UNKNOWN_FLOW,
     );
 }
@@ -229,13 +231,13 @@ fn an_open_flow_needs_the_same_signed_in_user() {
     check_error(
         &open_flow_for(&sealed, "handle-1", None, 1_000, &db_cipher).unwrap_err(),
         401,
-        OauthErrorCode::LoginRequired,
+        LoginRequired,
         "sign in to LiteLLM to finish connecting",
     );
     check_error(
         &open_flow_for(&sealed, "handle-1", Some("bob"), 1_000, &db_cipher).unwrap_err(),
         403,
-        OauthErrorCode::AccessDenied,
+        AccessDenied,
         "the signed-in user does not match this connect flow",
     );
 }
@@ -336,7 +338,7 @@ async fn a_bad_decision_is_refused_before_the_flow_opens() {
     check_error(
         &error_of(reply),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         "decision must be 'approve' or 'deny'",
     );
 }
@@ -353,7 +355,7 @@ async fn a_bad_delivery_is_refused_before_the_flow_opens() {
     check_error(
         &error_of(reply),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         "delivery must be 'redirect' or 'manual'",
     );
 }
@@ -373,12 +375,7 @@ async fn an_absent_form_reaches_the_flow_lookup() {
         &tokens,
     )
     .await;
-    check_error(
-        &error_of(reply),
-        400,
-        OauthErrorCode::InvalidRequest,
-        UNKNOWN_FLOW,
-    );
+    check_error(&error_of(reply), 400, InvalidRequest, UNKNOWN_FLOW);
 }
 
 #[tokio::test]
@@ -587,7 +584,7 @@ async fn a_stale_scoped_flow_cannot_be_completed() {
     check_error(
         &error_of(reply),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         "the requested MCP server is no longer available",
     );
 }
@@ -599,7 +596,7 @@ async fn an_unconnected_scoped_flow_cannot_be_completed() {
     check_error(
         &error_of(reply),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         "authorize the requested MCP server before finishing",
     );
 }
@@ -625,7 +622,7 @@ async fn an_unreachable_scoped_flow_is_stale() {
     check_error(
         &error_of(reply),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         "the requested MCP server is no longer available",
     );
 }
@@ -659,7 +656,7 @@ async fn a_completed_flow_cannot_be_completed_twice() {
     check_error(
         &error_of(replayed),
         400,
-        OauthErrorCode::InvalidRequest,
+        InvalidRequest,
         "this connect flow was already completed; restart the connection",
     );
 }

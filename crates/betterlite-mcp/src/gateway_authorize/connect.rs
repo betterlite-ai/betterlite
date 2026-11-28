@@ -45,7 +45,7 @@ pub struct CompleteFlowRequest<'call> {
     pub form: FlowForm<'call>,
 }
 
-pub struct ConnectPorts<'ports, V, R> {
+pub struct ConnectPorts<'ports, V: ?Sized, R: ?Sized> {
     pub registry: &'ports ServerRegistry,
     pub vendor: &'ports V,
     pub reachability: &'ports R,
@@ -147,6 +147,7 @@ pub fn manual_delivery_page(callback_url: &str) -> String {
     )
 }
 
+// byok_authorization_html's copy is private and outside this task's scope; html.escape(quote=True) needs these five.
 fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")

@@ -11,14 +11,13 @@ use crate::server_record::{MCPServer, OAuth2Flow};
 
 #[must_use]
 pub fn is_proxy_api_resource(base_url: &str, resource: Option<&str>) -> bool {
-    let Some(resource) = resource else {
+    let Some(present) = resource else {
         return false;
     };
-    canonical_resource_uri(resource).is_ok_and(|canonical| {
-        canonical.is_some_and(|canonical| {
-            canonicalize_url_identity(base_url).is_ok_and(|base| canonical == base)
-        })
-    })
+    let Ok(Some(canonical_uri)) = canonical_resource_uri(present) else {
+        return false;
+    };
+    canonicalize_url_identity(base_url).is_ok_and(|base| canonical_uri == base)
 }
 
 #[must_use]

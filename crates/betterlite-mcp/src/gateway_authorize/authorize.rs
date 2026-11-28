@@ -8,7 +8,7 @@ use crate::gateway_authorize::oauth_error;
 use crate::gateway_authorize::reply::{FlowCookie, FlowTokenSource, GatewayReply, RequestView};
 use crate::gateway_authorize::scope::resolve_scoped_resource_server;
 use crate::gateway_authorize::url_parts::{
-    append_query_params, cookie_path_and_secure, flow_cookie_name, relative_request_url, urlencode,
+    append_query_params, cookie_path_and_secure, flow_cookie_name, relative_request_url,
 };
 use crate::gateway_dcr::contracts::{CONNECT_FLOW_TTL_SECONDS, MAX_STATE_LENGTH};
 use crate::gateway_dcr::models::ConnectFlow;
@@ -91,14 +91,15 @@ pub fn rejected_authorize_request(
     None
 }
 
-#[must_use]
-pub fn login_redirect(base_url: &str, path: &str, query: Option<&str>) -> GatewayReply {
+pub fn login_redirect(
+    base_url: &str,
+    path: &str,
+    query: Option<&str>,
+) -> Result<GatewayReply, OauthError> {
     let return_to = relative_request_url(path, query);
-    let location = format!(
-        "{base_url}/sso/key/generate?{}",
-        urlencode(&[("return_to".to_owned(), return_to)])
-    );
-    GatewayReply::redirect(location)
+    let login_url = format!("{base_url}/sso/key/generate");
+    let location = append_query_params(&login_url, &[("return_to".to_owned(), return_to)])?;
+    Ok(GatewayReply::redirect(location))
 }
 
 #[must_use]
@@ -162,11 +163,11 @@ fn aggregate_reply(
         return Err(error);
     }
     let Some(user_id) = call.session_user_id else {
-        return Ok(login_redirect(
+        return login_redirect(
             &call.view.base_url,
             &call.view.path,
             call.view.query.as_deref(),
-        ));
+        );
     };
     let scoped = resolve_scoped_resource_server(registry, &call.view.base_url, call.resource);
     let handle = tokens.fresh_token();

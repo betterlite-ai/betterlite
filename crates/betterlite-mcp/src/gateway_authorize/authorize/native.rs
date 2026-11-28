@@ -61,11 +61,11 @@ where
         return Err(oauth_error(400, InvalidRequest, LOOPBACK_DESCRIPTION));
     }
     let Some(user_id) = call.session_user_id else {
-        return Ok(login_redirect(
+        return login_redirect(
             &call.view.base_url,
             &call.view.path,
             call.view.query.as_deref(),
-        ));
+        );
     };
     let consent = match teams.consent_teams(user_id).await {
         Ok(consent) => consent,
