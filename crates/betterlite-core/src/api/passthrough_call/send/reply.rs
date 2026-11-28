@@ -71,6 +71,7 @@ fn synthetic_stream(
                 PassthroughCallConfig {
                     tag: context.tag,
                     environment: Arc::clone(&context.environment),
+                    aws: Arc::clone(&context.aws),
                 },
                 target,
             )),

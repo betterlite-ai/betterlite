@@ -24,7 +24,7 @@ use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
 use thiserror::Error;
 use url::Url;
 
-use super::auth;
+use super::aws::AwsPassthrough;
 use super::logging::NoSpendCollector;
 use super::urls;
 
@@ -86,10 +86,11 @@ impl From<ConfigError> for Fault {
     }
 }
 
-// The eight configs LiteLLM's pass-through factory returns, chosen by B5360's tag; the Arc keeps the caller's map alive for the relay
+// The eight configs LiteLLM's pass-through factory returns, chosen by B5360's tag; the Arcs keep the caller's map and the AWS port alive for the relay
 pub struct PassthroughCallConfig {
     pub tag: PassthroughConfigTag,
     pub environment: Arc<BTreeMap<String, String>>,
+    pub aws: Arc<dyn AwsPassthrough>,
 }
 
 // B10044's reader of the AZURE_* variables, shared by the Azure URL arm and its key branch
@@ -174,12 +175,13 @@ impl BasePassthroughConfig for PassthroughCallConfig {
         urls::complete_url(self, request)
     }
 
+    // send.rs signs the two AWS tags through the port; every other config leaves the headers as sent
     fn sign_request(
         &self,
         headers: Headers,
-        context: &PassthroughSigning<'_>,
+        _context: &PassthroughSigning<'_>,
     ) -> Result<(Headers, Option<Vec<u8>>), Self::Error> {
-        auth::sign_request(self.tag, headers, context)
+        Ok((headers, None))
     }
 
     fn create_stream_collector(

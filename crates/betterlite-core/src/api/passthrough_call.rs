@@ -1,7 +1,7 @@
 mod auth;
+pub mod aws;
 pub mod config;
 pub mod logging;
-mod mantle;
 mod params;
 mod send;
 mod urls;
@@ -9,7 +9,7 @@ mod wire;
 
 mod tests;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,12 +24,7 @@ use betterlite_http::interactions::base::{
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
-};
+use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Object;
 use bytes::Bytes;
@@ -37,6 +32,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
+use self::aws::{AwsPassthrough, resolve_provider};
 use self::config::{ConfigError, Fault, PassthroughCallConfig};
 use self::logging::RelayLogging;
 use self::send::{Failure, run};
@@ -107,6 +103,8 @@ pub enum PassthroughCallError {
     ProviderNotFound(String),
     #[error(transparent)]
     Resolution(#[from] ResolutionError),
+    #[error("{0}")]
+    MantleEndpoint(#[source] ConfigError),
     #[error("{}", .0.message)]
     Mapped(Box<ProviderError>),
     #[error(transparent)]
@@ -129,10 +127,11 @@ pub async fn allm_passthrough_route(
     logging: &mut LoggingState,
     http: &ProxiedClient,
     environment: &BTreeMap<String, String>,
+    aws: &Arc<dyn AwsPassthrough>,
 ) -> Result<PassthroughReply, PassthroughCallError> {
     args.extra
         .insert("allm_passthrough_route".to_owned(), JsonValue::Bool(true));
-    let resolved = resolve_provider(&args, environment)?;
+    let resolved = resolve_provider(&args, environment, aws)?;
     let Some(tag) = config_tag(&resolved) else {
         return Err(PassthroughCallError::ProviderNotFound(
             resolved.provider.slug().to_owned(),
@@ -142,6 +141,7 @@ pub async fn allm_passthrough_route(
     let config = PassthroughCallConfig {
         tag,
         environment: Arc::clone(&shared_environment),
+        aws: Arc::clone(aws),
     };
     match run(&args, &resolved, &config, logging, http).await {
         Ok(reply) => Ok(reply),
@@ -150,35 +150,8 @@ pub async fn allm_passthrough_route(
             headers: status.headers,
             body: status.body,
         }),
-        Err(Failure::Fault(fault)) => Err(map_fault(&args, fault, &shared_environment)),
+        Err(Failure::Fault(fault)) => Err(map_fault(&args, fault, &shared_environment, aws)),
     }
-}
-
-// get_llm_provider: the catalog, names and credentials come from outside; the Mantle endpoint comes from the call
-fn resolve_provider(
-    args: &PassthroughCallArgs,
-    environment: &BTreeMap<String, String>,
-) -> Result<ResolvedModel, ResolutionError> {
-    let catalog = ModelCatalog::default();
-    let known_model_names = BTreeSet::new();
-    let custom_providers = BTreeSet::new();
-    resolve(
-        &ResolutionRequest {
-            model: &args.model,
-            custom_llm_provider: args.custom_llm_provider.as_deref(),
-            api_base: args.api_base.as_deref(),
-            api_key: args.api_key.as_ref(),
-        },
-        &ResolutionContext {
-            catalog: &catalog,
-            known_model_names: &known_model_names,
-            custom_providers: &custom_providers,
-            environment,
-            registry: JSONProviderRegistry::default(),
-            policies: mantle::policies(args),
-            globals: GlobalCredentials::default(),
-        },
-    )
 }
 
 // ProviderConfigManager.get_provider_passthrough_config, through B5360's tag
@@ -194,10 +167,11 @@ fn map_fault(
     args: &PassthroughCallArgs,
     fault: Fault,
     environment: &Arc<BTreeMap<String, String>>,
+    aws: &Arc<dyn AwsPassthrough>,
 ) -> PassthroughCallError {
-    let resolved = match resolve_provider(args, environment.as_ref()) {
+    let resolved = match resolve_provider(args, environment.as_ref(), aws) {
         Ok(resolved) => resolved,
-        Err(error) => return PassthroughCallError::Resolution(error),
+        Err(error) => return error,
     };
     let Some(tag) = config_tag(&resolved) else {
         return match fault {
@@ -219,6 +193,7 @@ fn map_fault(
     let config = PassthroughCallConfig {
         tag,
         environment: Arc::clone(environment),
+        aws: Arc::clone(aws),
     };
     match handle_error(&config, failure) {
         CallFailure::Provider(error) => {

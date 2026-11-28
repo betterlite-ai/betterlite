@@ -21,6 +21,7 @@ use tokio_util::task::TaskTracker;
 use url::Url;
 
 use super::auth::validate as validate_auth;
+use super::aws::{AwsFlavor, AwsPassthrough};
 use super::config::{ConfigError, Fault, FaultDetail, PassthroughCallConfig};
 use super::logging::{self, RelayLogging};
 use super::params;
@@ -56,6 +57,7 @@ impl From<ConfigError> for Failure {
 pub(crate) struct RelayContext<'call> {
     pub tag: PassthroughConfigTag,
     pub environment: Arc<BTreeMap<String, String>>,
+    pub aws: Arc<dyn AwsPassthrough>,
     pub model: &'call str,
     pub provider: &'call str,
     pub endpoint: &'call str,
@@ -80,7 +82,8 @@ pub(crate) async fn run(
     let client = params::client(http, &timeouts)?;
     logging::record_environment(state, args, resolved, &call)?;
     let upstream = upstream(config, args, resolved, &call.params, &client).await?;
-    let (headers, signing) = signed_headers(config, args, resolved, &call.params, &upstream)?;
+    let (headers, signing) =
+        signed_headers(config, args, resolved, &call.params, &upstream).await?;
     let json = replaced_model(args.json.as_ref(), &resolved.model);
     let empty = Object::new();
     let streaming = config.is_streaming_request(
@@ -117,6 +120,7 @@ fn relay_context<'call>(
     RelayContext {
         tag: config.tag,
         environment: Arc::clone(&config.environment),
+        aws: Arc::clone(&config.aws),
         model: &resolved.model,
         provider: resolved.provider.slug(),
         endpoint: &args.endpoint,
@@ -160,22 +164,16 @@ async fn upstream(
 }
 
 // steps 9 and 10: the caller's pass-through headers, then the provider's signature over them
-fn signed_headers(
+async fn signed_headers(
     config: &PassthroughCallConfig,
     args: &PassthroughCallArgs,
     resolved: &ResolvedModel,
     params: &Object,
     upstream: &Upstream,
 ) -> Result<(Headers, Option<Vec<u8>>), Failure> {
-    let mut requested = IndexMap::new();
-    for (name, value) in args.request_headers.iter().flatten() {
-        requested.insert(name.clone(), value.clone());
-    }
-    let auth_headers: IndexMap<String, String> = upstream
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
+    let requested: IndexMap<String, String> =
+        args.request_headers.iter().flatten().cloned().collect();
+    let auth_headers: IndexMap<String, String> = upstream.headers.iter().cloned().collect();
     let headers = forward_headers_from_request(&requested, auth_headers, false)
         .into_iter()
         .collect();
@@ -185,7 +183,20 @@ fn signed_headers(
         api_base: upstream.url.as_str(),
         model: Some(&resolved.model),
     };
-    Ok(config.sign_request(headers, &signing)?)
+    let flavor = match config.tag {
+        PassthroughConfigTag::Bedrock => Some(AwsFlavor::Bedrock),
+        PassthroughConfigTag::BedrockMantle => Some(AwsFlavor::Mantle),
+        PassthroughConfigTag::VLLM
+        | PassthroughConfigTag::Azure
+        | PassthroughConfigTag::AzureAI
+        | PassthroughConfigTag::GigaChat
+        | PassthroughConfigTag::Watsonx
+        | PassthroughConfigTag::NvidiaNim => None,
+    };
+    let Some(flavor) = flavor else {
+        return Ok(config.sign_request(headers, &signing)?);
+    };
+    Ok(config.aws.sign_request(flavor, headers, &signing).await?)
 }
 
 async fn send(
@@ -206,6 +217,7 @@ async fn send(
         PassthroughCallConfig {
             tag: context.tag,
             environment: Arc::clone(&context.environment),
+            aws: Arc::clone(&context.aws),
         },
         Arc::clone(&relay_logging),
         TaskTracker::new(),
