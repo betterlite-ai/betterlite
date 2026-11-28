@@ -19,9 +19,6 @@ use outcome::{MessagesDispatch, MessagesOutcome, MessagesRouting};
 use plan::{MessagesRoute, MessagesRouteInput, RouteFlag, plan_messages_route, team_id_from_data};
 use steps::{CallStepError, mock_params_disallowed, required_param_missing};
 
-// B9964's ROUTE_ENDPOINT_MAPPING has no entry for it, so the route type is also the error's name
-const ROUTE_TYPE: &str = "anthropic_messages";
-
 // The settings the router accepts as per-request kwargs, in LiteLLM's order
 const OVERRIDE_KEYS: [&str; 8] = [
     "fallbacks",
@@ -34,7 +31,17 @@ const OVERRIDE_KEYS: [&str; 8] = [
     "enable_tag_filtering",
 ];
 
+// The ports and settings one route's call steps take; the route type travels beside them so every error names the route
+pub struct MessagesCallParts {
+    pub dispatch: Arc<dyn MessagesDispatch>,
+    pub routing: Option<Arc<dyn MessagesRouting>>,
+    pub read_through: Option<Arc<dyn ModelReadThrough>>,
+    pub mock: MockTestingParams,
+    pub user_model: Option<String>,
+}
+
 pub struct MessagesCallSteps {
+    route_type: &'static str,
     dispatch: Arc<dyn MessagesDispatch>,
     routing: Option<Arc<dyn MessagesRouting>>,
     read_through: Option<Arc<dyn ModelReadThrough>>,
@@ -44,19 +51,14 @@ pub struct MessagesCallSteps {
 
 impl MessagesCallSteps {
     #[must_use]
-    pub const fn new(
-        dispatch: Arc<dyn MessagesDispatch>,
-        routing: Option<Arc<dyn MessagesRouting>>,
-        read_through: Option<Arc<dyn ModelReadThrough>>,
-        mock: MockTestingParams,
-        user_model: Option<String>,
-    ) -> Self {
+    pub fn new(route_type: &'static str, parts: MessagesCallParts) -> Self {
         Self {
-            dispatch,
-            routing,
-            read_through,
-            mock,
-            user_model,
+            route_type,
+            dispatch: parts.dispatch,
+            routing: parts.routing,
+            read_through: parts.read_through,
+            mock: parts.mock,
+            user_model: parts.user_model,
         }
     }
 
@@ -82,7 +84,7 @@ impl MessagesCallSteps {
         is_proxy_admin: bool,
     ) -> Result<MessagesOutcome, MessagesCallError> {
         let mut data = source.clone();
-        required_param_missing(ROUTE_TYPE, &data)?;
+        required_param_missing(self.route_type, &data)?;
         mock_params_disallowed(&data, self.mock.allowed)?;
         data.remove("enable_tag_filtering");
         let input = route_input(&data, is_proxy_admin, self.user_model.as_deref());
@@ -113,7 +115,7 @@ impl MessagesCallSteps {
             MessagesRoute::MissingModel => Err(MessagesCallError::MissingModel),
             MessagesRoute::NotFound => {
                 Err(MessagesCallError::NotFound(ProxyModelNotFoundError::new(
-                    route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                    route_endpoint(self.route_type).unwrap_or(self.route_type),
                     input.model.as_deref().unwrap_or_default(),
                     true,
                 )))
@@ -131,7 +133,7 @@ impl MessagesCallSteps {
         };
         let Some(result) = routing.a2a_agent(data).await else {
             return Err(MessagesCallError::NotFound(ProxyModelNotFoundError::new(
-                route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                route_endpoint(self.route_type).unwrap_or(self.route_type),
                 input.model.as_deref().unwrap_or_default(),
                 true,
             )));
@@ -194,14 +196,15 @@ fn merge_overrides(data: &mut JsonMap) {
 }
 
 fn routing_missing() -> MessagesCallError {
-    MessagesCallError::Call(CallFailure {
+    MessagesCallError::Call(Box::new(CallFailure {
         status: None,
         message: "the route chose the router, but the request carries no routing port".to_owned(),
         error_type: None,
         param: None,
         headers: BTreeMap::new(),
         timeout: None,
-    })
+        cooldown: None,
+    }))
 }
 
 // What B081's generic error answer reads off LiteLLM's exception
@@ -213,6 +216,7 @@ pub struct CallFailure {
     pub param: Option<String>,
     pub headers: BTreeMap<String, String>,
     pub timeout: Option<f64>,
+    pub cooldown: Option<f64>,
 }
 
 // LiteLLM's AnthropicContextManagementError, which /v1/messages answers in the Anthropic shape
@@ -227,8 +231,9 @@ pub struct Context {
 pub enum MessagesCallError {
     #[error(transparent)]
     Steps(#[from] CallStepError),
+    // boxed to keep the error under result_large_err's 128-byte limit
     #[error("{}", .0.message)]
-    Call(CallFailure),
+    Call(Box<CallFailure>),
     #[error(transparent)]
     Context(#[from] Context),
     #[error("litellm.PermissionDeniedError: Model is blocked")]

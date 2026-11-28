@@ -9,12 +9,13 @@ use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use secrecy::ExposeSecret as _;
 
+use super::MessagesCallError;
 use super::outcome::{MessagesDispatch, MessagesOutcome, MessagesRouting};
-use super::{MessagesCallError, ROUTE_TYPE};
 use crate::keepalive_interval::DeploymentLookup;
 use crate::routing::simple_shuffle::{pick_deployment, pick_matching};
 
 struct StandaloneRouting {
+    route_type: &'static str,
     executor: Arc<ChatExecutor>,
     dispatch: Arc<dyn MessagesDispatch>,
     model_names: BTreeSet<String>,
@@ -24,6 +25,7 @@ struct StandaloneRouting {
 // What B081's routes(state) builds until the production router replaces it
 #[must_use]
 pub fn standalone_routing(
+    route_type: &'static str,
     executor: Arc<ChatExecutor>,
     dispatch: Arc<dyn MessagesDispatch>,
 ) -> Arc<dyn MessagesRouting> {
@@ -38,6 +40,7 @@ pub fn standalone_routing(
         .map(|deployment| deployment.litellm_model.clone())
         .collect();
     Arc::new(StandaloneRouting {
+        route_type,
         executor,
         dispatch,
         model_names,
@@ -100,7 +103,7 @@ impl MessagesRouting for StandaloneRouting {
         let deployment =
             choose_deployment(&self.executor, &model, specific_deployment).map_err(|_error| {
                 MessagesCallError::NotFound(ProxyModelNotFoundError::new(
-                    route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                    route_endpoint(self.route_type).unwrap_or(self.route_type),
                     &model,
                     true,
                 ))

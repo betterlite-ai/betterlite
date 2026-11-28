@@ -73,12 +73,18 @@ impl TlsPolicy {
                 "SSL_ECDH_CURVE",
                 settings.ssl_ecdh_curve.as_ref(),
             ),
-            user_agent: environment
-                .get("LITELLM_USER_AGENT")
-                .cloned()
-                .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION"))),
+            user_agent: user_agent(environment),
         })
     }
+}
+
+// TlsPolicy::resolve reads LITELLM_USER_AGENT and falls back to this crate's own name
+#[must_use]
+pub fn user_agent(environment: &BTreeMap<String, String>) -> String {
+    environment
+        .get("LITELLM_USER_AGENT")
+        .cloned()
+        .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION")))
 }
 
 fn http2_enabled(
