@@ -5,7 +5,7 @@ use rstest::rstest;
 use crate::hosted_platform_dispatch::handler::HandlerError;
 use crate::regional_host_dispatch::error::DispatchError;
 
-use super::support::{ChatFixture, ChatRecorder, chat_dispatch, secret, secret_text};
+use super::support::{ChatFixture, ChatRecorder, chat_dispatch, headers, secret, secret_text};
 
 struct Sources {
     request_key: Option<&'static str>,
@@ -127,11 +127,13 @@ fn minimax_passes_the_request_headers_and_provider_config_as_they_came() {
     let mut fixture = ChatFixture::new();
     fixture.provider = String::from("minimax");
     fixture.provider_config = Some(ChatConfigTag::MinimaxChat);
+    fixture.headers = Some(headers(&[("x-request", "1")]));
+    fixture.settings.headers = Some(headers(&[("x-global", "2")]));
     let handler = ChatRecorder::succeeding();
     let (outcome, _state) = chat_dispatch(ChatConfigTag::MinimaxChat, &fixture, &handler);
     outcome.expect("the minimax arm answers");
     let call = handler.first();
-    assert_eq!(call.headers, None);
+    assert_eq!(call.headers, Some(headers(&[("x-request", "1")])));
     assert_eq!(call.provider_config, Some(ChatConfigTag::MinimaxChat));
 }
 
