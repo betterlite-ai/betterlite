@@ -280,7 +280,10 @@ fn int_of(text: &str) -> Option<i64> {
     );
     let mut digits = String::with_capacity(unsigned.len());
     for group in unsigned.split('_') {
-        if group.is_empty() || !group.bytes().all(|byte| byte.is_ascii_digit()) {
+        if group.is_empty() {
+            return None;
+        }
+        if !group.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
         digits.push_str(group);
