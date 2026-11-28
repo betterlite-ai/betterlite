@@ -236,6 +236,7 @@ fn volcengine_responses_config_falls_back_to_the_environment() {
     let empty = Settings::default();
     let empty_config = responses_config(&ResponsesConfigTag::VolcEngine, &empty)
         .expect("the tag still builds a config");
+    // the text is the VolcengineResponsesError message; LiteLLM's Responses text differs (docs/deviations/B8312.yaml)
     let error = empty_config
         .validate_environment(&BTreeMap::new(), None)
         .expect_err("the missing key is an error");
