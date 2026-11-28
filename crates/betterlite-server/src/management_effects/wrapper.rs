@@ -1,15 +1,21 @@
+use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::error::Error as StdError;
 use std::future::Future;
 use std::sync::Arc;
 
-use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use async_trait::async_trait;
+use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
+use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
+use betterlite_logging::otel::service::management::ManagementPayload;
 use betterlite_logging::otel::v2_callback::live_span::LiveSpan;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use serde::Serialize;
 
+use crate::alerting::model_alerts::key_event::VirtualKeyEvent;
 use crate::failure_hook::ports::Clock;
 use crate::management_effects::data::ManagementData;
 use crate::management_effects::eviction::{ManagementCacheEviction, delete_cached_keys};
@@ -187,4 +193,69 @@ where
             Err(failure.error)
         }
     }
+}
+
+// LiteLLM times each call with datetime.now(), so the wrapper's clock is the wall clock
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> DateTime<FixedOffset> {
+        Utc::now().fixed_offset()
+    }
+}
+
+// A route with no alert, parent span or cached key hands the wrapper this transport for all three effects
+pub struct NoEffects;
+
+#[async_trait]
+impl ManagementAlertTransport for NoEffects {
+    type Error = Infallible;
+
+    async fn send_management_event_alert(
+        &self,
+        _key_event: &VirtualKeyEvent,
+        _alert_type: AlertType,
+        _event_name: &str,
+    ) -> Result<(), Infallible> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ManagementSpanTransport for NoEffects {
+    type Error = Infallible;
+
+    async fn success_hook(
+        &self,
+        _payload: &ManagementPayload,
+        _parent_otel_span: Option<&LiveSpan>,
+    ) -> Result<(), Infallible> {
+        Ok(())
+    }
+
+    async fn failure_hook(
+        &self,
+        _payload: &ManagementPayload,
+        _parent_otel_span: Option<&LiveSpan>,
+    ) -> Result<(), Infallible> {
+        Ok(())
+    }
+}
+
+impl ManagementCacheEviction for NoEffects {
+    type Error = Infallible;
+
+    fn delete_cache(&self, _key: &str) -> Result<(), Infallible> {
+        Ok(())
+    }
+}
+
+// LiteLLM's bare UserAPIKeyAuth() for a call that carries no key: the wrapper's default auth
+pub fn default_management_auth(
+    source: Option<&UserAPIKeyAuth>,
+) -> Result<UserAPIKeyAuth, AuthError> {
+    let Some(auth) = source else {
+        return UserAPIKeyAuth::construct(AuthInput::Dict(BTreeMap::new()));
+    };
+    Ok(auth.clone())
 }

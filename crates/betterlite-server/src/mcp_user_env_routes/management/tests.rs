@@ -2,8 +2,8 @@
 
 use chrono::{TimeDelta, Utc};
 
-use super::SystemClock;
 use crate::failure_hook::ports::Clock as _;
+use crate::management_effects::wrapper::SystemClock;
 
 #[test]
 fn the_management_clock_reads_the_wall_clock() {

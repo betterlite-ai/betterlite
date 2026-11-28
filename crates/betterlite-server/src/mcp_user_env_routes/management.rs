@@ -1,30 +1,20 @@
-use std::collections::BTreeMap;
-use std::convert::Infallible;
 use std::future::Future;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use axum::Extension;
-use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
-use betterlite_config::sections::alert_settings::types::AlertType;
+use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::request_body::Settings as RequestBodySettings;
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_logging::otel::service::management::ManagementPayload;
-use betterlite_logging::otel::v2_callback::live_span::LiveSpan;
 use betterlite_mcp::registry::resolution::ServerAccessCheck;
 use betterlite_models::model_registration::JsonObject;
-use chrono::{DateTime, FixedOffset, Utc};
 use serde::Serialize;
 
-use crate::alerting::model_alerts::key_event::VirtualKeyEvent;
 use crate::auth::auth_identity::AuthContext;
-use crate::failure_hook::ports::Clock;
-use crate::management_effects::eviction::ManagementCacheEviction;
 use crate::management_effects::wrapper::{
-    ManagementCall, ManagementDeps, ManagementFailure, management_endpoint_wrapper,
+    ManagementCall, ManagementDeps, ManagementFailure, NoEffects, SystemClock,
+    default_management_auth, management_endpoint_wrapper,
 };
-use crate::management_payload::alerts::ManagementAlertTransport;
-use crate::management_payload::otel_span::{ManagementSpanDeps, ManagementSpanTransport};
+use crate::management_payload::otel_span::ManagementSpanDeps;
 use crate::mcp::management_server_access::AccessibleServerSources;
 
 use super::UserEnvRoutesState;
@@ -50,11 +40,8 @@ where
         let source_key = caller
             .as_ref()
             .and_then(|extension| extension.0.principal.source_key.0.clone());
-        let auth = match &source_key {
-            Some(key) => key.clone(),
-            None => UserAPIKeyAuth::construct(AuthInput::Dict(BTreeMap::new()))
-                .map_err(UserEnvRouteError::DefaultAuth)?,
-        };
+        let auth =
+            default_management_auth(source_key.as_ref()).map_err(UserEnvRouteError::DefaultAuth)?;
         let limits = ApiLimits::default();
         let body_settings = RequestBodySettings::default();
         let effects = NoEffects;
@@ -103,60 +90,6 @@ fn management_deps<'deps>(
         cache: effects,
         default_auth: auth,
         clock: Arc::new(SystemClock),
-    }
-}
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> DateTime<FixedOffset> {
-        Utc::now().fixed_offset()
-    }
-}
-
-// The wrapper's three effects are wired, and a per-user env var call has no alert name, parent span or key id
-struct NoEffects;
-
-#[async_trait]
-impl ManagementAlertTransport for NoEffects {
-    type Error = Infallible;
-
-    async fn send_management_event_alert(
-        &self,
-        _key_event: &VirtualKeyEvent,
-        _alert_type: AlertType,
-        _event_name: &str,
-    ) -> Result<(), Infallible> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl ManagementSpanTransport for NoEffects {
-    type Error = Infallible;
-
-    async fn success_hook(
-        &self,
-        _payload: &ManagementPayload,
-        _parent_otel_span: Option<&LiveSpan>,
-    ) -> Result<(), Infallible> {
-        Ok(())
-    }
-
-    async fn failure_hook(
-        &self,
-        _payload: &ManagementPayload,
-        _parent_otel_span: Option<&LiveSpan>,
-    ) -> Result<(), Infallible> {
-        Ok(())
-    }
-}
-
-impl ManagementCacheEviction for NoEffects {
-    type Error = Infallible;
-
-    fn delete_cache(&self, _key: &str) -> Result<(), Infallible> {
-        Ok(())
     }
 }
 
