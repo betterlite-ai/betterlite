@@ -2,6 +2,7 @@ use std::str::from_utf8;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
@@ -23,7 +24,7 @@ use super::credentials::{HUGGINGFACE_EMBEDDING_KEY, Sources, huggingface_env, re
 use super::hub::{PrefetchedTag, headers_from, model_info};
 use super::json::{self, additional_args, header_values};
 use super::transport::WireRequest;
-use super::{CallLogging, DispatchDeps, HubDispatchError};
+use super::{DispatchDeps, HubDispatchError};
 
 type BodyObject = IndexMap<String, Json>;
 
@@ -124,7 +125,7 @@ fn status_failure(response: &UpstreamResponse) -> Result<(), HubDispatchError> {
 fn received(
     call: &EmbeddingCall<'_>,
     encoder: &dyn OrdinaryEncoder,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     prepared: PreparedCall,
     response: &UpstreamResponse,
 ) -> Result<EmbeddingResponse, HubDispatchError> {
@@ -144,7 +145,7 @@ fn received(
 pub async fn embed<'call>(
     call: &'call EmbeddingCall<'_>,
     deps: &'call DispatchDeps<'_>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> Result<EmbeddingResponse, HubDispatchError> {
     let prepared = prepare_call(call, deps).await?;
     let sent = PreCall {

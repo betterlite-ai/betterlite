@@ -9,11 +9,11 @@ use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_vertex::genai::session::call::GenaiCall;
 use indexmap::IndexMap;
 
 use super::{
-    ConvertError, GenaiCall, NativeErrorPayload, decision_json, decision_object, parse,
-    reject_files,
+    ConvertError, NativeErrorPayload, decision_json, decision_object, parse, reject_files,
 };
 
 fn context(message: &str, model: &str, provider: &str) -> ErrorContext {
@@ -116,14 +116,16 @@ fn request_absent_optional_fields_stay_none() {
 fn request_negative_timeout_is_refused() {
     let call: GenaiCall =
         parse(r#"{"model": "m", "contents": [], "timeout": -1, "kwargs": {}}"#).unwrap();
-    assert!(matches!(call.timeout(), Err(ConvertError::Timeout { .. })));
+    call.timeout()
+        .expect_err("a negative number of seconds is not a duration");
 }
 
 #[test]
 fn request_oversized_timeout_is_refused() {
     let call: GenaiCall =
         parse(r#"{"model": "m", "contents": [], "timeout": 1e300, "kwargs": {}}"#).unwrap();
-    assert!(matches!(call.timeout(), Err(ConvertError::Timeout { .. })));
+    call.timeout()
+        .expect_err("an oversized number of seconds is not a duration");
 }
 
 #[test]

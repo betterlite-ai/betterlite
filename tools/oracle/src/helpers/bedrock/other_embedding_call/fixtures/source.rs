@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::embedding_call::CredentialSource;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_secret_managers::secret_lookup::SecretLookup;

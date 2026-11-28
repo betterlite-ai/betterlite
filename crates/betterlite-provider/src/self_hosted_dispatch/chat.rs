@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_models::lemonade_model_metadata::DEFAULT_API_KEY as LEMONADE_DEFAULT_API_KEY;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -10,7 +11,7 @@ use crate::petals::error::{ENGINE_MISSING_MESSAGE, ENGINE_STATUS, PetalsSetupErr
 use crate::vllm::completion::ENGINE_ERROR;
 
 use super::call::{CompletionCall, SelfHostedConfig};
-use super::context::{CallLogging, DispatchContext, first_nonempty, first_secret, ollama_api_base};
+use super::context::{DispatchContext, first_nonempty, first_secret, ollama_api_base};
 use super::error::DispatchError;
 use super::handler::ChatCompletionHandler;
 use super::logging;
@@ -28,7 +29,7 @@ pub fn dispatch<R>(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Option<Result<R, DispatchError>> {
     match tag {
         ChatConfigTag::HostedVllmChat => Some(logged_hosted_vllm(context, handler, log)),
@@ -98,7 +99,7 @@ fn hosted_vllm(context: &DispatchContext<'_>) -> CompletionCall {
 fn logged_hosted_vllm<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<R, DispatchError> {
     let reply = handler
         .complete(&hosted_vllm(context))

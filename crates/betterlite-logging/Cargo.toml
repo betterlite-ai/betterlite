@@ -25,6 +25,7 @@ betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
+betterlite-sigv4 = { path = "../betterlite-sigv4" }
 chrono.workspace = true
 csv = "1.4.0"
 flate2 = "1.1.5"

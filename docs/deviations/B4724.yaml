@@ -1,0 +1,9 @@
+task: B4724
+deviations:
+  - what: 'A 422 body lists each validation issue with type, loc and msg only, where the FastAPI RequestValidationError that LiteLLM runs writes input, ctx and url for the same failure.'
+    why: 'The input field echoes the value that failed, and on this route every value is a per-user secret, so {"values": {"TOKEN": 7}} would print 7 back and a body of another shape would print the raw body text; ctx and url add nothing a client needs to fix the request. The route contract is MCPUserEnvVarsRequest with a map of strings, so no working setup can rely on the echoed value.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2845-L2857
+  - what: 'A json_invalid issue reports loc ["body"], where FastAPI appends the failing character position and reports loc ["body", 12] for a body it cannot parse.'
+    why: 'The position is an offset out of CPython json module internals, not a value of the declared type, and a client that rejects the malformed body reads the same status, type and message without it. The Rust decoder reports the failure class and not an offset it would have to reproduce from another parser.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2845-L2857
+kept_bugs: []

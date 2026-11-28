@@ -5,6 +5,8 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
+use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;
@@ -16,9 +18,9 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_provider::api::speech_http::error::{ClientError, SpeechError};
+use betterlite_provider::api::speech_http::error::SpeechError;
 use betterlite_provider::api::speech_http::{
-    ClientSource, LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps,
+    LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechTransport,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -108,7 +110,7 @@ impl Fixture {
         call: &SpeechCall<'_>,
     ) -> Result<SpeechBinaryResponse, SpeechError>
     where
-        S: ClientSource,
+        S: ClientSource<Client: SpeechTransport>,
     {
         let env = PrePostEnv {
             debug: DebugSettings::default(),

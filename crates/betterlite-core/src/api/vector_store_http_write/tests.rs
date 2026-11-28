@@ -27,7 +27,8 @@ use crate::api::vector_store_http_write::error::{
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, DeleteCall, UpdateCall, WriteCall, WriteDeps, WriteTarget, send,
+    ClientKind, ClientSource, DeleteCall, UpdateCall, WriteCall, WriteDeps, WriteTarget,
+    WriteTransport, send,
 };
 
 fn json(text: &str) -> Json {
@@ -60,7 +61,7 @@ async fn run<'deps, C, S>(
 ) -> Result<Json, WriteError>
 where
     C: WriteConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let prepared = fixture.prepare(deps, mode, call, events)?;
     send(prepared).await

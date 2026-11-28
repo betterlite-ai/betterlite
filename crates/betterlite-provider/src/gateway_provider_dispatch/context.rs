@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::sections::gateway_provider_keys::Settings as SectionSettings;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::vercel_ai_gateway::VercelAiGatewayEnvironment;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
@@ -99,11 +97,6 @@ pub(super) fn referer_headers(
         resolved.extend(overlay);
     }
     resolved
-}
-
-pub struct CallLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
 }
 
 pub struct DispatchContext<'request> {

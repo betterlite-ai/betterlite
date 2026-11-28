@@ -14,7 +14,7 @@ use crate::api::vector_search_execution::config::{Params, SearchConfig};
 use crate::api::vector_search_execution::service::{
     SearchCall as SearchTransportCall, SearchDeps, prepare as prepare_search, send as send_search,
 };
-use crate::api::vector_store_http_write::service::{ClientSource, LogContext};
+use crate::api::vector_store_http_write::service::{ClientSource, LogContext, WriteTransport};
 use crate::api::vector_store_search::error::VectorStoreSearchError;
 use crate::api::vector_store_search::executor::{SelectedExecutor, direct_executor};
 use crate::api::vector_store_search::mock;
@@ -27,7 +27,7 @@ pub async fn search<S>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<Json, VectorStoreSearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     // the private argument is popped, so the executor selection, the log locals and the request never see it
     let mut kwargs = call.kwargs.clone();
@@ -82,7 +82,7 @@ async fn search_send<S>(
     selected: &SelectedExecutor<'_>,
 ) -> Result<Json, VectorStoreSearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let (config, provider) = search_config(deps, parts.resolved)?;
     let timeout = call_duration(call.timeout, deps.settings)?;

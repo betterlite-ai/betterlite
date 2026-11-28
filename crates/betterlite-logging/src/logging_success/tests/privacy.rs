@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
@@ -55,8 +56,11 @@ async fn logging_success_behavior_tests_behavior(
     let built = mode == "built";
     let path = if mode == "sync" { "sync" } else { "async" };
     let mut fixture = Fixture::new();
-    fixture.privacy.turn_off_message_logging = global;
-    fixture.builder.payload = Some(secret_payload());
+    fixture.set_privacy(Settings {
+        turn_off_message_logging: global,
+        redact_user_api_key_info: false,
+    });
+    fixture.builder.set_payload(secret_payload());
     let calls = Arc::new(CallLog::default());
     fixture.add(&Arc::new(FakeLogger::new("langfuse", &calls)));
     let mut state = state(Some(built));

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
@@ -9,7 +10,6 @@ use serde::de::DeserializeOwned;
 
 use crate::model_hub_dispatch::json;
 
-use super::context::CallLogging;
 use super::error::DispatchError;
 
 pub(super) fn convert<T, U>(value: &T) -> Result<U, DispatchError>
@@ -24,7 +24,7 @@ where
 
 // LiteLLM's post_call carries the error text as the original response and the headers as given
 pub(super) fn post(
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     messages: &[Message],
     original_response: Json,
     headers: Option<&BTreeMap<String, String>>,

@@ -24,7 +24,7 @@ use super::error::CreateReadError;
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{WriteError, handle_error};
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport as _,
+    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
 };
 
 mod facts;
@@ -229,7 +229,7 @@ fn wire_body(body: Option<&IndexMap<String, Json>>) -> Result<RequestBody, Write
 pub async fn send<C, S>(prepared: PreparedCall<'_, C, S>) -> Result<Json, CreateReadError>
 where
     C: CreateReadConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let PreparedCall {
         config,

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+use betterlite_bedrock::aws_settings::or_bearer_token;
 use betterlite_bedrock::mantle_inputs::capability::{base_segment, supports_responses};
 use betterlite_bedrock::mantle_inputs::chat_endpoint::{ChatEndpointParams, chat_endpoint_inputs};
-use betterlite_bedrock::mantle_inputs::credentials::resolve_bearer_token;
 use betterlite_bedrock::mantle_inputs::records::MantleGlobals;
 use betterlite_bedrock::mantle_inputs::region::{resolve_region, split_region_prefix};
 use betterlite_bedrock::model_routes::ParamMap;
@@ -61,11 +61,11 @@ fn bearer_precedence(cases: &[BearerCase]) -> HelperResult {
         let globals = globals(&case.environment)?;
         let api_key = case.api_key.as_deref().map(SecretString::from);
         tokens.push(
-            resolve_bearer_token(
+            or_bearer_token(&[
                 api_key.as_ref(),
                 globals.mantle_api_key.as_ref(),
                 globals.aws_bearer_token.as_ref(),
-            )
+            ])
             .map(|selected| selected.expose_secret().to_owned()),
         );
     }

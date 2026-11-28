@@ -12,9 +12,9 @@ use self::support::{Events, Fixture};
 use crate::api::vector_file_http_create_list::config::FilesConfig;
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_http_create_list::service::{
-    ClientSource, FileCall, FileDeps, PreparedFile, send,
+    FileCall, FileDeps, FileTransport, PreparedFile, send,
 };
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::service::{ClientKind, ClientSource};
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the expected JSON parses")
@@ -32,7 +32,7 @@ async fn run<'deps, C, S>(
 ) -> Result<Json, FileTransportError>
 where
     C: FilesConfig,
-    S: ClientSource,
+    S: ClientSource<Client: FileTransport>,
 {
     let prepared: PreparedFile<'deps, C, S> = fixture.prepare(deps, mode, call, events)?;
     send(prepared).await

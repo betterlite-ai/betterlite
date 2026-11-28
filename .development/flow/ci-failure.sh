@@ -7,6 +7,7 @@ logs=${worktree}/target/ci-logs/${run_id}
 gh run download "${run_id}" -D "${logs}" > /dev/null 2>&1
 failed_log=$(gh run view "${run_id}" --log-failed 2> /dev/null)
 failed_log=$(awk -F'\t' '$1 != "gate"' <<< "${failed_log}")
+job_logs=${failed_log}
 failed_log=$(cut -f3- <<< "${failed_log}")
 failed_log=$(sed -E 's/^\xEF\xBB\xBF//; s/^[0-9TZ:.-]+ //; s/(\x1b|\^\[)\[[0-9;]*m//g' <<< "${failed_log}")
 failed_log=$(grep -v '^##\[' <<< "${failed_log}")
@@ -15,6 +16,18 @@ failed_log=$(grep -v -E '^ +(PASS|SLOW|SKIP) \[' <<< "${failed_log}")
 lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
 # a step outside the gate (the gate's own tests, a tool install) prints no FAIL line, so its last lines go instead
 [[ -n "${lines}" ]] || lines=$(tail -n 40 <<< "${failed_log}")
+# GitHub puts a lost runner's reason in the job's annotations, not its log, so B10169 got four fix rounds with no failure in their note (11-28)
+runner=""
+if ! grep -q -E '^FAIL ' <<< "${lines}"; then
+  jobs=$(gh run view "${run_id}" --json jobs -q '.jobs[] | select(.name != "gate" and (.conclusion == "failure" or .conclusion == "cancelled")) | [.databaseId, .name, (((.completedAt | fromdate) - (.startedAt | fromdate)) / 60 | floor), ([.steps[] | select(.conclusion != "success" and .conclusion != "skipped") | .name][0] // "")] | @tsv' 2> /dev/null)
+  while IFS=$'\t' read -r job name minutes step; do
+    [[ -n "${job}" ]] || continue
+    reason=$(gh api "repos/{owner}/{repo}/check-runs/${job}/annotations" -q '.[] | select(.message | test("lost communication with the server")) | .message' 2> /dev/null)
+    awk -F'\t' -v job="${name}" '$1 == job && /The runner has received a shutdown signal/ {found = 1} END {exit !found}' <<< "${job_logs}" && reason="The runner has received a shutdown signal."
+    [[ -n "${reason}" ]] && runner+="The CI runner of job ${name} died after ${minutes} minutes in step \"${step}\" before any check failed: ${reason}"$'\n'
+  done <<< "${jobs}"
+fi
+[[ -n "${runner}" ]] && lines="${runner}A test that uses up the runner's memory or never ends does this, so find the test in your task commands that runs away and fix the code, not the test."
 missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
 missed=$(sort -u <<< "${missed}")
 missed=$(head -n 40 <<< "${missed}")

@@ -18,12 +18,13 @@ use url::Url;
 use crate::api::responses_agentic_execution::LoggingView;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
 use crate::api::responses_compact_http::service::facts::Sent;
-use crate::api::responses_compact_http::service::{ClientKind, SharedSession, SuppliedClient};
+use crate::api::responses_compact_http::service::{
+    ClientKind, ClientSource, SharedSession, SuppliedClient,
+};
 use crate::api::responses_hook_policy::callbacks::{
     CallbackLists, DeploymentHookDispatcher, NamedCallbackResolver, custom_logger_callbacks,
 };
 use crate::api::responses_stream_driver::source::PayloadSource;
-use crate::api::vector_store_http_write::error::ClientError;
 
 use self::finish::{Finish, checked, transformed, typed};
 use self::hook::Applied;
@@ -49,16 +50,6 @@ pub trait CreateTransport: Send + Sync {
         request: CreateRequest,
         stream: bool,
     ) -> impl Future<Output = Result<SentReply, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: CreateTransport;
-
-    fn client(
-        &self,
-        ssl_verify: Option<bool>,
-        shared_session: Option<SharedSession>,
-    ) -> Result<Self::Client, ClientError>;
 }
 
 pub struct CreateDeps<'deps, C: CreateConfig, S: ClientSource> {
@@ -217,7 +208,7 @@ pub async fn run<C, S, D, E>(
 ) -> Result<CreateOutcome, CreateError>
 where
     C: CreateConfig,
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,
 {

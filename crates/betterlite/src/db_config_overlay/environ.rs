@@ -6,10 +6,8 @@ use std::thread::{self, JoinHandle};
 use betterlite_config::sections::includes::ConfigMap;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_models::controls::multipart::DEFAULT_MAX_RECURSE_DEPTH;
+use betterlite_secret_managers::secret_lookup::ports::OidcTokenCache;
 use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue};
-use betterlite_secret_managers::secret_lookup::{manager::ManagerState, ports::OidcTokenCache};
-use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient as Client;
-use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::ExposeSecret as _;
 use tokio::sync::{Semaphore, oneshot, watch};
 
@@ -154,52 +152,10 @@ impl Resolver<'_> {
     }
 }
 
-pub(super) fn owned_secret_lookup(lookup: &SecretLookup) -> SecretLookup {
-    let tokens = lookup
-        .oidc_cache
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    SecretLookup {
-        manager: lookup.manager.as_ref().map(owned_manager),
-        oidc_http: Arc::clone(&lookup.oidc_http),
-        azure_tokens: Arc::clone(&lookup.azure_tokens),
-        clock: Arc::clone(&lookup.clock),
-        oidc_cache: Mutex::new(tokens),
-    }
-}
-
 pub(super) fn restore_oidc_tokens(lookup: &SecretLookup, fetched: OidcTokenCache) {
     let mut cache = lookup
         .oidc_cache
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     cache.extend(fetched.into_inner().unwrap_or_else(PoisonError::into_inner));
-}
-
-fn owned_manager(manager: &ManagerState) -> ManagerState {
-    ManagerState {
-        client: match &manager.client {
-            Client::AzureKeyVault(client) => Client::AzureKeyVault(Arc::clone(client)),
-            Client::GoogleKms(client) => Client::GoogleKms(Arc::clone(client)),
-            Client::AwsKms(client) => Client::AwsKms(Arc::clone(client)),
-            Client::AwsSecretManager(client) => Client::AwsSecretManager(Arc::clone(client)),
-            Client::GoogleSecretManager(client) => Client::GoogleSecretManager(Arc::clone(client)),
-            Client::Vault(client) => Client::Vault(Arc::clone(client)),
-            Client::CyberArk(client) => Client::CyberArk(Arc::clone(client)),
-            Client::Custom(client) => Client::Custom(Arc::clone(client)),
-            Client::Infisical(client) => Client::Infisical(Arc::clone(client)),
-            Client::Uninitialized => Client::Uninitialized,
-        },
-        settings: manager
-            .settings
-            .as_ref()
-            .map(|settings| SecretManagerSettings {
-                primary_secret_name: settings.primary_secret_name.clone(),
-                optional_params: settings.optional_params.clone(),
-            }),
-        system: manager.system,
-        access_mode: manager.access_mode,
-        hosted_keys: manager.hosted_keys.clone(),
-    }
 }

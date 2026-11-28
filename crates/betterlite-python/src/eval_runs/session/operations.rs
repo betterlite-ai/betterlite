@@ -1,4 +1,3 @@
-use betterlite_core::api::eval_http::exchange::EvalLogging;
 use betterlite_core::api::eval_lifecycle::EvalLifecycleConfigLookup as _;
 use betterlite_core::api::eval_run_create_list::EvalRunCreateList;
 use betterlite_core::api::eval_run_create_list::args::{CreateRunArgs, ListRunsArgs};
@@ -7,6 +6,7 @@ use betterlite_core::api::eval_run_lifecycle::handlers::HttpRunHandlers;
 use betterlite_core::api::eval_run_lifecycle::{
     EvalRunDeps, EvalRunRequest, acancel_run, adelete_run, aget_run,
 };
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -79,14 +79,14 @@ impl EvalCore {
                 #[rustfmt::skip]
                 let request = CreateRunArgs { eval_id: &payload.eval_id, data_source: &payload.data_source, name: payload.name.as_deref(), metadata: payload.metadata.as_ref(), extra_headers: payload.params.extra_headers.as_ref(), extra_query: payload.params.extra_query.as_ref(), extra_body: payload.extra_body.as_ref(), timeout: payload.params.timeout, custom_llm_provider: payload.params.custom_llm_provider.as_deref(), kwargs: &payload.params.kwargs };
                 #[rustfmt::skip]
-                let reply = service.acreate_run(request, EvalLogging { state: &mut state, env: &env }).await;
+                let reply = service.acreate_run(request, LogContext { state: &mut state, env: &env }).await;
                 EvalOperationFailure::reply(reply, payload.params.provider())
             }
             CreateListCall::List(payload) => {
                 #[rustfmt::skip]
                 let request = ListRunsArgs { eval_id: &payload.eval_id, limit: payload.limit, after: payload.after.as_deref(), before: payload.before.as_deref(), order: payload.order.as_deref(), extra_headers: payload.params.extra_headers.as_ref(), extra_query: payload.params.extra_query.as_ref(), timeout: payload.params.timeout, custom_llm_provider: payload.params.custom_llm_provider.as_deref(), kwargs: &payload.params.kwargs };
                 #[rustfmt::skip]
-                let reply = service.alist_runs(request, EvalLogging { state: &mut state, env: &env }).await;
+                let reply = service.alist_runs(request, LogContext { state: &mut state, env: &env }).await;
                 EvalOperationFailure::reply(reply, payload.params.provider())
             }
         }

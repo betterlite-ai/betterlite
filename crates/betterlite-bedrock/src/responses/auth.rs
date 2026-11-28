@@ -8,6 +8,7 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 
+use crate::aws_settings::or_bearer_token;
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
 use crate::responses::error::ResponsesError;
@@ -33,25 +34,13 @@ pub struct SignedHeaders {
     pub body: Option<Vec<u8>>,
 }
 
-// A truthy explicit key wins, then the standard AWS_BEARER_TOKEN_BEDROCK; an empty one is no token at all
-#[must_use]
-pub fn resolve_bearer_token(
-    api_key: Option<&SecretString>,
-    environment_token: Option<&SecretString>,
-) -> Option<SecretString> {
-    [api_key, environment_token]
-        .into_iter()
-        .flatten()
-        .find(|token| !token.expose_secret().is_empty())
-        .cloned()
-}
-
 pub fn validate_environment(
     headers: &mut IndexMap<String, String>,
     api_key: Option<&SecretString>,
     environment_token: Option<&SecretString>,
 ) {
-    if let Some(token) = resolve_bearer_token(api_key, environment_token) {
+    let bearer = or_bearer_token(&[api_key, environment_token]);
+    if let Some(token) = bearer.filter(|value| !value.expose_secret().is_empty()) {
         headers.insert(
             "Authorization".to_owned(),
             format!("Bearer {}", token.expose_secret()),
@@ -67,7 +56,8 @@ where
     F: FnOnce(&AwsSettings, &str) -> Fut,
     Fut: Future<Output = Result<Credentials, CredentialError>>,
 {
-    if resolve_bearer_token(inputs.api_key, inputs.environment_token).is_some() {
+    let bearer = or_bearer_token(&[inputs.api_key, inputs.environment_token]);
+    if bearer.is_some_and(|token| !token.expose_secret().is_empty()) {
         return Ok(SignedHeaders {
             headers: inputs.headers.to_vec(),
             body: None,

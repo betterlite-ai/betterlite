@@ -2,7 +2,7 @@ use betterlite_openai::api::container_contracts::records::ContainerFileListRespo
 use betterlite_openai::containers::container_file_http::PreCallHook;
 use betterlite_openai::containers::container_file_http::request::read_params;
 use betterlite_openai::containers::container_file_http::transport::{
-    BlockingClient as _, ClientSource, Selected,
+    AsyncClient, BlockingClient, ClientSource, Selected,
 };
 
 use super::{ContainerFileListCall, finish, prepare_request, transport_error};
@@ -15,7 +15,7 @@ pub fn container_file_list_handler<Source, Hook>(
     call: &ContainerFileListCall<'_, Source>,
 ) -> Result<ContainerFileListResponse, FileListHandlerError>
 where
-    Source: ClientSource,
+    Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>,
     Hook: PreCallHook,
 {
     let params = read_params(call.litellm_params)?;

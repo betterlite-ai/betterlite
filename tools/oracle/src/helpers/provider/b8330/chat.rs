@@ -2,6 +2,7 @@ use std::sync::{Mutex, PoisonError};
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_wire::header_map;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -11,7 +12,7 @@ use betterlite_prompts::message_content::Message;
 use betterlite_provider::data_cloud_dispatch::call::CompletionCall;
 use betterlite_provider::data_cloud_dispatch::chat::dispatch;
 use betterlite_provider::data_cloud_dispatch::context::{
-    CallLogging, DispatchContext, DispatchGlobals, EnvironmentSource, oci_explicit_params,
+    DispatchContext, DispatchGlobals, EnvironmentSource, oci_explicit_params,
 };
 use betterlite_provider::data_cloud_dispatch::embed::databricks_environment;
 use betterlite_provider::data_cloud_dispatch::error::DispatchError;
@@ -159,7 +160,7 @@ fn dispatched(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
     handler: &Recorder,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<(Result<String, DispatchError>, CompletionCall), Box<HelperError>> {
     let outcome = dispatch(tag, context, handler, log)
         .ok_or_else(|| super::input_failure(String::from("the chat table has no arm")))?;
@@ -183,7 +184,7 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     };
     let handler = recorder(case);
     let context = setup.context(case, source);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };

@@ -39,12 +39,13 @@ use crate::bedrock_embedding_io::transport::{
     ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest, Timeout,
     TransferError,
 };
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::plan::remaining_options;
 use crate::embedding_call::{
-    Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse,
-    EmbeddingEnvironment, LogContext, ParamMap, embeddings,
+    Clock, Dependencies, EmbeddingCall, EmbeddingCallResponse, EmbeddingEnvironment, LogContext,
+    ParamMap, embeddings,
 };
 use crate::signing::executor::AwsSigningExecutor;
 

@@ -11,13 +11,12 @@ use super::error::EmbeddingCallError;
 use super::hooks::{Event, Input, replay};
 use super::plan::EmbeddingPlan;
 use super::sign::{AsyncSigningInput, sign_owned};
-use super::{
-    Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext,
-};
+use super::{Clock, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext};
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::transport::{
     ClientFactory, EmbeddingCall as IoCall, Timeout, post_embedding,
 };
+use crate::credentials::CredentialSource;
 use crate::signing::executor::AwsSigningExecutor;
 
 mod bridge;
@@ -52,7 +51,7 @@ pub fn execute<'run, Source, Factory, Transport>(
     log: &'run mut LogContext<'_, '_>,
 ) -> BoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
     Factory::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,

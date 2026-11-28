@@ -11,6 +11,7 @@ use betterlite_http_fixture::error::FixtureError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::request::Request;
 use betterlite_http_fixture::server::{Serving, serve};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -38,7 +39,6 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 use crate::api::eval_http::error::EvalHttpError;
-use crate::api::eval_http::exchange::EvalLogging;
 use crate::api::eval_lifecycle::error::{EvalLifecycleError, EvalLifecycleFailure};
 use crate::api::eval_lifecycle::{
     EvalLifecycleCall, EvalLifecycleConfigLookup, EvalLifecycleDeps, EvalLifecycles,
@@ -530,7 +530,7 @@ where
 {
     let env = rig.fixture.env.pre_post();
     let deps = EvalLifecycleDeps { configs: &rig.configs, client: &rig.client, redactor: &rig.redactor, request_timeout: rig.request_timeout };
-    let mut log = EvalLogging { state: &mut rig.fixture.state, env: &env };
+    let mut log = LogContext { state: &mut rig.fixture.state, env: &env };
     let mut operations = EvalLifecycles { deps: &deps, log: &mut log };
     match operation {
         Operation::Delete => operations.delete_eval(call).await.map(|reply| Answer::Deleted(Box::new(reply))),
