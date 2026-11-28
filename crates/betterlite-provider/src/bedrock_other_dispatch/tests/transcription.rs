@@ -22,6 +22,12 @@ fn scripted(replies: &[Reply]) -> Fixture {
     Fixture::new(replies, credentials(ACCESS_KEY, SECRET_KEY))
 }
 
+// The audio a seam case hands the operation: bare bytes, or a tuple that names its file
+enum AudioCase {
+    Bytes(&'static [u8]),
+    Tuple(&'static str, &'static [u8]),
+}
+
 // The arguments one transcription case hands the dispatcher
 struct Call<'call> {
     model: &'call str,
@@ -59,7 +65,7 @@ fn native(fixture: &Fixture, environment: BTreeMap<String, String>) -> super::fi
 async fn file_seams() {
     let cases = [
         (
-            AudioFile::Bytes(AUDIO),
+            AudioCase::Bytes(AUDIO),
             Some(Timeout::Seconds(2.5)),
             false,
             "transcribed",
@@ -67,10 +73,7 @@ async fn file_seams() {
             r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "aGk=", "format": "wav", "filename": "audio.wav"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {"language": "en"}, "timeout_seconds": 2.5}"#,
         ),
         (
-            AudioFile::Tuple(AudioTuple {
-                filename: "voice.mp3",
-                content: Some(TupleContent::Bytes(b"ID3".as_slice())),
-            }),
+            AudioCase::Tuple("voice.mp3", b"ID3".as_slice()),
             Some(Timeout::Phases(TimeoutPhases {
                 connect: Some(1.0),
                 read: Some(600.0),
@@ -83,7 +86,15 @@ async fn file_seams() {
             r#"{"model": "amazon.nova-2-sonic-v1:0", "audio": {"data": "SUQz", "format": "mp3", "filename": "voice.mp3"}, "api_key": null, "api_base": null, "custom_llm_provider": "bedrock", "extra_headers": null, "optional_params": {}, "timeout_seconds": 600.0}"#,
         ),
     ];
-    for (audio, timeout, asynchronous, text, optional, expected) in cases {
+    for (audio_case, timeout, asynchronous, text, optional, expected) in cases {
+        // AudioFile is invariant, so building it here ties it to the borrow, not the array's lifetime
+        let audio = match audio_case {
+            AudioCase::Bytes(bytes) => AudioFile::Bytes(bytes),
+            AudioCase::Tuple(filename, bytes) => AudioFile::Tuple(AudioTuple {
+                filename,
+                content: Some(TupleContent::Bytes(bytes)),
+            }),
+        };
         let fixture = scripted(&[]);
         let params = transcription_params(optional);
         let recording = Recording::new(text);

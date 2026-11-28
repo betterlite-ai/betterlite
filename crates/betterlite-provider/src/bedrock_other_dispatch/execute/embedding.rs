@@ -10,7 +10,7 @@ use betterlite_bedrock::embedding_call::{
 };
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 
-use super::call::EmbeddingOperation;
+use super::super::call::EmbeddingOperation;
 use super::{LogContext, Services};
 
 // LiteLLM's arm wraps a string input, then hands the leaf the same fields it was given

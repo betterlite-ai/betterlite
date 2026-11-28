@@ -6,10 +6,9 @@ use betterlite_bedrock::embedding_call::{EmbeddingCallResponse, EmbeddingEnviron
 use betterlite_models::decisions::Json;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::embedding::EmbeddingVector;
+use betterlite_prompts::arguments::json::Json as PromptJson;
 
-use super::fixture::{
-    Fixture, Unavailable, array, environment, number, object, params, run, value,
-};
+use super::fixture::{Fixture, Unavailable, environment, object, params, run, value};
 use crate::bedrock_other_dispatch::call::{
     BedrockOtherOperation, EmbeddingInput, EmbeddingOperation, EmbeddingStatusOperation,
 };
@@ -57,10 +56,20 @@ fn floats(embedding: &EmbeddingVector) -> Vec<f64> {
     }
 }
 
-fn legacy_floats(embedding: &Json) -> Vec<f64> {
-    array(embedding)
+fn legacy_floats(embedding: &PromptJson) -> Vec<f64> {
+    let PromptJson::List(items) = embedding else {
+        panic!("the legacy embedding is a JSON array");
+    };
+    items
         .iter()
-        .filter_map(|item| number(item).as_f64())
+        .filter_map(|item| match item {
+            PromptJson::Number(number) => number.as_f64(),
+            PromptJson::Null
+            | PromptJson::Bool(_)
+            | PromptJson::Text(_)
+            | PromptJson::List(_)
+            | PromptJson::Object(_) => None,
+        })
         .collect()
 }
 

@@ -13,7 +13,7 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 // The credential lookup B595 would run; the fixture answers with the one identity it was built with
 #[derive(Clone)]
 pub struct Source {
-    pub credentials: Credentials,
+    credentials: Credentials,
     regions: Arc<Mutex<Vec<String>>>,
 }
 

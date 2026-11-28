@@ -7,7 +7,7 @@ use betterlite_bedrock::rerank::plan::{
 use betterlite_bedrock::rerank::transport::ClientFactory as RerankClientFactory;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 
-use super::call::RerankOperation;
+use super::super::call::RerankOperation;
 use super::{LogContext, Services};
 
 // The arm's four calls in order: resolve the agent-runtime target, sign and log the body, send it, decode it

@@ -23,6 +23,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_secret_managers::secret_lookup::SecretLookup;
 use indexmap::IndexMap;
 use serde_json::Number;
 
@@ -95,7 +96,10 @@ impl Fixture {
 }
 
 // What one dispatch observed: its outcome, every posted request, and the logging state it wrote
-pub(crate) struct Outcome<E> {
+pub(crate) struct Outcome<E>
+where
+    E: StdError + 'static,
+{
     pub(crate) result: Result<BedrockOtherResult, BedrockOtherError<E>>,
     pub(crate) requests: Vec<Recorded>,
     pub(crate) calls: Vec<ClientCall>,
@@ -209,13 +213,6 @@ pub(crate) fn array(value: &Json) -> &[Json] {
     match value {
         Json::List(items) => items,
         _other => panic!("the value is a JSON array"),
-    }
-}
-
-pub(crate) fn text(value: &Json) -> &str {
-    match value {
-        Json::Text(text) => text,
-        _other => panic!("the value is JSON text"),
     }
 }
 

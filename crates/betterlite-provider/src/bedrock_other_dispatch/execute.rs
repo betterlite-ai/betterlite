@@ -43,16 +43,16 @@ mod rerank;
 mod transcription;
 
 // The one dependency bundle every non-chat family reads; the family's own transport seam picks what it needs
-pub struct Services<'a, Source, Factory, Transport, Files> {
-    pub secrets: &'a SecretLookup,
-    pub region_worker: &'a ManagedRegionWorker,
-    pub source: &'a Source,
-    pub factory: &'a Factory,
-    pub transport: &'a Transport,
-    pub encoding: &'a (dyn TextEncoding + Send + Sync),
-    pub signing: &'a AwsSigningExecutor,
+pub struct Services<'deps, Source, Factory, Transport, Files> {
+    pub secrets: &'deps SecretLookup,
+    pub region_worker: &'deps ManagedRegionWorker,
+    pub source: &'deps Source,
+    pub factory: &'deps Factory,
+    pub transport: &'deps Transport,
+    pub encoding: &'deps (dyn TextEncoding + Send + Sync),
+    pub signing: &'deps AwsSigningExecutor,
     pub clock: Arc<dyn Clock>,
-    pub files: &'a Files,
+    pub files: &'deps Files,
 }
 
 // The callback state every leaf logs through; each family keeps its own LogContext shape

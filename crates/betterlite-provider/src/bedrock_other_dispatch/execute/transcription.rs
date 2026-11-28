@@ -4,8 +4,8 @@ use betterlite_bedrock::transcription::binding::{
 };
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
 
-use super::call::TranscriptionOperation;
-use super::error::BedrockOtherError;
+use super::super::call::TranscriptionOperation;
+use super::super::error::BedrockOtherError;
 
 // The binding seam LiteLLM reaches with NO_PYTHON: the same prepared arguments go to sync or async
 pub(super) async fn transcription<Files, B>(

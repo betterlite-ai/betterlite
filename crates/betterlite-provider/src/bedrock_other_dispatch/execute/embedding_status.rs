@@ -7,8 +7,8 @@ use betterlite_bedrock::embedding_jobs::transport::StatusTransport;
 use betterlite_bedrock::image_call::plan::CredentialSource as ImageCredentials;
 use betterlite_models::decisions::Json;
 
+use super::super::call::EmbeddingStatusOperation;
 use super::Services;
-use super::call::EmbeddingStatusOperation;
 
 // B632's status lookup reads the job arn the caller already has; nothing here starts a job, reads S3 or polls
 pub(super) async fn embedding_status<Source, Factory, Transport, Files>(
