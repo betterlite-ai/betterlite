@@ -16,9 +16,10 @@ use serde_json::Value;
 use tokio_postgres::NoTls;
 
 use super::{DatabaseCacheConfigStore, StoredSettingsError, stored_from_raw, stored_settings};
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::cache_settings_read::route::{CacheSettingsReadState, router, stored_cipher};
 use crate::cache_settings_read::test_support::{
-    FakeCacheConfigStore, StoreReply, caller, cipher_settings, get, lookup, obj, parse,
+    FakeCacheConfigStore, StoreReply, cipher_settings, get, lookup, obj, parse,
 };
 use crate::cache_settings_read::view::effective_values;
 
@@ -177,7 +178,7 @@ async fn a_stored_settings_failure_answers_500_with_the_error_prefix(#[case] rep
         cipher_settings(None),
         lookup(&[]),
     );
-    let (status, body) = get(router(state), Some(caller("master_key", Vec::new()))).await;
+    let (status, body) = get(router(state), Some(master_caller())).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     let parsed = parse(&body);
     let detail = parsed

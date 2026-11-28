@@ -145,6 +145,26 @@ async fn logs_scope_a_user_bound_key_to_its_user() {
 }
 
 #[tokio::test]
+async fn logs_scope_a_key_whose_user_is_master_key_to_that_user() {
+    let mut fake = spend_store();
+    fake.user_daily = vec![user_daily("2026-01-01", "1.25", "sk-one", "master_key")];
+    let store = store_with(fake);
+    let caller =
+        caller_through_key_stage(r#"{"user_id":"master_key","user_role":"internal_user"}"#);
+    let reply = call(
+        "/global/spend/logs",
+        Some(&caller.principal),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        store.calls(),
+        vec!["user_daily_spend(master_key,None)".to_owned()]
+    );
+}
+
+#[tokio::test]
 async fn logs_scope_an_internal_viewer_without_a_key_to_their_user() {
     let mut fake = spend_store();
     fake.user_daily = vec![

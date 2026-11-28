@@ -13,6 +13,7 @@ use betterlite_db::postgres_store::errors::DbError;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::management::gateway_request_activity::auth::FORBIDDEN;
 use crate::management::gateway_request_activity::error::DB_UNAVAILABLE;
 use crate::management::gateway_request_activity::store::GatewayActivityRow;
@@ -51,7 +52,7 @@ async fn answering(rows: Vec<GatewayActivityRow>, uri: &str) -> (Arc<FakeStore>,
 }
 
 #[rstest]
-#[case::master_key("master_key", Vec::new(), StatusCode::OK)]
+#[case::master_key_subject("master_key", Vec::new(), StatusCode::FORBIDDEN)]
 #[case::proxy_admin("user", vec![Role::PlatformAdmin], StatusCode::OK)]
 #[case::proxy_admin_view_only("user", vec![Role::PlatformViewer], StatusCode::OK)]
 #[case::admin_and_viewer("user", vec![Role::PlatformAdmin, Role::PlatformViewer], StatusCode::OK)]
@@ -104,7 +105,7 @@ async fn a_non_admin_caller_gets_the_auth_forbidden_detail() {
 
 #[tokio::test]
 async fn a_master_key_caller_passes_the_auth_check() {
-    let reply = get(app(None), Some(&caller("master_key", Vec::new())), ACTIVITY).await;
+    let reply = get(app(None), Some(&master_caller()), ACTIVITY).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     let body: DetailBody = reply.json();
     assert_eq!(body.detail, DB_ERROR);

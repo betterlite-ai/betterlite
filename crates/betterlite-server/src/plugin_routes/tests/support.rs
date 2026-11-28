@@ -21,6 +21,7 @@ use super::config::PluginRegistry;
 use super::headers::KeyHeaderName;
 use super::proxy::{PluginReply, PluginRequest, PluginSendError, PluginState, PluginUpstream};
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 
 pub(crate) const SALT: &str = "test-salt-key";
 pub(crate) const PLUGIN: &str = "litellm-platform-plugin";
@@ -70,7 +71,7 @@ pub(crate) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
 }
 
 pub(crate) fn master_key() -> AuthContext {
-    caller("master_key", Vec::new())
+    master_caller()
 }
 
 pub(crate) fn user_caller(subject: &str, roles: Vec<Role>, user_id: &str) -> AuthContext {

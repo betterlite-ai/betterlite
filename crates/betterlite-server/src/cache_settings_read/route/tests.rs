@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use serde_json::Value;
 
 use super::{CacheSettingsReadState, router};
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::cache_settings::REDACTED_VALUE;
 use crate::cache_settings_read::test_support::{
     FakeCacheConfigStore, StoreReply, SwitchableEnvironment, caller, cipher_settings, get, lookup,
@@ -37,7 +38,7 @@ fn current_values(body: &Value) -> Value {
 #[tokio::test]
 async fn the_response_carries_the_fields_without_values() {
     let state = CacheSettingsReadState::new(None, cipher_settings(None), lookup(&[]));
-    let (status, text) = get(router(state), Some(caller("master_key", Vec::new()))).await;
+    let (status, text) = get(router(state), Some(master_caller())).await;
     assert_eq!(status, StatusCode::OK);
     let body = parse(&text);
     let fields = body
@@ -75,7 +76,7 @@ async fn the_response_carries_the_fields_without_values() {
 #[tokio::test]
 async fn the_response_carries_the_redis_type_descriptions() {
     let state = CacheSettingsReadState::new(None, cipher_settings(None), lookup(&[]));
-    let (status, text) = get(router(state), Some(caller("master_key", Vec::new()))).await;
+    let (status, text) = get(router(state), Some(master_caller())).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         parse(&text).get("redis_type_descriptions"),
@@ -121,16 +122,14 @@ async fn the_environment_is_read_on_every_request() {
         Arc::<SwitchableEnvironment>::clone(&environment),
     );
     let application = router(state);
-    let (first_status, first_text) =
-        get(application.clone(), Some(caller("master_key", Vec::new()))).await;
+    let (first_status, first_text) = get(application.clone(), Some(master_caller())).await;
     assert_eq!(first_status, StatusCode::OK);
     assert_eq!(
         current_values(&parse(&first_text)),
         parse(r#"{"host": "first-host", "type": "redis", "redis_type": "node"}"#)
     );
     environment.replace(&[("REDIS_HOST", "second-host")]);
-    let (second_status, second_text) =
-        get(application, Some(caller("master_key", Vec::new()))).await;
+    let (second_status, second_text) = get(application, Some(master_caller())).await;
     assert_eq!(second_status, StatusCode::OK);
     assert_eq!(
         current_values(&parse(&second_text)),
@@ -150,7 +149,7 @@ async fn stored_values_reach_the_fields_redacted() {
         cipher_settings(None),
         lookup(&[]),
     );
-    let (status, text) = get(router(state), Some(caller("master_key", Vec::new()))).await;
+    let (status, text) = get(router(state), Some(master_caller())).await;
     assert_eq!(status, StatusCode::OK);
     let body = parse(&text);
     assert_eq!(

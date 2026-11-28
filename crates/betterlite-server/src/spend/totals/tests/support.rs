@@ -18,6 +18,7 @@ use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::spend::totals::prometheus::DailySpendSource;
 use crate::spend::totals::rows::{
     DailySpend, KeyDailySpend, KeySpend, ModelSpend, TeamSpend, TotalSpendRow, UserKeyDailySpend,
@@ -243,7 +244,7 @@ pub(super) fn role_holder(role: Role, user_id: &str) -> Principal {
 }
 
 pub(super) fn master_key() -> Principal {
-    principal("master_key", Vec::new(), None)
+    master_caller().principal
 }
 
 pub(super) struct Reply {

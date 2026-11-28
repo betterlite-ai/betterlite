@@ -888,7 +888,7 @@ async fn query_runtime_failure_is_503() {
 }
 
 #[test]
-fn the_master_principal_is_an_admin_without_roles() {
+fn the_master_key_record_is_an_admin() {
     assert_eq!(
         TraceAuth::from_principal(&master_principal()).role,
         TraceRole::Admin

@@ -22,6 +22,7 @@ use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::health_access_and_connections::connection_state::{
     ConnectionProbe, ConnectionProbeError, ModelCallAuthorizer, TestConnectionState,
 };
@@ -307,7 +308,7 @@ pub(super) fn context(subject: &str, roles: &[Role], source_key: SourceKey) -> A
 }
 
 pub(super) fn master_context() -> AuthContext {
-    context("master_key", &[], SourceKey(None))
+    master_caller()
 }
 
 pub(super) fn key_context(key_fields: &str) -> AuthContext {

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
+use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
@@ -9,6 +10,7 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use super::support::TestDatabase;
+use crate::auth::auth_key_lookup::tests::{caller_through_key_stage, master_caller};
 use crate::organization_create::access::{
     DatabaseUserLookup, NO_ACCESS_DETAIL, OrgAccessError, OrgUserLookup, verify_org_access,
 };
@@ -55,6 +57,20 @@ impl OrgUserLookup for PanicLookup {
     async fn find_user(&self, _user_id: &str) -> Result<Option<LiteLLMUserTable>, OrgAccessError> {
         panic!("an administrator must pass without the user lookup");
     }
+}
+
+#[test]
+fn org_caller_of_a_key_whose_user_is_master_key_is_not_an_admin() {
+    let spoofed = caller_through_key_stage(r#"{"user_id":"master_key"}"#);
+    let spoof = OrgCaller::from_principal(&spoofed.principal).expect("the key projects");
+    assert_eq!(spoof.user_id.as_deref(), Some("master_key"));
+    assert_eq!(spoof.user_role, None);
+    assert!(!spoof.admin_view);
+    let master =
+        OrgCaller::from_principal(&master_caller().principal).expect("the record projects");
+    assert_eq!(master.user_id.as_deref(), Some("default_user_id"));
+    assert_eq!(master.user_role, Some(UserRole::ProxyAdmin));
+    assert!(master.admin_view);
 }
 
 #[tokio::test]

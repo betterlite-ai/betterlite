@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::{caller_through_key_stage, master_caller};
 
 use super::{
     ADAPTIVE_ROUTER_STATE_PATH, AdaptiveRouterSnapshots, HOME_PATH, RootRouteState, routes,
@@ -54,7 +55,7 @@ async fn the_keyed_routes_take_only_get(#[case] path: &str) {
 #[rstest]
 #[case::proxy_admin_key(key_caller("proxy_admin"))]
 #[case::proxy_admin_viewer_key(key_caller("proxy_admin_viewer"))]
-#[case::master_key(caller("master_key", &[]))]
+#[case::master_key(master_caller())]
 #[case::platform_admin_role(caller("jwt-user", &[Role::PlatformAdmin]))]
 #[case::platform_viewer_role(caller("jwt-user", &[Role::PlatformViewer]))]
 #[tokio::test]
@@ -95,6 +96,20 @@ async fn state_refuses_every_other_caller_before_reading_the_router(
 }
 
 #[tokio::test]
+async fn a_key_whose_user_is_master_key_gets_the_admin_view_error() {
+    let (root_state, fake_routers) = route_state(vec![vec![snapshot("bandit", &["fast"])]]);
+    let reply = get(
+        root_state,
+        Some(&caller_through_key_stage(r#"{"user_id":"master_key"}"#)),
+        ADAPTIVE_ROUTER_STATE_PATH,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    assert_eq!(reply.json::<DetailReply>().detail.error, ADMIN_ONLY_DETAIL);
+    assert_eq!(fake_routers.reads(), 0);
+}
+
+#[tokio::test]
 async fn state_refuses_a_request_without_an_authenticated_caller() {
     let (root_state, fake_routers) = route_state(vec![vec![snapshot("bandit", &["fast"])]]);
     let reply = get(root_state, None, ADAPTIVE_ROUTER_STATE_PATH).await;
@@ -108,7 +123,7 @@ async fn state_answers_not_configured_without_any_adaptive_router() {
     let (root_state, fake_routers) = route_state(Vec::new());
     let reply = get(
         root_state,
-        Some(&caller("master_key", &[])),
+        Some(&master_caller()),
         ADAPTIVE_ROUTER_STATE_PATH,
     )
     .await;
@@ -122,7 +137,7 @@ async fn state_answers_an_empty_list_when_no_deployment_is_registered() {
     let (root_state, _fake_routers) = route_state(vec![Vec::new(), Vec::new()]);
     let reply = get(
         root_state,
-        Some(&caller("master_key", &[])),
+        Some(&master_caller()),
         ADAPTIVE_ROUTER_STATE_PATH,
     )
     .await;
@@ -141,7 +156,7 @@ async fn state_lists_snapshots_in_registry_order() {
     ]);
     let reply = get(
         root_state,
-        Some(&caller("master_key", &[])),
+        Some(&master_caller()),
         ADAPTIVE_ROUTER_STATE_PATH,
     )
     .await;
@@ -160,7 +175,7 @@ async fn state_serializes_every_snapshot_field() {
     let (root_state, _fake_routers) = route_state(vec![vec![detailed_snapshot()]]);
     let reply = get(
         root_state,
-        Some(&caller("master_key", &[])),
+        Some(&master_caller()),
         ADAPTIVE_ROUTER_STATE_PATH,
     )
     .await;
@@ -202,7 +217,7 @@ async fn state_serializes_model_costs_as_json_numbers() {
     let (root_state, _fake_routers) = route_state(vec![vec![detailed_snapshot()]]);
     let reply = get(
         root_state,
-        Some(&caller("master_key", &[])),
+        Some(&master_caller()),
         ADAPTIVE_ROUTER_STATE_PATH,
     )
     .await;

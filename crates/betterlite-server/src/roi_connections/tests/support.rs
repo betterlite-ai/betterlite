@@ -30,6 +30,7 @@ use tower::ServiceExt as _;
 use url::Url;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::roi_connections::gateway_http_client::GatewayHttpClient;
 use crate::roi_connections::routes::router;
 use crate::roi_connections::state::RoiConnectionsState;
@@ -81,7 +82,7 @@ pub(crate) fn member() -> AuthContext {
 }
 
 pub(crate) fn master() -> AuthContext {
-    caller("master_key", &[])
+    master_caller()
 }
 
 #[derive(Clone)]

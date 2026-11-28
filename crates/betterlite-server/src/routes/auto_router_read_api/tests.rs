@@ -26,6 +26,7 @@ use sha2::{Digest as _, Sha256};
 
 use super::{BENCHMARKS_PATH, ReadState, SESSION_PATH, read};
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::auth::route_match::admit;
 use crate::auto_router_read_api::error::ReadApiError;
 use crate::auto_router_read_api::postgres::reads_from_state;
@@ -136,7 +137,7 @@ fn principal(subject: &str, source_key: SourceKey) -> Principal {
 }
 
 fn master_principal() -> Principal {
-    principal("master_key", SourceKey(None))
+    master_caller().principal
 }
 
 fn key_principal(fields: &str) -> Principal {

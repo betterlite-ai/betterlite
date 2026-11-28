@@ -7,7 +7,9 @@ use betterlite_core::agents::json::AgentJson as JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
 
-use super::guards::{CallerKeyMissing, MISSING_KEY_DETAIL, enforce_provider_key, is_proxy_admin};
+use crate::auth::auth_key_lookup::tests::master_caller;
+
+use super::guards::{CallerKeyMissing, MISSING_KEY_DETAIL, enforce_provider_key};
 use super::merge::{
     TEMPLATE_FIELD, default_provider, merge_body_template, merge_query_params_into_data,
     query_values,
@@ -23,18 +25,26 @@ use support::{json_map, principal, query};
 #[case::team_admin(&[Role::TeamAdmin], false)]
 #[case::team_member(&[Role::TeamMember], false)]
 #[case::no_roles(&[], false)]
-fn only_the_proxy_admin_role_is_an_admin(#[case] roles: &[Role], #[case] expected: bool) {
-    assert_eq!(is_proxy_admin(&principal("user-1", roles)), expected);
+fn only_the_proxy_admin_role_passes_the_key_gate(#[case] roles: &[Role], #[case] expected: bool) {
+    let gate = enforce_provider_key(&JsonMap::new(), &principal("user-1", roles));
+    assert_eq!(gate.is_ok(), expected);
 }
 
 #[test]
-fn the_master_key_subject_is_an_admin_without_a_role() {
-    assert!(is_proxy_admin(&principal("master_key", &[])));
+fn the_master_key_record_passes_the_key_gate_without_a_role() {
+    enforce_provider_key(&JsonMap::new(), &master_caller().principal).unwrap();
 }
 
 #[test]
-fn another_subject_without_the_role_is_not_an_admin() {
-    assert!(!is_proxy_admin(&principal("admin-1", &[])));
+fn a_key_whose_subject_is_master_key_does_not_pass_the_key_gate() {
+    let rejected = enforce_provider_key(&JsonMap::new(), &principal("master_key", &[]));
+    assert_eq!(rejected, Err(CallerKeyMissing));
+}
+
+#[test]
+fn another_subject_without_the_role_does_not_pass_the_key_gate() {
+    let rejected = enforce_provider_key(&JsonMap::new(), &principal("admin-1", &[]));
+    assert_eq!(rejected, Err(CallerKeyMissing));
 }
 
 #[test]
