@@ -37,7 +37,7 @@ const LOCATION_SAFE: &AsciiSet = &NON_ALPHANUMERIC
 
 // urllib.parse.urlencode quotes each value with quote_plus, which spells a space "+".
 #[must_use]
-pub fn redirect_location(redirect_uri: &str, code: &str, state: &str) -> String {
+pub(super) fn redirect_location(redirect_uri: &str, code: &str, state: &str) -> String {
     let separator = if redirect_uri.contains('?') { '&' } else { '?' };
     let quoted_code = utf8_percent_encode(code, FORM_SAFE)
         .to_string()

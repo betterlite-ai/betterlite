@@ -30,6 +30,7 @@ impl AuthCodeStore {
         if codes.len() >= AUTH_CODES_MAX_SIZE {
             return Err(ConsentError::TooManyPendingFlows);
         }
+        drop(codes);
         Ok(())
     }
 

@@ -95,5 +95,5 @@ fn an_empty_name_has_the_initial_s() {
 
 #[test]
 fn a_non_ascii_first_letter_is_uppercased() {
-    assert_eq!(server_initial("éclair"), "É");
+    assert_eq!(server_initial("\u{e9}clair"), "\u{c9}");
 }

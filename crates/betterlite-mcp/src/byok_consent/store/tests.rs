@@ -14,7 +14,7 @@ fn an_inserted_code_is_read_back() {
     let codes = AuthCodeStore::new();
     codes.insert("code-1".to_owned(), record(FIVE_MINUTES_LATER));
     let stored = codes.get("code-1").unwrap();
-    assert_eq!(stored.expires_at, FIVE_MINUTES_LATER);
+    assert_eq!(stored.expires_at.to_bits(), FIVE_MINUTES_LATER.to_bits());
     assert_eq!(stored.api_key.expose_secret(), "sk-seed");
 }
 
@@ -46,7 +46,10 @@ fn replacing_a_code_keeps_one_entry() {
     codes.insert("code-1".to_owned(), record(FIVE_MINUTES_LATER));
     codes.insert("code-1".to_owned(), record(NOW));
     assert_eq!(codes.count(), 1);
-    assert_eq!(codes.get("code-1").unwrap().expires_at, NOW);
+    assert_eq!(
+        codes.get("code-1").unwrap().expires_at.to_bits(),
+        NOW.to_bits()
+    );
 }
 
 #[test]
@@ -87,5 +90,5 @@ fn a_record_round_trips_through_the_store() {
     assert_eq!(stored.redirect_uri, "http://127.0.0.1:1456/callback");
     assert_eq!(stored.client_id, "client-1");
     assert_eq!(stored.user_id, "user-1");
-    assert_eq!(stored.expires_at, FIVE_MINUTES_LATER);
+    assert_eq!(stored.expires_at.to_bits(), FIVE_MINUTES_LATER.to_bits());
 }

@@ -11,9 +11,9 @@ pub async fn authenticate_session(
     authenticator: Option<&dyn KeyAuthenticator>,
     now: DateTime<Utc>,
 ) -> Result<String, SessionAuthError> {
-    let Some(master_key) = master_key else {
+    let Some(secret) = master_key else {
         return Err(SessionAuthError::LoginRequired);
     };
-    let auth = byok_session_auth(cookie_header, master_key, authenticator, now).await?;
+    let auth = byok_session_auth(cookie_header, secret, authenticator, now).await?;
     Ok(key_identity(&auth).user_id.unwrap_or_default())
 }

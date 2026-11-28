@@ -3,6 +3,7 @@
 use std::ops::Add as _;
 
 use secrecy::{ExposeSecret as _, SecretString};
+use uuid::Uuid;
 
 use super::{PostForm, authorize_post};
 use crate::byok_consent::ConsentError;
@@ -28,11 +29,8 @@ fn form() -> PostForm {
 }
 
 fn is_uuid4(code: &str) -> bool {
-    code.len() == 36
-        && code.bytes().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => byte == b'-',
-            _ => matches!(byte, b'0'..=b'9' | b'a'..=b'f'),
-        })
+    Uuid::parse_str(code)
+        .is_ok_and(|parsed| parsed.get_version_num() == 4 && parsed.to_string() == code)
 }
 
 #[test]
@@ -46,7 +44,10 @@ fn the_stored_record_holds_every_form_field() {
     assert_eq!(stored.redirect_uri, CALLBACK);
     assert_eq!(stored.client_id, "client-1");
     assert_eq!(stored.user_id, "user-1");
-    assert_eq!(stored.expires_at, NOW.add(f64::from(AUTH_CODE_TTL_SECONDS)));
+    assert_eq!(
+        stored.expires_at.to_bits(),
+        NOW.add(f64::from(AUTH_CODE_TTL_SECONDS)).to_bits()
+    );
     assert_eq!(codes.count(), 1);
 }
 

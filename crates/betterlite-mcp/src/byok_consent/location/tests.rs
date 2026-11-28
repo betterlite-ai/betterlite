@@ -47,7 +47,7 @@ fn a_percent_in_the_state_is_encoded_once() {
 #[test]
 fn a_unicode_state_is_utf8_percent_encoded() {
     assert_eq!(
-        redirect_location(CALLBACK, "code-1", "é"),
+        redirect_location(CALLBACK, "code-1", "\u{e9}"),
         "http://127.0.0.1:1456/callback?code=code-1&state=%C3%A9"
     );
 }
