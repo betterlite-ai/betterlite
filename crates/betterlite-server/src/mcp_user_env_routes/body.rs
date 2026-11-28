@@ -4,7 +4,7 @@ use std::str;
 use axum::Json;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::Json as JsonValue;
 use indexmap::IndexMap;
 use serde::Serialize;
 use thiserror::Error;
@@ -20,7 +20,7 @@ const UNREADABLE_BODY: &str = "There was an error parsing the body";
 
 // FastAPI's items carry type, loc and msg; its input and ctx would echo a submitted secret (deviations)
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct Issue {
+pub struct Issue {
     #[serde(rename = "type")]
     pub(crate) kind: &'static str,
     pub(crate) loc: Vec<String>,
@@ -28,7 +28,7 @@ pub(crate) struct Issue {
 }
 
 #[derive(Debug, Error)]
-pub(crate) enum BodyRefusal {
+pub enum BodyRefusal {
     #[error("the request body does not match the declared types")]
     Validation(Vec<Issue>),
     #[error("the request body could not be read")]
@@ -81,7 +81,7 @@ impl IntoResponse for BodyRefusal {
 }
 
 // FastAPI reads the body as JSON only when no content type or an application/json one is sent
-pub(crate) fn decode_user_env_vars_request(
+pub fn decode_user_env_vars_request(
     content_type: Option<&HeaderValue>,
     body: &[u8],
 ) -> Result<MCPUserEnvVarsRequest, BodyRefusal> {
@@ -102,7 +102,7 @@ pub(crate) fn decode_user_env_vars_request(
     let Ok(text) = str::from_utf8(body) else {
         return Err(BodyRefusal::Unreadable);
     };
-    let Ok(parsed) = serde_json::from_str::<Json>(text) else {
+    let Ok(parsed) = serde_json::from_str::<JsonValue>(text) else {
         return Err(BodyRefusal::Validation(vec![issue(
             "json_invalid",
             &["body"],
@@ -110,13 +110,13 @@ pub(crate) fn decode_user_env_vars_request(
         )]));
     };
     match parsed {
-        Json::Null => Err(BodyRefusal::Validation(vec![issue(
+        JsonValue::Null => Err(BodyRefusal::Validation(vec![issue(
             "missing",
             &["body"],
             REQUIRED,
         )])),
-        Json::Object(fields) => values_from_body(fields),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+        JsonValue::Object(fields) => values_from_body(fields),
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::List(_) => {
             Err(BodyRefusal::Validation(vec![issue(
                 "model_attributes_type",
                 &["body"],
@@ -127,7 +127,7 @@ pub(crate) fn decode_user_env_vars_request(
 }
 
 fn values_from_body(
-    mut fields: IndexMap<String, Json>,
+    mut fields: IndexMap<String, JsonValue>,
 ) -> Result<MCPUserEnvVarsRequest, BodyRefusal> {
     let Some(values) = fields.shift_remove("values") else {
         return Err(BodyRefusal::Validation(vec![issue(
@@ -136,7 +136,7 @@ fn values_from_body(
             REQUIRED,
         )]));
     };
-    let Json::Object(entries) = values else {
+    let JsonValue::Object(entries) = values else {
         return Err(BodyRefusal::Validation(vec![issue(
             "dict_type",
             &["body", "values"],
@@ -147,10 +147,14 @@ fn values_from_body(
     let mut issues = Vec::new();
     for (name, value) in entries {
         match value {
-            Json::Text(text) => {
+            JsonValue::Text(text) => {
                 accepted.insert(name, text);
             }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::List(_)
+            | JsonValue::Object(_) => {
                 issues.push(issue(
                     "string_type",
                     &["body", "values", name.as_str()],
