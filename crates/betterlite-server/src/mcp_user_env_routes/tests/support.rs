@@ -51,8 +51,8 @@ pub(crate) const OTHER_MEMBER: &str = r#"{"user_id":"user-2"}"#;
 pub(crate) const ADMIN: &str = r#"{"user_id":"admin-1","user_role":"proxy_admin"}"#;
 pub(crate) const NO_USER: &str = r#"{"user_role":"proxy_admin"}"#;
 
-pub(crate) fn server_uri(server_id: &str) -> String {
-    SERVER_ENV_VARS_PATH.replace("{server_id}", server_id)
+pub(crate) fn server_uri(target: &str) -> String {
+    SERVER_ENV_VARS_PATH.replace("{server_id}", target)
 }
 
 fn key(fields: &str) -> UserAPIKeyAuth {
@@ -232,7 +232,9 @@ impl UserEnvVarsStore for FakeStore {
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone())),
         );
-        Ok(values.clone())
+        let merged = values.clone();
+        drop(rows);
+        Ok(merged)
     }
 
     async fn delete_user_env_vars(&self, user_id: &str, server_id: &str) -> StoreResult<()> {
