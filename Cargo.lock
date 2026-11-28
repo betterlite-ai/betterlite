@@ -5048,6 +5048,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
