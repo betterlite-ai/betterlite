@@ -870,20 +870,36 @@ def test_error_async_unsupported() -> None:
 
 # the async twins forward timeout, so a value the native request refuses fails each call
 def test_error_async_timeout() -> None:
-    pending = [
-        acreate_run(
-            EVAL_ID, DATA_SOURCE, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY
-        ),
-        alist_runs(EVAL_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
-        aget_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
-        acancel_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
-        adelete_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY),
-    ]
-    for call in pending:
-        with pytest.raises(BadRequestError) as raised:
-            asyncio.run(call)
-        assert raised.value.status_code == BAD_REQUEST
-        assert "timeout" in str(raised.value)
+    with pytest.raises(BadRequestError) as raised:
+        asyncio.run(
+            acreate_run(
+                EVAL_ID, DATA_SOURCE, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY
+            )
+        )
+    assert raised.value.status_code == BAD_REQUEST
+    assert "timeout" in str(raised.value)
+    with pytest.raises(BadRequestError) as raised:
+        asyncio.run(alist_runs(EVAL_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY))
+    assert raised.value.status_code == BAD_REQUEST
+    assert "timeout" in str(raised.value)
+    with pytest.raises(BadRequestError) as raised:
+        asyncio.run(
+            aget_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
+        )
+    assert raised.value.status_code == BAD_REQUEST
+    assert "timeout" in str(raised.value)
+    with pytest.raises(BadRequestError) as raised:
+        asyncio.run(
+            acancel_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
+        )
+    assert raised.value.status_code == BAD_REQUEST
+    assert "timeout" in str(raised.value)
+    with pytest.raises(BadRequestError) as raised:
+        asyncio.run(
+            adelete_run(EVAL_ID, RUN_ID, timeout=-1.0, api_base=CLOSED_BASE, api_key=GOOD_KEY)
+        )
+    assert raised.value.status_code == BAD_REQUEST
+    assert "timeout" in str(raised.value)
 
 
 def test_unsupported_object() -> None:

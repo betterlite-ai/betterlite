@@ -56,12 +56,16 @@ def _shared(
 def _with_credentials(values: dict[str, CallValue]) -> None:
     name = values.get(CREDENTIAL_NAME)
     match name:
-        case str() if name:
+        case str() if not name:
+            return
+        case str():
             for entry in CREDENTIALS.validate_python(betterlite.credential_list):
                 if entry["credential_name"] == name:
                     for key, value in entry["credential_values"].items():
                         values.setdefault(key, value)
                     return
+        case object():
+            return
 
 
 # LiteLLM's logging object belongs to its own runtime, so it never crosses into the payload
