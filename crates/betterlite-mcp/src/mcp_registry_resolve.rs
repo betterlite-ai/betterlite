@@ -16,7 +16,7 @@ pub struct ServerMetadata {
 // LiteLLM reads server_name or name, byok_description and byok_api_key_help_url off the registry row.
 #[must_use]
 pub fn resolve(server_id: Option<&str>, registry: Option<&ServerRegistry>) -> ServerMetadata {
-    let Some(server) = server_id.and_then(|server_id| find(server_id, registry)) else {
+    let Some(server) = server_id.and_then(|wanted| find(wanted, registry)) else {
         return ServerMetadata {
             server_name: FALLBACK_SERVER_NAME.to_owned(),
             access_items: Vec::new(),
@@ -48,8 +48,7 @@ fn find<'registry>(
     server_id: &str,
     registry: Option<&'registry ServerRegistry>,
 ) -> Option<&'registry MCPServer> {
-    let registry = registry?;
-    registry
+    registry?
         .get_registry()
         .into_iter()
         .find(|server| server.fields.server_id == server_id)

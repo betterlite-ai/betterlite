@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::ops::Add as _;
+
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{PostForm, authorize_post};
@@ -9,6 +11,8 @@ use crate::byok_consent::test_support::seeded_store;
 use crate::byok_token_exchange::ports::AuthCodeLookup as _;
 
 const NOW: f64 = 1_700_000_000.0;
+const LIVE_UNTIL: f64 = 1_700_000_300.0;
+const ALREADY_EXPIRED: f64 = 1_699_999_999.0;
 const CALLBACK: &str = "http://127.0.0.1:1456/callback";
 
 fn form() -> PostForm {
@@ -42,7 +46,7 @@ fn the_stored_record_holds_every_form_field() {
     assert_eq!(stored.redirect_uri, CALLBACK);
     assert_eq!(stored.client_id, "client-1");
     assert_eq!(stored.user_id, "user-1");
-    assert_eq!(stored.expires_at, NOW + f64::from(AUTH_CODE_TTL_SECONDS));
+    assert_eq!(stored.expires_at, NOW.add(f64::from(AUTH_CODE_TTL_SECONDS)));
     assert_eq!(codes.count(), 1);
 }
 
@@ -123,7 +127,7 @@ fn an_empty_user_id_is_login_required() {
 
 #[test]
 fn a_bad_redirect_uri_is_refused_before_the_capacity_check() {
-    let codes = seeded_store(AUTH_CODES_MAX_SIZE, NOW + 300.0);
+    let codes = seeded_store(AUTH_CODES_MAX_SIZE, LIVE_UNTIL);
     let form = PostForm {
         redirect_uri: "https://example.com/callback".to_owned(),
         ..form()
@@ -147,7 +151,7 @@ fn a_bad_redirect_uri_is_refused_before_the_method_check() {
 
 #[test]
 fn the_capacity_check_precedes_the_method_check() {
-    let codes = seeded_store(AUTH_CODES_MAX_SIZE, NOW + 300.0);
+    let codes = seeded_store(AUTH_CODES_MAX_SIZE, LIVE_UNTIL);
     let form = PostForm {
         code_challenge_method: "plain".to_owned(),
         ..form()
@@ -169,7 +173,7 @@ fn the_method_check_precedes_the_identity_check() {
 
 #[test]
 fn an_expired_prefill_frees_capacity() {
-    let codes = seeded_store(AUTH_CODES_MAX_SIZE, NOW - 1.0);
+    let codes = seeded_store(AUTH_CODES_MAX_SIZE, ALREADY_EXPIRED);
     let accepted = authorize_post(&form(), "user-1", &codes, NOW).unwrap();
     assert_eq!(codes.count(), 1);
     assert!(codes.get(&accepted.code).is_some());

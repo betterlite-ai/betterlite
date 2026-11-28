@@ -14,8 +14,8 @@ async fn admits(
     resolves: bool,
 ) -> Option<String> {
     let keys = Keys { resolves };
-    let master_key = master_key.map(master);
-    authenticate_session(cookie_header, master_key.as_ref(), Some(&keys), now())
+    let secret = master_key.map(master);
+    authenticate_session(cookie_header, secret.as_ref(), Some(&keys), now())
         .await
         .ok()
 }

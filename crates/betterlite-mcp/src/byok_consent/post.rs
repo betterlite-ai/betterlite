@@ -1,5 +1,7 @@
 mod tests;
 
+use std::ops::Add as _;
+
 use secrecy::SecretString;
 use uuid::Uuid;
 
@@ -51,7 +53,7 @@ pub fn authorize_post(
         redirect_uri: form.redirect_uri.clone(),
         client_id: form.client_id.clone(),
         user_id: user_id.to_owned(),
-        expires_at: now + f64::from(AUTH_CODE_TTL_SECONDS),
+        expires_at: now.add(f64::from(AUTH_CODE_TTL_SECONDS)),
     };
     codes.insert(code.clone(), record);
     let location = redirect_location(&form.redirect_uri, &code, &form.state);

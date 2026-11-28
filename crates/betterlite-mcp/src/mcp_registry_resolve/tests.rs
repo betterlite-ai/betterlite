@@ -2,8 +2,9 @@
 
 use super::{FALLBACK_SERVER_NAME, ServerMetadata, resolve, server_initial};
 use crate::byok_consent::test_support::{registry, server};
+use crate::server_record::MCPServer;
 
-fn github() -> crate::server_record::MCPServer {
+fn github() -> MCPServer {
     server(
         r#"{"server_id": "srv-1", "name": "github", "server_name": "GitHub", "transport": "sse", "byok_description": ["Read repositories", "Open pull requests"], "byok_api_key_help_url": "https://github.com/settings/tokens"}"#,
     )
