@@ -3,7 +3,9 @@ use std::num::TryFromIntError;
 
 use async_trait::async_trait;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::table_ops::rows::RowError;
 use betterlite_db::user_repository::RowDecodeError;
+use betterlite_db::user_repository::projection::UserRecordError;
 use betterlite_logging::prometheus::budget_gauges::inputs::{
     TeamBudgetGaugeInput, UserBudgetGaugeInput,
 };
@@ -39,6 +41,16 @@ pub enum BudgetPageError {
     KeyQuery(#[from] KeyQueryPlanError),
     #[error("the stored budget row is not valid JSON")]
     Row(#[source] serde_json::Error),
+    #[error("the stored user row cannot be decoded")]
+    UserRecord {
+        #[source]
+        source: UserRecordError,
+    },
+    #[error("the stored budget row cannot be decoded")]
+    BudgetRow {
+        #[source]
+        source: RowError,
+    },
     #[error("the budget gauge update failed: {source}")]
     Gauge {
         #[source]

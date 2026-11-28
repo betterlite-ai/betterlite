@@ -6,6 +6,7 @@ use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::user_repository::projection::UserRecordError;
 use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{TimeZone as _, Utc};
@@ -189,6 +190,46 @@ async fn users_page_orders_by_created_at_descending_with_a_count_each_page() {
 }
 
 #[tokio::test]
+async fn users_page_decodes_the_json_text_user_columns() {
+    let seed = r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_alias, user_email, spend, max_budget, metadata, model_spend, model_max_budget, created_at) VALUES ('u-json', 'u-json-alias', 'u-json@example.com', 7, 50, to_jsonb('{"role": "admin"}'::text), to_jsonb('{"gpt-4": 1.25}'::text), to_jsonb('{"gpt-4": 10}'::text), '2026-01-03 00:00:00');"#;
+    let fixture = Fixture::database(seed).await;
+    let source = fixture.source();
+
+    let page = source.users_page(50, 1).await.unwrap();
+
+    assert_eq!(page.rows.len(), 1);
+    assert_eq!(page.rows[0].user_id, "u-json");
+    assert_eq!(page.rows[0].user_alias.as_deref(), Some("u-json-alias"));
+    assert_eq!(
+        page.rows[0].user_email.as_deref(),
+        Some("u-json@example.com")
+    );
+    assert_eq!(page.rows[0].spend, Decimal::from(7));
+    assert_eq!(page.rows[0].max_budget, Some(Decimal::from(50)));
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn a_malformed_json_text_user_column_is_a_user_record_error() {
+    let seed = r#"INSERT INTO "LiteLLM_UserTable" (user_id, metadata, created_at) VALUES ('u-bad', to_jsonb('{'::text), '2026-01-03 00:00:00');"#;
+    let fixture = Fixture::database(seed).await;
+    let source = fixture.source();
+
+    let error = source.users_page(50, 1).await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        BudgetPageError::UserRecord {
+            source: UserRecordError::Field {
+                field: "metadata",
+                ..
+            }
+        }
+    ));
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn orgs_page_joins_the_budget_table() {
     let seed = [
         budget_row("b-org", 50, "2030-01-02 00:00:00"),
@@ -219,6 +260,24 @@ async fn orgs_page_joins_the_budget_table() {
     );
     let budget = page.rows[1].budget.as_ref().unwrap();
     assert_eq!(budget.max_budget, Some(Decimal::from(50)));
+    assert_eq!(budget.budget_reset_at, Some(next_day()));
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn orgs_page_decodes_a_json_text_model_max_budget() {
+    let seed = [
+        r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, budget_reset_at, model_max_budget, created_by, updated_by) VALUES ('b-text', 30, '2030-01-02 00:00:00', to_jsonb('{"gpt-4": 10}'::text), 'seed', 'seed');"#.to_owned(),
+        org_row("o-text", "b-text", 3, "2026-01-03 00:00:00"),
+    ]
+    .concat();
+    let fixture = Fixture::database(&seed).await;
+
+    let page = fixture.source().orgs_page(10, 1).await.unwrap();
+
+    assert_eq!(page.rows.len(), 1);
+    let budget = page.rows[0].budget.as_ref().unwrap();
+    assert_eq!(budget.max_budget, Some(Decimal::from(30)));
     assert_eq!(budget.budget_reset_at, Some(next_day()));
     fixture.close().await;
 }

@@ -4,12 +4,13 @@ use async_trait::async_trait;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::{LiteLLMBudgetTableFull, Timestamp};
 use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
-use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::resource_rows::organization::OrganizationTable;
+use betterlite_db::table_ops::rows::RowDecoder as _;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_db::user_repository::UserRepository;
+use betterlite_db::user_repository::projection::{UserRecordError, decode_user_record};
 use betterlite_logging::prometheus::budget_gauges::inputs::{
     TeamBudgetGaugeInput, UserBudgetGaugeInput,
 };
@@ -167,7 +168,12 @@ fn team_input(team: LiteLLMTeamTable) -> TeamBudgetGaugeInput {
 }
 
 fn user_row(row: Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
-    let stored: LiteLLMUserTable = stored_row(&row)?;
+    let text: String = row.try_get(0).map_err(backend)?;
+    let stored = decode_user_record(text.as_bytes())
+        .map_err(|source| BudgetPageError::UserRecord { source })?
+        .ok_or(BudgetPageError::UserRecord {
+            source: UserRecordError::NotAnObject,
+        })?;
     Ok(UserBudgetGaugeInput {
         user_id: stored.user_id,
         user_email: stored.user_email,
@@ -183,8 +189,8 @@ fn budget_of(row: &Row) -> Result<Option<BudgetTableSnapshot>, BudgetPageError> 
     let Some(text) = text else {
         return Ok(None);
     };
-    let stored: LiteLLMBudgetTableFull =
-        serde_json::from_str(&text).map_err(BudgetPageError::Row)?;
+    let stored = LiteLLMBudgetTableFull::decode_row(&text)
+        .map_err(|source| BudgetPageError::BudgetRow { source })?;
     Ok(Some(BudgetTableSnapshot {
         max_budget: stored.budget.max_budget,
         budget_reset_at: stored.budget_reset_at.map(Timestamp::utc),
