@@ -2,7 +2,7 @@
 
 use std::future::{Future, ready};
 use std::num::NonZeroU64;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use aws_lc_rs::error::Unspecified;
 use chrono::{DateTime, TimeZone as _, Utc};
@@ -51,14 +51,13 @@ impl SessionEntropy for FixedEntropy {
 }
 
 struct FlakyEntropy {
-    calls: Mutex<u32>,
+    calls: AtomicU32,
 }
 
 impl SessionEntropy for FlakyEntropy {
     fn jti(&self) -> Result<[u8; 16], Unspecified> {
-        let mut calls = self.calls.lock().unwrap();
-        *calls = calls.saturating_add(1);
-        if *calls == 1 {
+        let calls = self.calls.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        if calls == 1 {
             Err(Unspecified)
         } else {
             Ok([7; 16])
@@ -89,16 +88,13 @@ impl MintProxyCredential for Mint {
         team_id: Option<&str>,
     ) -> impl Future<Output = Result<MintedProxyCredential, ProxyCredentialMintFailure>> + Send
     {
-        let answer = match self.failure {
-            Some(failure) => Err(failure),
-            None => Ok(MintedProxyCredential {
-                key: SecretString::from("proxy-key-1"),
-                expires_in: NonZeroU64::new(600).unwrap(),
-                user_id: user_id.to_owned(),
-                team_id: self.team_id.clone().or_else(|| team_id.map(str::to_owned)),
-            }),
+        let minted = MintedProxyCredential {
+            key: SecretString::from("proxy-key-1"),
+            expires_in: NonZeroU64::new(600).unwrap(),
+            user_id: user_id.to_owned(),
+            team_id: self.team_id.clone().or_else(|| team_id.map(str::to_owned)),
         };
-        ready(answer)
+        ready(self.failure.map_or_else(|| Ok(minted), Err))
     }
 }
 
@@ -207,7 +203,11 @@ fn session_pair(reply: TokenReply) -> SessionPairBody {
             assert_eq!(status, 200);
             match *body {
                 TokenBody::SessionPair(pair) => pair,
-                other => panic!("expected a session pair, got {other:?}"),
+                other @ TokenBody::ProxyCredential(_)
+                | other @ TokenBody::Revoked(_)
+                | other @ TokenBody::Introspection(_) => {
+                    panic!("expected a session pair, got {other:?}")
+                }
             }
         }
         TokenReply::Error(error) => panic!("expected a session pair, got {}", error.description),
@@ -219,8 +219,12 @@ fn proxy_body(reply: TokenReply) -> ProxyCredentialBody {
         TokenReply::Json { status, body, .. } => {
             assert_eq!(status, 200);
             match *body {
-                TokenBody::ProxyCredential(body) => body,
-                other => panic!("expected a proxy credential, got {other:?}"),
+                TokenBody::ProxyCredential(credential) => credential,
+                other @ TokenBody::SessionPair(_)
+                | other @ TokenBody::Revoked(_)
+                | other @ TokenBody::Introspection(_) => {
+                    panic!("expected a proxy credential, got {other:?}")
+                }
             }
         }
         TokenReply::Error(error) => {
@@ -306,7 +310,7 @@ async fn a_claim_outage_is_a_503() {
 async fn a_mint_failure_keeps_the_claim() {
     let mut harness = Harness::new();
     harness.entropy = Box::new(FlakyEntropy {
-        calls: Mutex::new(0),
+        calls: AtomicU32::new(0),
     });
     let failure = error(harness.issue(alice(), "code:1").await);
     assert_eq!(failure.status, 500);

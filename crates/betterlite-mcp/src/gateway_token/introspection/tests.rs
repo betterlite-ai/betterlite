@@ -101,8 +101,14 @@ fn introspected_json(reply: TokenReply) -> String {
         TokenReply::Json { status, body, .. } => {
             assert_eq!(status, 200);
             match *body {
-                TokenBody::Introspection(body) => serde_json::to_string(&body).unwrap(),
-                other => panic!("expected an introspection body, got {other:?}"),
+                TokenBody::Introspection(introspection) => {
+                    serde_json::to_string(&introspection).unwrap()
+                }
+                other @ TokenBody::SessionPair(_)
+                | other @ TokenBody::ProxyCredential(_)
+                | other @ TokenBody::Revoked(_) => {
+                    panic!("expected an introspection body, got {other:?}")
+                }
             }
         }
         TokenReply::Error(error) => panic!("expected an introspection, got {}", error.description),

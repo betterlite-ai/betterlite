@@ -94,8 +94,12 @@ fn revoked_json(reply: TokenReply) -> String {
         TokenReply::Json { status, body, .. } => {
             assert_eq!(status, 200);
             match *body {
-                TokenBody::Revoked(body) => serde_json::to_string(&body).unwrap(),
-                other => panic!("expected a revoked body, got {other:?}"),
+                TokenBody::Revoked(revoked) => serde_json::to_string(&revoked).unwrap(),
+                other @ TokenBody::SessionPair(_)
+                | other @ TokenBody::ProxyCredential(_)
+                | other @ TokenBody::Introspection(_) => {
+                    panic!("expected a revoked body, got {other:?}")
+                }
             }
         }
         TokenReply::Error(error) => panic!("expected a revoked reply, got {}", error.description),

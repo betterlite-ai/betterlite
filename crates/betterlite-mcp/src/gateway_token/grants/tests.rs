@@ -2,7 +2,7 @@
 
 use std::future::{Future, ready};
 use std::num::NonZeroU64;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use aws_lc_rs::error::Unspecified;
 use base64::Engine as _;
@@ -62,29 +62,27 @@ fn challenge_of(value: &str) -> String {
 }
 
 struct CountingEntropy {
-    calls: Mutex<u8>,
+    calls: AtomicU8,
 }
 
 impl SessionEntropy for CountingEntropy {
     fn jti(&self) -> Result<[u8; 16], Unspecified> {
-        let mut calls = self.calls.lock().unwrap();
-        *calls = calls.saturating_add(1);
-        Ok([*calls; 16])
+        let calls = self.calls.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        Ok([calls; 16])
     }
 }
 
 struct FlakyEntropy {
-    calls: Mutex<u8>,
+    calls: AtomicU8,
 }
 
 impl SessionEntropy for FlakyEntropy {
     fn jti(&self) -> Result<[u8; 16], Unspecified> {
-        let mut calls = self.calls.lock().unwrap();
-        *calls = calls.saturating_add(1);
-        if *calls == 1 {
+        let calls = self.calls.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        if calls == 1 {
             Err(Unspecified)
         } else {
-            Ok([*calls; 16])
+            Ok([calls; 16])
         }
     }
 }
@@ -112,16 +110,13 @@ impl MintProxyCredential for Mint {
         team_id: Option<&str>,
     ) -> impl Future<Output = Result<MintedProxyCredential, ProxyCredentialMintFailure>> + Send
     {
-        let answer = match self.failure {
-            Some(failure) => Err(failure),
-            None => Ok(MintedProxyCredential {
-                key: SecretString::from("proxy-key-1"),
-                expires_in: NonZeroU64::new(600).unwrap(),
-                user_id: user_id.to_owned(),
-                team_id: self.team_id.clone().or_else(|| team_id.map(str::to_owned)),
-            }),
+        let minted = MintedProxyCredential {
+            key: SecretString::from("proxy-key-1"),
+            expires_in: NonZeroU64::new(600).unwrap(),
+            user_id: user_id.to_owned(),
+            team_id: self.team_id.clone().or_else(|| team_id.map(str::to_owned)),
         };
-        ready(answer)
+        ready(self.failure.map_or_else(|| Ok(minted), Err))
     }
 }
 
@@ -187,7 +182,7 @@ impl Harness {
             cipher: cipher(SALT),
             registry: registry(&[OAUTH_SERVER, M2M_SERVER]),
             entropy: Box::new(CountingEntropy {
-                calls: Mutex::new(0),
+                calls: AtomicU8::new(0),
             }),
             guard: guard(),
             reload: Reload(None),
@@ -232,7 +227,7 @@ impl Harness {
     }
 }
 
-fn form<'form>(grant_type: &'form str) -> TokenForm<'form> {
+fn form(grant_type: &str) -> TokenForm<'_> {
     TokenForm {
         grant_type: Some(grant_type),
         code: None,
@@ -262,7 +257,7 @@ fn auth_code(challenge: &str, jti: &str) -> GatewayAuthCode {
     }
 }
 
-fn code_form<'form>(code: &'form str) -> TokenForm<'form> {
+fn code_form(code: &str) -> TokenForm<'_> {
     let mut request = form("authorization_code");
     request.code = Some(code);
     request.redirect_uri = Some(CALLBACK);
@@ -271,14 +266,14 @@ fn code_form<'form>(code: &'form str) -> TokenForm<'form> {
     request
 }
 
-fn refresh_form<'form>(token: &'form str) -> TokenForm<'form> {
+fn refresh_form(token: &str) -> TokenForm<'_> {
     let mut request = form("refresh_token");
     request.refresh_token = Some(token);
     request.client_id = Some("client-1");
     request
 }
 
-fn exchange_form<'form>(client: &'form str) -> TokenForm<'form> {
+fn exchange_form(client: &str) -> TokenForm<'_> {
     let mut request = form(TOKEN_EXCHANGE_GRANT_TYPE);
     request.client_id = Some(client);
     request.subject_token = Some("idp-token");
@@ -302,7 +297,11 @@ fn session_pair(reply: TokenReply) -> SessionPairBody {
             assert_eq!(status, 200);
             match *body {
                 TokenBody::SessionPair(pair) => pair,
-                other => panic!("expected a session pair, got {other:?}"),
+                other @ TokenBody::ProxyCredential(_)
+                | other @ TokenBody::Revoked(_)
+                | other @ TokenBody::Introspection(_) => {
+                    panic!("expected a session pair, got {other:?}")
+                }
             }
         }
         TokenReply::Error(error) => panic!("expected a session pair, got {}", error.description),
@@ -314,8 +313,12 @@ fn proxy_body(reply: TokenReply) -> ProxyCredentialBody {
         TokenReply::Json { status, body, .. } => {
             assert_eq!(status, 200);
             match *body {
-                TokenBody::ProxyCredential(body) => body,
-                other => panic!("expected a proxy credential, got {other:?}"),
+                TokenBody::ProxyCredential(credential) => credential,
+                other @ TokenBody::SessionPair(_)
+                | other @ TokenBody::Revoked(_)
+                | other @ TokenBody::Introspection(_) => {
+                    panic!("expected a proxy credential, got {other:?}")
+                }
             }
         }
         TokenReply::Error(error) => {
@@ -533,7 +536,7 @@ async fn a_code_grant_issues_a_pair_and_burns_the_code() {
 async fn a_code_grant_claims_before_minting() {
     let mut harness = Harness::new();
     harness.entropy = Box::new(FlakyEntropy {
-        calls: Mutex::new(0),
+        calls: AtomicU8::new(0),
     });
     let code = harness.sealed_code(&auth_code(CHALLENGE, "jti-1"));
     assert_eq!(error(harness.token(&code_form(&code)).await).status, 500);

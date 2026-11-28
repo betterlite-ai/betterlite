@@ -66,15 +66,15 @@ fn pkce_rejects_an_empty_challenge() {
 fn pkce_hashes_non_ascii_characters_as_question_marks() {
     let replaced = "?".repeat(43);
     assert!(pkce_verifier_matches(
-        &"é".repeat(43),
+        &"\u{e9}".repeat(43),
         &challenge_of(&replaced)
     ));
-    assert!(!pkce_verifier_matches(&"é".repeat(43), CHALLENGE));
+    assert!(!pkce_verifier_matches(&"\u{e9}".repeat(43), CHALLENGE));
 }
 
 #[test]
 fn pkce_never_matches_on_a_non_ascii_challenge() {
-    assert!(!pkce_verifier_matches(VERIFIER, "é"));
+    assert!(!pkce_verifier_matches(VERIFIER, "\u{e9}"));
 }
 
 fn challenge_of(value: &str) -> String {
