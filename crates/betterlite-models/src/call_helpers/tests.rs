@@ -839,13 +839,14 @@ fn generic_params_coerce_a_text_max_retries() {
     }
 }
 
-fn generic_params_normalize_drop_params_and_remove_non_flags() {
+fn generic_params_normalize_drop_params() {
     let cases = [
         ("true", Some("true")),
         ("0", Some("false")),
         ("\"yes\"", Some("true")),
         ("\"0\"", Some("false")),
-        ("\"maybe\"", None),
+        ("\"maybe\"", Some("\"maybe\"")),
+        ("\"y\"", Some("\"y\"")),
         ("[\"a\"]", None),
     ];
     for (given, expected) in cases {
@@ -989,9 +990,7 @@ fn trusted_flags_cannot_be_forged() {
     generic_params_drop_reserved_keys_and_fill_false_defaults
 )]
 #[case::generic_params_coerce_a_text_max_retries(generic_params_coerce_a_text_max_retries)]
-#[case::generic_params_normalize_drop_params_and_remove_non_flags(
-    generic_params_normalize_drop_params_and_remove_non_flags
-)]
+#[case::generic_params_normalize_drop_params(generic_params_normalize_drop_params)]
 #[case::generic_params_validate_the_affinity_header(generic_params_validate_the_affinity_header)]
 fn call_helpers_call_helper_tests_behavior(#[case] scenario: fn()) {
     scenario();

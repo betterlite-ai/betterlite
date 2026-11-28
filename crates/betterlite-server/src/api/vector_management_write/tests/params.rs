@@ -13,6 +13,7 @@ fn params_text_stores_the_normalized_generic_params() {
     raw.insert("params".to_owned(), Json::Text("dropped".to_owned()));
     raw.insert("max_retries".to_owned(), Json::Text("3".to_owned()));
     raw.insert("use_litellm_proxy".to_owned(), Json::Bool(true));
+    raw.insert("drop_params".to_owned(), Json::Text("y".to_owned()));
     raw.insert("left_out".to_owned(), Json::Null);
     let stored = params_text(Some(&raw)).expect("the params are generic");
     let dumped: JsonObject =
@@ -24,6 +25,7 @@ fn params_text_stores_the_normalized_generic_params() {
         dumped.get("max_retries")
     );
     assert_eq!(Some(&Json::Bool(true)), dumped.get("use_litellm_proxy"));
+    assert_eq!(Some(&Json::Text("y".to_owned())), dumped.get("drop_params"));
     assert_eq!(None, dumped.get("left_out"));
     assert_eq!(
         Some(&Json::Bool(false)),
