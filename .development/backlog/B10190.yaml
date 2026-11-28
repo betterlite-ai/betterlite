@@ -1,13 +1,13 @@
 id: B10190
 milestone: R2 bug fixes
 title: The S3 signer and the ElastiCache and RDS presigners sign through betterlite-sigv4
-status: todo
+status: done
 depends_on: [B10173, B10191, B3993, B3062, B644, B4143, B4320, B2308]
 file: tasks/B10190-sigv4-s3-and-presign.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3473
