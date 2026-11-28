@@ -1,14 +1,14 @@
 id: B4505
 milestone: M8 platform
 title: Lease Lens work and accept verified results
-status: todo
+status: done
 depends_on: [B4500, B4501, B4502, B4503, B4504, B003]
 file: tasks/B4505-lens-worker-routes.yaml
 covers:
   - "litellm/proxy/lens/endpoints.py"
 parent: B132
 split_from: B132
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3471
