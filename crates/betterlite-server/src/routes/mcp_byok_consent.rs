@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::Json;
 use axum::Router;
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse as _, Response};
 use axum::routing::get;
 use betterlite_auth::auth_key_lookup::KeyAuthenticator;
@@ -62,8 +62,11 @@ async fn authorize_page(request: Request) -> Response {
 }
 
 async fn submit_form(State(state): State<Arc<ConsentState>>, request: Request) -> Response {
-    let cookie_header = cookie_header(request.headers());
-    let user_id = match session_user(&state, cookie_header).await {
+    let cookie = request
+        .headers()
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok());
+    let user_id = match session_user(&state, cookie).await {
         Ok(user_id) => user_id,
         Err(response) => return *response,
     };
@@ -131,11 +134,6 @@ fn query_from(query: Option<&str>) -> GetQuery {
         parsed.set(name.as_ref(), value.into_owned());
     }
     parsed
-}
-
-fn cookie_header(headers: &HeaderMap) -> Option<&str> {
-    let value = headers.get(header::COOKIE)?;
-    value.to_str().ok()
 }
 
 fn post_form(parts: &FormParts) -> Result<PostForm, ValidationBody> {
