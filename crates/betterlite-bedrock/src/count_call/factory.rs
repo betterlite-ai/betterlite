@@ -1,7 +1,7 @@
+use crate::credentials::CredentialSource;
+
 use super::counter::BedrockTokenCounter;
-use super::handler::{
-    BedrockCountTokensHandler, CountTokensCredentials, CountTokensEnvironment, CountTokensTransport,
-};
+use super::handler::{BedrockCountTokensHandler, CountTokensEnvironment, CountTokensTransport};
 
 #[derive(Debug, Clone, Default)]
 pub struct BedrockModelInfo {
@@ -18,7 +18,7 @@ impl BedrockModelInfo {
     ) -> BedrockTokenCounter<BedrockCountTokensHandler<T, C>>
     where
         T: CountTokensTransport,
-        C: CountTokensCredentials,
+        C: CredentialSource,
     {
         BedrockTokenCounter {
             handler: BedrockCountTokensHandler {

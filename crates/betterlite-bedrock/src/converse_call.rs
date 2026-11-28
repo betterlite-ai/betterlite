@@ -25,10 +25,10 @@ use crate::agentcore_stream::IdSource;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::{ConverseMedia, ConverseSettings};
 use crate::converse_response::wire::ModelResponse;
+use crate::credentials::CredentialSource;
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
 use crate::model_routes::ParamMap;
-use crate::rerank::plan::CredentialSource;
 use crate::rerank::transport::RerankHttpReply;
 
 pub mod buffered;
@@ -139,7 +139,7 @@ pub async fn converse_call<Cred, Source, Transport, Factory, Lookup, R, Ids>(
     assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
 ) -> Result<CallPlan, ConverseCallError>
 where
-    Cred: CredentialSource + Sync,
+    Cred: CredentialSource,
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
     Factory: ConverseClientFactory,
