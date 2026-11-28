@@ -57,8 +57,8 @@ fn a_bare_bearer_word_is_the_token() {
 #[test]
 fn header_bytes_are_decoded_as_latin1() {
     let input =
-        json!({"operation": "presented_key", "headers": [["authorization", "sk-caf\u{e9}"]]});
-    assert_eq!(run(&input), json!("sk-caf\u{e9}"));
+        json!({"operation": "presented_key", "headers": [["authorization", "sk-\u{e9}\u{e8}"]]});
+    assert_eq!(run(&input), json!("sk-\u{e9}\u{e8}"));
 }
 
 #[test]
