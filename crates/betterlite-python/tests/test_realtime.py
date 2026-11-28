@@ -82,6 +82,13 @@ class NativeFailure(TypedDict):
     status_code: int
 
 
+class ErrorCase(TypedDict):
+    model: str
+    reference: type[BaseException]
+    ours: type[BaseException]
+    name: str
+
+
 FAILURE: Final[TypeAdapter[NativeFailure]] = TypeAdapter(NativeFailure)
 
 
@@ -119,6 +126,20 @@ REFERENCE_ERRORS: ErrorModule = importlib.import_module(
 )
 REFERENCE_HTTP: ErrorModule = importlib.import_module(
     "litellm.llms.custom_httpx.http_handler"
+)
+ERROR_CASES: Final[tuple[ErrorCase, ...]] = (
+    {
+        "model": MODEL,
+        "reference": REFERENCE_ERRORS.BaseLLMException,
+        "ours": BaseLLMException,
+        "name": "BaseLLMException",
+    },
+    {
+        "model": NO_CONFIG_MODEL,
+        "reference": REFERENCE_HTTP.MaskedHTTPStatusError,
+        "ours": MaskedHTTPStatusError,
+        "name": "MaskedHTTPStatusError",
+    },
 )
 
 
@@ -368,21 +389,21 @@ def test_realtime_calls() -> None:
     }
 
 
-def test_provider_error() -> None:
-    reference_error = REFERENCE_ERRORS.BaseLLMException
+@pytest.mark.parametrize("case", ERROR_CASES)
+def test_provider_error(case: ErrorCase) -> None:
     with closing(RealtimeServer()) as server:
-        with pytest.raises(reference_error) as theirs:
+        with pytest.raises(case["reference"]) as theirs:
             asyncio.run(
                 REFERENCE_SECRET.acreate_realtime_client_secret(
-                    model=MODEL,
+                    model=case["model"],
                     api_base=server.url,
                     api_key=BAD_KEY,
                 )
             )
-        with pytest.raises(BaseLLMException) as ours:
+        with pytest.raises(case["ours"]) as ours:
             asyncio.run(
                 acreate_realtime_client_secret(
-                    model=MODEL,
+                    model=case["model"],
                     api_base=server.url,
                     api_key=BAD_KEY,
                 )
@@ -392,40 +413,9 @@ def test_provider_error() -> None:
     assert error_fields(ours.value).message == AUTH_TEXT
     assert error_fields(theirs.value).message == AUTH_TEXT
     assert ours.value.__class__.__name__ == theirs.value.__class__.__name__
-    assert theirs.value.__class__.__name__ == "BaseLLMException"
+    assert theirs.value.__class__.__name__ == case["name"]
     failure = FAILURE.validate_json(str(native_cause(ours.value)))
-    assert failure["type"] == "BaseLLMException"
-    assert failure["message"] == AUTH_TEXT
-    assert failure["status_code"] == UNAUTHORIZED
-
-
-def test_masked_status_error() -> None:
-    reference_error = REFERENCE_HTTP.MaskedHTTPStatusError
-    with closing(RealtimeServer()) as server:
-        with pytest.raises(reference_error) as theirs:
-            asyncio.run(
-                REFERENCE_SECRET.acreate_realtime_client_secret(
-                    model=NO_CONFIG_MODEL,
-                    api_base=server.url,
-                    api_key=BAD_KEY,
-                )
-            )
-        with pytest.raises(MaskedHTTPStatusError) as ours:
-            asyncio.run(
-                acreate_realtime_client_secret(
-                    model=NO_CONFIG_MODEL,
-                    api_base=server.url,
-                    api_key=BAD_KEY,
-                )
-            )
-    assert error_fields(ours.value).status_code == UNAUTHORIZED
-    assert error_fields(theirs.value).status_code == UNAUTHORIZED
-    assert error_fields(ours.value).message == AUTH_TEXT
-    assert error_fields(theirs.value).message == AUTH_TEXT
-    assert ours.value.__class__.__name__ == theirs.value.__class__.__name__
-    assert theirs.value.__class__.__name__ == "MaskedHTTPStatusError"
-    failure = FAILURE.validate_json(str(native_cause(ours.value)))
-    assert failure["type"] == "MaskedHTTPStatusError"
+    assert failure["type"] == case["name"]
     assert failure["message"] == AUTH_TEXT
     assert failure["status_code"] == UNAUTHORIZED
 
