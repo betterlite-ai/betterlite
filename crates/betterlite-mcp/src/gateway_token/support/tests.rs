@@ -288,13 +288,21 @@ fn a_proxy_credential_names_the_issued_type_when_set() {
 }
 
 #[test]
-fn token_bodies_debug_without_their_secrets() {
+fn a_session_pair_debug_redacts_both_tokens() {
     let pair = SessionPairBody {
         access_token: "llm_session_a".to_owned(),
         token_type: BEARER_TOKEN_TYPE,
         expires_in: 3_600,
         refresh_token: "llm_srefresh_r".to_owned(),
     };
+    let text = format!("{pair:?}");
+    assert!(text.contains("<redacted>"));
+    assert!(!text.contains("llm_session_a"));
+    assert!(!text.contains("llm_srefresh_r"));
+}
+
+#[test]
+fn a_proxy_credential_debug_redacts_the_key_and_refresh_token() {
     let proxy = ProxyCredentialBody {
         access_token: "sk-proxy".to_owned(),
         token_type: BEARER_TOKEN_TYPE,
@@ -304,12 +312,10 @@ fn token_bodies_debug_without_their_secrets() {
         team_id: None,
         issued_token_type: None,
     };
-    for text in [format!("{pair:?}"), format!("{proxy:?}")] {
-        assert!(text.contains("<redacted>"));
-        assert!(!text.contains("llm_session_a"));
-        assert!(!text.contains("llm_srefresh_r"));
-        assert!(!text.contains("sk-proxy"));
-    }
+    let text = format!("{proxy:?}");
+    assert!(text.contains("<redacted>"));
+    assert!(!text.contains("sk-proxy"));
+    assert!(!text.contains("llm_srefresh_r"));
 }
 
 #[test]
