@@ -15,6 +15,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
+use betterlite_router::routing_groups::error::RoutingGroupError;
 use thiserror::Error;
 
 use self::store::ConfigUpdateStore;
@@ -45,8 +46,12 @@ pub enum ConfigUpdateError {
     NotAdmin,
     #[error("Unsupported router settings: {names} are not valid router settings")]
     UnsupportedRouterSettings { names: String },
-    #[error("{0}")]
-    InvalidRoutingGroups(String),
+    #[error(transparent)]
+    RoutingGroups(#[from] RoutingGroupError),
+    #[error("routing_groups must be a list")]
+    RoutingGroupsList,
+    #[error("routing_groups entries must be objects")]
+    RoutingGroupsEntry,
     #[error("No DB Connected")]
     NoDatabase,
     #[error(transparent)]
@@ -62,7 +67,9 @@ impl ConfigUpdateError {
         match self {
             Self::NotAdmin => StatusCode::FORBIDDEN,
             Self::UnsupportedRouterSettings { .. }
-            | Self::InvalidRoutingGroups(_)
+            | Self::RoutingGroups(_)
+            | Self::RoutingGroupsList
+            | Self::RoutingGroupsEntry
             | Self::NoDatabase
             | Self::Body(_)
             | Self::ConfigState(_)
@@ -74,9 +81,10 @@ impl ConfigUpdateError {
     fn detail(&self) -> String {
         match self {
             Self::NotAdmin => NOT_ADMIN.to_owned(),
-            Self::UnsupportedRouterSettings { .. } | Self::InvalidRoutingGroups(_) => {
-                self.to_string()
-            }
+            Self::UnsupportedRouterSettings { .. }
+            | Self::RoutingGroups(_)
+            | Self::RoutingGroupsList
+            | Self::RoutingGroupsEntry => self.to_string(),
             Self::NoDatabase | Self::Body(_) | Self::ConfigState(_) | Self::Encode(_) => {
                 format!("Authentication Error, {self}")
             }

@@ -10,8 +10,6 @@ use super::body::RouterSettingsBody;
 use super::{ConfigUpdateError, SettingsMap};
 
 const ROUTING_GROUPS: &str = "routing_groups";
-const GROUPS_ENTRY: &str = "routing_groups entries must be objects";
-const GROUPS_LIST: &str = "routing_groups must be a list";
 
 // Router.get_valid_args(), the keyword names Router.__init__ declares
 pub const ROUTER_INIT_ARGUMENTS: [&str; 58] = [
@@ -118,9 +116,7 @@ fn check_groups(value: Option<&JsonValue>) -> Result<(), ConfigUpdateError> {
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Object(_),
         ) => {
-            return Err(ConfigUpdateError::InvalidRoutingGroups(
-                GROUPS_LIST.to_owned(),
-            ));
+            return Err(ConfigUpdateError::RoutingGroupsList);
         }
     };
     let mut parsed: Vec<JsonMap> = Vec::with_capacity(groups.len());
@@ -137,14 +133,11 @@ fn check_groups(value: Option<&JsonValue>) -> Result<(), ConfigUpdateError> {
             | JsonValue::Number(_)
             | JsonValue::String(_)
             | JsonValue::Array(_) => {
-                return Err(ConfigUpdateError::InvalidRoutingGroups(
-                    GROUPS_ENTRY.to_owned(),
-                ));
+                return Err(ConfigUpdateError::RoutingGroupsEntry);
             }
         }
     }
-    let _outcome = parse_routing_groups(Some(parsed.as_slice()), &BTreeSet::new())
-        .map_err(|error| ConfigUpdateError::InvalidRoutingGroups(error.to_string()))?;
+    let _outcome = parse_routing_groups(Some(parsed.as_slice()), &BTreeSet::new())?;
     Ok(())
 }
 

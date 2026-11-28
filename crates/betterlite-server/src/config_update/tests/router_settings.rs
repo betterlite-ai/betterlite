@@ -69,8 +69,15 @@ fn refuses_duplicate_group_names() {
         ]}"#,
     );
     let error = router_settings::check(&raw).unwrap_err();
-    assert!(matches!(&error, ConfigUpdateError::InvalidRoutingGroups(_)));
+    assert!(matches!(&error, ConfigUpdateError::RoutingGroups(_)));
     assert!(error.to_string().contains("group names must be unique"));
+}
+
+#[test]
+fn refuses_a_routing_groups_that_is_not_a_list() {
+    let raw = object(r#"{"routing_groups": "g"}"#);
+    let error = router_settings::check(&raw).unwrap_err();
+    assert_eq!(error.to_string(), "routing_groups must be a list");
 }
 
 #[test]
