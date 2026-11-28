@@ -265,42 +265,36 @@ impl FakeDatabase {
     }
 }
 
-fn read_row(
-    rows: &Mutex<BTreeMap<String, McpServerTable>>,
-    server_id: &str,
-) -> Option<McpServerTable> {
-    let rows = rows.lock().unwrap_or_else(PoisonError::into_inner);
-    rows.get(server_id).cloned()
+type TableRead<'db, E> =
+    Pin<Box<dyn Future<Output = Result<Option<McpServerTable>, E>> + Send + 'db>>;
+
+fn read_row_or<'db, E>(
+    rows: &'db Mutex<BTreeMap<String, McpServerTable>>,
+    server_id: &'db str,
+    fails: bool,
+    missing: E,
+) -> TableRead<'db, E>
+where
+    E: Send + 'db,
+{
+    let row = {
+        let stored = rows.lock().unwrap_or_else(PoisonError::into_inner);
+        stored.get(server_id).cloned()
+    };
+    Box::pin(ready(if fails { Err(missing) } else { Ok(row) }))
 }
 
 impl SessionDatabase for FakeDatabase {
-    fn get_server<'db>(
-        &'db self,
-        server_id: &'db str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<McpServerTable>, McpTableError>> + Send + 'db>>
-    {
-        let fault = self.fault;
-        let row = read_row(&self.servers, server_id);
-        Box::pin(async move {
-            if fault == DatabaseFault::ServerRead {
-                return Err(McpTableError::MissingServerId);
-            }
-            Ok(row)
-        })
+    fn get_server<'db>(&'db self, server_id: &'db str) -> TableRead<'db, McpTableError> {
+        let fault = self.fault == DatabaseFault::ServerRead;
+        let error = McpTableError::MissingServerId;
+        read_row_or(&self.servers, server_id, fault, error)
     }
 
-    fn get_draft<'db>(
-        &'db self,
-        server_id: &'db str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<McpServerTable>, ServerWriteError>> + Send + 'db>>
-    {
-        let outcome = match self.fault {
-            DatabaseFault::DraftRead => Err(ServerWriteError::MissingServerId),
-            DatabaseFault::None | DatabaseFault::ServerRead | DatabaseFault::DraftWrite => {
-                Ok(read_row(&self.drafts, server_id))
-            }
-        };
-        Box::pin(ready(outcome))
+    fn get_draft<'db>(&'db self, server_id: &'db str) -> TableRead<'db, ServerWriteError> {
+        let fault = self.fault == DatabaseFault::DraftRead;
+        let error = ServerWriteError::MissingServerId;
+        read_row_or(&self.drafts, server_id, fault, error)
     }
 
     fn create_draft<'db>(
