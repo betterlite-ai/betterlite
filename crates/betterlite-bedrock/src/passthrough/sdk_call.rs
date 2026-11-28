@@ -155,21 +155,20 @@ where
                 AwsFlavor::Mantle => passthrough_region(context.litellm_params, &self.globals)?,
             },
         };
-        let credentials = match &bearer {
-            Some(_token) => None,
-            None => {
-                let mut raw = raw_params(context.litellm_params)?;
-                let auth = pop_aws_auth_params(&mut raw)?;
-                let settings = auth_settings(auth, &region);
-                Some(
-                    self.source
-                        .resolve(settings, region.clone())
-                        .await
-                        .map_err(|error| ConfigError::ValueError {
-                            message: error.to_string(),
-                        })?,
-                )
-            }
+        let credentials = if let Some(_token) = &bearer {
+            None
+        } else {
+            let mut raw = raw_params(context.litellm_params)?;
+            let auth = pop_aws_auth_params(&mut raw)?;
+            let settings = auth_settings(auth, &region);
+            Some(
+                self.source
+                    .resolve(settings, region.clone())
+                    .await
+                    .map_err(|error| ConfigError::ValueError {
+                        message: error.to_string(),
+                    })?,
+            )
         };
         let identity = SigningIdentity {
             credentials: credentials.as_ref(),

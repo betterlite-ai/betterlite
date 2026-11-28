@@ -85,7 +85,7 @@ impl CredentialSource for FakeSource {
             .unwrap_or_else(PoisonError::into_inner)
             .push(Resolved {
                 access_key_id,
-                region: region.clone(),
+                region,
             });
         ready(Ok(Credentials {
             access_key_id: SecretString::from(self.access_key.clone()),
@@ -143,7 +143,7 @@ fn bedrock_url(
     url_of(config, AwsFlavor::Bedrock, &request)
 }
 
-fn signing<'text>(params: &'text Object) -> PassthroughSigning<'text> {
+fn signing(params: &Object) -> PassthroughSigning<'_> {
     PassthroughSigning {
         litellm_params: params,
         request_data: None,
@@ -402,7 +402,7 @@ async fn an_empty_bearer_token_falls_through_to_sigv4() {
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&empty))
         .await
         .unwrap();
-    let authorization = headers.get("Authorization").unwrap();
+    let authorization = &headers["Authorization"];
     assert!(
         authorization.starts_with(
             "AWS4-HMAC-SHA256 Credential=AKIAEMPTY/20231114/us-west-2/bedrock/aws4_request"
@@ -470,7 +470,7 @@ async fn sigv4_signs_with_the_source_at_the_signing_region() {
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&params))
         .await
         .unwrap();
-    let authorization = headers.get("Authorization").unwrap();
+    let authorization = &headers["Authorization"];
     assert!(
         authorization.starts_with(
             "AWS4-HMAC-SHA256 Credential=AKIAFIXTURE/20231114/eu-west-1/bedrock/aws4_request"
@@ -495,7 +495,7 @@ async fn mantle_sigv4_signs_at_the_mantle_region() {
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&params))
         .await
         .unwrap();
-    let authorization = headers.get("Authorization").unwrap();
+    let authorization = &headers["Authorization"];
     assert!(
         authorization.starts_with(
             "AWS4-HMAC-SHA256 Credential=AKIAMANTLE/20231114/eu-central-1/bedrock/aws4_request"
