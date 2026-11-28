@@ -7,10 +7,10 @@ use std::time::Duration;
 
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::records::{RunEvent, RunReply, RunRequest};

@@ -22,10 +22,11 @@ use self::error::{ErrorMode, ErrorSource, TextCompletionError, TextCompletionFai
 use self::logging::{CompletionLogger, PostCallRecord, ResponseKind};
 use self::reply::text_response;
 use self::sdk::{
-    ClientConstructor, ClientKind, HttpClientSource, ParsedCompletion, SdkArguments, SdkError,
+    ClientConstructor, HttpClientSource, ParsedCompletion, SdkArguments, SdkError,
     TextCompletionSdk as _, missing_api_key,
 };
 use self::stream::{StreamSetup, completion_stream};
+use betterlite_http::client_kind::ClientKind;
 
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default
 const REPEATED_CHUNK_LIMIT: usize = 100;
@@ -65,13 +66,13 @@ struct Route {
 const fn route(context: &CallContext) -> Route {
     match (context.acompletion, context.streaming) {
         (true, true) => Route {
-            kind: ClientKind::Async,
+            kind: ClientKind::Asynchronous,
             http_client: HttpClientSource::AClientSession,
             build: ErrorMode::Raw,
             send: ErrorMode::Raw,
         },
         (true, false) => Route {
-            kind: ClientKind::Async,
+            kind: ClientKind::Asynchronous,
             http_client: HttpClientSource::AsyncHttpClient,
             build: ErrorMode::Mapped,
             send: ErrorMode::Mapped,

@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::aleph_alpha::lines::{LineDecoder, decode_text};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_prompts::message_content::Message;
 use futures_util::StreamExt as _;
 use http::{HeaderMap, Method};
@@ -41,7 +41,7 @@ pub trait StreamTransport: Send + Sync {
 #[async_trait]
 impl StreamTransport for ProxiedClient {
     fn kind(&self) -> ClientKind {
-        ClientKind::Async
+        ClientKind::Asynchronous
     }
 
     async fn post(&self, request: OutboundRequest) -> Result<StreamHead, TransportError> {

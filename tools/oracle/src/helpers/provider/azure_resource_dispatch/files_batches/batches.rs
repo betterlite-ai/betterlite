@@ -3,9 +3,10 @@ use std::sync::{Mutex, PoisonError};
 
 use betterlite_azure::batches::error::AzureBatchesError;
 use betterlite_azure::batches::{Operation, Reply as BatchReply, call};
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery};
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind};
+use betterlite_openai::batches::sdk::BatchesSdk;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::azure_resource_dispatch::{

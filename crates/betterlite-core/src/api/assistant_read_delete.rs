@@ -9,7 +9,7 @@ use std::error::Error;
 use std::future::Future;
 
 use betterlite_config::sections::resource_sdk_settings::Settings;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::records::{AssistantDeleted, AssistantObject, AssistantPage};
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
@@ -117,7 +117,7 @@ where
         let options = ResourceSdkRequestOptions::from(&input.params);
         // the flag only picks the client type; a supplied async client makes the call async on its own
         let kind = match flag {
-            Some(true) => ClientKind::Async,
+            Some(true) => ClientKind::Asynchronous,
             Some(false) | None => ClientKind::Sync,
         };
         let provider = match input.provider.as_str() {
@@ -142,11 +142,11 @@ where
             supplied: resolution::supplied_client(input),
             timeout,
         };
-        let asynchronous = call.kind == ClientKind::Async
+        let asynchronous = call.kind == ClientKind::Asynchronous
             || call
                 .supplied
                 .as_ref()
-                .is_some_and(|client| client.kind.client_kind() == ClientKind::Async);
+                .is_some_and(|client| client.kind.client_kind() == ClientKind::Asynchronous);
         Ok((call, asynchronous))
     }
 }

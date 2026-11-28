@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::text_completion_transport::TextCompletionTransport;
 use betterlite_openai::text_completion_transport::call::{
@@ -10,7 +11,7 @@ use betterlite_openai::text_completion_transport::error::{
     ErrorStatus, TextCompletionError, TextCompletionFailure,
 };
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
-use betterlite_openai::text_completion_transport::sdk::{ClientKind, SdkError};
+use betterlite_openai::text_completion_transport::sdk::SdkError;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use futures_util::StreamExt as _;
 use secrecy::SecretString;
@@ -182,7 +183,7 @@ async fn drive(call: &Call) -> Output {
         answer: call.answer.clone(),
     };
     let kind = if call.request.acompletion {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };

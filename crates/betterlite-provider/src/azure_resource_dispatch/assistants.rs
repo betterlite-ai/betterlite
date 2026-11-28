@@ -16,7 +16,7 @@ use betterlite_azure::azure_thread_messages::error::ThreadMessagesError;
 use betterlite_azure::azure_thread_messages::operations::{
     ThreadMessagesApi, ThreadOperation, ThreadReply,
 };
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::records::RunReply;
