@@ -1,0 +1,27 @@
+kind: helper
+name: environment-validation-retry-after-lenient-dates
+call:
+  b5364:
+    operation: retry_after_header
+    cases:
+    - headers: {retry-after: 'Fri, 21 Oct 2015 07:28:00 GMT'}
+      now: 1445412450
+    - headers: {retry-after: 'Wed, 21 oct 2015 07:28:00 GMT'}
+      now: 1445412450
+    - headers: {retry-after: '21 October 2015 07:28:00 GMT'}
+      now: 1445412450
+    - headers: {retry-after: 'Wed, 21 Oct 15 07:28:00 GMT'}
+      now: 1445412450
+    - headers: {retry-after: '21 Oct 2_015 07:28:00 GMT'}
+      now: 1445412450
+    - headers: {retry-after: 'Wed, 21 Oct 2015 03:28:00 EDT'}
+      now: 1445412450
+    - headers: {retry-after: 'Wed, 21 Oct 2015 07:28:00 XYZ'}
+      now: 1445412450
+    - headers: {retry-after: '21 Oct 2015 07:27:60 GMT'}
+      now: 1445412450
+    - headers: {retry-after: '1_0'}
+      now: 1445412450
+env: {}
+compare:
+  ignore: []

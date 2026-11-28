@@ -1,0 +1,5 @@
+kind: helper
+name: auth-model-budgets-seed
+call: {auth_model_budgets: {calls: [{function: user_budget, token: {user_id: u1, user_model_max_budget: {gpt-4: 5.0}}, models: [gpt-4]}, {function: end_user_apply, budget: {max_budget: 2.0}}]}}
+env: {}
+compare: {ignore: []}

@@ -4,6 +4,8 @@ use betterlite_db::database_availability::chain::Chain;
 use betterlite_db::database_availability::classification::is_service_unavailable;
 use betterlite_db::database_availability::projection::service_unavailable_error;
 use betterlite_db::database_faults::{DbError, is_database_connection_error};
+use betterlite_error::error::details::BudgetExceededDetails;
+use betterlite_error::error::{ErrorClass as BudgetErrorClass, class_message};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 // ast-grep-ignore: no-long-names
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
@@ -189,6 +191,28 @@ pub fn as_proxy_exception(failure: &AuthFailure) -> ClientFailure {
             ClientFailure::Proxy(other_exception(message, param.as_deref()))
         }
     }
+}
+
+// BudgetExceededError fills an absent or empty message with the costs, and the wire keeps the rejection's status
+#[must_use]
+pub fn budget_details_exception(details: &BudgetExceededDetails) -> ProxyException {
+    let class = BudgetErrorClass::BudgetExceeded(Box::new(details.clone()));
+    let failure = AuthFailure::BudgetExceeded {
+        message: class_message(&class),
+        status_code: Some(details.status_code),
+        llm_provider: details.provider.clone(),
+    };
+    as_proxy_exception(&failure).exception().clone()
+}
+
+// an exception that is not a budget rejection reaches the wire as an auth error with a null param
+#[must_use]
+pub fn other_message_exception(message: &str) -> ProxyException {
+    let failure = AuthFailure::Other {
+        message: message.to_owned(),
+        param: None,
+    };
+    as_proxy_exception(&failure).exception().clone()
 }
 
 fn budget_exception(message: &str, status_code: Option<u16>) -> ProxyException {

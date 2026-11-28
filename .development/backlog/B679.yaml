@@ -1,7 +1,7 @@
 id: B679
 milestone: M3 providers
 title: Bedrock image operation composition
-status: todo
+status: done
 depends_on: [B678, B634, B638, B171]
 file: tasks/B679-bedrock-image-dispatch.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/bedrock/image_edit/handler.py"
 parent: B029
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3380
