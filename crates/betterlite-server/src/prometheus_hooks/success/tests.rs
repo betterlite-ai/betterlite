@@ -397,20 +397,11 @@ async fn a_latency_overflow_stops_the_deployment_and_the_tail() {
     let fixture = fixture_with_settings(labelled_settings());
     let mut record = rich_payload(dec("2.5"));
     record.end_time = Decimal::MAX;
-    let metadata = IndexMap::from([
-        (
-            "queue_time_seconds".to_owned(),
-            number(&Decimal::MAX.to_string()),
-        ),
-        (
-            "litellm-key-remaining-requests-gpt-4-group".to_owned(),
-            number("7"),
-        ),
-        (
-            "litellm-key-remaining-tokens-gpt-4-group".to_owned(),
-            number("5"),
-        ),
-    ]);
+    let mut metadata = success_metadata();
+    metadata.insert(
+        "queue_time_seconds".to_owned(),
+        number(&Decimal::MAX.to_string()),
+    );
     let result = fixture
         .hooks
         .async_log_success_event(Arc::new(event_with_metadata(record, metadata)))
