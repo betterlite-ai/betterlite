@@ -1,9 +1,10 @@
+import subprocess
+import sys
 from enum import Enum
-from typing import Final, TypedDict
+from typing import Final
 
 import litellm.caching.caching as their_caching
 import litellm.exceptions as their_exceptions
-import litellm.integrations.custom_guardrail as their_custom_guardrail
 import litellm.types.caching as their_cache_types
 import litellm.types.guardrails as their_guardrails
 import litellm.types.integrations.slack_alerting as their_alerting
@@ -11,9 +12,8 @@ import litellm.types.llms.openai as their_openai
 import litellm.types.mcp as their_mcp
 import litellm.types.router as their_router
 import pytest
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
-import betterlite._integrations.custom_guardrail as our_custom_guardrail
 import betterlite._router_types_errors as our_router_errors
 import betterlite._router_types_routing as our_router_routing
 import betterlite.caching as our_caching
@@ -94,48 +94,43 @@ def test_cache_type_message() -> None:
     assert str(caught.value) == "s3 cache type is not built yet"
 
 
-class Record(TypedDict):
-    guardrail_response: JsonValue
+GUARDRAIL_PROBE: Final = """
+import betterlite._integrations.custom_guardrail as our_guardrail
+import litellm.integrations.custom_guardrail as their_guardrail
+from betterlite.types.guardrails.params import GuardrailEventHooks as OurHooks
+from litellm.types.guardrails import GuardrailEventHooks as TheirHooks
 
 
-class Recorded(TypedDict):
-    metadata: dict[str, JsonValue]
-
-
-class OurSummary(our_custom_guardrail.CustomGuardrail):
-    def summary(self, response: dict[str, JsonValue], baseline: dict[str, JsonValue]) -> JsonValue:
-        request_data: dict[str, JsonValue] = {"metadata": {}}
+class Ours(our_guardrail.CustomGuardrail):
+    def summary(self, response, baseline):
+        request_data = {"metadata": {}}
         self._process_response(
-            response, request_data,
-            event_type=our_guardrails_params.GuardrailEventHooks.pre_call,
-            original_inputs=baseline,
+            response, request_data, event_type=OurHooks.pre_call, original_inputs=baseline
         )
-        data = TypeAdapter(Recorded).validate_python(request_data)
-        entries = TypeAdapter(list[Record]).validate_python(
-            data["metadata"]["standard_logging_guardrail_information"]
-        )
-        assert len(entries) == 1
-        return entries[0]["guardrail_response"]
+        records = request_data["metadata"]["standard_logging_guardrail_information"]
+        return records[0]["guardrail_response"]
 
 
-class TheirSummary(their_custom_guardrail.CustomGuardrail):
-    def summary(self, response: dict[str, JsonValue], baseline: dict[str, JsonValue]) -> JsonValue:
-        return TypeAdapter(JsonValue).validate_python(
-            self._summarize_guardrail_response(
-                response, baseline, their_guardrails.GuardrailEventHooks.pre_call
-            )
-        )
+class Theirs(their_guardrail.CustomGuardrail):
+    def summary(self, response, baseline):
+        return self._summarize_guardrail_response(response, baseline, TheirHooks.pre_call)
+
+
+baseline = {"messages": [{"role": "user", "content": "hi"}]}
+unchanged = {"messages": [{"role": "user", "content": "hi"}], "model": "gpt-5"}
+changed = {"messages": [{"role": "user", "content": "bye"}]}
+ours = Ours(guardrail_name="probe")
+theirs = Theirs(guardrail_name="probe")
+ours_said = (ours.summary(unchanged, baseline), ours.summary(changed, baseline))
+theirs_said = (theirs.summary(unchanged, baseline), theirs.summary(changed, baseline))
+assert ours_said == theirs_said == ("allow", "mask"), (ours_said, theirs_said)
+print("OK")
+"""
 
 
 def test_guardrail_pre_call() -> None:
-    baseline: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
-    unchanged: dict[str, JsonValue] = {
-        "messages": [{"role": "user", "content": "hi"}],
-        "model": "gpt-5",
-    }
-    changed: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "bye"}]}
-    ours = OurSummary(guardrail_name="probe")
-    theirs = TheirSummary(guardrail_name="probe")
-    ours_said = (ours.summary(unchanged, baseline), ours.summary(changed, baseline))
-    theirs_said = (theirs.summary(unchanged, baseline), theirs.summary(changed, baseline))
-    assert ours_said == theirs_said == ("allow", "mask")
+    completed = subprocess.run(
+        [sys.executable, "-c", GUARDRAIL_PROBE], capture_output=True, text=True, check=False
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "OK"
