@@ -40,7 +40,7 @@ pub(super) struct Provider {
 }
 
 impl Provider {
-    pub(super) fn answering(response: ResponsesApiResponse, failure: Option<u16>) -> Self {
+    pub(super) const fn answering(response: ResponsesApiResponse, failure: Option<u16>) -> Self {
         Self {
             response,
             failure,
@@ -85,10 +85,12 @@ pub(super) fn service_input(
 ) -> ResponsesMcpFollowupInput {
     let mut input = empty_input();
     input.input = request.input.clone();
-    input.model = request.model.clone();
-    input.tools = request.tools.clone();
-    input.previous_response_id = request.previous_response_id.clone();
-    input.call_params = call_params.clone();
+    input.model.clone_from(&request.model);
+    input.tools.clone_from(&request.tools);
+    input
+        .previous_response_id
+        .clone_from(&request.previous_response_id);
+    input.call_params.clone_from(call_params);
     input
 }
 

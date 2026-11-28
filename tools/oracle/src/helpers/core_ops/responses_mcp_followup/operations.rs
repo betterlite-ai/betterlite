@@ -25,9 +25,11 @@ pub(super) fn request_params(scenarios: &[RequestScenario]) -> HelperResult {
 
 fn request_scenario(scenario: &RequestScenario) -> Result<Value, Box<HelperError>> {
     let mut input = service_input(&scenario.request, &scenario.call_params);
-    input.kwargs = scenario.kwargs.clone();
+    input.kwargs.clone_from(&scenario.kwargs);
     input.auth = streaming_auth(&scenario.auth)?;
-    input.mcp_tools_with_litellm_proxy = scenario.mcp_tools.clone();
+    input
+        .mcp_tools_with_litellm_proxy
+        .clone_from(&scenario.mcp_tools);
     input.mcp_discovery_events = stream_events(&scenario.mcp_events);
     input.tool_server_map = scenario.tool_server_map.clone();
     let settings = Settings {
@@ -114,7 +116,9 @@ pub(super) fn provider_call_error(
 ) -> HelperResult {
     let mut input = service_input(request, call_params);
     input.follow_up_input = follow_up_input.to_vec();
-    input.follow_up_response_id = request.previous_response_id.clone();
+    input
+        .follow_up_response_id
+        .clone_from(&request.previous_response_id);
     let settings = Settings {
         should_auto_execute: true,
         original_stream: false,
