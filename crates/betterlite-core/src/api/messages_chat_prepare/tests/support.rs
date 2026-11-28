@@ -18,7 +18,7 @@ use betterlite_db::resource_rows::project::ProjectTable;
 use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider};
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -68,7 +68,7 @@ pub(crate) fn decided(raw: &str) -> Vec<Json> {
     serde_json::from_str(raw).expect("the messages decode")
 }
 
-pub(crate) fn extra(raw: &str) -> betterlite_models::decisions::Extra {
+pub(crate) fn extra(raw: &str) -> Extra {
     serde_json::from_str(raw).expect("the mapping decodes")
 }
 
