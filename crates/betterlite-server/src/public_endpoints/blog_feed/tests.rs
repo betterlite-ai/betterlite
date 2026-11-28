@@ -228,7 +228,14 @@ async fn empty_feed_falls_back() {
     let (feed, warnings) = feed(script, FEED_URL, false, clock, Arc::new(backup_posts()));
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![backup_post()]);
-    assert_eq!(warnings.warnings(), vec![FeedWarning::empty_posts()]);
+    assert_eq!(
+        warnings.warnings(),
+        vec![FeedWarning {
+            subject: None,
+            message: "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
+                .to_owned(),
+        }]
+    );
     assert_eq!(feed.cache_snapshot().cached_posts, None);
 }
 
