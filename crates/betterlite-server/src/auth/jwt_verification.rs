@@ -48,15 +48,13 @@ pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
     let verifier = extensions
         .get::<Arc<JwtVerifier>>()
         .cloned()
-        .or_else(|| state.and_then(|server| server.jwt_verification.verifier.clone()));
+        .or_else(|| state?.jwt_verification.verifier.clone());
     let source = extensions
         .get::<Arc<dyn PublicKeySource>>()
         .cloned()
         .or_else(|| {
-            state.and_then(|server| {
-                let resolver: Arc<dyn PublicKeySource> = server.jwt_keys.resolver.clone()?;
-                Some(resolver)
-            })
+            let resolver: Arc<dyn PublicKeySource> = state?.jwt_keys.resolver.clone()?;
+            Some(resolver)
         });
     StageInput::JwtVerification(Box::new(JwtVerificationStageInput {
         verifier,

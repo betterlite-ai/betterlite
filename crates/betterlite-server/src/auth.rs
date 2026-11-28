@@ -243,12 +243,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
-        StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
-        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
-        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
-        StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
+        other @ (StageInput::AuthTenantBudgets(_)
+        | StageInput::AuthOrgLookup(_)
+        | StageInput::AuthEndUsers(_)
+        | StageInput::ModelGrantIntersection(_)
+        | StageInput::AuthModelGrants(_)
+        | StageInput::EntityModelAccess(_)) => prefetch_remaining(other).await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
@@ -260,6 +260,19 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
+    }
+}
+
+// the stages after the key fetch: a second dispatch keeps both matches under the cognitive-complexity limit
+async fn prefetch_remaining(input: StageInput) -> Result<StageInput, StageFailure> {
+    match input {
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
+        StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
+        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
+        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
+        StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
+        other => Ok(other),
     }
 }
 fn master_key_stage(

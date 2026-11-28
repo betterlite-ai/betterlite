@@ -127,7 +127,7 @@ async fn step_answer(fixture: &Fixture<'_>, step: &Step) -> StepAnswer {
     let writes_from = lock(&fixture.cache.writes).len();
     let token = step.token.as_deref().unwrap_or_default();
     // the step's scripted GETs join the userinfo fake's queue, as LiteLLM's transport extends its replies
-    if let Op::Userinfo = step.op {
+    if matches!(step.op, Op::Userinfo) {
         lock(&fixture.http.replies).extend(step.http.iter().cloned());
     }
     let (value, error) = match step.op {
