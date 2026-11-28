@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use betterlite_config::sections::jwt_settings::Settings as JwtSettings;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::resource_rows::access_group::AccessGroupTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
@@ -233,7 +234,7 @@ pub(crate) fn selection<Patch>(patch: Patch) -> SelectionSettings
 where
     Patch: FnOnce(&mut SelectionSettings),
 {
-    let mut settings = SelectionSettings::default();
+    let mut settings = SelectionSettings::from_section(&JwtSettings::default());
     patch(&mut settings);
     settings
 }
