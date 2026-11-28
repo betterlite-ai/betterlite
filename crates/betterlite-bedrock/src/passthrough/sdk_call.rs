@@ -20,7 +20,7 @@ use serde_json::value::RawValue;
 use url::Url;
 
 use super::error::PassthroughFailure;
-use super::url::{self, PassthroughEnvironment, RuntimeUrl};
+use super::url::{PassthroughEnvironment, RuntimeUrl, optional_text};
 use super::{SigningIdentity, sign_headers, signing_region};
 use crate::aws_endpoints::runtime::BedrockEndpointType;
 use crate::aws_settings::sources::{Credentials, SourceError};
@@ -123,7 +123,7 @@ where
             AwsFlavor::Mantle => {
                 let region = passthrough_region(request.litellm_params, &self.globals)?;
                 let configured =
-                    url::optional_text(request.litellm_params, "aws_bedrock_runtime_endpoint")?;
+                    optional_text(request.litellm_params, "aws_bedrock_runtime_endpoint")?;
                 let endpoint = passthrough_runtime_endpoint(&PassthroughEndpointRequest {
                     api_base: request.api_base,
                     configured_endpoint: configured.as_deref(),

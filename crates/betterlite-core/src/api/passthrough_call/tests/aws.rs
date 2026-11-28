@@ -51,7 +51,7 @@ struct FakeAws {
 }
 
 fn port(fake: &Arc<FakeAws>) -> Arc<dyn AwsPassthrough> {
-    Arc::clone(fake)
+    Arc::<FakeAws>::clone(fake)
 }
 
 fn fake(base: &str) -> Arc<FakeAws> {
@@ -145,7 +145,7 @@ impl AwsPassthrough for FakeAws {
             String::from("application/json"),
         );
         let body = context.request_data.map_or_else(
-            || br"{}".to_vec(),
+            || b"{}".to_vec(),
             |data| dumps_object(&logging::json_object(data)).into_bytes(),
         );
         Ok((signed, Some(body)))

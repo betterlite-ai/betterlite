@@ -378,12 +378,13 @@ fn runtime_url_reports_streaming_through_the_endpoint() {
     assert!(!runtime.is_streaming_request("model/x/converse", &Object::new()));
 }
 
-#[test]
-fn bedrock_bearer_token_signs_with_the_environment_token() {
+#[tokio::test]
+async fn bedrock_bearer_token_signs_with_the_environment_token() {
     let config = build(&[("AWS_BEARER_TOKEN_BEDROCK", "env-token")]);
     let empty = Object::new();
     let (headers, body) = config
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&empty))
+        .await
         .unwrap();
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
@@ -393,12 +394,12 @@ fn bedrock_bearer_token_signs_with_the_environment_token() {
         headers.get("Content-Type").map(String::as_str),
         Some("application/json")
     );
-    assert_eq!(body.as_deref(), Some(br"{}".as_slice()));
+    assert_eq!(body.as_deref(), Some(b"{}".as_slice()));
     assert!(config.source.recorded().is_empty());
 }
 
-#[test]
-fn an_empty_bearer_token_falls_through_to_sigv4() {
+#[tokio::test]
+async fn an_empty_bearer_token_falls_through_to_sigv4() {
     let source = FakeSource {
         calls: Mutex::new(Vec::new()),
         access_key: String::from("AKIAEMPTY"),
@@ -407,6 +408,7 @@ fn an_empty_bearer_token_falls_through_to_sigv4() {
     let empty = Object::new();
     let (headers, _body) = config
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&empty))
+        .await
         .unwrap();
     let authorization = headers.get("Authorization").unwrap();
     assert!(
@@ -417,8 +419,8 @@ fn an_empty_bearer_token_falls_through_to_sigv4() {
     );
 }
 
-#[test]
-fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
+#[tokio::test]
+async fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
     let config = build(&[
         ("BEDROCK_MANTLE_API_KEY", "mantle-key"),
         ("AWS_BEARER_TOKEN_BEDROCK", "aws-token"),
@@ -427,6 +429,7 @@ fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
     let params = object(&[("api_key", "param-key")]);
     let (headers, body) = config
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&params))
+        .await
         .unwrap();
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
@@ -436,9 +439,10 @@ fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
         headers.get("Content-Type").map(String::as_str),
         Some("application/json")
     );
-    assert_eq!(body.as_deref(), Some(br"{}".as_slice()));
+    assert_eq!(body.as_deref(), Some(b"{}".as_slice()));
     let (headers, _body) = config
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&empty))
+        .await
         .unwrap();
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
@@ -450,6 +454,7 @@ fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
     ]);
     let (headers, _body) = fallback
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&empty))
+        .await
         .unwrap();
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
@@ -457,8 +462,8 @@ fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
     );
 }
 
-#[test]
-fn sigv4_signs_with_the_source_at_the_signing_region() {
+#[tokio::test]
+async fn sigv4_signs_with_the_source_at_the_signing_region() {
     let source = FakeSource {
         calls: Mutex::new(Vec::new()),
         access_key: String::from("AKIAFIXTURE"),
@@ -471,6 +476,7 @@ fn sigv4_signs_with_the_source_at_the_signing_region() {
     ]);
     let (headers, _body) = config
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&params))
+        .await
         .unwrap();
     let authorization = headers.get("Authorization").unwrap();
     assert!(
@@ -485,8 +491,8 @@ fn sigv4_signs_with_the_source_at_the_signing_region() {
     assert_eq!(calls[0].access_key_id.as_deref(), Some("AKIAPARAM"));
 }
 
-#[test]
-fn mantle_sigv4_signs_at_the_mantle_region() {
+#[tokio::test]
+async fn mantle_sigv4_signs_at_the_mantle_region() {
     let source = FakeSource {
         calls: Mutex::new(Vec::new()),
         access_key: String::from("AKIAMANTLE"),
@@ -495,6 +501,7 @@ fn mantle_sigv4_signs_at_the_mantle_region() {
     let params = object(&[("aws_secret_access_key", "fixture-secret")]);
     let (headers, _body) = config
         .sign_request(AwsFlavor::Mantle, Headers::new(), &signing(&params))
+        .await
         .unwrap();
     let authorization = headers.get("Authorization").unwrap();
     assert!(
@@ -508,13 +515,14 @@ fn mantle_sigv4_signs_at_the_mantle_region() {
     assert_eq!(calls[0].region, "eu-central-1");
 }
 
-#[test]
-fn a_non_string_aws_key_is_a_value_error() {
+#[tokio::test]
+async fn a_non_string_aws_key_is_a_value_error() {
     let config = build(&[]);
     let mut params = Object::new();
     params.insert(String::from("aws_access_key_id"), JsonValue::Bool(true));
     let error = config
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&params))
+        .await
         .unwrap_err();
     assert!(matches!(&error, ConfigError::ValueError { .. }));
     assert_eq!(
@@ -523,14 +531,15 @@ fn a_non_string_aws_key_is_a_value_error() {
     );
 }
 
-#[test]
-fn no_credential_chain_is_a_value_error() {
+#[tokio::test]
+async fn no_credential_chain_is_a_value_error() {
     let config =
         BedrockSdkCall::from_environment(&environment(&[]), NoCredentialChain, fixture_time)
             .unwrap();
     let empty = Object::new();
     let error = config
         .sign_request(AwsFlavor::Bedrock, Headers::new(), &signing(&empty))
+        .await
         .unwrap_err();
     assert!(matches!(&error, ConfigError::ValueError { .. }));
     assert_eq!(error.to_string(), "AWS credential provider is unavailable");

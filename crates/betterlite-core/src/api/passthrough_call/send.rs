@@ -177,7 +177,11 @@ async fn signed_headers(
     signing: &PassthroughSigning<'_>,
 ) -> Result<(Headers, Option<Vec<u8>>), Failure> {
     let requested: IndexMap<String, String> = request_headers.iter().cloned().collect();
-    let auth_headers: IndexMap<String, String> = upstream.headers.iter().cloned().collect();
+    let auth_headers: IndexMap<String, String> = upstream
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
     let headers = forward_headers_from_request(&requested, auth_headers, false)
         .into_iter()
         .collect();
