@@ -1,18 +1,10 @@
 import subprocess
 import sys
 from enum import Enum
-from typing import Final
+from typing import Final, TypedDict
 
-import litellm.caching.caching as their_caching
-import litellm.exceptions as their_exceptions
-import litellm.types.caching as their_cache_types
-import litellm.types.guardrails as their_guardrails
-import litellm.types.integrations.slack_alerting as their_alerting
-import litellm.types.llms.openai as their_openai
-import litellm.types.mcp as their_mcp
-import litellm.types.router as their_router
 import pytest
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 import betterlite._router_types_errors as our_router_errors
 import betterlite._router_types_routing as our_router_routing
@@ -28,24 +20,69 @@ import betterlite.types.mcp.enums as our_mcp
 
 PERCENT_FORMAT: Final = "%s"
 
-ENUM_PAIRS: Final[list[tuple[type[Enum], type[Enum]]]] = [
-    (our_mcp.MCPAuth, their_mcp.MCPAuth),
-    (our_mcp.MCPTransport, their_mcp.MCPTransport),
-    (our_guardrails_params.GuardrailEventHooks, their_guardrails.GuardrailEventHooks),
-    (
-        our_guardrails_params.GUARDRAIL_DEFINITION_LOCATION,
-        their_guardrails.GUARDRAIL_DEFINITION_LOCATION,
-    ),
-    (our_guardrails_pii.PiiAction, their_guardrails.PiiAction),
-    (our_guardrails_core.Role, their_guardrails.Role),
-    (our_cache_types.LiteLLMCacheType, their_cache_types.LiteLLMCacheType),
-    (our_caching.CacheMode, their_caching.CacheMode),
-    (our_router_errors.RouterErrorTypes, their_router.RouterErrorTypes),
-    (our_router_routing.RequestType, their_router.RequestType),
-    (our_exceptions.RateLimitErrorCategory, their_exceptions.RateLimitErrorCategory),
-    (our_event_types.ResponsesAPIStreamEvents, their_openai.ResponsesAPIStreamEvents),
-    (our_alerting.AlertType, their_alerting.AlertType),
-]
+DESCRIBE_SCRIPT = """
+import json
+
+import litellm.caching.caching as caching
+import litellm.exceptions as exceptions
+import litellm.types.caching as cache_types
+import litellm.types.guardrails as guardrails
+import litellm.types.integrations.slack_alerting as alerting
+import litellm.types.llms.openai as openai
+import litellm.types.mcp as mcp
+import litellm.types.router as router
+
+PERCENT = "%s"
+ENUMS = {
+    "MCPAuth": mcp.MCPAuth,
+    "MCPTransport": mcp.MCPTransport,
+    "GuardrailEventHooks": guardrails.GuardrailEventHooks,
+    "GUARDRAIL_DEFINITION_LOCATION": guardrails.GUARDRAIL_DEFINITION_LOCATION,
+    "PiiAction": guardrails.PiiAction,
+    "Role": guardrails.Role,
+    "LiteLLMCacheType": cache_types.LiteLLMCacheType,
+    "CacheMode": caching.CacheMode,
+    "RouterErrorTypes": router.RouterErrorTypes,
+    "RequestType": router.RequestType,
+    "RateLimitErrorCategory": exceptions.RateLimitErrorCategory,
+    "ResponsesAPIStreamEvents": openai.ResponsesAPIStreamEvents,
+    "AlertType": alerting.AlertType,
+}
+
+described = {}
+for name, enum in ENUMS.items():
+    described[name] = [
+        {
+            "name": member.name,
+            "value": member.value,
+            "texts": [str(member), format(member), f"{member}", PERCENT % member],
+        }
+        for member in enum
+    ]
+print(json.dumps(described))
+"""
+
+OUR_ENUMS: Final[dict[str, type[Enum]]] = {
+    "MCPAuth": our_mcp.MCPAuth,
+    "MCPTransport": our_mcp.MCPTransport,
+    "GuardrailEventHooks": our_guardrails_params.GuardrailEventHooks,
+    "GUARDRAIL_DEFINITION_LOCATION": our_guardrails_params.GUARDRAIL_DEFINITION_LOCATION,
+    "PiiAction": our_guardrails_pii.PiiAction,
+    "Role": our_guardrails_core.Role,
+    "LiteLLMCacheType": our_cache_types.LiteLLMCacheType,
+    "CacheMode": our_caching.CacheMode,
+    "RouterErrorTypes": our_router_errors.RouterErrorTypes,
+    "RequestType": our_router_routing.RequestType,
+    "RateLimitErrorCategory": our_exceptions.RateLimitErrorCategory,
+    "ResponsesAPIStreamEvents": our_event_types.ResponsesAPIStreamEvents,
+    "AlertType": our_alerting.AlertType,
+}
+
+
+class DescribedMember(TypedDict):
+    name: str
+    value: JsonValue
+    texts: tuple[str, str, str, str]
 
 
 def member_values(enum: type[Enum]) -> list[JsonValue]:
@@ -61,17 +98,31 @@ def member_texts(member: Enum) -> tuple[str, str, str, str]:
     return (str(member), format(member), f"{member}", percent)
 
 
-@pytest.mark.parametrize(("ours", "theirs"), ENUM_PAIRS)
-def test_enum_members(ours: type[Enum], theirs: type[Enum]) -> None:
-    assert [member.name for member in ours] == [member.name for member in theirs]
-    assert member_values(ours) == member_values(theirs)
+@pytest.fixture(scope="module")
+def described() -> dict[str, list[DescribedMember]]:
+    completed = subprocess.run(
+        [sys.executable, "-c", DESCRIBE_SCRIPT],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return TypeAdapter(dict[str, list[DescribedMember]]).validate_json(completed.stdout)
+
+
+@pytest.mark.parametrize(("name", "ours"), sorted(OUR_ENUMS.items()))
+def test_enum_members(
+    name: str, ours: type[Enum], described: dict[str, list[DescribedMember]]
+) -> None:
+    theirs = described[name]
+    assert [member.name for member in ours] == [member["name"] for member in theirs]
+    assert member_values(ours) == [member["value"] for member in theirs]
     for our_member, their_member in zip(ours, theirs, strict=True):
-        assert member_texts(our_member) == member_texts(their_member)
+        assert member_texts(our_member) == their_member["texts"]
 
 
-def test_mcp_auth_values() -> None:
-    values = member_values(our_mcp.MCPAuth)
-    assert values == member_values(their_mcp.MCPAuth)
+def test_mcp_auth_values(described: dict[str, list[DescribedMember]]) -> None:
+    theirs = described["MCPAuth"]
+    assert member_values(our_mcp.MCPAuth) == [member["value"] for member in theirs]
 
 
 def test_rate_limit_error_text() -> None:
