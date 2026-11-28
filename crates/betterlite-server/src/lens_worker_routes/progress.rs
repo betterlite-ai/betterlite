@@ -5,8 +5,10 @@ use axum::body::Bytes;
 use axum::extract::{MatchedPath, Path, State};
 use axum::http::{HeaderMap, header};
 use betterlite_db::lens_repository::update::DEFAULT_ATTEMPTS;
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_lens::models::job::{Job, Lens, Worker};
 use betterlite_lens::models::messages::Progress;
+use betterlite_lens::sources::storage::Storage;
 use chrono::{DateTime, TimeDelta, Utc};
 
 use crate::lens_access::lookup::{lens_repository, required};
@@ -25,7 +27,7 @@ pub(crate) async fn progress<Db, Store>(
     matched: MatchedPath,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<bool>, LensWorkerError>
+) -> Result<Json<bool>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
@@ -46,7 +48,7 @@ async fn carried<Db, Store>(
     lens_id: &str,
     job_id: &str,
     worker: &Worker,
-) -> Result<Progress, LensWorkerError>
+) -> Result<Progress, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
@@ -66,7 +68,7 @@ async fn apply<Db, Store>(
     job_id: &str,
     worker: &Worker,
     body: &Progress,
-) -> Result<(), LensWorkerError>
+) -> Result<(), LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
@@ -102,16 +104,6 @@ fn renewed(lens: Lens, job_id: &str, worker_id: &str, body: &Progress, now: Date
         ..job.clone()
     };
     replace_job(&lens, &updated)
-}
-
-// Python's datetime.isoformat for an aware UTC value: microseconds only when they are not zero
-pub(crate) fn isoformat(now: DateTime<Utc>) -> String {
-    let seconds = now.format("%Y-%m-%dT%H:%M:%S");
-    let micros = now.timestamp_subsec_micros();
-    if micros == 0 {
-        return format!("{seconds}+00:00");
-    }
-    format!("{seconds}.{micros:06}+00:00")
 }
 
 mod tests;

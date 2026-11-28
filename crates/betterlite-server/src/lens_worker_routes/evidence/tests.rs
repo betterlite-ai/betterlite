@@ -9,7 +9,7 @@ use crate::lens_access::tests::support::finding;
 use crate::lens_worker_routes::error::LensWorkerError;
 use crate::lens_worker_routes::evidence::validate_finding;
 use crate::lens_worker_routes::tests::support::{
-    WorkerStorage, base_lens, sample_of, trace_execution,
+    TestError, WorkerStorage, base_lens, sample_of, trace_execution,
 };
 
 const EXISTING_CHECK: &str = "Existing finding must belong to the same check";
@@ -49,7 +49,7 @@ fn lens_with(findings: Vec<Finding>) -> Lens {
     stored
 }
 
-fn assert_refusal(error: &LensWorkerError, status: StatusCode, detail: &str) {
+fn assert_refusal(error: &LensWorkerError<TestError>, status: StatusCode, detail: &str) {
     assert_eq!(error.status(), status);
     assert_eq!(error.detail(), detail);
 }
@@ -106,13 +106,15 @@ async fn the_same_check_rule_runs_before_storage() {
 async fn matching_evidence_passes() {
     let storage = WorkerStorage::with_pages(&[]);
     let lens = lens_with(Vec::new());
-    let draft = finding_draft("c1", None, &["t0"]);
-    validate_finding(&lens, &selected(), &draft, Some(&storage))
+    let execution = trace_execution(0);
+    let sample = sample_of(vec![execution.clone()]);
+    let draft = finding_draft("c1", None, &[execution.id.as_str()]);
+    validate_finding(&lens, &sample, &draft, Some(&storage))
         .await
         .expect("the stored span carries the quote");
     let calls = storage.evidence_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].id, "t0");
+    assert_eq!(calls[0].id, execution.trace_id);
     assert_eq!(calls[0].span, "s1");
     assert_eq!(calls[0].quote, "boom");
 }
@@ -121,8 +123,10 @@ async fn matching_evidence_passes() {
 async fn mismatching_evidence_is_422() {
     let storage = WorkerStorage::with_pages(&[]).answering_evidence(false);
     let lens = lens_with(Vec::new());
-    let draft = finding_draft("c1", None, &["t0"]);
-    let error = validate_finding(&lens, &selected(), &draft, Some(&storage))
+    let execution = trace_execution(0);
+    let sample = sample_of(vec![execution.clone()]);
+    let draft = finding_draft("c1", None, &[execution.id.as_str()]);
+    let error = validate_finding(&lens, &sample, &draft, Some(&storage))
         .await
         .expect_err("the quote is not in the stored span");
     assert_refusal(&error, StatusCode::UNPROCESSABLE_ENTITY, EVIDENCE_MISMATCH);
@@ -154,8 +158,10 @@ async fn an_evidence_run_outside_the_sample_is_500() {
 async fn a_storage_failure_is_500() {
     let storage = WorkerStorage::with_pages(&[]).failing();
     let lens = lens_with(Vec::new());
-    let draft = finding_draft("c1", None, &["t0"]);
-    let error = validate_finding(&lens, &selected(), &draft, Some(&storage))
+    let execution = trace_execution(0);
+    let sample = sample_of(vec![execution.clone()]);
+    let draft = finding_draft("c1", None, &[execution.id.as_str()]);
+    let error = validate_finding(&lens, &sample, &draft, Some(&storage))
         .await
         .expect_err("the fake storage failed");
     assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);

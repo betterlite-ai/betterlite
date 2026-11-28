@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::BTreeSet;
 use std::convert::Infallible;
+use std::error::Error as StdError;
 
 use axum::Json;
 use axum::body::Bytes;
@@ -11,6 +12,7 @@ use betterlite_lens::models::execution::Sample;
 use betterlite_lens::models::finding::Finding;
 use betterlite_lens::models::job::{Job, JobStatus, Lens, Worker};
 use betterlite_lens::models::messages::JobResult;
+use betterlite_lens::sources::storage::Storage;
 use betterlite_lens::state::snapshot_finding::snapshot_finding;
 use chrono::{DateTime, TimeDelta, Utc};
 
@@ -31,7 +33,7 @@ pub(crate) async fn result<Db, Store>(
     Path((lens_id, job_id)): Path<(String, String)>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<Lens>, LensWorkerError>
+) -> Result<Json<Lens>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
@@ -89,11 +91,14 @@ fn check_ids(job: &Job) -> BTreeSet<String> {
 }
 
 // inference.result's four 422 checks, run in LiteLLM's order before any storage call
-fn check_request(
+fn check_request<E>(
     job: &Job,
     request: &JobResult,
     allowed: &BTreeSet<&str>,
-) -> Result<(), LensWorkerError> {
+) -> Result<(), LensWorkerError<E>>
+where
+    E: StdError + 'static,
+{
     let runs: BTreeSet<&str> = request
         .assessments
         .iter()

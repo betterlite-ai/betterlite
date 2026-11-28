@@ -1,11 +1,14 @@
 use std::convert::Infallible;
+use std::num::ParseIntError;
 
 use axum::Json;
 use axum::extract::{RawQuery, State};
 use axum::http::{HeaderMap, header};
 use betterlite_db::lens_repository::update::DEFAULT_ATTEMPTS;
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_lens::models::job::{JobStatus, Lens, Worker};
 use betterlite_lens::models::messages::{Claim, RunRequest};
+use betterlite_lens::sources::storage::Storage;
 use betterlite_lens::state::transitions::{can_access, claim_job, queue_job};
 use chrono::{DateTime, Utc};
 
@@ -15,7 +18,6 @@ use crate::lens_inference::jobs::current_job;
 use crate::lens_worker_routes::WorkerRoutesState;
 use crate::lens_worker_routes::credential::worker_auth;
 use crate::lens_worker_routes::error::{LensWorkerError, infallible_update, query_refusal};
-use crate::lens_worker_routes::progress::isoformat;
 
 const INTEGER_PARSE: &str = "Input should be a valid integer, unable to parse string as an integer";
 
@@ -23,13 +25,14 @@ pub(crate) async fn claim<Db, Store>(
     State(state): State<WorkerRoutesState<Db, Store>>,
     headers: HeaderMap,
     raw: RawQuery,
-) -> Result<Json<Option<Claim>>, LensWorkerError>
+) -> Result<Json<Option<Claim>>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
 {
     let worker = worker_auth(&state.routes, headers.get(header::AUTHORIZATION)).await?;
-    let protocol = protocol_version(raw.0.as_deref().unwrap_or_default().as_bytes())?;
+    let protocol = protocol_version(raw.0.as_deref().unwrap_or_default().as_bytes())
+        .map_err(|_error| query_refusal("int_parsing", "protocol_version", INTEGER_PARSE))?;
     if protocol != 2 {
         return Err(LensWorkerError::UpgradeWorker);
     }
@@ -51,16 +54,13 @@ where
 }
 
 // protocol_version is an int query parameter defaulting to 1, decoded after the worker's own auth
-fn protocol_version(raw: &[u8]) -> Result<i64, LensWorkerError> {
+pub fn protocol_version(raw: &[u8]) -> Result<i64, ParseIntError> {
     let mut version = 1_i64;
     for (name, value) in form_urlencoded::parse(raw).into_owned() {
         if name != "protocol_version" {
             continue;
         }
-        let parsed = value
-            .parse::<i64>()
-            .map_err(|_error| query_refusal("int_parsing", "protocol_version", INTEGER_PARSE))?;
-        version = parsed;
+        version = value.parse::<i64>()?;
     }
     Ok(version)
 }
@@ -71,7 +71,7 @@ async fn claim_candidate<Db, Store>(
     candidate: &Lens,
     worker: &Worker,
     now: DateTime<Utc>,
-) -> Result<Option<Claim>, LensWorkerError>
+) -> Result<Option<Claim>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,

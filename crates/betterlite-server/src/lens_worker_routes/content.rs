@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Path, RawQuery, State};
 use axum::http::{HeaderMap, header};
 use betterlite_lens::models::execution::ExecutionContent;
+use betterlite_lens::sources::storage::Storage;
 
 use crate::lens_access::state::{LensDatabase, LensStorage};
 use crate::lens_access::storage::source_reader;
@@ -16,14 +17,15 @@ pub(crate) async fn content<Db, Store>(
     Path((lens_id, job_id)): Path<(String, String)>,
     headers: HeaderMap,
     raw: RawQuery,
-) -> Result<Json<ExecutionContent>, LensWorkerError>
+) -> Result<Json<ExecutionContent>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
 {
     let worker = worker_auth(&state.routes, headers.get(header::AUTHORIZATION)).await?;
     let query_text = raw.0.as_deref().unwrap_or_default();
-    let execution_id = execution_id(query_text.as_bytes())?;
+    let execution_id = execution_id(query_text.as_bytes())
+        .ok_or_else(|| query_refusal("missing", "execution_id", "Field required"))?;
     let query = decode_content_query(query_text.as_bytes())?;
     let now = state.routes.clock.now();
     let (lens, job) = assigned(&state.routes, &lens_id, &job_id, &worker, now).await?;
@@ -45,14 +47,14 @@ where
 }
 
 // execution_id is a required query string, so a request without it is FastAPI's missing-field 422
-fn execution_id(raw: &[u8]) -> Result<String, LensWorkerError> {
+pub fn execution_id(raw: &[u8]) -> Option<String> {
     let mut found = None;
     for (name, value) in form_urlencoded::parse(raw).into_owned() {
         if name == "execution_id" {
             found = Some(value);
         }
     }
-    found.ok_or_else(|| query_refusal("missing", "execution_id", "Field required"))
+    found
 }
 
 mod tests;

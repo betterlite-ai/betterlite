@@ -12,7 +12,7 @@ pub(crate) async fn validate_finding<Store>(
     selected: &Sample,
     finding: &FindingDraft,
     storage: Option<&Store>,
-) -> Result<(), LensWorkerError>
+) -> Result<(), LensWorkerError<<Store as Storage>::Error>>
 where
     Store: Storage + Clone + Send + Sync,
 {

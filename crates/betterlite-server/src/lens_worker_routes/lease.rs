@@ -1,4 +1,5 @@
 use betterlite_lens::models::job::{Job, JobStatus, Lens, Worker};
+use betterlite_lens::sources::storage::Storage;
 use chrono::{DateTime, Utc};
 
 use crate::lens_access::lookup::{get_lens, lens_repository};
@@ -13,7 +14,7 @@ pub(crate) async fn assigned<Db, Store>(
     job_id: &str,
     worker: &Worker,
     now: DateTime<Utc>,
-) -> Result<(Lens, Job), LensWorkerError>
+) -> Result<(Lens, Job), LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,

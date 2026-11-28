@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, header};
@@ -24,7 +26,7 @@ pub(crate) async fn sample<Db, Store>(
     State(state): State<WorkerRoutesState<Db, Store>>,
     Path((lens_id, job_id)): Path<(String, String)>,
     headers: HeaderMap,
-) -> Result<Json<Sample>, LensWorkerError>
+) -> Result<Json<Sample>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
@@ -91,7 +93,7 @@ async fn gather<Store>(
     reader: &SourceReader<Store>,
     lens: &Lens,
     job: &Job,
-) -> Result<Sample, LensWorkerError>
+) -> Result<Sample, LensWorkerError<<Store as Storage>::Error>>
 where
     Store: Storage + Sync,
 {
@@ -130,7 +132,7 @@ async fn freeze<Db, Store>(
     job_id: &str,
     worker: &Worker,
     built: &Sample,
-) -> Result<Json<Sample>, LensWorkerError>
+) -> Result<Json<Sample>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,
@@ -168,7 +170,10 @@ fn frozen(lens: Lens, job_id: &str, worker_id: &str, built: &Sample) -> Result<L
     Ok(replace_job(&lens, &updated))
 }
 
-fn moved_update(error: LensUpdateError<JobMoved>) -> LensWorkerError {
+fn moved_update<E>(error: LensUpdateError<JobMoved>) -> LensWorkerError<E>
+where
+    E: StdError + 'static,
+{
     match error {
         LensUpdateError::Repository(source) => LensWorkerError::Repository(source),
         LensUpdateError::Transform(JobMoved) => LensWorkerError::JobMoved,

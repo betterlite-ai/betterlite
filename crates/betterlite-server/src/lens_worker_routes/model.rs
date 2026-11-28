@@ -10,6 +10,7 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, header};
 use betterlite_auth::reservation_cost::ModelInfoSource;
 use betterlite_lens::models::messages::{ModelRequest, ModelResult};
+use betterlite_lens::sources::storage::Storage;
 use betterlite_logging::clickhouse::clickhouse_logging::context::LensAnalysis;
 
 use crate::lens_access::lookup::lens_repository;
@@ -92,7 +93,7 @@ pub(crate) async fn model<Db, Store>(
     Path((lens_id, job_id)): Path<(String, String)>,
     context: ModelContext,
     body: Bytes,
-) -> Result<Json<ModelResult>, LensWorkerError>
+) -> Result<Json<ModelResult>, LensWorkerError<<Store as Storage>::Error>>
 where
     Db: LensDatabase,
     Store: LensStorage,

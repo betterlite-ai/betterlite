@@ -16,7 +16,10 @@ use crate::tracing_routes::router::DetailBody;
 
 // the refusals the worker routes share, with LiteLLM's texts
 #[derive(Debug, Error)]
-pub(crate) enum LensWorkerError {
+pub(crate) enum LensWorkerError<E>
+where
+    E: StdError + 'static,
+{
     #[error("Not authenticated")]
     NotAuthenticated,
     #[error("Worker credential is invalid or revoked")]
@@ -25,8 +28,8 @@ pub(crate) enum LensWorkerError {
     Access(#[from] LensAccessError),
     #[error(transparent)]
     Repository(#[from] LensRepositoryError),
-    #[error("{0}")]
-    Source(#[source] Box<dyn StdError + Send + Sync>),
+    #[error("the lens storage query failed")]
+    Source(#[from] SourceError<E>),
     #[error(transparent)]
     Analyze(#[from] AnalyzeError),
     #[error(transparent)]
@@ -65,16 +68,10 @@ pub(crate) enum LensWorkerError {
 #[derive(Debug)]
 pub(crate) struct JobMoved;
 
-impl<E> From<SourceError<E>> for LensWorkerError
+impl<E> LensWorkerError<E>
 where
-    E: StdError + Send + Sync + 'static,
+    E: StdError + 'static,
 {
-    fn from(error: SourceError<E>) -> Self {
-        Self::Source(Box::new(error))
-    }
-}
-
-impl LensWorkerError {
     pub(crate) const fn status(&self) -> StatusCode {
         match self {
             Self::NotAuthenticated | Self::InvalidCredential => StatusCode::UNAUTHORIZED,
@@ -112,7 +109,7 @@ impl LensWorkerError {
             return failure_text(error);
         }
         if let Self::Source(error) = self {
-            return failure_text(error.as_ref());
+            return failure_text(error);
         }
         if let Self::Analyze(error) = self {
             return error.detail();
@@ -122,7 +119,10 @@ impl LensWorkerError {
 }
 
 // a lens transform that cannot fail: the update only carries the repository's own failure up
-pub(crate) fn infallible_update(error: LensUpdateError<Infallible>) -> LensWorkerError {
+pub(crate) fn infallible_update<E>(error: LensUpdateError<Infallible>) -> LensWorkerError<E>
+where
+    E: StdError + 'static,
+{
     match error {
         LensUpdateError::Repository(source) => LensWorkerError::Repository(source),
         LensUpdateError::Transform(never) => match never {},
@@ -130,7 +130,14 @@ pub(crate) fn infallible_update(error: LensUpdateError<Infallible>) -> LensWorke
 }
 
 // FastAPI's query validation issue, for a parameter that failed before the handler ran
-pub(crate) fn query_refusal(kind: &'static str, field: &str, msg: &'static str) -> LensWorkerError {
+pub(crate) fn query_refusal<E>(
+    kind: &'static str,
+    field: &str,
+    msg: &'static str,
+) -> LensWorkerError<E>
+where
+    E: StdError + 'static,
+{
     let issue = Issue {
         kind,
         loc: vec!["query".to_owned(), field.to_owned()],
@@ -151,7 +158,10 @@ fn bearer_refusal() -> Response {
     response
 }
 
-impl IntoResponse for LensWorkerError {
+impl<E> IntoResponse for LensWorkerError<E>
+where
+    E: StdError + Send + Sync + 'static,
+{
     fn into_response(self) -> Response {
         let (status, detail) = match self {
             Self::NotAuthenticated => return bearer_refusal(),

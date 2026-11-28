@@ -1,6 +1,6 @@
-mod claim;
-mod content;
-mod credential;
+pub mod claim;
+pub mod content;
+pub mod credential;
 mod error;
 mod evidence;
 mod lease;
