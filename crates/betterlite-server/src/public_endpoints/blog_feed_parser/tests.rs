@@ -43,6 +43,14 @@ fn resolves_entity_and_numeric_references() {
 }
 
 #[test]
+fn undefined_entity_is_a_parse_failure() {
+    let xml = "<rss><channel><item><title>A &bogus; B</title>\
+        <link>https://x</link></item></channel></rss>";
+    let error = parse_rss_to_posts(xml, 1, 64).unwrap_err();
+    assert!(matches!(error, ParseFailure::Escape(_)));
+}
+
+#[test]
 fn empty_self_closing_fields_are_present_but_blank() {
     let xml = "<rss><channel><item><title/><link/><description/><pubDate/></item></channel></rss>";
     let posts = parse_rss_to_posts(xml, 1, 64).unwrap();
