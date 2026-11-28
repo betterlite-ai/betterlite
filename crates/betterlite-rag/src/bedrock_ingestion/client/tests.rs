@@ -305,10 +305,10 @@ async fn client_signs_s3_with_the_path_as_sent() {
 }
 
 #[tokio::test]
-async fn client_signs_other_services_in_the_default_mode() {
-    let (built, transport, _resolver) = rag_clients(vec![json_response("{}"), json_response("{}")]);
+async fn client_signs_bedrock_in_the_default_mode() {
+    let (built, transport, _resolver) = rag_clients(vec![json_response("{}")]);
     let url = format!("{AGENT}/knowledgebases/KB%201/datasources/");
-    let agent_request = SignedRequest {
+    let request = SignedRequest {
         service: "bedrock",
         signing_region: "us-west-2",
         method: "POST",
@@ -316,39 +316,50 @@ async fn client_signs_other_services_in_the_default_mode() {
         headers: &[],
         body: &[],
     };
-    // s3vectors starts with s3 and botocore still signs it with SigV4Auth
-    let vectors_request = SignedRequest {
-        service: "s3vectors",
-        ..agent_request
-    };
     built
-        .signed_request_with(agent_request)
+        .signed_request_with(request)
         .await
         .expect("the bedrock request succeeds");
+    let requests = transport.requests();
+    let authorization =
+        header(&requests[0], "Authorization").expect("the bedrock request is signed");
+    assert_eq!(
+        authorization,
+        signed_authorization(&request, SigningMode::SigV4Auth)
+    );
+    assert_ne!(
+        authorization,
+        signed_authorization(&request, SigningMode::S3SigV4Auth)
+    );
+}
+
+#[tokio::test]
+async fn client_signs_s3vectors_in_the_default_mode() {
+    let (built, transport, _resolver) = rag_clients(vec![json_response("{}")]);
+    let url = format!("{AGENT}/knowledgebases/KB%201/datasources/");
+    // s3vectors starts with s3 and botocore still signs it with SigV4Auth
+    let request = SignedRequest {
+        service: "s3vectors",
+        signing_region: "us-west-2",
+        method: "POST",
+        url: &url,
+        headers: &[],
+        body: &[],
+    };
     built
-        .signed_request_with(vectors_request)
+        .signed_request_with(request)
         .await
         .expect("the s3vectors request succeeds");
     let requests = transport.requests();
-    let agent_authorization =
-        header(&requests[0], "Authorization").expect("the bedrock request is signed");
+    let authorization =
+        header(&requests[0], "Authorization").expect("the s3vectors request is signed");
     assert_eq!(
-        agent_authorization,
-        signed_authorization(&agent_request, SigningMode::SigV4Auth)
+        authorization,
+        signed_authorization(&request, SigningMode::SigV4Auth)
     );
     assert_ne!(
-        agent_authorization,
-        signed_authorization(&agent_request, SigningMode::S3SigV4Auth)
-    );
-    let vectors_authorization =
-        header(&requests[1], "Authorization").expect("the s3vectors request is signed");
-    assert_eq!(
-        vectors_authorization,
-        signed_authorization(&vectors_request, SigningMode::SigV4Auth)
-    );
-    assert_ne!(
-        vectors_authorization,
-        signed_authorization(&vectors_request, SigningMode::S3SigV4Auth)
+        authorization,
+        signed_authorization(&request, SigningMode::S3SigV4Auth)
     );
 }
 
