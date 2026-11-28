@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use betterlite_pyhost::blocking_work::{Stats, WorkTracker};
 use betterlite_pyhost::host::PythonHost;
+use pyo3::types::PyAnyMethods as _;
 
 use super::{
     PYTHON, RecordingLogger, Setup, audio_host, call, configure, decimal, probe, reset, stage,

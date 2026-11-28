@@ -13,14 +13,13 @@ use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_pyhost::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, PythonHost};
 use indexmap::IndexMap;
 use pyo3::types::{PyAnyMethods as _, PyModule};
-use pyo3::{Bound, Python};
+use pyo3::{Bound, PyAny, Python};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use super::RivaCall;
-use super::error::RivaCallError;
 use super::logging::{RivaEvent, RivaLogger};
 
 mod cases;
@@ -39,7 +38,7 @@ const FAKE_MODULES: [&str; 7] = [
     "soundfile",
 ];
 
-const PROBE: &str = r#"import json
+const PROBE: &str = "import json
 import threading
 
 events = []
@@ -91,9 +90,9 @@ def snapshot():
         sort_keys=True,
         separators=(',', ':'),
     )
-"#;
+";
 
-const SDK: &str = r#"import inspect
+const SDK: &str = "import inspect
 
 import riva_call_probe as probe
 
@@ -273,9 +272,9 @@ class ASRService:
         if probe.flags.get('asr_fails'):
             raise RuntimeError('asr refused')
         return object.__new__(_SERVICES[probe.flags.get('service', 'timeout')])
-"#;
+";
 
-const CLIENT_FULL: &str = r#"from riva_call_sdk import (
+const CLIENT_FULL: &str = "from riva_call_sdk import (
     ASRService,
     AudioEncoding,
     Auth,
@@ -283,17 +282,17 @@ const CLIENT_FULL: &str = r#"from riva_call_sdk import (
     RecognitionConfig,
     StreamingRecognitionConfig,
 )
-"#;
+";
 
-const CLIENT_WITHOUT_CONFIGS: &str = r#"from riva_call_sdk import ASRService, Auth
-"#;
+const CLIENT_WITHOUT_CONFIGS: &str = "from riva_call_sdk import ASRService, Auth
+";
 
-const CLIENT_BROKEN: &str = r#"def __getattr__(name):
+const CLIENT_BROKEN: &str = "def __getattr__(name):
     raise RuntimeError('client attribute failed')
-"#;
+";
 
-const PROTO: &str = r#"from riva_call_sdk import AudioEncoding, EndpointingConfig, RecognitionConfig, StreamingRecognitionConfig
-"#;
+const PROTO: &str = "from riva_call_sdk import AudioEncoding, EndpointingConfig, RecognitionConfig, StreamingRecognitionConfig
+";
 
 // what the probe and the fake SDK recorded during one test
 #[derive(Debug, Default, Deserialize)]

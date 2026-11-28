@@ -92,7 +92,7 @@ impl RivaSdk {
             }
         };
         let asr = match client.bind(py).getattr(RECOGNITION_ATTR) {
-            Ok(_constructor) => client.clone(),
+            Ok(_constructor) => client.clone_ref(py),
             Err(error) if error.is_instance_of::<PyAttributeError>(py) => {
                 match py.import(PROTO_MODULE) {
                     Ok(module) => module.unbind().into_any(),

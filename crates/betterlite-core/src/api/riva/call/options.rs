@@ -95,7 +95,7 @@ fn function_id(optional: &Object) -> Result<Option<String>, RivaCallError> {
 pub fn endpoint(api_base: Option<&str>) -> Result<&str, RivaCallError> {
     match api_base {
         Some(value) if !value.is_empty() => Ok(value),
-        Some(_empty) | None => Err(RivaCallError::MissingEndpoint {
+        Some(_) | None => Err(RivaCallError::MissingEndpoint {
             message: MISSING_ENDPOINT.to_owned(),
         }),
     }

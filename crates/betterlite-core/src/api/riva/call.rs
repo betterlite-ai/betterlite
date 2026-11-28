@@ -54,11 +54,11 @@ pub fn transcribe_attached(
     let resampled = decode_riva_audio_attached(py, &call.file.file_content)?;
     let resolved = resolve(call.optional_params)?;
     let prepared = prepare_attached(py, &resolved, uri, call.api_key)?;
-    let logged = json_records(&resolved.request.recognition_config)?;
+    let entry_fields = json_records(&resolved.request.recognition_config)?;
     drop(logger.record(RivaEvent::PreCall(RivaPreCall {
         api_base: uri.to_owned(),
         atranscription: call.atranscription,
-        recognition_config: logged,
+        recognition_config: entry_fields,
         nvcf_function_id_set: resolved.function_id.is_some(),
         use_ssl: resolved.use_ssl_logged.clone(),
     })));
@@ -78,11 +78,11 @@ pub async fn transcribe(
     let resampled =
         decode_riva_audio(host, tracker, deadline, call.file.file_content.clone()).await?;
     let resolved = resolve(call.optional_params)?;
-    let logged = json_records(&resolved.request.recognition_config)?;
+    let entry_fields = json_records(&resolved.request.recognition_config)?;
     drop(logger.record(RivaEvent::PreCall(RivaPreCall {
         api_base: uri.to_owned(),
         atranscription: true,
-        recognition_config: logged,
+        recognition_config: entry_fields,
         nvcf_function_id_set: resolved.function_id.is_some(),
         use_ssl: resolved.use_ssl_logged.clone(),
     })));
@@ -126,7 +126,7 @@ fn finish(
     )?;
     let encoded =
         serde_json::to_value(&response).map_err(|source| RivaCallError::Json { source })?;
-    let original_response =
+    let original_response: Json =
         serde_json::from_value(encoded).map_err(|source| RivaCallError::Json { source })?;
     let recognition_config = json_records(&resolved.request.recognition_config)?;
     drop(logger.record(RivaEvent::PostCall(RivaPostCall {

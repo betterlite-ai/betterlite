@@ -2,7 +2,7 @@ use betterlite_openai::openai_base_config::Object;
 use betterlite_pyhost::json_values::to_object;
 use pyo3::exceptions::PyAttributeError;
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _};
-use pyo3::{Bound, Python};
+use pyo3::{Bound, PyAny, Python};
 
 use super::super::error::RivaCallError;
 use super::{
@@ -41,8 +41,8 @@ fn recognition_fields<'py>(
         if name == ENCODING_FIELD || name == ENDPOINTING_FIELD {
             continue;
         }
-        let field = config_call(py, RECOGNITION, to_object(py, value))?;
-        pairs.push((name.clone(), field));
+        let converted = config_call(py, RECOGNITION, to_object(py, value))?;
+        pairs.push((name.clone(), converted));
     }
     Ok(pairs)
 }

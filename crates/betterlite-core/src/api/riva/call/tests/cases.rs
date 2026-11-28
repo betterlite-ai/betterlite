@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use betterlite_pyhost::host::PythonHost;
+use pyo3::types::PyAnyMethods as _;
 use rstest::rstest;
 
 use super::{
