@@ -507,12 +507,14 @@ impl Harness {
     }
 
     pub(crate) fn router(&self) -> Router {
+        let store: Arc<dyn UserEnvVarsStore> = Arc::clone(&self.store);
+        let cache: Arc<dyn UserEnvVarsCache> = Arc::clone(&self.cache);
         let state = UserEnvRoutesState {
             database: self
                 .database
                 .then(|| Arc::new(PostgresStore { pool: None })),
-            store: Arc::clone(&self.store),
-            cache: Arc::clone(&self.cache),
+            store,
+            cache,
             registry: self.registry(),
             db_lookup: self.db_lookup_port(),
             access: self.access_port(),
