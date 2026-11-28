@@ -58,9 +58,10 @@ pub(crate) enum SessionError {
     },
 }
 
-// Everything one Python passthrough call owns: the outbound client every provider request goes through.
+// Everything one Python passthrough call owns: the outbound client every provider request goes through, and the environment its provider settings read
 pub(crate) struct SessionCore {
     client: ProxiedClient,
+    environment: BTreeMap<String, String>,
 }
 
 impl SessionCore {
@@ -71,7 +72,10 @@ impl SessionCore {
             .map_err(|source| SessionError::Proxy { source })?;
         let client = ProxiedClient::outbound(&Arc::new(policy))
             .map_err(|source| SessionError::Client { source })?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            environment,
+        })
     }
 
     pub(crate) async fn call(
@@ -81,7 +85,7 @@ impl SessionCore {
         let model = args.model.clone();
         let provider = args.custom_llm_provider.clone().unwrap_or_default();
         let mut logging = logging_state(&model)?;
-        allm_passthrough_route(args, &mut logging, &self.client)
+        allm_passthrough_route(args, &mut logging, &self.client, &self.environment)
             .await
             .map_err(|error| Box::new(failure(&error, &provider, &model)))
     }

@@ -1,0 +1,159 @@
+id: B10186
+title: The SDK pass-through call logs Azure chat replies and Azure and GigaChat streams with their assembled responses
+description: >-
+  After B10177 the SDK pass-through call logs Azure, Azure AI and GigaChat replies through their provider configs, but three ports answer nothing. Azure's `ChatReplyProjection` and `ChatStreamAssembly` have only the no-op pair (crates/betterlite-azure/src/passthrough/logging.rs L33-L60), so an Azure or Azure AI `/chat/completions` reply or stream logs no ModelResponse, and GigaChat's stream hook returns `GigachatPassthroughLogged::Chunks` (crates/betterlite-openai/src/gigachat_passthrough.rs L51-L55, L149-L170) that nobody assembles. LiteLLM logs the first with OpenAIGPTConfig.transform_response and the second with the OpenAI pass-through stream builder (azure/passthrough/transformation.py L176-L231), and runs stream_chunk_builder over GigaChat's translated chunks (gigachat/passthrough/transformation.py L134-L195).
+
+
+  Sync against async. B3572's collector contract is sync, and so is LiteLLM's: `build_logged_response` and `handle_logging_collected_chunks` are plain methods (base_llm/passthrough/transformation.py L102-L131) and GigaChat calls stream_chunk_builder without awaiting (L187-L191). The contract is right. The Rust builders are async only because their token counter port is: `stream_chunk_builder` (crates/betterlite-streaming/src/streamed_response_assembly.rs L126) and core's `complete_streaming_response` (crates/betterlite-core/src/openai_streaming_assembly.rs L146-L173, L250) await `UsageTokenCounter` (stream_usage_assembly.rs L32-L40). betterlite-tokenizer's `Counter` really suspends: CountingService waits for a semaphore permit and a blocking pool (engine/limits.rs L47-L68, L86-L91) and the selector may download a tokenizer (engine/selection.rs L140-L192). `Engine::encode` is sync (engine.rs L20-L25). So the adapters count with a counter whose futures are ready at once and finish the builder in one poll, the way the server's OpenAI pass-through toolbox does (crates/betterlite-server/src/pass_through_logging/openai_passthrough_logging/toolbox.rs L173-L196), and a builder that does not finish in one poll is an error, never a block.
+
+
+  One collected assembly. The server already holds that counter and the silent builder ports, and two copies of the one-poll call: `CollectedCounter` over bundled cl100k_base (gemini_passthrough_logging/counter.rs L13-L49), `NoCosts`, `SilentLogger`, `SilentConsole` and `silent_hooks` (gemini_passthrough_logging/assembly.rs L210-L267), and the Request literal with a `block_on` in gemini assembly.rs L171-L207 and cohere_passthrough_logging/stream.rs L47-L60 and L149-L162. They move once to a new module crates/betterlite-streaming/src/collected_assembly.rs with collected_assembly/counter.rs, collected_assembly/silent.rs and collected_assembly/tests.rs (the skeleton declares it in lib.rs): `pub struct CollectedCounter { pub engine: Engine }` with `bundled()` and its UsageTokenCounter impl, the three silent ports and silent_hooks, and `pub fn assemble_collected(chunks: &[Chunk], counter: &CollectedCounter, now: i64) -> Result<Option<Response>, CollectedAssemblyError>`. It builds the Request gemini builds today (messages, count_prompt_tokens, logging and metadata None, costs NoCosts) and runs stream_chunk_builder with `FutureExt::now_or_never` from futures-util, added to betterlite-streaming's dependencies; `CollectedAssemblyError` has Redaction, Assembly and Pending. CollectedCounter's `ReasoningTokenCounter` impl (counter.rs L51-L57) moves to a new crates/betterlite-anthropic/src/usage/collected.rs, declared in usage.rs, since betterlite-streaming cannot reach that trait. Gemini and Cohere call assemble_collected and keep their own chunk conversion and model fix-ups; both block_on functions go. Every other server import of these types (vertex_stream_collection.rs L22, vertex_stream_collection/build.rs L10-L13 and tests.rs L11, anthropic_passthrough_logging.rs L29, gemini routes.rs L28, openai_passthrough_logging/toolbox.rs L38, interrupted_stream_usage/assembly.rs L38-L39) reads them from betterlite-streaming.
+
+
+  GigaChat. handle_collected_chunks keeps its parse loop, converts each GenericChunk with `convert_generic_chunk` (crates/betterlite-streaming/src/stream_chunk_shaping/extras.rs L78-L82) and to the builder's Chunk with serde_json::to_value and serde_json::from_value (StreamChunk serializes and Chunk deserializes the OpenAI chunk shape), and runs assemble_collected over the config's counter (Built once, below). `GigachatPassthroughLogged::Chunks` becomes `Streamed(Box<ChatResponse>)` from the builder's `Response::Chat`; a missing tokenizer, an assembly error or a Text response logs a warning and answers None. B10177's logged.rs maps Streamed to SuccessResult::Chat as it maps Chat.
+
+
+  Azure stream. A new file crates/betterlite-core/src/openai_streaming_assembly/collected.rs, declared in openai_streaming_assembly.rs, implements core's `RelayTokenCounter` (L61-L66) for streaming's CollectedCounter and holds `pub struct CollectedChatAssembly { pub counter: CollectedCounter }` with Azure's ChatStreamAssembly: it converts the relayed messages to the tokenizer's Message with serde_json::from_value, calls complete_streaming_response with NoCosts, `Uuid::new_v4` and the current Unix second, finishes it with now_or_never, and returns the Chat response as an Object. count_text and count_response_text encode with the engine. count_messages needs the tokenizer's message walk, and only the async Texter drives it today (count/messages.rs L37-L48). Make that walk take `&dyn TextCount`, a new `#[async_trait]` trait in count/text.rs with Texter's `count` as its impl and one for `Engine` that encodes at once, so the same walk counts in one poll; CollectedCounter's count_messages calls it with `message_params(model, &ModelCatalog::default())` (L24-L35). Core implements Azure's trait here because the assembler is core's and core already depends on betterlite-azure.
+
+
+  Azure reply. A new file crates/betterlite-azure/src/passthrough/chat_reply.rs holds `pub struct OpenAiChatReplyProjection` with Azure's ChatReplyProjection: it decodes the body into betterlite-openai's ChatResponse through serde_json::from_slice into a Value and serde_json::from_value, the shape OpenAIGPTConfig.transform_response returns, and returns it as an Object, or None when the body is not a chat completion. The port gets no logging state, so the post_call log of the raw reply that transform_response writes is not repeated here (deviation below).
+
+
+  Wiring. B10177's logged.rs builds the Azure config and the Foundry plan with the defaults; it builds them with `OpenAiChatReplyProjection` and a `CollectedChatAssembly` over the call's counter instead. FoundryPassthroughPlan already takes both as type parameters (crates/betterlite-foundry/src/passthrough/plan.rs L45-L49), so foundry_plan gains the two values as arguments. Delete the Azure, Azure AI and GigaChat parts of B10177's "no provider-built logged response" row in docs/deviations/B10177.yaml, and write this task's rows in docs/deviations/B10186.yaml.
+
+
+  Built once. Parsing the bundled vocabulary costs a full BPE load, so no call builds a counter: it comes in with B10166's AWS port, and every caller already builds that port once. A new file crates/betterlite-core/src/api/passthrough_call/ports.rs, declared with `pub mod ports;` in passthrough_call.rs, holds `#[derive(Clone)] pub struct PassthroughPorts { pub aws: Arc<dyn AwsPassthrough>, pub counter: CollectedCounter }`. allm_passthrough_route's fifth argument, B10166's `aws: &Arc<dyn AwsPassthrough>`, becomes `ports: &PassthroughPorts`, so the call keeps five parameters, and PassthroughCallConfig holds a clone of the ports where it held the port; the port's readers in send.rs, urls.rs and passthrough_call.rs read `ports.aws`. A clone copies the engine's Arc, not the vocabulary. logged.rs hands `config.ports.counter.clone()` to CollectedChatAssembly. GigachatPassthroughConfig gains `pub counter: Option<CollectedCounter>`, None in its Default so urls.rs keeps the default it builds, and config.rs's GigaChat arm sets it to Some from the ports. B10166's Python session builds the ports once in `SessionCore::build` (crates/betterlite-python/src/passthrough_calls/session.rs L67-L75) beside from_environment, with `CollectedCounter::bundled()`; a None there is a new SessionError variant naming the missing cl100k_base vocabulary. B8691, B8694 and B8631 build theirs the same way when they land. The server's Vertex stream collector stops building its own: `VertexStreamCollector::new` (vertex_stream_collection.rs L73-L79) takes `counter: Option<CollectedCounter>` as its second argument, so build.rs and its tests keep the Option and its production builder hands it the same counter.
+
+
+  Tests. collected_assembly/tests.rs: `assemble_collected_builds_a_chat_response_in_one_poll` over two content chunks and a usage chunk, `assemble_collected_answers_none_without_chunks`. gigachat_passthrough/tests.rs: `collected_chunks_assemble_into_a_chat_response` (content joined, usage from the last chunk) and `collected_chunks_without_a_chunk_log_nothing`. crates/betterlite-core/src/openai_streaming_assembly/tests/collected.rs, declared in its tests.rs: `collected_chat_assembly_counts_prompt_tokens_from_the_messages` (a stream without a usage chunk gets cl100k prompt and completion counts) and `collected_counter_counts_messages_in_one_poll`. azure passthrough/tests: `chat_reply_projection_decodes_a_chat_completion` and `chat_reply_projection_answers_none_for_a_body_that_is_not_one`. In core's passthrough_call/tests/success.rs, an Azure chat stream and an Azure full chat reply now reach dispatch_success_handlers as Chat. The core and Python tests that call allm_passthrough_route pass one PassthroughPorts built once in their support. The server's pass-through logging tests stay green with the moved types.
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-streaming/Cargo.toml
+    - crates/betterlite-streaming/src/collected_assembly.rs
+    - crates/betterlite-streaming/src/collected_assembly/**
+    - crates/betterlite-anthropic/src/usage.rs
+    - crates/betterlite-anthropic/src/usage/collected.rs
+    - crates/betterlite-tokenizer/src/count/text.rs
+    - crates/betterlite-tokenizer/src/count/messages.rs
+    - crates/betterlite-tokenizer/src/count.rs
+    - crates/betterlite-tokenizer/src/count/tests.rs
+    - crates/betterlite-tokenizer/src/count/tests/**
+    - crates/betterlite-openai/src/gigachat_passthrough.rs
+    - crates/betterlite-openai/src/gigachat_passthrough/tests.rs
+    - crates/betterlite-azure/src/passthrough.rs
+    - crates/betterlite-azure/src/passthrough/chat_reply.rs
+    - crates/betterlite-azure/src/passthrough/tests.rs
+    - crates/betterlite-azure/src/passthrough/tests/**
+    - crates/betterlite-foundry/src/passthrough/plan.rs
+    - crates/betterlite-foundry/src/passthrough/tests.rs
+    - crates/betterlite-foundry/src/passthrough/tests/**
+    - crates/betterlite-core/src/openai_streaming_assembly.rs
+    - crates/betterlite-core/src/openai_streaming_assembly/collected.rs
+    - crates/betterlite-core/src/openai_streaming_assembly/tests.rs
+    - crates/betterlite-core/src/openai_streaming_assembly/tests/**
+    - crates/betterlite-core/src/api/passthrough_call.rs
+    - crates/betterlite-core/src/api/passthrough_call/ports.rs
+    - crates/betterlite-core/src/api/passthrough_call/config.rs
+    - crates/betterlite-core/src/api/passthrough_call/send.rs
+    - crates/betterlite-core/src/api/passthrough_call/urls.rs
+    - crates/betterlite-core/src/api/passthrough_call/logged.rs
+    - crates/betterlite-core/src/api/passthrough_call/tests.rs
+    - crates/betterlite-python/src/passthrough_calls/session.rs
+    - crates/betterlite-python/src/passthrough_calls/session/tests.rs
+    - crates/betterlite-core/src/api/passthrough_call/tests/**
+    - crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging/**
+    - crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging/stream.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_stream_collection.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_stream_collection/**
+    - crates/betterlite-server/src/pass_through_logging/anthropic_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/openai_passthrough_logging/toolbox.rs
+    - crates/betterlite-server/src/pass_through_logging/interrupted_stream_usage/assembly.rs
+    - docs/deviations/B10177.yaml
+    - docs/deviations/B10186.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L102-L131
+    why: the collector protocol and the raw-bytes collector are sync, so B3572's contract matches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L176-L231
+    why: Azure's chat reply goes through OpenAIGPTConfig.transform_response and its chat stream through the OpenAI pass-through builder with the relayed messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L134-L195
+    why: GigaChat translates each chunk and runs stream_chunk_builder over them without awaiting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L552-L613
+    why: the OpenAI pass-through stream builder Azure reuses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L658-L676
+    why: LiteLLM's token_counter picks the encoding from the model name.
+dod:
+  - text: The bundled counter, the silent builder ports and one one-poll assemble_collected live in betterlite-streaming, and Gemini, Cohere, GigaChat and Bedrock's later assembler share them.
+    proof: [streaming-tests, server-tests, no-copies]
+  - text: A GigaChat stream logs the assembled chat response, and an Azure or Azure AI chat stream or full chat reply logs a ModelResponse.
+    proof: [openai-tests, core-tests, azure-tests, foundry-tests]
+  - text: The tokenizer's message walk counts in one poll over a sync engine and still counts the same through the async Texter.
+    proof: [tokenizer-tests, core-tests]
+  - text: B10177's row no longer names Azure, Azure AI or GigaChat, and docs/deviations/B10186.yaml has this task's rows.
+    proof: [deviation-rows]
+  - text: No call parses the vocabulary. The counter comes in with the AWS port in PassthroughPorts, built once by each caller, and the Vertex collector takes it as an argument.
+    proof: [built-once, core-tests, python-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: streaming-tests
+      why: the moved counter or assemble_collected builds a different response or blocks
+      run: grep -q 'fn assemble_collected_builds_a_chat_response_in_one_poll' crates/betterlite-streaming/src/collected_assembly/tests.rs && cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^collected_assembly::/) | test(/^streamed_response_assembly::/)'
+    - id: tokenizer-tests
+      why: the message walk counts differently after it takes a text counter trait
+      run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^count::/)'
+    - id: openai-tests
+      why: GigaChat's stream answer is lost or assembled wrong
+      run: grep -q 'fn collected_chunks_assemble_into_a_chat_response' crates/betterlite-openai/src/gigachat_passthrough/tests.rs && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^gigachat_passthrough::/)'
+    - id: azure-tests
+      why: the chat reply projection decodes wrong or answers a body that is not a chat completion
+      run: grep -rq 'fn chat_reply_projection_decodes_a_chat_completion' crates/betterlite-azure/src/passthrough && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/^passthrough::/)'
+    - id: foundry-tests
+      why: the Foundry plan lost its Azure ports or its other answers changed
+      run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^passthrough::/) - test(/replays_the_/)'
+    - id: core-tests
+      why: the relayed counter, the Azure stream assembly or the call's success log broke
+      run: grep -q 'fn collected_chat_assembly_counts_prompt_tokens_from_the_messages' crates/betterlite-core/src/openai_streaming_assembly/tests/collected.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^openai_streaming_assembly::/) | test(/^api::passthrough_call::/)'
+    - id: server-tests
+      why: Gemini, Vertex, Cohere, Anthropic or OpenAI pass-through logging changed with the moved types
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::/)'
+    - id: no-copies
+      why: a block_on or a second copy of the silent ports or the counter is still in the server
+      run: test -z "$(grep -rn 'fn block_on\|struct NoCosts\|struct SilentLogger\|struct SilentConsole\|struct CollectedCounter' crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging)"
+    - id: built-once
+      why: a call or a collector still parses the bundled vocabulary itself
+      run: test -z "$(grep -n 'CollectedCounter::bundled' crates/betterlite-core/src/api/passthrough_call/logged.rs crates/betterlite-openai/src/gigachat_passthrough.rs crates/betterlite-server/src/pass_through_logging/vertex_stream_collection.rs)"
+    - id: python-tests
+      why: the Python session lost its ports or calls the pass-through route with the old port argument
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^passthrough_calls::/)'
+    - id: deviation-rows
+      why: this task's deviations are missing, or B10177's row still names the ports this task builds
+      run: test -s docs/deviations/B10186.yaml && test -z "$(grep -n 'GigaChat streams have no provider-built' docs/deviations/B10177.yaml)"
+oracle_cases: []
+deviations:
+  - what: >-
+      Token estimates for an Azure, Azure AI or GigaChat pass-through stream without a usage chunk use cl100k_base for every model. LiteLLM's token_counter picks the model's encoding, o200k_base for gpt-4o and later.
+    why: >-
+      The bundled counter holds one engine, the one the server's Gemini and Cohere pass-through logging already use, and a stream with usage reports its own counts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L658-L676
+  - what: >-
+      An Azure pass-through chat reply is logged without a second post_call record of the raw reply text.
+    why: >-
+      Azure's ChatReplyProjection port gets the reply and the request but no logging state, and the call already logged the raw reply when it relayed it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L176-L207
+out_of_scope:
+  - "Bedrock and Bedrock Mantle: B10184 builds their ports over assemble_collected."
+  - "Per-model encodings for the bundled counter (deviation above)."
+pitfalls:
+  - "GigachatPassthroughConfig derives Debug (gigachat_passthrough.rs L58); derive Debug on the moved CollectedCounter too, since Engine is Debug (crates/betterlite-tokenizer/src/engine.rs L14)."
+  - "Convert serde values with serde_json::to_value and from_value, never through from_str: arbitrary_precision is on in these crates."
+  - "assemble_collected never blocks: now_or_never answers Pending as an error, and no block_in_place or new runtime takes its place."
+  - "betterlite-streaming cannot depend on betterlite-anthropic (anthropic depends on streaming), so the ReasoningTokenCounter impl lives in betterlite-anthropic."
+  - "core's openai_streaming_assembly.rs has 270 lines; the Azure assembly and the counter impl go in collected.rs."
+  - "Keep Gemini's model fix-ups (assembly.rs L163-L170, L185-L190) in Gemini; only the Request, the hooks and the poll move."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
