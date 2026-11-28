@@ -39,7 +39,8 @@ const NO_TEXT_DELTA: &str =
 
 const TEXT_DELTA_FRAME: &[u8] = b"event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"one\"}}\n\n";
 
-const ENDED_FRAME: &[u8] = b"event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"one\"}}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\n";
+// The ended-stream assembly reads the served model from message_start, so the frame carries a real stream's start.
+const ENDED_FRAME: &[u8] = b"event: message_start\ndata: {\"message\": {\"id\": \"msg_1\", \"model\": \"claude-3\", \"role\": \"assistant\", \"usage\": {\"input_tokens\": 1, \"output_tokens\": 0}}, \"type\": \"message_start\"}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"one\"}}\n\nevent: message_delta\ndata: {\"delta\": {\"stop_reason\": \"end_turn\"}, \"type\": \"message_delta\", \"usage\": {\"output_tokens\": 9}}\n\n";
 
 fn translation() -> Anthropic {
     AnthropicTranslation {
@@ -259,6 +260,10 @@ async fn stream_raw_frame_ended_rewrite_stays_bytes() {
         .process_streaming_response(&mut stream, &applied, call(true))
         .await
         .unwrap();
+    assert_eq!(
+        fake.calls()[0].inputs.texts.as_ref().unwrap(),
+        &[String::from("one")]
+    );
     let [StreamItem::Bytes(frame)] = stream.as_slice() else {
         panic!("expected the raw frame in place, got {stream:?}");
     };
