@@ -116,9 +116,7 @@ def branch_for(url_route: str) -> str | None:
     embeddings.process_embed_content_response = Leaf("embed_content")
     embeddings.process_response = Leaf("embed_content")
     images.VertexImageGeneration = Leaf("predict")
-    object.__setattr__(
-        partner_module, "get_vertex_ai_partner_model_config", Leaf("raw_predict")
-    )
+    object.__setattr__(partner_module, "get_vertex_ai_partner_model_config", Leaf("raw_predict"))
     search = Leaf("search")
     object.__setattr__(search, "transform_search_vector_store_response", search)
     bindings.vertex_search_api_config = search
