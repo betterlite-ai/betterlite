@@ -162,6 +162,16 @@ async fn a_non_json_media_type_does_not_parse_json() {
 }
 
 #[tokio::test]
+async fn a_non_application_json_subtype_is_not_parsed() {
+    let reply = post_body(Some("text/json"), br#"{"values":{"TOKEN":"secret"}}"#).await;
+    assert_eq!(reply.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        reply.issues(),
+        [issue("model_attributes_type", &["body"], ATTRIBUTES_TYPE)]
+    );
+}
+
+#[tokio::test]
 async fn invalid_utf8_is_the_http_400() {
     let reply = post_body(Some("application/json"), b"\xff\xfe").await;
     assert_eq!(reply.status(), StatusCode::BAD_REQUEST);
