@@ -1,7 +1,9 @@
 use betterlite_db::stored_cipher::DbCipher;
+use betterlite_mcp::gateway_authorize::authorize::native::{
+    NativeClientAuthorize, native_client_authorize,
+};
 use betterlite_mcp::gateway_authorize::authorize::{
-    AggregateAuthorize, AuthorizeRequest, NativeClientAuthorize, aggregate_authorize,
-    native_client_authorize,
+    AggregateAuthorize, AuthorizeRequest, aggregate_authorize,
 };
 use betterlite_mcp::gateway_authorize::connect::{
     CompleteFlowRequest, ConnectFlowCall, ConnectPorts, FlowForm, complete_connect_flow,
