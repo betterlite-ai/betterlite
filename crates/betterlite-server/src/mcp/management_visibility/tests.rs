@@ -546,39 +546,34 @@ fn non_admin_view_strips_secret_fields() {
 #[test]
 fn non_admin_view_keeps_discovery_fields() {
     let view = non_admin(FULL_ROW);
-    assert_discovery_identity(&view);
-    assert_discovery_access(&view);
-}
-
-fn assert_discovery_identity(view: &McpServerTable) {
-    assert_eq!(view.server_name.as_deref(), Some("Test Server"));
-    assert_eq!(view.alias.as_deref(), Some("test-alias"));
-    assert_eq!(view.description.as_deref(), Some("test description"));
-    assert_eq!(view.transport, MCPTransport::Http);
-    assert_eq!(view.auth_type, Some(MCPAuth::BearerToken));
-    assert_eq!(view.instructions.as_deref(), Some("test instructions"));
-    assert_eq!(view.mcp_access_groups, ["group-1"]);
-    assert_eq!(view.allowed_tools, ["tool-1"]);
-}
-
-fn assert_discovery_access(view: &McpServerTable) {
-    assert_eq!(
-        view.teams,
-        vec![BTreeMap::from([(
-            "team_id".to_owned(),
-            Some("team-1".to_owned())
-        )])]
+    assert!(
+        view.server_name.as_deref() == Some("Test Server")
+            && view.alias.as_deref() == Some("test-alias")
+            && view.description.as_deref() == Some("test description")
+            && view.transport == MCPTransport::Http
+            && view.auth_type == Some(MCPAuth::BearerToken)
+            && view.instructions.as_deref() == Some("test instructions")
     );
-    assert_eq!(
-        view.health_check_error.as_deref(),
-        Some("test health failure")
+    assert!(
+        view.teams
+            == vec![BTreeMap::from([(
+                "team_id".to_owned(),
+                Some("team-1".to_owned())
+            )])]
+            && view.mcp_access_groups == ["group-1"]
+            && view.allowed_tools == ["tool-1"]
     );
-    assert!(view.last_health_check.is_some());
-    assert_eq!(view.created_by.as_deref(), Some("test-creator"));
-    assert_eq!(view.updated_by.as_deref(), Some("test-updater"));
-    assert_eq!(view.status, Some(McpStatus::Healthy));
-    assert!(view.tool_name_to_display_name.is_some());
-    assert!(view.tool_name_to_description.is_some());
+    assert!(
+        view.health_check_error.as_deref() == Some("test health failure")
+            && view.last_health_check.is_some()
+            && view.created_by.as_deref() == Some("test-creator")
+            && view.updated_by.as_deref() == Some("test-updater")
+    );
+    assert!(
+        view.status == Some(McpStatus::Healthy)
+            && view.tool_name_to_display_name.is_some()
+            && view.tool_name_to_description.is_some()
+    );
 }
 
 #[test]
