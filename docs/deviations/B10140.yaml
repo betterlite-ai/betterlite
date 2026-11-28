@@ -1,0 +1,12 @@
+task: B10140
+deviations:
+  - what: >-
+      The team members gauge reaches the metric effect as an Option the caller hands in, and
+      None records nothing, where LiteLLM looks the registered PrometheusLogger up in a global
+      and returns when there is none.
+    why: >-
+      The repository forbids globals, so the server wiring that builds the team routes passes
+      the litellm_team_members gauge it registered. None gives the same no-op LiteLLM's missing
+      PrometheusLogger gives: no value is built, no gauge is touched and nothing is logged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L257-L265
+kept_bugs: []

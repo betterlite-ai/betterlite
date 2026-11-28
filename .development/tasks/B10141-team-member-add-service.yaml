@@ -1,0 +1,107 @@
+id: B10141
+title: Locked team member addition
+description: >-
+  LiteLLM writes new team members in one place, _add_team_members_to_team, and two routes call it: B804's POST /team/new after the team row commits, and B808's POST /team/member_add. Neither route needs B807's membership preflight, role update, metric or audits for this step, so the locked addition is its own task and B804 no longer waits for B807. Code goes in betterlite-server, module team_member_add_service (crates/betterlite-server/src/team_member_add_service.rs) with the submodule roster (team_member_add_service/roster.rs), and a tests.rs beside each. The file is an empty stub that lib.rs already declares.
+
+
+  roster, the merge. update_team_members_list is _update_team_members_list. It takes B8412's TeamMemberAddRequest, the caller's B859 LiteLLMTeamTable and the B720 LiteLLMUserTable rows that B1206's process_team_members returned. request.member is one B859 Member or a list; take it as a list in request order and resolve every entry with B1206's resolve_member_identity against the updated users before appending anything. Then walk the resolved list in order and append each member for which B1206's member_already_in_team is false against the team's members_with_roles as it stands at that moment. A member appended earlier in the same call therefore counts as present for the next one, so a batch naming one user twice, or once by id and once by email after resolution fills both, adds that user once. LiteLLM gets this from a generator that extend() consumes while it appends; a plain loop over the resolved list does the same. The function changes only the team's members_with_roles.
+
+
+  roster, the write. write_members_with_roles(session, team_id, members) is LiteLLM's _team_tx_db(tx).update(where team_id, data members_with_roles json.dumps(...)) on the caller's transaction, a B700 DbSession. Main has no roster UPDATE yet, so this task owns it: `UPDATE "LiteLLM_TeamTable" team SET members_with_roles = $1::TEXT::JSONB, updated_at = CURRENT_TIMESTAMP WHERE team_id = $2 RETURNING row_to_json(team)::TEXT`, with $1 the members serialized as a JSON array of their user_id, user_email and role in roster order. Parse the returned text with B724's TeamRecord::parse, as B801's TeamTransaction::team_row does. No row returned is Ok(None). B807's _update_team_member_role writes its roster through this same function, so the statement exists once.
+
+
+  The locked addition. add_team_members_to_team is _add_team_members_to_team. It takes B726's PrismaClient, the TeamMemberAddRequest, the caller's team as &mut LiteLLMTeamTable, the caller principal B1206's process_team_members takes (B732's type) and litellm_proxy_admin_name as Option<&str>. It opens one transaction on client.writer (B700's PostgresStore session, then transaction) and, in this order on that transaction:
+
+  1. runs B819's TEAM_ADVISORY_LOCK_SQL (access_group_sync::team) with the request's team_id through B801's team_transaction(&tx).execute_raw;
+
+  2. rereads the roster with team_transaction(&tx).members_with_roles(team_id), B724's locked read. None is MemberAddError::TeamDeleted and nothing is written. Otherwise the locked roster replaces the team's members_with_roles, because the caller's snapshot is stale and a member another request added or removed since then must stay that way;
+
+  3. calls B1206's process_team_members with the request, the team, the client, the caller, the proxy admin name and the open transaction, so its user and membership writes run on this connection, and keeps the updated users and memberships it returns;
+
+  4. calls update_team_members_list with those users;
+
+  5. calls write_members_with_roles with the team's roster; None is MemberAddError::TeamDeleted again;
+
+  6. commits and returns MemberAddition { team: the TeamRecord the write returned, updated_users, updated_team_memberships } (B720's LiteLLMUserTable and B859's LiteLLMTeamMembership).
+
+  An error at any step drops the transaction without commit, so the users, memberships and roster written by this call roll back together, as LiteLLM's async with prisma_client.tx() does. After a successful return the caller's team holds the final roster: B804 returns it in the /team/new response and puts it in the audit snapshot, and B808 reads it for the metric and the after-roster of its audit.
+
+
+  Errors. MemberAddError lives in this module's own files. TeamDeleted carries the team id and reads `Team=<team_id> was deleted while this member add was running`; the routes turn it into HTTP 404 with that text as detail.error. The other variants wrap B700's DbError, B724's TeamQueryError and TeamRecordError and B1206's member error unchanged, so B1206's HTTP 400, 403 and 500 details reach the route as B1206 built them.
+
+
+  Tests run on real Postgres through betterlite-postgres-fixture (POSTGRES_TEST_URL when set, otherwise testcontainers; a failure to connect fails the test), with betterlite's migrations in a fresh schema per test. The merge tests in roster/tests.rs need no database; the write tests there do. The tests in tests.rs cover the transaction. For the lock test a second connection opens a transaction, takes `SELECT pg_advisory_xact_lock(hashtext($1))` for the team and changes the roster, as entity_spend_commit/membership/tests.rs holds a team lock; the add must wait, then see that change and keep it. B1207's delete is not built yet, so the delete side of the race is that raw lock and a plain DELETE of the team row on the second connection. The pool test runs several adds for one team on a PostgresStore pool of two connections and expects all of them to finish. User ids and emails in tests start with test-.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_member_add_service.rs
+    - crates/betterlite-server/src/team_member_add_service/**
+    - tools/oracle/cases/helpers/team-member-add/**
+    - tools/oracle/fuzz/corpus/helper_case/team-member-add-*
+    - tools/oracle/helpers/b10141.py
+    - tools/oracle/helpers/b10141/**
+    - tools/oracle/src/helpers/server/b10141.rs
+    - tools/oracle/src/helpers/server/b10141/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2956-L2972
+    why: Owned. _update_team_members_list, resolve first and then append against the growing roster.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2975-L3028
+    why: Owned. _add_team_members_to_team, the lock, the locked reread, the two 404s and the writes on one transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2859-L2953
+    why: _process_team_members, _resolve_member_identity and _member_already_in_team, built by B1206; this task calls them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1735-L1756
+    why: Call site in new_team (B804), after the team insert commits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3458-L3468
+    why: Call site in team_member_add (B808).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L180-L220
+    why: LiteLLM_TeamTable, members_with_roles as Json and updated_at with @updatedAt.
+dod:
+  - text: update_team_members_list appends absent members in request order, skips one already on the roster by id or email, keeps the identity resolved from the updated users, and adds a user named twice in one call once, matching LiteLLM's _update_team_members_list.
+    proof: [roster-tests, oracle, helper-python, helper-case-corpus]
+  - text: write_members_with_roles stores the roster as a JSON array in roster order, stamps updated_at, returns the updated team row, and returns None for a team that does not exist.
+    proof: [roster-tests]
+  - text: add_team_members_to_team takes the advisory lock before it rereads the roster, replaces the caller's stale snapshot with the locked roster, and keeps a roster change another transaction made while it waited.
+    proof: [transaction-tests]
+  - text: A team deleted before the lock is MemberAddError::TeamDeleted with the text "Team=<id> was deleted while this member add was running", and no user, membership or roster row is written.
+    proof: [transaction-tests]
+  - text: A failed member write rolls back every user, membership and roster write of the call; several adds for one team on a pool of two connections all finish; after success the caller's team holds the final roster.
+    proof: [transaction-tests]
+checks:
+  optional: []
+  commands:
+    - id: roster-tests
+      why: The merge order, the in-call deduplication, the identity fill or the roster write differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_member_add_service::roster::/)'
+    - id: transaction-tests
+      why: The lock order, the locked reread, the deleted-team error, the rollback or the pool behavior differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_member_add_service::tests::/)'
+    - id: helper-python
+      why: The b10141 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10141.py tools/oracle/helpers/b10141)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10141 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-member-add-*")" &&
+        grep -lE 'b10141"?:' tools/oracle/fuzz/corpus/helper_case/team-member-add-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-member-add/roster-merge.yaml
+  - tools/oracle/cases/helpers/team-member-add/roster-self-dedup.yaml
+deviations: []
+out_of_scope:
+  - "team_call_validation_checks, team_member_add_duplication_check, _validate_team_member_add_permissions, _update_team_member_role and _schedule_team_member_add_audit_logs: B807. Its role update calls this task's write_members_with_roles."
+  - "_process_team_members, _resolve_member_identity, _member_already_in_team and the other identity and provisioning helpers: B1206. This task calls the first three."
+  - "The metric and the membership audit after an add: B10140, called by B808. Cache eviction after the commit: B808 and B804."
+  - "new_team: B804. team_member_add: B808. Every other team_endpoints.py function: the owner B807's out_of_scope names for it."
+pitfalls:
+  - "Take TEAM_ADVISORY_LOCK_SQL before reading the roster; reading first lets a /team/delete that committed in between go unseen, and the add then writes users and memberships for a team that is gone."
+  - "Every user, membership and roster write runs on the locked transaction's connection; a second pool connection taken while the lock is held deadlocks a small pool once enough adds for one team wait on that lock."
+  - "Prisma's @updatedAt stamps updated_at on every team update, so the roster UPDATE sets updated_at = CURRENT_TIMESTAMP itself."
+  - "members_with_roles is a jsonb column, so bind the serialized roster as text and cast it with $1::TEXT::JSONB; binding a String to jsonb directly fails with a type error."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

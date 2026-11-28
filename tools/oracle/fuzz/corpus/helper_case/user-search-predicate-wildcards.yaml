@@ -1,0 +1,5 @@
+kind: helper
+name: user-search-predicate-wildcards-seed
+call: {b10149: {search: 'a%b_c\'}}
+env: {}
+compare: {ignore: []}

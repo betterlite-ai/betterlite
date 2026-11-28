@@ -20,10 +20,10 @@ description: >-
 
 
   The step. `GatewayCompaction` is built once per client request from the request's `axum::http::request::Parts` and the
-  route's surface (`chat`, `messages` or `responses`, B336's surface type). It holds the executor from
+  route's surface (`chat`, `messages` or `responses`, B385's `compaction_history::contracts::Surface`). It holds the executor from
   `executor_for(&parts)` (None when the request carries no loopback target, as a loopback child never does) and is shared
-  by every attempt of the request. Building it also initializes B336's compaction state on the request with
-  `initialize_compaction_state` and the surface, before the first attempt and before B021's pre-routing hook runs, since
+  by every attempt of the request. Building it also creates the request's compaction state, a B10153 `SharedCompactionState`, with
+  B10153's `initialize_compaction_state` and the surface, before the first attempt and before B021's pre-routing hook runs, since
   LiteLLM creates that state in async_function_with_fallbacks (router.py L7547-L7552) and `arm_compaction` only fills a
   state that exists. `initialize_compaction_state` keeps a state that is already there, so a fallback hop that runs it
   again shares the same one. For each attempt, `compact` takes the router, the picked deployment and the attempt's request
@@ -114,7 +114,7 @@ references:
   - url: https://docs.rs/axum/0.8.9/axum/http/request/struct.Parts.html
     why: Parts is the extractor that gives the handler what executor_for reads.
 dod:
-  - text: Each chat, messages and responses request gets one GatewayCompaction that initializes B336's compaction state with its surface before routing and holds the executor from executor_for.
+  - text: Each chat, messages and responses request gets one GatewayCompaction that initializes B10153's compaction state with its surface before routing and holds the executor from executor_for.
     proof: [gateway-compaction-tests]
   - text: An over-budget conversation on an auto router with context_compaction is summarized through a loopback child that carries the parent's Authorization, and the tier call gets the summary and the kept tail, on all three route families.
     proof: [gateway-compaction-tests, case-files, oracle]
@@ -144,7 +144,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "The executor itself, its child call and header filter: B8291. Building it from the request: B100."
-  - "compact_to_fit, initialize_compaction_state, the privacy flag and the summary call: B336. Arming the state in the pre-routing hook (router.py L13837-L13860): B021."
+  - "compact_to_fit, the privacy flag and the summary call: B336. CompactionState and initialize_compaction_state: B10153. Arming the state in the pre-routing hook (router.py L13837-L13860): B021."
   - "B6020's RouterCompletion and B6021's RouterGeneric: B8630's compaction adapter passes no executor, since no gateway chat, messages or responses call reaches their attempts."
   - "The Cursor route (response_api_endpoints/endpoints.py L633) takes the same call in routes/cursor_responses_compat.rs, which this task's scope includes. The lens billing call is B8682's and the prompt test route is B117's; each calls GatewayCompaction at its own dispatch."
   - "Background Responses polling (response_polling/background_streaming.py L148, B936): no owner yet, since B936 cannot depend on this task (B9810 depends on B080, and B080 depends on B936)."

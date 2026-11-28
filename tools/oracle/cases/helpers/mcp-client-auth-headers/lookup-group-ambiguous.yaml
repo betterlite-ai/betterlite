@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-client-auth-headers-lookup-group-ambiguous
+call:
+  b10155:
+    calls:
+      - function: lookup
+        headers:
+          team-a: {Authorization: "Bearer test-a"}
+          team-b: {Authorization: "Bearer test-b"}
+        alias: unrelated
+        server_name: null
+        access_groups: [team-a, team-b]
+      - function: lookup
+        headers:
+          team-a: {Authorization: "Bearer test-same", X-Extra: "test-extra"}
+          team-b: {Authorization: "Bearer test-same"}
+        alias: null
+        server_name: null
+        access_groups: [team-a, team-b]
+env: {}
+compare: {ignore: []}

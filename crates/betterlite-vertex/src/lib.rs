@@ -48,6 +48,7 @@ pub mod model_urls;
 pub mod multimodal_embedding_records;
 pub mod partner_count;
 pub mod partner_openai;
+pub mod partner_response_config;
 pub mod provider_metadata;
 pub mod request_labels;
 pub mod studio_agents;

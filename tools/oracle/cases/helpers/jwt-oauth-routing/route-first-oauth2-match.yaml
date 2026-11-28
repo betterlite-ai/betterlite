@@ -1,0 +1,28 @@
+kind: helper
+name: jwt-oauth-routing-route-first-oauth2-match
+env: {}
+compare: {ignore: []}
+call:
+  b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://other.example"}, {iss: "https://issuer.example"}]}
+calls:
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: null}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: []}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://other.example"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://issuer.example"}, {iss: "https://issuer.example", client_id: client-abc}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://issuer.example", client_id: client-abc}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://issuer.*"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://issuer.example", scope: profile}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://issuer.example", scope: "openid profile"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI", routing_overrides: [{iss: "https://issuer.example", aud: [api]}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiBbImFwaSIsICJvdGhlciJdLCAiY2xpZW50X2lkIjogImNsaWVudC1hYmMiLCAic2NvcGUiOiAiQXBwOkxpdGVMTE0gb3BlbmlkIn0.InNpZyI", routing_overrides: [{iss: "https://issuer.example", scope: "App:*"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiBbImFwaSIsICJvdGhlciJdLCAiY2xpZW50X2lkIjogImNsaWVudC1hYmMiLCAic2NvcGUiOiAiQXBwOkxpdGVMTE0gb3BlbmlkIn0.InNpZyI", routing_overrides: [{iss: "https://issuer.example", aud: other}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiBbImFwaSIsICJvdGhlciJdLCAiY2xpZW50X2lkIjogImNsaWVudC1hYmMiLCAic2NvcGUiOiAiQXBwOkxpdGVMTE0gb3BlbmlkIn0.InNpZyI", routing_overrides: [{iss: "https://issuer.example", scope: "App:* openid"}]}
+  - b10161: {operation: route, token: "not-a-jwt", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "e30.e30", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "a.b.c", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.e30.InNpZyI", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.WzEsIDJd.InNpZyI", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.bm90LWpzb24.InNpZyI", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSJ9.!!!", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "!!!.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSJ9.c2ln", routing_overrides: [{iss: "https://issuer.example"}]}
+  - b10161: {operation: route, token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSJ9.c2ln", routing_overrides: [{iss: "https://issuer.example"}]}

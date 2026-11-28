@@ -1,0 +1,13 @@
+id: B10165
+milestone: R2 bug fixes
+title: API-key and master-key authentication fill the principal's user and the master key's admin role
+status: done
+depends_on: [B738, B863, B870, B1601, B1724, B8271, B8599]
+file: tasks/B10165-key-principal-user.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3404

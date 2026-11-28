@@ -64,7 +64,7 @@ description: >-
   Counts: about 40 non-blank LiteLLM lines (the config block and the two database loaders). No oracle case: the
   routes that read the registries are mounted by the vector store and RAG route tasks, which add the cases.
 
-  Pass-through vector adapters. B8641 writes no-vector-store adapters in crates/betterlite-server/src/app/pass_through/ports/vector.rs. Replace them with the real ones over this task's vector_stores field: VectorRegistryAdapter over B1062 (is_index, index by name) and B1063 (store by name), with has_index_registry and has_store_registry true only when that registry exists; VectorAccessAdapter with B10014's assert_user_can_access_vector_store and B1061's is_allowed_to_call_vector_store_endpoint (keep only its error) and B1060's assert_proxy_admin_for_vector_store_index_management with operation create, also backing B3623's VertexStoreAccess with B10014's get_litellm_managed_vector_store; and the Milvus arm of VectorProviderAdapter over B7892's MilvusProviderPorts (auth_headers is get_auth_credentials, complete_url is get_complete_url).
+  Pass-through vector adapters. B8641 writes no-vector-store adapters in crates/betterlite-server/src/app/pass_through/ports/vector.rs. Replace them with the real ones over this task's vector_stores field: VectorRegistryAdapter over B1062 (is_index, index by name) and B1063 (store by name), with has_index_registry and has_store_registry true only when that registry exists; VectorAccessAdapter with B10014's assert_user_can_access_vector_store and B1061's is_allowed_to_call_vector_store_endpoint (keep only its error) and B1060's assert_proxy_admin_for_vector_store_index_management with operation create, also backing B3623's VertexStoreAccess with B10014's get_litellm_managed_vector_store. Leave VectorProviderAdapter as B8641 wrote it: Milvus has no provider config there (has_config(Milvus) is false), so `/milvus/{endpoint}` keeps answering B3624's HTTP 500 "Unable to find Milvus vector store config." with no upstream call. B7892 replaces that Milvus arm with its MilvusProviderPorts after this task.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -133,6 +133,7 @@ deviations: []
 out_of_scope:
   - "The registries, their config and database load functions, add, upsert and lookups: B1062. Tool selection over them: B1063. The vector store and RAG routes: their own tasks."
   - "The MCP registry and its loading: B9997. The other database loaders and their order: B8384."
+  - "The Milvus arm of VectorProviderAdapter over MilvusProviderPorts: B7892, which runs after this task."
 pitfalls:
   - The vector store loaders do nothing on an empty table; they never clear entries and never create an empty registry.
   - VectorStores::new must not create empty registries, since has_store_registry and has_index_registry answer false only while a registry is None.

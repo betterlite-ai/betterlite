@@ -67,7 +67,7 @@ pub fn unverified_claims(token: &str) -> Option<TypedValue> {
 }
 
 // pyjwt strips up to two trailing '=', requires a padded segment to be a whole quad and re-encodes the result
-fn decode_segment(segment: &[u8]) -> Result<Vec<u8>, DecodeError> {
+pub(crate) fn decode_segment(segment: &[u8]) -> Result<Vec<u8>, DecodeError> {
     let padding = segment
         .iter()
         .rev()

@@ -9,7 +9,10 @@ description: >-
   guardrail and the native endpoint's existing model/agent/MCP server setup. The
   scanner is the real B3771 HTTP integration; mock only its remote replies and the
   remote provider. Compare its captured inputs and the final provider request or
-  client response so merely obtaining a 200 cannot satisfy these cases.
+  client response so merely obtaining a 200 cannot satisfy these cases. The Google cases reach
+  the provider through B10178's generation pipeline, which runs the during-call, post-call and stream
+  guardrail hooks on generateContent and streamGenerateContent; before it the mounted routes have no
+  production dispatch.
 
   Google calls POST /v1beta/models/{model_name}:generateContent and
   /models/{model_name}:generateContent, plus the corresponding
@@ -110,7 +113,7 @@ deviations: []
 out_of_scope:
   - B1391 implements Google text projection and B3680 its adapter; B6163 owns A2A translation and B3818 MCP translation.
   - B3506/B8774 own Google handlers/mounting, B8589/B8648 A2A handlers/mounting, B4682 MCP discovery scanning, B8198 MCP post-call execution and B8626 REST mounting.
-  - B6370 owns stream wrapper composition; B8632 owns the production stream item bridge and must carry raw native text/bytes through the wrapper.
+  - B6370 owns stream wrapper composition and B8632 the production stream item bridge; B10169 carries the raw Google frames through the guardrail contract as StreamItem::Bytes, and B8632 hands them to the wrapper in place.
   - MCP session/toolset and protocol mounts remain B8701/B9950/B8728; no additional MCP endpoint is registered here.
 pitfalls:
   - Google streaming replacement text is deliberately ignored even when the same guardrail rewrites a nonstreaming candidate.

@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-client-auth-headers-lookup-server-name-fallback
+call:
+  b10155:
+    calls:
+      - function: lookup
+        headers:
+          beta: {Authorization: "Bearer test-beta"}
+        alias: null
+        server_name: Beta
+        access_groups: []
+      - function: lookup
+        headers:
+          alpha: {Authorization: "Bearer test-alpha"}
+          beta: {Authorization: "Bearer test-beta"}
+        alias: missing
+        server_name: Beta
+        access_groups: []
+      - function: lookup
+        headers:
+          beta: {Authorization: "Bearer test-beta"}
+        alias: ""
+        server_name: Beta
+        access_groups: []
+env: {}
+compare: {ignore: []}

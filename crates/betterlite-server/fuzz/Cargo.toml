@@ -651,3 +651,17 @@ path = "fuzz_targets/auto_router_read_api.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "oauth_callback_query"
+path = "fuzz_targets/oauth_callback_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "login_return"
+path = "fuzz_targets/login_return.rs"
+test = false
+doc = false
+bench = false

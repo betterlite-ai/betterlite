@@ -136,7 +136,7 @@ description: >-
   enrichment callback still becomes a problem document in B3193's native unit
   tests, but a booted database-failure case cannot manufacture that exception.
   Register no new byte decoder: the routes consume parsed
-  records, B9300 owns RSS decoding, B10009 settings decoding and the existing list framework owns
+  records, B10163 owns RSS decoding, B10009 settings decoding and the existing list framework owns
   query parsing. The unassigned handlers occupy 46 nonblank noncomment source
   lines including decorators and excluding docstrings; composition and native/HTTP tests
   bring this to roughly 700 changed non-fixture lines, below the fixed budget.
@@ -298,7 +298,7 @@ out_of_scope:
   - "public_endpoints.py L422-L449 and L495-L572: B3192 owns get_complexity_scorer_defaults, get_public_fuse_presets, _load_bundled_autorouter_presets, _fetch_remote_autorouter_presets, _resolve_autorouter_presets, _AutoRouterPresetsCache, get_autorouter_presets and get_public_autorouter_presets."
   - "public_endpoints.py L593-L639: B3191 owns get_agent_fields and its agent credential projection; B8647 owns its existing mount and HTTP coverage."
   - "types/proxy/public_endpoints/public_endpoints.py: B3190 owns ProviderCredentialField, ProviderCreateInfo, EndpointProvider, SupportedEndpoint and SupportedEndpointsResponse; B3191 owns AgentCredentialField and AgentCreateInfo; B3192 owns AutoRouterPresetTiers, AutoRouterPresetConfig, AutoRouterPresetRecord and ComplexityScorerDefaults. B7947 owns the separate Python exports. Only the native PublicModelHubInfo is added here."
-  - B9300 owns all get_blog_posts.py functions, production BlogPost/BlogPostsResponse and RSS decoding; B10009 owns the public_discovery settings and their defaults; B193/B194 own catalog loading, finalization, serialization retention and adoption, which must be corrected before this task runs.
+  - B9300 owns the get_blog_posts.py feed functions and production BlogPostsResponse, and B10163 owns parse_rss_to_posts, BlogPost and RSS decoding in public_endpoints::blog_feed_parser; B10009 owns the public_discovery settings and their defaults; B193/B194 own catalog loading, finalization, serialization retention and adoption, which must be corrected before this task runs.
   - B8610 owns the shared server inputs, B10082 the aggregate mount calls, B8611 router views, B8612 agent read-through, B9997 the MCP registry in shared.mcp_registry, B8647 the live public-agent holder, B8380 settings snapshots and B839 model/link writes; this task implements only the adapters into the already owned handlers.
   - The import of EnterpriseProxyConfig.get_custom_docs_description has no open-source implementation and is not built; the reachable exception fallback is custom_docs_description null.
 pitfalls:
