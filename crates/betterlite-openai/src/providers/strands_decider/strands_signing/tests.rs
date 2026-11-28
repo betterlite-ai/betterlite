@@ -6,13 +6,13 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_models::decisions::ir;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json};
+use betterlite_sigv4::credentials::Credentials;
 use rstest::rstest;
 use secrecy::SecretString;
 use tracing::subscriber::with_default;
 
 use super::StrandsDeciderDecisionsConfig;
 use super::headers::SESSION_HEADER;
-use super::signing::AwsCredentials;
 use crate::decisions::transformation::provider_config::{
     DecisionsProviderConfig as _, SigningContext,
 };
@@ -30,7 +30,7 @@ const EXPECTED_BODY: &[u8] =
     br#"{"model": "m", "state": "the state", "questions": {"q": {"type": "noul", "instructions": "decide"}}}"#;
 const EXPECTED_AUTHORIZATION: &str = "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-east-1/bedrock-agentcore/aws4_request, SignedHeaders=host;x-amz-date;x-amz-security-token;x-amzn-bedrock-agentcore-runtime-session-id;x-custom, Signature=119941b9f1ffca7c0b0d0b0dacd8d2b1da4c096df793d3d6893324439452f497";
 
-fn with_clock(credentials: Option<AwsCredentials>) -> StrandsDeciderDecisionsConfig {
+fn with_clock(credentials: Option<Credentials>) -> StrandsDeciderDecisionsConfig {
     StrandsDeciderDecisionsConfig {
         credentials,
         clock: Arc::new(|| {
@@ -84,7 +84,7 @@ fn custom_headers() -> Headers {
 #[case::from_litellm_params(false)]
 #[case::injected_into_the_config(true)]
 fn test_aws_signing_signs_the_json_body_for_the_bedrock_agentcore_service(#[case] injected: bool) {
-    let credentials = injected.then(|| AwsCredentials {
+    let credentials = injected.then(|| Credentials {
         access_key_id: SecretString::from(ACCESS_KEY),
         secret_access_key: SecretString::from(SECRET_KEY),
         session_token: Some(SecretString::from(SESSION_TOKEN)),
@@ -180,7 +180,7 @@ fn aws_signing_without_credentials_leaves_the_request_unsigned() {
 
 #[test]
 fn litellm_params_credentials_win_over_injected_credentials() {
-    let injected = AwsCredentials {
+    let injected = Credentials {
         access_key_id: SecretString::from("INJECTEDKEY"),
         secret_access_key: SecretString::from(SECRET_KEY),
         session_token: Some(SecretString::from("injected-token")),

@@ -12,13 +12,14 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_foundry::chat::sources::NoSources;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_models::decisions::Json;
-use betterlite_openai::assistants::client::{ClientKind, SdkClient};
+use betterlite_openai::assistants::client::SdkClient;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::records::{
     MessageContent, MessageRole, ThreadCreate, ThreadMessageData, ThreadRecord,
@@ -561,7 +562,7 @@ async fn a_transport_timeout_maps_as_apitimeout_from_the_async_wrapper() {
 }
 
 #[rstest]
-#[case::true_flag("true", "openai:Async")]
+#[case::true_flag("true", "openai:Asynchronous")]
 #[case::false_flag("false", "openai:Sync")]
 #[case::one("1", "openai:Sync")]
 #[case::text(r#""true""#, "openai:Sync")]

@@ -681,6 +681,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "config_update"
+path = "fuzz_targets/config_update.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sso_return_target"
 path = "fuzz_targets/sso_return_target.rs"
 test = false

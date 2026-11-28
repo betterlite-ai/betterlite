@@ -1,11 +1,10 @@
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchQuery};
-use betterlite_openai::batches::sdk::{
-    BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout,
-};
+use betterlite_openai::batches::sdk::{BatchesSdk, ClientConstructor, SdkArguments, Timeout};
 use secrecy::ExposeSecret;
 use serde::Serialize;
 use serde_json::{Map, Value};

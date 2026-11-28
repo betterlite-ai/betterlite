@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
+use betterlite_http::client_kind::ClientKind;
+use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::thread_runs::records::RunRequest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -17,7 +18,7 @@ use super::error::AssistantRunError;
 pub(super) const fn client_kind(call: &RunThreadCall, arun: bool) -> ClientKind {
     match call.client.as_ref() {
         Some(client) => client.kind(),
-        None if arun => ClientKind::Async,
+        None if arun => ClientKind::Asynchronous,
         None => ClientKind::Sync,
     }
 }

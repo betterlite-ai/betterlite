@@ -9,9 +9,10 @@ use betterlite_azure::credentials::source::{
 use betterlite_azure::endpoints::get_client::ClientCache;
 use betterlite_azure::endpoints::projection::{ClientIdentity, ClientKind, ClientOutcome};
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
+use betterlite_http::client_kind::ClientKind as SdkKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery};
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind as SdkKind};
+use betterlite_openai::batches::sdk::BatchesSdk;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -130,7 +131,7 @@ impl ClientMaterializer for Materializer {
 
 const fn sdk_kind(kind: ClientKind) -> SdkKind {
     match kind {
-        ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi => SdkKind::Async,
+        ClientKind::AsyncAzureOpenAi | ClientKind::AsyncOpenAi => SdkKind::Asynchronous,
         ClientKind::AzureOpenAi | ClientKind::OpenAi | ClientKind::Other => SdkKind::Sync,
     }
 }

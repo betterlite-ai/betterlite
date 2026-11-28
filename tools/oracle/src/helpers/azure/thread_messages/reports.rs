@@ -4,7 +4,6 @@ use std::sync::PoisonError;
 use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
 use betterlite_azure::azure_thread_messages::error::ThreadMessagesError;
 use betterlite_azure::azure_thread_messages::operations::ThreadReply;
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::threads::error::ThreadsError;
 use serde_json::{Value, json};
 
@@ -50,13 +49,6 @@ pub(super) fn failure(error: &ThreadMessagesError) -> Result<Value, Box<HelperEr
     }
 }
 
-const fn kind_name(kind: ClientKind) -> &'static str {
-    match kind {
-        ClientKind::Sync => "sync",
-        ClientKind::Async => "async",
-    }
-}
-
 // The facade's own reply and kind, plus everything the wire saw before answering.
 pub(super) fn operation(
     recorder: &Recorder,
@@ -66,7 +58,7 @@ pub(super) fn operation(
     match outcome {
         Ok(reply) => Ok(json!({
             "requests": requests,
-            "kind": kind_name(reply.kind),
+            "kind": reply.kind.label(),
             "result": reply.thread,
         })),
         Err(error) => Ok(json!({"requests": requests, "error": failure(&error)?})),

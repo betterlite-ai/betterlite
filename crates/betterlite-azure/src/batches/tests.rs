@@ -5,9 +5,10 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchPage, BatchQuery};
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind};
+use betterlite_openai::batches::sdk::BatchesSdk;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::{Builder, Runtime};
 
@@ -187,7 +188,7 @@ impl ClientMaterializer for Materializer {
 
 const fn sync_kind(kind: OutcomeKind) -> ClientKind {
     match kind {
-        OutcomeKind::AsyncAzureOpenAi | OutcomeKind::AsyncOpenAi => ClientKind::Async,
+        OutcomeKind::AsyncAzureOpenAi | OutcomeKind::AsyncOpenAi => ClientKind::Asynchronous,
         OutcomeKind::AzureOpenAi | OutcomeKind::OpenAi | OutcomeKind::Other => ClientKind::Sync,
     }
 }

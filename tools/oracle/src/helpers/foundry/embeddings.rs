@@ -5,13 +5,14 @@ use std::time::Duration;
 
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport};
 use betterlite_foundry::embeddings::call::{
-    EmbeddingClientFactory, FoundryEmbeddingRequest, SuppliedClient, TextEmbedding,
-    TextEmbeddingCall, embedding, projected_headers,
+    EmbeddingClientFactory, FoundryEmbeddingRequest, TextEmbedding, TextEmbeddingCall, embedding,
+    projected_headers,
 };
 use betterlite_foundry::embeddings::error::FoundryEmbeddingError;
 use betterlite_foundry::embeddings::reply::{
     EmbeddingReply, FoundryEmbeddingResponse, decode_foundry_embedding,
 };
+use betterlite_http::client_kind::SuppliedClient;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -218,8 +219,8 @@ fn flow_outcome(flow: &FlowCall, runtime: &Runtime) -> Result<Value, Box<HelperE
     };
     let key = flow.api_key.as_deref().map(SecretString::from);
     let supplied = held.as_ref().map(|client| SuppliedClient {
-        mode: flow.mode.mode(),
-        client,
+        kind: flow.mode,
+        transport: client,
     });
     let request = FoundryEmbeddingRequest {
         model: &flow.model,
@@ -228,7 +229,7 @@ fn flow_outcome(flow: &FlowCall, runtime: &Runtime) -> Result<Value, Box<HelperE
         api_base: flow.api_base.as_deref(),
         api_key: key.as_ref(),
         timeout: Duration::from_secs(flow.timeout),
-        mode: flow.mode.mode(),
+        mode: flow.mode,
     };
     let outcome = runtime.block_on(embedding(&request, supplied, &factory, &text));
     flow_record(&state, outcome)
