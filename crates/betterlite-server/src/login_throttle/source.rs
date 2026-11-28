@@ -101,7 +101,7 @@ fn parse_network(text: &str, setting_name: &str) -> Option<IpNet> {
     networks.pop()
 }
 
-// ipaddress.ip_address, including one non-empty IPv6 scope id and no slash anywhere; the scope comes back because a /64 network address prints it
+// ipaddress.ip_address with one non-empty IPv6 scope id and no slash; the scope comes back because a /64 address prints it, and B743's crate-private cidr::parse_address drops it; see docs/deviations/B787.yaml
 fn parse_address(text: &str) -> Option<(IpAddr, Option<String>)> {
     if text.contains('/') {
         return None;

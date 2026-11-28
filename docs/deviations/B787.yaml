@@ -9,4 +9,7 @@ deviations:
   - what: Warning text is betterlite's own wording. The trigger points, warning count per event and the classification tokens (refused, blocked, redis_fallback, invalid_source_limit, invalid_window, invalid_block, invalid_overrides_mapping, invalid_override_value, invalid_topology_shape, invalid_network, source_limit_off, counters_per_worker) match LiteLLM.
     why: The oracle compares classified warning meanings rather than LiteLLM's exact log strings, so wording can read naturally in betterlite's own log output.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L405-L410
+  - what: The throttle parses client addresses with its own ipaddress.ip_address-compatible helper instead of betterlite_auth::trusted_network::cidr::parse_address, which B743 owns.
+    why: B743's helper is pub(crate) and returns the bare address, while the throttle must keep the one IPv6 scope id that source_group prints on a /64 network address; widening the helper's visibility and return type and updating its two callers would edit crates/betterlite-auth, outside this task's scope.paths. The same module's parse_normalized is reused for every range and override key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L186-L194
 kept_bugs: []
