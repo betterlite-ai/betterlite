@@ -71,7 +71,7 @@ pub fn select_client(
             .clone()
             .ok_or(SpeechError::MissingApiKey)?;
         let base_url = normalize_base(connection.api_base.as_deref().unwrap_or(DEFAULT_API_BASE))?;
-        let shared_session = if kind == ClientKind::Async {
+        let shared_session = if kind == ClientKind::Asynchronous {
             connection.shared_session.clone()
         } else {
             None

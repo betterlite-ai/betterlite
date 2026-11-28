@@ -1,6 +1,5 @@
 use std::future::Future;
 
-use betterlite_http::client_kind::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::{HeaderMap, Method};

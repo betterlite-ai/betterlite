@@ -6,10 +6,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::bytez_wire::messages::RawMessage;
 use betterlite_openai::bytez_wire::request::request_body;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -227,9 +227,13 @@ async fn first_fragment(stream: &mut BytezCustomStream<'_>) -> String {
 #[tokio::test(start_paused = true)]
 async fn opens_a_post_with_the_serialized_body_and_the_transport_deadline() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
-    let (stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
+    let (stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     drop(stream);
     let seen = transport.seen();
     assert_eq!(seen.len(), 1);
@@ -260,13 +264,13 @@ async fn opens_a_post_with_the_serialized_body_and_the_transport_deadline() {
 #[tokio::test(start_paused = true)]
 async fn rejects_every_status_except_200(#[case] status: u16) {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, status));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, status));
     transport.push(b"refused body");
     transport.close();
     let Err(BytezStreamError::Api(failure)) = call(
         Some(Arc::clone(&transport)),
-        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
-        ClientKind::Async,
+        Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200)),
+        ClientKind::Asynchronous,
         &redactor,
     )
     .open()
@@ -282,14 +286,14 @@ async fn rejects_every_status_except_200(#[case] status: u16) {
 async fn wraps_a_transport_status_error() {
     let redactor = redactor();
     let transport = Arc::new(FakeTransport::failing(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         503,
         "upstream down",
     ));
     let Err(BytezStreamError::Api(failure)) = call(
         Some(Arc::clone(&transport)),
-        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
-        ClientKind::Async,
+        Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200)),
+        ClientKind::Asynchronous,
         &redactor,
     )
     .open()
@@ -304,12 +308,12 @@ async fn wraps_a_transport_status_error() {
 #[tokio::test(start_paused = true)]
 async fn refuses_a_refusal_body_over_the_byte_limit() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 500));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 500));
     transport.push(&vec![b'x'; super::MAX_BODY_BYTES + 1]);
     let Err(error) = call(
         Some(Arc::clone(&transport)),
-        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
-        ClientKind::Async,
+        Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200)),
+        ClientKind::Asynchronous,
         &redactor,
     )
     .open()
@@ -324,9 +328,9 @@ async fn refuses_a_refusal_body_over_the_byte_limit() {
 
 #[rstest]
 #[case::sync_keeps_sync(ClientKind::Sync, ClientKind::Sync, true)]
-#[case::async_keeps_async(ClientKind::Async, ClientKind::Async, true)]
-#[case::sync_replaces_async(ClientKind::Sync, ClientKind::Async, false)]
-#[case::async_replaces_sync(ClientKind::Async, ClientKind::Sync, false)]
+#[case::async_keeps_async(ClientKind::Asynchronous, ClientKind::Asynchronous, true)]
+#[case::sync_replaces_async(ClientKind::Sync, ClientKind::Asynchronous, false)]
+#[case::async_replaces_sync(ClientKind::Asynchronous, ClientKind::Sync, false)]
 #[tokio::test(start_paused = true)]
 async fn uses_a_supplied_client_only_when_its_kind_matches(
     #[case] call_kind: ClientKind,
@@ -365,10 +369,14 @@ async fn opens_without_a_supplied_client_on_the_default() {
 #[tokio::test(start_paused = true)]
 async fn delivers_each_fragment_before_the_next_one_arrives() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
     transport.push(b"one");
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     assert_eq!(first_fragment(&mut stream).await, "one");
     let pending = timeout(Duration::from_millis(20), stream.fragments.next()).await;
     pending.expect_err("still pending");
@@ -379,21 +387,29 @@ async fn delivers_each_fragment_before_the_next_one_arrives() {
 #[tokio::test(start_paused = true)]
 async fn keeps_a_split_character_for_the_next_fragment() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
     transport.push(&[0xc3]);
     transport.push(&[0xa9]);
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     assert_eq!(first_fragment(&mut stream).await, "\u{e9}");
 }
 
 #[tokio::test(start_paused = true)]
 async fn refuses_bytes_that_are_not_utf8() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
     transport.push(&[0xff]);
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     let error = stream
         .fragments
         .next()
@@ -406,11 +422,15 @@ async fn refuses_bytes_that_are_not_utf8() {
 #[tokio::test(start_paused = true)]
 async fn refuses_a_character_cut_off_at_the_end_of_the_stream() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
     transport.push(&[0xc3]);
     transport.close();
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     let error = stream
         .fragments
         .next()
@@ -424,10 +444,14 @@ async fn refuses_a_character_cut_off_at_the_end_of_the_stream() {
 #[tokio::test(start_paused = true)]
 async fn delivers_embedded_newlines_and_data_text_as_plain_content() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
     transport.push(b"line one\ndata: not an event");
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     assert_eq!(
         first_fragment(&mut stream).await,
         "line one\ndata: not an event"
@@ -437,10 +461,14 @@ async fn delivers_embedded_newlines_and_data_text_as_plain_content() {
 #[tokio::test(start_paused = true)]
 async fn a_body_error_surfaces_as_a_body_failure() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
     transport.fail_with(HttpError::Timeout);
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     let error = stream
         .fragments
         .next()
@@ -458,9 +486,13 @@ async fn a_body_error_surfaces_as_a_body_failure() {
 #[tokio::test(start_paused = true)]
 async fn dropping_the_stream_drops_the_transport_body() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
-    let (stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
+    let (stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     assert!(!transport.dropped.load(Ordering::SeqCst));
     drop(stream);
     assert!(transport.dropped.load(Ordering::SeqCst));
@@ -546,9 +578,13 @@ fn body_limit_matches_the_transport_default() {
 #[tokio::test(start_paused = true)]
 async fn a_stream_outlasts_the_timeout_while_fragments_keep_arriving() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     let writer = Arc::clone(&transport);
     let feeding = async move {
         sleep(Duration::from_secs(200)).await;
@@ -571,9 +607,13 @@ async fn a_stream_outlasts_the_timeout_while_fragments_keep_arriving() {
 #[tokio::test(start_paused = true)]
 async fn a_silent_stream_times_out_after_three_hundred_seconds() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200));
-    let (mut stream, _default) =
-        opened(Some(Arc::clone(&transport)), ClientKind::Async, &redactor).await;
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200));
+    let (mut stream, _default) = opened(
+        Some(Arc::clone(&transport)),
+        ClientKind::Asynchronous,
+        &redactor,
+    )
+    .await;
     let started = Instant::now();
     let error = stream
         .fragments
@@ -590,9 +630,9 @@ async fn opening_gives_up_after_three_hundred_seconds() {
     let redactor = redactor();
     let started = Instant::now();
     let Err(error) = call(
-        Some(Arc::new(FakeTransport::stalled(ClientKind::Async))),
-        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
-        ClientKind::Async,
+        Some(Arc::new(FakeTransport::stalled(ClientKind::Asynchronous))),
+        Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200)),
+        ClientKind::Asynchronous,
         &redactor,
     )
     .open()
@@ -607,12 +647,12 @@ async fn opening_gives_up_after_three_hundred_seconds() {
 #[tokio::test(start_paused = true)]
 async fn a_refusal_body_that_never_ends_times_out() {
     let redactor = redactor();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 500));
+    let transport = Arc::new(FakeTransport::new(ClientKind::Asynchronous, 500));
     transport.push(b"partial");
     let Err(error) = call(
         Some(Arc::clone(&transport)),
-        Arc::new(FakeTransport::new(ClientKind::Async, 200)),
-        ClientKind::Async,
+        Arc::new(FakeTransport::new(ClientKind::Asynchronous, 200)),
+        ClientKind::Asynchronous,
         &redactor,
     )
     .open()

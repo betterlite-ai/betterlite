@@ -12,11 +12,12 @@ use crate::anthropic_http_stream::completion::{
     CompletionStream, ParameterError, WrappedStream, acompletion_stream_function,
 };
 use crate::chat_call::error::ChatCallError;
-use crate::chat_call::transport::{ChatTransport, ClientKind};
+use crate::chat_call::transport::ChatTransport;
 use crate::chat_call::{ChatClients, ChatOutcome, SyncStreamNames};
 use crate::headers::response::process_anthropic_headers;
 use crate::tool_names::REVERSE_MAP_KEY;
 use crate::usage::ReasoningTokenCounter;
+use betterlite_http::client_kind::ClientKind;
 
 pub struct StreamFacts<'facts> {
     pub model: &'facts str,
@@ -47,7 +48,7 @@ where
     let supplied = clients
         .supplied
         .as_ref()
-        .filter(|item| !acompletion || item.kind == ClientKind::Async)
+        .filter(|item| !acompletion || item.kind == ClientKind::Asynchronous)
         .map(|item| item.transport);
     let wrapping = StreamClients {
         supplied,

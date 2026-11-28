@@ -4,11 +4,12 @@ use std::time::Duration;
 
 use betterlite_azure::image_transport::{ImageReply, ImageRequest, ImageTransport};
 use betterlite_foundry::embeddings::call::{
-    EmbeddingClientFactory, EmbeddingMode, TextEmbedding, TextEmbeddingCall,
+    EmbeddingClientFactory, TextEmbedding, TextEmbeddingCall,
 };
 use betterlite_foundry::embeddings::error::FoundryEmbeddingError;
 use betterlite_foundry::embeddings::reply::EmbeddingReply;
 use betterlite_foundry::embeddings::request::FoundryEmbeddingOptions;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_openai::embedding::EmbeddingRecord;
@@ -89,7 +90,7 @@ impl EmbeddingClientFactory for Factory {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TextSent {
-    pub mode: EmbeddingMode,
+    pub mode: ClientKind,
     pub model: String,
     pub input: Vec<String>,
     pub api_base: Option<String>,

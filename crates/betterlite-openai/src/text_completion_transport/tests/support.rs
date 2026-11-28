@@ -27,9 +27,10 @@ use super::super::logging::{
     CompletionLogger, PostCallRecord, PreCallRecord, SecretHeaders, StreamDefaults,
 };
 use super::super::sdk::{
-    ByteStream, ClientConstructor, ClientKind, RawCompletion, SdkArguments, SdkError, StatusError,
+    ByteStream, ClientConstructor, RawCompletion, SdkArguments, SdkError, StatusError,
     TextCompletionSdk,
 };
+use betterlite_http::client_kind::ClientKind;
 
 pub(super) type Log = Arc<Mutex<Vec<Value>>>;
 

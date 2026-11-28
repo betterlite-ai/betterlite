@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use betterlite_prompts::arguments::json::Object;
 
-use crate::embeddings::call::{EmbeddingMode, SuppliedClient};
 use crate::embeddings::error::FoundryEmbeddingError;
+use betterlite_http::client_kind::ClientKind;
+use betterlite_http::client_kind::SuppliedClient;
 
 use super::support::{
     Answer, BASE, Factory, IMAGE_ONE, IMAGE_URI, ImageClient, MODEL, Seen, TEXT_EMPTY, TEXT_ONE,
@@ -30,8 +31,8 @@ fn sync_reuses_supplied() {
     let factory = Factory::new(Answer::json(IMAGE_ONE));
     let text = Text::replying(TEXT_EMPTY);
     let held = SuppliedClient {
-        mode: EmbeddingMode::Sync,
-        client: &supplied,
+        kind: ClientKind::Sync,
+        transport: &supplied,
     };
     let response = run(&call, Some(held), &factory, &text).unwrap();
     assert_eq!(response.data.len(), 1);
@@ -69,24 +70,24 @@ fn sync_replaces_client() {
 }
 
 fn async_reuses_supplied() {
-    let (supplied, factory) = async_with_supplied(EmbeddingMode::Async);
+    let (supplied, factory) = async_with_supplied(ClientKind::Asynchronous);
     assert_eq!(supplied.seen.lock().unwrap().len(), 1);
     assert!(factory.requests().is_empty());
     assert!(factory.async_timeouts().is_empty());
 }
 
 fn async_mismatched_supplied() {
-    let (supplied, factory) = async_with_supplied(EmbeddingMode::Sync);
+    let (supplied, factory) = async_with_supplied(ClientKind::Sync);
     assert!(supplied.seen.lock().unwrap().is_empty());
     assert_eq!(factory.async_timeouts(), vec![Duration::from_secs(5)]);
     assert_eq!(factory.requests().len(), 1);
 }
 
-fn async_with_supplied(held_mode: EmbeddingMode) -> (ImageClient, Factory) {
+fn async_with_supplied(held_mode: ClientKind) -> (ImageClient, Factory) {
     let input = strings(&[IMAGE_URI]);
     let secret = key("case-key");
     let mut call = request(MODEL, &input);
-    call.mode = EmbeddingMode::Async;
+    call.mode = ClientKind::Asynchronous;
     call.api_key = Some(&secret);
     let supplied = ImageClient {
         answer: Answer::json(IMAGE_ONE),
@@ -94,8 +95,8 @@ fn async_with_supplied(held_mode: EmbeddingMode) -> (ImageClient, Factory) {
     };
     let factory = Factory::new(Answer::json(IMAGE_ONE));
     let held = SuppliedClient {
-        mode: held_mode,
-        client: &supplied,
+        kind: held_mode,
+        transport: &supplied,
     };
     run(&call, Some(held), &factory, &Text::replying(TEXT_EMPTY)).unwrap();
     (supplied, factory)
@@ -115,7 +116,7 @@ fn images_before_text() {
         FoundryEmbeddingError::ImageDataMissing
     ));
     assert!(text.calls().is_empty());
-    call.mode = EmbeddingMode::Async;
+    call.mode = ClientKind::Asynchronous;
     let async_error = run(&call, None, &factory, &text).unwrap_err();
     assert!(matches!(
         async_error,

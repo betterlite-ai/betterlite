@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message};
 use futures_util::StreamExt as _;
@@ -240,10 +240,14 @@ fn expect_error<T>(result: Result<T, LangGraphStreamError>, message: &str) -> La
 async fn posts_the_serialized_body_with_the_headers_and_the_deadline() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, frames("")));
+    let transport = Arc::new(FakeTransport::new(
+        ClientKind::Asynchronous,
+        200,
+        frames(""),
+    ));
     let logger = RecordingLogger::default();
     let stream = open(
-        &request(&data, &messages, ClientKind::Async),
+        &request(&data, &messages, ClientKind::Asynchronous),
         &deps(None, &transport, &logger),
     )
     .await
@@ -271,14 +275,14 @@ async fn rejects_every_status_except_200(#[case] status: u16) {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         status,
         frames("refused"),
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &request(&data, &messages, ClientKind::Async),
+            &request(&data, &messages, ClientKind::Asynchronous),
             &deps(None, &transport, &logger),
         )
         .await,
@@ -296,14 +300,14 @@ async fn the_error_message_is_the_lossy_body_text() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         502,
         vec![Ok(vec![0xff, b'a'])],
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &request(&data, &messages, ClientKind::Async),
+            &request(&data, &messages, ClientKind::Asynchronous),
             &deps(None, &transport, &logger),
         )
         .await,
@@ -325,14 +329,14 @@ async fn an_error_body_over_the_byte_limit_is_refused() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         500,
         vec![Ok(vec![b'x'; MAX_BODY_BYTES + 1])],
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &request(&data, &messages, ClientKind::Async),
+            &request(&data, &messages, ClientKind::Asynchronous),
             &deps(None, &transport, &logger),
         )
         .await,
@@ -346,14 +350,14 @@ async fn an_error_body_of_exactly_the_limit_is_read() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         500,
         vec![Ok(vec![b'x'; MAX_BODY_BYTES])],
     ));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &request(&data, &messages, ClientKind::Async),
+            &request(&data, &messages, ClientKind::Asynchronous),
             &deps(None, &transport, &logger),
         )
         .await,
@@ -367,9 +371,9 @@ async fn an_error_body_of_exactly_the_limit_is_read() {
 
 #[rstest]
 #[case::sync_keeps_sync(ClientKind::Sync, ClientKind::Sync, true)]
-#[case::async_keeps_async(ClientKind::Async, ClientKind::Async, true)]
-#[case::sync_replaces_async(ClientKind::Sync, ClientKind::Async, false)]
-#[case::async_replaces_sync(ClientKind::Async, ClientKind::Sync, false)]
+#[case::async_keeps_async(ClientKind::Asynchronous, ClientKind::Asynchronous, true)]
+#[case::sync_replaces_async(ClientKind::Sync, ClientKind::Asynchronous, false)]
+#[case::async_replaces_sync(ClientKind::Asynchronous, ClientKind::Sync, false)]
 #[tokio::test]
 async fn uses_a_supplied_client_only_when_its_kind_matches(
     #[case] call_kind: ClientKind,
@@ -412,10 +416,14 @@ async fn opens_on_the_default_client_without_a_supplied_one() {
 async fn logs_post_call_after_a_200() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, frames("")));
+    let transport = Arc::new(FakeTransport::new(
+        ClientKind::Asynchronous,
+        200,
+        frames(""),
+    ));
     let logger = RecordingLogger::default();
     let stream = open(
-        &request(&data, &messages, ClientKind::Async),
+        &request(&data, &messages, ClientKind::Asynchronous),
         &deps(None, &transport, &logger),
     )
     .await
@@ -434,13 +442,13 @@ async fn does_not_log_post_call_when_the_status_is_not_200() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         500,
         frames("refused"),
     ));
     let logger = RecordingLogger::default();
     let result = open(
-        &request(&data, &messages, ClientKind::Async),
+        &request(&data, &messages, ClientKind::Asynchronous),
         &deps(None, &transport, &logger),
     )
     .await;
@@ -453,13 +461,13 @@ async fn the_wrapper_parses_the_response_stream() {
     let data = body();
     let messages = prompt();
     let transport = Arc::new(FakeTransport::new(
-        ClientKind::Async,
+        ClientKind::Asynchronous,
         200,
         frames("data: {\"content\": \"hi\"}\n\ndata: [\"metadata\", {\"run_id\": \"r\"}]\n\n"),
     ));
     let logger = RecordingLogger::default();
     let stream: LangGraphStream = open(
-        &request(&data, &messages, ClientKind::Async),
+        &request(&data, &messages, ClientKind::Asynchronous),
         &deps(None, &transport, &logger),
     )
     .await
@@ -476,11 +484,11 @@ async fn the_wrapper_parses_the_response_stream() {
 async fn a_transport_error_surfaces() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::closed(ClientKind::Async));
+    let transport = Arc::new(FakeTransport::closed(ClientKind::Asynchronous));
     let logger = RecordingLogger::default();
     let error = expect_error(
         open(
-            &request(&data, &messages, ClientKind::Async),
+            &request(&data, &messages, ClientKind::Asynchronous),
             &deps(None, &transport, &logger),
         )
         .await,
@@ -498,9 +506,13 @@ async fn a_transport_error_surfaces() {
 async fn an_invalid_url_is_refused() {
     let data = body();
     let messages = prompt();
-    let transport = Arc::new(FakeTransport::new(ClientKind::Async, 200, frames("")));
+    let transport = Arc::new(FakeTransport::new(
+        ClientKind::Asynchronous,
+        200,
+        frames(""),
+    ));
     let logger = RecordingLogger::default();
-    let mut request = request(&data, &messages, ClientKind::Async);
+    let mut request = request(&data, &messages, ClientKind::Asynchronous);
     request.url = "::not a url::";
     let error = expect_error(
         open(&request, &deps(None, &transport, &logger)).await,

@@ -60,6 +60,6 @@ pub fn select_client(
         shared_session: connection
             .shared_session
             .clone()
-            .filter(|_session| kind == ClientKind::Async),
+            .filter(|_session| kind == ClientKind::Asynchronous),
     })
 }
