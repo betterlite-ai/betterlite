@@ -182,8 +182,10 @@ impl ConfigUpdateStore for RecordingStore {
     }
 
     fn seal_environment(&self, values: &SettingsMap) -> Result<SettingsMap, ConfigStateError> {
-        let mut seals = self.seals.lock().unwrap_or_else(PoisonError::into_inner);
-        seals.push(values.clone());
+        self.seals
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(values.clone());
         Ok(values
             .iter()
             .map(|(key, value)| (key.clone(), sealed(value)))
