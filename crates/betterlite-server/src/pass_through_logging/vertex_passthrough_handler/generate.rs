@@ -15,12 +15,13 @@ use betterlite_vertex::vertex_relay_metadata::url_models::{
 };
 use http::HeaderMap;
 
-use super::response_body::{model_response_body, set_body_id};
+use super::response_body::set_body_id;
 use super::{VertexPassthroughError, VertexPassthroughInput};
 use crate::pass_through_logging::gemini_passthrough_logging::cost::{
     FactoryCost, PassthroughCompletionCost,
 };
 use crate::pass_through_logging::gemini_passthrough_logging::relay::{RelayLogging, relay_kwargs};
+use crate::pass_through_logging::gemini_passthrough_logging::reply;
 
 // VertexGeminiConfig.transform_response with the endpoint's dummy message and empty request parameters.
 pub(super) fn generate_content(
@@ -37,7 +38,7 @@ pub(super) fn generate_content(
         &model,
         input.end_time.timestamp(),
     )?;
-    let mut body = model_response_body(&response, input.end_time.timestamp())
+    let mut body = reply::logged_response(&response, input.end_time.timestamp())
         .map_err(|source| VertexPassthroughError::Encode { source })?;
     let mut relay = RelayLogging::project(input.logging_obj);
     let mut completion = completion_of(&response);

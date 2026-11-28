@@ -14,8 +14,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::raw_predict::{completion_response, dummy_messages};
-use super::response_body::extra_json;
 use super::{VertexBranch, VertexPassthroughError, select_vertex_branch};
+use crate::pass_through_logging::gemini_passthrough_logging::reply::extra_json;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
     FakeCost, as_text, detail, field, integer, json, kwarg, kwargs, logged_model, logged_provider,
     number_text, optional_param, result_json, text,
