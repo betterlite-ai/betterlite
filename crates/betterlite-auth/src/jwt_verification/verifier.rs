@@ -193,7 +193,7 @@ impl JwtVerifier {
             verify_aud: audience.is_none().then_some(false),
             verify_iss: issuer.is_none().then_some(false),
         };
-        Ok((audience.is_some() || issuer.is_some()).then_some(options))
+        Ok((audience.is_none() || issuer.is_none()).then_some(options))
     }
 
     // _get_configured_issuer: the first exact config for a nonempty string iss, read from unverified claims.
@@ -229,7 +229,12 @@ impl JwtVerifier {
     ) -> Result<TypedValue, VerificationError> {
         let checks_on = match options {
             Some(explicit) => explicit,
-            None => Self::decode_options(audience, issuer, disable_audience_validation)?,
+            None => Self::decode_options(audience, issuer, disable_audience_validation)?.unwrap_or(
+                DecodeOptions {
+                    verify_aud: None,
+                    verify_iss: None,
+                },
+            ),
         };
         let header = JwtHeader::parse(token)?;
         let Some(name) = header.algorithm.as_deref() else {

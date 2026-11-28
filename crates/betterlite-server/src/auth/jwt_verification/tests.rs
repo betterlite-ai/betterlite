@@ -24,7 +24,6 @@ use betterlite_auth::jwt_verification::verifier::JwtVerifier;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
 use betterlite_config::types::Config;
-use betterlite_error::proxy_exception::ExceptionCode;
 use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
@@ -164,7 +163,7 @@ async fn reached_handler(Extension(reached): Extension<Arc<AtomicBool>>) -> &'st
     "reached"
 }
 
-fn chat_application(config: &Config, reached: &Arc<AtomicBool>) -> Router {
+fn chat_application(config: &Config) -> Router {
     let chat = Router::new().route("/v1/chat/completions", get(reached_handler));
     routes::router(
         state_for(config),
@@ -229,7 +228,7 @@ async fn stage_is_registered() {
         panic!("the verification stage raises its own failure");
     };
     assert_eq!(exception.error_type, "auth_error");
-    assert!(matches!(exception.code, ExceptionCode::Status(401)));
+    assert_eq!(exception.code, "401");
 }
 
 #[tokio::test]
@@ -240,7 +239,7 @@ async fn failure_stops_downstream() {
     .load("general_settings:\n  master_key: secret-master-key\n")
     .unwrap();
     let reached = Arc::new(AtomicBool::new(false));
-    let app = chat_application(&config, &reached);
+    let app = chat_application(&config);
 
     let refused = Request::get("/v1/chat/completions")
         .header(
