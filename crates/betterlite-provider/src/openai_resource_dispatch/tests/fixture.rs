@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::Settings;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -11,7 +12,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::batches::error::SdkError as BatchSdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery};
 use betterlite_openai::batches::sdk::{
-    BatchesSdk, ClientConstructor, ClientKind, ClientSettings, SdkArguments,
+    BatchesSdk, ClientConstructor, ClientSettings, SdkArguments,
 };
 use betterlite_openai::containers::OpenAiContainerConfig;
 use betterlite_openai::containers::costs::ContainerCosts;
@@ -242,7 +243,7 @@ impl BatchesSdk for BatchSdk {
     type Page = BatchPage;
 
     fn kind(&self) -> ClientKind {
-        ClientKind::Async
+        ClientKind::Asynchronous
     }
 
     fn create(

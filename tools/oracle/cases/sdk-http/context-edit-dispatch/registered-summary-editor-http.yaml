@@ -1,0 +1,126 @@
+kind: sdk_http
+name: registered-summary-editor-http
+call:
+  context_edit_dispatch:
+    scenarios:
+      - model: main-model
+        messages:
+          - role: user
+            content: hello
+          - role: assistant
+            content: hi
+          - role: user
+            content: question
+        context_management:
+          edits:
+            - type: compact_20260112
+              trigger:
+                type: input_tokens
+                value: 50000
+        summary_model: gpt-4o-mini
+        counter:
+          count: 50001
+      - model: main-model
+        messages:
+          - role: user
+            content: hello
+          - role: assistant
+            content: hi
+          - role: user
+            content: question
+        context_management:
+          edits:
+            - type: compact_20260112
+              trigger:
+                type: input_tokens
+                value: 49999
+        summary_model: gpt-4o-mini
+        counter:
+          count: 50001
+      - model: main-model
+        messages:
+          - role: user
+            content:
+              - type: tool_result
+                tool_use_id: tool_0
+                content: first result
+          - role: assistant
+            content:
+              - type: tool_use
+                id: tool_0
+                name: lookup
+                input: {}
+          - role: user
+            content:
+              - type: tool_result
+                tool_use_id: tool_1
+                content: second result
+          - role: assistant
+            content:
+              - type: tool_use
+                id: tool_1
+                name: lookup
+                input: {}
+          - role: user
+            content:
+              - type: tool_result
+                tool_use_id: tool_2
+                content: third result
+          - role: assistant
+            content:
+              - type: tool_use
+                id: tool_2
+                name: lookup
+                input: {}
+          - role: user
+            content:
+              - type: tool_result
+                tool_use_id: tool_3
+                content: fourth result
+          - role: assistant
+            content:
+              - type: tool_use
+                id: tool_3
+                name: lookup
+                input: {}
+          - role: user
+            content: final question
+        context_management:
+          edits:
+            - type: clear_tool_uses_20250919
+              trigger:
+                type: input_tokens
+                value: 50000
+            - type: compact_20260112
+              trigger:
+                type: input_tokens
+                value: 50000
+        summary_model: gpt-4o-mini
+        counter:
+          count: 50001
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-mini
+      choices:
+        - index: 0
+          message: {role: assistant, content: "<summary>S</summary>"}
+          finish_reason: stop
+      usage: {prompt_tokens: 12, completion_tokens: 3, total_tokens: 15}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-2
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-mini
+      choices:
+        - index: 0
+          message: {role: assistant, content: "<summary>S</summary>"}
+          finish_reason: stop
+      usage: {prompt_tokens: 12, completion_tokens: 3, total_tokens: 15}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}

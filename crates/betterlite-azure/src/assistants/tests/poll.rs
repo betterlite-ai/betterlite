@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use tokio::time::Instant;
 

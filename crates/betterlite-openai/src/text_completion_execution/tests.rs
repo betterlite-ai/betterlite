@@ -38,9 +38,10 @@ use crate::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
 };
 use crate::text_completion_transport::sdk::{
-    ClientConstructor as _, ClientKind, HttpClientSource, RawCompletion, SdkArguments, SdkError,
-    StatusError, TextCompletionSdk as _, status_error,
+    ClientConstructor as _, HttpClientSource, RawCompletion, SdkArguments, SdkError, StatusError,
+    TextCompletionSdk as _, status_error,
 };
+use betterlite_http::client_kind::ClientKind;
 
 fn deployment(model: &str) -> ChatDeployment {
     let listed = ModelDeployment {
@@ -515,7 +516,7 @@ fn async_sdk(address: SocketAddr, facts: Arc<Mutex<Option<UpstreamFacts>>>) -> H
         authorization: Some(SecretString::from("Bearer sk-deployment")),
         facts,
     }
-    .construct(&arguments, ClientKind::Async)
+    .construct(&arguments, ClientKind::Asynchronous)
     .expect("sdk")
     .expect("a credential builds the sdk")
 }
@@ -534,7 +535,7 @@ async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let sdk = async_sdk(address, Arc::new(Mutex::new(None)));
-    assert_eq!(sdk.kind(), ClientKind::Async);
+    assert_eq!(sdk.kind(), ClientKind::Asynchronous);
     let mut data = Map::new();
     data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
     data.insert(String::from("prompt"), Value::from("hi"));

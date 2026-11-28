@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadCreate;
 use secrecy::SecretString;
@@ -22,7 +22,7 @@ use super::support::{
 const KINDS: [(Option<bool>, ClientKind); 3] = [
     (None, ClientKind::Sync),
     (Some(false), ClientKind::Sync),
-    (Some(true), ClientKind::Async),
+    (Some(true), ClientKind::Asynchronous),
 ];
 
 pub(super) async fn check() {
@@ -109,13 +109,13 @@ async fn supplied_retrieve() {
     let retrieved = api
         .call(
             &request,
-            Some(supplied_client(ClientKind::Async, &transport)),
+            Some(supplied_client(ClientKind::Asynchronous, &transport)),
             Some(true),
             ThreadOperation::Retrieve("thread_1"),
         )
         .await
         .unwrap();
-    assert_eq!(retrieved.kind, ClientKind::Async);
+    assert_eq!(retrieved.kind, ClientKind::Asynchronous);
     assert_eq!(
         transport.requests(),
         vec![supplied_wire("GET", "threads/thread_1", None)]
