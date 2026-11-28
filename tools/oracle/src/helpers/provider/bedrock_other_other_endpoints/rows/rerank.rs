@@ -40,7 +40,7 @@ pub(super) async fn rerank_row(probe: &Probe) -> Result<Value, Failed> {
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
-    row(&outcome, value, None)
+    row(&outcome, &value, None)
 }
 
 fn request(probe: &Probe) -> RerankRequest {

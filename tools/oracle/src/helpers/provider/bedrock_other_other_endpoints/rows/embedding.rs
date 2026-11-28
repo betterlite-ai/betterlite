@@ -49,7 +49,7 @@ pub(super) async fn embedding_row(probe: &Probe) -> Result<Value, Failed> {
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
-    row(&outcome, value, None)
+    row(&outcome, &value, None)
 }
 
 // The reply fields both dialects carry: each input's vector under its own index, with the usage totals

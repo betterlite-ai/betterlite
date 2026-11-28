@@ -39,7 +39,7 @@ async fn probe_row(input: &Input, probe: &Probe) -> Result<Value, Failed> {
 // One row per probe: the posted requests, whether the dispatch succeeded, and what it returned
 pub(super) fn row<E>(
     outcome: &Outcome<E>,
-    value: Value,
+    value: &Value,
     error: Option<&str>,
 ) -> Result<Value, Failed>
 where

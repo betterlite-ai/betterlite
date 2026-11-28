@@ -52,7 +52,7 @@ pub(super) async fn count_row(probe: &Probe) -> Result<Value, Failed> {
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
-    row(&outcome, value, None)
+    row(&outcome, &value, None)
 }
 
 // The region, endpoint and bearer token LiteLLM reads from the process environment

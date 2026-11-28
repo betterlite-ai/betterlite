@@ -94,7 +94,7 @@ async fn run_image(
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
-    row(&outcome, value, None)
+    row(&outcome, &value, None)
 }
 
 // Both arms answer base64 images; only an edit reply carries the cost header

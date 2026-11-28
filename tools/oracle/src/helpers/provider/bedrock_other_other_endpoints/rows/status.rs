@@ -36,5 +36,5 @@ pub(super) async fn status_row(probe: &Probe) -> Result<Value, Failed> {
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
-    row(&outcome, value, None)
+    row(&outcome, &value, None)
 }

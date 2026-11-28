@@ -32,7 +32,7 @@ pub(super) enum Case {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     #[serde(default)]
     pub(super) model_cost: ModelCost,
     pub(super) probes: Vec<Probe>,

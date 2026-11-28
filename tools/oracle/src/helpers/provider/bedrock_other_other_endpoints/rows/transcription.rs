@@ -57,7 +57,7 @@ pub(super) async fn transcription_row(probe: &Probe) -> Result<Value, Failed> {
         Ok(_other) => Value::Null,
         Err(_reported) => Value::Null,
     };
-    row(&outcome, value, error_kind(&outcome))
+    row(&outcome, &value, error_kind(&outcome))
 }
 
 fn extra_headers(probe: &Probe) -> Option<Params> {
