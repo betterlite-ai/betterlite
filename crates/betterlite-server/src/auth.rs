@@ -55,6 +55,8 @@ pub mod virtual_key_routes;
 
 use std::{
     collections::BTreeSet,
+    future::{Future, ready},
+    pin::Pin,
     sync::{Arc, PoisonError},
 };
 
@@ -216,25 +218,32 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
+// the stage prefetch a stage module returns, erased so the one match below stays one arm per stage
+type StagePrefetch = Pin<Box<dyn Future<Output = Result<StageInput, StageFailure>> + Send>>;
+
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
-    match input {
-        StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
-        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
-        StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
-        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
-        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
-        StageInput::AuthEndUserIdentity(stage) => {
-            StageInput::prefetch_end_user_identity(stage).await
+    let stage_future: StagePrefetch = match input {
+        StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
+        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
+        StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
+        StageInput::AuthTagBudgets(stage) => Box::pin(auth_tag_budgets::prefetched(stage)),
+        StageInput::AuthKeyBudgets(stage) => Box::pin(auth_key_budgets::prefetched(stage)),
+        StageInput::AuthModelBudgets(stage) => Box::pin(auth_model_budgets::prefetched(stage)),
+        StageInput::TeamBudgetAdmission(stage) => {
+            Box::pin(team_budget_admission::prefetched(stage))
         }
-        StageInput::AuthEndUsers(stage) => end_user_identity::prefetch_budget(stage).await,
-        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
-        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
-        StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
+        StageInput::AuthTenantBudgets(stage) => Box::pin(auth_tenant_budgets::prefetched(stage)),
+        StageInput::AuthOrgLookup(stage) => Box::pin(auth_org_lookup::prefetched(stage)),
+        StageInput::AuthEndUserIdentity(stage) => {
+            Box::pin(StageInput::prefetch_end_user_identity(stage))
+        }
+        StageInput::AuthEndUsers(stage) => Box::pin(end_user_identity::prefetch_budget(stage)),
+        StageInput::ModelGrantIntersection(stage) => {
+            Box::pin(StageInput::prefetch_model_grants(stage))
+        }
+        StageInput::AuthModelGrants(stage) => Box::pin(auth_model_grants::prefetched(stage)),
+        StageInput::EntityModelAccess(stage) => Box::pin(entity_model_access::prefetched(stage)),
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
@@ -245,8 +254,9 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
-        | StageInput::AuthPolicySupport(_)) => Ok(other),
-    }
+        | StageInput::AuthPolicySupport(_)) => Box::pin(ready(Ok(other))),
+    };
+    stage_future.await
 }
 
 fn master_key_stage(
