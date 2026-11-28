@@ -305,6 +305,28 @@ async fn claim_answers_null_when_the_lease_instant_overflows() {
     assert_eq!(after.jobs[0].status, JobStatus::Queued);
 }
 
+// a give-up exposes the next active job, which is only claimed when it is running under this worker
+#[tokio::test]
+async fn claim_does_not_claim_the_job_a_give_up_exposes() {
+    let harness = Harness::new();
+    harness.database.seed_worker(worker_fixture());
+    let mut stored = base_lens("l1");
+    let mut exhausted = running_job("j1", "w2", shifted(TimeDelta::seconds(-1)));
+    exhausted.attempts = 3;
+    stored.jobs = vec![
+        exhausted,
+        running_job("j2", "w2", shifted(TimeDelta::minutes(5))),
+    ];
+    harness.database.seed_lens(stored);
+    let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.body, b"null");
+    let after = harness.database.lens("l1");
+    assert_eq!(after.jobs[0].status, JobStatus::Failed);
+    assert_eq!(after.jobs[0].error, "Worker disconnected repeatedly");
+    assert_eq!(after.jobs[1].worker_id.as_deref(), Some("w2"));
+}
+
 #[tokio::test]
 async fn claim_returns_the_first_claimable_lens() {
     let harness = Harness::new();

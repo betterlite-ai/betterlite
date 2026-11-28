@@ -93,6 +93,9 @@ async fn progress_answers_true_when_the_job_moved_away() {
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.body, b"true");
     assert_eq!(harness.database.heartbeats().len(), 1);
+    let after = harness.database.lens("l1");
+    assert_eq!(after.jobs[0].worker_id.as_deref(), Some("w2"));
+    assert_eq!(after.jobs[0].stage, "Queued");
 }
 
 #[tokio::test]
