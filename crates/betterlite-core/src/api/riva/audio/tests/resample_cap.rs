@@ -26,7 +26,7 @@ fn rejects_a_sample_product_that_overflows_u64() {
 // 32000 Hz halves the input, and ceil(33,554,433 / 2) is one sample more than rounding gives
 #[test]
 fn rejects_a_fractional_output_past_the_cap() {
-    let error = check_output_size(33_554_433, 32_000).unwrap_err();
+    let error = check_output_size(0x0200_0001, 32_000).unwrap_err();
     assert!(matches!(error, RivaAudioError::TooLarge));
 }
 
