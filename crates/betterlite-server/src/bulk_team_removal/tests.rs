@@ -14,6 +14,27 @@ use crate::bulk_team_removal::audit::{DeletedKeyAudit as _, KeyEventDeletedAudit
 use crate::bulk_team_removal::error::BulkRemovalError;
 use crate::bulk_team_removal::service::BulkTeamRemoval;
 
+const COMMIT_EVENTS: [&str; 18] = [
+    "lookup:team-1",
+    "transaction:u1",
+    "lock:team-1",
+    "roster:team-1",
+    "users:u1;",
+    "tokens:u1",
+    "mappings:k1",
+    "write-roster:team-1:1",
+    "write-teams:u1:other",
+    "delete-memberships:u1",
+    "archive:k1",
+    "delete-keys:u1",
+    "audit:k1:admin",
+    "key-cache:k1",
+    "publish:k1",
+    "memory:jwt_key_mapping:iss:sub:claim-k1",
+    "mapping:jwt_key_mapping:iss:sub:claim-k1",
+    "metric:team=team-1,team_alias=:1",
+];
+
 #[tokio::test]
 async fn duplicate_removed_before_transaction() {
     let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
@@ -37,7 +58,7 @@ async fn duplicate_removed_before_transaction() {
         .count();
     assert_eq!(transactions, 1);
     assert!(events.iter().any(|event| event == "transaction:u1"));
-    assert!(fixture.session.roster("team-1").is_empty());
+    assert!(fixture.session.roster_of("team-1").is_empty());
 }
 
 #[tokio::test]
@@ -60,13 +81,13 @@ async fn email_backfill_requires_user_team() {
         .unwrap();
     assert!(!results[0].success);
     assert_eq!(results[0].error.as_deref(), Some("User not found in team"));
-    assert_eq!(fixture.session.roster("team-2"), email_only.to_vec());
-    let results = fixture
+    assert_eq!(fixture.session.roster_of("team-2"), email_only.to_vec());
+    let removal = fixture
         .remove("team-1", &request, &support::proxy_admin())
         .await
         .unwrap();
-    assert!(results[0].success);
-    assert!(fixture.session.roster("team-1").is_empty());
+    assert!(removal[0].success);
+    assert!(fixture.session.roster_of("team-1").is_empty());
 }
 
 #[tokio::test]
@@ -176,7 +197,7 @@ async fn result_original_identity_and_index() {
     assert!(results[2].success);
     assert_eq!(results[2].user_id.as_deref(), Some("u3"));
     assert_eq!(
-        fixture.session.roster("team-1"),
+        fixture.session.roster_of("team-1"),
         vec![support::member("u2")]
     );
 }
@@ -273,29 +294,7 @@ async fn writes_commit_in_source_order() {
         .await
         .unwrap();
     assert!(results[0].success);
-    assert_eq!(
-        fixture.log.events(),
-        support::lines(&[
-            "lookup:team-1",
-            "transaction:u1",
-            "lock:team-1",
-            "roster:team-1",
-            "users:u1;",
-            "tokens:u1",
-            "mappings:k1",
-            "write-roster:team-1:1",
-            "write-teams:u1:other",
-            "delete-memberships:u1",
-            "archive:k1",
-            "delete-keys:u1",
-            "audit:k1:admin",
-            "key-cache:k1",
-            "publish:k1",
-            "memory:jwt_key_mapping:iss:sub:claim-k1",
-            "mapping:jwt_key_mapping:iss:sub:claim-k1",
-            "metric:team=team-1,team_alias=:1",
-        ])
-    );
+    assert_eq!(fixture.log.events(), support::lines(&COMMIT_EVENTS));
 }
 
 #[tokio::test]
@@ -316,7 +315,7 @@ async fn stale_array_only_member_matches_and_loses_the_team() {
         .unwrap();
     assert!(results[0].success);
     assert_eq!(
-        fixture.session.roster("team-1"),
+        fixture.session.roster_of("team-1"),
         vec![support::member("u2")]
     );
     assert_eq!(fixture.session.user_teams("u1"), support::lines(&["other"]));
@@ -352,7 +351,7 @@ async fn explicit_email_is_never_replaced() {
         Some("explicit@example.com")
     );
     assert_eq!(
-        fixture.session.roster("team-1"),
+        fixture.session.roster_of("team-1"),
         vec![support::email_member("row@example.com")]
     );
     assert!(fixture.session.user_teams("u1").is_empty());
@@ -370,7 +369,7 @@ async fn a_removal_without_keys_skips_archive_and_audit() {
         .await
         .unwrap();
     assert!(results[0].success);
-    assert!(fixture.session.roster("team-1").is_empty());
+    assert!(fixture.session.roster_of("team-1").is_empty());
     assert!(fixture.session.memberships().is_empty());
     let events = fixture.log.events();
     assert!(events.iter().all(|event| {
@@ -414,14 +413,8 @@ fn deleted_key_audit_matches_the_hook() {
     );
     let before = record.before_value.as_ref().unwrap();
     assert!(before.get("token").is_some());
-    assert!(
-        record
-            .updated_values
-            .as_ref()
-            .unwrap()
-            .as_object()
-            .is_some_and(|object| object.is_empty())
-    );
+    let updated = record.updated_values.as_ref().unwrap();
+    assert!(updated.as_object().unwrap().is_empty());
 }
 
 #[test]
@@ -450,7 +443,7 @@ async fn removed_member_without_user_row_loses_keys_and_membership() {
         .await
         .unwrap();
     assert!(results[0].success);
-    assert!(fixture.session.roster("team-1").is_empty());
+    assert!(fixture.session.roster_of("team-1").is_empty());
     assert!(fixture.session.memberships().is_empty());
     assert!(fixture.session.key_tokens().is_empty());
     assert_eq!(fixture.session.archived_tokens(), support::lines(&["k1"]));
@@ -472,7 +465,7 @@ async fn removed_roster_id_fetches_its_own_user_row() {
         .unwrap();
     assert!(results[0].success);
     assert!(fixture.session.user_teams("u2").is_empty());
-    assert!(fixture.session.roster("team-1").is_empty());
+    assert!(fixture.session.roster_of("team-1").is_empty());
 }
 
 #[tokio::test]
@@ -511,7 +504,7 @@ async fn email_only_request_matches_a_stale_user_row() {
 
 #[tokio::test]
 async fn postgres_concurrent_roster_delete() {
-    postgres::concurrent_roster_delete().await;
+    Box::pin(postgres::concurrent_roster_delete()).await;
 }
 
 #[tokio::test]

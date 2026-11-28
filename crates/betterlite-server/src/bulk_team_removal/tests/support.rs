@@ -23,7 +23,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::member_removal_identity::identity::MemberIdentity;
-use betterlite_db::team_rows::member::Member;
+use betterlite_db::team_rows::member::{Member, MemberBase, MemberRole};
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::prometheus::budget_gauges::gauge::GaugeField;
@@ -37,6 +37,8 @@ use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use chrono::{DateTime, FixedOffset};
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tempfile::NamedTempFile;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -94,7 +96,10 @@ pub(crate) fn assert_step_order(log: &[String], steps: &[&str]) {
         })
         .collect();
     assert!(
-        positions.windows(2).all(|pair| pair[0] < pair[1]),
+        positions
+            .iter()
+            .zip(positions.iter().skip(1))
+            .all(|(before, after)| before < after),
         "{log:?}"
     );
 }
@@ -160,7 +165,7 @@ impl MemorySession {
         lock(&self.state).keys.insert(token, key);
     }
 
-    pub(crate) fn roster(&self, team_id: &str) -> Vec<Member> {
+    pub(crate) fn roster_of(&self, team_id: &str) -> Vec<Member> {
         lock(&self.state)
             .teams
             .get(team_id)
@@ -264,6 +269,7 @@ impl RemovalTables for MemorySession {
             return Err(BulkRemovalError::MissingRow);
         };
         team.fields.base.members_with_roles = kept.to_vec();
+        drop(state);
         Ok(())
     }
 
@@ -332,12 +338,6 @@ impl TeamRemovalSession for MemorySession {
 #[derive(Default)]
 pub(crate) struct OrgAdmins {
     admins: Mutex<BTreeSet<(String, String)>>,
-}
-
-impl OrgAdmins {
-    pub(crate) fn grant(&self, user_id: &str, organization_id: &str) {
-        lock(&self.admins).insert((user_id.to_owned(), organization_id.to_owned()));
-    }
 }
 
 #[async_trait]
@@ -555,7 +555,7 @@ impl Collector for LogGauge {
         let rendered = self
             .labels
             .iter()
-            .map(|(name, value)| format!("{name}={value}"))
+            .map(|(name, label_value)| format!("{name}={label_value}"))
             .collect::<Vec<String>>()
             .join(",");
         self.log.push(format!("metric:{rendered}:{value}"));
@@ -565,63 +565,74 @@ impl Collector for LogGauge {
 pub(crate) struct Fixture {
     pub(crate) log: EventLog,
     pub(crate) session: MemorySession,
-    pub(crate) org: Arc<OrgAdmins>,
     pub(crate) access: TeamAccess,
     pub(crate) jwt: StaticJwt,
     pub(crate) audit: LogAudit,
     pub(crate) auth: Arc<RecordingAuth>,
-    pub(crate) spend: Arc<NoopSpend>,
-    pub(crate) transport: Arc<RecordingTransport>,
     pub(crate) invalidation: AuthInvalidation,
     pub(crate) gauge: GaugeField<LogGauge>,
     pub(crate) settings: PrometheusLabelSettings,
 }
 
-pub(crate) fn fixture() -> Fixture {
-    let log = EventLog::default();
-    let org = Arc::new(OrgAdmins::default());
-    let org_roles: Arc<dyn OrgRoles> = org.clone();
-    let jwt = StaticJwt {
-        log: log.clone(),
-        rows: Arc::default(),
-    };
-    let audit = LogAudit {
-        log: log.clone(),
-        failing: AtomicBool::new(false),
-    };
-    let auth = Arc::new(RecordingAuth {
+fn recording_auth(log: &EventLog) -> Arc<RecordingAuth> {
+    Arc::new(RecordingAuth {
         log: log.clone(),
         fail_delete_sync: AtomicBool::new(false),
         fail_delete_memory: AtomicBool::new(false),
-    });
-    let spend = Arc::new(NoopSpend);
-    let transport = Arc::new(RecordingTransport { log: log.clone() });
-    let invalidation = AuthInvalidation {
-        auth: auth.clone(),
-        usage: None,
-        spend: spend.clone(),
-        transport: transport.clone(),
-        clock: Arc::new(SystemClock),
-        access_group_ttl: 0.0,
-    };
-    let gauge = GaugeField {
+    })
+}
+
+fn recording_transport(log: &EventLog) -> Arc<RecordingTransport> {
+    Arc::new(RecordingTransport { log: log.clone() })
+}
+
+fn static_jwt(log: &EventLog) -> StaticJwt {
+    StaticJwt {
+        log: log.clone(),
+        rows: Arc::default(),
+    }
+}
+
+fn log_audit(log: &EventLog) -> LogAudit {
+    LogAudit {
+        log: log.clone(),
+        failing: AtomicBool::new(false),
+    }
+}
+
+fn team_gauge(log: &EventLog) -> GaugeField<LogGauge> {
+    GaugeField {
         metric_name: "litellm_team_members_metric",
         supported_labels: vec!["team".to_owned(), "team_alias".to_owned()],
         collector: LogGauge {
             log: log.clone(),
             labels: Vec::new(),
         },
+    }
+}
+
+pub(crate) fn fixture() -> Fixture {
+    let log = EventLog::default();
+    let auth = recording_auth(&log);
+    let org_roles: Arc<dyn OrgRoles> = Arc::new(OrgAdmins::default());
+    let invalidation = AuthInvalidation {
+        auth: Arc::clone(&auth),
+        usage: None,
+        spend: Arc::new(NoopSpend),
+        transport: recording_transport(&log),
+        clock: Arc::new(SystemClock),
+        access_group_ttl: 0.0,
     };
+    let jwt = static_jwt(&log);
+    let audit = log_audit(&log);
+    let gauge = team_gauge(&log);
     Fixture {
         log,
         session: MemorySession::default(),
-        org,
         access: TeamAccess { org_roles },
         jwt,
         audit,
         auth,
-        spend,
-        transport,
         invalidation,
         gauge,
         settings: PrometheusLabelSettings::with_defaults(),
@@ -638,7 +649,7 @@ impl Fixture {
 
     pub(crate) fn team_access(&self) -> TeamAccess {
         TeamAccess {
-            org_roles: self.access.org_roles.clone(),
+            org_roles: Arc::clone(&self.access.org_roles),
         }
     }
 
@@ -675,26 +686,75 @@ pub(crate) fn fixture_with_team(team: LiteLLMTeamTable) -> Fixture {
     built
 }
 
+#[derive(Serialize)]
+struct TeamJson<'row> {
+    team_id: &'row str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    organization_id: Option<&'row str>,
+    members_with_roles: &'row [Member],
+}
+
+#[derive(Serialize)]
+struct UserJson<'row> {
+    user_id: &'row str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_email: Option<&'row str>,
+    teams: &'row [&'row str],
+}
+
+#[derive(Serialize)]
+struct KeyJson<'row> {
+    token: &'row str,
+    team_id: &'row str,
+    user_id: &'row str,
+    key_name: &'row str,
+}
+
+fn from_json<T, Source>(source: Source) -> T
+where
+    T: DeserializeOwned,
+    Source: Serialize,
+{
+    let value = serde_json::to_value(source).unwrap();
+    serde_json::from_value(value).unwrap()
+}
+
 pub(crate) fn member(user_id: &str) -> Member {
-    serde_json::from_value(serde_json::json!({"user_id": user_id, "role": "user"})).unwrap()
+    Member {
+        base: MemberBase {
+            user_id: Some(user_id.to_owned()),
+            user_email: None,
+        },
+        role: MemberRole::User,
+    }
 }
 
 pub(crate) fn email_member(user_email: &str) -> Member {
-    serde_json::from_value(serde_json::json!({"user_email": user_email, "role": "user"})).unwrap()
+    Member {
+        base: MemberBase {
+            user_id: None,
+            user_email: Some(user_email.to_owned()),
+        },
+        role: MemberRole::User,
+    }
 }
 
 pub(crate) fn member_with_email(user_id: &str, user_email: &str) -> Member {
-    serde_json::from_value(serde_json::json!({
-        "user_id": user_id,
-        "user_email": user_email,
-        "role": "user",
-    }))
-    .unwrap()
+    Member {
+        base: MemberBase {
+            user_id: Some(user_id.to_owned()),
+            user_email: Some(user_email.to_owned()),
+        },
+        role: MemberRole::User,
+    }
 }
 
 pub(crate) fn team(team_id: &str, members: &[Member]) -> LiteLLMTeamTable {
-    serde_json::from_value(serde_json::json!({"team_id": team_id, "members_with_roles": members}))
-        .unwrap()
+    from_json(TeamJson {
+        team_id,
+        organization_id: None,
+        members_with_roles: members,
+    })
 }
 
 pub(crate) fn team_with_org(
@@ -702,31 +762,28 @@ pub(crate) fn team_with_org(
     organization_id: &str,
     members: &[Member],
 ) -> LiteLLMTeamTable {
-    serde_json::from_value(serde_json::json!({
-        "team_id": team_id,
-        "organization_id": organization_id,
-        "members_with_roles": members,
-    }))
-    .unwrap()
+    from_json(TeamJson {
+        team_id,
+        organization_id: Some(organization_id),
+        members_with_roles: members,
+    })
 }
 
 pub(crate) fn user(user_id: &str, user_email: Option<&str>, teams: &[&str]) -> LiteLLMUserTable {
-    serde_json::from_value(serde_json::json!({
-        "user_id": user_id,
-        "user_email": user_email,
-        "teams": teams,
-    }))
-    .unwrap()
+    from_json(UserJson {
+        user_id,
+        user_email,
+        teams,
+    })
 }
 
 pub(crate) fn key(token: &str, team_id: &str, user_id: &str) -> LiteLLMVerificationToken {
-    serde_json::from_value(serde_json::json!({
-        "token": token,
-        "team_id": team_id,
-        "user_id": user_id,
-        "key_name": token,
-    }))
-    .unwrap()
+    from_json(KeyJson {
+        token,
+        team_id,
+        user_id,
+        key_name: token,
+    })
 }
 
 pub(crate) fn identity_id(user_id: &str) -> MemberIdentity {
@@ -756,11 +813,11 @@ pub(crate) fn member_auth(user_id: &str) -> UserAPIKeyAuth {
 }
 
 fn auth(fields: &[(&str, &str)]) -> UserAPIKeyAuth {
-    let fields: BTreeMap<String, JsonData> = fields
+    let input: BTreeMap<String, JsonData> = fields
         .iter()
         .map(|(name, value)| ((*name).to_owned(), JsonData::String((*value).to_owned())))
         .collect();
-    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
+    UserAPIKeyAuth::construct(AuthInput::Dict(input)).unwrap()
 }
 
 pub(crate) fn mismatched_context(

@@ -11,8 +11,9 @@ use betterlite_logging::prometheus_label_projection::prometheus_label_factory::L
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::sql::BASELINE;
 use clap::Parser;
-use deadpool_postgres::{Manager, Pool};
+use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::timeout;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Config, NoTls};
 
@@ -216,8 +217,8 @@ impl Harness {
     }
 
     async fn seed_user(&self, user_id: &str, user_email: Option<&str>, teams: &[&str]) {
-        let teams: Vec<String> = teams.iter().map(|team| (*team).to_owned()).collect();
-        let params: [&(dyn ToSql + Sync); 3] = [&user_id, &user_email, &teams];
+        let assigned_teams: Vec<String> = teams.iter().map(|team| (*team).to_owned()).collect();
+        let params: [&(dyn ToSql + Sync); 3] = [&user_id, &user_email, &assigned_teams];
         self.exec(INSERT_USER, &params).await;
     }
 
@@ -374,9 +375,31 @@ fn assert_stage_error(stage: &str, error: &BulkRemovalError) {
     }
 }
 
+async fn assert_roster(harness: &Harness, team_id: &str, expected: &[&str]) {
+    assert_eq!(harness.roster(team_id).await, support::lines(expected));
+}
+
+async fn assert_pre_removal_state(harness: &Harness) {
+    assert_roster(harness, "team-1", &["u1", "u2"]).await;
+    assert_eq!(harness.user_teams("u1").await, support::lines(&["team-1"]));
+    assert!(harness.has_membership("team-1", "u1").await);
+    assert_eq!(harness.key_count().await, 1);
+    assert_eq!(harness.archived_count().await, 0);
+}
+
 pub(super) async fn concurrent_roster_delete() {
     lock_before_fresh_read().await;
-    two_removals_keep_each_others_members().await;
+    Box::pin(two_removals_keep_each_others_members()).await;
+}
+
+async fn hold_lock(harness: &Harness, team_id: &str) -> Client {
+    let holder = harness.pool.get().await.unwrap();
+    holder.batch_execute("BEGIN").await.unwrap();
+    holder
+        .query(TEAM_ADVISORY_LOCK_SQL, &[&team_id])
+        .await
+        .unwrap();
+    holder
 }
 
 async fn lock_before_fresh_read() {
@@ -391,31 +414,21 @@ async fn lock_before_fresh_read() {
         clock: &clock,
         timeout: BATCH_TX_TIMEOUT,
     };
-    let holder = harness.pool.get().await.unwrap();
-    holder.batch_execute("BEGIN").await.unwrap();
-    holder
-        .query(TEAM_ADVISORY_LOCK_SQL, &[&"team-1"])
-        .await
-        .unwrap();
+    let holder = hold_lock(&harness, "team-1").await;
     holder
         .execute(SET_ROSTER, &[&"team-1", &ROSTER_U1_U2_U3])
         .await
         .unwrap();
     let pending_members = [support::identity_id("u1")];
     let mut pending = Box::pin(run(&fixture, &removal, "team-1", &pending_members));
-    assert!(
-        tokio::time::timeout(Duration::from_millis(150), &mut pending)
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(150), &mut pending)
+        .await
+        .unwrap_err();
     holder.batch_execute("COMMIT").await.unwrap();
     drop(holder);
     let results = pending.await.unwrap();
     assert!(results[0].success);
-    assert_eq!(
-        harness.roster("team-1").await,
-        support::lines(&["u2", "u3"])
-    );
+    assert_roster(&harness, "team-1", &["u2", "u3"]).await;
     harness.close().await;
 }
 
@@ -431,12 +444,12 @@ async fn two_removals_keep_each_others_members() {
     };
     let first_members = [support::identity_id("u1")];
     let second_members = [support::identity_id("u2")];
-    let first = run(&fixture, &removal, "team-1", &first_members);
-    let second = run(&fixture, &removal, "team-1", &second_members);
-    let (first, second) = tokio::join!(first, second);
+    let first_removal = run(&fixture, &removal, "team-1", &first_members);
+    let second_removal = run(&fixture, &removal, "team-1", &second_members);
+    let (first, second) = tokio::join!(first_removal, second_removal);
     assert!(first.unwrap()[0].success);
     assert!(second.unwrap()[0].success);
-    assert_eq!(harness.roster("team-1").await, support::lines(&["u3"]));
+    assert_roster(&harness, "team-1", &["u3"]).await;
     harness.close().await;
 }
 
@@ -457,66 +470,54 @@ async fn timeout_rolls_back() {
         clock: &clock,
         timeout: Duration::from_millis(100),
     };
-    let holder = harness.pool.get().await.unwrap();
-    holder.batch_execute("BEGIN").await.unwrap();
-    holder
-        .query(TEAM_ADVISORY_LOCK_SQL, &[&"team-1"])
-        .await
-        .unwrap();
+    let holder = hold_lock(&harness, "team-1").await;
     let error = run(&fixture, &removal, "team-1", &[support::identity_id("u1")])
         .await
         .unwrap_err();
     assert!(matches!(error, BulkRemovalError::Timeout { seconds: 0 }));
     holder.batch_execute("ROLLBACK").await.unwrap();
     drop(holder);
-    assert_eq!(
-        harness.roster("team-1").await,
-        support::lines(&["u1", "u2"])
-    );
-    assert_eq!(harness.key_count().await, 1);
-    assert_eq!(harness.archived_count().await, 0);
-    assert!(harness.has_membership("team-1", "u1").await);
+    assert_pre_removal_state(&harness).await;
     harness.close().await;
 }
 
+const FAILURE_STAGES: [&str; 5] = [
+    "roster",
+    "user-teams",
+    "membership",
+    "archive",
+    "key-delete",
+];
+
 async fn write_failures_roll_back() {
-    for stage in [
-        "roster",
-        "user-teams",
-        "membership",
-        "archive",
-        "key-delete",
-    ] {
-        let harness = Harness::open().await;
-        harness.seed_committed_removal().await;
-        harness.fail(stage).await;
-        let fixture = support::fixture();
-        let clock = SystemArchiveClock;
-        let removal = PostgresTeamRemoval {
-            store: &harness.store,
-            clock: &clock,
-            timeout: BATCH_TX_TIMEOUT,
-        };
-        let error = run(&fixture, &removal, "team-1", &[support::identity_id("u1")])
-            .await
-            .unwrap_err();
-        assert_stage_error(stage, &error);
-        assert_eq!(
-            harness.roster("team-1").await,
-            support::lines(&["u1", "u2"])
-        );
-        assert_eq!(harness.user_teams("u1").await, support::lines(&["team-1"]));
-        assert!(harness.has_membership("team-1", "u1").await);
-        assert_eq!(harness.key_count().await, 1);
-        assert_eq!(harness.archived_count().await, 0);
-        harness.clear_failures().await;
-        let results = run(&fixture, &removal, "team-1", &[support::identity_id("u1")])
-            .await
-            .unwrap();
-        assert!(results[0].success);
-        harness.assert_committed().await;
-        harness.close().await;
+    for stage in FAILURE_STAGES {
+        exercise_rollback(stage).await;
     }
+}
+
+async fn exercise_rollback(stage: &str) {
+    let harness = Harness::open().await;
+    harness.seed_committed_removal().await;
+    harness.fail(stage).await;
+    let fixture = support::fixture();
+    let clock = SystemArchiveClock;
+    let removal = PostgresTeamRemoval {
+        store: &harness.store,
+        clock: &clock,
+        timeout: BATCH_TX_TIMEOUT,
+    };
+    let error = run(&fixture, &removal, "team-1", &[support::identity_id("u1")])
+        .await
+        .unwrap_err();
+    assert_stage_error(stage, &error);
+    assert_pre_removal_state(&harness).await;
+    harness.clear_failures().await;
+    let results = run(&fixture, &removal, "team-1", &[support::identity_id("u1")])
+        .await
+        .unwrap();
+    assert!(results[0].success);
+    harness.assert_committed().await;
+    harness.close().await;
 }
 
 async fn archive_precedes_delete() {
@@ -526,7 +527,7 @@ async fn archive_precedes_delete() {
         let client = harness.pool.get().await.unwrap();
         client.execute(DELETE_KEY_DIRECTLY, &[&"k1"]).await
     };
-    assert!(early.is_err());
+    early.unwrap_err();
     let fixture = support::fixture();
     let clock = SystemArchiveClock;
     let removal = PostgresTeamRemoval {
@@ -607,12 +608,7 @@ async fn vanished_team() {
 
 async fn stale_array_only_membership() {
     let harness = Harness::open().await;
-    harness.seed_team("team-1", ROSTER_U2).await;
-    harness
-        .seed_user("u1", None, &["team-1", "other", "team-1"])
-        .await;
-    harness.seed_membership("team-1", "u1").await;
-    harness.seed_key("k1", "team-1", "u1").await;
+    seed_stale_array_member(&harness).await;
     let fixture = support::fixture();
     let clock = SystemArchiveClock;
     let removal = PostgresTeamRemoval {
@@ -624,12 +620,25 @@ async fn stale_array_only_membership() {
         .await
         .unwrap();
     assert!(results[0].success);
-    assert_eq!(harness.roster("team-1").await, support::lines(&["u2"]));
+    assert_stale_array_removed(&harness).await;
+    harness.close().await;
+}
+
+async fn seed_stale_array_member(harness: &Harness) {
+    harness.seed_team("team-1", ROSTER_U2).await;
+    harness
+        .seed_user("u1", None, &["team-1", "other", "team-1"])
+        .await;
+    harness.seed_membership("team-1", "u1").await;
+    harness.seed_key("k1", "team-1", "u1").await;
+}
+
+async fn assert_stale_array_removed(harness: &Harness) {
+    assert_roster(harness, "team-1", &["u2"]).await;
     assert_eq!(harness.user_teams("u1").await, support::lines(&["other"]));
     assert!(!harness.has_membership("team-1", "u1").await);
     assert_eq!(harness.key_count().await, 0);
     assert_eq!(harness.archived_count().await, 1);
-    harness.close().await;
 }
 
 async fn email_only_roster() {

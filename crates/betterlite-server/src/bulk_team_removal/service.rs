@@ -36,7 +36,7 @@ struct PreparedMembers {
     duplicates: BTreeSet<usize>,
 }
 
-impl<Gauge: Collector> BulkTeamRemoval<'_, Gauge> {
+impl<Gauge: Collector + Send + Sync> BulkTeamRemoval<'_, Gauge> {
     pub async fn bulk_remove_team_members(
         &self,
         team_id: &str,

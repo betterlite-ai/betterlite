@@ -72,18 +72,15 @@ fn requested_identities(members: &[MemberIdentity]) -> (Vec<String>, Vec<String>
     let mut user_ids = BTreeSet::new();
     let mut user_emails = BTreeSet::new();
     for member in members {
-        match &member.user_id {
-            Some(user_id) => {
-                user_ids.insert(user_id.clone());
-            }
-            None => {
-                let email = member
-                    .user_email
-                    .as_deref()
-                    .filter(|requested| !requested.is_empty());
-                if let Some(requested) = email {
-                    user_emails.insert(requested.to_owned());
-                }
+        if let Some(user_id) = &member.user_id {
+            user_ids.insert(user_id.clone());
+        } else {
+            let email = member
+                .user_email
+                .as_deref()
+                .filter(|requested| !requested.is_empty());
+            if let Some(requested) = email {
+                user_emails.insert(requested.to_owned());
             }
         }
     }
