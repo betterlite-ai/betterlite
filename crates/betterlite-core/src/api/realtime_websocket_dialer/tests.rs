@@ -30,7 +30,7 @@ use url::Url;
 
 use crate::api::realtime_backend_relay::source::{RealtimeBackendSource, RelayReceiveError};
 use crate::api::realtime_backend_transport::dial::{
-    DialRequest, RealtimeSsl, SizeLimitedSource, open_realtime_backend_ws,
+    ConnectedBackend, DialRequest, RealtimeSsl, SizeLimitedSource, open_realtime_backend_ws,
 };
 use crate::api::realtime_backend_transport::error::DialError;
 use crate::api::realtime_connection_plan::{ProbeConnection, RealtimeProbeDialer};
@@ -205,6 +205,73 @@ async fn serve_sent_frames(listener: TcpListener) -> (Message, Message, Message)
     (text, binary, close)
 }
 
+// the backend the dialer opens against a server, with no proxy and no keepalive
+async fn dialed_backend(address: SocketAddr, max_size: usize) -> ConnectedBackend {
+    let url = format!("ws://{address}/realtime");
+    let ssl = RealtimeSsl::Disabled;
+    let headers = HeaderMap::new();
+    let dialer = web_dialer(no_proxy());
+    timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, max_size)),
+    )
+    .await
+    .expect("deadline")
+    .expect("opened")
+}
+
+async fn dialed_source(address: SocketAddr, max_size: usize) -> Box<dyn RealtimeBackendSource> {
+    dialed_backend(address, max_size)
+        .await
+        .source
+        .expect("source")
+}
+
+fn expect_closed(
+    outcome: Result<RealtimeMessage, RelayReceiveError>,
+    failure: &str,
+    arrival: &str,
+) -> ConnectionClosed {
+    match outcome {
+        Err(RelayReceiveError::Closed(closed)) => closed,
+        Err(_error) => panic!("{failure}"),
+        Ok(_message) => panic!("{arrival}"),
+    }
+}
+
+fn assert_oversized_close(closed: &ConnectionClosed, max_size: usize) {
+    assert_eq!(
+        closed.received,
+        Some(CloseFrame {
+            code: 1009,
+            reason: "message too big".to_owned(),
+        })
+    );
+    let expected = format!("the realtime backend message exceeds the {max_size}-byte limit");
+    assert_eq!(closed.message, expected);
+}
+
+fn custom_headers(recorded: &[(String, String)]) -> Vec<(&str, &str)> {
+    recorded
+        .iter()
+        .filter(|(name, _value)| {
+            name.as_str() == "x-request-id" || name.as_str() == "authorization"
+        })
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect()
+}
+
+// the three frames a normal session writes, as the server read them
+fn assert_sent_frames(text: Message, binary: Message, close: Message) {
+    assert_eq!(text, Message::Text(Utf8Bytes::from("hello")));
+    assert_eq!(binary, Message::Binary(Bytes::from_static(b"raw")));
+    let Message::Close(Some(frame)) = close else {
+        panic!("expected a close frame");
+    };
+    assert_eq!(u16::from(frame.code), 1000);
+    assert_eq!(frame.reason.as_str(), "");
+}
+
 #[tokio::test]
 async fn dialer_answers_a_rejected_upgrade_with_the_status_after_one_attempt() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -296,11 +363,8 @@ async fn dialer_rejects_an_ssl_argument_on_a_ws_url_without_connecting() {
             message: "ssl argument is incompatible with a ws:// URI".to_owned(),
         }
     );
-    assert!(
-        timeout(Duration::from_millis(50), listener.accept())
-            .await
-            .is_err()
-    );
+    let refused = timeout(Duration::from_millis(50), listener.accept()).await;
+    let _elapsed = refused.expect_err("the dialer connected without a handshake");
 }
 
 #[tokio::test]
@@ -339,18 +403,7 @@ async fn size_limited_source_closes_a_frame_one_byte_over_the_cap_with_1009() {
     let frame = Message::Text(Utf8Bytes::from("x".repeat(AT_LIMIT_FRAME)));
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_frames(listener, vec![frame.clone(), frame]));
-    let url = format!("ws://{address}/realtime");
-    let ssl = RealtimeSsl::Disabled;
-    let headers = HeaderMap::new();
-    let dialer = web_dialer(no_proxy());
-    let backend = timeout(
-        TEST_TIMEOUT,
-        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, MAX_SIZE)),
-    )
-    .await
-    .expect("deadline")
-    .expect("opened");
-    let mut source = backend.source.expect("source");
+    let mut source = dialed_source(address, MAX_SIZE).await;
     // the client's own cap is one over the session's, so the frame the session rejects arrives intact first
     let delivered = timeout(TEST_TIMEOUT, source.recv(None))
         .await
@@ -364,22 +417,12 @@ async fn size_limited_source_closes_a_frame_one_byte_over_the_cap_with_1009() {
     let outcome = timeout(TEST_TIMEOUT, limited.recv(None))
         .await
         .expect("deadline");
-    let closed = match outcome {
-        Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_error) => panic!("the oversized frame failed instead of closing"),
-        Ok(_message) => panic!("the oversized frame arrived"),
-    };
-    assert_eq!(
-        closed.received,
-        Some(CloseFrame {
-            code: 1009,
-            reason: "message too big".to_owned(),
-        })
+    let closed = expect_closed(
+        outcome,
+        "the oversized frame failed instead of closing",
+        "the oversized frame arrived",
     );
-    assert_eq!(
-        closed.message,
-        "the realtime backend message exceeds the 8-byte limit"
-    );
+    assert_oversized_close(&closed, MAX_SIZE);
     assert_eq!(backend_close_from(&closed).code, 1009);
     tasks.abort_all();
 }
@@ -391,37 +434,16 @@ async fn dialer_closes_a_frame_over_its_own_cap_with_1009() {
     let frame = Message::Text(Utf8Bytes::from("x".repeat(OVER_LIMIT_FRAME)));
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_close_after(listener, Some(frame)));
-    let url = format!("ws://{address}/realtime");
-    let ssl = RealtimeSsl::Disabled;
-    let headers = HeaderMap::new();
-    let dialer = web_dialer(no_proxy());
-    let backend = timeout(
-        TEST_TIMEOUT,
-        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, MAX_SIZE)),
-    )
-    .await
-    .expect("deadline")
-    .expect("opened");
-    let mut source = backend.source.expect("source");
+    let mut source = dialed_source(address, MAX_SIZE).await;
     let outcome = timeout(TEST_TIMEOUT, source.recv(None))
         .await
         .expect("deadline");
-    let closed = match outcome {
-        Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_error) => panic!("the oversized frame failed instead of closing"),
-        Ok(_message) => panic!("the oversized frame arrived"),
-    };
-    assert_eq!(
-        closed.received,
-        Some(CloseFrame {
-            code: 1009,
-            reason: "message too big".to_owned(),
-        })
+    let closed = expect_closed(
+        outcome,
+        "the oversized frame failed instead of closing",
+        "the oversized frame arrived",
     );
-    assert_eq!(
-        closed.message,
-        "the realtime backend message exceeds the 8-byte limit"
-    );
+    assert_oversized_close(&closed, MAX_SIZE);
     let (code, reason) = tasks
         .join_next()
         .await
@@ -493,26 +515,15 @@ async fn dialer_reports_an_end_without_a_close_frame() {
     let address = listener.local_addr().expect("address");
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_end(listener));
-    let url = format!("ws://{address}/realtime");
-    let ssl = RealtimeSsl::Disabled;
-    let headers = HeaderMap::new();
-    let dialer = web_dialer(no_proxy());
-    let backend = timeout(
-        TEST_TIMEOUT,
-        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, 1024)),
-    )
-    .await
-    .expect("deadline")
-    .expect("opened");
-    let mut source = backend.source.expect("source");
+    let mut source = dialed_source(address, 1024).await;
     let outcome = timeout(TEST_TIMEOUT, source.recv(None))
         .await
         .expect("deadline");
-    let closed = match outcome {
-        Err(RelayReceiveError::Closed(closed)) => closed,
-        Err(_error) => panic!("the ended socket failed instead of closing"),
-        Ok(_message) => panic!("the ended socket sent a frame"),
-    };
+    let closed = expect_closed(
+        outcome,
+        "the ended socket failed instead of closing",
+        "the ended socket sent a frame",
+    );
     assert_eq!(closed.received, None);
     assert_eq!(closed.message, "no close frame received or sent");
     tasks.abort_all();
@@ -529,18 +540,7 @@ async fn source_applies_the_decode_flag_to_frames() {
     ];
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_frames(listener, frames));
-    let url = format!("ws://{address}/realtime");
-    let ssl = RealtimeSsl::Disabled;
-    let headers = HeaderMap::new();
-    let dialer = web_dialer(no_proxy());
-    let backend = timeout(
-        TEST_TIMEOUT,
-        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, 1024)),
-    )
-    .await
-    .expect("deadline")
-    .expect("opened");
-    let mut source = backend.source.expect("source");
+    let mut source = dialed_source(address, 1024).await;
     let decoded = timeout(TEST_TIMEOUT, source.recv(Some(true)))
         .await
         .expect("deadline")
@@ -596,15 +596,8 @@ async fn dialer_sends_the_backend_headers_in_order() {
         .expect("server")
         .expect("server task");
     let recorded = seen.lock().expect("recorded headers");
-    let custom: Vec<(&str, &str)> = recorded
-        .iter()
-        .filter(|(name, _value)| {
-            name.as_str() == "x-request-id" || name.as_str() == "authorization"
-        })
-        .map(|(name, value)| (name.as_str(), value.as_str()))
-        .collect();
     assert_eq!(
-        custom,
+        custom_headers(recorded.as_slice()),
         [("authorization", "Bearer two"), ("x-request-id", "one")]
     );
 }
@@ -615,17 +608,7 @@ async fn sender_writes_text_binary_and_a_normal_close() {
     let address = listener.local_addr().expect("address");
     let mut tasks = JoinSet::new();
     tasks.spawn(serve_sent_frames(listener));
-    let url = format!("ws://{address}/realtime");
-    let ssl = RealtimeSsl::Disabled;
-    let headers = HeaderMap::new();
-    let dialer = web_dialer(no_proxy());
-    let mut backend = timeout(
-        TEST_TIMEOUT,
-        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, 1024)),
-    )
-    .await
-    .expect("deadline")
-    .expect("opened");
+    let mut backend = dialed_backend(address, 1024).await;
     backend
         .sender
         .send(RealtimeMessage::Text("hello".to_owned()))
@@ -642,13 +625,7 @@ async fn sender_writes_text_binary_and_a_normal_close() {
         .expect("server")
         .expect("server")
         .expect("server task");
-    assert_eq!(text, Message::Text(Utf8Bytes::from("hello")));
-    assert_eq!(binary, Message::Binary(Bytes::from_static(b"raw")));
-    let Message::Close(Some(frame)) = close else {
-        panic!("expected a close frame");
-    };
-    assert_eq!(u16::from(frame.code), 1000);
-    assert_eq!(frame.reason.as_str(), "");
+    assert_sent_frames(text, binary, close);
 }
 
 #[tokio::test]
@@ -708,61 +685,34 @@ fn dialer_timeouts_match_websockets() {
 
 #[test]
 fn close_texts_match_websockets() {
-    assert_eq!(super::halves::close_text(1000, ""), "1000 (OK)");
-    assert_eq!(super::halves::close_text(1000, "bye"), "1000 (OK) bye");
-    assert_eq!(
-        super::halves::close_text(1005, ""),
-        "1005 (no status received [internal])"
-    );
-    assert_eq!(
-        super::halves::close_text(1009, "too big"),
-        "1009 (message too big) too big"
-    );
-    assert_eq!(
-        super::halves::close_text(1011, "keepalive ping timeout"),
-        "1011 (internal error) keepalive ping timeout"
-    );
-    assert_eq!(super::halves::close_text(3000, ""), "3000 (registered)");
-    assert_eq!(
-        super::halves::close_text(4000, "bye"),
-        "4000 (private use) bye"
-    );
-    assert_eq!(super::halves::close_text(1001, ""), "1001 (going away)");
-    assert_eq!(super::halves::close_text(1002, ""), "1002 (protocol error)");
-    assert_eq!(
-        super::halves::close_text(1003, ""),
-        "1003 (unsupported data)"
-    );
-    assert_eq!(
-        super::halves::close_text(1006, ""),
-        "1006 (abnormal closure [internal])"
-    );
-    assert_eq!(
-        super::halves::close_text(1007, ""),
-        "1007 (invalid frame payload data)"
-    );
-    assert_eq!(
-        super::halves::close_text(1008, ""),
-        "1008 (policy violation)"
-    );
-    assert_eq!(
-        super::halves::close_text(1010, ""),
-        "1010 (mandatory extension)"
-    );
-    assert_eq!(
-        super::halves::close_text(1012, ""),
-        "1012 (service restart)"
-    );
-    assert_eq!(
-        super::halves::close_text(1013, ""),
-        "1013 (try again later)"
-    );
-    assert_eq!(super::halves::close_text(1014, ""), "1014 (bad gateway)");
-    assert_eq!(
-        super::halves::close_text(1015, ""),
-        "1015 (TLS handshake failure [internal])"
-    );
-    assert_eq!(super::halves::close_text(3999, ""), "3999 (registered)");
-    assert_eq!(super::halves::close_text(4999, ""), "4999 (private use)");
-    assert_eq!(super::halves::close_text(7, ""), "7 (unknown)");
+    let cases = [
+        (1000, "", "1000 (OK)"),
+        (1000, "bye", "1000 (OK) bye"),
+        (1001, "", "1001 (going away)"),
+        (1002, "", "1002 (protocol error)"),
+        (1003, "", "1003 (unsupported data)"),
+        (1005, "", "1005 (no status received [internal])"),
+        (1006, "", "1006 (abnormal closure [internal])"),
+        (1007, "", "1007 (invalid frame payload data)"),
+        (1008, "", "1008 (policy violation)"),
+        (1009, "too big", "1009 (message too big) too big"),
+        (1010, "", "1010 (mandatory extension)"),
+        (
+            1011,
+            "keepalive ping timeout",
+            "1011 (internal error) keepalive ping timeout",
+        ),
+        (1012, "", "1012 (service restart)"),
+        (1013, "", "1013 (try again later)"),
+        (1014, "", "1014 (bad gateway)"),
+        (1015, "", "1015 (TLS handshake failure [internal])"),
+        (3000, "", "3000 (registered)"),
+        (3999, "", "3999 (registered)"),
+        (4000, "bye", "4000 (private use) bye"),
+        (4999, "", "4999 (private use)"),
+        (7, "", "7 (unknown)"),
+    ];
+    for (code, reason, expected) in cases {
+        assert_eq!(super::halves::close_text(code, reason), expected);
+    }
 }

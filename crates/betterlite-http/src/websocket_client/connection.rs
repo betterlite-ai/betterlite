@@ -109,29 +109,9 @@ pub struct WebSocketReceiver {
 impl WebSocketReceiver {
     pub async fn recv(&mut self) -> Result<WebSocketReceive, WebSocketClientError> {
         loop {
-            if let Some(options) = self.keepalive {
-                let now = Instant::now();
-                if self.pong_deadline.is_some_and(|deadline| now >= deadline) {
-                    drop(
-                        self.sender
-                            .close(KEEPALIVE_CLOSE_CODE, KEEPALIVE_TIMEOUT_REASON)
-                            .await,
-                    );
-                    return Err(WebSocketClientError::KeepaliveTimeout);
-                }
-                if self.pong_deadline.is_none() && self.next_ping.is_some_and(|next| now >= next) {
-                    self.sender
-                        .sink
-                        .lock()
-                        .await
-                        .send(Message::Ping(Bytes::new()))
-                        .await
-                        .map_err(WebSocketClientError::from_tungstenite)?;
-                    self.next_ping = Some(now + options.interval);
-                    self.pong_deadline = Some(now + options.timeout);
-                }
-            }
-            let message = match self.pong_deadline.or(self.next_ping) {
+            self.keepalive_step().await?;
+            let deadline = self.pong_deadline.or(self.next_ping);
+            let message = match deadline {
                 Some(deadline) => match timeout_at(deadline, self.stream.next()).await {
                     Ok(Some(message)) => message,
                     Ok(None) => return Ok(WebSocketReceive::End),
@@ -142,37 +122,75 @@ impl WebSocketReceiver {
                     None => return Ok(WebSocketReceive::End),
                 },
             };
-            match message {
-                Ok(Message::Text(text)) => {
-                    return Ok(WebSocketReceive::Text(text.as_str().to_owned()));
-                }
-                Ok(Message::Binary(bytes)) => return Ok(WebSocketReceive::Binary(bytes)),
-                Ok(Message::Close(frame)) => {
-                    let close = match frame {
-                        Some(frame) => PeerClose {
-                            code: u16::from(frame.code),
-                            reason: frame.reason.as_str().to_owned(),
-                        },
-                        None => PeerClose {
-                            code: EMPTY_CLOSE_CODE,
-                            reason: String::new(),
-                        },
-                    };
-                    return Ok(WebSocketReceive::Close(close));
-                }
-                Ok(Message::Pong(_)) => {
-                    if let Some(options) = self.keepalive {
-                        self.pong_deadline = None;
-                        self.next_ping = Some(Instant::now() + options.interval);
-                    }
-                }
-                // tungstenite answers a ping itself and a bare frame carries no message
-                Ok(Message::Ping(_) | Message::Frame(_)) => {}
-                Err(TungsteniteError::Protocol(ProtocolError::ResetWithoutClosingHandshake)) => {
-                    return Ok(WebSocketReceive::End);
-                }
-                Err(error) => return Err(WebSocketClientError::from_tungstenite(error)),
+            if let Some(receive) = self.receive(message)? {
+                return Ok(receive);
             }
         }
+    }
+
+    // websockets' keepalive task: a ping every interval, and a socket that misses a pong fails with 1011
+    async fn keepalive_step(&mut self) -> Result<(), WebSocketClientError> {
+        let Some(options) = self.keepalive else {
+            return Ok(());
+        };
+        let now = Instant::now();
+        if self.pong_deadline.is_some_and(|deadline| now >= deadline) {
+            drop(
+                self.sender
+                    .close(KEEPALIVE_CLOSE_CODE, KEEPALIVE_TIMEOUT_REASON)
+                    .await,
+            );
+            return Err(WebSocketClientError::KeepaliveTimeout);
+        }
+        if self.pong_deadline.is_none() && self.next_ping.is_some_and(|next| now >= next) {
+            let mut sink = self.sender.sink.lock().await;
+            sink.send(Message::Ping(Bytes::new()))
+                .await
+                .map_err(WebSocketClientError::from_tungstenite)?;
+            self.pong_deadline = Some(now + options.timeout);
+        }
+        Ok(())
+    }
+
+    // one frame from the peer, or nothing for a frame the keepalive task answers or one that carries no message
+    fn receive(
+        &mut self,
+        message: Result<Message, TungsteniteError>,
+    ) -> Result<Option<WebSocketReceive>, WebSocketClientError> {
+        match message {
+            Ok(Message::Text(text)) => Ok(Some(WebSocketReceive::Text(text.as_str().to_owned()))),
+            Ok(Message::Binary(bytes)) => Ok(Some(WebSocketReceive::Binary(bytes))),
+            Ok(Message::Close(frame)) => {
+                let close = match frame {
+                    Some(frame) => PeerClose {
+                        code: u16::from(frame.code),
+                        reason: frame.reason.as_str().to_owned(),
+                    },
+                    None => PeerClose {
+                        code: EMPTY_CLOSE_CODE,
+                        reason: String::new(),
+                    },
+                };
+                Ok(Some(WebSocketReceive::Close(close)))
+            }
+            Ok(Message::Pong(_)) => {
+                self.pong_received();
+                Ok(None)
+            }
+            // tungstenite answers a ping itself and a bare frame carries no message
+            Ok(Message::Ping(_) | Message::Frame(_)) => Ok(None),
+            Err(TungsteniteError::Protocol(ProtocolError::ResetWithoutClosingHandshake)) => {
+                Ok(Some(WebSocketReceive::End))
+            }
+            Err(error) => Err(WebSocketClientError::from_tungstenite(error)),
+        }
+    }
+
+    fn pong_received(&mut self) {
+        let Some(options) = self.keepalive else {
+            return;
+        };
+        self.pong_deadline = None;
+        self.next_ping = Some(Instant::now() + options.interval);
     }
 }

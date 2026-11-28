@@ -14,9 +14,9 @@ use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http::StatusCode;
 use http::header::{HeaderName, HeaderValue};
-use rustls::ServerConfig;
 use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls::{ClientConfig, ServerConfig};
 use secrecy::SecretString;
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -33,7 +33,7 @@ use tokio_tungstenite::{WebSocketStream, accept_async, accept_hdr_async};
 use url::Url;
 
 use super::connect;
-use super::connection::{PeerClose, WebSocketReceive};
+use super::connection::{PeerClose, WebSocketConnection, WebSocketReceive, WebSocketReceiver};
 use super::error::WebSocketClientError;
 use super::request::{Keepalive, WebSocketRequest};
 use crate::tls::websocket_client_config;
@@ -243,60 +243,78 @@ struct TlsServer {
     ca_pem: String,
 }
 
-#[tokio::test]
-async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let address = listener.local_addr().expect("address");
-    let mut tasks = JoinSet::new();
-    tasks.spawn(serve_plain(listener));
-    let url = Url::parse(&format!("ws://{address}/realtime?model=x")).expect("url");
-    let headers = [
-        (
-            HeaderName::from_static("x-request-id"),
-            HeaderValue::from_static("one"),
-        ),
-        (
-            HeaderName::from_static("authorization"),
-            HeaderValue::from_static("Bearer two"),
-        ),
-    ];
-    let mut connection = timeout(
-        TEST_TIMEOUT,
-        connect(WebSocketRequest {
-            url,
-            headers: &headers,
-            tls: None,
-            max_message_size: 1024,
-            open_timeout: TEST_TIMEOUT,
-            keepalive: None,
-            proxy: None,
-        }),
-    )
-    .await
-    .expect("deadline")
-    .expect("connect");
-    connection.sender.send_text("hello").await.expect("send");
+// a client opened over a plain ws URL with the given ordered headers
+async fn plain_connection(url: &str, headers: &[(HeaderName, HeaderValue)]) -> WebSocketConnection {
+    let request = WebSocketRequest {
+        url: Url::parse(url).expect("url"),
+        headers,
+        tls: None,
+        max_message_size: 1024,
+        open_timeout: TEST_TIMEOUT,
+        keepalive: None,
+        proxy: None,
+    };
+    timeout(TEST_TIMEOUT, connect(request))
+        .await
+        .expect("deadline")
+        .expect("connect")
+}
+
+async fn tls_connection(url: Url, tls: Arc<ClientConfig>) -> WebSocketConnection {
+    let request = WebSocketRequest {
+        url,
+        headers: &[],
+        tls: Some(tls),
+        max_message_size: 1024,
+        open_timeout: TEST_TIMEOUT,
+        keepalive: None,
+        proxy: None,
+    };
+    timeout(TEST_TIMEOUT, connect(request))
+        .await
+        .expect("deadline")
+        .expect("connect")
+}
+
+// the tunnel test's client, dialled through the CONNECT proxy in front of the backend
+async fn proxied_connection(proxy: &ProxyServer, url: &str) -> WebSocketConnection {
+    let request = WebSocketRequest {
+        url: Url::parse(url).expect("url"),
+        headers: &[],
+        tls: None,
+        max_message_size: 1024,
+        open_timeout: TEST_TIMEOUT,
+        keepalive: None,
+        proxy: Some(proxy),
+    };
+    timeout(TEST_TIMEOUT, connect(request))
+        .await
+        .expect("deadline")
+        .expect("connect")
+}
+
+async fn assert_text_then_binary(receiver: &mut WebSocketReceiver) {
     assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
+        receiver.recv().await.expect("recv"),
         WebSocketReceive::Text("world".to_owned())
     );
     assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
+        receiver.recv().await.expect("recv"),
         WebSocketReceive::Binary(Bytes::from_static(b"\x00\x01"))
     );
+}
+
+async fn assert_peer_close(receiver: &mut WebSocketReceiver, code: u16, reason: &str) {
     assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
+        receiver.recv().await.expect("recv"),
         WebSocketReceive::Close(PeerClose {
-            code: 4000,
-            reason: "bye".to_owned()
+            code,
+            reason: reason.to_owned(),
         })
     );
-    let (target, recorded) = tasks
-        .join_next()
-        .await
-        .expect("server")
-        .expect("server task");
-    assert_eq!(target, "/realtime?model=x");
+}
+
+fn assert_handshake_order(recorded: &[(String, String)], address: SocketAddr) {
     let names: Vec<&str> = recorded
         .iter()
         .map(|(name, _value)| name.as_str())
@@ -313,9 +331,42 @@ async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
             "authorization",
         ]
     );
-    assert_eq!(recorded[0].1, address.to_string());
-    assert_eq!(recorded[5].1, "one");
-    assert_eq!(recorded[6].1, "Bearer two");
+    let host = recorded.first().expect("host header");
+    assert_eq!(host.1, address.to_string());
+    let request_id = recorded.get(5).expect("x-request-id header");
+    assert_eq!(request_id.1, "one");
+    let authorization = recorded.get(6).expect("authorization header");
+    assert_eq!(authorization.1, "Bearer two");
+}
+
+#[tokio::test]
+async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_plain(listener));
+    let headers = [
+        (
+            HeaderName::from_static("x-request-id"),
+            HeaderValue::from_static("one"),
+        ),
+        (
+            HeaderName::from_static("authorization"),
+            HeaderValue::from_static("Bearer two"),
+        ),
+    ];
+    let url = format!("ws://{address}/realtime?model=x");
+    let mut connection = plain_connection(&url, &headers).await;
+    connection.sender.send_text("hello").await.expect("send");
+    assert_text_then_binary(&mut connection.receiver).await;
+    assert_peer_close(&mut connection.receiver, 4000, "bye").await;
+    let (target, recorded) = tasks
+        .join_next()
+        .await
+        .expect("server")
+        .expect("server task");
+    assert_eq!(target, "/realtime?model=x");
+    assert_handshake_order(&recorded, address);
 }
 
 #[tokio::test]
@@ -329,30 +380,9 @@ async fn websocket_client_tests_exchange_frames_over_tls() {
     let ca_path = ca_file.path().to_str().expect("ca path").to_owned();
     let config = websocket_client_config(&Verification::CaFile(ca_path)).expect("tls config");
     let url = Url::parse(&format!("wss://{address}/realtime")).expect("url");
-    let mut connection = timeout(
-        TEST_TIMEOUT,
-        connect(WebSocketRequest {
-            url,
-            headers: &[],
-            tls: Some(Arc::new(config)),
-            max_message_size: 1024,
-            open_timeout: TEST_TIMEOUT,
-            keepalive: None,
-            proxy: None,
-        }),
-    )
-    .await
-    .expect("deadline")
-    .expect("connect");
+    let mut connection = tls_connection(url, Arc::new(config)).await;
     connection.sender.send_text("hello").await.expect("send");
-    assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
-        WebSocketReceive::Text("world".to_owned())
-    );
-    assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
-        WebSocketReceive::Binary(Bytes::from_static(b"\x00\x01"))
-    );
+    assert_text_then_binary(&mut connection.receiver).await;
     assert_eq!(
         tasks
             .join_next()
@@ -550,38 +580,11 @@ async fn websocket_client_tests_tunnel_through_a_connect_proxy() {
         port: proxy_address.port(),
         credentials: None,
     };
-    let url = Url::parse(&format!("ws://{backend_address}/realtime")).expect("url");
-    let mut connection = timeout(
-        TEST_TIMEOUT,
-        connect(WebSocketRequest {
-            url,
-            headers: &[],
-            tls: None,
-            max_message_size: 1024,
-            open_timeout: TEST_TIMEOUT,
-            keepalive: None,
-            proxy: Some(&proxy),
-        }),
-    )
-    .await
-    .expect("deadline")
-    .expect("connect");
+    let url = format!("ws://{backend_address}/realtime");
+    let mut connection = proxied_connection(&proxy, &url).await;
     connection.sender.send_text("hello").await.expect("send");
-    assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
-        WebSocketReceive::Text("world".to_owned())
-    );
-    assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
-        WebSocketReceive::Binary(Bytes::from_static(b"\x00\x01"))
-    );
-    assert_eq!(
-        connection.receiver.recv().await.expect("recv"),
-        WebSocketReceive::Close(PeerClose {
-            code: 4000,
-            reason: "bye".to_owned()
-        })
-    );
+    assert_text_then_binary(&mut connection.receiver).await;
+    assert_peer_close(&mut connection.receiver, 4000, "bye").await;
     drop(connection);
     let head = proxies
         .join_next()

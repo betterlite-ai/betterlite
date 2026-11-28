@@ -80,61 +80,65 @@ impl OpenFailure {
 // every WebSocketClientError a connect answers, as the exception websockets raises and the DialError LiteLLM's retry reads
 pub(super) fn connect_failure(error: WebSocketClientError) -> OpenFailure {
     match error {
-        WebSocketClientError::Timeout => OpenFailure::new(
-            Class::TimeoutError,
-            DialError::Timeout {
-                message: "timed out during opening handshake".to_owned(),
-            },
-        ),
-        WebSocketClientError::Io(source) => OpenFailure::new(
-            Class::OSError,
-            DialError::Os {
-                message: source.to_string(),
-            },
-        ),
-        WebSocketClientError::Tls => OpenFailure::new(
-            Class::OSError,
-            DialError::Os {
-                message: "the websocket TLS configuration is not valid".to_owned(),
-            },
-        ),
-        WebSocketClientError::Status { status } => OpenFailure::with_status(
-            Class::InvalidStatus,
-            status,
-            DialError::InvalidStatus {
-                status_code: status,
-                message: format!("server rejected WebSocket connection: HTTP {status}"),
-            },
-        ),
-        WebSocketClientError::ProxyStatus { status } => OpenFailure::new(
+        WebSocketClientError::Timeout => {
+            timeout_failure("timed out during opening handshake".to_owned())
+        }
+        WebSocketClientError::Io(source) => os_failure(source.to_string()),
+        WebSocketClientError::Tls => {
+            os_failure("the websocket TLS configuration is not valid".to_owned())
+        }
+        WebSocketClientError::Status { status } => status_failure(status),
+        WebSocketClientError::ProxyStatus { status } => web_socket_failure(
             Class::InvalidProxyStatus,
-            DialError::WebSocket {
-                message: format!("proxy rejected connection: HTTP {status}"),
-            },
+            format!("proxy rejected connection: HTTP {status}"),
         ),
-        WebSocketClientError::Capacity { .. } => OpenFailure::new(
+        WebSocketClientError::Capacity { .. } => web_socket_failure(
             Class::InvalidUpgrade,
-            DialError::WebSocket {
-                message: "the websocket upgrade answered with an oversized message".to_owned(),
-            },
+            "the websocket upgrade answered with an oversized message".to_owned(),
         ),
-        WebSocketClientError::Url => OpenFailure::new(
+        WebSocketClientError::Url => web_socket_failure(
             Class::InvalidUri,
-            DialError::WebSocket {
-                message: "the websocket URL is not usable".to_owned(),
-            },
+            "the websocket URL is not usable".to_owned(),
         ),
-        WebSocketClientError::KeepaliveTimeout => OpenFailure::new(
-            Class::TimeoutError,
-            DialError::Timeout {
-                message: "the websocket keepalive timed out".to_owned(),
-            },
-        ),
-        WebSocketClientError::Protocol => OpenFailure::new(
+        WebSocketClientError::KeepaliveTimeout => {
+            timeout_failure("the websocket keepalive timed out".to_owned())
+        }
+        WebSocketClientError::Protocol => web_socket_failure(
             Class::InvalidUpgrade,
-            DialError::WebSocket {
-                message: "the websocket protocol failed".to_owned(),
-            },
+            "the websocket protocol failed".to_owned(),
         ),
     }
+}
+
+fn timeout_failure(message: String) -> OpenFailure {
+    OpenFailure {
+        class: Class::TimeoutError,
+        status: None,
+        error: DialError::Timeout { message },
+    }
+}
+
+fn os_failure(message: String) -> OpenFailure {
+    OpenFailure {
+        class: Class::OSError,
+        status: None,
+        error: DialError::Os { message },
+    }
+}
+
+fn web_socket_failure(class: Class, message: String) -> OpenFailure {
+    OpenFailure {
+        class,
+        status: None,
+        error: DialError::WebSocket { message },
+    }
+}
+
+fn status_failure(status: u16) -> OpenFailure {
+    let message = format!("server rejected WebSocket connection: HTTP {status}");
+    let error = DialError::InvalidStatus {
+        status_code: status,
+        message,
+    };
+    OpenFailure::with_status(Class::InvalidStatus, status, error)
 }

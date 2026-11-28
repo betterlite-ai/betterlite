@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use betterlite_http::websocket_client::connection::{
-    WebSocketReceive, WebSocketReceiver, WebSocketSender,
+    PeerClose, WebSocketReceive, WebSocketReceiver, WebSocketSender,
 };
 use betterlite_http::websocket_client::error::WebSocketClientError;
 use betterlite_openai::realtime::message_cap::{
@@ -62,69 +62,99 @@ pub(super) struct DialedSource {
 impl RealtimeBackendSource for DialedSource {
     async fn recv(&mut self, decode: Option<bool>) -> Result<RealtimeMessage, RelayReceiveError> {
         match self.receiver.recv().await {
-            Ok(WebSocketReceive::Text(text)) => Ok(match decode {
-                Some(false) => RealtimeMessage::Binary(text.into_bytes()),
-                None | Some(true) => RealtimeMessage::Text(text),
-            }),
-            Ok(WebSocketReceive::Binary(bytes)) => match decode {
-                Some(true) => match String::from_utf8(bytes.to_vec()) {
-                    Ok(text) => Ok(RealtimeMessage::Text(text)),
-                    Err(_error) => Err(RelayReceiveError::Failed(WebSocketError {
-                        message: "the realtime backend sent a binary frame that is not UTF-8"
-                            .to_owned(),
-                    })),
-                },
-                None | Some(false) => Ok(RealtimeMessage::Binary(bytes.to_vec())),
-            },
-            Ok(WebSocketReceive::Close(close)) => {
-                Err(RelayReceiveError::Closed(ConnectionClosed {
-                    received: Some(CloseFrame {
-                        code: close.code,
-                        reason: close.reason.clone(),
-                    }),
-                    message: format!(
-                        "received {}; no close frame sent",
-                        close_text(close.code, &close.reason)
-                    ),
-                }))
-            }
-            Ok(WebSocketReceive::End) => Err(RelayReceiveError::Closed(ConnectionClosed {
-                received: None,
-                message: NO_CLOSE.to_owned(),
-            })),
+            Ok(WebSocketReceive::Text(text)) => Ok(decode_text(text, decode)),
+            Ok(WebSocketReceive::Binary(bytes)) => decode_binary(bytes.to_vec(), decode),
+            Ok(WebSocketReceive::Close(close)) => Err(received_close(close)),
+            Ok(WebSocketReceive::End) => Err(ended_without_close()),
             Err(WebSocketClientError::Capacity { size, max_size }) => {
-                let Some(close) = oversized_message_close(size, self.max_size) else {
-                    return Err(RelayReceiveError::Failed(websocket_error(
-                        WebSocketClientError::Capacity { size, max_size },
-                    )));
-                };
-                let closed = RelayReceiveError::Closed(ConnectionClosed {
-                    received: Some(CloseFrame {
-                        code: close.code,
-                        reason: close.reason,
-                    }),
-                    // the value SizeLimitedSource builds once a frame passes the client's own cap
-                    message: format!(
-                        "the realtime backend message exceeds the {}-byte limit",
-                        self.max_size
-                    ),
-                });
-                drop(
-                    self.sender
-                        .close(MESSAGE_TOO_BIG_CODE, MESSAGE_TOO_BIG_REASON)
-                        .await,
-                );
-                Err(closed)
+                self.close_oversized(size, max_size).await
             }
-            Err(WebSocketClientError::KeepaliveTimeout) => {
-                Err(RelayReceiveError::Closed(ConnectionClosed {
-                    received: None,
-                    message: KEEPALIVE_CLOSE.to_owned(),
-                }))
-            }
+            Err(WebSocketClientError::KeepaliveTimeout) => Err(keepalive_closed()),
             Err(error) => Err(RelayReceiveError::Failed(websocket_error(error))),
         }
     }
+}
+
+impl DialedSource {
+    async fn close_oversized(
+        &mut self,
+        size: usize,
+        max_size: usize,
+    ) -> Result<RealtimeMessage, RelayReceiveError> {
+        let Some(close) = oversized_message_close(size, self.max_size) else {
+            let error = WebSocketClientError::Capacity { size, max_size };
+            return Err(RelayReceiveError::Failed(websocket_error(error)));
+        };
+        // the value SizeLimitedSource builds once a frame passes the client's own cap
+        let message = format!(
+            "the realtime backend message exceeds the {}-byte limit",
+            self.max_size
+        );
+        let received = Some(CloseFrame {
+            code: close.code,
+            reason: close.reason,
+        });
+        drop(
+            self.sender
+                .close(MESSAGE_TOO_BIG_CODE, MESSAGE_TOO_BIG_REASON)
+                .await,
+        );
+        Err(RelayReceiveError::Closed(ConnectionClosed {
+            received,
+            message,
+        }))
+    }
+}
+
+// websockets' recv(decode=...) turns a text frame into bytes and a binary frame into text when asked
+fn decode_text(text: String, decode: Option<bool>) -> RealtimeMessage {
+    match decode {
+        Some(false) => RealtimeMessage::Binary(text.into_bytes()),
+        None | Some(true) => RealtimeMessage::Text(text),
+    }
+}
+
+fn decode_binary(
+    bytes: Vec<u8>,
+    decode: Option<bool>,
+) -> Result<RealtimeMessage, RelayReceiveError> {
+    match decode {
+        Some(true) => match String::from_utf8(bytes) {
+            Ok(text) => Ok(RealtimeMessage::Text(text)),
+            Err(_error) => Err(RelayReceiveError::Failed(WebSocketError {
+                message: "the realtime backend sent a binary frame that is not UTF-8".to_owned(),
+            })),
+        },
+        None | Some(false) => Ok(RealtimeMessage::Binary(bytes)),
+    }
+}
+
+fn received_close(close: PeerClose) -> RelayReceiveError {
+    let message = format!(
+        "received {}; no close frame sent",
+        close_text(close.code, &close.reason)
+    );
+    let received = Some(CloseFrame {
+        code: close.code,
+        reason: close.reason,
+    });
+    RelayReceiveError::Closed(ConnectionClosed { received, message })
+}
+
+fn ended_without_close() -> RelayReceiveError {
+    let message = NO_CLOSE.to_owned();
+    RelayReceiveError::Closed(ConnectionClosed {
+        received: None,
+        message,
+    })
+}
+
+fn keepalive_closed() -> RelayReceiveError {
+    let message = KEEPALIVE_CLOSE.to_owned();
+    RelayReceiveError::Closed(ConnectionClosed {
+        received: None,
+        message,
+    })
 }
 
 fn websocket_error(error: WebSocketClientError) -> WebSocketError {

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_config::proxy::{ProxyPolicy, ProxyRoute};
+use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
 use betterlite_config::tls::Verification;
 use betterlite_http::tls::websocket_client_config;
 use betterlite_http::websocket_client::connect;
@@ -104,24 +104,8 @@ impl RealtimeProbeDialer for WebSocketDialer {
 impl WebSocketDialer {
     // websockets.connect's checks and arguments, one attempt, with the proxy websockets' get_proxy would pick
     async fn open(&self, request: OpenRequest<'_>) -> Result<WebSocketConnection, OpenFailure> {
-        let url = Url::parse(request.url).map_err(|error| {
-            OpenFailure::new(
-                Class::InvalidUri,
-                DialError::WebSocket {
-                    message: error.to_string(),
-                },
-            )
-        })?;
-        let scheme = url.scheme();
-        if scheme != "ws" && scheme != "wss" {
-            return Err(OpenFailure::new(
-                Class::InvalidUri,
-                DialError::WebSocket {
-                    message: format!("scheme isn't ws or wss: '{scheme}'"),
-                },
-            ));
-        }
-        let plain = scheme == "ws";
+        let url = websocket_url(request.url)?;
+        let plain = url.scheme() == "ws";
         let tls = match request.ssl {
             RealtimeSsl::Shared(_) | RealtimeSsl::Insecure if plain => {
                 return Err(OpenFailure::new(
@@ -139,34 +123,7 @@ impl WebSocketDialer {
             )),
             RealtimeSsl::Disabled => None,
         };
-        let proxy = match self.proxy.websocket_route(&url) {
-            None => None,
-            Some(ProxyRoute::Forward(server)) => Some(server.as_ref()),
-            Some(ProxyRoute::Unsupported { scheme }) if scheme.starts_with("socks") => {
-                return Err(OpenFailure::new(
-                    Class::ImportError,
-                    DialError::Other {
-                        message: "python-socks is required to use a SOCKS proxy".to_owned(),
-                    },
-                ));
-            }
-            Some(ProxyRoute::Unsupported { scheme }) => {
-                return Err(OpenFailure::new(
-                    Class::InvalidProxy,
-                    DialError::Other {
-                        message: format!("websockets can't connect through a {scheme} proxy"),
-                    },
-                ));
-            }
-            Some(ProxyRoute::Invalid { name }) => {
-                return Err(OpenFailure::new(
-                    Class::InvalidProxy,
-                    DialError::WebSocket {
-                        message: format!("the {name} proxy isn't a valid proxy"),
-                    },
-                ));
-            }
-        };
+        let proxy = self.proxy_target(&url)?;
         // one over the session's cap, so SizeLimitedSource still decides the exact boundary
         let limit = request.max_size.saturating_add(1);
         connect(WebSocketRequest {
@@ -176,9 +133,59 @@ impl WebSocketDialer {
             max_message_size: limit,
             open_timeout: request.open_timeout,
             keepalive: request.keepalive,
-            proxy,
+            proxy: proxy.as_deref(),
         })
         .await
         .map_err(connect_failure)
     }
+
+    // websockets' get_proxy, narrowed to the routes this client can dial and the classes a blocked one raises
+    fn proxy_target(&self, url: &Url) -> Result<Option<Arc<ProxyServer>>, OpenFailure> {
+        match self.proxy.websocket_route(url) {
+            None => Ok(None),
+            Some(ProxyRoute::Forward(server)) => Ok(Some(server)),
+            Some(ProxyRoute::Unsupported { scheme }) if scheme.starts_with("socks") => {
+                Err(OpenFailure::new(
+                    Class::ImportError,
+                    DialError::Other {
+                        message: "python-socks is required to use a SOCKS proxy".to_owned(),
+                    },
+                ))
+            }
+            Some(ProxyRoute::Unsupported { scheme }) => Err(OpenFailure::new(
+                Class::InvalidProxy,
+                DialError::Other {
+                    message: format!("websockets can't connect through a {scheme} proxy"),
+                },
+            )),
+            Some(ProxyRoute::Invalid { name }) => Err(OpenFailure::new(
+                Class::InvalidProxy,
+                DialError::WebSocket {
+                    message: format!("the {name} proxy isn't a valid proxy"),
+                },
+            )),
+        }
+    }
+}
+
+// websockets.connect's URI check: only a ws or wss URL reaches a socket
+fn websocket_url(raw: &str) -> Result<Url, OpenFailure> {
+    let url = Url::parse(raw).map_err(|error| {
+        OpenFailure::new(
+            Class::InvalidUri,
+            DialError::WebSocket {
+                message: error.to_string(),
+            },
+        )
+    })?;
+    let scheme = url.scheme();
+    if scheme != "ws" && scheme != "wss" {
+        return Err(OpenFailure::new(
+            Class::InvalidUri,
+            DialError::WebSocket {
+                message: format!("scheme isn't ws or wss: '{scheme}'"),
+            },
+        ));
+    }
+    Ok(url)
 }
