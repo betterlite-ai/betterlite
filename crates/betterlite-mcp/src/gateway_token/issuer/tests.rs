@@ -203,9 +203,9 @@ fn session_pair(reply: TokenReply) -> SessionPairBody {
             assert_eq!(status, 200);
             match *body {
                 TokenBody::SessionPair(pair) => pair,
-                other @ TokenBody::ProxyCredential(_)
-                | other @ TokenBody::Revoked(_)
-                | other @ TokenBody::Introspection(_) => {
+                other @ (TokenBody::ProxyCredential(_)
+                | TokenBody::Revoked(_)
+                | TokenBody::Introspection(_)) => {
                     panic!("expected a session pair, got {other:?}")
                 }
             }
@@ -220,9 +220,9 @@ fn proxy_body(reply: TokenReply) -> ProxyCredentialBody {
             assert_eq!(status, 200);
             match *body {
                 TokenBody::ProxyCredential(credential) => credential,
-                other @ TokenBody::SessionPair(_)
-                | other @ TokenBody::Revoked(_)
-                | other @ TokenBody::Introspection(_) => {
+                other @ (TokenBody::SessionPair(_)
+                | TokenBody::Revoked(_)
+                | TokenBody::Introspection(_)) => {
                     panic!("expected a proxy credential, got {other:?}")
                 }
             }

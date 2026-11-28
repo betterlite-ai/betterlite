@@ -95,9 +95,9 @@ fn revoked_json(reply: TokenReply) -> String {
             assert_eq!(status, 200);
             match *body {
                 TokenBody::Revoked(revoked) => serde_json::to_string(&revoked).unwrap(),
-                other @ TokenBody::SessionPair(_)
-                | other @ TokenBody::ProxyCredential(_)
-                | other @ TokenBody::Introspection(_) => {
+                other @ (TokenBody::SessionPair(_)
+                | TokenBody::ProxyCredential(_)
+                | TokenBody::Introspection(_)) => {
                     panic!("expected a revoked body, got {other:?}")
                 }
             }

@@ -104,9 +104,9 @@ fn introspected_json(reply: TokenReply) -> String {
                 TokenBody::Introspection(introspection) => {
                     serde_json::to_string(&introspection).unwrap()
                 }
-                other @ TokenBody::SessionPair(_)
-                | other @ TokenBody::ProxyCredential(_)
-                | other @ TokenBody::Revoked(_) => {
+                other @ (TokenBody::SessionPair(_)
+                | TokenBody::ProxyCredential(_)
+                | TokenBody::Revoked(_)) => {
                     panic!("expected an introspection body, got {other:?}")
                 }
             }
