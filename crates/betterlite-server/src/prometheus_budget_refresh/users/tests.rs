@@ -34,10 +34,7 @@ async fn a_missing_database_logs_and_skips_the_users() {
     );
 }
 
-#[tokio::test]
-async fn every_page_of_users_reaches_the_gauges() {
-    let rig = budget_rig(&["user"]);
-    let settings = PrometheusLabelSettings::with_defaults();
+fn source_with_two_pages() -> FakeSource {
     let source = FakeSource::new();
     source.push_users(Ok(Page {
         rows: vec![UserBudgetGaugeInput {
@@ -61,6 +58,14 @@ async fn every_page_of_users_reaches_the_gauges() {
         }],
         total_count: Some(51),
     }));
+    source
+}
+
+#[tokio::test]
+async fn every_page_of_users_reaches_the_gauges() {
+    let rig = budget_rig(&["user"]);
+    let settings = PrometheusLabelSettings::with_defaults();
+    let source = source_with_two_pages();
 
     refresh_users(
         Some(&source),
