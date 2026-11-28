@@ -11,15 +11,18 @@ use betterlite_core::api::passthrough_call::aws::{AwsFlavor, AwsPassthrough as _
 use betterlite_core::api::passthrough_call::config::ConfigError;
 use betterlite_models::resolution::ResolutionRequest;
 use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{BedrockSdkCall, NoCredentialChain};
+use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
+use crate::passthrough::url::RuntimeUrl;
 
 const SIGNING_BASE: &str = "https://bedrock-runtime.eu-west-1.amazonaws.com/model/m/converse";
 const MODEL_ARN: &str = "arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/abc";
@@ -347,6 +350,22 @@ fn mantle_url_takes_the_region_from_the_base_host_or_the_environment() {
         url_of(&config, AwsFlavor::Mantle, &request),
         "http://127.0.0.1:9/chat/completions"
     );
+}
+
+// the runtime URL the Mantle arm builds keeps BasePassthroughConfig's streaming check over the endpoint text
+#[test]
+fn runtime_url_reports_streaming_through_the_endpoint() {
+    let runtime = RuntimeUrl {
+        endpoint: runtime_endpoint(RuntimeEndpointInput {
+            api_base: None,
+            configured_endpoint: None,
+            environment_endpoint: None,
+            region: "us-east-1",
+            endpoint_type: BedrockEndpointType::Runtime,
+        }),
+    };
+    assert!(runtime.is_streaming_request("model/x/converse-stream", &Object::new()));
+    assert!(!runtime.is_streaming_request("model/x/converse", &Object::new()));
 }
 
 #[test]

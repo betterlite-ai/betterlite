@@ -272,6 +272,28 @@ async fn call_vllm_never_asks_the_port() {
     assert!(fake.calls().is_empty());
 }
 
+// only the missing Mantle endpoint asks the port; another get_llm_provider failure keeps its resolution error
+#[tokio::test]
+async fn error_another_resolution_failure_never_asks_the_port() {
+    let fake = fake("http://127.0.0.1:1");
+    let mut args = vllm_args("http://127.0.0.1:1");
+    args.model = String::from("azure_ai/gpt-4o");
+    args.custom_llm_provider = None;
+    args.api_base = Some(String::from("https://[abc]/v1"));
+    let error = allm_passthrough_route(
+        args,
+        &mut logging_state(),
+        &proxy_client(1024),
+        &empty_environment(),
+        &port(&fake),
+    )
+    .await
+    .err()
+    .expect("the api_base is not a URL");
+    assert!(matches!(error, PassthroughCallError::Resolution(_)));
+    assert!(fake.calls().is_empty());
+}
+
 #[tokio::test]
 async fn error_a_failing_mantle_endpoint_is_reported_as_its_own_variant() {
     let fake = Arc::new(FakeAws {
