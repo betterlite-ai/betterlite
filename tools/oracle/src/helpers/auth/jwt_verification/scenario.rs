@@ -120,7 +120,6 @@ struct Fixture<'scenario> {
     issuer: Option<&'scenario str>,
     levels: &'scenario Mutex<Vec<String>>,
 }
-
 async fn step_answer(fixture: &Fixture<'_>, step: &Step) -> StepAnswer {
     let warnings_from = lock(fixture.levels).len();
     let requests_from = lock(&fixture.http.requests).len();
@@ -143,14 +142,12 @@ async fn step_answer(fixture: &Fixture<'_>, step: &Step) -> StepAnswer {
         writes: tail(&fixture.cache.writes, writes_from),
     }
 }
-
 async fn auth_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) {
     match fixture.verifier.auth_jwt(token, fixture.source).await {
         Ok(payload) => (json_value(payload.json), None),
         Err(error) => (Json::Null, Some(auth_failure(&error))),
     }
 }
-
 fn decode_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) {
     let Some(key) = PublicKey::from_resolved(&fixture.source.key) else {
         return (
@@ -172,7 +169,6 @@ fn decode_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) 
         Err(error) => (Json::Null, Some(auth_failure(&error))),
     }
 }
-
 // TypedValue carries serde_json's value, and the answer reports this crate's JSON type.
 fn json_value(value: Value) -> Json {
     match value {
@@ -189,14 +185,12 @@ fn json_value(value: Value) -> Json {
         ),
     }
 }
-
 async fn userinfo_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) {
     fixture.verifier.get_oidc_userinfo(token).await.map_or_else(
         |_| (Json::Null, Some(Failure::default())),
         |fields| (Json::Object(fields), None),
     )
 }
-
 fn auth_failure(error: &VerificationError) -> Failure {
     let exception = into_proxy_exception(error);
     Failure {
@@ -206,11 +200,9 @@ fn auth_failure(error: &VerificationError) -> Failure {
         code: Some(exception.code),
     }
 }
-
 struct RecordLevels {
     levels: Arc<Mutex<Vec<String>>>,
 }
-
 // Python's logger drops debug and info below its level, so only the WARN events the proxy logger names are kept.
 impl<S: tracing::Subscriber> Layer<S> for RecordLevels {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {

@@ -22,7 +22,6 @@ pub(super) struct Scenario {
     pub(super) key: Json,
     pub(super) steps: Vec<Step>,
 }
-
 // The LiteLLM_JWTAuth.issuers entry; the fields this operation never reads stay at their defaults.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,7 +38,6 @@ pub(super) struct IssuerEntry {
     pub(super) org_id_jwt_field: Option<String>,
     pub(super) end_user_id_jwt_field: Option<String>,
 }
-
 impl IssuerEntry {
     pub(super) fn config(&self) -> IssuerConfig {
         IssuerConfig {
@@ -58,7 +56,6 @@ impl IssuerEntry {
         }
     }
 }
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Step {
@@ -67,7 +64,6 @@ pub(super) struct Step {
     #[serde(default)]
     pub(super) http: Vec<Reply>,
 }
-
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Op {
@@ -75,7 +71,6 @@ pub(super) enum Op {
     Decode,
     Userinfo,
 }
-
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Reply {
@@ -85,7 +80,6 @@ pub(super) struct Reply {
     #[serde(default)]
     pub(super) body: String,
 }
-
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum ReplyKind {

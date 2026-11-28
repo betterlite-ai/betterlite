@@ -65,27 +65,22 @@ impl KeyCache for Cache {
 pub(super) struct FixedClock {
     pub(super) now: f64,
 }
-
 #[async_trait]
 impl Clock for FixedClock {
     fn now(&self) -> f64 {
         self.now
     }
-
     async fn sleep(&self, _delay: Duration) {}
 }
-
 // The identity provider's one published key: the same answer for the global and the issuer lookup.
 pub(super) struct Source {
     pub(super) key: Json,
 }
-
 #[async_trait]
 impl PublicKeySource for Source {
     async fn resolve_public_key(&self, _kid: Option<&str>) -> Result<Json, KeyError> {
         Ok(self.key.clone())
     }
-
     async fn resolve_keys_for_url(
         &self,
         _jwks_url: &str,
@@ -94,14 +89,12 @@ impl PublicKeySource for Source {
         Ok(self.key.clone())
     }
 }
-
 // One GET per userinfo call, answered from the step's script and never retried.
 #[derive(Default)]
 pub(super) struct ScriptedUserinfo {
     pub(super) replies: Mutex<VecDeque<Reply>>,
     pub(super) requests: Mutex<Vec<Request>>,
 }
-
 #[async_trait]
 impl UserinfoHttp for ScriptedUserinfo {
     async fn get(
@@ -132,6 +125,5 @@ impl UserinfoHttp for ScriptedUserinfo {
             | None => Err(FetchError::Transport(HttpError::Timeout)),
         }
     }
-
     fn close(&self) {}
 }

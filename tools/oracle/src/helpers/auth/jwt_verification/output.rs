@@ -13,7 +13,6 @@ pub(super) struct Request {
     pub(super) authorization: String,
     pub(super) accept: String,
 }
-
 // The proxy exception's answer fields, or a failure the proxy hands to the caller unwrapped.
 #[derive(Default, Serialize)]
 pub(super) struct Failure {
@@ -23,7 +22,6 @@ pub(super) struct Failure {
     pub(super) param: Option<String>,
     pub(super) code: Option<String>,
 }
-
 #[derive(Serialize)]
 pub(super) struct StepAnswer {
     pub(super) value: Json,
@@ -32,12 +30,10 @@ pub(super) struct StepAnswer {
     pub(super) requests: Vec<Request>,
     pub(super) writes: Vec<Write>,
 }
-
 #[derive(Serialize)]
 pub(super) struct ScenarioAnswer {
     pub(super) steps: Vec<StepAnswer>,
 }
-
 #[derive(Serialize)]
 pub(super) struct Answer {
     pub(super) scenarios: Vec<ScenarioAnswer>,
