@@ -220,7 +220,7 @@ fn insert_counts(fields: &mut IndexMap<String, Json>, counts: &[(&str, Option<i6
     }
 }
 
-fn extra_json(extra: &UsageNumber) -> Json {
+pub(super) fn extra_json(extra: &UsageNumber) -> Json {
     match extra {
         UsageNumber::Integer(count) => Json::Number(Number::from(*count)),
         UsageNumber::Boolean(flag) => Json::Bool(*flag),

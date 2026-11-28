@@ -5,6 +5,7 @@ use std::sync::Arc;
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
+use betterlite_models::usage_sum::UsageNumber;
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
 use betterlite_vertex::vertex_discovery_search::error::VertexDiscoverySearchError;
 use betterlite_vertex::vertex_relay_metadata::types::CustomLlmProvider;
@@ -13,6 +14,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::raw_predict::{completion_response, dummy_messages};
+use super::response_body::extra_json;
 use super::{VertexBranch, VertexPassthroughError, select_vertex_branch};
 use crate::pass_through_logging::anthropic_batch::unified_object_id;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
@@ -386,6 +388,37 @@ fn generate_keeps_the_caller_kwargs() {
         Some(&json(r#"{"metadata":{}}"#))
     );
     assert_eq!(as_text(kwarg(&outcome, "model")), "gemini-2.0-flash");
+}
+
+#[test]
+fn generate_drops_the_unset_message_fields() {
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(25, 3)));
+    let mut fixture = fixture(GENERATE_ROUTE, GENERATE_BODY);
+    let outcome = passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect("the generateContent reply is logged");
+    let result = result_json(&outcome);
+    let choice = &items(field(&result, "choices"))[0];
+    let Json::Object(message) = field(choice, "message") else {
+        panic!("the message is an object");
+    };
+    for name in [
+        "reasoning_content",
+        "audio",
+        "annotations",
+        "provider_specific_fields",
+    ] {
+        assert!(
+            message.get(name).is_none(),
+            "{name} stays out of the message"
+        );
+    }
+}
+
+#[test]
+fn generate_usage_renders_numeric_extras_in_their_json_type() {
+    assert_eq!(extra_json(&UsageNumber::Integer(7)), json("7"));
+    assert_eq!(extra_json(&UsageNumber::Boolean(true)), json("true"));
 }
 
 #[test]
