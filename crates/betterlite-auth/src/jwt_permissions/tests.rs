@@ -380,6 +380,23 @@ fn admin_not_scoped() {
     assert!(outcome.is_none());
 }
 
+// is_admin is literal membership: the scope among others still counts, and a token with no scopes never does
+#[test]
+fn admin_scope_membership() {
+    let mixed = check_admin_access(
+        &Settings::default(),
+        &values(&["chat", "litellm_proxy_admin"]),
+        "/user/info",
+        &identity(),
+        None,
+    )
+    .unwrap();
+    assert!(mixed.is_some());
+    let unscoped =
+        check_admin_access(&Settings::default(), &[], "/user/info", &identity(), None).unwrap();
+    assert!(unscoped.is_none());
+}
+
 #[test]
 fn admin_result() {
     let claims: TypedValue = serde_json::from_str(r#"{"sub": "user-1", "custom": true}"#).unwrap();
