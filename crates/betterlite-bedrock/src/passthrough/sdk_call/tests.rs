@@ -400,8 +400,8 @@ fn bedrock_bearer_token_signs_with_the_environment_token() {
 #[test]
 fn an_empty_bearer_token_falls_through_to_sigv4() {
     let source = FakeSource {
+        calls: Mutex::new(Vec::new()),
         access_key: String::from("AKIAEMPTY"),
-        ..FakeSource::default()
     };
     let config = build_with(source, &[("AWS_BEARER_TOKEN_BEDROCK", "")]);
     let empty = Object::new();
@@ -460,8 +460,8 @@ fn mantle_bearer_chain_prefers_the_params_then_the_environment() {
 #[test]
 fn sigv4_signs_with_the_source_at_the_signing_region() {
     let source = FakeSource {
+        calls: Mutex::new(Vec::new()),
         access_key: String::from("AKIAFIXTURE"),
-        ..FakeSource::default()
     };
     let config = build_with(source, &[("AWS_REGION_NAME", "us-east-1")]);
     let params = object(&[
@@ -488,8 +488,8 @@ fn sigv4_signs_with_the_source_at_the_signing_region() {
 #[test]
 fn mantle_sigv4_signs_at_the_mantle_region() {
     let source = FakeSource {
+        calls: Mutex::new(Vec::new()),
         access_key: String::from("AKIAMANTLE"),
-        ..FakeSource::default()
     };
     let config = build_with(source, &[("BEDROCK_MANTLE_REGION", "eu-central-1")]);
     let params = object(&[("aws_secret_access_key", "fixture-secret")]);
