@@ -584,25 +584,7 @@ async fn redirects_a_cross_origin_target_behind_a_login_code() {
     .unwrap()
     .unwrap();
 
-    let login_code = {
-        let recorded = cache.writes.lock().unwrap();
-        assert_eq!(recorded.len(), 1);
-        let entry = &recorded[0];
-        let code = entry
-            .key
-            .strip_prefix(LOGIN_CODE_PREFIX)
-            .unwrap()
-            .to_owned();
-        assert_eq!(code.len(), 43);
-        assert!(
-            code.chars()
-                .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '-' | '_'))
-        );
-        assert_eq!(entry.token, JWT);
-        assert_eq!(entry.redirect_url, "https://cp.example.com/done?x=1");
-        assert_eq!(entry.ttl_seconds.to_bits(), 60.0_f64.to_bits());
-        code
-    };
+    let login_code = recorded_login_code(&cache);
 
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
@@ -615,6 +597,28 @@ async fn redirects_a_cross_origin_target_behind_a_login_code() {
         header_values(&response, header::SET_COOKIE),
         vec![DELETED.to_owned()]
     );
+}
+
+// drops the write lock once the entry is copied, so it is not held across the code assertions
+fn recorded_login_code(cache: &RecordingCache) -> String {
+    let recorded = cache.writes.lock().unwrap();
+    assert_eq!(recorded.len(), 1);
+    let entry = &recorded[0];
+    let code = entry
+        .key
+        .strip_prefix(LOGIN_CODE_PREFIX)
+        .unwrap()
+        .to_owned();
+    assert_eq!(entry.token, JWT);
+    assert_eq!(entry.redirect_url, "https://cp.example.com/done?x=1");
+    assert_eq!(entry.ttl_seconds.to_bits(), 60.0_f64.to_bits());
+    drop(recorded);
+    assert_eq!(code.len(), 43);
+    assert!(
+        code.chars()
+            .all(|letter| letter.is_ascii_alphanumeric() || matches!(letter, '-' | '_'))
+    );
+    code
 }
 
 #[tokio::test]
