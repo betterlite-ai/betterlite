@@ -22,6 +22,7 @@ description: >-
   What users see: S3 requests carry Authorization, X-Amz-Date and X-Amz-Security-Token in botocore's spelling instead of lowercase, as LiteLLM sends them; header names are case-insensitive on the wire. An ElastiCache token built from credentials with a session token now lists X-Amz-Security-Token before X-Amz-Signature, as LiteLLM's does. betterlite-rag uploads a file whose S3 key needs percent-encoding, and S3 no longer refuses it. Nothing else changes.
 scope:
   paths:
+    - "crates/betterlite-bedrock/src/s3_listing/requests.rs"
     - crates/betterlite-sigv4/Cargo.toml
     - crates/betterlite-sigv4/src/sign.rs
     - crates/betterlite-sigv4/src/sign/tests.rs

@@ -1,8 +1,9 @@
 use betterlite_models::decisions::Json;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::Method;
 
 use crate::s3_transport::error::S3TransportError;
-use crate::s3_transport::signing::{RequestToSign, sign_request};
+use crate::s3_transport::signing::S3_SERVICE;
 use crate::s3_transport::transport::{S3Request, S3Response, S3Transport};
 
 mod tests;
@@ -30,17 +31,17 @@ impl S3Transport {
         let url = self.endpoint.object_url(object_key);
         let headers = vec![("x-amz-content-sha256".to_owned(), EMPTY_SHA256.to_owned())];
         let credentials = self.credentials.resolve().await?;
-        let signed = sign_request(
-            &RequestToSign {
-                method: "GET",
-                url: &url,
-                headers: &headers,
-                content_sha256: EMPTY_SHA256,
-                region: &self.endpoint.region,
-                now: self.clock.now(),
-            },
-            &credentials,
-        )?;
+        let signed = sign_request(&Signable {
+            method: "GET",
+            url: &url,
+            headers: &headers,
+            body: &[],
+            service: S3_SERVICE,
+            region: &self.endpoint.region,
+            credentials: &credentials,
+            mode: SigningMode::S3SigV4Auth,
+            now: self.clock.now(),
+        })?;
         let mut signed_headers = headers;
         signed_headers.extend(signed);
         Ok(S3Request {

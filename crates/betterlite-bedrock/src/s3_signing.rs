@@ -2,8 +2,8 @@ use std::num::ParseIntError;
 use std::str::Utf8Error;
 
 use betterlite_context::cloud_storage::CloudStorageError;
-use betterlite_logging::s3_transport::error::S3TransportError;
 use betterlite_prompts::media_metadata::error::MediaMetadataError;
+use betterlite_sigv4::error::SigV4Error;
 
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::request_policy::{Params, RequestValue};
@@ -57,7 +57,7 @@ pub enum S3SigningError {
     #[error(transparent)]
     Signing(Box<SigningError>),
     #[error("the S3 upload cannot be signed")]
-    Sign(#[source] Box<S3TransportError>),
+    Sign(#[source] Box<SigV4Error>),
 }
 
 // boxed so the two large causes keep every variant within variant_size_differences
@@ -67,8 +67,8 @@ impl From<SigningError> for S3SigningError {
     }
 }
 
-impl From<S3TransportError> for S3SigningError {
-    fn from(error: S3TransportError) -> Self {
+impl From<SigV4Error> for S3SigningError {
+    fn from(error: SigV4Error) -> Self {
         Self::Sign(Box::new(error))
     }
 }

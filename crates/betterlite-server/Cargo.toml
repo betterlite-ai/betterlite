@@ -61,6 +61,7 @@ betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-semantic = { path = "../betterlite-semantic" }
+betterlite-sigv4 = { path = "../betterlite-sigv4" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 betterlite-tracing = { path = "../betterlite-tracing" }

@@ -1,6 +1,5 @@
-use aws_sigv4::http_request::SigningError;
-use aws_sigv4::sign::v4::signing_params::BuildError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_sigv4::error::SigV4Error;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 
 use crate::s3_transport::signing::CredentialError;
@@ -31,10 +30,8 @@ pub enum S3TransportError {
     },
     #[error("the S3 request could not be sent")]
     Send(#[from] TransportError),
-    #[error("the SigV4 signing parameters are invalid")]
-    Parameters(#[from] BuildError),
     #[error("the S3 request could not be signed")]
-    Signing(#[from] SigningError),
+    Signing(#[from] SigV4Error),
     #[error("the AWS credentials for S3 could not be resolved")]
     Credentials(#[from] CredentialError),
     #[error("the S3 logging payload could not be serialized")]

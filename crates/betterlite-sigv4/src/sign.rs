@@ -1,9 +1,10 @@
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use aws_credential_types::Credentials as SigV4Credentials;
+use aws_sigv4::SigningOutput;
 use aws_sigv4::http_request::{
-    PercentEncodingMode, SignableBody, SignableRequest, SigningParams, SigningSettings,
-    UriPathNormalizationMode, sign,
+    PercentEncodingMode, SignableBody, SignableRequest, SignatureLocation, SigningInstructions,
+    SigningParams, SigningSettings, UriPathNormalizationMode, sign,
 };
 use aws_sigv4::sign::v4;
 use aws_smithy_runtime_api::client::identity::Identity;
@@ -13,6 +14,10 @@ use crate::credentials::Credentials;
 use crate::error::SigV4Error;
 
 pub mod header_map;
+
+mod tests;
+
+const SIGNATURE_PARAM: &str = "X-Amz-Signature";
 
 // botocore's two header signers; S3SigV4Auth is the one that leaves the path as sent
 #[derive(Debug, Clone, Copy)]
@@ -35,8 +40,41 @@ pub struct Signable<'source> {
 }
 
 pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, SigV4Error> {
+    let (instructions, _signature) =
+        sign_once(request, SignatureLocation::Headers, None)?.into_parts();
+    let (headers, _query) = instructions.into_parts();
+    Ok(headers
+        .into_iter()
+        .map(|header| (botocore_name(header.name()), header.value().to_owned()))
+        .collect())
+}
+
+pub fn presign_request(
+    request: &Signable<'_>,
+    expires_in: Duration,
+) -> Result<Vec<(String, String)>, SigV4Error> {
+    let (instructions, signature) =
+        sign_once(request, SignatureLocation::QueryParams, Some(expires_in))?.into_parts();
+    let (_headers, parameters) = instructions.into_parts();
+    let mut pairs: Vec<(String, String)> = Vec::with_capacity(parameters.len());
+    for (name, value) in parameters {
+        if name == SIGNATURE_PARAM {
+            continue;
+        }
+        pairs.push((name.to_owned(), value.into_owned()));
+    }
+    // botocore ends the query with the signature; aws-sigv4 emits it before the security token
+    pairs.push((SIGNATURE_PARAM.to_owned(), signature));
+    Ok(pairs)
+}
+
+fn sign_once(
+    request: &Signable<'_>,
+    location: SignatureLocation,
+    expires_in: Option<Duration>,
+) -> Result<SigningOutput<SigningInstructions>, SigV4Error> {
     let identity = identity(request.credentials);
-    let settings = match request.mode {
+    let mut settings = match request.mode {
         SigningMode::SigV4Auth => SigningSettings::default(),
         SigningMode::S3SigV4Auth => {
             let mut s3_settings = SigningSettings::default();
@@ -45,6 +83,8 @@ pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, Sig
             s3_settings
         }
     };
+    settings.signature_location = location;
+    settings.expires_in = expires_in;
     let parameters = v4::SigningParams::builder()
         .identity(&identity)
         .region(request.region)
@@ -61,13 +101,7 @@ pub fn sign_request(request: &Signable<'_>) -> Result<Vec<(String, String)>, Sig
         payload(request.headers, request.body),
     )
     .map_err(SigV4Error::Signable)?;
-    let output = sign(signable, &SigningParams::from(parameters)).map_err(SigV4Error::Signable)?;
-    let (instructions, _signature) = output.into_parts();
-    let (headers, _query) = instructions.into_parts();
-    Ok(headers
-        .into_iter()
-        .map(|header| (botocore_name(header.name()), header.value().to_owned()))
-        .collect())
+    sign(signable, &SigningParams::from(parameters)).map_err(SigV4Error::Signable)
 }
 
 // botocore never signs these headers

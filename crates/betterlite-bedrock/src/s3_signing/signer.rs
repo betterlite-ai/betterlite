@@ -4,9 +4,8 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_aws_settings::AwsS3Settings;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
-use betterlite_logging::s3_transport::signing::{
-    Credentials as SigningCredentials, RequestToSign, sign_request,
-};
+use betterlite_logging::s3_transport::signing::S3_SERVICE;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 use sha2::{Digest as _, Sha256};
@@ -120,24 +119,23 @@ where
     let mut signed_input = headers.clone();
     signed_input.push((CONTENT_SHA256.to_owned(), content_hash.clone()));
     // the region was resolved above, and the non-LLM region lookup returns a given region unchanged
-    let mut computed = sign_request(
-        &RequestToSign {
-            method: "PUT",
-            url: request.api_base,
-            headers: &signed_input,
-            content_sha256: &content_hash,
-            region: &region,
-            now: request.now,
-        },
-        &SigningCredentials {
-            access_key_id: credentials.access_key_id,
-            secret_access_key: credentials.secret_access_key,
-            session_token: credentials.session_token,
-        },
-    )?;
+    let mut computed = sign_request(&Signable {
+        method: "PUT",
+        url: request.api_base,
+        headers: &signed_input,
+        body: request.content.as_bytes(),
+        service: S3_SERVICE,
+        region: &region,
+        credentials: &credentials,
+        mode: SigningMode::S3SigV4Auth,
+        now: request.now,
+    })?;
     computed.push((CONTENT_SHA256.to_owned(), content_hash));
     for (name, botocore_name) in SIGNED_HEADERS {
-        if let Some((_, value)) = computed.iter().find(|(header, _)| header == name) {
+        if let Some((_, value)) = computed
+            .iter()
+            .find(|(header, _)| header.eq_ignore_ascii_case(name))
+        {
             headers.push((botocore_name.to_owned(), value.clone()));
         }
     }

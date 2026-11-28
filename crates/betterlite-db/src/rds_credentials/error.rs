@@ -5,9 +5,8 @@ use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_sts::error::SdkError;
 use aws_sdk_sts::operation::assume_role::AssumeRoleError;
 use aws_sdk_sts::operation::assume_role_with_web_identity::AssumeRoleWithWebIdentityError;
-use aws_sigv4::http_request::SigningError;
-use aws_sigv4::sign::v4;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
+use betterlite_sigv4::error::SigV4Error;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -66,20 +65,10 @@ pub enum RdsCredentialsError {
         #[source]
         source: TryFromFloatSecsError,
     },
-    #[error("the RDS signing parameters are invalid")]
-    SigningParams {
-        #[source]
-        source: v4::signing_params::BuildError,
-    },
-    #[error("the RDS authentication request cannot be signed")]
-    SignableRequest {
-        #[source]
-        source: SigningError,
-    },
     #[error("signing the RDS authentication token failed")]
     Sign {
         #[source]
-        source: SigningError,
+        source: SigV4Error,
     },
     #[error("the signing clock reads before the Unix epoch")]
     ClockBeforeEpoch {

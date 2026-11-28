@@ -1,14 +1,10 @@
-use std::iter::empty;
 use std::time::{Duration, SystemTime};
 
 use aws_credential_types::Credentials;
 use aws_credential_types::provider::error::CredentialsError;
-use aws_sigv4::http_request::{
-    SignableBody, SignableRequest, SignatureLocation, SigningError, SigningParams, SigningSettings,
-    sign,
-};
-use aws_sigv4::sign::v4;
-use aws_smithy_runtime_api::client::identity::Identity;
+use betterlite_sigv4::credentials::Credentials as SigningCredentials;
+use betterlite_sigv4::error::SigV4Error;
+use betterlite_sigv4::sign::{Signable, SigningMode, presign_request};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
@@ -53,20 +49,10 @@ pub enum ElastiCacheSigningError {
         #[source]
         source: CredentialsError,
     },
-    #[error("failed to build the AWS SigV4 signing parameters: {source}")]
-    SigningParams {
-        #[source]
-        source: v4::signing_params::BuildError,
-    },
-    #[error("failed to build a signable ElastiCache connect request: {source}")]
-    SignableRequest {
-        #[source]
-        source: SigningError,
-    },
     #[error("failed to sign the ElastiCache connect request: {source}")]
     Sign {
         #[source]
-        source: SigningError,
+        source: SigV4Error,
     },
 }
 
@@ -81,49 +67,41 @@ impl ElastiCacheIamProvider {
         now: SystemTime,
     ) -> Result<(String, SecretString), ElastiCacheSigningError> {
         let credentials = resolver.resolve()?;
-        let signed = presign_connect_url(&self.settings, credentials, now)?;
+        let signed = presign_connect_url(&self.settings, &credentials, now)?;
         Ok((self.settings.user_name.clone(), signed))
     }
 }
 
 fn presign_connect_url(
     settings: &AwsSettings,
-    credentials: Credentials,
+    credentials: &Credentials,
     now: SystemTime,
 ) -> Result<SecretString, ElastiCacheSigningError> {
-    let identity = Identity::from(credentials);
-
-    let mut signing_settings = SigningSettings::default();
-    signing_settings.signature_location = SignatureLocation::QueryParams;
-    signing_settings.expires_in = Some(Duration::from_secs(settings.token_ttl_seconds));
-
-    let signing_params = SigningParams::from(
-        v4::SigningParams::builder()
-            .identity(&identity)
-            .region(&settings.region)
-            .name(ELASTICACHE_SERVICE_NAME)
-            .time(now)
-            .settings(signing_settings)
-            .build()
-            .map_err(|source| ElastiCacheSigningError::SigningParams { source })?,
-    );
-
     let uri = format!(
         "https://{}/?{}",
         settings.cache_name,
         settings.connect_query()
     );
-    let signable = SignableRequest::new("GET", uri.as_str(), empty(), SignableBody::Bytes(&[]))
-        .map_err(|source| ElastiCacheSigningError::SignableRequest { source })?;
-
-    let output = sign(signable, &signing_params)
-        .map_err(|source| ElastiCacheSigningError::Sign { source })?;
-    let (instructions, _signature) = output.into_parts();
-    let (_headers, query_params) = instructions.into_parts();
+    let signing = SigningCredentials::from(credentials);
+    let parameters = presign_request(
+        &Signable {
+            method: "GET",
+            url: &uri,
+            headers: &[],
+            body: &[],
+            service: ELASTICACHE_SERVICE_NAME,
+            region: &settings.region,
+            credentials: &signing,
+            mode: SigningMode::SigV4Auth,
+            now,
+        },
+        Duration::from_secs(settings.token_ttl_seconds),
+    )
+    .map_err(|source| ElastiCacheSigningError::Sign { source })?;
 
     let mut query = url::form_urlencoded::Serializer::new(settings.connect_query());
-    for (name, value) in query_params {
-        query.append_pair(name, value.as_ref());
+    for (name, value) in parameters {
+        query.append_pair(&name, &value);
     }
     Ok(SecretString::from(format!(
         "{}/?{}",

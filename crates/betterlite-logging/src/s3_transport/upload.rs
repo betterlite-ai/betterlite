@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::Method;
 use md5::Md5;
 use serde::Serialize;
@@ -13,7 +14,7 @@ use crate::s3_transport::batch_element::{ContentType, S3BatchLoggingElement};
 use crate::s3_transport::encryption::ServerSideEncryption;
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::error_code::{error_code, is_terminal};
-use crate::s3_transport::signing::{RequestToSign, sign_request};
+use crate::s3_transport::signing::S3_SERVICE;
 use crate::s3_transport::transport::{S3Request, S3Response, S3Transport, UploadOutcome};
 
 mod tests;
@@ -25,7 +26,6 @@ const CACHE_CONTROL: &str = "private, immutable, max-age=31536000, s-maxage=0";
 
 struct PreparedPut {
     body: Vec<u8>,
-    content_sha256: String,
     headers: Vec<(String, String)>,
 }
 
@@ -101,17 +101,17 @@ impl S3Transport {
         let credentials = self.credentials.resolve().await?;
         let url = self.endpoint.object_url(&element.s3_object_key);
         let mut headers = prepared.headers.clone();
-        let signed = sign_request(
-            &RequestToSign {
-                method: "PUT",
-                url: &url,
-                headers: &headers,
-                content_sha256: &prepared.content_sha256,
-                region: &self.endpoint.region,
-                now: self.clock.now(),
-            },
-            &credentials,
-        )?;
+        let signed = sign_request(&Signable {
+            method: "PUT",
+            url: &url,
+            headers: &headers,
+            body: &prepared.body,
+            service: S3_SERVICE,
+            region: &self.endpoint.region,
+            credentials: &credentials,
+            mode: SigningMode::S3SigV4Auth,
+            now: self.clock.now(),
+        })?;
         headers.extend(signed);
         let request = S3Request {
             method: Method::PUT,
@@ -132,11 +132,7 @@ impl S3Transport {
         let body = element_body(element)?;
         let content_sha256 = hex::encode(Sha256::digest(&body));
         let headers = put_headers(element, &body, &content_sha256, self.encryption.as_ref());
-        Ok(PreparedPut {
-            body,
-            content_sha256,
-            headers,
-        })
+        Ok(PreparedPut { body, headers })
     }
 }
 
