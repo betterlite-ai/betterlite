@@ -24,10 +24,11 @@ use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
+use crate::auth::auth_context_sources::model_stage_input;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
-use crate::auth::{headers_json, model_pattern_input, model_stage_input, query_json};
+use crate::auth::{headers_json, query_json, resolver_stage_input};
 use crate::error_body::AuthenticationFailure;
 use crate::routes;
 use crate::routes::tests::state_for;
@@ -127,6 +128,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::TenantBudgets(_)
             | StageFailure::EndUserIdentity(_)
             | StageFailure::TrustedNetwork(_)
+            | StageFailure::AuthContextSources(_)
             | StageFailure::JwtKeys(_)
             | StageFailure::OauthTokens(_),
         ) => panic!("the master key stage runs no other auth check"),
@@ -212,7 +214,7 @@ fn stage_is_registered() {
         .body(Body::from(r#"{"model": "gpt-4"}"#))
         .expect("the request builds");
     assert!(matches!(
-        model_pattern_input(
+        resolver_stage_input(
             AuthBackend::AuthRequestModels,
             &request,
             Some(&context),

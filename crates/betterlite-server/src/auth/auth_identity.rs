@@ -3,9 +3,10 @@ use betterlite_auth::auth_identity::records::Principal;
 use secrecy::SecretString;
 
 use self::{
-    AuthBackend::MasterKey, StageInput::AuthIdentity, StageInput::AuthKeyLookup,
-    StageInput::Authenticated,
+    AuthBackend::MasterKey,
+    StageInput::{AuthIdentity, AuthKeyLookup, Authenticated},
 };
+use crate::auth::auth_context_sources;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
@@ -67,6 +68,7 @@ pub enum AuthBackend {
     AuthEndUsers,
     AuthPolicySupport,
     ModelGrantIntersection,
+    AuthContextSources,
 }
 
 // B052 owns the stage order; the JWT fetch runs before the master-key comparison, as in LiteLLM.
@@ -93,6 +95,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthEndUserIdentity,
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
+    AuthBackend::AuthContextSources,
     AuthBackend::ModelGrantIntersection,
     AuthBackend::AuthRoutePolicy,
     AuthBackend::AuthModelBudgets,
@@ -127,6 +130,7 @@ pub enum StageInput {
     AuthEndUsers(Box<EndUserStageInput>),
     AuthPolicySupport(Box<AuthPolicySupportStageInput>),
     ModelGrantIntersection(Box<GrantStageInput>),
+    AuthContextSources(Box<RequestModelStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -218,6 +222,7 @@ impl StageInput {
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
             Self::AuthPolicySupport(_) => AuthBackend::AuthPolicySupport,
             Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
+            Self::AuthContextSources(_) => AuthBackend::AuthContextSources,
         }
     }
 }
@@ -254,7 +259,7 @@ pub(crate) fn dispatch(
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
         AuthKeyLookup(_) | AuthIdentity(_) => Err(StageFailure::from(Missing)),
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
-        StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
+        StageInput::MasterKey(presented) => Ok(master_key_stage(presented.as_ref(), master_key)?),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
@@ -267,6 +272,7 @@ pub(crate) fn dispatch(
         }
         StageInput::AuthRequestModels(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
+        StageInput::AuthContextSources(stage) => auth_context_sources::run_stage(stage),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }

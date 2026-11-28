@@ -1,0 +1,130 @@
+kind: helper
+name: auth-context-sources-hierarchical-settings
+call:
+  auth_context_sources:
+    function: router_settings
+    key_settings: {model_group_alias: {alias-one: group-one}}
+    team_settings: {model_group_alias: {alias-two: group-two}}
+    team_id: team-one
+    team_lookup: present
+calls:
+  - auth_context_sources:
+      function: router_settings
+      key_settings: "model_group_alias: {alias-two: group-two}"
+      team_settings: null
+      team_id: null
+      team_lookup: absent
+  - auth_context_sources:
+      function: router_settings
+      key_settings: {}
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: team-one
+      team_lookup: present
+  - auth_context_sources:
+      function: router_settings
+      key_settings: null
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: team-one
+      team_lookup: error
+  - auth_context_sources:
+      function: router_settings
+      key_settings: null
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: null
+      team_lookup: present
+  - auth_context_sources:
+      function: router_settings
+      key_settings: [not, settings]
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: team-one
+      team_lookup: absent
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: client-choice
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: false
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: true
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: true
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: alias-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: false
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: null
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+env: {}
+compare: {ignore: []}

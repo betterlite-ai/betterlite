@@ -36,6 +36,7 @@ pub(crate) enum StageFailure {
     EndUsers(Box<ProxyException>),
     AuthPolicySupport(Box<ProxyException>),
     ModelGrants(Box<ProxyException>),
+    AuthContextSources(Box<ProxyException>),
     OauthTokens(Box<ProxyException>),
 }
 
@@ -77,6 +78,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::AuthPolicySupport(exception)
         | StageFailure::ModelGrants(exception)
         | StageFailure::OauthTokens(exception)
+        | StageFailure::AuthContextSources(exception)
         | StageFailure::EndUserIdentity(exception) => denial_response(exception),
     }
 }

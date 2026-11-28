@@ -1,0 +1,4 @@
+general_settings:
+  master_key: os.environ/MICROSOFT_CLIENT_ID
+environment_variables:
+  MICROSOFT_CLIENT_ID: fixture-microsoft-client

@@ -1,0 +1,16 @@
+kind: helper
+name: auth-context-sources-router-alias
+call:
+  auth_context_sources:
+    function: router_alias
+    route: /chat/completions
+    router_available: true
+    marker_set: false
+    passthrough: false
+    requested_model: alias-one
+    raw_body_available: true
+    settings: {model_group_alias: {alias-one: group-one}}
+    client_requested_model: null
+    team_id: team-one
+env: {}
+compare: {ignore: []}

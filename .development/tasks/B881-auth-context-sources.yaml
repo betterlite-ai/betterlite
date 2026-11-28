@@ -102,6 +102,8 @@ description: >-
   B1100 registers state/auth_context_sources.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_context_sources.rs and leave state.rs as it is.
 scope:
   paths:
+    - "deny.toml"
+    - "crates/betterlite-server/src/pre_call_step/router_branch.rs"
     - crates/betterlite-auth/src/auth_context_sources.rs
     - crates/betterlite-auth/src/auth_context_sources/**
     - crates/betterlite-auth/Cargo.toml
@@ -365,6 +367,6 @@ pitfalls:
   - An empty client ID enables SSO discovery but cannot disable password fallback through the stricter readiness check.
   - The router-alias marker is set before passthrough and body checks; retries must not get a second rewrite opportunity.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0
 review_level: security

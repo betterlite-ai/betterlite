@@ -1,0 +1,3 @@
+model_group_alias:
+  alias-one: group-one
+num_retries: 3

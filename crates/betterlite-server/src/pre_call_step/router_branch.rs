@@ -1,10 +1,10 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object as JsonMap;
-use betterlite_router::model_catalog_lookup::alias::AliasTarget;
 use indexmap::IndexMap;
 use serde_json::Number;
 
+use crate::auth::auth_context_sources::alias::resolve_model_group_alias;
 use crate::pre_call::failure::PreCallFailure;
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::ports::RouterView;
@@ -70,24 +70,11 @@ fn weights_json(weights: &RouterWeights) -> JsonValue {
 }
 
 fn alias_target(aliases: Option<&JsonValue>, model: Option<&JsonValue>) -> Option<String> {
-    let JsonValue::Object(entries) = aliases? else {
-        return None;
-    };
     let requested = model?.as_str()?;
-    let entry = entries.get(requested)?;
-    let resolved = match entry {
-        JsonValue::String(name) => AliasTarget::Name(name.clone()),
-        JsonValue::Object(item) => AliasTarget::Item {
-            model: item.get("model").map(to_decision),
-            hidden: None,
-        },
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
-            AliasTarget::Unsupported(Json::Null)
-        }
-    };
-    let target = resolved.resolved()?;
+    let stored = aliases.map(to_decision);
+    let target = resolve_model_group_alias(stored.as_ref(), requested)?;
     if target == requested {
         return None;
     }
-    Some(target.to_owned())
+    Some(target)
 }

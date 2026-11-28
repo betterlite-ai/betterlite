@@ -1,0 +1,14 @@
+environment_variables:
+  MICROSOFT_CLIENT_ID: fixture-microsoft-client
+  MICROSOFT_CLIENT_SECRET: fixture-microsoft-secret
+  MICROSOFT_TENANT: fixture-tenant
+  GOOGLE_CLIENT_ID: fixture-google-client
+  GOOGLE_CLIENT_SECRET: fixture-google-secret
+  GENERIC_CLIENT_ID: fixture-generic-client
+  GENERIC_CLIENT_SECRET: fixture-generic-secret
+  GENERIC_AUTHORIZATION_ENDPOINT: https://idp.example/authorize
+  GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+  GENERIC_USERINFO_ENDPOINT: https://idp.example/userinfo
+  SAML_IDP_METADATA_URL: https://idp.example/metadata
+  SAML_IDP_METADATA_XML: "<EntityDescriptor xmlns='urn:oasis:names:tc:SAML:2.0:metadata'/>"
+  MINIMUM_CUSTOM_KEY_LENGTH: "16"

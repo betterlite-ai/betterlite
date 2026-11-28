@@ -193,6 +193,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::ModelGrants(exception)
         | StageFailure::OauthTokens(exception)
         | StageFailure::KeyLookup(exception)
+        | StageFailure::AuthContextSources(exception)
         | StageFailure::EndUserIdentity(exception) => Some((**exception).clone()),
         StageFailure::Authentication(authentication) => match **authentication {
             AuthenticationFailure::Invalid => Some(ProxyException::new(ProxyExceptionInit {

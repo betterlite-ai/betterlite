@@ -1,0 +1,58 @@
+name: auth-context-sources-alias-normalization
+config: |
+  general_settings:
+    master_key: os.environ/LITELLM_MASTER_KEY
+  model_list:
+    - model_name: dispatch-model
+      litellm_params:
+        model: openai/gpt-dispatch-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: upstream-dispatch-1}
+    body:
+      id: chatcmpl-dispatch
+      object: chat.completion
+      created: 1700000000
+      model: gpt-dispatch-upstream-2024
+      choices:
+        - index: 0
+          message: {role: assistant, content: hello over http}
+          logprobs: null
+          finish_reason: stop
+      usage:
+        prompt_tokens: 3
+        completion_tokens: 2
+        total_tokens: 5
+steps:
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers:
+        content-type: application/json
+        authorization: Bearer oracle-master
+        x-litellm-call-id: oracle-call-dispatch
+      body:
+        model: "claude-router-64697370617463682d6d6f64656c"
+        messages:
+          - {role: user, content: Say hello over http.}
+        temperature: 0.2
+        max_tokens: 20
+    compare:
+      headers: [content-type, llm_provider-content-type, llm_provider-x-request-id, x-litellm-call-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name, x-litellm-model-api-base, x-litellm-attempted-retries, x-litellm-attempted-fallbacks]
+      headers_present: [x-litellm-response-duration-ms, x-litellm-overhead-duration-ms, x-litellm-callback-duration-ms, x-litellm-version]
+      upstream_headers: [authorization, content-type]
+      ignore: []
+  - request:
+      method: POST
+      path: /v1/chat/completions
+      headers: {content-type: application/json, authorization: Bearer invalid-key}
+      body: {model: "dispatch-model[1m]", messages: [{role: user, content: denied}]}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /error/message, why: betterlite writes its own message}
