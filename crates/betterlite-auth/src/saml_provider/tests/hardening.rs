@@ -7,6 +7,7 @@ use super::{NOW, Recorded, TestMemory, TestTier};
 use crate::auth_cache::AuthCache;
 use crate::saml_provider::authn_request::authn_request_xml;
 use crate::saml_provider::cache::SamlCache;
+use crate::saml_provider::fetch::FETCH_TIMEOUT_SECONDS;
 use crate::saml_provider::idp_metadata::parse::decode_document;
 use crate::saml_provider::idp_metadata::{
     IdpMetadataError, IdpSettings, X509CertMulti, decode_saml_metadata,
@@ -185,6 +186,11 @@ fn authn_request_values_are_escaped() {
     let xml = authn_request_xml(&settings, "ONELOGIN_FIXED", NOW).unwrap();
     assert!(xml.contains(r#"Destination="https://idp.example.com/sso?a=1&amp;b=2""#));
     assert!(xml.contains("<saml:Issuer>urn:a&amp;b</saml:Issuer>"));
+}
+
+#[test]
+fn the_metadata_fetch_timeout_is_ten_seconds() {
+    assert_eq!(FETCH_TIMEOUT_SECONDS, 10);
 }
 
 #[test]
