@@ -4,6 +4,7 @@ mod chat;
 mod chat_gigachat;
 mod chat_minimax;
 mod chat_nlp_cloud;
+mod configs;
 mod embedding;
 mod embedding_dashscope;
 mod embedding_gigachat;

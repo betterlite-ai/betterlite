@@ -3,6 +3,7 @@ pub mod chat;
 mod chat_gigachat;
 mod chat_minimax;
 mod chat_nlp_cloud;
+pub mod configs;
 pub mod context;
 pub mod embedding;
 mod embedding_volcengine;
