@@ -87,7 +87,7 @@ fn transport_retrieve_leaves_the_absent_fields_none() {
     assert_eq!(transport.timeout, None);
     assert_eq!(transport.custom_llm_provider, None);
     assert_eq!(transport.params.api_base, None);
-    assert_eq!(transport.params.api_key, None);
+    assert!(transport.params.api_key.is_none());
     assert_eq!(transport.params.ssl_verify, None);
 }
 
