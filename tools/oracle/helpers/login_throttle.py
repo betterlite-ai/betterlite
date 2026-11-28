@@ -215,15 +215,14 @@ async def run_step(
             view["outcome"] = "ok"
     except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         view["outcome"] = "refused"
-        view["error"] = _JSON.validate_python(
-            {
-                "code": error.code,
-                "type": error.type,
-                "param": error.param,
-                "message": error.message,
-                "headers": error.headers,
-            }
-        )
+        payload: dict[str, JsonValue] = {
+            "code": error.code,
+            "type": error.type,
+            "param": error.param,
+            "message": error.message,
+            "headers": _JSON.validate_python(error.headers),
+        }
+        view["error"] = payload
     except ValidationError:
         view["outcome"] = "error"
     return pending, view
@@ -231,7 +230,7 @@ async def run_step(
 
 async def run_phase(
     phase: PhaseInput, settings: dict[str, JsonValue], handler: CaptureHandler, session: Session
-) -> JsonValue:
+) -> dict[str, JsonValue]:
     session.clock.now = phase["now"]
     spec = phase["request"]
     headers: list[tuple[bytes, bytes]] = []
@@ -271,20 +270,18 @@ async def run_phase(
             next((tag for needle, tag in WARNING_TOKENS if needle in message), f"other:{message}")
             for message in messages
         ]
-        return _JSON.validate_python(
-            {"throttle": throttle_view, "steps": steps, "warnings": warnings}
-        )
+        return {"throttle": throttle_view, "steps": steps, "warnings": warnings}
     finally:
         time.time = saved
 
 
-async def run_phases(input_value: Input, handler: CaptureHandler) -> JsonValue:
+async def run_phases(input_value: Input, handler: CaptureHandler) -> dict[str, JsonValue]:
     session = Session(input_value.get("redis"))
     settings = input_value["config"]["general_settings"]
     phases: list[JsonValue] = [
         await run_phase(phase, settings, handler, session) for phase in input_value["phases"]
     ]
-    return _JSON.validate_python({"phases": phases})
+    return {"phases": phases}
 
 
 def run(input_value: Input) -> JsonValue:
