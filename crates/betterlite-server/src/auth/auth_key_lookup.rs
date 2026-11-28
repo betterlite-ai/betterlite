@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::Request;
-use betterlite_auth::auth_errors::conversion::other_message_exception;
+use betterlite_auth::auth_errors::conversion::{as_proxy_exception, other_message_exception};
 use betterlite_auth::auth_identity::records::{CredentialRef, Principal};
 use betterlite_auth::auth_identity::roles::AuthMethod;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
