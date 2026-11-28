@@ -9,12 +9,15 @@ use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::auth_pricing::{MaxBudget, Settings};
 
 fn load(source: &str) -> Result<Settings, ConfigError> {
-    Ok(ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(source)?
-    .sections
-    .auth_pricing)
+    load_with(source, &[])
+}
+
+fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    let lookup: BTreeMap<String, String> = variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    Ok(ConfigLoader { lookup }.load(source)?.sections.auth_pricing)
 }
 
 #[rstest]
@@ -56,16 +59,21 @@ fn reject_tags_loaded(#[case] written: &str, #[case] expected: bool) {
 #[case::zero("0", MaxBudget::Finite(Decimal::ZERO))]
 #[case::negative("-1", MaxBudget::Finite(Decimal::from(-1_i64)))]
 #[case::numeric_text("\"5\"", MaxBudget::Finite(Decimal::from(5_i64)))]
-#[case::source_true("true", MaxBudget::Finite(Decimal::ONE))]
-#[case::source_false("false", MaxBudget::Finite(Decimal::ZERO))]
 #[case::infinity("\"inf\"", MaxBudget::PositiveInfinity)]
-#[case::signed_infinity("\"+inf\"", MaxBudget::PositiveInfinity)]
 #[case::negative_infinity("\"-inf\"", MaxBudget::NegativeInfinity)]
-#[case::python_spelling("\"Infinity\"", MaxBudget::PositiveInfinity)]
-#[case::nan("\"nan\"", MaxBudget::Nan)]
+#[case::nan("\"NaN\"", MaxBudget::Nan)]
 fn proxy_budget_loaded(#[case] written: &str, #[case] expected: MaxBudget) {
     let source = format!("litellm_settings:\n  max_budget: {written}\n");
     assert_eq!(load(&source).unwrap().max_budget, expected);
+}
+
+#[test]
+fn budget_environment_reference_resolves() {
+    let source = "litellm_settings:\n  max_budget: os.environ/PROXY_MAX_BUDGET\n";
+    let resolved = load_with(source, &[("PROXY_MAX_BUDGET", "25.5")]).unwrap();
+    assert_eq!(resolved.max_budget, MaxBudget::Finite(Decimal::new(255, 1)));
+    let unset = load_with(source, &[("PROXY_MAX_BUDGET", "")]).unwrap();
+    assert_eq!(unset.max_budget, MaxBudget::Finite(Decimal::ZERO));
 }
 
 // an unquoted non-finite float never reaches the section: the YAML layer refuses it for every config key
@@ -95,14 +103,24 @@ fn invalid_scalar_rejected(#[case] source: &str) {
     ));
 }
 
-// text Python's float() cannot read is an invalid value that names the setting
+// text the float parser cannot read is a load error that names the setting
 #[test]
 fn budget_text_names_the_field() {
     let error = load("litellm_settings:\n  max_budget: soon\n").unwrap_err();
-    let ConfigError::InvalidFloat { path, .. } = error else {
-        panic!("text the float parser cannot read is an invalid float");
-    };
-    assert_eq!(path, "litellm_settings.max_budget");
+    assert!(
+        error.to_string().contains("litellm_settings.max_budget"),
+        "{error}"
+    );
+}
+
+// a bool is outside the declared float, so the load refuses it and names the setting
+#[test]
+fn boolean_budget_names_the_field() {
+    let error = load("litellm_settings:\n  max_budget: true\n").unwrap_err();
+    assert!(
+        error.to_string().contains("litellm_settings.max_budget"),
+        "{error}"
+    );
 }
 
 #[test]

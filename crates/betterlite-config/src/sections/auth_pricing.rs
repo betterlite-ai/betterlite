@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::parse_float;
+use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
 mod tests;
@@ -70,29 +70,24 @@ impl Default for MaxBudget {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        let max_budget = match self.litellm_settings.max_budget {
-            Some(number) => budget(number)?,
-            None => MaxBudget::Finite(Decimal::ZERO),
-        };
+        // proxy_server.py reads max_budget with float(value); the shared decoder resolves an os.environ
+        // reference first and refuses a bool, which is outside the declared float
+        let max_budget = resolve_number(
+            self.litellm_settings.max_budget,
+            BUDGET_PATH,
+            lookup,
+            parse_float,
+        )?
+        .map_or_else(MaxBudget::default, MaxBudget::from_f64);
         Ok(Settings {
             enforce_user_param: general.enforce_user_param.unwrap_or_default(),
             reject_clientside_tags: general.reject_clientside_tags.unwrap_or_default(),
             max_budget,
         })
-    }
-}
-
-// proxy_server.py reads this one with float(value): an int stays exact money, a bool counts as 0 or 1, text as Python reads it
-fn budget(number: RawNumber) -> Result<MaxBudget, ConfigError> {
-    match number {
-        RawNumber::Integer(integer) => Ok(MaxBudget::Finite(Decimal::from(integer))),
-        RawNumber::Float(float) => Ok(MaxBudget::from_f64(float)),
-        RawNumber::Boolean(flag) => Ok(MaxBudget::Finite(Decimal::from(i32::from(flag)))),
-        RawNumber::Text(text) => parse_float(text.trim(), BUDGET_PATH).map(MaxBudget::from_f64),
     }
 }
