@@ -187,27 +187,27 @@ fn self_hosted_tls_follows_the_override() {
 
     reset(&host, 1600);
     stage(&host, FINAL_SPEC);
-    let typed_setup = Setup::new(r#"{"use_ssl":"yes"}"#);
-    let (typed_outcome, _typed_logger) =
-        run_sync(&host, &typed_setup, Some("localhost:50051"), false);
-    let error = typed_outcome.unwrap_err();
-    assert!(matches!(error, RivaCallError::Records(_)));
-    assert_eq!(error.to_string(), "the use_ssl option must be a boolean");
-    assert_eq!(error.status_code(), Some(400));
-
-    reset(&host, 1600);
-    stage(&host, FINAL_SPEC);
-    let zero_setup = Setup::new(r#"{"use_ssl":0,"nvcf_function_id":"fn-123"}"#);
-    let (zero_outcome, _zero_logger) =
-        run_sync(&host, &zero_setup, Some("grpc.nvcf.nvidia.com:443"), false);
-    let zero_error = zero_outcome.unwrap_err();
+    let truthy_setup = Setup::new(r#"{"use_ssl":"yes"}"#);
+    let (truthy_outcome, truthy_logger) =
+        run_sync(&host, &truthy_setup, Some("localhost:50051"), false);
+    truthy_outcome.unwrap();
     assert_eq!(
-        zero_error.to_string(),
-        "the use_ssl option must be a boolean"
+        value(&probe(&host), "auth.kwargs"),
+        r#"{"metadata_args":[["authorization","Bearer riva-key"]],"uri":"localhost:50051","use_ssl":true}"#
     );
-    assert_eq!(zero_error.status_code(), Some(400));
-    let recorded = probe(&host);
-    assert!(recorded.events.is_empty());
+    assert_eq!(truthy_logger.pre[0].use_ssl, json(r#""yes""#));
+
+    let (_, zero_logger) = complete(
+        &host,
+        r#"{"use_ssl":0,"nvcf_function_id":"fn-123"}"#,
+        "grpc.nvcf.nvidia.com:443",
+    );
+    assert_eq!(
+        value(&probe(&host), "auth.kwargs"),
+        r#"{"metadata_args":[["function-id","fn-123"],["authorization","Bearer riva-key"]],"uri":"grpc.nvcf.nvidia.com:443","use_ssl":false}"#
+    );
+    assert_eq!(zero_logger.pre[0].use_ssl, json("0"));
+    assert!(zero_logger.pre[0].nvcf_function_id_set);
 }
 
 #[test]

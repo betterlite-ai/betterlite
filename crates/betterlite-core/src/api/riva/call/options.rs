@@ -1,4 +1,5 @@
 use betterlite_context::non_default_params::Params;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 
@@ -27,11 +28,21 @@ pub fn resolve(params: &Params) -> Result<Resolved, RivaCallError> {
     force_wire_format(&mut request.recognition_config);
     let nvcf = function_id(&optional)?;
     let override_value = optional.get(USE_SSL).filter(|value| !value.is_null());
-    let use_ssl = match override_value {
-        Some(value) => value
-            .as_bool()
-            .ok_or(RecordsError::Boolean { field: USE_SSL })?,
-        None => nvcf.is_some(),
+    let override_flag = match override_value {
+        Some(value) => {
+            let typed = serde_json::from_value::<JsonValue>(value.clone())
+                .map_err(|source| RivaCallError::Json { source })?;
+            Some(typed)
+        }
+        None => None,
+    };
+    let use_ssl = match override_flag {
+        Some(JsonValue::Bool(flag)) => flag,
+        Some(JsonValue::Number(number)) => number.as_f64().is_some_and(|real| real != 0.0_f64),
+        Some(JsonValue::Text(text)) => !text.is_empty(),
+        Some(JsonValue::Array(items)) => !items.is_empty(),
+        Some(JsonValue::Object(fields)) => !fields.is_empty(),
+        Some(JsonValue::Null) | None => nvcf.is_some(),
     };
     let use_ssl_logged = match override_value {
         Some(value) => serde_json::from_value::<Json>(value.clone())
