@@ -1,0 +1,19 @@
+kind: helper
+name: riva-audio-backend-order
+call:
+  riva_audio:
+    calls:
+      - file_hex: "524946462c00000057415645666d74201000000001000100401f0000803e00000200100064617461080000000000000000200000"
+        soundfile_error: null
+        audioread: null
+        resamplers: ["soxr", "scipy"]
+      - file_hex: "524946462c00000057415645666d74201000000001000100401f0000803e00000200100064617461080000000000000000200000"
+        soundfile_error: null
+        audioread: null
+        resamplers: ["scipy"]
+      - file_hex: "524946462c00000057415645666d74201000000001000100401f0000803e00000200100064617461080000000000000000200000"
+        soundfile_error: null
+        audioread: null
+        resamplers: []
+compare: {ignore: []}
+env: {}

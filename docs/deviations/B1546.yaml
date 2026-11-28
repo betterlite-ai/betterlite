@@ -1,0 +1,12 @@
+task: B1546
+deviations:
+  - what: A supplied file over 64 MiB, or a decode whose PCM would exceed 64 MiB, fails with HTTP 413, type invalid_request_error, param file and code audio_too_large.
+    why: The source buffers the supplied bytes and every decoder output whole with no cap, so bounded input handling needs an explicit limit; it checks soundfile frame metadata and accumulated audioread chunks before allocating.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L64-L182
+kept_bugs:
+  - what: A soxr runtime error propagates out of the resampler instead of falling back to scipy or linear interpolation; only ImportError advances the chain.
+    why: a working setup whose soxr raises already sees that error, so betterlite copies the source's selection rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L200-L208
+  - what: Negative full scale becomes -32767 rather than -32768 because the final conversion multiplies by 32767 instead of 32768.
+    why: callers receive these PCM bytes and the duration from the same conversion, and the task names the asymmetric peak, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L91-L96
