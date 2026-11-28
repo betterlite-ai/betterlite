@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use betterlite_bedrock::count_call::handler::CountTokensTransport;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
+use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles as _;
 use http::{HeaderMap, Method};
 use url::Url;
 
