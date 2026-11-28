@@ -669,6 +669,43 @@ async fn retrieve_names_the_namespace_without_api_key() {
     assert_eq!(retrieved.data, expected);
 }
 
+// secrets-stay-secret: an empty or one-letter key is masked inside the name, so the rest of both lines survives and the namespace keeps the raw name
+#[rstest]
+#[case::empty("")]
+#[case::one_letter("a")]
+#[tokio::test]
+async fn retrieve_masks_a_short_api_key_by_name(#[case] key: &str) {
+    let mut rig = Rig::new();
+    rig.remote.scan = RemoteAnswer::Value(vec![format!("litellm:{key}:{RETRIEVE_CALL_TYPE}:abc")]);
+    let mut fields = BTreeMap::new();
+    fields.insert(String::from("api_key"), JsonData::String(key.to_owned()));
+    let input = BatchPrecallInput {
+        call: BatchPrecallCall::Retrieve(BatchRetrieveCall {
+            call_type: String::from(RETRIEVE_CALL_TYPE),
+            principal: BatchLimitPrincipal(fields),
+            data: retrieve_data(),
+            cache_key: None,
+            cache_control: None,
+        }),
+    };
+    let BatchPrecallResult::Retrieve(retrieved) = rig.run(&input).await.unwrap() else {
+        panic!("a retrieve answers with the retrieve result");
+    };
+    assert_eq!(
+        retrieved.diagnostics,
+        vec![
+            debug_line(&format!("cache_key_name: {MASKED_NAME}")),
+            debug_line(&format!("redis keys: ['{MASKED_KEY}']")),
+        ]
+    );
+    let mut expected = retrieve_data();
+    expected.insert(
+        String::from("metadata"),
+        namespaced_as(&format!("litellm:{key}:{RETRIEVE_CALL_TYPE}")),
+    );
+    assert_eq!(retrieved.data, expected);
+}
+
 // without litellm.cache the hook only sets the namespace
 #[tokio::test]
 async fn retrieve_without_cache() {
