@@ -7,8 +7,9 @@ use std::time::Duration;
 use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::decisions::Json;
-use betterlite_openai::assistants::client::{ClientKind, SdkClient};
+use betterlite_openai::assistants::client::SdkClient;
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -116,9 +117,9 @@ fn azure_client(
 
 #[rstest]
 #[case::openai_sync(false, ClientKind::Sync, "azure:Sync:None")]
-#[case::openai_async(false, ClientKind::Async, "openai:Async")]
+#[case::openai_async(false, ClientKind::Asynchronous, "openai:Asynchronous")]
 #[case::azure_sync(true, ClientKind::Sync, "azure:Sync:None")]
-#[case::azure_async(true, ClientKind::Async, "azure:Async:None")]
+#[case::azure_async(true, ClientKind::Asynchronous, "azure:Asynchronous:None")]
 #[tokio::test]
 async fn azure_drops_the_sync_sdk_classes_only(
     #[case] azure: bool,
@@ -253,7 +254,7 @@ async fn an_azure_provider_404_maps_without_body_fields_asynchronously() {
 fn a_supplied_azure_client_is_kept_only_when_it_is_async(#[case] asynchronous: bool) {
     let harness = Harness::new();
     let kind = if asynchronous {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };

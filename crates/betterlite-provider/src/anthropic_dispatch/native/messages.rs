@@ -2,11 +2,12 @@ use super::super::CallLogging;
 use super::super::completion::{CompletionCall, HandlerFuture, ResolvedCall};
 use super::legacy::Transport;
 use super::{ClientHandle, Counter, Failure, Native, Reply, Runtime, config::Config};
-use betterlite_anthropic::chat_call::transport::{ChatTransport, SuppliedChatClient};
+use betterlite_anthropic::chat_call::transport::ChatTransport;
 use betterlite_anthropic::chat_call::{
     CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
 };
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_http::client_kind::SuppliedClient;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
@@ -72,7 +73,7 @@ impl<Client> Runtime<'_, Client> {
     ) -> ChatDeps<'call, Config<'matrix>, Client, Counter> {
         let clients = ChatClients {
             pooled: self.pooled,
-            supplied: call.client.as_ref().map(|client| SuppliedChatClient {
+            supplied: call.client.as_ref().map(|client| SuppliedClient {
                 kind: client.kind,
                 transport: &client.transport,
             }),

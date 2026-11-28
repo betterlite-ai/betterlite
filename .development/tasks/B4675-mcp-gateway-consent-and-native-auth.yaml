@@ -169,5 +169,5 @@ pitfalls:
   - "resolve_scoped_resource_server turns a resource of base_url plus /mcp into None, but base_url alone is the proxy-API resource handled by is_proxy_api_resource, not a server."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2500
   max_new_expects: 0

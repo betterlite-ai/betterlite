@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::records::{ThreadCreate, ThreadRecord};
 
@@ -51,7 +51,7 @@ where
 // Only the literal true flag selects the async client; a missing, false or other facade value stays sync.
 const fn requested_kind(flag: Option<bool>) -> ClientKind {
     match flag {
-        Some(true) => ClientKind::Async,
+        Some(true) => ClientKind::Asynchronous,
         Some(false) | None => ClientKind::Sync,
     }
 }

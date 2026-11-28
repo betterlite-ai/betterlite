@@ -24,7 +24,7 @@ use crate::api::image_contracts::records::{ImageFile, ImageHeaders};
 use crate::image_generation::decode::{decode_image_reply, original_response};
 use crate::image_generation::reply::{ImageGenerationReply, ImageUsage, ImageUsageDetails};
 use crate::image_variations::call::{DEFAULT_TIMEOUT, prepare_image_variation};
-use crate::image_variations::client::{ClientKind, normalize_base};
+use crate::image_variations::client::normalize_base;
 use crate::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
 use crate::image_variations::logging::data_view;
 use crate::image_variations::request::{
@@ -35,6 +35,7 @@ use crate::image_variations::wire::outbound_request;
 use crate::image_variations::{
     ImageVariationData, ImageVariationParams, OpenAiImageVariationConfig,
 };
+use betterlite_http::client_kind::ClientKind;
 
 #[rstest]
 #[case::variation_image_part(0)]
@@ -199,7 +200,7 @@ async fn omitted_default_fields() {
     let mut delegated = request(image(None, "PNGDATA"));
     delegated.params = ImageVariationParams { async_call: true };
     let delegated_prepared = prepared(delegated).unwrap();
-    assert_eq!(delegated_prepared.client.kind, ClientKind::Async);
+    assert_eq!(delegated_prepared.client.kind, ClientKind::Asynchronous);
     assert!(delegated_prepared.async_mode);
     let sync = request(image(None, "PNGDATA"));
     assert!(!prepared(sync).unwrap().async_mode);
@@ -670,7 +671,7 @@ fn outbound_request_carries_the_sdk_extras() {
 #[tokio::test]
 async fn a_supplied_client_of_the_other_kind_is_refused() {
     let mut call = request(image(None, "PNGDATA"));
-    call.client = Some(supplied(ClientKind::Async));
+    call.client = Some(supplied(ClientKind::Asynchronous));
     let failure = prepare_image_variation(call).unwrap_err();
     assert_eq!(failure.status_code, 500);
     assert!(matches!(
@@ -737,7 +738,7 @@ fn the_identity_reply_keeps_the_sdk_shape() {
 fn image_variation_params_default_to_the_sync_call() {
     assert!(!ImageVariationParams::default().async_call);
     assert_eq!(ClientKind::Sync.label(), "sync");
-    assert_eq!(ClientKind::Async.label(), "async");
+    assert_eq!(ClientKind::Asynchronous.label(), "async");
     let data = ImageVariationData {
         image: image(Some("cat.png"), "PNGDATA"),
         options: options(r#"{"n":2}"#),

@@ -22,10 +22,11 @@ use crate::response::wire::ResponseEnvelope;
 use crate::stream_state::state::IdSource;
 use crate::usage::ReasoningTokenCounter;
 
+use betterlite_http::client_kind::SuppliedClient;
 use config::ChatConfig;
 use error::ChatCallError;
 use steps::finish;
-use transport::{ChatTransport, SuppliedChatClient};
+use transport::ChatTransport;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStyle {
     Async,
@@ -50,7 +51,7 @@ pub struct ChatCall<'call> {
     pub model_response: ResponseEnvelope,
 }
 pub struct ChatClients<'clients, Client> {
-    pub supplied: Option<SuppliedChatClient<'clients, Client>>,
+    pub supplied: Option<SuppliedClient<'clients, Client>>,
     pub pooled: &'clients Client,
 }
 pub struct ChatDeps<'deps, Config, Client, Counter> {
