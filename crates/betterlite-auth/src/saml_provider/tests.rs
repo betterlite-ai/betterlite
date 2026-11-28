@@ -2,7 +2,9 @@
 
 mod hardening;
 
+use std::fs;
 use std::io::Read as _;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
@@ -28,7 +30,7 @@ use super::cache::{AUTHN_TTL, IDP_TTL, SamlCache};
 use super::error::SamlProviderError;
 use super::fetch::{MetadataFetchError, MetadataFetcher};
 use super::idp_metadata::{IdpSettings, X509CertMulti, extract::decode_saml_metadata};
-use super::provider::{ProviderUrls, SamlProvider};
+use super::provider::{LoginRedirect, ProviderUrls, SamlProvider};
 use super::settings::{MergedSettings, validate_url};
 use super::sp_metadata::validate_sp_metadata;
 use super::verify::{
@@ -41,6 +43,7 @@ const ACS_URL: &str = "https://proxy.example/sso/saml/callback";
 const METADATA_URL: &str = "https://proxy.example/sso/saml/metadata";
 const IDP_SSO_URL: &str = "https://idp.example.com/sso";
 const RELAY: &str = "https://app.example/after";
+const PERSISTENT_NAME_ID: &str = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent";
 
 const IDP_XML: &str = r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="urn:example:idp"><md:IDPSSODescriptor><md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>CERT</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor></md:IDPSSODescriptor></md:EntityDescriptor>"#;
 
@@ -116,8 +119,8 @@ impl SamlCache for FakeCache {
         settings: &IdpSettings,
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
-        let mut state = self.state();
         let entry = (cache_key.to_owned(), settings.clone(), ttl_seconds);
+        let mut state = self.state();
         state.idp_writes.push(entry);
         Ok(())
     }
@@ -240,6 +243,41 @@ fn inflated_request(location: &str) -> String {
     xml
 }
 
+fn expected_authn_request(request_id: &str, name_id_format: &str) -> String {
+    format!(
+        "<samlp:AuthnRequest\n  xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"\n  xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"\n  ID=\"{request_id}\"\n  Version=\"2.0\"\n  IssueInstant=\"2026-11-30T00:53:20Z\"\n  Destination=\"https://idp.example.com/sso\"\n  ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"\n  AssertionConsumerServiceURL=\"https://proxy.example/sso/saml/callback\">\n    <saml:Issuer>https://proxy.example/sso/saml/metadata</saml:Issuer>\n    <samlp:NameIDPolicy\n        Format=\"{name_id_format}\"\n        AllowCreate=\"true\" />\n\n</samlp:AuthnRequest>"
+    )
+}
+
+fn assert_authn_request(redirect: &LoginRedirect, name_id_format: &str) {
+    let expected = expected_authn_request(&redirect.request_id, name_id_format);
+    assert_eq!(inflated_request(&redirect.location), expected);
+}
+
+fn assert_login_cache(cache: &FakeCache, request_id: &str) {
+    let state = cache.state();
+    assert_eq!(
+        state.authn_writes,
+        vec![(format!("saml_authn_request:{request_id}"), AUTHN_TTL)]
+    );
+    assert_eq!(
+        state.idp_writes,
+        vec![(
+            cache_key("saml_idp_settings", IDP_XML),
+            IdpSettings {
+                entity_id: Some("urn:example:idp".to_owned()),
+                sso_url: Some(IDP_SSO_URL.to_owned()),
+                slo_url: None,
+                x509_cert: Some("CERT".to_owned()),
+                x509_cert_multi: None,
+                name_id_format: Some(PERSISTENT_NAME_ID.to_owned()),
+                want_authn_requests_signed: None,
+            },
+            IDP_TTL
+        )]
+    );
+}
+
 #[tokio::test]
 async fn login_redirects_with_the_toolkit_authn_request() {
     let (provider, cache, fetcher) = inline_provider(IDP_XML);
@@ -254,38 +292,9 @@ async fn login_redirects_with_the_toolkit_authn_request() {
             .location
             .contains("&RelayState=https%3A%2F%2Fapp.example%2Fafter")
     );
-    let expected = format!(
-        "<samlp:AuthnRequest\n  xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"\n  xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"\n  ID=\"{0}\"\n  Version=\"2.0\"\n  IssueInstant=\"2026-11-30T00:53:20Z\"\n  Destination=\"https://idp.example.com/sso\"\n  ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"\n  AssertionConsumerServiceURL=\"https://proxy.example/sso/saml/callback\">\n    <saml:Issuer>https://proxy.example/sso/saml/metadata</saml:Issuer>\n    <samlp:NameIDPolicy\n        Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:persistent\"\n        AllowCreate=\"true\" />\n\n</samlp:AuthnRequest>",
-        redirect.request_id
-    );
-    assert_eq!(inflated_request(&redirect.location), expected);
+    assert_authn_request(&redirect, PERSISTENT_NAME_ID);
     assert!(fetcher.calls().is_empty());
-    let state = cache.state();
-    assert_eq!(
-        state.authn_writes,
-        vec![(
-            format!("saml_authn_request:{}", redirect.request_id),
-            AUTHN_TTL
-        )]
-    );
-    assert_eq!(
-        state.idp_writes,
-        vec![(
-            cache_key("saml_idp_settings", IDP_XML),
-            IdpSettings {
-                entity_id: Some("urn:example:idp".to_owned()),
-                sso_url: Some(IDP_SSO_URL.to_owned()),
-                slo_url: None,
-                x509_cert: Some("CERT".to_owned()),
-                x509_cert_multi: None,
-                name_id_format: Some(
-                    "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent".to_owned()
-                ),
-                want_authn_requests_signed: None,
-            },
-            IDP_TTL
-        )]
-    );
+    assert_login_cache(&cache, &redirect.request_id);
 }
 
 #[tokio::test]
@@ -431,9 +440,9 @@ async fn metadata_without_an_identity_provider_is_a_bad_gateway() {
         Err(SamlProviderError::NoUsableIdp)
     ));
     let empty_descriptor = r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"><md:IDPSSODescriptor/></md:EntityDescriptor>"#;
-    let (provider, _cache, _fetcher) = inline_provider(empty_descriptor);
+    let (empty_provider, _empty_cache, _empty_fetcher) = inline_provider(empty_descriptor);
     assert!(matches!(
-        provider.login(&urls(), RELAY).await,
+        empty_provider.login(&urls(), RELAY).await,
         Err(SamlProviderError::NoUsableIdp)
     ));
 }
@@ -602,8 +611,13 @@ fn the_authn_request_xml_matches_the_toolkit_template() {
         },
     };
     let xml = authn_request_xml(&settings, "ONELOGIN_FIXED", 1_796_000_000).unwrap();
-    let expected = "<samlp:AuthnRequest\n  xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\"\n  xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"\n  ID=\"ONELOGIN_FIXED\"\n  Version=\"2.0\"\n  IssueInstant=\"2026-11-30T00:53:20Z\"\n  Destination=\"https://idp.example.com/sso\"\n  ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"\n  AssertionConsumerServiceURL=\"https://proxy.example/sso/saml/callback\">\n    <saml:Issuer>https://proxy.example/sso/saml/metadata</saml:Issuer>\n    <samlp:NameIDPolicy\n        Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress\"\n        AllowCreate=\"true\" />\n\n</samlp:AuthnRequest>";
-    assert_eq!(xml, expected);
+    assert_eq!(
+        xml,
+        expected_authn_request(
+            "ONELOGIN_FIXED",
+            "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+        )
+    );
 }
 
 #[test]
@@ -612,7 +626,9 @@ fn the_request_id_is_a_onelogin_sha1_token() {
     assert!(first.starts_with("ONELOGIN_"));
     assert_eq!(first.len(), 49);
     assert!(
-        first["ONELOGIN_".len()..]
+        first
+            .strip_prefix("ONELOGIN_")
+            .unwrap()
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit())
     );
@@ -858,10 +874,10 @@ impl AuthCacheTier for TestTier {
     }
 
     fn set(&self, key: Option<&str>, value: &Json, options: CacheOptions) {
-        let key = key.unwrap_or_default().to_owned();
+        let storage_key = key.unwrap_or_default().to_owned();
         record(&self.recorded)
             .sets
-            .push((key, value.clone(), options));
+            .push((storage_key, value.clone(), options));
     }
 
     async fn async_set(&self, key: Option<&str>, value: &Json, options: CacheOptions) {
@@ -902,22 +918,26 @@ impl AuthCacheTier for TestTier {
     }
 }
 
-#[tokio::test]
-async fn the_auth_cache_stores_settings_for_an_hour_and_a_request_id_for_ten_minutes() {
-    let recorded = Arc::new(Mutex::new(Recorded::default()));
-    let cache = AuthCache {
+fn test_cache(recorded: &Arc<Mutex<Recorded>>) -> AuthCache {
+    AuthCache {
         ordinary: TestTier {
             memory: Arc::new(TestMemory),
-            recorded: Arc::clone(&recorded),
+            recorded: Arc::clone(recorded),
             cached: None,
         },
         key_objects: TestTier {
             memory: Arc::new(TestMemory),
-            recorded: Arc::clone(&recorded),
+            recorded: Arc::clone(recorded),
             cached: None,
         },
         management_ttl_fallback: 45.0_f64,
-    };
+    }
+}
+
+#[tokio::test]
+async fn the_auth_cache_stores_settings_for_an_hour_and_a_request_id_for_ten_minutes() {
+    let recorded = Arc::new(Mutex::new(Recorded::default()));
+    let cache = test_cache(&recorded);
     let idp = IdpSettings {
         entity_id: Some("urn:x".to_owned()),
         sso_url: None,
@@ -935,9 +955,9 @@ async fn the_auth_cache_stores_settings_for_an_hour_and_a_request_id_for_ten_min
         .put_authn_request("saml_authn_request:ONELOGIN_1", AUTHN_TTL)
         .await
         .unwrap();
-    let observed = record(&recorded);
-    assert_eq!(observed.sets.len(), 2);
-    let (idp_key, idp_value, idp_options) = &observed.sets[0];
+    let observed = record(&recorded).sets.clone();
+    assert_eq!(observed.len(), 2);
+    let (idp_key, idp_value, idp_options) = &observed[0];
     assert_eq!(idp_key, "saml_idp_settings:key");
     match idp_value {
         Json::Object(map) => assert!(map.contains_key("entity_id")),
@@ -947,7 +967,7 @@ async fn the_auth_cache_stores_settings_for_an_hour_and_a_request_id_for_ten_min
     }
     assert_eq!(idp_options.ttl, Some(3600.0_f64));
     assert!(!idp_options.local_only);
-    let (request_key, request_value, request_options) = &observed.sets[1];
+    let (request_key, request_value, request_options) = &observed[1];
     assert_eq!(request_key, "saml_authn_request:ONELOGIN_1");
     assert_eq!(request_value, &Json::Text("1".to_owned()));
     assert_eq!(request_options.ttl, Some(600.0_f64));
@@ -957,19 +977,7 @@ async fn the_auth_cache_stores_settings_for_an_hour_and_a_request_id_for_ten_min
 #[tokio::test]
 async fn the_auth_cache_reads_settings_with_the_typed_decoder() {
     let recorded = Arc::new(Mutex::new(Recorded::default()));
-    let cache = AuthCache {
-        ordinary: TestTier {
-            memory: Arc::new(TestMemory),
-            recorded: Arc::clone(&recorded),
-            cached: None,
-        },
-        key_objects: TestTier {
-            memory: Arc::new(TestMemory),
-            recorded: Arc::clone(&recorded),
-            cached: None,
-        },
-        management_ttl_fallback: 45.0_f64,
-    };
+    let cache = test_cache(&recorded);
     let cached = cache
         .get_idp_settings("saml_idp_settings:key")
         .await
@@ -982,9 +990,7 @@ async fn the_auth_cache_reads_settings_with_the_typed_decoder() {
 }
 
 #[rstest]
-fn replays_the_saml_metadata_corpus(
-    #[files("fuzz/corpus/saml_metadata/*")] path: std::path::PathBuf,
-) {
-    let bytes = std::fs::read(path).unwrap();
+fn replays_the_saml_metadata_corpus(#[files("fuzz/corpus/saml_metadata/*")] path: PathBuf) {
+    let bytes = fs::read(path).unwrap();
     drop(decode_saml_metadata(&bytes));
 }

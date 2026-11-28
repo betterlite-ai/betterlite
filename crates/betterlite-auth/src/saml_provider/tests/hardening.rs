@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use super::{NOW, Recorded, TestMemory, TestTier};
 use crate::auth_cache::AuthCache;
 use crate::saml_provider::authn_request::authn_request_xml;
-use crate::saml_provider::cache::SamlCache;
+use crate::saml_provider::cache::SamlCache as _;
 use crate::saml_provider::fetch::FETCH_TIMEOUT_SECONDS;
 use crate::saml_provider::idp_metadata::parse::decode_document;
 use crate::saml_provider::idp_metadata::{
@@ -65,18 +65,14 @@ fn a_declaration_before_the_root_is_read_and_one_after_it_is_refused() {
     decode_saml_metadata(trailing.as_bytes()).unwrap_err();
 }
 
-fn merged(
-    idp: IdpSettings,
-    want_assertions_signed: bool,
-    want_messages_signed: bool,
-) -> MergedSettings {
+fn merged(idp: IdpSettings, want_assertions_signed: bool) -> MergedSettings {
     MergedSettings {
         strict: SamlFlag(true),
         sp_entity_id: "https://proxy.example/sso/saml/metadata".to_owned(),
         acs_url: "https://proxy.example/sso/saml/callback".to_owned(),
         name_id_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress".to_owned(),
         want_assertions_signed: SamlFlag(want_assertions_signed),
-        want_messages_signed: SamlFlag(want_messages_signed),
+        want_messages_signed: SamlFlag(false),
         authn_requests_signed: SamlFlag(false),
         idp,
     }
@@ -102,7 +98,6 @@ fn a_single_logout_url_is_checked_only_when_present_and_not_empty() {
             ..idp_with(Some("urn:example:idp"))
         },
         true,
-        false,
     );
     assert_eq!(
         invalid.validate(false).unwrap_err().codes,
@@ -114,7 +109,6 @@ fn a_single_logout_url_is_checked_only_when_present_and_not_empty() {
             ..idp_with(Some("urn:example:idp"))
         },
         true,
-        false,
     );
     empty.validate(false).unwrap();
     let valid = merged(
@@ -123,7 +117,6 @@ fn a_single_logout_url_is_checked_only_when_present_and_not_empty() {
             ..idp_with(Some("urn:example:idp"))
         },
         true,
-        false,
     );
     valid.validate(false).unwrap();
 }
@@ -136,7 +129,6 @@ fn an_empty_single_sign_on_url_is_reported_as_missing() {
             ..idp_with(Some("urn:example:idp"))
         },
         true,
-        false,
     );
     assert_eq!(
         empty.validate(false).unwrap_err().codes,
@@ -152,7 +144,6 @@ fn a_single_sign_on_url_without_a_scheme_is_reported_as_invalid() {
             ..idp_with(Some("urn:example:idp"))
         },
         true,
-        false,
     );
     assert_eq!(
         invalid.validate(false).unwrap_err().codes,
@@ -162,7 +153,7 @@ fn a_single_sign_on_url_without_a_scheme_is_reported_as_invalid() {
 
 #[test]
 fn an_empty_acs_url_is_reported_as_missing() {
-    let mut empty = merged(idp_with(Some("urn:example:idp")), true, false);
+    let mut empty = merged(idp_with(Some("urn:example:idp")), true);
     empty.acs_url = String::new();
     assert_eq!(
         empty.validate(false).unwrap_err().codes,
@@ -172,7 +163,7 @@ fn an_empty_acs_url_is_reported_as_missing() {
 
 #[test]
 fn an_acs_url_without_a_scheme_is_reported_as_invalid() {
-    let mut invalid = merged(idp_with(Some("urn:example:idp")), true, false);
+    let mut invalid = merged(idp_with(Some("urn:example:idp")), true);
     invalid.acs_url = "not a url".to_owned();
     assert_eq!(
         invalid.validate(false).unwrap_err().codes,
@@ -194,7 +185,7 @@ fn a_multiple_certificate_counts_and_no_certificate_is_required_without_the_flag
         name_id_format: None,
         want_authn_requests_signed: None,
     };
-    merged(multiple, true, false).validate(false).unwrap();
+    merged(multiple, true).validate(false).unwrap();
     let bare = IdpSettings {
         entity_id: Some("urn:example:idp".to_owned()),
         sso_url: Some("https://idp.example.com/sso".to_owned()),
@@ -204,7 +195,7 @@ fn a_multiple_certificate_counts_and_no_certificate_is_required_without_the_flag
         name_id_format: None,
         want_authn_requests_signed: None,
     };
-    merged(bare, false, false).validate(false).unwrap();
+    merged(bare, false).validate(false).unwrap();
 }
 
 #[test]
@@ -233,7 +224,7 @@ fn authn_request_values_are_escaped() {
         name_id_format: None,
         want_authn_requests_signed: None,
     };
-    let mut settings = merged(idp, true, false);
+    let mut settings = merged(idp, true);
     settings.sp_entity_id = "urn:a&b".to_owned();
     let xml = authn_request_xml(&settings, "ONELOGIN_FIXED", NOW).unwrap();
     assert!(xml.contains(r#"Destination="https://idp.example.com/sso?a=1&amp;b=2""#));
