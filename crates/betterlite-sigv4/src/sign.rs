@@ -12,6 +12,8 @@ use secrecy::ExposeSecret as _;
 use crate::credentials::Credentials;
 use crate::error::SigV4Error;
 
+pub mod header_map;
+
 // botocore's two header signers; S3SigV4Auth is the one that leaves the path as sent
 #[derive(Debug, Clone, Copy)]
 pub enum SigningMode {
