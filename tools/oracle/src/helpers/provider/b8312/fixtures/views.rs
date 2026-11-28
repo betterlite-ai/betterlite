@@ -34,15 +34,32 @@ pub(super) fn minimax_chat_view(case: &Case) -> HelperResult {
     Ok(json!({"request": request_view(&url, &headers)}))
 }
 
+// the wire request both views return, carrying the provider body only when it sends one
+pub(super) fn wire_request(
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    body: Option<Value>,
+) -> Value {
+    let request = request_view(url, &kept(headers.iter()));
+    match body {
+        Some(params) => json!({"request": request, "params": params}),
+        None => json!({"request": request}),
+    }
+}
+
 pub(super) fn nlp_cloud_view(case: &Case) -> HelperResult {
     let call = chat_call(case, ChatConfigTag::NlpCloud, "nlp_cloud")?;
-    let base = call
-        .api_base
-        .as_deref()
-        .ok_or_else(|| input_failure(String::from("the nlp_cloud arm resolved no api_base")))?;
     let headers = nlp_headers(&BTreeMap::new(), call.api_key.as_ref());
-    let url = format!("{base}{}/generation", call.model);
-    Ok(json!({"request": request_view(&url, &kept(headers.iter()))}))
+    match call.api_base.as_deref() {
+        Some(base) => Ok(wire_request(
+            &format!("{base}{}/generation", call.model),
+            &headers,
+            None,
+        )),
+        None => Err(input_failure(String::from(
+            "the nlp_cloud arm resolved no api_base",
+        ))),
+    }
 }
 
 pub(super) fn volcengine_view(case: &Case) -> HelperResult {
@@ -51,10 +68,7 @@ pub(super) fn volcengine_view(case: &Case) -> HelperResult {
     let headers = request::validate_environment(&caller, call.api_key.as_ref()).or_value_error()?;
     let body = request::transform_embedding_request(&call.model, &call.input, &WireObject::new());
     let url = request::get_complete_url(call.api_base.as_deref());
-    Ok(json!({
-        "request": request_view(&url, &kept(headers.iter())),
-        "params": Value::Object(body),
-    }))
+    Ok(wire_request(&url, &headers, Some(Value::Object(body))))
 }
 
 pub(super) fn dashscope_view(case: &Case) -> HelperResult {
