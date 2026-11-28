@@ -227,9 +227,7 @@ pub(crate) fn dispatch(
         }
         StageInput::AuthRequestModels(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
-        StageInput::AuthContextSources(stage) => {
-            auth_context_sources::run_stage(stage).map_err(StageFailure::AuthContextSources)
-        }
+        StageInput::AuthContextSources(stage) => auth_context_sources::run_stage(stage),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
