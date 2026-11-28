@@ -113,6 +113,21 @@ fn budget_text_names_the_field() {
     );
 }
 
+// the shared decoder reads only the three non-finite spellings, so the other float() spellings name the field
+#[rstest]
+#[case::infinity("\"Infinity\"")]
+#[case::signed_infinity("\"+inf\"")]
+#[case::lowercase_nan("\"nan\"")]
+#[case::overflow("\"1e999\"")]
+fn python_float_spellings_name_the_field(#[case] written: &str) {
+    let source = format!("litellm_settings:\n  max_budget: {written}\n");
+    let error = load(&source).unwrap_err();
+    assert!(
+        error.to_string().contains("litellm_settings.max_budget"),
+        "{error}"
+    );
+}
+
 // a bool is outside the declared float, so the load refuses it and names the setting
 #[test]
 fn boolean_budget_names_the_field() {
