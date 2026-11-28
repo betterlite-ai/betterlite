@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_http::proxy::base_builder;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::RequestBody;
@@ -29,10 +31,10 @@ use http::header::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::api::speech_http::error::{ClientError, SpeechError};
+use crate::api::speech_http::error::SpeechError;
 use crate::api::speech_http::{
-    ClientSource, LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams,
-    SpeechTransport, SpeechWireRequest,
+    LogContext, Mode, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams, SpeechTransport,
+    SpeechWireRequest,
 };
 use crate::api::speech_provider_contract::error::{BaseLlmException, SpeechContractError};
 use crate::api::speech_provider_contract::{
@@ -122,7 +124,7 @@ pub(crate) async fn run<'deps, S>(
     call: &SpeechCall<'_>,
 ) -> Result<SpeechBinaryResponse, SpeechError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: SpeechTransport>,
 {
     let env = PrePostEnv {
         debug: DebugSettings::default(),
