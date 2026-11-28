@@ -25,7 +25,7 @@ use support::{
     with_request_body,
 };
 
-mod batch;
+mod batch_prediction_jobs;
 mod support;
 
 const INTERACTIONS_ROUTE: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/interactions";

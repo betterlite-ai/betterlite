@@ -17,8 +17,6 @@ from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
 )
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
-from b3633 import make_logging
-
 START: Final = datetime.fromisoformat("2026-01-01T00:00:00+00:00")
 ARBITRARY: Final = ConfigDict(arbitrary_types_allowed=True)
 
@@ -44,28 +42,6 @@ class VertexHandler(Protocol):
     def vertex_passthrough_handler(
         self, **kwargs: Unpack[HandlerCall]
     ) -> dict[str, JsonValue]: ...
-
-
-@runtime_checkable
-class HandlerModule(Protocol):
-    VertexAIVideoConfig: Callable[[JsonValue], JsonValue]
-    vertex_search_api_config: Callable[[JsonValue], JsonValue]
-
-
-@runtime_checkable
-class LitellmModule(Protocol):
-    ModelResponse: Callable[[JsonValue], JsonValue]
-
-
-@runtime_checkable
-class ImageModule(Protocol):
-    VertexImageGeneration: Callable[[JsonValue], JsonValue]
-
-
-@runtime_checkable
-class EmbedModule(Protocol):
-    process_embed_content_response: Callable[[JsonValue], JsonValue]
-    process_response: Callable[[JsonValue], JsonValue]
 
 
 @runtime_checkable
@@ -96,32 +72,32 @@ class Leaf:
 
 
 HANDLER: Final = TypeAdapter(VertexHandler, config=ARBITRARY)
-HANDLER_MODULE: Final = TypeAdapter(HandlerModule, config=ARBITRARY)
-LITELLM: Final = TypeAdapter(LitellmModule, config=ARBITRARY)
-IMAGES: Final = TypeAdapter(ImageModule, config=ARBITRARY)
-EMBEDDINGS: Final = TypeAdapter(EmbedModule, config=ARBITRARY)
 LOGGING: Final = TypeAdapter(LoggingSetup, config=ARBITRARY)
 INPUT: Final = TypeAdapter(Input)
 
 
 def branch_for(url_route: str) -> str | None:
     handler = HANDLER.validate_python(handler_module.VertexPassthroughLoggingHandler)
-    bindings = HANDLER_MODULE.validate_python(handler_module)
-    core = LITELLM.validate_python(litellm)
-    images = IMAGES.validate_python(image_module)
-    embeddings = EMBEDDINGS.validate_python(embed_module)
     object.__setattr__(handler_module, "_interactions_model", Leaf("interactions"))
-    bindings.VertexAIVideoConfig = Leaf("video")
-    core.ModelResponse = Leaf("generate_content")
-    embeddings.process_embed_content_response = Leaf("embed_content")
-    embeddings.process_response = Leaf("embed_content")
-    images.VertexImageGeneration = Leaf("predict")
+    object.__setattr__(handler_module, "VertexAIVideoConfig", Leaf("video"))
+    object.__setattr__(litellm, "ModelResponse", Leaf("generate_content"))
+    object.__setattr__(embed_module, "process_embed_content_response", Leaf("embed_content"))
+    object.__setattr__(embed_module, "process_response", Leaf("embed_content"))
+    object.__setattr__(image_module, "VertexImageGeneration", Leaf("predict"))
     object.__setattr__(partner_module, "get_vertex_ai_partner_model_config", Leaf("raw_predict"))
     search = Leaf("search")
     object.__setattr__(search, "transform_search_vector_store_response", search)
-    bindings.vertex_search_api_config = search
+    object.__setattr__(handler_module, "vertex_search_api_config", search)
     handler.batch_prediction_jobs_handler = Leaf("batch_prediction_jobs")
-    logging_obj = make_logging(START)
+    logging_obj = Logging(
+        model="",
+        messages=None,
+        stream=False,
+        call_type="pass_through_endpoint",
+        start_time=START,
+        litellm_call_id="b3642-call",
+        function_id="b3642",
+    )
     setup = LOGGING.validate_python(logging_obj)
     setup.update_environment_variables(litellm_params={}, optional_params={})
     reply = httpx.Response(200, content=b"{}")
