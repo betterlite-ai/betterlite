@@ -173,6 +173,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
         StageFailure::AuthModelGrants(exception)
         | StageFailure::JwtKeys(exception)
+        | StageFailure::JwtTeamSelection(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)

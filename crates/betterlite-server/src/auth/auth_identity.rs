@@ -1,6 +1,6 @@
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::Principal;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
@@ -23,7 +23,6 @@ pub(crate) use crate::auth::failures::StageFailure;
 use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
 use crate::auth::jwt_team_selection::{self, JwtTeamSelectionStageInput};
-use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
@@ -189,6 +188,23 @@ fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), Stage
         return Ok(());
     }
     Err(StageFailure::from(AuthenticationFailure::Missing))
+}
+
+fn master_key_stage(
+    input: &StageInput,
+    master_key: &SecretString,
+) -> Result<AuthContext, AuthenticationFailure> {
+    let StageInput::MasterKey(presented) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
+    if let Some(context) = master_key_context(presented.as_ref(), master_key) {
+        return Ok(context);
+    }
+    let failure = match presented.as_ref() {
+        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+        Some(_) | None => AuthenticationFailure::Missing,
+    };
+    Err(failure)
 }
 
 pub(crate) fn dispatch(

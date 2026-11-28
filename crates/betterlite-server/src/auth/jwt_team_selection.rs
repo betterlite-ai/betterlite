@@ -9,7 +9,7 @@ use betterlite_auth::jwt_claims::claims::JwtClaims;
 use betterlite_auth::jwt_claims::settings::JwtAuthSettings;
 use betterlite_auth::jwt_team_selection::claims_teams::{find_team_in_claims, get_all_team_ids};
 use betterlite_auth::jwt_team_selection::header::{HeaderTeam, resolve_team_from_header};
-use betterlite_auth::jwt_team_selection::object::validate_object_id;
+use betterlite_auth::jwt_team_selection::object::{ObjectPolicy, validate_object_id};
 use betterlite_auth::jwt_team_selection::settings::SelectionSettings;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_paths::paths::Document;
@@ -122,6 +122,15 @@ pub(crate) async fn prefetch(
     Ok(())
 }
 
+pub(crate) async fn prefetched(
+    mut stage: Box<JwtTeamSelectionStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch(&mut stage)
+        .await
+        .map_err(StageFailure::JwtTeamSelection)?;
+    Ok(StageInput::JwtTeamSelection(stage))
+}
+
 // validate_object_id needs the team the earlier phases selected, so it runs once prefetch has stored it
 pub(crate) fn run_stage(
     stage: &JwtTeamSelectionStageInput,
@@ -139,8 +148,10 @@ pub(crate) fn run_stage(
     validate_object_id(
         rule.user_id.as_deref(),
         team_id,
-        rule.enforce_rbac,
-        rule.is_proxy_admin,
+        ObjectPolicy {
+            enforce_rbac: rule.enforce_rbac,
+            is_proxy_admin: rule.is_proxy_admin,
+        },
     )
     .map_err(|error| Box::new(error.into_proxy_exception()))?;
     Ok(stage.context.clone())

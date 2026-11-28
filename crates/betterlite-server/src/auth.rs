@@ -81,7 +81,7 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -241,10 +241,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
-        StageInput::JwtTeamSelection(mut stage) => {
-            jwt_team_selection::prefetch(&mut stage).await?;
-            Ok(StageInput::JwtTeamSelection(stage))
-        }
+        StageInput::JwtTeamSelection(stage) => jwt_team_selection::prefetched(stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
@@ -268,23 +265,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthPolicySupport(_)
         | StageInput::AuthRoutePolicy(_)) => Ok(other),
     }
-}
-
-fn master_key_stage(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = auth_identity::master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
 }
 
 fn default_resolver() -> Arc<RequestModelResolver> {
