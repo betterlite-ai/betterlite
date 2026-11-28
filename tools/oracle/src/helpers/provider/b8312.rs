@@ -1,5 +1,6 @@
 mod fixtures;
 mod oracle;
+mod speech;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -12,17 +11,15 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
-use betterlite_provider::api::speech_http::SpeechCall;
-use betterlite_provider::api::speech_provider_contract::{
-    SpeechHeaders, SpeechRequestInput, TextToSpeechConfig,
-};
 use betterlite_provider::hosted_platform_dispatch::call::CompletionCall;
 use betterlite_provider::hosted_platform_dispatch::handler::{ChatCompletionHandler, HandlerError};
-use betterlite_provider::regional_host_dispatch::error::DispatchError;
-use betterlite_provider::regional_host_dispatch::speech::SpeechHandler;
 use betterlite_redact::secret::Redactor;
 use chrono::DateTime;
 use serde_json::{Value, json};
+
+mod speech;
+
+pub(super) use speech::SpeechRecorder;
 
 const INIT: &str = r#"{"model":"oracle","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 // the two headers both sides build themselves; the HTTP client adds the rest
@@ -39,9 +36,10 @@ pub(super) fn input_failure(message: String) -> Box<HelperError> {
     })
 }
 
-pub(super) fn kept<'name>(
-    pairs: impl Iterator<Item = (&'name String, &'name String)>,
-) -> BTreeMap<String, String> {
+pub(super) fn kept<'name, Pairs>(pairs: Pairs) -> BTreeMap<String, String>
+where
+    Pairs: Iterator<Item = (&'name String, &'name String)>,
+{
     pairs
         .filter(|(name, _)| KEPT.contains(&name.to_lowercase().as_str()))
         .map(|(name, value)| (name.to_lowercase(), value.clone()))
@@ -120,68 +118,4 @@ impl ChatCompletionHandler for ChatRecorder {
             .push(call.clone());
         Ok(())
     }
-}
-
-#[derive(Default)]
-pub(super) struct SpeechRecorder {
-    view: Mutex<Option<Result<Value, String>>>,
-}
-
-impl SpeechRecorder {
-    pub(super) fn take_view(&self) -> Result<Value, Box<HelperError>> {
-        match self
-            .view
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            Some(Ok(view)) => Ok(view),
-            Some(Err(error)) => Err(input_failure(error)),
-            None => Err(input_failure(String::from(
-                "the speech arm called no handler",
-            ))),
-        }
-    }
-}
-
-impl SpeechHandler for SpeechRecorder {
-    type Reply = ();
-
-    fn synthesize(
-        &self,
-        call: &SpeechCall<'_>,
-        config: &dyn TextToSpeechConfig,
-    ) -> impl Future<Output = Result<Self::Reply, DispatchError>> + Send {
-        let built = speech_wire(call, config);
-        *self.view.lock().unwrap_or_else(PoisonError::into_inner) = Some(built);
-        ready(Ok(()))
-    }
-}
-
-fn speech_wire(call: &SpeechCall<'_>, config: &dyn TextToSpeechConfig) -> Result<Value, String> {
-    let url = config
-        .complete_url(
-            call.model,
-            call.params.api_base.as_deref(),
-            call.litellm_params,
-        )
-        .map_err(|error| error.to_string())?;
-    let headers = config.validate_environment(
-        &SpeechHeaders::new(),
-        call.model,
-        call.params.api_key.as_ref(),
-        call.params.api_base.as_deref(),
-    );
-    let data = config.speech_request(&SpeechRequestInput {
-        model: call.model,
-        input: call.input,
-        voice: call.voice,
-        optional_params: call.optional_params,
-        litellm_params: call.litellm_params,
-        headers: &headers,
-    });
-    Ok(json!({
-        "request": request_view(&url, &kept(headers.iter())),
-        "params": data.dict_body,
-    }))
 }

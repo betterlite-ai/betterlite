@@ -19,18 +19,16 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::hosted_platform_dispatch::call::{CompletionCall, EmbeddingCall};
 use betterlite_provider::regional_host_dispatch::chat;
 use betterlite_provider::regional_host_dispatch::context::{
-    CallLogging, DispatchContext, DispatchSettings, EmbeddingContext,
+    CallLogging, DispatchContext, EmbeddingContext,
 };
 use betterlite_provider::regional_host_dispatch::embedding;
-use betterlite_provider::regional_host_dispatch::speech::{self, SpeechContext};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
 
-use super::fixtures::{ChatRecorder, SpeechRecorder, input_failure, kept, logging, request_view};
+use super::fixtures::{ChatRecorder, input_failure, kept, logging, request_view};
 
 // the litellm globals, the request values and the variables each arm falls back to
 #[derive(Deserialize, Default)]
@@ -63,12 +61,14 @@ pub(crate) fn run(case: &Case) -> HelperResult {
         }
         "volcengine_embedding" => volcengine_view(case),
         "dashscope_embedding" => dashscope_view(case),
-        "minimax_speech" => speech_view(case),
+        "minimax_speech" => super::speech::view(case),
         other => Err(input_failure(format!("unknown op {other}"))),
     }
 }
 
-fn section_settings(case: &Case) -> SectionSettings {
+// every key is named; the variables the cases set are read and the rest stay unset
+#[rustfmt::skip]
+pub(super) fn section_settings(case: &Case) -> SectionSettings {
     let read = |name: &str| case.env.get(name).filter(|text| !text.is_empty()).cloned();
     let nonempty = |value: &Option<String>| value.clone().filter(|text| !text.is_empty());
     SectionSettings {
@@ -78,15 +78,15 @@ fn section_settings(case: &Case) -> SectionSettings {
         gigachat_key: nonempty(&case.gigachat_key).map(SecretString::from),
         nlp_cloud_key: nonempty(&case.nlp_cloud_key).map(SecretString::from),
         environment: Environment {
-            ark_api_key: read("ARK_API_KEY").map(SecretString::from),
-            gigachat_api_key: read("GIGACHAT_API_KEY").map(SecretString::from),
-            gigachat_credentials: read("GIGACHAT_CREDENTIALS").map(SecretString::from),
-            nlp_cloud_api_key: read("NLP_CLOUD_API_KEY").map(SecretString::from),
-            nlp_cloud_api_base: read("NLP_CLOUD_API_BASE"),
-            minimax_api_key: read("MINIMAX_API_KEY").map(SecretString::from),
-            dashscope_api_key: read("DASHSCOPE_API_KEY").map(SecretString::from),
-            dashscope_base: read("DASHSCOPE_API_BASE"),
-            ..Environment::default()
+            ark_api_key: read("ARK_API_KEY").map(SecretString::from), ark_api_base: None,
+            dashscope_api_key: read("DASHSCOPE_API_KEY").map(SecretString::from), dashscope_base: read("DASHSCOPE_API_BASE"),
+            dashscope_rerank_base: None, dashscope_image_base: None, modelscope_api_base: None, modelscope_api_key: None,
+            gigachat_api_key: read("GIGACHAT_API_KEY").map(SecretString::from), gigachat_credentials: read("GIGACHAT_CREDENTIALS").map(SecretString::from),
+            minimax_api_key: read("MINIMAX_API_KEY").map(SecretString::from), minimax_api_base: None,
+            nlp_cloud_api_key: read("NLP_CLOUD_API_KEY").map(SecretString::from), nlp_cloud_api_base: read("NLP_CLOUD_API_BASE"),
+            qwen_ai_platform_key: None, qwen_ai_platform_base: None, qwen_ai_platform_rerank_base: None, qwen_ai_platform_image_base: None,
+            qwencloud_key: None, qwencloud_base: None, qwencloud_rerank_base: None, qwencloud_image_base: None,
+            tencent_api_base: None, tencent_api_key: None, volcengine_api_base: None, volcengine_api_key: None,
         },
     }
 }
@@ -113,7 +113,7 @@ fn chat_call(
         provider_config: Some(tag),
         stream: None,
         timeout: None,
-        settings: DispatchSettings::from(&settings),
+        settings: &settings,
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let (mut state, prepost) = logging(&redactor)?;
@@ -170,7 +170,7 @@ fn embedding_call(case: &Case, provider: ProviderId) -> Result<EmbeddingCall, Bo
         optional_params: &optional_params,
         ssl_verify: None,
         timeout: Duration::from_secs(600),
-        settings: DispatchSettings::from(&settings),
+        settings: &settings,
     };
     embedding::dispatch(provider, &context)
         .ok_or_else(|| input_failure(String::from("the provider has no embedding arm")))?
@@ -213,33 +213,4 @@ fn dashscope_view(case: &Case) -> HelperResult {
         "request": request_view(&url, &kept(headers.iter())),
         "params": serde_json::to_value(body)?,
     }))
-}
-
-fn speech_view(case: &Case) -> HelperResult {
-    let settings = section_settings(case);
-    let optional_params = Object::new();
-    let litellm_params = Object::new();
-    let api_key = case.api_key.as_deref().map(SecretString::from);
-    let context = SpeechContext {
-        api_base: case.api_base.as_deref(),
-        api_key: api_key.as_ref(),
-        extra_headers: None,
-        input: case.input.as_str(),
-        litellm_params: &litellm_params,
-        model: &case.model,
-        optional_params: &optional_params,
-        ssl_verify: None,
-        timeout: None,
-        voice: case.voice.clone(),
-        settings: DispatchSettings::from(&settings),
-    };
-    let recorder = SpeechRecorder::default();
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .or_value_error()?;
-    runtime
-        .block_on(speech::minimax(None, &context, &recorder))
-        .map_err(|error| input_failure(error.to_string()))?;
-    recorder.take_view()
 }

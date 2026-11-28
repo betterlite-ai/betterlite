@@ -1,10 +1,11 @@
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, NotRequired, TypedDict
+from typing import ClassVar, Final, NotRequired, Protocol, TypedDict
 
 import litellm
 import openai
+from litellm.llms.minimax.text_to_speech.transformation import MinimaxTextToSpeechConfig
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
@@ -14,12 +15,28 @@ KEPT: Final[tuple[str, ...]] = ("authorization", "content-type")
 BRANDS: Final = ("ARK", "DASHSCOPE", "GIGACHAT", "MINIMAX", "NLP_CLOUD", "QWEN", "VOLCENGINE")
 OAUTH_BODY: Final = '{"access_token":"token-1","expires_at":9999999999999}'
 ENDPOINTS: Final[dict[str, str]] = {
-    "minimax_chat": "/chat/completions",
-    "nlp_cloud_chat": "/generation",
-    "minimax_speech": "/v1/t2a_v2",
-    "volcengine_embedding": "/embeddings",
-    "dashscope_embedding": "/embeddings",
+    "minimax_chat": "/chat/completions", "nlp_cloud_chat": "/generation",
+    "volcengine_embedding": "/embeddings", "dashscope_embedding": "/embeddings",
 }
+
+
+class SpeechConfig(Protocol):
+    def map_openai_params(
+        self,
+        _model: str,
+        _optional_params: dict[str, JsonValue],
+        _voice: str | dict[str, JsonValue] | None,
+        /,
+        *,
+        drop_params: bool,
+    ) -> tuple[str | None, dict[str, JsonValue]]: ...
+
+
+class SpeechFactory(Protocol):
+    def __call__(self) -> SpeechConfig: ...
+
+
+SPEECH: Final[SpeechFactory] = MinimaxTextToSpeechConfig
 
 
 class Answer(TypedDict):
@@ -123,41 +140,50 @@ def prepared(case: Case, exchange: Exchange) -> None:
         case["api_base"] = api_base.replace(UPSTREAM, exchange.base)
 
 
+def text_input(case: Case) -> str:
+    text = case.get("input")
+    if text is None:
+        raise ValueError("the case needs an input")
+    return text
+
+
 def called(case: Case) -> None:
     operation = case["op"]
     provider = operation.removesuffix("_chat").removesuffix("_embedding")
-    model = f"{provider.removesuffix('_speech')}/{case['model']}"
+    model = f"{provider}/{case['model']}"
     if operation.endswith("_embedding"):
         litellm.embedding(
             model=model,
-            input=case["input"],
+            input=text_input(case),
             api_base=case.get("api_base"),
             api_key=case.get("api_key"),
         )
-    elif operation == "minimax_speech":
-        litellm.speech(
-            model=model,
-            input=case["input"],
-            voice=case.get("voice"),
-            api_base=case.get("api_base"),
-            api_key=case.get("api_key"),
-        )
-    else:
-        litellm.completion(
-            model=model,
-            messages=[{"role": "user", "content": "hi"}],
-            api_base=case.get("api_base"),
-            api_key=case.get("api_key"),
-        )
+        return
+    litellm.completion(
+        model=model,
+        messages=[{"role": "user", "content": "hi"}],
+        api_base=case.get("api_base"),
+        api_key=case.get("api_key"),
+    )
+
+
+def speech_view(case: Case) -> JsonValue:
+    voice, params = SPEECH().map_openai_params(
+        case["model"], {}, case.get("voice"), drop_params=False
+    )
+    answer: dict[str, JsonValue] = {"voice": voice, "params": params}
+    return answer
 
 
 def value(case: Case, exchange: Exchange) -> JsonValue:
+    operation = case["op"]
+    if operation == "minimax_speech":
+        return speech_view(case)
     try:
         called(case)
     except openai.APIError as raised:
         # a missing key fails before any request, so litellm's added 500 status is not the arm's
         raise RuntimeError(str(raised)) from raised
-    operation = case["op"]
     if operation in ("gigachat_chat", "gigachat_embedding"):
         for record in exchange.records:
             if record["url"].endswith("/oauth"):
