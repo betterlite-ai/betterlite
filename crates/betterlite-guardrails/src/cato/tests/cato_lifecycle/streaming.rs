@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::websocket_client::error::WebSocketClientError;
 use reqwest::header::HeaderMap;
 use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time;
-use tokio_tungstenite::tungstenite::Error as WebSocketError;
 
 use super::ws_guardrail;
 use crate::cato::CatoGuardrail;
@@ -74,7 +74,7 @@ impl CatoFrameWriter for FakeWriter {
     async fn send_text(&mut self, text: &str) -> Result<(), CatoError> {
         if self.fail_writes {
             return Err(CatoError::WebSocket {
-                source: WebSocketError::AlreadyClosed,
+                source: WebSocketClientError::Protocol,
             });
         }
         self.sent.lock().expect("sent").push(text.to_owned());
