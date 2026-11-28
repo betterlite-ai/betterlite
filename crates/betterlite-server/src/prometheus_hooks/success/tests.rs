@@ -62,7 +62,7 @@ async fn invalid_key_is_skipped() {
 #[tokio::test]
 async fn success_emits_every_step_and_ends_with_the_total() {
     let router = Arc::new(RecordingRouterUsage::new(9, 5));
-    let usage: Arc<dyn RemainingModelGroupUsage> = Arc::clone(&router);
+    let usage: Arc<dyn RemainingModelGroupUsage> = Arc::<RecordingRouterUsage>::clone(&router);
     let fixture = fixture_with_ports(
         labelled_settings(),
         PrometheusHookPorts {
