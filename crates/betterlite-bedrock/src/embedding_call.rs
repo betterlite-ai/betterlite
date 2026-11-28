@@ -7,11 +7,10 @@ pub mod sign;
 mod tests;
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::cohere_embedding::TextEncoding;
@@ -22,11 +21,10 @@ use futures_util::future::BoxFuture;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 
-use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use crate::bedrock_embedding_io::response::EmbeddingReply;
-use crate::bedrock_embedding_io::transport::{ClientFactory, SuppliedClient, Timeout};
-use crate::credentials::error::CredentialError;
+use crate::bedrock_embedding_io::transport::{ClientFactory, Timeout};
+use crate::credentials::CredentialSource;
 use crate::signing::executor::AwsSigningExecutor;
 use error::EmbeddingCallError;
 
@@ -61,14 +59,6 @@ pub struct LogContext<'borrow, 'env> {
     pub env: &'borrow PrePostEnv<'env>,
 }
 
-pub trait CredentialSource {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
-}
-
 pub struct Dependencies<'source, Source, Factory, Transport> {
     pub secrets: &'source SecretLookup,
     pub region_worker: &'source ManagedRegionWorker,
@@ -94,7 +84,7 @@ pub fn embeddings<'run, Source, Factory, Transport>(
     log: &'run mut LogContext<'_, '_>,
 ) -> BoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
     Factory::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,

@@ -83,6 +83,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "oauth_tokens"
+path = "fuzz_targets/oauth_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "request_body_safety"
 path = "fuzz_targets/request_body_safety.rs"
 test = false

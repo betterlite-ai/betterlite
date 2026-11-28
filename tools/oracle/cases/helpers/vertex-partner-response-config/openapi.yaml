@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-partner-response-config-openapi
+call:
+  b10159:
+    publisher: openapi
+    model: meta/llama-3.1-405b-instruct-maas
+    status: 200
+    raw_text: |
+      {"id":"l-1","created":5,"model":"upstream-model","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}
+    headers: {x-request-id: req-b10159}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+env: {}
+compare: {ignore: []}

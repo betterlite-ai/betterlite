@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use crate::embeddings::call::EmbeddingMode;
 use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::route::models_route_base;
+use betterlite_http::client_kind::ClientKind;
 
 use super::support::{
     Answer, BASE, Factory, IMAGE_ONE, IMAGE_URI, MODEL, TEXT_EMPTY, TEXT_ONE, Text, key, request,
@@ -151,7 +151,7 @@ fn text_call_gets_the_route_base() {
     let input = strings(&["hello"]);
     let secret = key("text-key");
     let base = format!("{BASE}/v1");
-    for mode in [EmbeddingMode::Sync, EmbeddingMode::Async] {
+    for mode in [ClientKind::Sync, ClientKind::Asynchronous] {
         let mut call = request(MODEL, &input);
         call.mode = mode;
         call.api_base = Some(&base);
@@ -173,7 +173,7 @@ fn async_without_guards() {
     let input = strings(&[IMAGE_URI]);
     let secret = key("async-key");
     let mut call = request(MODEL, &input);
-    call.mode = EmbeddingMode::Async;
+    call.mode = ClientKind::Asynchronous;
     call.api_base = None;
     call.api_key = Some(&secret);
     let factory = Factory::new(Answer::json(IMAGE_ONE));

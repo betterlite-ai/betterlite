@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::decode::decode_assistant_object;
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::{

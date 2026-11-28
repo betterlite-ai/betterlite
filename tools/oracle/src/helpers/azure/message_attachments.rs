@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::endpoints::projection::LiteLlmParams;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::threads::records::ThreadMessageData;
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
@@ -22,16 +23,9 @@ struct Reply {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum KindName {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SuppliedStep {
-    kind: KindName,
+    kind: ClientKind,
 }
 
 // One facade call: the method arguments LiteLLM reads, the litellm_params it forwards, and the SDK reply to serve.

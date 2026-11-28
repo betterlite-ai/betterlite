@@ -1,0 +1,18 @@
+task: B7877
+deviations:
+- what: "`client` and `shared_session` in kwargs raise `UnsupportedCallArgument` instead of being passed to the vector store file handlers."
+  why: They are live Python HTTP clients; betterlite makes its own request through its Rust transport, so accepting them would silently ignore the client the caller gave.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L167
+- what: "`create`, `list`, `retrieve`, `retrieve_content`, `update`, `delete` and their async twins run their body directly instead of through the `@client` wrapper, so the wrapper's logging-object setup, `litellm_credential_name` credential loading, caching, success and failure handlers, post-call rules and cost tracking do not run."
+  why: betterlite-sdk has no vector store file call target for CallWrapper; the native session builds its own pre and post-call logging, and adding the target is outside this task's scope.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L106
+- what: "A `litellm_logging_obj` in kwargs is dropped, where LiteLLM hands the caller's logging object to the handler's pre-call and post-call logging."
+  why: The object is Python state a Rust call cannot reach; the native session logs the call with its own logging state, so keeping the object would promise records that never arrive.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L122
+- what: "`logger_fn` is never called; the call warns that the logger function does not run, where LiteLLM keeps it on the logging object and calls it on success and failure."
+  why: A Python callable cannot cross into Rust; a silent drop would leave the caller waiting for a call that never comes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1400-L1403
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server in crates/betterlite-python/tests/test_vector_store_files.py.
+  link: ""
+kept_bugs: []

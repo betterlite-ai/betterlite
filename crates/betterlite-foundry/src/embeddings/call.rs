@@ -2,6 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use betterlite_azure::image_transport::{ImageRequest, ImageTransport};
+use betterlite_http::client_kind::{ClientKind, SuppliedClient};
 use betterlite_models::call_helpers::headers::{AdditionalHeaders, OPENAI_RESPONSE_HEADERS};
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingRecord;
@@ -20,18 +21,6 @@ use crate::embeddings::request::{
 };
 use crate::embeddings::route::models_route_base;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EmbeddingMode {
-    Sync,
-    Async,
-}
-
-// the caller's client is reused only when its kind matches the call, as LiteLLM's isinstance checks do
-pub struct SuppliedClient<'client, Client> {
-    pub mode: EmbeddingMode,
-    pub client: &'client Client,
-}
-
 // B173 builds the clients: HTTPHandler(timeout, concurrent_limit=1) sync, azure_ai async
 pub trait EmbeddingClientFactory: Sync {
     type Client: ImageTransport;
@@ -42,7 +31,7 @@ pub trait EmbeddingClientFactory: Sync {
 }
 
 pub struct TextEmbeddingCall<'call> {
-    pub mode: EmbeddingMode,
+    pub mode: ClientKind,
     pub model: &'call str,
     pub input: &'call [String],
     pub api_base: Option<&'call str>,
@@ -66,7 +55,7 @@ pub struct FoundryEmbeddingRequest<'call> {
     pub api_base: Option<&'call str>,
     pub api_key: Option<&'call SecretString>,
     pub timeout: Duration,
-    pub mode: EmbeddingMode,
+    pub mode: ClientKind,
 }
 
 pub async fn embedding<Factory, Text>(
@@ -118,12 +107,12 @@ where
     let body =
         serde_json::to_vec(image).map_err(|source| FoundryEmbeddingError::Encode { source })?;
     let image_request = ImageRequest::new(Method::POST, url.clone(), headers, body);
-    let outcome = if let Some(reused) = supplied.filter(|client| client.mode == request.mode) {
-        reused.client.send(image_request).await
+    let outcome = if let Some(reused) = supplied.filter(|client| client.kind == request.mode) {
+        reused.transport.send(image_request).await
     } else {
         let built = match request.mode {
-            EmbeddingMode::Sync => factory.sync_client(request.timeout),
-            EmbeddingMode::Async => factory.async_client(request.timeout),
+            ClientKind::Sync => factory.sync_client(request.timeout),
+            ClientKind::Asynchronous => factory.async_client(request.timeout),
         };
         built.send(image_request).await
     };
@@ -170,11 +159,11 @@ where
 
 // the sync route refuses a missing base or key; the async route leaves both to the request itself
 fn sync_guards(
-    mode: EmbeddingMode,
+    mode: ClientKind,
     base: Option<&str>,
     key: Option<&SecretString>,
 ) -> Result<(), FoundryEmbeddingError> {
-    if mode != EmbeddingMode::Sync {
+    if mode != ClientKind::Sync {
         return Ok(());
     }
     if base.is_none() {

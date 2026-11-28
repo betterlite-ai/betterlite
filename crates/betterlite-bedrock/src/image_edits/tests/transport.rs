@@ -6,7 +6,7 @@ use betterlite_redact::secret::Redactor;
 
 use super::cases::{Answer, Run, STABILITY_MODEL, auth_params, call, image_list, run};
 use super::fixture::Reply;
-use crate::image_call::transport::ClientKind;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 pub(super) fn edit_transport_selection(redactor: &Redactor) {
     sync_selection(redactor);
@@ -19,7 +19,7 @@ fn sync_selection(redactor: &Redactor) {
     assert_eq!(from_factory.sync_calls, 1);
     assert!(from_factory.async_calls.is_empty());
     assert_eq!(from_factory.factory_requests.len(), 1);
-    let async_ignored = edit_run(redactor, false, None, Some(ClientKind::Async));
+    let async_ignored = edit_run(redactor, false, None, Some(ClientKind::Asynchronous));
     assert_eq!(async_ignored.sync_calls, 1);
     assert!(async_ignored.supplied_requests.is_empty());
     let sync_taken = edit_run(redactor, false, None, Some(ClientKind::Sync));
@@ -36,7 +36,7 @@ fn async_selection(redactor: &Redactor) {
     let no_timeout_option = edit_run(redactor, true, None, None);
     assert_eq!(no_timeout_option.async_calls, vec![None]);
     assert_eq!(no_timeout_option.factory_requests.len(), 1);
-    let async_supplied = edit_run(redactor, true, None, Some(ClientKind::Async));
+    let async_supplied = edit_run(redactor, true, None, Some(ClientKind::Asynchronous));
     assert!(async_supplied.async_calls.is_empty());
     assert_eq!(async_supplied.supplied_requests.len(), 1);
     let sync_rejected = edit_run(redactor, true, timeout, Some(ClientKind::Sync));

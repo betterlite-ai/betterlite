@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::controls::json_value::JsonValue;
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::operations::RunDispatch;
 use betterlite_openai::thread_runs::records::RunRequest;
@@ -79,7 +79,7 @@ async fn runs_async_facade() {
     let RunOutcome::Polled(kind, reply) = *run else {
         panic!()
     };
-    assert_eq!(kind, ClientKind::Async);
+    assert_eq!(kind, ClientKind::Asynchronous);
     assert_eq!(reply.status, "completed");
     let seen = transport.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 2);
@@ -135,7 +135,7 @@ async fn runs_stream_open_failure() {
     let RunOutcome::Streaming(kind, mut events) = *run else {
         panic!("a refused stream did not stay a stream")
     };
-    assert_eq!(kind, ClientKind::Async);
+    assert_eq!(kind, ClientKind::Asynchronous);
     assert!(transport.seen.lock().unwrap().is_empty());
     let Some(Err(ThreadRunsError::Status(400, body))) = events.next().await else {
         panic!("the refused open did not come out of the stream")

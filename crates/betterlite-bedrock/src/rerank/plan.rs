@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::{Duration, SystemTime};
 
-use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
@@ -17,8 +15,6 @@ use serde_json::value::RawValue;
 use super::error::RerankCallError;
 use super::transform::transform_request;
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
-use crate::aws_settings::sources::Credentials;
-use crate::credentials::error::CredentialError;
 use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
 use crate::signing::request::AwsSignedRequest;
@@ -54,14 +50,6 @@ pub struct PreparedRequest {
 pub struct LogContext<'borrow, 'env> {
     pub state: &'borrow mut LoggingState,
     pub env: &'borrow PrePostEnv<'env>,
-}
-
-pub trait CredentialSource {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
 }
 
 pub fn prepare_request(

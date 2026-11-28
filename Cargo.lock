@@ -1305,7 +1305,6 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-bedrockruntime",
  "aws-sdk-sts",
- "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
  "aws-smithy-http",
@@ -1328,6 +1327,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-sdk",
  "betterlite-secret-managers",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "bytes",
@@ -1671,9 +1671,6 @@ name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "aws-credential-types",
- "aws-sigv4",
- "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -1703,6 +1700,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-secrets",
  "betterlite-semantic",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-test-ports",
  "betterlite-tokenizer",
@@ -2172,7 +2170,6 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sts",
- "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -2184,6 +2181,7 @@ dependencies = [
  "betterlite-interactions",
  "betterlite-models",
  "betterlite-prometheus",
+ "betterlite-sigv4",
  "betterlite-test-ports",
  "bytes",
  "crc32fast",
@@ -2332,6 +2330,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "betterlite-sigv4",
  "betterlite-test-ports",
  "chrono",
  "clap",
@@ -2459,6 +2458,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2556,9 +2556,6 @@ name = "betterlite-openai"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "aws-credential-types",
- "aws-sigv4",
- "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
@@ -2570,6 +2567,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-test-ports",
  "betterlite-tokenizer",
@@ -3040,6 +3038,7 @@ dependencies = [
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
@@ -3171,9 +3170,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-oracle",
  "betterlite-oracle-runner",
- "chrono",
  "libfuzzer-sys",
- "quick-xml",
  "serde",
  "serde-saphyr",
  "thiserror",
@@ -3826,6 +3823,7 @@ dependencies = [
  "betterlite-analytics",
  "betterlite-auth",
  "betterlite-backend",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -3834,6 +3832,7 @@ dependencies = [
  "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-lens",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -3864,7 +3863,6 @@ dependencies = [
  "jiff",
  "jsonwebtoken",
  "opentelemetry",
- "quick-xml",
  "rand 0.10.3",
  "rmcp",
  "rstest",
@@ -3882,6 +3880,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -4360,6 +4359,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-secret-managers",
+ "betterlite-sigv4",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -4647,12 +4647,11 @@ version = "0.1.0"
 dependencies = [
  "aws-credential-types",
  "aws-sdk-kms",
- "aws-sigv4",
  "aws-smithy-http-client",
- "aws-smithy-runtime-api",
  "axum",
  "base64 0.23.1",
  "betterlite-env",
+ "betterlite-sigv4",
  "http 1.5.0",
  "num-traits",
  "percent-encoding",
@@ -4824,6 +4823,7 @@ dependencies = [
  "phf",
  "pkcs8",
  "pyo3",
+ "quick-xml",
  "rand 0.10.3",
  "rcgen",
  "redis",
@@ -4876,6 +4876,19 @@ dependencies = [
  "libfuzzer-sys",
  "rust_decimal",
  "serde_json",
+]
+
+[[package]]
+name = "betterlite-sigv4"
+version = "0.1.0"
+dependencies = [
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "thiserror",
 ]
 
 [[package]]
@@ -5006,6 +5019,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-sigv4",
  "chrono",
  "claxon",
  "futures-util",
@@ -5055,11 +5069,13 @@ dependencies = [
  "betterlite-core",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-test-ports",
  "betterlite-tokenizer",

@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_bedrock::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest,
-    Timeout, TimeoutRecord, TransferError,
+    ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest, Timeout,
+    TimeoutRecord, TransferError,
 };
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
@@ -234,7 +235,7 @@ pub(crate) fn supplied_client(case: &HttpRequest) -> Option<(ClientKind, Fixture
     let kind = match case.supplied {
         Supplied::None => return None,
         Supplied::Sync => ClientKind::Sync,
-        Supplied::Async => ClientKind::Async,
+        Supplied::Async => ClientKind::Asynchronous,
     };
     Some((kind, FixtureClient::new(case.reply.clone())))
 }

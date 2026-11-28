@@ -1,5 +1,6 @@
 use std::str;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_state::LoggingState;
@@ -9,14 +10,14 @@ use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 
 use super::decode::decode_rerank_reply;
 use super::error::RerankCallError;
-use super::plan::{CredentialSource, LogContext, PreparedRequest, RerankCall};
+use super::plan::{LogContext, PreparedRequest, RerankCall};
 use super::transport::{
-    ClientFactory, ClientKind, RerankHttpReply, RerankHttpRequest, RerankTransport as _,
-    SuppliedClient, TransferError,
+    ClientFactory, RerankHttpReply, RerankHttpRequest, RerankTransport as _, TransferError,
 };
 use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
 };
+use crate::credentials::CredentialSource;
 use crate::signing::target::{RegionInputs, RequestTarget, TargetRequest, request_target};
 
 pub async fn resolve_target<Source>(
@@ -24,7 +25,7 @@ pub async fn resolve_target<Source>(
     source: &Source,
 ) -> Result<RequestTarget, RerankCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     // no bearer shortcut: LiteLLM prepares rerank with supports_bearer_token=False
     let target = request_target(
@@ -84,7 +85,7 @@ where
     Factory: ClientFactory + Sync,
 {
     match (is_async, supplied) {
-        (true, Some(client)) if client.kind == ClientKind::Async => {
+        (true, Some(client)) if client.kind == ClientKind::Asynchronous => {
             client.transport.post_with_logging(request, state).await
         }
         (true, _) => {

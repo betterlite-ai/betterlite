@@ -1,0 +1,25 @@
+kind: helper
+name: riva-call-nvcf-metadata
+call:
+  riva_call:
+    calls:
+      - model: nvidia-riva/parakeet
+        audio_name: clip.wav
+        file_hex: "0000"
+        samples: 1600
+        optional_params:
+          nvcf_function_id: fn-abc123
+        api_base: grpc.nvcf.nvidia.com:443
+        api_key: riva-secret
+        timeout_seconds: 30.0
+        service: timeout
+        legacy_auth: false
+        endpointing: ok
+        stream:
+          - results:
+              - is_final: true
+                alternatives:
+                  - transcript: "hello"
+                    words: []
+compare: {ignore: []}
+env: {}

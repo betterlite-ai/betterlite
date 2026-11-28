@@ -1,0 +1,14 @@
+kind: helper
+name: armed-chat-request
+call:
+  b10153:
+    state: armed
+    payload:
+      model: openai/gpt-4o
+      messages:
+        - role: user
+          content:
+            - type: encrypted_content
+              encrypted_content: gAAAAABopaque
+env: {}
+compare: {ignore: []}

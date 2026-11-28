@@ -1,0 +1,10 @@
+general_settings:
+  enable_oauth2_auth: true
+  enable_oauth2_proxy_auth: true
+  oauth2_config_mappings:
+    user_id: X-User-Id
+    user_email: X-User-Email
+    team_id: X-Team-Id
+    team_alias: X-Team-Alias
+    org_id: X-Org-Id
+    models: X-Models

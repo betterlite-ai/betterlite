@@ -1,10 +1,10 @@
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::text_completion_transport::sdk::{
-    ClientConstructor, ClientKind, HttpClientSource, RawCompletion, SdkArguments, SdkError,
-    TextCompletionSdk,
+    ClientConstructor, HttpClientSource, RawCompletion, SdkArguments, SdkError, TextCompletionSdk,
 };
 use futures_util::StreamExt as _;
 use futures_util::stream;

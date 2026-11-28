@@ -1,0 +1,13 @@
+id: B10218
+milestone: R2 bug fixes
+title: A production ProxyDiagnostics for handle_exception_on_proxy, built once and handed out by the server state
+status: done
+depends_on: [B2400, B4170, B9979, B10058, B1100, B1075]
+file: tasks/B10218-proxy-bug-report-notices.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3436
