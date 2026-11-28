@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-team-selection-seed
+call:
+  jwt_team_selection:
+    scenarios:
+      - function: header
+        headers: {x-litellm-team-id: team-a}
+        allowed_team_ids: [team-a]
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: shared}
+        agents:
+          - {agent_id: shared, agent_name: agent-one, agent_card_params: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,44 @@
+kind: helper
+name: jwt-team-selection-claim-fallback-errors
+call:
+  jwt_team_selection:
+    scenarios:
+      # only a 404 from the id claim defers to the fallback
+      - function: specific_team
+        token: {team_id: missing}
+        fields: {team_id_jwt_field: team_id, team_alias_jwt_field: team_alias, team_claim_fallback: true}
+      - function: specific_team
+        token: {team_id: missing}
+        fields: {team_id_jwt_field: team_id, team_alias_jwt_field: team_alias}
+      # no database is a plain 401, not a fallback
+      - function: specific_team
+        token: {team_id: team-a}
+        fields: {team_id_jwt_field: team_id}
+        database: false
+      # a row that exists but does not decode is still a 404, and the fallback takes it
+      - function: specific_team
+        token: {team_id: broken}
+        fields: {team_id_jwt_field: team_id, team_claim_fallback: true}
+        teams:
+          broken: {team_id: broken, models: null}
+      - function: specific_team
+        token: {team_id: broken}
+        fields: {team_id_jwt_field: team_id}
+        teams:
+          broken: {team_id: broken, models: null}
+      # an alias claim that finds no team fails on its own
+      - function: specific_team
+        token: {team_alias: missing-alias}
+        fields: {team_alias_jwt_field: team_alias}
+      # the fallback does not affect a resolved alias
+      - function: specific_team
+        token: {team_alias: alias-a}
+        fields: {team_alias_jwt_field: team_alias, team_claim_fallback: true}
+        aliases:
+          alias-a: [{team_id: team-a, models: []}]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/scenarios/1/error/message, why: B737 renders the missing team as text where LiteLLM attaches the same text inside a detail object}
+    - {pointer: /value/scenarios/4/error/message, why: B737 renders the unreadable row as text where LiteLLM attaches the same text inside a detail object}
+    - {pointer: /value/scenarios/5/error/message, why: B737 renders the missing alias as text where LiteLLM attaches the same text inside a detail object}

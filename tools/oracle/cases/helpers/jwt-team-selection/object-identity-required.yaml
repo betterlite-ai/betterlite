@@ -1,0 +1,28 @@
+kind: helper
+name: jwt-team-selection-object-identity-required
+call:
+  jwt_team_selection:
+    scenarios:
+      # enforced RBAC needs an admin, a user or a team to attribute the call to
+      - function: object
+        enforce_rbac: true
+      - function: object
+        enforce_rbac: true
+        is_proxy_admin: true
+      - function: object
+        enforce_rbac: true
+        user_id: user-1
+      - function: object
+        enforce_rbac: true
+        team_id: team-a
+      # without enforcement the token may name neither
+      - function: object
+        enforce_rbac: false
+      # an admin passes even when the token carries both identities
+      - function: object
+        enforce_rbac: true
+        is_proxy_admin: true
+        user_id: user-1
+        team_id: team-a
+env: {}
+compare: {ignore: []}

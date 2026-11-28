@@ -1,0 +1,20 @@
+kind: helper
+name: jwt-team-selection-header-not-in-claims
+call:
+  jwt_team_selection:
+    scenarios:
+      # no database means no alias to rescue the value, and the ids are listed sorted
+      - function: header
+        headers: {x-litellm-team-id: team-z}
+        allowed_team_ids: [team-b, team-a]
+        database: false
+      # the alias lookup runs and finds nothing
+      - function: header
+        headers: {x-litellm-team-id: team-z}
+        allowed_team_ids: [team-a]
+      # an empty claim set still lists as an empty Python list
+      - function: header
+        headers: {x-litellm-team-id: team-z}
+        allowed_team_ids: []
+env: {}
+compare: {ignore: []}

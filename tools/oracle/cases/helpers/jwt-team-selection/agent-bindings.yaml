@@ -1,0 +1,56 @@
+kind: helper
+name: jwt-team-selection-agent-bindings
+call:
+  jwt_team_selection:
+    scenarios:
+      # the claim matches a registered agent id before a name
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: shared}
+        agents:
+          - {agent_id: by-name, agent_name: shared, agent_card_params: {}}
+          - {agent_id: shared, agent_name: by-id, agent_card_params: {}}
+      # a name match returns the registered id
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: agent-by-name}
+        agents:
+          - {agent_id: a1, agent_name: agent-by-name, agent_card_params: {}}
+      # every identity binding forbids the agent, whatever matched it
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: a2}
+        agents:
+          - {agent_id: a2, agent_name: agent-two, agent_card_params: {}, identity_managed: true}
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: a3}
+        agents:
+          - agent_id: a3
+            agent_name: agent-three
+            agent_card_params: {}
+            identity:
+              agent_id: a3
+              provider: microsoft_entra
+              tenant_id: tenant
+              client_id: client
+              issuer: issuer
+              revision: "1"
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: a4}
+        agents:
+          - {agent_id: a4, agent_name: agent-four, agent_card_params: {}, litellm_params: {identity: null}}
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {agent_id: a5}
+        agents:
+          - {agent_id: a5, agent_name: agent-five, agent_card_params: {}, litellm_params: {identity: bound}}
+      # no claim selects nothing
+      - function: agent
+        fields: {agent_id_jwt_field: agent_id}
+        token: {sub: someone}
+        agents:
+          - {agent_id: a1, agent_name: agent-one, agent_card_params: {}}
+env: {}
+compare: {ignore: []}

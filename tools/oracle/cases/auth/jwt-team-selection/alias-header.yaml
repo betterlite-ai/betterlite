@@ -1,0 +1,27 @@
+kind: helper
+name: jwt-team-selection-alias-header
+call:
+  jwt_team_selection:
+    scenarios:
+      # a unique alias whose team is among the claims selects that team
+      - function: header
+        headers: {x-litellm-team-id: alias-a}
+        allowed_team_ids: [team-a]
+        aliases:
+          alias-a: [{team_id: team-a, models: []}]
+      # an alias outside the claims fails the header check
+      - function: header
+        headers: {x-litellm-team-id: alias-b}
+        allowed_team_ids: [team-a]
+        aliases:
+          alias-b: [{team_id: team-b, models: []}]
+      # an alias two teams share resolves to no team and is denied
+      - function: header
+        headers: {x-litellm-team-id: alias-c}
+        allowed_team_ids: [team-a, team-b]
+        aliases:
+          alias-c:
+            - {team_id: team-a, models: []}
+            - {team_id: team-b, models: []}
+env: {}
+compare: {ignore: []}

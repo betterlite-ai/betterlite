@@ -1,0 +1,27 @@
+kind: helper
+name: jwt-team-selection-header-casefold
+call:
+  jwt_team_selection:
+    scenarios:
+      # the header name matches without regard to case, and its value is an allowed id
+      - function: header
+        headers: {X-LiteLLM-Team-ID: team-a}
+        allowed_team_ids: [team-a, team-b]
+      - function: header
+        headers: {x-litellm-team-id: team-b}
+        allowed_team_ids: [team-b]
+      - function: header
+        headers: {X-LiTeLLM-TeAm-Id: team-b}
+        allowed_team_ids: [team-a, team-b]
+      # no header, an unrelated header and an empty value all select nothing
+      - function: header
+        headers: {}
+        allowed_team_ids: [team-a]
+      - function: header
+        headers: {x-other-header: team-a}
+        allowed_team_ids: [team-a]
+      - function: header
+        headers: {x-litellm-team-id: ""}
+        allowed_team_ids: [team-a]
+env: {}
+compare: {ignore: []}

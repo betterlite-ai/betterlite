@@ -1,0 +1,25 @@
+kind: helper
+name: jwt-team-selection-auth-unknown-agent
+call:
+  jwt_team_selection:
+    scenarios:
+      # the claim field is the configured one, and the refusal names it
+      - function: agent
+        fields: {agent_id_jwt_field: azp}
+        token: {azp: nobody}
+        agents:
+          - {agent_id: a1, agent_name: agent-one, agent_card_params: {}}
+      # the same registry resolves a name match, so the denial is about this claim
+      - function: agent
+        fields: {agent_id_jwt_field: azp}
+        token: {azp: agent-one}
+        agents:
+          - {agent_id: a1, agent_name: agent-one, agent_card_params: {}}
+      # a bound agent is refused like an unregistered one
+      - function: agent
+        fields: {agent_id_jwt_field: azp}
+        token: {azp: a1}
+        agents:
+          - {agent_id: a1, agent_name: agent-one, agent_card_params: {}, identity_managed: true}
+env: {}
+compare: {ignore: []}
