@@ -8,7 +8,7 @@ use crate::api::riva::records::grpc_status::RivaException;
 use crate::api::transcription_call::error::TranscriptionDispatchError;
 
 // the source's pinned 400 text for a missing gRPC endpoint, word for word
-pub const MISSING_ENDPOINT: &str = "NVIDIA Riva requires `api_base` (host:port for the gRPC endpoint, e.g. `grpc.nvcf.nvidia.com:443` or `localhost:50051`). Set it in litellm_params or via `NVIDIA_RIVA_API_BASE`.";
+pub const MISSING_ENDPOINT: &str = "NVIDIA Riva requires `api_base` (host:port for the gRPC endpoint, e.g. `grpc.nvcf.nvidia.com:443` or `localhost:50051`). Set it in litellm_params or via NVIDIA_RIVA_API_BASE.";
 
 // the source's 500 text when the optional client is absent
 pub const INSTALL_HINT: &str =
