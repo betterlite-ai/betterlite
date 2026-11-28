@@ -33,14 +33,9 @@ async fn bind() -> Server {
     }
 }
 
-fn client() -> ProxiedClient {
+fn client(limits: TransportLimits) -> ProxiedClient {
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
-    ProxiedClient::build(
-        base_builder().http1_only(),
-        &policy,
-        TransportLimits::DEFAULT,
-    )
-    .unwrap()
+    ProxiedClient::build(base_builder().http1_only(), &policy, limits).unwrap()
 }
 
 async fn read_head(socket: &mut TcpStream) {
@@ -55,13 +50,11 @@ async fn read_head(socket: &mut TcpStream) {
     }
 }
 
-fn ok(body: &str) -> String {
+fn answer(code: u16, reason: &str, body: &str) -> String {
     let length = body.len();
-    format!("HTTP/1.1 200 OK\r\ncontent-length: {length}\r\nconnection: close\r\n\r\n{body}")
-}
-
-fn status(code: u16, reason: &str) -> String {
-    format!("HTTP/1.1 {code} {reason}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+    format!(
+        "HTTP/1.1 {code} {reason}\r\ncontent-length: {length}\r\nconnection: close\r\n\r\n{body}"
+    )
 }
 
 fn redirect(location: &str) -> String {
@@ -96,7 +89,7 @@ async fn five_second_deadline_ends_a_hanging_fetch() {
     tasks.spawn(hang(Arc::clone(&server.listener)));
     let clock = Arc::new(FixedClock { now: 100.0 });
     let (feed, warnings) = feed(
-        client(),
+        client(TransportLimits::DEFAULT),
         &server.url,
         false,
         clock,
@@ -117,11 +110,11 @@ async fn rejects_a_non_success_status() {
     let mut tasks = JoinSet::new();
     tasks.spawn(serve(
         Arc::clone(&server.listener),
-        status(503, "Service Unavailable"),
+        answer(503, "Service Unavailable", FRESH),
     ));
     let clock = Arc::new(FixedClock { now: 100.0 });
     let (feed, warnings) = feed(
-        client(),
+        client(TransportLimits::DEFAULT),
         &server.url,
         false,
         clock,
@@ -132,6 +125,7 @@ async fn rejects_a_non_success_status() {
     let recorded = warnings.warnings();
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].subject.as_deref(), Some(server.url.as_str()));
+    assert!(recorded[0].message.contains("returned HTTP status 503"));
 }
 
 #[tokio::test]
@@ -144,12 +138,12 @@ async fn does_not_follow_a_redirect() {
     tasks.spawn(serve(Arc::clone(&redirector.listener), redirect(&location)));
     tasks.spawn(serve_counted(
         Arc::clone(&target.listener),
-        ok(FRESH),
+        answer(200, "OK", FRESH),
         Arc::clone(&hits),
     ));
     let clock = Arc::new(FixedClock { now: 100.0 });
     let (feed, _) = feed(
-        client(),
+        client(TransportLimits::DEFAULT),
         &redirector.url,
         false,
         clock,
@@ -163,14 +157,20 @@ async fn does_not_follow_a_redirect() {
 #[tokio::test]
 async fn caps_the_response_body() {
     let server = bind().await;
-    let declared = MAX_FEED_BYTES.checked_add(1).unwrap();
-    let response =
-        format!("HTTP/1.1 200 OK\r\ncontent-length: {declared}\r\nconnection: close\r\n\r\n");
+    let oversized = MAX_FEED_BYTES.checked_add(1).unwrap();
+    let body = super::capped_feed(oversized);
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve(Arc::clone(&server.listener), response));
+    tasks.spawn(serve(
+        Arc::clone(&server.listener),
+        answer(200, "OK", &body),
+    ));
     let clock = Arc::new(FixedClock { now: 100.0 });
+    let limits = TransportLimits {
+        body_bytes: MAX_FEED_BYTES.checked_mul(2).unwrap(),
+        ..TransportLimits::DEFAULT
+    };
     let (feed, warnings) = feed(
-        client(),
+        client(limits),
         &server.url,
         false,
         clock,
@@ -178,7 +178,13 @@ async fn caps_the_response_body() {
     );
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![backup_post()]);
-    assert_eq!(warnings.warnings().len(), 1);
+    let recorded = warnings.warnings();
+    assert_eq!(recorded.len(), 1);
+    assert!(
+        recorded[0]
+            .message
+            .contains(&format!("larger than {MAX_FEED_BYTES} bytes"))
+    );
 }
 
 #[tokio::test]
@@ -193,12 +199,15 @@ async fn cancelling_a_fetch_does_not_wedge_the_feed() {
         ready.send(()).await.unwrap();
         let (mut second, _) = listener.accept().await.unwrap();
         read_head(&mut second).await;
-        second.write_all(ok(FRESH).as_bytes()).await.unwrap();
+        second
+            .write_all(answer(200, "OK", FRESH).as_bytes())
+            .await
+            .unwrap();
         second.shutdown().await.unwrap();
     });
     let clock = Arc::new(FixedClock { now: 100.0 });
     let (feed, _) = feed(
-        client(),
+        client(TransportLimits::DEFAULT),
         &server.url,
         false,
         clock,
