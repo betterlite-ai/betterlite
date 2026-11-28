@@ -55,8 +55,7 @@ fn native(fixture: &Fixture, environment: BTreeMap<String, String>) -> super::fi
     native_binding(fixture.client(), fixture.source().clone(), environment)
 }
 
-// A byte slice reaches the NO_PYTHON seam as a wav file, and a typed tuple keeps its own filename
-// and format; a phased timeout hands over its read phase, and the timeout decides the deadline
+// Both seams: bytes reach the NO_PYTHON binding as wav, a typed tuple keeps its filename, and a phased timeout keeps its read phase
 async fn file_seams() {
     let cases = [
         (
