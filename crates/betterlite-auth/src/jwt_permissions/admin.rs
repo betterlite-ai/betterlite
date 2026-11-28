@@ -53,8 +53,8 @@ pub fn check_admin_access(
         return Err(route_denial(settings, route));
     }
     let jwt_claims = match claims {
-        Some(claims) => claims.clone(),
-        None => serde_json::from_str::<TypedValue>("{}").map_err(empty_claims_failure)?,
+        Some(value) => value.clone(),
+        None => empty_claims()?,
     };
     Ok(Some(admin_result(identity, jwt_claims)))
 }
@@ -77,10 +77,12 @@ fn route_denial(settings: &Settings, route: &str) -> Box<AuthFailure> {
 }
 
 // `claims or {}`: a token without claims still carries the empty document, which the literal always decodes
-fn empty_claims_failure(error: serde_json::Error) -> Box<AuthFailure> {
-    Box::new(AuthFailure::Other {
-        message: format!("the empty JWT claims document could not be decoded: {error}"),
-        param: None,
+fn empty_claims() -> Result<TypedValue, Box<AuthFailure>> {
+    serde_json::from_str::<TypedValue>("{}").map_err(|error| {
+        Box::new(AuthFailure::Other {
+            message: format!("the empty JWT claims document could not be decoded: {error}"),
+            param: None,
+        })
     })
 }
 

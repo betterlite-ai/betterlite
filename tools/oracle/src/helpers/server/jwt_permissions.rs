@@ -138,9 +138,6 @@ fn settings(input: &Input) -> Settings {
     if let Some(routes) = &input.admin_allowed_routes {
         settings.routes.admin_allowed_routes.clone_from(routes);
     }
-    if let Some(mappings) = &input.scope_mappings {
-        settings.scopes.scope_mappings = Some(mappings.clone());
-    }
     settings
 }
 
@@ -189,7 +186,7 @@ fn outcome(result: Result<(), Box<AuthFailure>>) -> HelperResult {
     }
 }
 
-fn answer(outcome: &'static str, result: Option<Value>) -> Answer {
+const fn answer(outcome: &'static str, result: Option<Value>) -> Answer {
     Answer {
         outcome,
         status: None,
@@ -203,7 +200,8 @@ fn answer(outcome: &'static str, result: Option<Value>) -> Answer {
 }
 
 fn denial(failure: &AuthFailure) -> Answer {
-    let exception = as_proxy_exception(failure).exception();
+    let client = as_proxy_exception(failure);
+    let exception = client.exception();
     Answer {
         outcome: "denied",
         status: Some(exception.code.parse::<u16>().unwrap_or_default()),
