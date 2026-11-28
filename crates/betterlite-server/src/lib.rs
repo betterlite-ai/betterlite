@@ -302,6 +302,7 @@ pub mod registry_read_through;
 pub mod release_info;
 pub mod reload_routes;
 pub mod request_error_span;
+pub mod request_host;
 pub mod resource_delegation;
 pub mod roi_cache;
 pub mod roi_connections;

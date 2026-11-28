@@ -17,10 +17,11 @@ use serde_json::Number;
 
 use super::error::GenerationCallError;
 use super::params::{CallParams, ParamsError};
-use super::submit::{SubmitError, SuppliedTransport, TransportKind};
+use super::submit::SubmitError;
 use super::{GenerationCall, GenerationExecutor, LogContext, prepare_call};
 use crate::api::bfl::generation::BflImageResponse;
 use crate::api::bfl::poll::PollError;
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use support::{
     BASE, MODEL, PROMPT, PostMode, READY, RecordedPost, Recorder, SUBMITTED, Script, Sink,
     StepClock, logging_env, logging_state, poll_once, reply,
@@ -78,7 +79,7 @@ async fn run(
         clock,
         sleeper,
     };
-    let supplied: Option<SuppliedTransport<'_, Script>> = None;
+    let supplied: Option<SuppliedClient<'_, Script>> = None;
     let result = match preparation {
         Ok(prepared) => {
             executor
@@ -558,8 +559,8 @@ async fn a_sync_call_uses_a_sync_supplied_transport() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let handed = SuppliedTransport {
-        kind: TransportKind::Sync,
+    let handed = SuppliedClient {
+        kind: ClientKind::Sync,
         transport: &supplied,
     };
     let (redactor, mut state) = logging_state();
@@ -593,8 +594,8 @@ async fn a_sync_call_discards_an_async_supplied_transport() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let handed = SuppliedTransport {
-        kind: TransportKind::Async,
+    let handed = SuppliedClient {
+        kind: ClientKind::Asynchronous,
         transport: &supplied,
     };
     let (redactor, mut state) = logging_state();
@@ -629,8 +630,8 @@ async fn an_async_call_uses_an_async_supplied_transport() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let handed = SuppliedTransport {
-        kind: TransportKind::Async,
+    let handed = SuppliedClient {
+        kind: ClientKind::Asynchronous,
         transport: &supplied,
     };
     let (redactor, mut state) = logging_state();
@@ -665,8 +666,8 @@ async fn an_async_call_discards_a_sync_supplied_transport() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let handed = SuppliedTransport {
-        kind: TransportKind::Sync,
+    let handed = SuppliedClient {
+        kind: ClientKind::Sync,
         transport: &supplied,
     };
     let (redactor, mut state) = logging_state();
@@ -707,7 +708,7 @@ fn dropping_a_pending_generation_call_cancels_the_submission() {
         state: &mut state,
         env: &env,
     };
-    let supplied: Option<SuppliedTransport<'_, Script>> = None;
+    let supplied: Option<SuppliedClient<'_, Script>> = None;
 
     let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
     let mut future = Box::pin(executor.image_generation(&call, &prepared, supplied, Vec::new()));
@@ -737,7 +738,7 @@ fn dropping_a_pending_generation_call_cancels_the_poll() {
         state: &mut state,
         env: &env,
     };
-    let supplied: Option<SuppliedTransport<'_, Script>> = None;
+    let supplied: Option<SuppliedClient<'_, Script>> = None;
 
     let prepared = prepare_call(&call, &mut log).expect("the call is prepared");
     let mut future = Box::pin(executor.image_generation(&call, &prepared, supplied, Vec::new()));

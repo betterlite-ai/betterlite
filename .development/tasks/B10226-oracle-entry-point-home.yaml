@@ -1,0 +1,157 @@
+id: B10226
+title: One EntryPoint in betterlite-oracle-helper-api for the oracle's 34 Sync and Async entry-point enums
+description: >-
+  Thirty-four oracle adapters under tools/oracle/src declare their own enum with two unit variants, Sync and Async, read from a case's "sync" or "async" to pick which LiteLLM entry point the case calls: completion or acompletion, success_handler or async_success_handler, sync_read_from_primary or async_read_from_primary, an iterator's `__next__` or `__anext__`. Copied code is not allowed, so this task writes one `EntryPoint` into the empty module tools/oracle/helper-api/src/entry_point.rs (the stub and its `pub mod entry_point;` line in helper-api's lib.rs are on main) and moves every copy onto it. betterlite-oracle-helper-api is the oracle's bottom crate: the eight group crates that hold a copy (bedrock, core_ops, foundry, http, logging, sdk, secret_managers, vertex) and the top betterlite-oracle crate (sdk_http, router_probes and its own router group) already depend on it, and it depends on no other oracle crate, so no Cargo.toml changes, no new crate edge and no cycle. It is a refactor: every case reads, runs and answers the same.
+
+
+  The home. `use serde::{Deserialize, Serialize};`, a one-line comment saying the value picks the LiteLLM entry point a case calls, then `#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]` and `#[serde(rename_all = "snake_case")]` over `pub enum EntryPoint { #[default] Sync, Async }`, and `mod tests;` at the end. The serde names are "sync" and "async", the names every copy reads and every case sends. The derives are what the copies need between them: Serialize because sdk_http's calls, least_busy's steps, request_policy's Iterate input and openai_mock_transport's scenarios derive it on the struct that holds the value; PartialEq for comparisons like invoke_stream's `run.wrapper == Wrapper::Sync`; and Default with Sync, because messages_stream_split's SplitStep, sdk b5368's Input and assistant_create's Call read an absent field as sync through `#[serde(default)]` (one messages_stream_split case leaves `mode` out). The tests go in entry_point/tests.rs, plain `#[test]` functions as in error/tests.rs: both variants serialize with serde_json to "sync" and "async" and read back, "Sync" and "asynchronous" are refused, and `EntryPoint::default()` is Sync.
+
+
+  The copies, by shape. Sync and Async under `rename_all = "snake_case"` (24): bedrock's invoke_stream/types.rs `Wrapper` L41-L44, other_transcription/input.rs `Mode` L14-L17 and request_policy.rs `IteratorCall` L53-L56; core_ops' b3487.rs `Mode` L36-L39, b3488.rs `Mode` L59-L62, b3491.rs `Mode` L10-L13, b4305/fixtures/input.rs `Operation` L31-L34 and messages_stream_split.rs `Mode` L58-L62; foundry's agent_runs/input.rs `Mode` L22-L25; http's openai_mock_transport.rs `SelectionKind` L41-L44; logging's b3962.rs `Path` L31-L34 and success/input.rs `Mode` L78-L81; the top crate's router b4381/input.rs `Method` L28-L31; sdk's b5368/input.rs `Mode` L7-L11; secret_managers' b4414.rs `Path` L33-L36; vertex's legacy_prediction_result/input.rs `Step` L12-L15; router_probes' least_busy.rs `Callback` L51-L54; and sdk_http's assistant_create.rs `Entry` L38-L42, assistant_messages.rs `Mode` L26-L29, assistant_threads.rs `Mode` L36-L39, chat_response_stream/call.rs `ChatRunMode` L30-L33, responses_chat_call/call.rs `Mode` L10-L13, responses_compact.rs `Mode` L53-L56 and transcription_call.rs `Mode` L40-L43. Sync and `#[serde(rename = "async")] Asynchronous` (9), all in sdk_http: image_generation_plan.rs `SyncMode` L22-L26, and the `Mode` of rerank_http.rs L19-L23, responses_lifecycle_write.rs L20-L24, transcription_http.rs L21-L25, vector_file_create_list.rs L26-L30, vector_file_read.rs L36-L40, vector_file_write.rs L26-L30, vector_store_read.rs L26-L30 and vector_store_write.rs L26-L30. And one with no derives: logging's b3997/cases.rs `HeaderMode` L27-L30, which b3997.rs L39-L40 builds from `Action::AsyncHeaders` and `Action::SyncHeaders`. Each enum goes with its derive, serde and comment lines.
+
+
+  The users. Each field that holds one keeps its name (mode, path, method, steps, wrapper, operation, kind, callback, entry, calls, modes), since the name is the key the cases send, and takes `EntryPoint`. Every `::Async` or `::Asynchronous` of a copy reads `EntryPoint::Async`, and every `::Sync` reads `EntryPoint::Sync`. Each file imports `betterlite_oracle_helper_api::entry_point::EntryPoint` from the crate that defines it, as shared oracle code is imported today. Beside the defining files, the users are bedrock's invoke_stream/run.rs and other_transcription/ops.rs; core_ops' b3491/runner.rs, b4305/fixtures.rs, b4305/fixtures/request.rs, b4305/scenario.rs and messages_stream_split/split_step.rs; foundry's agent_runs/runs.rs; logging's b3997.rs and success/handler.rs; router's b4381.rs; sdk's b5368/fixture.rs and b5368/target.rs; vertex's legacy_prediction_result/ops.rs and tests.rs; and in sdk_http assistant_messages/execute.rs and tests.rs, chat_response_stream/run.rs, image_generation_plan/native.rs, rerank_http/native.rs, responses_chat_call.rs, responses_compact/support.rs, responses_lifecycle_write/native.rs, transcription_call/call.rs, transcription_http/fixtures/source.rs, the native.rs of the five vector modules, and responses_create/ports.rs L2 and L27, which build a responses_chat_call call with `Mode::Sync`. The scope lists each file, and the whole module where B10200, B10216, B10220 or B10224 rewrite it first, since their workers may move these lines.
+
+
+  Converters that stay. foundry's agent_runs/runs.rs L56-L57 turns the value into betterlite-foundry's AgentRunMode, router's b4381.rs L75-L76 into betterlite-router's EmbeddingMode, logging's b3962.rs L196-L201 into betterlite-logging's CallbackPath and core_ops' b4305/fixtures/request.rs L22-L27 into AsyncSupport. Those product types have no serde and belong to their crates, so each match stays and only its left side reads EntryPoint. rerank_http.rs L25-L33 `impl Mode { request_flag }` can't stay on a type another crate owns; its one caller, rerank_http/native.rs L102, writes `is_async: Json::Bool(mode == EntryPoint::Async),` with the impl's comment on the line above. b4305/fixtures.rs L12 re-exports Operation; the re-export drops it, and scenario.rs and request.rs import the home.
+
+
+  Not merged. B10220 and B10221 own the 26 Sync and Async wire enums whose value becomes a client class: B10220 the twelve sdk_http transport `Mode`s, file_http_upload's `RunMode`, image_edit_call's `Client`, image_edit_http's `Mode`, bedrock other_rerank's `Supplied`, soniox_pipeline's `Mode` and openai files' `Supplied`, which take betterlite-http's ClientKind; B10221 azure's four `KindName`s, openai's assistants `KindName`, image_variations `Kind` and speech `SuppliedKind`, and foundry embeddings' `ModeName`. The line between them is where the value goes: into a ClientKind or a client constructor's is_async is theirs, a pick of which LiteLLM function, method or handler runs is this task's. One more two-variant enum names a client class and stays: redis' b4321.rs `ClientKindWire` L19-L23 mirrors betterlite-redis's ClientKind, the redis-py client class. The rest have a third variant or a payload, or use Sync as one tag among others: bedrock's embedding_io/input.rs, other_embedding_call/input.rs, other_image_call/calls.rs and other_image_edits/input.rs `Supplied` and invoke_stream/types.rs `Client` (None, Sync, Async); sdk_http's assistant_read_delete.rs `EntrySet` (Both, Sync, Async) and file_http_content.rs `Mode` (Sync, Asynchronous, Streaming); core_ops' b3488.rs `Outcome`, b3491/runner.rs `Streams` and messages_stream_split/split_step.rs `Run`, sdk_http's messages_chat_transform_stream/steps.rs `Pump` and response_chat_dispatch/fixtures/execution.rs `ExecutionFailure`, which carry results or streams; and models' ocr_pricing.rs `Input`, server's b3672.rs `Function` and the `StepKind`s of router_probes' routing_budget_state, routing_state and usage_v2_accounting.
+
+
+  Tests. The home's tests.rs is the only new test. The helper corpus replays decode every helper corpus case through each group's inputs, and the sdk_http corpus replay decodes the sdk_http cases, so they prove the cases still read the same names. The modules' own tests (bedrock's invoke_stream, other_transcription and request_policy, foundry's agent_runs, http's openai_mock_transport, logging's b3997, vertex's legacy_prediction_result and sdk_http's assistant_messages) pass with only the type changed. No case file changes.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - tools/oracle/helper-api/src/entry_point/**
+    - tools/oracle/helper-api/src/entry_point.rs
+    - tools/oracle/src/helpers/bedrock/invoke_stream/**
+    - tools/oracle/src/helpers/bedrock/invoke_stream.rs
+    - tools/oracle/src/helpers/bedrock/other_transcription/input.rs
+    - tools/oracle/src/helpers/bedrock/other_transcription/ops.rs
+    - tools/oracle/src/helpers/bedrock/request_policy.rs
+    - tools/oracle/src/helpers/core_ops/b3487.rs
+    - tools/oracle/src/helpers/core_ops/b3488.rs
+    - tools/oracle/src/helpers/core_ops/b3491.rs
+    - tools/oracle/src/helpers/core_ops/b3491/runner.rs
+    - tools/oracle/src/helpers/core_ops/b4305/fixtures/input.rs
+    - tools/oracle/src/helpers/core_ops/b4305/fixtures/request.rs
+    - tools/oracle/src/helpers/core_ops/b4305/fixtures.rs
+    - tools/oracle/src/helpers/core_ops/b4305/scenario.rs
+    - tools/oracle/src/helpers/core_ops/messages_stream_split.rs
+    - tools/oracle/src/helpers/core_ops/messages_stream_split/split_step.rs
+    - tools/oracle/src/helpers/foundry/agent_runs/input.rs
+    - tools/oracle/src/helpers/foundry/agent_runs/runs.rs
+    - tools/oracle/src/helpers/http/openai_mock_transport.rs
+    - tools/oracle/src/helpers/logging/b3962.rs
+    - tools/oracle/src/helpers/logging/b3997/cases.rs
+    - tools/oracle/src/helpers/logging/b3997.rs
+    - tools/oracle/src/helpers/logging/success/handler.rs
+    - tools/oracle/src/helpers/logging/success/input.rs
+    - tools/oracle/src/helpers/router/b4381/input.rs
+    - tools/oracle/src/helpers/router/b4381.rs
+    - tools/oracle/src/helpers/sdk/b5368/fixture.rs
+    - tools/oracle/src/helpers/sdk/b5368/input.rs
+    - tools/oracle/src/helpers/sdk/b5368/target.rs
+    - tools/oracle/src/helpers/secret_managers/b4414.rs
+    - tools/oracle/src/helpers/vertex/legacy_prediction_result/input.rs
+    - tools/oracle/src/helpers/vertex/legacy_prediction_result/ops.rs
+    - tools/oracle/src/helpers/vertex/legacy_prediction_result/tests.rs
+    - tools/oracle/src/router_probes/least_busy.rs
+    - tools/oracle/src/sdk_http/assistant_create.rs
+    - tools/oracle/src/sdk_http/assistant_messages/execute.rs
+    - tools/oracle/src/sdk_http/assistant_messages.rs
+    - tools/oracle/src/sdk_http/assistant_messages/tests.rs
+    - tools/oracle/src/sdk_http/assistant_threads.rs
+    - tools/oracle/src/sdk_http/chat_response_stream/call.rs
+    - tools/oracle/src/sdk_http/chat_response_stream/run.rs
+    - tools/oracle/src/sdk_http/image_generation_plan/native.rs
+    - tools/oracle/src/sdk_http/image_generation_plan.rs
+    - tools/oracle/src/sdk_http/rerank_http/**
+    - tools/oracle/src/sdk_http/rerank_http.rs
+    - tools/oracle/src/sdk_http/responses_chat_call/call.rs
+    - tools/oracle/src/sdk_http/responses_chat_call.rs
+    - tools/oracle/src/sdk_http/responses_compact/**
+    - tools/oracle/src/sdk_http/responses_compact.rs
+    - tools/oracle/src/sdk_http/responses_create/ports.rs
+    - tools/oracle/src/sdk_http/responses_lifecycle_write/native.rs
+    - tools/oracle/src/sdk_http/responses_lifecycle_write.rs
+    - tools/oracle/src/sdk_http/transcription_call/call.rs
+    - tools/oracle/src/sdk_http/transcription_call.rs
+    - tools/oracle/src/sdk_http/transcription_http/**
+    - tools/oracle/src/sdk_http/transcription_http.rs
+    - tools/oracle/src/sdk_http/vector_file_create_list/**
+    - tools/oracle/src/sdk_http/vector_file_create_list.rs
+    - tools/oracle/src/sdk_http/vector_file_read/**
+    - tools/oracle/src/sdk_http/vector_file_read.rs
+    - tools/oracle/src/sdk_http/vector_file_write/**
+    - tools/oracle/src/sdk_http/vector_file_write.rs
+    - tools/oracle/src/sdk_http/vector_store_read/**
+    - tools/oracle/src/sdk_http/vector_store_read.rs
+    - tools/oracle/src/sdk_http/vector_store_write/**
+    - tools/oracle/src/sdk_http/vector_store_write.rs
+  lint_tables: false
+references: []
+dod:
+  - text: betterlite-oracle-helper-api's entry_point module holds the one EntryPoint, Sync and Async with the serde names "sync" and "async" and Sync as the default, and its tests pass.
+    proof: [entry-point-home, entry-point-serde-tests]
+  - text: None of the 34 adapters declares a Sync and Async enum of its own, each one names the home instead, and no re-export, alias or type alias keeps an old name.
+    proof: [entry-point-copies]
+  - text: Every helper and sdk_http corpus case of the groups the move touches still decodes, and those modules' own tests pass with only the type changed.
+    proof: [entry-point-group-replays, entry-point-group-tests, entry-point-root-tests]
+checks:
+  optional: []
+  commands:
+    - id: entry-point-home
+      why: the home is missing, lost its snake_case serde names or no longer defaults to Sync
+      run: |-
+        grep -qxF 'pub enum EntryPoint {' tools/oracle/helper-api/src/entry_point.rs &&
+        grep -qxF '#[serde(rename_all = "snake_case")]' tools/oracle/helper-api/src/entry_point.rs &&
+        grep -qxF '    #[default]' tools/oracle/helper-api/src/entry_point.rs &&
+        grep -qxF '    Sync,' tools/oracle/helper-api/src/entry_point.rs &&
+        grep -qxF '    Async,' tools/oracle/helper-api/src/entry_point.rs
+    - id: entry-point-serde-tests
+      why: the home no longer reads and writes "sync" and "async", accepts another spelling, or defaults to Async
+      run: cargo nextest run --locked -p betterlite-oracle-helper-api --no-tests=fail -E 'test(/^entry_point::/)'
+    - id: entry-point-copies
+      why: an adapter still declares its own two-variant Sync and Async enum, does not name the home, or keeps an old name through a re-export or alias
+      run: |-
+        test -z "$(grep -lPz '\benum \w+ \{\s*(#\[[^\]]*\]\s*)*(Sync|Async|Asynchronous),\s*(#\[[^\]]*\]\s*)*(Sync|Async|Asynchronous),\s*\}' tools/oracle/src/helpers/bedrock/invoke_stream/types.rs tools/oracle/src/helpers/bedrock/other_transcription/input.rs tools/oracle/src/helpers/bedrock/request_policy.rs tools/oracle/src/helpers/core_ops/b3487.rs tools/oracle/src/helpers/core_ops/b3488.rs tools/oracle/src/helpers/core_ops/b3491.rs tools/oracle/src/helpers/core_ops/b4305/fixtures/input.rs tools/oracle/src/helpers/core_ops/messages_stream_split.rs tools/oracle/src/helpers/foundry/agent_runs/input.rs tools/oracle/src/helpers/http/openai_mock_transport.rs tools/oracle/src/helpers/logging/b3962.rs tools/oracle/src/helpers/logging/b3997/cases.rs tools/oracle/src/helpers/logging/success/input.rs tools/oracle/src/helpers/router/b4381/input.rs tools/oracle/src/helpers/sdk/b5368/input.rs tools/oracle/src/helpers/secret_managers/b4414.rs tools/oracle/src/helpers/vertex/legacy_prediction_result/input.rs tools/oracle/src/router_probes/least_busy.rs tools/oracle/src/sdk_http/assistant_create.rs tools/oracle/src/sdk_http/assistant_messages.rs tools/oracle/src/sdk_http/assistant_threads.rs tools/oracle/src/sdk_http/chat_response_stream/call.rs tools/oracle/src/sdk_http/image_generation_plan.rs tools/oracle/src/sdk_http/rerank_http.rs tools/oracle/src/sdk_http/responses_chat_call/call.rs tools/oracle/src/sdk_http/responses_compact.rs tools/oracle/src/sdk_http/responses_lifecycle_write.rs tools/oracle/src/sdk_http/transcription_call.rs tools/oracle/src/sdk_http/transcription_http.rs tools/oracle/src/sdk_http/vector_file_create_list.rs tools/oracle/src/sdk_http/vector_file_read.rs tools/oracle/src/sdk_http/vector_file_write.rs tools/oracle/src/sdk_http/vector_store_read.rs tools/oracle/src/sdk_http/vector_store_write.rs)" &&
+        test -z "$(grep -LwF EntryPoint tools/oracle/src/helpers/bedrock/invoke_stream/types.rs tools/oracle/src/helpers/bedrock/other_transcription/input.rs tools/oracle/src/helpers/bedrock/request_policy.rs tools/oracle/src/helpers/core_ops/b3487.rs tools/oracle/src/helpers/core_ops/b3488.rs tools/oracle/src/helpers/core_ops/b3491.rs tools/oracle/src/helpers/core_ops/b4305/fixtures/input.rs tools/oracle/src/helpers/core_ops/messages_stream_split.rs tools/oracle/src/helpers/foundry/agent_runs/input.rs tools/oracle/src/helpers/http/openai_mock_transport.rs tools/oracle/src/helpers/logging/b3962.rs tools/oracle/src/helpers/logging/b3997/cases.rs tools/oracle/src/helpers/logging/success/input.rs tools/oracle/src/helpers/router/b4381/input.rs tools/oracle/src/helpers/sdk/b5368/input.rs tools/oracle/src/helpers/secret_managers/b4414.rs tools/oracle/src/helpers/vertex/legacy_prediction_result/input.rs tools/oracle/src/router_probes/least_busy.rs tools/oracle/src/sdk_http/assistant_create.rs tools/oracle/src/sdk_http/assistant_messages.rs tools/oracle/src/sdk_http/assistant_threads.rs tools/oracle/src/sdk_http/chat_response_stream/call.rs tools/oracle/src/sdk_http/image_generation_plan.rs tools/oracle/src/sdk_http/rerank_http.rs tools/oracle/src/sdk_http/responses_chat_call/call.rs tools/oracle/src/sdk_http/responses_compact.rs tools/oracle/src/sdk_http/responses_lifecycle_write.rs tools/oracle/src/sdk_http/transcription_call.rs tools/oracle/src/sdk_http/transcription_http.rs tools/oracle/src/sdk_http/vector_file_create_list.rs tools/oracle/src/sdk_http/vector_file_read.rs tools/oracle/src/sdk_http/vector_file_write.rs tools/oracle/src/sdk_http/vector_store_read.rs tools/oracle/src/sdk_http/vector_store_write.rs)" &&
+        test -z "$(grep -rnE 'pub(\([a-z]+\))? use [^;]*\bEntryPoint\b|\bEntryPoint as \w|\btype \w+ = [^;]*\bEntryPoint\b' tools/oracle/src --include=*.rs)"
+    - id: entry-point-group-replays
+      why: a helper corpus case of a group the move touches no longer decodes, so a helper reads another name for sync or async
+      run: |-
+        grep -qxF 'pub enum EntryPoint {' tools/oracle/helper-api/src/entry_point.rs &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock,betterlite-oracle-groups/betterlite-oracle-core-ops,betterlite-oracle-groups/betterlite-oracle-foundry,betterlite-oracle-groups/betterlite-oracle-http,betterlite-oracle-groups/betterlite-oracle-logging,betterlite-oracle-groups/betterlite-oracle-sdk,betterlite-oracle-groups/betterlite-oracle-secret-store,betterlite-oracle-groups/betterlite-oracle-vertex --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: entry-point-group-tests
+      why: a group helper's own tests fail after its enum moved to the home
+      run: |-
+        grep -qxF 'pub enum EntryPoint {' tools/oracle/helper-api/src/entry_point.rs &&
+        cargo nextest run --locked -p betterlite-oracle-bedrock -p betterlite-oracle-foundry -p betterlite-oracle-http -p betterlite-oracle-logging -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^(invoke_stream|other_transcription|request_policy|agent_runs|openai_mock_transport|b3997|legacy_prediction_result)::/)'
+    - id: entry-point-root-tests
+      why: an sdk_http case or a router helper case no longer decodes, or assistant_messages' tests fail after the move
+      run: |-
+        grep -qxF 'pub enum EntryPoint {' tools/oracle/helper-api/src/entry_point.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(/^sdk_http::assistant_messages::/) | test(replays_the_helper_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10220 and B10221: the 26 Sync and Async wire enums whose value becomes betterlite-http's ClientKind, and that home itself."
+  - "redis' b4321.rs ClientKindWire, a two-variant enum for the redis-py client class rather than an entry point."
+  - "The product crates' own entry-point enums (foundry's AgentRunMode, betterlite-router's EmbeddingMode, betterlite-logging's CallbackPath, openai's codestral_call Mode and the others B10221 lists): the oracle keeps its converters into them."
+  - "The enums with a third variant, a payload or Sync as one tag among others, listed in the description."
+pitfalls:
+  - "sdk_http's vector_file_create_list.rs, vector_file_read.rs, vector_file_write.rs, vector_store_read.rs and vector_store_write.rs also declare an `Operation` enum, and sdk's b5368 a `Step` enum, that are not copies; rename only users of the enum the description names in each file."
+  - "Keep every field name: the cases send `mode`, `path`, `method`, `steps`, `wrapper`, `operation`, `kind`, `callback`, `entry`, `calls` and `modes` as keys, and a renamed field fails `deny_unknown_fields` on each case that uses it."
+  - "The nine sdk_http `Asynchronous` variants become `EntryPoint::Async`; the wire name stays \"async\" through `rename_all`, so the `#[serde(rename = \"async\")]` goes with each enum and nothing on the home spells \"asynchronous\"."
+  - "`#[default]` stays on Sync: a messages_stream_split case leaves `mode` out and runs the sync iterator today, and b5368 and assistant_create read their field with `#[serde(default)]` too."
+  - "least_busy's `Callback` is read only on the Python side, since `Step::Success { call_id, .. }` skips it, so the field stays on Success and Failure or the probe cases stop parsing under deny_unknown_fields."
+  - "Line numbers are main's at e34d392e793; B10200, B10216, B10220 and B10224 rewrite some of these files first, so find each enum and each use by name."
+  - "No `pub use`, `use ... as Mode` or `type Mode = EntryPoint;` keeps an old name: each file imports betterlite_oracle_helper_api::entry_point::EntryPoint itself."
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

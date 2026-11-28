@@ -1,15 +1,15 @@
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_server::public_endpoints::blog_feed_parser::{
+    BlogPost, ParseFailure, parse_rss_to_posts,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-mod date_parse;
 mod logic;
-mod parser;
 
 use logic::{Cache, fetch_rss_feed, get_blog_posts, local_posts, validate_blog_posts};
-use parser::BlogPost;
 
 pub(crate) struct Op;
 
@@ -95,7 +95,7 @@ enum Failure {
     #[error("RSS response returned HTTP status {status}")]
     Status { status: u16 },
     #[error(transparent)]
-    Parse(#[from] parser::ParseFailure),
+    Parse(#[from] ParseFailure),
 }
 
 impl Failure {
@@ -108,14 +108,15 @@ impl Failure {
     }
 }
 
-const fn parse_failure_class(error: &parser::ParseFailure) -> &'static str {
+const fn parse_failure_class(error: &ParseFailure) -> &'static str {
     match error {
-        parser::ParseFailure::MissingChannel => "ValueError",
-        parser::ParseFailure::Xml(_)
-        | parser::ParseFailure::Decode(_)
-        | parser::ParseFailure::Escape(_)
-        | parser::ParseFailure::UnclosedElement
-        | parser::ParseFailure::OutsideRoot => "ParseError",
+        ParseFailure::MissingChannel => "ValueError",
+        ParseFailure::Xml(_)
+        | ParseFailure::Decode(_)
+        | ParseFailure::Escape(_)
+        | ParseFailure::UnclosedElement
+        | ParseFailure::OutsideRoot
+        | ParseFailure::TooDeep { .. } => "ParseError",
     }
 }
 
@@ -136,7 +137,8 @@ impl Helper for Op {
                 json!({ "text": text, "request": request })
             }
             Input::ParseRssToPosts { xml, max_posts } => {
-                let posts = parser::parse_rss_to_posts(xml, *max_posts).map_err(Failure::from)?;
+                let posts =
+                    parse_rss_to_posts(xml, *max_posts, usize::MAX).map_err(Failure::from)?;
                 serde_json::to_value(posts).map_err(|error| serialization_error(&error))?
             }
             Input::ValidateBlogPosts { posts } => run_validate(posts),
