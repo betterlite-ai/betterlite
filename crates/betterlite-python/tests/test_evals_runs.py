@@ -683,6 +683,20 @@ def test_calls_structured_timeout() -> None:
     assert shapes[0] == shapes[1]
 
 
+# a call's ssl_verify never reaches the transport; docs/deviations/B7886.yaml records the gap
+def test_calls_ignore_ssl_verify() -> None:
+    with RunsServer() as server:
+        ours = create_run(
+            EVAL_ID, DATA_SOURCE, ssl_verify=False, api_base=server.url, api_key=GOOD_KEY
+        )
+        reference = LITELLM.create_run(
+            eval_id=EVAL_ID, data_source=DATA_SOURCE, ssl_verify=False,
+            api_base=server.url, api_key=GOOD_KEY,
+        )
+    assert dumped(made_answer(ours)) == dumped(reference)
+    assert body_of(server.calls[0]) == body_of(server.calls[1])
+
+
 # betterlite.evals carries the names of the eval calls and the run calls the task adds
 def test_calls_export_every_name() -> None:
     names = RUN_NAMES | EVAL_NAMES
