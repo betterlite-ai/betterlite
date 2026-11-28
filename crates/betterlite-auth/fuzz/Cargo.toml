@@ -104,6 +104,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "saml_metadata"
+path = "fuzz_targets/saml_metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "session_token_codec"
 path = "fuzz_targets/session_token_codec.rs"
 test = false

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{OriginalUri, State};
-use axum::http::uri::{InvalidUri, InvalidUriParts, PathAndQuery};
+use axum::http::uri::{Authority, InvalidUri, InvalidUriParts, PathAndQuery};
 use axum::http::{Extensions, HeaderMap, Method, Request, StatusCode, Uri, header};
 use axum::middleware::{Next, from_fn_with_state};
 use axum::response::{IntoResponse as _, Redirect, Response};
@@ -91,6 +91,23 @@ pub fn get_request_root_path(extensions: &Extensions, scalar_root: &str) -> Stri
     extensions
         .get::<RequestRootPath>()
         .map_or_else(|| scalar_root.to_owned(), |stashed| stashed.0.clone())
+}
+
+// Starlette's request.base_url: the scheme, the host and the root path, ending in a slash
+pub(crate) fn request_base_url(request: &Request<Body>, root_path: &str) -> String {
+    let uri = request.uri();
+    let scheme = uri.scheme_str().unwrap_or("http");
+    let host = uri
+        .authority()
+        .map(Authority::as_str)
+        .or_else(|| {
+            request
+                .headers()
+                .get(header::HOST)
+                .and_then(|value| value.to_str().ok())
+        })
+        .unwrap_or_default();
+    format!("{scheme}://{host}{root_path}/")
 }
 
 async fn assign_root_path(

@@ -4,18 +4,18 @@ description: >-
   Add saml_provider to betterlite-auth and saml_entrypoints to betterlite-server. Own
   _saml_unavailable_error and SAMLAuthHandler methods _env through build_sp_metadata in
   saml_sso.py, plus saml_login and saml_metadata in ui_sso.py. Register public GET
-  /sso/saml/login and /sso/saml/metadata once. Use samael with its xmlsec feature enabled,
-  including the native libxml2/xmlsec/OpenSSL build requirements; do not implement XML
-  signatures or canonicalization. Keep backend availability behind the existing optional
-  SAML build boundary rather than silently disabling signature checks when native support
-  is unavailable.
+  /sso/saml/login and /sso/saml/metadata once. Do not implement XML
+  signatures or canonicalization. Signature checks go through the SamlResponseVerifier port,
+  and this task ships only UnavailableSamlVerifier: a later task adds samael's verifier behind
+  a non-default saml feature, so OpenSSL stays out of the default build and the wheels (Max,
+  11-28). No path may accept an unsigned response, and this task adds no samael dependency.
   Its adapter must expose verified response/assertion facts for B1626 without letting an
   unsigned sibling element supply identity data. SAML_IDP_METADATA_URL and SAML_IDP_METADATA_XML
   default absent; URL takes precedence, including the source's empty-versus-absent distinction.
   Cache parsed metadata at saml_idp_settings:<SHA256(source)> for 3600s. Fetch configured metadata
   with timeout 10s and SAML_IDP_METADATA_VALIDATE_CERT=true; no usable IdP settings yields 502,
   no configuration yields 501, invalid toolkit settings yield 500. Preserve the unavailable
-  toolkit 501 path for a build without the SAML backend; ordinary builds include it.
+  toolkit 501 path for a build without the SAML backend, which is the default build.
   SAML_SP_ENTITY_ID defaults to the public metadata URL, SAML_SP_NAME_ID_FORMAT to the emailAddress
   URN. SAML_STRICT and SAML_WANT_ASSERTIONS_SIGNED default true; SAML_WANT_MESSAGES_SIGNED and
   SAML_AUTHN_REQUESTS_SIGNED default false. Boolean env parsing trims and accepts true/1/yes/on.
@@ -34,6 +34,9 @@ description: >-
   80 HTTP wiring lines within 800, including native dependency declarations.
 scope:
   paths:
+    - "crates/betterlite-server/src/public_endpoints/resource_hubs/agent_hub.rs"
+    - "crates/betterlite-server/src/middleware/request_root_paths.rs"
+    - "crates/betterlite-server/src/agent_skills_routes/index.rs"
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-auth/Cargo.toml
@@ -60,10 +63,6 @@ references:
     why: Optional toolkit, settings, metadata cache, AuthnRequest and SP metadata generation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2149-L2167
     why: Login and metadata route decorators with their different UI-disable behavior.
-  - url: https://github.com/njaremko/samael/blob/master/src/service_provider/mod.rs
-    why: ServiceProvider verifies signatures before exposing the selected assertion.
-  - url: https://github.com/njaremko/samael/blob/master/Cargo.toml
-    why: The xmlsec feature and native XML/crypto dependency requirements.
 dod:
   - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and B8771 proves them over HTTP.
     proof: [saml-provider-tests]
@@ -94,6 +93,6 @@ pitfalls:
   - SAML_IDP_METADATA_URL set to an empty string still takes the remote-parser branch when inline XML supplies the cache source.
   - SAML_AUTHN_REQUESTS_SIGNED cannot manufacture an SP signing key, so unsupported signing configuration must retain the toolkit's configuration failure.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1700
   max_new_expects: 0
 review_level: security
