@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_db::managed_resource_rows::mcp::McpStatus;
 use betterlite_db::mcp_stored_contracts::MCPTransport;
+use thiserror::Error;
 use url::Url;
 
 use super::ports::{
@@ -12,9 +13,16 @@ use crate::server_record::MCPServer;
 
 pub const ACCEPT: &str = "text/event-stream, application/json";
 
-const NEEDS_HTTP_TRANSPORT: &str = "Server reachability requires an HTTP or SSE URL";
-const NEEDS_CLEAN_URL: &str =
-    "Server reachability requires an HTTP URL without embedded credentials";
+#[derive(Debug, Error)]
+enum UrlRefusal {
+    #[error("Server reachability requires an HTTP or SSE URL")]
+    Transport,
+    #[error("Server reachability requires an HTTP URL without embedded credentials")]
+    Credentials,
+    #[error("Server reachability requires an HTTP URL without embedded credentials")]
+    Unparsable(#[from] url::ParseError),
+}
+
 const CANCELLED: &str = "Reachability check was cancelled";
 
 impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L>
@@ -34,7 +42,7 @@ where
     ) -> (McpStatus, Option<String>) {
         let url = match reachable_url(server) {
             Ok(url) => url,
-            Err(message) => return (McpStatus::Unknown, Some(message.to_owned())),
+            Err(error) => return (McpStatus::Unknown, Some(error.to_string())),
         };
         let probe = self
             .deps
@@ -61,21 +69,21 @@ where
 }
 
 // LiteLLM parses the url with httpx.URL and refuses a scheme, a host or userinfo it cannot probe
-fn reachable_url(server: &MCPServer) -> Result<Url, &'static str> {
+fn reachable_url(server: &MCPServer) -> Result<Url, UrlRefusal> {
     let Some(raw_url) = server.fields.url.as_deref().filter(|url| !url.is_empty()) else {
-        return Err(NEEDS_HTTP_TRANSPORT);
+        return Err(UrlRefusal::Transport);
     };
     match server.fields.transport {
         MCPTransport::Http | MCPTransport::Sse => {}
-        MCPTransport::Stdio => return Err(NEEDS_HTTP_TRANSPORT),
+        MCPTransport::Stdio => return Err(UrlRefusal::Transport),
     }
-    let parsed = Url::parse(raw_url).map_err(|_error| NEEDS_CLEAN_URL)?;
+    let parsed = Url::parse(raw_url)?;
     let clean = matches!(parsed.scheme(), "http" | "https")
         && parsed.host_str().is_some()
         && parsed.username().is_empty()
         && parsed.password().is_none();
     if !clean {
-        return Err(NEEDS_CLEAN_URL);
+        return Err(UrlRefusal::Credentials);
     }
     Ok(parsed)
 }

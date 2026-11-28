@@ -452,7 +452,7 @@ async fn row_spec_path_result_keeps_the_table_view() {
     ", \"url\": \"\"",
     "Server reachability requires an HTTP or SSE URL"
 )]
-#[case::unparseable(
+#[case::unparsable(
     "http",
     ", \"url\": \"not a url\"",
     "Server reachability requires an HTTP URL without embedded credentials"
