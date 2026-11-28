@@ -33,6 +33,9 @@ description: >-
   out (signed-browser-login, unsigned-wrong-key-and-expired, wrong-audience-and-destination,
   subject-confirmation-request-id, wrong-browser-cookie, reused-assertion, unsolicited-disabled-without-redis,
   attribute-overrides-and-nameid-fallback, missing-and-oversize-form and relative-relay-state-ignored under tools/oracle/cases/sso/saml-callback/) with B1631's signer.
+  The signed cases need B10228's verifier: where B063 builds the SamlProvider, pick XmlSignatureVerifier under
+  #[cfg(feature = "saml")] and keep UnavailableSamlVerifier without it. The built-in oracle check builds the gateway
+  with default features only, so the ten cases run in the saml-callback-oracle check, which builds it with --features saml.
 scope:
   paths:
     - crates/betterlite-auth/src/saml_assertion.rs
@@ -51,6 +54,7 @@ scope:
     - tools/oracle/src/helpers/auth/b1626.rs
     - tools/oracle/src/helpers/auth/b1626/**
     - crates/betterlite-server/src/sso.rs
+    - crates/betterlite-server/src/sso/**
     - tools/oracle/cases/sso/saml-callback/**
   lint_tables: false
 references:
@@ -70,7 +74,7 @@ dod:
   - text: Oversize forms, malformed base64 and hostile XML reach bounded production decoders and replay without panic.
     proof: [saml-assertion-tests, saml-assertion-corpora]
   - text: "The SAML callback answers like LiteLLM through the booted proxy for signed, unsigned, expired, replayed, misaddressed and malformed posts."
-    proof: [oracle]
+    proof: [saml-callback-oracle]
 checks:
   optional: [mutants]
   commands:
@@ -83,17 +87,14 @@ checks:
     - id: saml-assertion-corpora
       why: Form/XML decoder and SAML policy configuration lack branch-added corpus data.
       run: test -f crates/betterlite-auth/fuzz/fuzz_targets/saml_assertion_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/saml_assertion_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config --no-tests=fail -E 'test(replays_the_saml_assertion_input_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases:
-- tools/oracle/cases/sso/saml-callback/signed-browser-login.yaml
-- tools/oracle/cases/sso/saml-callback/unsigned-wrong-key-and-expired.yaml
-- tools/oracle/cases/sso/saml-callback/wrong-audience-and-destination.yaml
-- tools/oracle/cases/sso/saml-callback/subject-confirmation-request-id.yaml
-- tools/oracle/cases/sso/saml-callback/wrong-browser-cookie.yaml
-- tools/oracle/cases/sso/saml-callback/reused-assertion.yaml
-- tools/oracle/cases/sso/saml-callback/unsolicited-disabled-without-redis.yaml
-- tools/oracle/cases/sso/saml-callback/attribute-overrides-and-nameid-fallback.yaml
-- tools/oracle/cases/sso/saml-callback/missing-and-oversize-form.yaml
-- tools/oracle/cases/sso/saml-callback/relative-relay-state-ignored.yaml
+    - id: saml-callback-oracle
+      why: The SAML callback answers differently from LiteLLM through a gateway built with the saml feature.
+      run: |-
+        set -e
+        cases=(signed-browser-login unsigned-wrong-key-and-expired wrong-audience-and-destination subject-confirmation-request-id wrong-browser-cookie reused-assertion unsolicited-disabled-without-redis attribute-overrides-and-nameid-fallback missing-and-oversize-form relative-relay-state-ignored)
+        cargo build --locked --quiet -p betterlite --features saml
+        cargo run --locked --quiet -p betterlite-oracle -- "${cases[@]/#/tools/oracle/cases/sso/saml-callback/}"
+oracle_cases: []
 deviations:
   - what: A valid SAML login is not refused because the database contains more users than LiteLLM's free-tier allowance.
     why: The README explicitly removes license checks and user/team caps; prove this with native count-boundary tests outside equality cases.
