@@ -1,0 +1,34 @@
+kind: helper
+name: auth-route-policy-jwt-route-groups
+call:
+  auth_route_policy:
+    function: jwt_allowed_routes
+    role: team
+    route: /v1/chat/completions
+calls:
+  - auth_route_policy:
+      function: jwt_allowed_routes
+      role: team
+      route: /mcp/tools
+  - auth_route_policy:
+      function: jwt_allowed_routes
+      role: team
+      route: /v1/chat/completions
+      team_allowed_routes: []
+  - auth_route_policy:
+      function: jwt_allowed_routes
+      role: proxy_admin
+      route: /team/team-1
+      admin_allowed_routes: [management_routes]
+  - auth_route_policy:
+      function: jwt_allowed_routes
+      role: proxy_admin
+      route: /internal-models
+      admin_allowed_routes: ["/internal-*"]
+  - auth_route_policy:
+      function: jwt_allowed_routes
+      role: internal_user
+      route: /team/team-1
+      admin_allowed_routes: [management_routes]
+env: {}
+compare: {ignore: []}
