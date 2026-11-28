@@ -19,33 +19,39 @@ use super::error::{DATABASE_NOT_CONNECTED, HttpRefusal, RouteError, UserEnvRoute
 use super::status::{compute_user_env_status, parse_server_env_vars};
 use super::types::{MCPUserEnvVarsRequest, MCPUserEnvVarsStatus};
 
-pub(crate) async fn read_status<Access, Sources>(
-    state: &UserEnvRoutesState<Access, Sources>,
-    auth: &UserAPIKeyAuth,
-    server_id: &str,
-) -> Result<MCPUserEnvVarsStatus, RouteError<Access, Sources>>
-where
-    Access: ServerAccessCheck,
-    Sources: AccessibleServerSources,
-{
-    let (user_id, server) = authorize_target(state, auth, server_id).await?;
-    let stored = state.store.get_user_env_vars(&user_id, server_id).await?;
-    let status = compute_user_env_status(&server, &stored, state.proxy_base_url.as_deref())?;
-    Ok(status)
+// The one server-scoped path answers three methods, so the method picks the work B865's wrapper runs
+pub(crate) enum UserEnvSubmission {
+    Read,
+    Store(MCPUserEnvVarsRequest),
+    Clear,
 }
 
-pub(crate) async fn store_values<Access, Sources>(
+pub(super) async fn clear_user_env_values<Access, Sources>(
     state: &UserEnvRoutesState<Access, Sources>,
-    auth: &UserAPIKeyAuth,
+    user_id: &str,
     server_id: &str,
-    request: &MCPUserEnvVarsRequest,
-) -> Result<MCPUserEnvVarsStatus, RouteError<Access, Sources>>
+) -> Result<UserEnvVars, RouteError<Access, Sources>>
 where
     Access: ServerAccessCheck,
     Sources: AccessibleServerSources,
 {
-    let (user_id, server) = authorize_target(state, auth, server_id).await?;
-    let (_, user_specs) = parse_server_env_vars(&server)?;
+    state.store.delete_user_env_vars(user_id, server_id).await?;
+    state.cache.invalidate(user_id, server_id);
+    Ok(UserEnvVars::new())
+}
+
+pub(super) async fn store_user_env_values<Access, Sources>(
+    state: &UserEnvRoutesState<Access, Sources>,
+    user_id: &str,
+    server_id: &str,
+    server: &McpServerTable,
+    request: &MCPUserEnvVarsRequest,
+) -> Result<UserEnvVars, RouteError<Access, Sources>>
+where
+    Access: ServerAccessCheck,
+    Sources: AccessibleServerSources,
+{
+    let (_, user_specs) = parse_server_env_vars(server)?;
     let allowed_names: BTreeSet<String> = user_specs.iter().map(|spec| spec.name.clone()).collect();
     let mut updates = UserEnvVars::new();
     for (name, value) in &request.values {
@@ -55,34 +61,10 @@ where
     }
     let merged = state
         .store
-        .merge_user_env_vars(&user_id, server_id, &updates, &allowed_names)
+        .merge_user_env_vars(user_id, server_id, &updates, &allowed_names)
         .await?;
-    state.cache.invalidate(&user_id, server_id);
-    let status = compute_user_env_status(&server, &merged, state.proxy_base_url.as_deref())?;
-    Ok(status)
-}
-
-pub(crate) async fn clear_values<Access, Sources>(
-    state: &UserEnvRoutesState<Access, Sources>,
-    auth: &UserAPIKeyAuth,
-    server_id: &str,
-) -> Result<MCPUserEnvVarsStatus, RouteError<Access, Sources>>
-where
-    Access: ServerAccessCheck,
-    Sources: AccessibleServerSources,
-{
-    let (user_id, server) = authorize_target(state, auth, server_id).await?;
-    state
-        .store
-        .delete_user_env_vars(&user_id, server_id)
-        .await?;
-    state.cache.invalidate(&user_id, server_id);
-    let status = compute_user_env_status(
-        &server,
-        &UserEnvVars::new(),
-        state.proxy_base_url.as_deref(),
-    )?;
-    Ok(status)
+    state.cache.invalidate(user_id, server_id);
+    Ok(merged)
 }
 
 pub(crate) async fn list_statuses<Access, Sources>(
@@ -127,7 +109,7 @@ where
     Ok(statuses)
 }
 
-async fn authorize_target<Access, Sources>(
+pub(super) async fn authorize_target<Access, Sources>(
     state: &UserEnvRoutesState<Access, Sources>,
     auth: &UserAPIKeyAuth,
     server_id: &str,

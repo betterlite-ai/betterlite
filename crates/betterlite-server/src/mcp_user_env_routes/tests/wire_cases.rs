@@ -1,6 +1,8 @@
 use axum::http::StatusCode;
 
-use super::support::{Harness, MEMBER, SERVER_ANON, call, context, get, post, put, server_uri};
+use super::support::{
+    Harness, MEMBER, SERVER_ANON, call, context, get, head, post, put, server_uri,
+};
 use crate::mcp_user_env_routes::router::{SERVER_ENV_VARS_PATH, USER_ENV_VARS_STATUS_PATH};
 use crate::mcp_user_env_routes::types::{MCPUserEnvVarSpec, MCPUserEnvVarsStatus};
 
@@ -26,6 +28,23 @@ async fn the_litellm_paths_reach_the_handlers() {
     let list = call(
         app.clone(),
         get("/v1/mcp/user-env-vars/status", Some(&context(MEMBER))),
+    )
+    .await;
+    assert_eq!(list.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn head_reaches_the_read_handler_on_both_paths() {
+    let harness = Harness::new();
+    let server = call(
+        harness.router(),
+        head(&server_uri("srv-1"), Some(&context(MEMBER))),
+    )
+    .await;
+    assert_eq!(server.status(), StatusCode::OK);
+    let list = call(
+        harness.router(),
+        head(USER_ENV_VARS_STATUS_PATH, Some(&context(MEMBER))),
     )
     .await;
     assert_eq!(list.status(), StatusCode::OK);

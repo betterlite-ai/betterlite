@@ -36,6 +36,8 @@ use crate::mcp_user_env_routes::UserEnvRoutesState;
 use crate::mcp_user_env_routes::ports::{UserEnvVarsCache, UserEnvVarsStore};
 use crate::mcp_user_env_routes::router::{SERVER_ENV_VARS_PATH, routes};
 
+type StoreResult<T> = Result<T, UserEnvVarsError>;
+
 pub(crate) const SERVER_ONE: &str = r#"{"server_id":"srv-1","server_name":"Server One","alias":"one","transport":"http","env_vars":[{"name":"TOKEN","scope":"user","description":"Paste the token"}],"static_headers":{"Authorization":"Bearer ${TOKEN}"}}"#;
 pub(crate) const SERVER_TWO: &str = r#"{"server_id":"srv-2","server_name":"Server Two","transport":"http","env_vars":[{"name":"OTHER","scope":"user"}],"static_headers":{"X-Other":"${OTHER}"}}"#;
 pub(crate) const SERVER_BARE: &str =
@@ -165,19 +167,20 @@ impl FakeStore {
     pub(crate) fn fail_clear(&self) {
         self.fail_delete.store(true, Ordering::SeqCst);
     }
+
+    fn begin(&self, event: String, fail: &AtomicBool) -> StoreResult<()> {
+        self.journal.record(event);
+        if fail.load(Ordering::SeqCst) {
+            return Err(UserEnvVarsError::NotText);
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl UserEnvVarsStore for FakeStore {
-    async fn get_user_env_vars(
-        &self,
-        user_id: &str,
-        server_id: &str,
-    ) -> Result<UserEnvVars, UserEnvVarsError> {
-        self.journal.record(format!("get:{user_id}:{server_id}"));
-        if self.fail_get.load(Ordering::SeqCst) {
-            return Err(UserEnvVarsError::NotText);
-        }
+    async fn get_user_env_vars(&self, user_id: &str, server_id: &str) -> StoreResult<UserEnvVars> {
+        self.begin(format!("get:{user_id}:{server_id}"), &self.fail_get)?;
         Ok(self.row(user_id, server_id).unwrap_or_default())
     }
 
@@ -232,15 +235,8 @@ impl UserEnvVarsStore for FakeStore {
         Ok(values.clone())
     }
 
-    async fn delete_user_env_vars(
-        &self,
-        user_id: &str,
-        server_id: &str,
-    ) -> Result<(), UserEnvVarsError> {
-        self.journal.record(format!("delete:{user_id}:{server_id}"));
-        if self.fail_delete.load(Ordering::SeqCst) {
-            return Err(UserEnvVarsError::NotText);
-        }
+    async fn delete_user_env_vars(&self, user_id: &str, server_id: &str) -> StoreResult<()> {
+        self.begin(format!("delete:{user_id}:{server_id}"), &self.fail_delete)?;
         self.rows
             .lock()
             .unwrap()
@@ -489,28 +485,38 @@ impl Harness {
         )))
     }
 
+    fn db_lookup_port(&self) -> Arc<dyn DbLookup> {
+        Arc::new(FakeDb {
+            journal: self.journal.clone(),
+            answer: self.lookup,
+        })
+    }
+
+    fn access_port(&self) -> Arc<FakeAccess> {
+        Arc::new(FakeAccess {
+            journal: self.journal.clone(),
+            answer: self.access,
+        })
+    }
+
+    fn sources_port(&self) -> Arc<FakeSources> {
+        Arc::new(FakeSources {
+            journal: self.journal.clone(),
+            answer: self.sources.clone(),
+        })
+    }
+
     pub(crate) fn router(&self) -> Router {
-        let store: Arc<dyn UserEnvVarsStore> = Arc::clone(&self.store);
-        let cache: Arc<dyn UserEnvVarsCache> = Arc::clone(&self.cache);
         let state = UserEnvRoutesState {
             database: self
                 .database
                 .then(|| Arc::new(PostgresStore { pool: None })),
-            store,
-            cache,
+            store: Arc::clone(&self.store),
+            cache: Arc::clone(&self.cache),
             registry: self.registry(),
-            db_lookup: Arc::new(FakeDb {
-                journal: self.journal.clone(),
-                answer: self.lookup,
-            }),
-            access: Arc::new(FakeAccess {
-                journal: self.journal.clone(),
-                answer: self.access,
-            }),
-            sources: Arc::new(FakeSources {
-                journal: self.journal.clone(),
-                answer: self.sources.clone(),
-            }),
+            db_lookup: self.db_lookup_port(),
+            access: self.access_port(),
+            sources: self.sources_port(),
             mode: self.mode,
             proxy_base_url: self.base_url.clone(),
         };
@@ -526,22 +532,18 @@ pub(crate) fn delete(uri: &str, caller: Option<&AuthContext>) -> Request<Body> {
     request("DELETE", uri, caller, None)
 }
 
+pub(crate) fn head(uri: &str, caller: Option<&AuthContext>) -> Request<Body> {
+    request("HEAD", uri, caller, None)
+}
+
 pub(crate) fn put(uri: &str, caller: Option<&AuthContext>, body: &str) -> Request<Body> {
-    request(
-        "PUT",
-        uri,
-        caller,
-        Some((Some("application/json"), body.as_bytes())),
-    )
+    let content_type = Some("application/json");
+    request("PUT", uri, caller, Some((content_type, body.as_bytes())))
 }
 
 pub(crate) fn post(uri: &str, caller: Option<&AuthContext>, body: &str) -> Request<Body> {
-    request(
-        "POST",
-        uri,
-        caller,
-        Some((Some("application/json"), body.as_bytes())),
-    )
+    let content_type = Some("application/json");
+    post_raw(uri, caller, content_type, body.as_bytes())
 }
 
 pub(crate) fn post_raw(
