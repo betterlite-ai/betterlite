@@ -416,7 +416,7 @@ async fn editor_errors_propagate_and_stop_later_edits() {
             assert_eq!(status_code, 400);
             assert_eq!(message, "boom");
         }
-        other @ DispatchError::Spec(_) | other @ DispatchError::Editor(_) => {
+        other @ (DispatchError::Spec(_) | DispatchError::Editor(_)) => {
             panic!("expected the editor's own refusal: {other:?}")
         }
     }

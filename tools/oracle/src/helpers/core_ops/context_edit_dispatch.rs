@@ -93,13 +93,13 @@ fn run_scenario(runtime: &Runtime, scenario: &Scenario) -> Result<Value, Box<Hel
     let (logs, guard) = install();
     let outcome = runtime.block_on(apply_context_management(request, &editor));
     drop(guard);
-    assemble(outcome, &editor, logs.diagnostics())
+    assemble(outcome, &editor, &logs.diagnostics())
 }
 
 fn assemble(
     outcome: Result<PolyfillResult, DispatchError<ScriptFailure>>,
     editor: &ScriptedEditor,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: &[Diagnostic],
 ) -> Result<Value, Box<HelperError>> {
     let (result, failure) = match outcome {
         Ok(polyfilled) => (shape(&polyfilled), Value::Null),
@@ -108,7 +108,7 @@ fn assemble(
             failure_value(
                 &editor_failure.class,
                 editor_failure.status_code,
-                editor_failure.message,
+                &editor_failure.message,
             ),
         ),
         // any other exception escapes the whole run, as dispatch.py reports it
@@ -147,7 +147,7 @@ fn shape(result: &PolyfillResult) -> Value {
     })
 }
 
-fn failure_value(class: &str, status_code: Option<u16>, message: String) -> Value {
+fn failure_value(class: &str, status_code: Option<u16>, message: &str) -> Value {
     json!({
         "class": class,
         "status_code": status_code,
