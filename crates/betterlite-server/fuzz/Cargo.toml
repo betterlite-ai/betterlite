@@ -672,3 +672,10 @@ path = "fuzz_targets/login_return.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "protected_resource_body"
+path = "fuzz_targets/protected_resource_body.rs"
+test = false
+doc = false
+bench = false

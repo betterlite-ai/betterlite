@@ -1,7 +1,8 @@
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
+
 use super::error::SigningError;
 use super::headers::{merge_computed, prepare, without_computed};
 use super::request::AwsSignedRequest;
-use super::sigv4::{Signable, sign_request};
 use crate::aws_settings::sources::Credentials;
 use std::time::SystemTime;
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +29,7 @@ pub fn sign_aws_json_post(request: JsonPost<'_>) -> Result<AwsSignedRequest, Sig
         service: request.service_name,
         region,
         credentials: request.credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })?;
     let headers = merge_computed(supplied, computed);
