@@ -21,10 +21,10 @@ use betterlite_core::api::genai::chat_call::{
     CompletionCall, CompletionExecutor, CompletionOutput,
 };
 use betterlite_core::api::genai::generate_content::GenerateContentAnswer;
-use betterlite_core::api::genai_http::config::{AuthCall, GenerateContentHttpConfig};
-use betterlite_core::api::genai_http::service::ClientSource;
+use betterlite_core::api::genai_http::config::{AuthCall, GenerateContentHttpConfig as _};
+use betterlite_core::api::genai_http::service::ClientSource as _;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
-use betterlite_core::genai_setup::config::GenerateContentProviderConfig;
+use betterlite_core::genai_setup::config::GenerateContentProviderConfig as _;
 use betterlite_core::genai_setup::params::GenerateContentLiteLLMParams;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};

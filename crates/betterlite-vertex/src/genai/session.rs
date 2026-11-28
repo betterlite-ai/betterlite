@@ -79,21 +79,21 @@ pub struct SessionParts {
 
 // Everything one generate content call owns: the environment snapshot, the settings read from it and the clients every call goes through
 pub struct GenaiSession {
-    environment: BTreeMap<String, String>,
-    studio: StudioSettings,
-    vertex: VertexSettings,
-    schema: SchemaSettings,
-    request_timeout: RequestTimeout,
-    catalog: Arc<ModelCatalog>,
-    registry: JSONProviderRegistry,
-    known_model_names: BTreeSet<String>,
-    custom_providers: BTreeSet<String>,
-    capabilities: CatalogCapabilities,
-    clients: NativeClients,
-    clock: Arc<dyn CredentialClock>,
+    pub environment: BTreeMap<String, String>,
+    pub studio: StudioSettings,
+    pub vertex: VertexSettings,
+    pub schema: SchemaSettings,
+    pub request_timeout: RequestTimeout,
+    pub catalog: Arc<ModelCatalog>,
+    pub registry: JSONProviderRegistry,
+    pub known_model_names: BTreeSet<String>,
+    pub custom_providers: BTreeSet<String>,
+    pub capabilities: CatalogCapabilities,
+    pub clients: NativeClients,
+    pub clock: Arc<dyn CredentialClock>,
     // a caller that logs the call needs the same scrubber the handler redacts with
     pub redactor: Redactor,
-    aws: Arc<dyn AwsCredentialsSource>,
+    pub aws: Arc<dyn AwsCredentialsSource>,
 }
 
 impl GenaiSession {
