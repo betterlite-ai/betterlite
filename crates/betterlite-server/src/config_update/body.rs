@@ -165,6 +165,8 @@ pub enum PreCallCheck {
 
 // FastAPI validates the body before the handler runs, so a bad body is 422 no matter who asked
 pub fn decode_config_update(bytes: &[u8]) -> Result<DecodedConfigUpdate, BodyError> {
+    // serde reads a JSON array as the models' field sequence, but FastAPI refuses a body that is not an object
+    let _object: SettingsMap = decode_body(bytes)?;
     let body: ConfigUpdateBody = decode_body(bytes)?;
     let raw: RawRouterSettings = decode_body(bytes)?;
     Ok(DecodedConfigUpdate {

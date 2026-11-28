@@ -1,20 +1,20 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use axum::body::Bytes;
+use axum::body::{Bytes, to_bytes};
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::settings::{JsonValue, Section};
 use betterlite_db::budget_permission_rows::JsonData;
@@ -97,7 +97,9 @@ pub(crate) fn key_user(fields: &str) -> AuthContext {
     let decoded: BTreeMap<String, JsonData> =
         serde_json::from_str(fields).expect("the key fields decode");
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("the key constructs");
-    context("key-owner", SourceKey(Some(key)))
+    let mut caller = context("key-owner", SourceKey(Some(key)));
+    caller.principal.roles.push(Role::PlatformAdmin);
+    caller
 }
 
 #[derive(Default)]
@@ -180,7 +182,8 @@ impl ConfigUpdateStore for RecordingStore {
     }
 
     fn seal_environment(&self, values: &SettingsMap) -> Result<SettingsMap, ConfigStateError> {
-        self.seals.lock().expect("seals").push(values.clone());
+        let mut seals = self.seals.lock().unwrap_or_else(PoisonError::into_inner);
+        seals.push(values.clone());
         Ok(values
             .iter()
             .map(|(key, value)| (key.clone(), sealed(value)))
@@ -190,14 +193,14 @@ impl ConfigUpdateStore for RecordingStore {
 
 #[derive(Default)]
 pub(crate) struct CollectingSpawner {
-    tasks: Mutex<Vec<AuditCallbackFuture>>,
+    tasks: Mutex<VecDeque<AuditCallbackFuture>>,
 }
 
 impl CollectingSpawner {
     pub(crate) async fn run_all(&self) {
         loop {
-            let task = self.tasks.lock().expect("tasks").pop();
-            let Some(task) = task else {
+            let queued = self.tasks.lock().expect("tasks").pop_front();
+            let Some(task) = queued else {
                 return;
             };
             task.await;
@@ -207,7 +210,7 @@ impl CollectingSpawner {
 
 impl AuditTaskSpawner for CollectingSpawner {
     fn spawn(&self, task: AuditCallbackFuture) {
-        self.tasks.lock().expect("tasks").push(task);
+        self.tasks.lock().expect("tasks").push_back(task);
     }
 }
 
@@ -399,14 +402,14 @@ pub(crate) async fn send(
     caller: Option<AuthContext>,
     body: &str,
 ) -> (StatusCode, JsonValue) {
-    let response = update_config(
+    let response = Box::pin(update_config(
         State(harness.state.clone()),
         caller.map(Extension),
         Bytes::from(body.to_owned()),
-    )
+    ))
     .await;
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the answer body reads");
     (

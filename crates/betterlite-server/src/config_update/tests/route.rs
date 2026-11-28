@@ -115,7 +115,7 @@ async fn config_owned_keys_are_refused_before_any_write() {
 }
 
 #[tokio::test]
-async fn general_settings_are_merged_stored_and_audited() {
+async fn general_settings_are_merged_and_stored() {
     let store = RecordingStore::holding(&[(
         Section::GeneralSettings,
         settings(&[("global_max_parallel_requests", parsed("4"))]),
@@ -144,6 +144,22 @@ async fn general_settings_are_merged_stored_and_audited() {
         upserts.first().map(|(name, _)| name.as_str()),
         Some("general_settings")
     );
+}
+
+#[tokio::test]
+async fn general_settings_are_audited_with_the_stored_values() {
+    let store = RecordingStore::holding(&[(
+        Section::GeneralSettings,
+        settings(&[("global_max_parallel_requests", parsed("4"))]),
+    )]);
+    let harness = Harness::holding(config_state(), store);
+    let (status, _body) = send(
+        &harness,
+        Some(admin()),
+        r#"{"general_settings": {"alert_to_webhook_url": {"budget_alerts": "https://hooks/x"}}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     harness.spawner.run_all().await;
     let record = harness
         .repository
@@ -208,7 +224,7 @@ async fn environment_variables_are_sealed_then_merged_and_audited() {
 }
 
 #[tokio::test]
-async fn litellm_settings_union_the_success_callbacks_and_are_audited() {
+async fn litellm_settings_union_the_success_callbacks() {
     let store = RecordingStore::holding(&[(
         Section::LitellmSettings,
         settings(&[("success_callback", parsed(r#"["S3"]"#))]),
@@ -237,12 +253,26 @@ async fn litellm_settings_union_the_success_callbacks_and_are_audited() {
         BTreeSet::from(["new".to_owned(), "s3".to_owned()])
     );
     assert_eq!(stored.get("drop_params"), Some(&JsonValue::Bool(true)));
-    let stored_value = JsonValue::Object(
-        stored
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
-    );
+}
+
+#[tokio::test]
+async fn litellm_settings_audit_the_stored_row() {
+    let store = RecordingStore::holding(&[(
+        Section::LitellmSettings,
+        settings(&[("success_callback", parsed(r#"["S3"]"#))]),
+    )]);
+    let harness = Harness::holding(config_state(), store);
+    let (status, _body) = send(
+        &harness,
+        Some(admin()),
+        r#"{"litellm_settings": {"success_callback": ["New"], "drop_params": true}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let stored = harness
+        .store
+        .stored(Section::LitellmSettings)
+        .expect("the stored litellm_settings");
     harness.spawner.run_all().await;
     let record = harness
         .repository
@@ -251,7 +281,10 @@ async fn litellm_settings_union_the_success_callbacks_and_are_audited() {
         .next()
         .expect("one audit record");
     assert_eq!(record.object_id, "litellm_settings");
-    assert_eq!(record.updated_values, Some(stored_value));
+    assert_eq!(
+        record.updated_values,
+        Some(JsonValue::Object(stored.into_iter().collect()))
+    );
 }
 
 #[tokio::test]

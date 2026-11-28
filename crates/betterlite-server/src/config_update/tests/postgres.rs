@@ -89,8 +89,12 @@ async fn fixture_pool() -> (PostgresFixture, Pool) {
     (fixture, pool)
 }
 
-#[tokio::test]
-async fn the_postgres_store_reads_writes_and_seals_sections() {
+async fn store_with_fixture() -> (
+    PostgresFixture,
+    Pool,
+    Arc<RecordingInvalidator>,
+    PostgresConfigUpdateStore,
+) {
     let (fixture, pool) = fixture_pool().await;
     let invalidator = Arc::new(RecordingInvalidator::default());
     let invalidator_arc = Arc::clone(&invalidator);
@@ -102,18 +106,12 @@ async fn the_postgres_store_reads_writes_and_seals_sections() {
         cipher: Arc::new(cipher()),
         invalidator: invalidator_handle,
     };
-    let sent = settings(&[("OPENAI_API_KEY", JsonValue::String("sk-plain".to_owned()))]);
-    let sealed = store.seal_environment(&sent).expect("the values seal");
-    assert_eq!(
-        sealed.keys().collect::<Vec<&String>>(),
-        sent.keys().collect::<Vec<&String>>(),
-        "the sealed map keeps every sent key"
-    );
-    assert_ne!(
-        sealed.get("OPENAI_API_KEY"),
-        Some(&JsonValue::String("sk-plain".to_owned())),
-        "the sealed value stays plaintext"
-    );
+    (fixture, pool, invalidator, store)
+}
+
+#[tokio::test]
+async fn the_postgres_store_reads_and_writes_sections() {
+    let (fixture, pool, invalidator, store) = store_with_fixture().await;
     assert_eq!(
         store
             .read_section(Section::GeneralSettings)
@@ -133,6 +131,25 @@ async fn the_postgres_store_reads_writes_and_seals_sections() {
             .await
             .expect("the stored section reads"),
         values
+    );
+    pool.close();
+    fixture.close_async().await.expect("the fixture closes");
+}
+
+#[tokio::test]
+async fn the_postgres_store_seals_environment_values() {
+    let (fixture, pool, _invalidator, store) = store_with_fixture().await;
+    let sent = settings(&[("OPENAI_API_KEY", JsonValue::String("sk-plain".to_owned()))]);
+    let sealed = store.seal_environment(&sent).expect("the values seal");
+    assert_eq!(
+        sealed.keys().collect::<Vec<&String>>(),
+        sent.keys().collect::<Vec<&String>>(),
+        "the sealed map keeps every sent key"
+    );
+    assert_ne!(
+        sealed.get("OPENAI_API_KEY"),
+        Some(&JsonValue::String("sk-plain".to_owned())),
+        "the sealed value stays plaintext"
     );
     pool.close();
     fixture.close_async().await.expect("the fixture closes");

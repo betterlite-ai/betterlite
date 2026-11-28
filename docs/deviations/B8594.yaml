@@ -12,6 +12,9 @@ deviations:
   - what: an invalid routing_groups value answers 400 with parse_routing_groups' message, where LiteLLM's body validation answers 422 for anything pydantic rejects and only reaches its 400 for errors pydantic lets through.
     why: the task routes group validation through B323 and asks for its message at 400.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17997-L18002
+  - what: a request body that is not a JSON object answers 422 with issue type value_error, where FastAPI answers model_attributes_type with its own message for a list body.
+    why: the body goes through betterlite-server's shared BodyError decoder, which has no non-object issue type; the status, the detail envelope and the body location match, and compatibility.md leaves validation messages to betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17954-L17961
   - what: a success_callback entry that is not a string is deduplicated by value; Python's list(set(...)) raises TypeError for a dict or list entry and answers 400.
     why: the union exists to dedupe additive callback names, so a non-string entry is kept instead of failing the whole update.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18128

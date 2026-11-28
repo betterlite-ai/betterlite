@@ -133,3 +133,14 @@ fn rejects_a_missing_or_non_object_body() {
     drop(decode_config_update(br#"{"router_settings": "x"}"#).unwrap_err());
     drop(decode_config_update(br#"{"general_settings": []}"#).unwrap_err());
 }
+
+#[test]
+fn a_non_object_body_is_a_value_error_at_the_body_location() {
+    let error = decode_config_update(b"[]").unwrap_err();
+    let issue = serde_json::to_value(&error).expect("the issue serializes");
+    assert_eq!(
+        issue.get("type").and_then(JsonValue::as_str),
+        Some("value_error")
+    );
+    assert_eq!(issue.get("loc"), Some(&parsed(r#"["body"]"#)));
+}
