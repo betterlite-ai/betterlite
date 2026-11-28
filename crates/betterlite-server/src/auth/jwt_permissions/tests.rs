@@ -15,7 +15,7 @@ use betterlite_config::types::Config;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
-use super::{JwtPermissionRule, JwtPermissionStageInput, stage_input};
+use super::{JwtPermissionRule, JwtPermissionStageInput, request_model, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -132,6 +132,58 @@ async fn run_request(
         String::from_utf8(answer.to_vec()).unwrap(),
         reached.load(Ordering::Acquire),
     )
+}
+
+fn empty_request(uri: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[test]
+fn missing_context_is_unauthenticated() {
+    assert!(matches!(
+        stage_input(&empty_request(CHAT_ROUTE), None, None),
+        Err(StageFailure::Authentication(_))
+    ));
+}
+
+// a master key or virtual key request carries no JWT claims, so the stage must leave it alone
+#[test]
+fn no_rule_passes_the_context_through() {
+    let context = master_context();
+    let Ok(StageInput::JwtPermissions(stage)) =
+        stage_input(&empty_request(CHAT_ROUTE), Some(&context), None)
+    else {
+        panic!("the stage builds its input without a rule");
+    };
+    let master = master_key();
+    let Ok(forwarded) = dispatch(
+        AuthBackend::JwtPermissions,
+        &StageInput::JwtPermissions(stage),
+        &master,
+    ) else {
+        panic!("an absent rule leaves the stage inert");
+    };
+    assert_eq!(forwarded.principal.subject, "master_key");
+}
+
+// request_data.get("model"): only the declared string field is a model
+#[test]
+fn request_model_reads_only_a_string() {
+    let request = empty_request(CHAT_ROUTE);
+    let text = Bytes::from_static(br#"{"model":"gpt-4o"}"#);
+    assert_eq!(
+        request_model(&request, Some(&text)),
+        Some("gpt-4o".to_owned())
+    );
+    let number = Bytes::from_static(br#"{"model":5}"#);
+    assert!(request_model(&request, Some(&number)).is_none());
+    let absent = Bytes::from_static(br#"{}"#);
+    assert!(request_model(&request, Some(&absent)).is_none());
 }
 
 #[test]
