@@ -36,7 +36,7 @@ async def adelete(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fca
     vector_store_id: str,
     file_id: str,
     extra_headers: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L650
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L650
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileDeleteResponse:

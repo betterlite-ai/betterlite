@@ -66,7 +66,7 @@ async def alist(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d66
     order: str | None = None,
     extra_headers: JsonValue = None,
     extra_query: JsonValue = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L192
+    timeout: float | TimeoutValues | None = None,  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L192
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileListResponse:
