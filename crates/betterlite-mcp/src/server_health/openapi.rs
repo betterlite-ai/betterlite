@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
@@ -23,7 +24,13 @@ pub struct OpenApiHealthProbe {
     result: Option<Health>,
 }
 
-impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L>
+// multiple_inherent_impl leaves service.rs the type's one inherent impl, so the spec check lives on this trait
+pub trait SpecHealthChecks {
+    #[must_use]
+    fn spec_health(&self, spec_path: &str) -> impl Future<Output = Health> + Send;
+}
+
+impl<P, S, E, A, C, L> SpecHealthChecks for HealthService<P, S, E, A, C, L>
 where
     P: ProbeClient,
     S: SessionProbe,
@@ -32,8 +39,7 @@ where
     C: Clock,
     L: SpecLoader,
 {
-    #[must_use]
-    pub async fn spec_health(&self, spec_path: &str) -> Health {
+    async fn spec_health(&self, spec_path: &str) -> Health {
         let probe = {
             let mut slots = self
                 .spec_probes

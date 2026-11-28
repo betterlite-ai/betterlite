@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
+use std::future::Future;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use futures_util::future::join_all;
 use tracing::warn;
 
+use super::check::ServerHealthChecks as _;
 use super::ports::{AllowedServers, Clock, EnvVarCheck, ProbeClient, SessionProbe, SpecLoader};
 use super::service::HealthService;
 use crate::registry::lookup::ServerLookups as _;
@@ -12,7 +14,33 @@ use crate::registry::table::ServerTables as _;
 
 pub const BATCH_SIZE: usize = 10;
 
-impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L>
+// multiple_inherent_impl leaves service.rs the type's one inherent impl, so the batch steps live on this trait
+pub trait HealthBatches {
+    #[must_use]
+    fn with_health_and_teams(
+        &self,
+        auth: Option<&UserAPIKeyAuth>,
+        server_ids: Option<&[String]>,
+        checked_server_ids: &BTreeSet<String>,
+    ) -> impl Future<Output = Vec<McpServerTable>> + Send;
+    #[must_use]
+    fn with_health_unfiltered(
+        &self,
+        server_ids: Option<&[String]>,
+    ) -> impl Future<Output = Vec<McpServerTable>> + Send;
+    #[must_use]
+    fn run_health_checks(
+        &self,
+        target_server_ids: &[String],
+    ) -> impl Future<Output = Vec<McpServerTable>> + Send;
+    #[must_use]
+    fn all_allowed(
+        &self,
+        auth: Option<&UserAPIKeyAuth>,
+    ) -> impl Future<Output = Vec<McpServerTable>> + Send;
+}
+
+impl<P, S, E, A, C, L> HealthBatches for HealthService<P, S, E, A, C, L>
 where
     P: ProbeClient,
     S: SessionProbe,
@@ -21,8 +49,7 @@ where
     C: Clock,
     L: SpecLoader,
 {
-    #[must_use]
-    pub async fn with_health_and_teams(
+    async fn with_health_and_teams(
         &self,
         auth: Option<&UserAPIKeyAuth>,
         server_ids: Option<&[String]>,
@@ -44,11 +71,7 @@ where
         self.run_health_checks(&unchecked).await
     }
 
-    #[must_use]
-    pub async fn with_health_unfiltered(
-        &self,
-        server_ids: Option<&[String]>,
-    ) -> Vec<McpServerTable> {
+    async fn with_health_unfiltered(&self, server_ids: Option<&[String]>) -> Vec<McpServerTable> {
         let registered: Vec<String> = {
             let registry = self.deps.registry.read().await;
             registry
@@ -74,8 +97,7 @@ where
         self.run_health_checks(&target).await
     }
 
-    #[must_use]
-    pub async fn run_health_checks(&self, target_server_ids: &[String]) -> Vec<McpServerTable> {
+    async fn run_health_checks(&self, target_server_ids: &[String]) -> Vec<McpServerTable> {
         let mut unique_ids: Vec<&String> = Vec::new();
         for server_id in target_server_ids {
             if !unique_ids.contains(&server_id) {
@@ -92,8 +114,7 @@ where
         rows
     }
 
-    #[must_use]
-    pub async fn all_allowed(&self, auth: Option<&UserAPIKeyAuth>) -> Vec<McpServerTable> {
+    async fn all_allowed(&self, auth: Option<&UserAPIKeyAuth>) -> Vec<McpServerTable> {
         let allowed = self.deps.allowed.allowed_server_ids(auth);
         let registry = self.deps.registry.read().await;
         let mut rows = Vec::with_capacity(allowed.len());

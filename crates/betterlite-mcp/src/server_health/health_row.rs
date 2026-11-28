@@ -78,7 +78,7 @@ const NOT_FOUND_BASE: McpServerTable = McpServerTable {
 #[must_use]
 pub fn not_found_row(server_id: &str, checked_at: DateTime<Utc>) -> McpServerTable {
     let mut row = NOT_FOUND_BASE;
-    row.server_id = server_id.to_owned();
+    server_id.clone_into(&mut row.server_id);
     row.status = Some(McpStatus::Unknown);
     row.approval_status = default_approval_status();
     row.last_health_check = health_timestamp(checked_at);

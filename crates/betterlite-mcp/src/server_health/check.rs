@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_db::managed_resource_rows::mcp::{McpServerTable, McpStatus};
 use betterlite_db::mcp_stored_contracts::MCPAuth;
 use secrecy::ExposeSecret as _;
@@ -5,16 +7,31 @@ use tracing::warn;
 
 use super::health::Health;
 use super::health_row;
+use super::instructions::ServerInstructions as _;
+use super::openapi::SpecHealthChecks as _;
 use super::ports::{
     AllowedServers, Clock, EnvVarCheck, ProbeClient, SessionError, SessionProbe, SpecLoader,
 };
+use super::reachability::ServerReachability as _;
 use super::service::HealthService;
 use crate::registry::lookup::ServerLookups as _;
 use crate::server_record::{MCPServer, ServerFields};
 
 const CANCELLED: &str = "Health check was cancelled";
 
-impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L>
+// multiple_inherent_impl leaves service.rs the type's one inherent impl, so the check steps live on this trait
+pub trait ServerHealthChecks {
+    #[must_use]
+    fn check_server(&self, server_id: &str) -> impl Future<Output = McpServerTable> + Send;
+    fn probe_health(&self, server: &MCPServer) -> impl Future<Output = Health> + Send;
+    fn uses_reachability(&self, server: &MCPServer) -> bool;
+    fn session_health(
+        &self,
+        server: &MCPServer,
+    ) -> impl Future<Output = (McpStatus, Option<String>)> + Send;
+}
+
+impl<P, S, E, A, C, L> ServerHealthChecks for HealthService<P, S, E, A, C, L>
 where
     P: ProbeClient,
     S: SessionProbe,
@@ -23,22 +40,21 @@ where
     C: Clock,
     L: SpecLoader,
 {
-    #[must_use]
-    pub async fn check_server(&self, server_id: &str) -> McpServerTable {
-        let server = {
+    async fn check_server(&self, server_id: &str) -> McpServerTable {
+        let found = {
             let registry = self.deps.registry.read().await;
             registry.server_by_id(server_id, None).cloned()
         };
-        let Some(server) = server else {
+        let Some(server) = found else {
             warn!("MCP Server {server_id} not found");
             return health_row::not_found_row(server_id, self.deps.clock.now_utc());
         };
-        let spec_path = server
+        let maybe_spec_path = server
             .fields
             .spec_path
             .as_deref()
             .filter(|path| !path.is_empty());
-        let Some(spec_path) = spec_path else {
+        let Some(spec_path) = maybe_spec_path else {
             let health = self.probe_health(&server).await;
             let registry = self.deps.registry.read().await;
             return health_row::session_row(&registry, &server, &health);

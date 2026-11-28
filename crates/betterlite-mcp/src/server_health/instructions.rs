@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::PoisonError;
 
 use super::check::needs_an_unavailable_token;
@@ -6,7 +7,16 @@ use super::service::HealthService;
 use crate::config_loader::ports::InstructionsCache;
 use crate::server_record::MCPServer;
 
-impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L>
+// multiple_inherent_impl leaves service.rs the type's one inherent impl, so the prefetch steps live on this trait
+pub trait ServerInstructions {
+    fn remember_instructions(&self, server_id: &str, instructions: Option<&str>);
+    fn ensure_instructions_cached(&self, server: &MCPServer) -> impl Future<Output = ()> + Send;
+    fn instructions_are_ready(&self, server: &MCPServer) -> bool;
+    fn last_probe_within_cooldown(&self, server_id: &str) -> bool;
+    fn record_instructions_probe(&self, server_id: &str);
+}
+
+impl<P, S, E, A, C, L> ServerInstructions for HealthService<P, S, E, A, C, L>
 where
     P: ProbeClient,
     S: SessionProbe,
@@ -15,7 +25,7 @@ where
     C: Clock,
     L: SpecLoader,
 {
-    pub fn remember_instructions(&self, server_id: &str, instructions: Option<&str>) {
+    fn remember_instructions(&self, server_id: &str, instructions: Option<&str>) {
         let Some(text) = instructions else {
             return;
         };
@@ -30,7 +40,7 @@ where
         cached.insert(server_id.to_owned(), trimmed.to_owned());
     }
 
-    pub async fn ensure_instructions_cached(&self, server: &MCPServer) {
+    async fn ensure_instructions_cached(&self, server: &MCPServer) {
         if self.instructions_are_ready(server) {
             return;
         }
@@ -93,14 +103,14 @@ where
     }
 
     fn last_probe_within_cooldown(&self, server_id: &str) -> bool {
-        let probed_at = {
+        let maybe_probed_at = {
             let probed = self
                 .instructions_probed_at
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             probed.get(server_id).copied()
         };
-        let Some(probed_at) = probed_at else {
+        let Some(probed_at) = maybe_probed_at else {
             return false;
         };
         self.deps.clock.now_monotonic().saturating_sub(probed_at)

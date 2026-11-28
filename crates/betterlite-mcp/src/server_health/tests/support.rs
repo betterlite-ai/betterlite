@@ -77,9 +77,9 @@ pub(super) fn rig_with(config: &[&str], db: &[&str], settings: HealthSettings) -
     let loader = Arc::new(LoaderLog::default());
     let clock = FakeClock::new();
     let cancel = CancellationToken::new();
-    let registry: SharedRegistry = Arc::new(RwLock::new(registry));
+    let shared: SharedRegistry = Arc::new(RwLock::new(registry));
     let deps = HealthDeps {
-        registry,
+        registry: shared,
         probe: FakeProbe(Arc::clone(&probe)),
         sessions: FakeSession(Arc::clone(&session)),
         env_vars: FakeEnvVars(Arc::clone(&env_vars)),

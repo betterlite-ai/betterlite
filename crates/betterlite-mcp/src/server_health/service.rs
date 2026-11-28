@@ -30,7 +30,7 @@ pub struct HealthService<P, S, E, A, C, L> {
 
 impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L> {
     #[must_use]
-    pub fn new(deps: HealthDeps<P, S, E, A, C, L>, settings: HealthSettings) -> Self {
+    pub const fn new(deps: HealthDeps<P, S, E, A, C, L>, settings: HealthSettings) -> Self {
         Self {
             deps,
             settings,

@@ -15,8 +15,12 @@ use rstest::rstest;
 use tracing::subscriber::{set_default, with_default};
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::openapi::{MAX_SPEC_BYTES, openapi_spec_health};
-use super::ports::{ProbeError, SessionError, SystemClock};
+use super::batches::HealthBatches as _;
+use super::check::ServerHealthChecks as _;
+use super::instructions::ServerInstructions as _;
+use super::openapi::{MAX_SPEC_BYTES, SpecHealthChecks as _, openapi_spec_health};
+use super::ports::{Clock as _, ProbeError, SessionError, SystemClock};
+use super::reachability::ServerReachability as _;
 use super::settings::{HEALTH_CHECK_TIMEOUT_VARIABLE, HealthSettings};
 use crate::config_loader::ports::InstructionsCache;
 use crate::openapi_tools::error::OpenApiError;
@@ -86,8 +90,8 @@ where
 
 #[tokio::test]
 async fn check_not_found_row_reports_server_not_found() {
-    let a = server_json("a", "http", "");
-    let rig = rig(&[a.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let rig = rig(&[server_a.as_str()], &[]);
     let row = rig.service.check_server("missing").await;
     assert_eq!(row.server_id, "missing");
     assert_eq!(row.server_name, None);
@@ -697,9 +701,9 @@ async fn batch_empty_input_gives_an_empty_list() {
 
 #[tokio::test]
 async fn batch_deduplicates_and_keeps_the_input_order() {
-    let b = server_json("b", "http", "");
-    let a = server_json("a", "http", "");
-    let rig = rig(&[b.as_str(), a.as_str()], &[]);
+    let server_b = server_json("b", "http", "");
+    let server_a = server_json("a", "http", "");
+    let rig = rig(&[server_b.as_str(), server_a.as_str()], &[]);
     let target = vec!["b".to_owned(), "a".to_owned(), "b".to_owned()];
     let rows = rig.service.run_health_checks(&target).await;
     assert_eq!(server_ids(&rows), vec!["b".to_owned(), "a".to_owned()]);
@@ -722,11 +726,14 @@ async fn batch_runs_ten_checks_at_a_time_and_keeps_the_order() {
 
 #[tokio::test]
 async fn batch_health_and_teams_narrows_to_allowed_and_requested_ids() {
-    let a = server_json("a", "http", "");
-    let b = server_json("b", "http", "");
-    let c = server_json("c", "http", "");
-    let d = server_json("d", "http", "");
-    let rig = rig(&[a.as_str(), b.as_str(), c.as_str()], &[d.as_str()]);
+    let server_a = server_json("a", "http", "");
+    let server_b = server_json("b", "http", "");
+    let server_c = server_json("c", "http", "");
+    let server_d = server_json("d", "http", "");
+    let rig = rig(
+        &[server_a.as_str(), server_b.as_str(), server_c.as_str()],
+        &[server_d.as_str()],
+    );
     rig.allowed
         .set_ids(vec!["c".to_owned(), "b".to_owned(), "a".to_owned()]);
     let requested = vec!["c".to_owned(), "d".to_owned(), "a".to_owned()];
@@ -741,9 +748,9 @@ async fn batch_health_and_teams_narrows_to_allowed_and_requested_ids() {
 
 #[tokio::test]
 async fn batch_health_and_teams_without_ids_checks_every_allowed_server() {
-    let a = server_json("a", "http", "");
-    let b = server_json("b", "http", "");
-    let rig = rig(&[a.as_str(), b.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let server_b = server_json("b", "http", "");
+    let rig = rig(&[server_a.as_str(), server_b.as_str()], &[]);
     rig.allowed.set_ids(vec!["b".to_owned(), "a".to_owned()]);
     let rows = rig
         .service
@@ -754,9 +761,9 @@ async fn batch_health_and_teams_without_ids_checks_every_allowed_server() {
 
 #[tokio::test]
 async fn batch_an_empty_id_list_checks_everything() {
-    let a = server_json("a", "http", "");
-    let b = server_json("b", "http", "");
-    let rig = rig(&[a.as_str(), b.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let server_b = server_json("b", "http", "");
+    let rig = rig(&[server_a.as_str(), server_b.as_str()], &[]);
     let empty: Vec<String> = Vec::new();
     let teams = rig
         .service
@@ -772,8 +779,8 @@ async fn batch_an_empty_id_list_checks_everything() {
 
 #[tokio::test]
 async fn batch_unfiltered_with_no_registered_requested_id_gives_an_empty_list() {
-    let a = server_json("a", "http", "");
-    let rig = rig(&[a.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let rig = rig(&[server_a.as_str()], &[]);
     let requested = vec!["zzz".to_owned()];
     let rows = rig.service.with_health_unfiltered(Some(&requested)).await;
     assert!(rows.is_empty());
@@ -796,10 +803,13 @@ async fn batch_health_and_teams_passes_the_auth_to_the_allowed_source() {
 
 #[tokio::test]
 async fn batch_unfiltered_returns_the_registry_in_order() {
-    let a = server_json("a", "http", "");
-    let b = server_json("b", "http", "");
-    let c = server_json("c", "http", "");
-    let rig = rig(&[a.as_str(), b.as_str()], &[c.as_str()]);
+    let server_a = server_json("a", "http", "");
+    let server_b = server_json("b", "http", "");
+    let server_c = server_json("c", "http", "");
+    let rig = rig(
+        &[server_a.as_str(), server_b.as_str()],
+        &[server_c.as_str()],
+    );
     let rows = rig.service.with_health_unfiltered(None).await;
     assert_eq!(
         server_ids(&rows),
@@ -809,9 +819,9 @@ async fn batch_unfiltered_returns_the_registry_in_order() {
 
 #[tokio::test]
 async fn batch_unfiltered_keeps_only_registered_requested_ids() {
-    let a = server_json("a", "http", "");
-    let c = server_json("c", "http", "");
-    let rig = rig(&[a.as_str()], &[c.as_str()]);
+    let server_a = server_json("a", "http", "");
+    let server_c = server_json("c", "http", "");
+    let rig = rig(&[server_a.as_str()], &[server_c.as_str()]);
     let requested = vec!["c".to_owned(), "zzz".to_owned(), "a".to_owned()];
     let rows = rig.service.with_health_unfiltered(Some(&requested)).await;
     assert_eq!(server_ids(&rows), vec!["c".to_owned(), "a".to_owned()]);
@@ -825,8 +835,8 @@ async fn batch_unfiltered_with_an_empty_registry_gives_an_empty_list() {
 
 #[tokio::test]
 async fn batch_unfiltered_ignores_the_allowed_source() {
-    let a = server_json("a", "http", "");
-    let rig = rig(&[a.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let rig = rig(&[server_a.as_str()], &[]);
     rig.allowed.set_ids(Vec::new());
     let rows = rig.service.with_health_unfiltered(None).await;
     assert_eq!(server_ids(&rows), vec!["a".to_owned()]);
@@ -835,9 +845,9 @@ async fn batch_unfiltered_ignores_the_allowed_source() {
 
 #[tokio::test]
 async fn batch_all_allowed_returns_a_table_per_allowed_server_in_its_order() {
-    let a = server_json("a", "http", "");
-    let b = server_json("b", "http", ", \"server_name\": \"Up B\"");
-    let rig = rig(&[a.as_str(), b.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let server_b = server_json("b", "http", ", \"server_name\": \"Up B\"");
+    let rig = rig(&[server_a.as_str(), server_b.as_str()], &[]);
     rig.allowed.set_ids(vec!["b".to_owned(), "a".to_owned()]);
     let rows = rig.service.all_allowed(None).await;
     assert_eq!(server_ids(&rows), vec!["b".to_owned(), "a".to_owned()]);
@@ -848,8 +858,8 @@ async fn batch_all_allowed_returns_a_table_per_allowed_server_in_its_order() {
 
 #[tokio::test]
 async fn batch_all_allowed_skips_a_missing_server() {
-    let a = server_json("a", "http", "");
-    let rig = rig(&[a.as_str()], &[]);
+    let server_a = server_json("a", "http", "");
+    let rig = rig(&[server_a.as_str()], &[]);
     rig.allowed.set_ids(vec!["a".to_owned(), "gone".to_owned()]);
     let rows = rig.service.all_allowed(None).await;
     assert_eq!(server_ids(&rows), vec!["a".to_owned()]);

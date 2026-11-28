@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_http::proxy::ProxiedClient;
@@ -18,15 +17,8 @@ impl<R> SpecLoader for OpenApiSpecLoader<R>
 where
     R: Resolve,
 {
-    fn load(
-        &self,
-        spec_path: &str,
-        max_bytes: usize,
-    ) -> impl Future<Output = Result<(), OpenApiError>> + Send {
-        async move {
-            load_openapi_spec_async(&self.fetcher, &self.client, spec_path, Some(max_bytes))
-                .await?;
-            Ok(())
-        }
+    async fn load(&self, spec_path: &str, max_bytes: usize) -> Result<(), OpenApiError> {
+        load_openapi_spec_async(&self.fetcher, &self.client, spec_path, Some(max_bytes)).await?;
+        Ok(())
     }
 }

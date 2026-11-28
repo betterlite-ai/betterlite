@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_db::managed_resource_rows::mcp::McpStatus;
@@ -25,7 +26,17 @@ enum UrlRefusal {
 
 const CANCELLED: &str = "Reachability check was cancelled";
 
-impl<P, S, E, A, C, L> HealthService<P, S, E, A, C, L>
+// multiple_inherent_impl leaves service.rs the type's one inherent impl, so the reachability probe lives on this trait
+pub trait ServerReachability {
+    #[must_use]
+    fn reachability(
+        &self,
+        server: &MCPServer,
+        timeout: Duration,
+    ) -> impl Future<Output = (McpStatus, Option<String>)> + Send;
+}
+
+impl<P, S, E, A, C, L> ServerReachability for HealthService<P, S, E, A, C, L>
 where
     P: ProbeClient,
     S: SessionProbe,
@@ -34,8 +45,7 @@ where
     C: Clock,
     L: SpecLoader,
 {
-    #[must_use]
-    pub async fn reachability(
+    async fn reachability(
         &self,
         server: &MCPServer,
         timeout: Duration,
