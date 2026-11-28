@@ -30,7 +30,7 @@ fn dict_edits(normalized: Option<&Json>) -> Vec<IndexMap<String, Json>> {
     entries
         .iter()
         .filter_map(|entry| match entry {
-            Json::Object(fields) => Some(fields.clone()),
+            Json::Object(edit) => Some(edit.clone()),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         })
         .collect()

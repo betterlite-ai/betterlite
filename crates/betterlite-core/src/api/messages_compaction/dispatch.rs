@@ -235,8 +235,8 @@ fn displayed_type(value: Option<&Json>) -> String {
         Some(Json::Number(number)) => number.to_string(),
         Some(Json::Bool(true)) => String::from("True"),
         Some(Json::Bool(false)) => String::from("False"),
-        Some(value @ (Json::List(_) | Json::Object(_))) => {
-            serde_json::to_string(value).unwrap_or_default()
+        Some(container @ (Json::List(_) | Json::Object(_))) => {
+            serde_json::to_string(container).unwrap_or_default()
         }
     }
 }

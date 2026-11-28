@@ -77,11 +77,7 @@ fn registered<'services>(
     }
 }
 
-fn dispatch<'spec>(
-    messages: Vec<Json>,
-    system: Option<Json>,
-    spec: &'spec Json,
-) -> DispatchRequest<'spec> {
+fn dispatch(messages: Vec<Json>, system: Option<Json>, spec: &Json) -> DispatchRequest<'_> {
     DispatchRequest {
         model: "main-model",
         messages,

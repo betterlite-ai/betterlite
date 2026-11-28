@@ -149,10 +149,14 @@ async fn unknown_edits_preserve_state() {
         logs.matching("context_management polyfill: unknown edit type"),
         vec![
             String::from(
-                "DEBUG context_management polyfill: unknown edit type 'future' — skipping"
+                "DEBUG context_management polyfill: unknown edit type 'future' \u{2014} skipping"
             ),
-            String::from("DEBUG context_management polyfill: unknown edit type '7' — skipping"),
-            String::from("DEBUG context_management polyfill: unknown edit type 'None' — skipping"),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type '7' \u{2014} skipping"
+            ),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type 'None' \u{2014} skipping"
+            ),
         ]
     );
 }
@@ -177,14 +181,20 @@ async fn unknown_edit_type_values_print_like_python_scalars() {
     assert_eq!(
         messages,
         vec![
-            String::from("DEBUG context_management polyfill: unknown edit type 'None' — skipping"),
-            String::from("DEBUG context_management polyfill: unknown edit type 'True' — skipping"),
-            String::from("DEBUG context_management polyfill: unknown edit type 'False' — skipping"),
             String::from(
-                "DEBUG context_management polyfill: unknown edit type '[1,\"x\"]' — skipping"
+                "DEBUG context_management polyfill: unknown edit type 'None' \u{2014} skipping"
             ),
             String::from(
-                "DEBUG context_management polyfill: unknown edit type '{\"a\":1}' — skipping"
+                "DEBUG context_management polyfill: unknown edit type 'True' \u{2014} skipping"
+            ),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type 'False' \u{2014} skipping"
+            ),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type '[1,\"x\"]' \u{2014} skipping"
+            ),
+            String::from(
+                "DEBUG context_management polyfill: unknown edit type '{\"a\":1}' \u{2014} skipping"
             ),
         ]
     );
@@ -406,7 +416,9 @@ async fn editor_errors_propagate_and_stop_later_edits() {
             assert_eq!(status_code, 400);
             assert_eq!(message, "boom");
         }
-        other => panic!("expected the editor's own refusal: {other:?}"),
+        other @ DispatchError::Spec(_) | other @ DispatchError::Editor(_) => {
+            panic!("expected the editor's own refusal: {other:?}")
+        }
     }
     assert_eq!(editor.calls().len(), 1);
 }

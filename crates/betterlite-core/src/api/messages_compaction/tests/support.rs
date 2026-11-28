@@ -146,7 +146,6 @@ impl ScriptedEditor {
     }
 
     fn next(
-        &self,
         scripts: &Mutex<VecDeque<ScriptedResult>>,
         editor: &str,
     ) -> Result<EditorOutcome, ScriptedError> {
@@ -191,7 +190,7 @@ impl ContextEditor for ScriptedEditor {
                     edit_spec: clear.edit_spec,
                 };
                 self.record(&record);
-                self.next(&self.clear, "clear_tool_uses")
+                Self::next(&self.clear, "clear_tool_uses")
             }
             EditCall::Compact(compact) => {
                 let record = CompactRecord {
@@ -206,7 +205,7 @@ impl ContextEditor for ScriptedEditor {
                     user_api_key_auth: compact.user_api_key_auth.map(|_principal| "present"),
                 };
                 self.record(&record);
-                self.next(&self.compact, "compact")
+                Self::next(&self.compact, "compact")
             }
         };
         ready(outcome)
@@ -504,11 +503,11 @@ impl SummaryCompletion for NeverCalled {
     }
 }
 
-pub(crate) fn request<'request>(
+pub(crate) fn request(
     messages: Vec<Json>,
     system: Option<Json>,
-    spec: Option<&'request Json>,
-) -> DispatchRequest<'request> {
+    spec: Option<&Json>,
+) -> DispatchRequest<'_> {
     DispatchRequest {
         model: "main-model",
         messages,
