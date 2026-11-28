@@ -820,3 +820,153 @@ fn a_named_audio_file_is_logged_unchanged() {
     outcome.unwrap();
     assert_eq!(logger.post[0].input, json(r#""meeting-notes.wav""#));
 }
+
+const CLIENT_IMPORT_SOURCE: &str = "def __getattr__(name):
+    raise RuntimeError('riva import failed')
+";
+
+const PROTO_IMPORT_SOURCE: &str = "def __getattr__(name):
+    raise RuntimeError('proto import failed')
+";
+
+const SIGNATURE_SOURCE: &str = "def signature(obj):
+    raise RuntimeError('signature refused')
+";
+
+const ENCODING_SOURCE: &str = "class _Later:
+    def __init__(self, error):
+        self.calls = 0
+        self.error = error
+
+    def __getattr__(self, name):
+        if name != 'LINEAR_PCM':
+            raise AttributeError(name)
+        self.calls += 1
+        if self.calls > 1:
+            raise self.error
+        return 1
+
+
+missing = _Later(AttributeError('LINEAR_PCM'))
+failing = _Later(RuntimeError('encoding refused'))
+";
+
+fn replace_encoding(host: &PythonHost, which: &str) {
+    host.attach(|py| {
+        let module = install(py, "riva_call_encoding", ENCODING_SOURCE);
+        let replacement = module.getattr(which).unwrap();
+        py.import("riva.client")
+            .unwrap()
+            .setattr("AudioEncoding", replacement)
+            .unwrap();
+    });
+}
+
+#[test]
+fn a_client_import_failure_that_is_not_an_import_error_keeps_its_cause() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    host.attach(|py| {
+        let raising = install(py, "riva", CLIENT_IMPORT_SOURCE);
+        let registered = modules(py);
+        registered.set_item("riva", &raising).unwrap();
+        drop(registered.del_item("riva.client"));
+    });
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    let error = outcome.unwrap_err();
+    assert!(matches!(error, RivaCallError::Import { .. }));
+    assert!(error.to_string().contains("riva import failed"));
+}
+
+#[test]
+fn a_proto_import_failure_that_is_not_an_import_error_keeps_its_cause() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    install_fakes(&host, 1600, CLIENT_WITHOUT_CONFIGS, true);
+    stage(&host, FINAL_SPEC);
+    host.attach(|py| {
+        let raising = install(py, "riva.client.proto", PROTO_IMPORT_SOURCE);
+        let registered = modules(py);
+        registered.set_item("riva.client.proto", &raising).unwrap();
+        drop(registered.del_item("riva.client.proto.riva_asr_pb2"));
+    });
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    let error = outcome.unwrap_err();
+    assert!(matches!(error, RivaCallError::Import { .. }));
+    assert!(error.to_string().contains("proto import failed"));
+}
+
+#[test]
+fn a_signature_failure_that_is_not_a_type_error_maps_through_the_grpc_table() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    let original = host.attach(|py| {
+        let inspect = py.import("inspect").unwrap();
+        let previous = inspect.getattr("signature").unwrap().unbind();
+        let patched = install(py, "riva_call_inspect", SIGNATURE_SOURCE)
+            .getattr("signature")
+            .unwrap();
+        inspect.setattr("signature", patched).unwrap();
+        previous
+    });
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    host.attach(|py| {
+        py.import("inspect")
+            .unwrap()
+            .setattr("signature", original.bind(py))
+            .unwrap();
+    });
+    let error = outcome.unwrap_err();
+    assert!(matches!(error, RivaCallError::Provider(_)));
+    assert_eq!(error.to_string(), "NVIDIA Riva error: signature refused");
+}
+
+#[test]
+fn a_named_encoding_missing_on_a_later_read_falls_back_to_linear_pcm() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    replace_encoding(&host, "missing");
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    outcome.unwrap();
+    let recorded = probe(&host);
+    assert_eq!(value(&recorded, "recognition.kwargs"), RECOGNITION_DEFAULT);
+}
+
+#[test]
+fn a_named_encoding_failure_that_is_not_missing_names_the_config() {
+    let _guard = PYTHON.blocking_lock();
+    let Some(host) = audio_host() else {
+        return;
+    };
+    reset(&host, 1600);
+    stage(&host, FINAL_SPEC);
+    replace_encoding(&host, "failing");
+    let setup = Setup::new("{}");
+    let (outcome, _logger) = run_sync(&host, &setup, Some("grpc.example:443"), false);
+    let error = outcome.unwrap_err();
+    assert!(matches!(
+        error,
+        RivaCallError::Config {
+            operation: "riva.client.RecognitionConfig",
+            ..
+        }
+    ));
+}
