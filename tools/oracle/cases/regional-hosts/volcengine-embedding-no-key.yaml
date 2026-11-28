@@ -1,0 +1,10 @@
+kind: helper
+name: volcengine-embedding-no-key
+call:
+  b8312:
+    op: volcengine_embedding
+    model: doubao-embedding
+    input: hello
+    api_base: "{{upstream}}"
+env: {}
+compare: {ignore: []}

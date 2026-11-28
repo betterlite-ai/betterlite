@@ -1,11 +1,15 @@
+mod fixtures;
+mod oracle;
+mod speech;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = oracle::Case;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b8312")
+    fn run(input: &Self::Input) -> HelperResult {
+        oracle::run(input)
     }
 }

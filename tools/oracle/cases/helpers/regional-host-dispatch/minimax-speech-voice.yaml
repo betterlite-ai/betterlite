@@ -1,0 +1,61 @@
+kind: helper
+name: minimax-speech-voice
+call:
+  b8312:
+    op: minimax_speech
+    model: speech-02-hd
+    input: hello there
+    voice: female-shaonv
+    api_base: "{{upstream}}"
+    api_key: "sk-minimax"
+    answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+calls:
+  - b8312:
+      op: minimax_speech
+      model: speech-02-hd
+      input: hello there
+      voice: {voice_id: v-1, id: v-2, name: v-3}
+      api_base: "{{upstream}}"
+      api_key: "sk-minimax"
+      answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+  - b8312:
+      op: minimax_speech
+      model: speech-02-hd
+      input: hello there
+      voice: {id: v-2}
+      api_base: "{{upstream}}"
+      api_key: "sk-minimax"
+      answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+  - b8312:
+      op: minimax_speech
+      model: speech-02-hd
+      input: hello there
+      voice: {name: v-3}
+      api_base: "{{upstream}}"
+      api_key: "sk-minimax"
+      answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+  - b8312:
+      op: minimax_speech
+      model: speech-02-hd
+      input: hello there
+      voice: {voice_id: "", name: v-3}
+      api_base: "{{upstream}}"
+      api_key: "sk-minimax"
+      answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+  - b8312:
+      op: minimax_speech
+      model: speech-02-hd
+      input: hello there
+      api_base: "{{upstream}}"
+      api_key: "sk-minimax"
+      answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+  - b8312:
+      op: minimax_speech
+      model: speech-02-hd
+      input: hello there
+      voice: alloy
+      api_base: "{{upstream}}"
+      api_key: "sk-minimax"
+      answer: {status: 200, body: '{"base_resp":{"status_code":0},"data":{"audio":"6869"}}'}
+env: {}
+compare: {ignore: []}
