@@ -118,7 +118,7 @@ fn region_kwargs(region: Option<&str>) -> Object {
 
 fn map_answer(call: &Call) -> Value {
     let options = SpeechMappingOptions {
-        voice: call.voice.cloned(),
+        voice: call.voice.clone(),
         drop_params: false,
         kwargs: call.kwargs.clone(),
     };
@@ -155,7 +155,10 @@ fn request_answer(runtime: &Runtime, call: &Call) -> Value {
         },
         &FixedResolver,
     ));
-    signed.map_or_else(|_| json!({ "ok": false }), |signed| signed_answer(&signed))
+    signed.map_or_else(
+        |_| json!({ "ok": false }),
+        |request| signed_answer(&request),
+    )
 }
 
 fn signed_answer(signed: &TextToSpeechRequest) -> Value {
