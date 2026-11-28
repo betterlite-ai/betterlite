@@ -77,7 +77,7 @@ def managed_arguments(
     fields: dict[str, CallValue], kwargs: dict[str, CallValue], transport: dict[str, CallValue]
 ) -> dict[str, CallValue]:
     return {
-        **fields, "kwargs": kwargs, "transport": transport,
+        **fields, "transport": {**transport, "kwargs": kwargs},
     }
 
 
