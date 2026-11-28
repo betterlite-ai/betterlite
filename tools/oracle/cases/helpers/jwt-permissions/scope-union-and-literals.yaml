@@ -1,0 +1,66 @@
+kind: helper
+name: jwt-permissions-scope-union-and-literals
+call:
+  jwt_permissions:
+    function: scope_access
+    scope_mappings:
+      - scope: chat
+        models: [gpt-4o]
+      - scope: chat
+        models: [claude-3]
+    scopes: [chat]
+    model: claude-3
+calls:
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: [gpt-4o]
+        - scope: responses
+          models: [claude-3]
+      scopes: [chat]
+      model: claude-3
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings: []
+      scopes: [chat]
+      model: gpt-4o
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: [gpt-4o]
+      scopes: [chat]
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: ["*"]
+      scopes: [chat]
+      model: gpt-4o
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: ["*"]
+      scopes: [chat]
+      model: "*"
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: null
+      scopes: [chat]
+      model: gpt-4o
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: [gpt-4o]
+      scopes: [chat]
+      model: ""
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes its own denial text and never echoes the bearer

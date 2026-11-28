@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-permissions-scope-model-denial
+call:
+  jwt_permissions:
+    function: scope_access
+    scope_mappings:
+      - scope: chat
+        models: [gpt-4o]
+    scopes: [chat]
+    model: gpt-4o-mini
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes its own denial text and never echoes the bearer

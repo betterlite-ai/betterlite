@@ -1,0 +1,12 @@
+kind: helper
+name: jwt-permissions-scope-model-grant
+call:
+  jwt_permissions:
+    function: scope_access
+    scope_mappings:
+      - scope: chat
+        models: [gpt-4o]
+    scopes: [chat]
+    model: gpt-4o
+env: {}
+compare: {ignore: []}

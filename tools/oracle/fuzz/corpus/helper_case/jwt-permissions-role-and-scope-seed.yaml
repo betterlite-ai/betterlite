@@ -1,0 +1,32 @@
+kind: helper
+name: jwt-permissions-role-and-scope-seed
+call:
+  jwt_permissions:
+    function: check_rbac_role
+    enforce_rbac: true
+    role: internal_user
+    role_permissions:
+      - role: internal_user
+        models: [gpt-4o]
+        routes: [openai_routes]
+    model: gpt-4o
+    route: /v1/chat/completions
+calls:
+  - jwt_permissions:
+      function: scope_access
+      scope_mappings:
+        - scope: chat
+          models: [gpt-4o]
+      scopes: [chat]
+      model: gpt-4o-mini
+  - jwt_permissions:
+      function: admin_access
+      scopes: [litellm_proxy_admin]
+      route: /v1/chat/completions
+      token: oracle-jwt-token
+      user_id: user-1
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes its own denial text and never echoes the bearer
