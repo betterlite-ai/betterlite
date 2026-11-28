@@ -301,7 +301,7 @@ pub(crate) struct Harness {
     pub(crate) callbacks: FakeCallbacks,
     pub(crate) alert_types: Vec<AlertType>,
     pub(crate) webhooks: BTreeMap<AlertType, WebhookUrl>,
-    pub(crate) router_settings: Option<BTreeMap<String, JsonValue>>,
+    pub(crate) router: Option<Arc<dyn RouterSettingsReader>>,
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) clock: DateTime<FixedOffset>,
     pub(crate) audit_repository: Arc<RecordingRepository>,
@@ -320,7 +320,7 @@ impl Harness {
             callbacks: FakeCallbacks::default(),
             alert_types: Vec::new(),
             webhooks: BTreeMap::new(),
-            router_settings: None,
+            router: None,
             environment: BTreeMap::new(),
             clock: moment(),
             audit_repository: Arc::new(RecordingRepository::default()),
@@ -347,7 +347,7 @@ impl Harness {
     }
 
     pub(crate) fn with_router(mut self, settings: BTreeMap<String, JsonValue>) -> Self {
-        self.router_settings = Some(settings);
+        self.router = Some(router_port(Arc::new(FakeRouter { settings })));
         self
     }
 
@@ -412,7 +412,7 @@ impl Harness {
             store_model_in_db: Arc::new(StoreFlag(self.store_model_in_db)),
             callbacks: Arc::new(self.callback_fakes()),
             alerting: Arc::new(self.alerting_state()),
-            router: self.router_reader(),
+            router: self.router.clone(),
             environment: Arc::new(self.environment.clone()),
             audit: Arc::new(enabled_sink(Arc::clone(&self.audit_repository))),
             clock: Arc::new(FixedCallbackClock { moment: self.clock }),
@@ -439,13 +439,6 @@ impl Harness {
         FakeAlerting {
             alert_types: self.alert_types.clone(),
             webhooks: self.webhooks.clone(),
-        }
-    }
-
-    fn router_reader(&self) -> Option<Arc<dyn RouterSettingsReader>> {
-        match self.router_settings.clone() {
-            None => None,
-            Some(settings) => Some(router_port(Arc::new(FakeRouter { settings }))),
         }
     }
 
