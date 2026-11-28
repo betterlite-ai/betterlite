@@ -228,7 +228,7 @@ impl Harness {
     }
 
     pub(crate) fn reply(mut self, url: &str, body: &str) -> Self {
-        self.replies.push((url.to_owned(), answer(200, body)));
+        self.replies.push((url.to_owned(), Ok(answer(200, body))));
         self
     }
 
@@ -237,7 +237,8 @@ impl Harness {
     }
 
     pub(crate) fn status_body(mut self, url: &str, status: u16, body: &str) -> Self {
-        self.replies.push((url.to_owned(), answer(status, body)));
+        self.replies
+            .push((url.to_owned(), Ok(answer(status, body))));
         self
     }
 
@@ -310,11 +311,11 @@ impl Harness {
     }
 }
 
-fn answer(status: u16, body: &str) -> Result<UpstreamReply, GetFailure> {
-    Ok(UpstreamReply {
+fn answer(status: u16, body: &str) -> UpstreamReply {
+    UpstreamReply {
         status,
         body: body.as_bytes().to_vec(),
-    })
+    }
 }
 
 pub(crate) fn registry(servers: Vec<MCPServer>) -> SharedRegistry {
