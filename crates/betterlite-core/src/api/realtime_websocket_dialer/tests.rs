@@ -19,6 +19,7 @@ use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
 use http::StatusCode;
 use rstest::rstest;
+use tokio::io::AsyncReadExt as _;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
@@ -180,6 +181,17 @@ async fn serve_silent(listener: TcpListener) -> (u16, String) {
 async fn serve_end(listener: TcpListener) {
     let (stream, _peer) = listener.accept().await.expect("accept");
     drop(accept_async(stream).await);
+}
+
+// a server that reads the first byte of each attempt and drops the socket, so a TLS ClientHello shows itself
+async fn record_first_byte(listener: TcpListener, seen: Arc<Mutex<Vec<u8>>>) {
+    loop {
+        let (mut stream, _peer) = listener.accept().await.expect("accept");
+        let mut byte = [0_u8; 1];
+        if let Ok(read) = stream.read(&mut byte).await {
+            seen.lock().expect("seen").extend_from_slice(&byte[..read]);
+        }
+    }
 }
 
 // a server that records the upgrade's headers before it answers the handshake
@@ -396,6 +408,72 @@ async fn dialer_reports_a_socks_proxy_as_the_import_error() {
             message: "python-socks is required to use a SOCKS proxy".to_owned(),
         }
     );
+}
+
+#[tokio::test]
+async fn dialer_reports_a_https_proxy_as_invalid_proxy() {
+    let environment = BTreeMap::from([(
+        "HTTPS_PROXY".to_owned(),
+        "https://proxy.local:3128".to_owned(),
+    )]);
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment).expect("policy");
+    let ssl = RealtimeSsl::Disabled;
+    let headers = HeaderMap::new();
+    let dialer = web_dialer(Arc::new(policy));
+    let outcome = timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(
+            &dialer,
+            &request("ws://example.test/realtime", &ssl, &headers, 1024),
+        ),
+    )
+    .await
+    .expect("deadline");
+    let error = match outcome {
+        Err(error) => error,
+        Ok(_backend) => panic!("the https proxy opened"),
+    };
+    assert_eq!(
+        error,
+        DialError::Other {
+            message: "websockets can't connect through a https proxy".to_owned(),
+        }
+    );
+}
+
+// SSL_VERIFY=false on a wss URL keeps TLS, as llm_http_handler.py builds a context with CERT_NONE there
+#[tokio::test]
+async fn dialer_keeps_tls_for_a_wss_url_when_verification_is_disabled() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut tasks = JoinSet::new();
+    tasks.spawn(record_first_byte(listener, Arc::clone(&seen)));
+    let url = format!("wss://{address}/realtime");
+    let ssl = RealtimeSsl::Insecure;
+    let headers = HeaderMap::new();
+    let dialer = web_dialer(no_proxy());
+    let outcome = timeout(
+        TEST_TIMEOUT,
+        open_realtime_backend_ws(&dialer, &request(&url, &ssl, &headers, 1024)),
+    )
+    .await
+    .expect("deadline");
+    let error = match outcome {
+        Err(error) => error,
+        Ok(_backend) => panic!("the dropped wss socket opened"),
+    };
+    assert!(
+        matches!(error, DialError::Os { .. }),
+        "the dropped TLS handshake failed with {error:?}"
+    );
+    let first = seen.lock().expect("seen").first().copied();
+    assert_eq!(
+        first,
+        Some(0x16),
+        "the first byte was not a TLS handshake record"
+    );
+    tasks.abort_all();
 }
 
 #[tokio::test]
