@@ -135,6 +135,17 @@ pub fn bedrock_bearer_token(
     }
 }
 
+#[must_use]
+pub fn or_bearer_token(tokens: &[Option<&SecretString>]) -> Option<SecretString> {
+    let selected = tokens
+        .iter()
+        .flatten()
+        .copied()
+        .find(|token| !token.expose_secret().is_empty());
+    // Python's `a or b or c` evaluates to the last operand when none of them is truthy
+    selected.or(tokens.last().copied().flatten()).cloned()
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct AssumeRoleParams {
