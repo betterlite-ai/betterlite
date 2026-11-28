@@ -1,14 +1,14 @@
 id: B10163
 milestone: M4 keys, spend and management
 title: Production blog feed parser
-status: todo
+status: done
 depends_on: [B001, B003, B3190, B4264, B5100, B8807, B10167]
 file: tasks/B10163-blog-feed-parser.yaml
 covers:
   - "litellm/litellm_core_utils/get_blog_posts.py"
 parent: B077
 split_from: B9300
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3423
