@@ -179,6 +179,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
+        | StageFailure::JwtPermissions(exception)
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
         | StageFailure::ModelBudgets(exception)

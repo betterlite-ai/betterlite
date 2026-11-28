@@ -149,6 +149,7 @@ fn stage_input(
         AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
+        AuthBackend::JwtPermissions => jwt_permissions::stage_input(request, authenticated, body),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
@@ -255,6 +256,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::TrustedNetwork(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
+        | StageInput::JwtPermissions(_)
         | StageInput::AuthVirtualKeyRoutes(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)

@@ -22,6 +22,7 @@ use crate::auth::entity_model_access::EntityModelStageInput;
 pub(crate) use crate::auth::failures::StageFailure;
 use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
+use crate::auth::jwt_permissions;
 use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
@@ -39,6 +40,7 @@ pub enum AuthBackend {
     TrustedNetwork,
     AuthRequestPolicy,
     RequestBodySafety,
+    JwtPermissions,
     AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
@@ -66,6 +68,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::TrustedNetwork,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
+    AuthBackend::JwtPermissions,
     AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
@@ -95,6 +98,7 @@ pub enum StageInput {
     TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
+    JwtPermissions(Box<jwt_permissions::JwtPermissionStageInput>),
     AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
@@ -156,6 +160,7 @@ impl StageInput {
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
+            Self::JwtPermissions(_) => AuthBackend::JwtPermissions,
             Self::AuthVirtualKeyRoutes(_) => AuthBackend::AuthVirtualKeyRoutes,
             Self::AuthRequestModels(_) => AuthBackend::AuthRequestModels,
             Self::AuthModelPatterns(_) => AuthBackend::AuthModelPatterns,
@@ -215,6 +220,9 @@ pub(crate) fn dispatch(
         }
         StageInput::RequestBodySafety(stage) => {
             request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
+        }
+        StageInput::JwtPermissions(stage) => {
+            jwt_permissions::run_stage(stage).map_err(StageFailure::JwtPermissions)
         }
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
