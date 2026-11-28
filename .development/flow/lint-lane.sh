@@ -10,10 +10,26 @@ id=${branch#task/}
 id=${id%%-*}
 packages=$(($# / 2))
 started=${EPOCHSECONDS}
+# a task within 10 steps of the longest open chain (build slot 1 in next-slot.sh) marks that it waits, and every other task leaves the next free lane to it (lever 1 of the 11-20 plan, Max 11-28)
+chains=${root}/chain-waits
+mkdir -p "${chains}" || exit 1
+mark=""
+if [[ "${GATE_LOWEST_BUILD_SLOT:-2}" -eq 1 ]]; then
+  mark=${chains}/${id}
+  echo "$$" > "${mark}" || exit 1
+  trap 'rm -f -- "${mark}"' EXIT
+fi
 lane=0
 # each lane has its own lean target, so two runs never wait on one cargo lock
 while [[ "${lane}" -eq 0 ]]; do
-  for ((number = 1; number <= lanes; number++)); do
+  yield=0
+  if [[ -z "${mark}" ]]; then
+    for file in "${chains}"/*; do
+      # a mark whose process is gone, or is no lint lane any more, holds nobody back
+      [[ -e "${file}" ]] && grep -q -a -F lint-lane.sh "/proc/$(< "${file}")/cmdline" 2> /dev/null && yield=1
+    done
+  fi
+  for ((number = 1; yield == 0 && number <= lanes; number++)); do
     exec 9> "${root}/lane-${number}.lock"
     if flock -n 9; then
       lane=${number}
@@ -29,6 +45,7 @@ while [[ "${lane}" -eq 0 ]]; do
     sleep 5
   fi
 done
+[[ -n "${mark}" ]] && rm -f -- "${mark}"
 waited=$((EPOCHSECONDS - started))
 target=${root}/target-${lane}
 size=$(du -s -BG "${target}" 2> /dev/null) || size=0
