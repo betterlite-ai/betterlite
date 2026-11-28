@@ -76,9 +76,20 @@ fn master_context(master_key: &SecretString) -> AuthContext {
     context
 }
 
+fn stage_position(backend: AuthBackend) -> usize {
+    INSTALLED_STAGES
+        .iter()
+        .position(|stage| *stage == backend)
+        .expect("the stage is installed")
+}
+
 #[test]
 fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthContextSources));
+    // LiteLLM resolves the request model before its model access and route checks
+    let position = stage_position(AuthBackend::AuthContextSources);
+    assert!(position < stage_position(AuthBackend::ModelGrantIntersection));
+    assert!(position < stage_position(AuthBackend::AuthRoutePolicy));
     let config = config_with_master_key();
     let app = state_for(&config);
     let master_key = SecretString::from(MASTER_KEY.to_owned());

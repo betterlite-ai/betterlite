@@ -85,8 +85,8 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
-    AuthBackend::ModelGrantIntersection,
     AuthBackend::AuthContextSources,
+    AuthBackend::ModelGrantIntersection,
     AuthBackend::AuthRoutePolicy,
     AuthBackend::AuthModelBudgets,
 ];
