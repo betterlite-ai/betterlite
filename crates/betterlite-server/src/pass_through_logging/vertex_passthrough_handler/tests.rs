@@ -359,8 +359,8 @@ fn generate_decodes_the_reply_and_prices_it(#[case] route: &str, #[case] provide
     assert_eq!(as_text(kwarg(&outcome, "model")), "gemini-2.0-flash");
     assert_eq!(logged_model(&fixture.logging_obj), "gemini-2.0-flash");
     assert_eq!(
-        logged_provider(&fixture.logging_obj).as_deref(),
-        Some(provider)
+        detail(&fixture.logging_obj, "custom_llm_provider"),
+        Some(Json::Text(provider.to_owned()))
     );
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
