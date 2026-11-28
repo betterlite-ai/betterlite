@@ -207,6 +207,23 @@ async fn a_draft_write_failure_answers_500_and_keeps_the_local_copy() {
 }
 
 #[tokio::test]
+async fn a_database_error_before_the_caching_scope_is_not_wrapped() {
+    let harness = harness(HarnessConfig::new().with_database(DatabaseFault::ServerRead));
+    let route = session_route(&harness);
+    let auth = auth_with(Some("admin-1"), "proxy_admin");
+    let Err(error) = add_session_server(&route, SESSION_BODY.as_bytes(), &auth).await else {
+        panic!("the id lookup fails");
+    };
+    assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(matches!(error, SessionError::Table(_)));
+    assert!(
+        !error
+            .to_string()
+            .starts_with("Error caching temporary mcp server:")
+    );
+}
+
+#[tokio::test]
 async fn a_body_that_is_not_json_answers_422() {
     let harness = harness(HarnessConfig::new());
     let route = session_route(&harness);
