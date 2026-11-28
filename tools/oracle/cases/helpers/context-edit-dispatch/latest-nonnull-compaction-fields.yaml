@@ -66,9 +66,6 @@ call:
                 content: two
             applied_edits:
               - type: compact_20260112
-            compaction_block:
-              type: compaction
-              content: C
       - messages:
           - role: user
             content: start

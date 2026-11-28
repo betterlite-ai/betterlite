@@ -349,6 +349,32 @@ async fn latest_nonnull_compaction_fields_block_without_usage() {
 }
 
 #[tokio::test]
+async fn latest_nonnull_compaction_fields_block_kept_when_omitted() {
+    let editor = ScriptedEditor::new(
+        Vec::new(),
+        vec![
+            ScriptedResult::Polyfilled(polyfilled(
+                decided(M0),
+                None,
+                Vec::new(),
+                Some(block("A")),
+                Some(vec![iteration(10, 4)]),
+            )),
+            ScriptedResult::Polyfilled(polyfilled(decided(M1), None, Vec::new(), None, None)),
+        ],
+    );
+    let spec = parse(r#"{"edits":[{"type":"compact_20260112"},{"type":"compact_20260112"}]}"#);
+    let dispatch = request(decided("[]"), None, Some(&spec));
+    let result = apply_context_management(dispatch, &editor)
+        .await
+        .expect("both edits run");
+
+    assert_eq!(result.messages, decided(M1));
+    assert_eq!(result.compaction_block, Some(block("A")));
+    assert_eq!(result.iterations_usage, Some(vec![iteration(10, 4)]));
+}
+
+#[tokio::test]
 async fn editor_errors_propagate_and_stop_later_edits() {
     let editor = ScriptedEditor::new(
         vec![
