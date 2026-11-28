@@ -11,7 +11,7 @@ use betterlite_logging::logging_success::dispatch::{
 };
 use betterlite_logging::logging_success::handler::{async_success_handler, success_handler};
 use betterlite_logging::logging_success::types::SuccessRequest;
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
@@ -39,11 +39,16 @@ fn handler_probe(probe: &HandlerProbe, runtime: &Runtime) -> Result<Value, Box<H
         .map_err(|failure| super::value_error(&failure))?;
     let end = DateTime::parse_from_rfc3339(&probe.end_time)
         .map_err(|failure| super::value_error(&failure))?;
+    // the redacted response's created must be the second LiteLLM pins, not the probe's end time
+    let moment =
+        DateTime::<Utc>::from_timestamp(scenario::stamp_value(probe.stamp.as_ref()).created, 0)
+            .map(|utc| utc.fixed_offset())
+            .ok_or_else(|| super::value_error(&"the stamp created is out of range"))?;
     let mut scenario = Scenario::new(ScenarioSpec {
         loggers: &probe.loggers,
         built_payload: probe.built_payload.as_ref(),
         complete: probe.complete_response.as_ref(),
-        now: end,
+        now: moment,
         excluded_fields: probe.excluded_fields.clone(),
         stamp: probe.stamp.as_ref(),
     })?;

@@ -15,6 +15,7 @@ use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
+use crate::auth::auth_pricing::PricingStageInput;
 use crate::auth::auth_request_models::RequestModelStageInput;
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -34,6 +35,10 @@ use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
+use crate::auth::{
+    auth_key_budgets, auth_model_budgets, auth_tag_budgets, auth_tenant_budgets,
+    team_budget_admission,
+};
 use crate::error_body::AuthenticationFailure::Missing;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +56,7 @@ pub enum AuthBackend {
     AuthModelGrants,
     EntityModelAccess,
     AuthResourceGrants,
+    AuthPricing,
     AuthTagBudgets,
     AuthKeyBudgets,
     AuthModelBudgets,
@@ -80,6 +86,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthModelGrants,
     AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
+    AuthBackend::AuthPricing,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
@@ -111,6 +118,7 @@ pub enum StageInput {
     AuthModelGrants(Box<AgentModelGrantsStageInput>),
     EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
+    AuthPricing(Box<PricingStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     AuthModelBudgets(Box<ModelBudgetStageInput>),
@@ -157,6 +165,24 @@ impl StageInput {
         Ok(Self::ModelGrantIntersection(stage))
     }
 
+    #[rustfmt::skip] // the budget stages read their limits before dispatch; the closing match names every variant so a new stage cannot pass through
+    pub(crate) async fn prefetch_budget(self) -> Result<Self, StageFailure> {
+        if let Self::AuthTagBudgets(stage) = self { return auth_tag_budgets::prefetched(stage).await; }
+        if let Self::AuthKeyBudgets(stage) = self { return auth_key_budgets::prefetched(stage).await; }
+        if let Self::AuthModelBudgets(stage) = self { return auth_model_budgets::prefetched(stage).await; }
+        if let Self::TeamBudgetAdmission(stage) = self { return team_budget_admission::prefetched(stage).await; }
+        if let Self::AuthTenantBudgets(stage) = self { return auth_tenant_budgets::prefetched(stage).await; }
+        match self {
+            budget @ (Self::AuthTagBudgets(_) | Self::AuthKeyBudgets(_) | Self::AuthModelBudgets(_) | Self::TeamBudgetAdmission(_) | Self::AuthTenantBudgets(_)) => Ok(budget),
+            other @ (Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) | Self::JwtKeys(_) | Self::MasterKey(_)
+            | Self::TrustedNetwork(_) | Self::AuthRequestPolicy(_) | Self::RequestBodySafety(_) | Self::AuthVirtualKeyRoutes(_)
+            | Self::AuthRequestModels(_) | Self::AuthModelPatterns(_) | Self::AuthModelGrants(_) | Self::EntityModelAccess(_)
+            | Self::AuthResourceGrants(_) | Self::AuthPricing(_) | Self::OrganizationRoutePolicy(_) | Self::AuthRoutePolicy(_)
+            | Self::AuthOrgLookup(_) | Self::AuthEndUserIdentity(_) | Self::AuthEndUsers(_) | Self::AuthPolicySupport(_)
+            | Self::ModelGrantIntersection(_)) => Ok(other),
+        }
+    }
+
     // the identity stage's id validation is async, so the caller awaits it on the owned input
     pub(crate) async fn prefetch_end_user_identity(
         mut stage: Box<EndUserIdentityStageInput>,
@@ -184,6 +210,7 @@ impl StageInput {
             Self::EntityModelAccess(_) => AuthBackend::EntityModelAccess,
             Self::AuthModelGrants(_) => AuthBackend::AuthModelGrants,
             Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
+            Self::AuthPricing(_) => AuthBackend::AuthPricing,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
             Self::AuthModelBudgets(_) => AuthBackend::AuthModelBudgets,
@@ -209,6 +236,7 @@ fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), Stage
     Err(StageFailure::from(Missing))
 }
 
+#[rustfmt::skip] // the fallback arm stays on one line to keep dispatch within clippy's line limit
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
@@ -219,6 +247,7 @@ pub(crate) fn dispatch(
         Authenticated(context) => Ok((**context).clone()),
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthPricing(stage) => Ok(stage.context.clone()),
         StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelBudgets(stage) => Ok(stage.context.clone()),

@@ -1,0 +1,48 @@
+kind: helper
+name: auth-pricing-auth-mixed-model-list
+call:
+  auth_pricing:
+    calls:
+      # one charged candidate makes the whole list charged, and the free one is cached first
+      - function: zero_cost
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+            charged: {input: 0.0, output: 0.0002}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+            charged:
+              - model_info: {id: dep-charged}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+            dep-charged: {input_cost_per_token: 0.0, output_cost_per_token: 0.0002}
+          cache: {}
+        model: [free, charged]
+      # an unpriced candidate is reported next to a priced one
+      - function: unpriced
+        router:
+          groups:
+            free: {input: 0.0, output: 0.0}
+            sparse: {input: 0.0, output: 0.0}
+          deployments:
+            free:
+              - model_info: {id: dep-free}
+            sparse:
+              - model_info: {id: dep-sparse}
+          costs:
+            dep-free: {input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+            dep-sparse: {}
+          cache: {}
+        model: [free, sparse]
+      # a seeded false short-circuits the list before the charged lookup
+      - function: zero_cost
+        router:
+          groups:
+            charged: {input: 1.0, output: 1.0}
+          cache:
+            charged: false
+        model: [charged, free]
+env: {}
+compare:
+  ignore: []

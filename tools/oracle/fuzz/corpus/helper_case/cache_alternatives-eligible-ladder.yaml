@@ -1,0 +1,11 @@
+kind: helper
+name: cache-alternatives-eligible-ladder-seed
+call:
+  b3124:
+    config:
+      tiers: {SIMPLE: cheap, MEDIUM: mid, COMPLEX: strong, REASONING: deep}
+      adaptive: false
+      plugins: []
+    decision: {tier: MEDIUM, cause: heuristic_scorer}
+env: {}
+compare: {ignore: []}

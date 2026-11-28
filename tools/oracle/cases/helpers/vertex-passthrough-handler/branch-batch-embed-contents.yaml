@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-passthrough-handler-branch-batch-embed-contents
+call:
+  b3642:
+    url_route: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/text-embedding-004:batchEmbedContents"
+env: {}
+compare: {ignore: []}
