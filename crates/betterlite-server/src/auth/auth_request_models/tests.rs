@@ -114,6 +114,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::RequestBodySafety(_)
             | StageFailure::VirtualKeyRoutes(_)
             | StageFailure::KeyBudgets(_)
+            | StageFailure::ModelBudgets(_)
             | StageFailure::TeamBudgets(_)
             | StageFailure::OrganizationRoutePolicy(_)
             | StageFailure::AuthRoutePolicy(_)

@@ -53,22 +53,26 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, PoisonError},
+};
 
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_identity::AuthBackend::{OrganizationRoutePolicy, TeamBudgetAdmission};
+use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
+use crate::auth::auth_model_budgets::SharedViews;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
-use crate::auth::organization_route_policy::stage_input as organization_stage_input;
+use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -93,14 +97,40 @@ pub(crate) async fn authenticate(
     request
         .extensions_mut()
         .insert(ConfiguredMasterKey(master_key.clone()));
+    request.extensions_mut().insert(SharedViews::default());
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
-        Ok((staged, authenticated, body)) => {
-            auth_stage_loop::forward(staged, authenticated, body, next).await
+        Ok((mut staged, authenticated, body)) => {
+            let rewritten = rewritten_body(&mut staged, body);
+            auth_stage_loop::forward(staged, authenticated, rewritten, next).await
         }
         Err(response) => *response,
     }
 }
+
+// a per-model budget fallback rewrites the buffered body, which every downstream handler parses in place of the client's
+fn rewritten_body(request: &mut Request<Body>, body: Option<Bytes>) -> Option<Bytes> {
+    let snapshots = request
+        .extensions()
+        .get::<SharedViews>()
+        .and_then(|shared| {
+            shared
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        });
+    let Some(views) = snapshots else {
+        return body;
+    };
+    if let Some(parsed) = views.parsed_body.clone() {
+        request.extensions_mut().insert(parsed);
+    }
+    let rewritten = views.serialized_body.clone().map(Bytes::from).or(body);
+    request.extensions_mut().insert(views);
+    rewritten
+}
+
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -132,9 +162,10 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthModelBudgets => auth_model_budgets::stage(request, authenticated, body),
         TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
-        OrganizationRoutePolicy => organization_stage_input(request, authenticated, body),
+        AuthBackend::OrganizationRoutePolicy => org_route_stage_input(request, authenticated, body),
         AuthBackend::AuthRoutePolicy => route_policy_stage_input(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
@@ -211,6 +242,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
+        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
