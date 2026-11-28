@@ -105,7 +105,6 @@ async fn wiring_builds_one_success_handler_over_its_parts() {
         turn_off_message_logging: true,
         redact_user_api_key_info: true,
     };
-    let excluded_fields = vec!["messages".to_owned()];
     let known_callback: Arc<dyn Fn(&str) -> bool + Send + Sync> =
         Arc::new(|name: &str| name == "langfuse");
     let settings = wiring_settings();
@@ -117,28 +116,20 @@ async fn wiring_builds_one_success_handler_over_its_parts() {
         stream_assembler: Arc::clone(&stream_assembler),
         success: SuccessInputs {
             payload: payload(privacy),
-            excluded_fields: excluded_fields.clone(),
+            excluded_fields: vec!["messages".to_owned()],
             known_callback: Arc::clone(&known_callback),
         },
     })
     .expect("the wiring starts");
-    assert!(Arc::ptr_eq(
-        &wiring.success.stream_assembler,
-        &stream_assembler
-    ));
-    assert!(Arc::ptr_eq(&wiring.stream_assembler, &stream_assembler));
-    assert!(Arc::ptr_eq(&wiring.success.clock, &clock));
-    let service_names: Vec<&str> = wiring
-        .success
-        .registry
-        .list_identities(CallbackList::Service)
-        .iter()
-        .map(|identity| identity.class_name.as_str())
-        .collect();
-    assert_eq!(service_names, ["datadog"]);
-    assert_eq!(wiring.success.excluded_fields, excluded_fields);
-    assert_eq!(wiring.success.privacy, privacy);
-    assert!(wiring.success.known_callback("langfuse"));
-    assert!(!wiring.success.known_callback("custom_callback"));
+    let success = &wiring.success;
+    assert!(Arc::ptr_eq(&success.stream_assembler, &stream_assembler));
+    assert!(Arc::ptr_eq(&success.clock, &clock));
+    let service = success.registry.list_identities(CallbackList::Service);
+    assert_eq!(service.len(), 1);
+    assert_eq!(service[0].class_name, "datadog");
+    assert_eq!(success.excluded_fields, ["messages".to_owned()]);
+    assert_eq!(success.privacy, privacy);
+    assert!(success.known_callback("langfuse"));
+    assert!(!success.known_callback("custom_callback"));
     wiring.pipeline.stop().await;
 }

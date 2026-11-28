@@ -248,15 +248,15 @@ impl CallbackRegistry {
         ];
         for identity in lists.iter().flat_map(|list| self.list_identities(*list)) {
             let key = identity.key();
-            let logger = self
+            let counting = self
                 .entries
                 .iter()
                 .find(|entry| entry.identity.key() == key)
                 .and_then(|entry| match &entry.sink {
-                    CallbackSink::Logger(logger) => Some(logger),
+                    CallbackSink::Logger(logger) => logger.failure_counter(),
                     CallbackSink::Tracing | CallbackSink::Channel(_) => None,
                 });
-            if let Some(counter) = logger.and_then(|logger| logger.failure_counter()) {
+            if let Some(counter) = counting {
                 return Some(counter);
             }
         }

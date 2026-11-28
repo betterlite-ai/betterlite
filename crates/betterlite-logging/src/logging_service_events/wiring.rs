@@ -42,52 +42,44 @@ pub struct LoggingWiring {
 }
 
 impl LoggingWiring {
-    pub fn start(inputs: LoggingInputs<'_>) -> Result<Self, PipelineError> {
-        let LoggingInputs {
-            settings,
-            clock,
-            sink,
-            mut registry,
-            stream_assembler,
-            success,
-        } = inputs;
+    pub fn start(mut inputs: LoggingInputs<'_>) -> Result<Self, PipelineError> {
         // an unknown LITELLM_LOG stops the server here, as it stops LiteLLM when _logging imports
-        let log_level = settings.resolve_log_level()?;
-        register_service_callbacks(&mut registry, &settings.service_callbacks);
+        let log_level = inputs.settings.resolve_log_level()?;
+        register_service_callbacks(&mut inputs.registry, &inputs.settings.service_callbacks);
         let worker_settings = WorkerSettings {
-            max_queue_size: settings.max_queue_size,
-            concurrency: settings.concurrency,
-            event_timeout: settings.event_timeout,
+            max_queue_size: inputs.settings.max_queue_size,
+            concurrency: inputs.settings.concurrency,
+            event_timeout: inputs.settings.event_timeout,
             shutdown_drain: DEFAULT_SHUTDOWN_DRAIN,
             timeout_summary_window: DEFAULT_TIMEOUT_SUMMARY_WINDOW,
         };
         // the registry is filled before the one Arc is made, so the handler's lookups never race a write
-        let shared_registry = Arc::new(registry);
-        let privacy = success.payload.privacy;
+        let shared_registry = Arc::new(inputs.registry);
+        let privacy = inputs.success.payload.privacy;
         let payload_builder: Arc<dyn StandardPayloadBuilder> =
-            Arc::new(PayloadBuilder::new(success.payload));
+            Arc::new(PayloadBuilder::new(inputs.success.payload));
         let success_handler = Arc::new(OwnedSuccessHandler {
             registry: Arc::clone(&shared_registry),
             payload_builder,
-            stream_assembler: Arc::clone(&stream_assembler),
-            clock: Arc::clone(&clock),
-            excluded_fields: success.excluded_fields,
-            known_callback: success.known_callback,
+            stream_assembler: Arc::clone(&inputs.stream_assembler),
+            clock: Arc::clone(&inputs.clock),
+            excluded_fields: inputs.success.excluded_fields,
+            known_callback: inputs.success.known_callback,
             privacy,
         });
         let pipeline = ServicePipeline::start(PipelineConfig {
             settings: worker_settings,
-            clock,
-            sink,
+            clock: inputs.clock,
+            sink: inputs.sink,
             registry: shared_registry,
         })?;
         Ok(Self {
             pipeline: Arc::new(pipeline),
-            stream_assembler,
+            stream_assembler: inputs.stream_assembler,
             success: success_handler,
             worker_settings,
             log_level,
-            json_logs: settings.json_logs,
+            json_logs: inputs.settings.json_logs,
         })
     }
 }

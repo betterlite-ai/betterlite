@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_cache::cache_key::derive::get_cache_key;

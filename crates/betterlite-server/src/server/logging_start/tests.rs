@@ -20,7 +20,7 @@ litellm_settings:
 
 #[tokio::test]
 async fn start_logging_reads_the_handler_settings_from_the_config() {
-    let environment = BTreeMap::new();
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     let config = ConfigLoader {
         lookup: environment,
     }
