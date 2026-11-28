@@ -1,0 +1,23 @@
+kind: helper
+name: riva-audio-temporary-cleanup
+call:
+  riva_audio:
+    calls:
+      - file_hex: "737461676564206279746573"
+        soundfile_error: "cannot open sound file"
+        audioread: {chunks: ["0000", "0000"], samplerate: 8000, channels: 1, failure: "none"}
+        resamplers: []
+      - file_hex: "737461676564206279746573"
+        soundfile_error: "cannot open sound file"
+        audioread: {chunks: [], samplerate: 8000, channels: 1, failure: "none"}
+        resamplers: []
+      - file_hex: "737461676564206279746573"
+        soundfile_error: "cannot open sound file"
+        audioread: {chunks: ["e80318fc", "d00730f8"], samplerate: 16000, channels: 2, failure: "none"}
+        resamplers: []
+      - file_hex: "737461676564206279746573"
+        soundfile_error: "cannot open sound file"
+        audioread: {chunks: ["0000"], samplerate: 8000, channels: 1, failure: "iteration"}
+        resamplers: []
+compare: {ignore: []}
+env: {}

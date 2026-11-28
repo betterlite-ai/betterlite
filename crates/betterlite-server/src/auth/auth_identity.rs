@@ -7,6 +7,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
 pub(crate) use crate::auth::auth_key_lookup::master_key_context;
+use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
@@ -45,6 +46,7 @@ pub enum AuthBackend {
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
+    AuthModelBudgets,
     TeamBudgetAdmission,
     AuthTenantBudgets,
     OrganizationRoutePolicy,
@@ -77,6 +79,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
     AuthBackend::ModelGrantIntersection,
+    AuthBackend::AuthModelBudgets,
 ];
 
 #[derive(Clone, Debug)]
@@ -97,6 +100,7 @@ pub enum StageInput {
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    AuthModelBudgets(Box<ModelBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthTenantBudgets(Box<TenantBudgetStageInput>),
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
@@ -156,6 +160,7 @@ impl StageInput {
             Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
+            Self::AuthModelBudgets(_) => AuthBackend::AuthModelBudgets,
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
             Self::AuthTenantBudgets(_) => AuthBackend::AuthTenantBudgets,
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
@@ -167,20 +172,28 @@ impl StageInput {
     }
 }
 
+// the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
+fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    let key_pass_through = backend == MasterKey && matches!(input, Authenticated(_));
+    if backend == input.backend() || key_pass_through {
+        return Ok(());
+    }
+    Err(StageFailure::from(AuthenticationFailure::Missing))
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    require_backend(backend, input)?;
     match input {
         Authenticated(context) => Ok((**context).clone()),
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
         StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelBudgets(stage) => Ok(stage.context.clone()),
         StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
         StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
