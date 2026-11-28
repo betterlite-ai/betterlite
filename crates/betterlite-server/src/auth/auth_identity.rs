@@ -17,7 +17,7 @@ use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
-use crate::auth::end_user_identity::EndUserIdentityStageInput;
+use crate::auth::end_user_identity::{self, EndUserIdentityStageInput};
 use crate::auth::entity_model_access::EntityModelStageInput;
 pub(crate) use crate::auth::failures::StageFailure;
 use crate::auth::identity_store::IdentityStageInput;
@@ -144,6 +144,16 @@ impl StageInput {
             .await
             .map_err(StageFailure::ModelGrants)?;
         Ok(Self::ModelGrantIntersection(stage))
+    }
+
+    // the identity stage's id validation is async, so the caller awaits it on the owned input
+    pub(crate) async fn prefetch_end_user_identity(
+        mut stage: Box<EndUserIdentityStageInput>,
+    ) -> Result<Self, StageFailure> {
+        end_user_identity::prefetch(&mut stage)
+            .await
+            .map_err(StageFailure::EndUserIdentity)?;
+        Ok(Self::AuthEndUserIdentity(stage))
     }
 
     const fn backend(&self) -> AuthBackend {

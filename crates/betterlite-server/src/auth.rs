@@ -218,19 +218,6 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 }
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
-    // the identity stage is prefetched here on a cloned box, so the input stays whole for the table and the table stays under clippy's cognitive-complexity cap
-    if let StageInput::AuthEndUserIdentity(stage) = &input {
-        let mut owned = Box::clone(stage);
-        end_user_identity::prefetch(&mut owned)
-            .await
-            .map_err(StageFailure::EndUserIdentity)?;
-        return Ok(StageInput::AuthEndUserIdentity(owned));
-    }
-    prefetch_stage_table(input).await
-}
-
-// the identity stage never reaches this table, so its variant only keeps the match exhaustive
-async fn prefetch_stage_table(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
         StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
@@ -241,12 +228,14 @@ async fn prefetch_stage_table(input: StageInput) -> Result<StageInput, StageFail
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
+        StageInput::AuthEndUserIdentity(stage) => {
+            StageInput::prefetch_end_user_identity(stage).await
+        }
         StageInput::AuthEndUsers(stage) => end_user_identity::prefetch_budget(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
-        other @ (StageInput::AuthEndUserIdentity(_)
-        | StageInput::Authenticated(_)
+        other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
         | StageInput::AuthRequestPolicy(_)
