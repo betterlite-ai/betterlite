@@ -15,8 +15,9 @@ use crate::usage::ReasoningTokenCounter;
 use super::config::{ChatConfig, TransformResponse};
 use super::error::ChatCallError;
 use super::prepare::Prepared;
-use super::transport::{BufferedReply, ChatTransport, ClientKind};
+use super::transport::{BufferedReply, ChatTransport};
 use super::{CallFacts, CallStyle, ChatDeps, ChatOutcome, ChatResult};
+use betterlite_http::client_kind::ClientKind;
 
 pub mod streams;
 struct ReplyFacts<'call> {

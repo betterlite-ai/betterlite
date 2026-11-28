@@ -1,0 +1,58 @@
+kind: helper
+name: end-user-identity-validation-cache-budget-matrix
+call:
+  end_user_identity:
+    raw_end_user_id: u1
+    validate_in_db: true
+    database: true
+    proxy_default: b-proxy
+    cached: invalid
+    end_user: found
+    user: found
+calls:
+  - end_user_identity:
+      raw_end_user_id: u1
+      validate_in_db: true
+      database: true
+      cached: invalid
+      end_user: found
+      user: found
+  - end_user_identity:
+      raw_end_user_id: u1
+      validate_in_db: true
+      database: true
+      key_end_user_budget_id: ""
+      cached: invalid
+      end_user: found
+      user: found
+  - end_user_identity:
+      raw_end_user_id: u1
+      validate_in_db: true
+      database: true
+      proxy_default: ""
+      cached: invalid
+      end_user: found
+      user: found
+  - end_user_identity:
+      raw_end_user_id: u1
+      validate_in_db: true
+      database: true
+      cached: valid
+      end_user: found
+      user: found
+  - end_user_identity:
+      raw_end_user_id: u1
+      validate_in_db: true
+      database: true
+      cached: unknown
+      end_user: found
+      user: found
+  - end_user_identity:
+      raw_end_user_id: u1
+      validate_in_db: true
+      database: true
+      cached: 7
+      end_user: missing
+      user: missing
+env: {}
+compare: {ignore: []}

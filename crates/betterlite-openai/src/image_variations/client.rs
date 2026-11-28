@@ -1,26 +1,11 @@
 use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::DEFAULT_API_BASE;
+use betterlite_http::client_kind::ClientKind;
 use secrecy::SecretString;
 use url::Url;
 
 use super::error::ImageVariationSource;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
-
-impl ClientKind {
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Sync => "sync",
-            Self::Async => "async",
-        }
-    }
-}
 
 // LiteLLM builds every variation client on this shared session; betterlite's pooled client plays that part
 #[derive(Debug, Clone)]

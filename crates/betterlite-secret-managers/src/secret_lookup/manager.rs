@@ -9,6 +9,7 @@ use crate::secret_read_dispatch::get_secret_from_manager;
 use crate::secret_read_dispatch::settings::SecretManagerSettings;
 use crate::secret_types::{KeyManagementSystem, SecretAccessMode};
 
+#[derive(Clone)]
 pub struct ManagerState {
     pub client: SecretManagerClient,
     pub settings: Option<SecretManagerSettings>,

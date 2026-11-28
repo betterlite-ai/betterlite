@@ -4,6 +4,7 @@ P=${self%/*}
 main=${BETTERLITE_ROOT:-$(git -C "${P}" rev-parse --show-toplevel)}
 worktrees=${BETTERLITE_WORKTREES:-$(dirname "${main}")/betterlite-worktrees}
 L=${worktrees}/logs
+export BETTERLITE_LOGS=${L}
 events=${L}/flow-events.log
 pool=${L}/sccache-pool.tsv
 samples=${L}/machine-samples.tsv

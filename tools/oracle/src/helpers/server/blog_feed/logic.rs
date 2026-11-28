@@ -1,8 +1,8 @@
+use betterlite_server::public_endpoints::blog_feed_parser::parse_rss_to_posts;
 use serde_json::Value;
 
 use super::{
     BLOG_POSTS_TTL_SECONDS, BlogPost, Failure, MockResponse, default_max_posts, default_timeout,
-    parser,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -62,7 +62,7 @@ fn fetch_and_parse(
 ) -> (FetchRequest, Result<Vec<BlogPost>, Failure>) {
     let (request, fetched) = fetch_rss_feed(url, default_timeout(), response);
     let parsed = fetched.and_then(|xml| {
-        parser::parse_rss_to_posts(&xml, default_max_posts()).map_err(Failure::from)
+        parse_rss_to_posts(&xml, default_max_posts(), usize::MAX).map_err(Failure::from)
     });
     (request, parsed)
 }

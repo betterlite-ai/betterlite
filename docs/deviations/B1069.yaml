@@ -1,0 +1,59 @@
+task: B1069
+deviations:
+  - what: >-
+      On POST /vector_store/new a declared body field of the wrong JSON type reads as absent. The shared
+      B1131 request record keeps a null or wrong-typed declared field in its extra map, so
+      litellm_params: "x" creates the store with {}, vector_store_id: 5 and vector_store_id: null both
+      answer the 400 "vector_store_id and custom_llm_provider are required". LiteLLM validates the
+      TypedDict body with FastAPI and answers its 422 to each of the three.
+    why: >-
+      B1131's record decoder owns request decoding for every route that takes a LiteLLM record, and the
+      task pins this route to it instead of adding a second parser. The update and delete routes take
+      typed request records and answer the same 422 LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L277-L280
+  - what: >-
+      A litellm_params member whose JSON type the GenericLiteLLMParams field of the same name cannot hold
+      is stored as sent instead of rejected: POST /vector_store/new with litellm_params {"tpm": "abc"}
+      answers 200 and keeps tpm as the string beside the five False defaults. LiteLLM builds
+      GenericLiteLLMParams(**litellm_params), pydantic rejects the value, and the create handler's
+      catch-all turns the ValidationError into a 500.
+    why: >-
+      GenericLiteLLMParams is B010's typed deployment params model, and this route carries the request's
+      litellm_params as open JSON through B1131, normalizing the keys it acts on and leaving the rest as
+      sent. B3360 and B3483 record the same unvalidated model. docs/compatibility.md answers a request
+      value the declared type cannot hold with a 400 that names the field, and that needs the typed model
+      here; a per-field type table written in this route would be one more copy of it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L248-L250
+  - what: >-
+      A litellm_params value the route's GenericLiteLLMParams normalisation rejects answers 400 with a
+      detail that names the field: a max_retries text that is not a whole number and a
+      provider_affinity_header that is not a valid header name. LiteLLM's pydantic ValidationError for
+      the same input falls into the new_vector_store catch-all and answers 500 with the exception text.
+    why: >-
+      owned-behavior-is-built fixes a 500 from an unhandled validation error on input LiteLLM already
+      fails, where a 4xx belongs, and docs/compatibility.md answers a request value the declared type
+      cannot hold with a 400 that names the field. A 4xx is a handled client error, so the create
+      catch-all does not log it, as LiteLLM rethrows its own HTTPException without logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L339-L341
+  - what: >-
+      On POST /vector_store/new a litellm_params drop_params text of y, t, n or f, in any case and with
+      surrounding whitespace, is stored and answered as sent. LiteLLM's coerce_drop_params normalizes the
+      text with pydantic's TypeAdapter(bool), which accepts those single-letter spellings, so the same
+      input stores and answers true or false.
+    why: >-
+      B206's shared text-to-bool parser owns the accepted spellings (true, false, 1, 0, yes, no, on, off),
+      and docs/compatibility.md gives every text flag that one parser. A text neither parser reads stays
+      as sent in both, which coerce_drop_params' str branch does and generic_params keeps.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L51-L60
+kept_bugs:
+  - what: >-
+      A litellm_params value sent to POST /vector_store/update is ignored and the stored params stay as
+      they were, an explicit null included. LiteLLM's update handler has a branch that would normalize
+      update_data["litellm_params"] and write it, but VectorStoreUpdateRequest declares no such field
+      and pydantic drops the key, so model_dump(exclude_unset=True) never carries it and the branch
+      cannot run.
+    why: >-
+      LiteLLM is the spec and the oracle answers this input with the stored params intact, so a working
+      setup can only rely on the params surviving; making the body's value win would change what those
+      updates store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L650-L653

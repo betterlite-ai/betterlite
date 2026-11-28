@@ -6,7 +6,7 @@ use secrecy::SecretString;
 use crate::aws_endpoints::runtime::{
     BedrockEndpointType, RuntimeEndpoint, RuntimeEndpointInput, runtime_endpoint,
 };
-use crate::mantle_inputs::credentials::resolve_bearer_token;
+use crate::aws_settings::or_bearer_token;
 use crate::mantle_inputs::records::MantleGlobals;
 use crate::mantle_inputs::region::{region_from_host, resolve_region};
 use crate::passthrough::error::PassthroughFailure;
@@ -60,11 +60,11 @@ pub fn passthrough_bearer_token(
         .get("api_key")
         .and_then(|value| value.as_str())
         .map(|text| SecretString::from(text.to_owned()));
-    resolve_bearer_token(
+    or_bearer_token(&[
         api_key.as_ref(),
         globals.mantle_api_key.as_ref(),
         globals.aws_bearer_token.as_ref(),
-    )
+    ])
 }
 
 // Only a converse endpoint without invoke is logged with the native Bedrock reply shape; invoke wins when both substrings occur.

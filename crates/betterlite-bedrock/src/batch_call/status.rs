@@ -6,7 +6,7 @@ use betterlite_openai::batches::records::BatchObject;
 use serde_json::value::RawValue;
 
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
-use crate::image_call::plan::CredentialSource;
+use crate::credentials::CredentialSource;
 
 use super::client::{control_plane, send};
 use super::error::BatchCallError;
@@ -32,7 +32,7 @@ pub async fn retrieve_model_job_status<Source, Factory>(
     mut log: Option<&mut CallLogger<'_>>,
 ) -> Result<BatchObject, BatchCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ControlPlaneFactory,
 {
     let region = resolve_region(call.aws_region_name, call.batch_id)?;

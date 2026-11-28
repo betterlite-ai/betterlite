@@ -27,7 +27,7 @@ use tokio::runtime::Builder;
 
 use crate::api::image_contracts::records::{ImageFile, ImageHeaders, ImageParams};
 use crate::image_variations::call::{PreparedImageVariation, prepare_image_variation};
-use crate::image_variations::client::{ClientKind, ImageVariationClient, SharedSession};
+use crate::image_variations::client::{ImageVariationClient, SharedSession};
 use crate::image_variations::error::OpenAiImageVariationError;
 use crate::image_variations::logging::{
     ImageVariationLogger, PostCallRecord, PreCallRecord, PrePostLogger, data_view,
@@ -39,6 +39,7 @@ use crate::image_variations::transport::ImageVariationTransport;
 use crate::image_variations::{
     ImageVariationParams, ImageVariationRequest, OpenAiImageVariationConfig,
 };
+use betterlite_http::client_kind::ClientKind;
 
 pub(super) const NOW: i64 = 1_700_000_000;
 pub(super) const BOUNDARY: &str = "test-boundary";

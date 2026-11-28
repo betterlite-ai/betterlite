@@ -1,0 +1,31 @@
+kind: helper
+name: end-user-identity-unknown-enforced-user
+call:
+  end_user_identity:
+    raw_end_user_id: ghost
+    validate_in_db: true
+    database: true
+    proxy_default: b-proxy
+    end_user: missing
+    user: missing
+calls:
+  - end_user_identity:
+      raw_end_user_id: ghost
+      validate_in_db: true
+      database: true
+      end_user: missing
+      user: missing
+  - end_user_identity:
+      raw_end_user_id: ghost
+      validate_in_db: false
+      database: true
+      end_user: missing
+      user: missing
+  - end_user_identity:
+      raw_end_user_id: ghost
+      validate_in_db: true
+      database: false
+      end_user: missing
+      user: missing
+env: {}
+compare: {ignore: []}

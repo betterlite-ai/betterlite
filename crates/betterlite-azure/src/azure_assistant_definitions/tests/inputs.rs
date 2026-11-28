@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::azure_assistant_definitions::client::AzureAssistantsClient;
@@ -107,8 +107,10 @@ fn async_client_inputs() {
     let fixture = Fixture::new();
     let request = fixture.request();
     let (api, _transport) = harness(200, PAGE);
-    let client = api.azure_client(&request, None, ClientKind::Async).unwrap();
-    assert_eq!(client.kind, ClientKind::Async);
+    let client = api
+        .azure_client(&request, None, ClientKind::Asynchronous)
+        .unwrap();
+    assert_eq!(client.kind, ClientKind::Asynchronous);
     assert!(client.inputs.as_ref().unwrap().http_client.is_async);
 }
 
@@ -125,7 +127,7 @@ async fn supplied_sync_kept() {
     assert!(matches!(blocked, Err(DefinitionsError::MissingCredentials)));
     let supplied = client_handle(ClientKind::Sync, Arc::clone(&supplied_transport));
     let kept = api
-        .azure_client(&request, Some(supplied), ClientKind::Async)
+        .azure_client(&request, Some(supplied), ClientKind::Asynchronous)
         .unwrap();
     assert_eq!(kept.kind, ClientKind::Sync);
     assert!(kept.inputs.is_none());
@@ -151,11 +153,11 @@ fn supplied_async_kept() {
     fixture.api_key = None;
     let request = fixture.request();
     let (api, _transport) = harness(200, PAGE);
-    let supplied = client_handle(ClientKind::Async, Arc::clone(&supplied_transport));
+    let supplied = client_handle(ClientKind::Asynchronous, Arc::clone(&supplied_transport));
     let kept = api
         .azure_client(&request, Some(supplied), ClientKind::Sync)
         .unwrap();
-    assert_eq!(kept.kind, ClientKind::Async);
+    assert_eq!(kept.kind, ClientKind::Asynchronous);
     assert!(kept.inputs.is_none());
     assert!(supplied_transport.requests().is_empty());
 }
