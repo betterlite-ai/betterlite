@@ -158,31 +158,27 @@ fn virtual_key(source: &str) -> McpServerTable {
 }
 
 fn assert_shared_stripped(view: &McpServerTable) {
-    assert_connection_fields_stripped(view);
-    assert_oauth_fields_stripped(view);
-}
-
-fn assert_connection_fields_stripped(view: &McpServerTable) {
-    assert!(view.credentials.is_none());
-    assert!(view.pinned_tools.is_none());
-    assert!(view.url.is_none());
-    assert!(view.static_headers.is_none());
-    assert!(view.extra_headers.is_empty());
-    assert!(view.env.0.is_empty());
-    assert!(view.command.is_none());
-    assert!(view.args.is_empty());
-    assert!(view.env_vars.is_none());
-}
-
-fn assert_oauth_fields_stripped(view: &McpServerTable) {
-    assert!(view.issuer.is_none());
-    assert!(view.authorization_url.is_none());
-    assert!(view.token_url.is_none());
-    assert!(view.registration_url.is_none());
-    assert!(view.token_exchange_endpoint.is_none());
-    assert!(view.audience.is_none());
-    assert!(view.subject_token_type.is_none());
-    assert!(view.token_exchange_profile.is_none());
+    assert!(
+        view.credentials.is_none()
+            && view.pinned_tools.is_none()
+            && view.url.is_none()
+            && view.static_headers.is_none()
+            && view.extra_headers.is_empty()
+            && view.env.0.is_empty()
+            && view.command.is_none()
+            && view.args.is_empty()
+            && view.env_vars.is_none()
+    );
+    assert!(
+        view.issuer.is_none()
+            && view.authorization_url.is_none()
+            && view.token_url.is_none()
+            && view.registration_url.is_none()
+            && view.token_exchange_endpoint.is_none()
+            && view.audience.is_none()
+            && view.subject_token_type.is_none()
+            && view.token_exchange_profile.is_none()
+    );
 }
 
 #[rstest]
