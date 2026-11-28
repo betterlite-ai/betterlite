@@ -52,7 +52,7 @@ def _shared(
     }
 
 
-# LiteLLM's @client wrapper fills kwargs from a matching litellm_credential_name before the body runs
+# LiteLLM's wrapper fills kwargs from a matching litellm_credential_name before the body runs
 def _with_credentials(values: dict[str, CallValue]) -> None:
     name = values.get(CREDENTIAL_NAME)
     match name:

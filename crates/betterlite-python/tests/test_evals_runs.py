@@ -637,7 +637,7 @@ def test_calls_drop_logging() -> None:
     assert body_of(server.calls[0]) == {"data_source": DATA_SOURCE, "name": NAME}
 
 
-# LiteLLM's @client wrapper fills the call from a matching litellm_credential_name before the body runs
+# LiteLLM's wrapper fills the call from a matching litellm_credential_name before the body runs
 def test_calls_credential_name() -> None:
     with RunsServer() as server:
         values: dict[str, JsonValue] = {"api_key": GOOD_KEY, "api_base": server.url}
@@ -667,7 +667,7 @@ def test_calls_credential_name() -> None:
     assert header_of(their_call, "authorization") == f"Bearer {GOOD_KEY}"
 
 
-# a structured httpx.Timeout is accepted and becomes one deadline; the deviation records the phase loss
+# a structured httpx.Timeout becomes one deadline; docs/deviations/B7886.yaml records the phase loss
 def test_calls_structured_timeout() -> None:
     with RunsServer() as server:
         ours = create_run(
@@ -805,7 +805,7 @@ def test_error_unsupported() -> None:
     assert f"CREATE run is not supported for {ANTHROPIC}" in str(async_created.value)
 
 
-# the async twins forward the caller's timeout, so a value the native request refuses fails each call
+# the async twins forward timeout, so a value the native request refuses fails each call
 def test_error_async_timeout() -> None:
     with pytest.raises(BadRequestError) as created:
         asyncio.run(
