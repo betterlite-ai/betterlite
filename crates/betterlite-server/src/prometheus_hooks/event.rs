@@ -106,13 +106,14 @@ fn merge_model_info(metadata: &mut IndexMap<String, Json>, model_id: Option<&str
 
 // the budget fan-out reads the auth-carried snapshots out of a plain JSON map
 pub(crate) fn fan_out_metadata(metadata: &IndexMap<String, Json>) -> BTreeMap<String, AgentJson> {
-    let mut out = BTreeMap::new();
-    if let Ok(encoded) = serde_json::to_value(Json::Object(metadata.clone()))
-        && let Some(fields) = encoded.as_object()
-    {
-        for (key, value) in fields {
-            out.insert(key.clone(), value.clone());
-        }
-    }
-    out
+    let Ok(encoded) = serde_json::to_value(Json::Object(metadata.clone())) else {
+        return BTreeMap::new();
+    };
+    let Some(fields) = encoded.as_object() else {
+        return BTreeMap::new();
+    };
+    fields
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
