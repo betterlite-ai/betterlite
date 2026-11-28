@@ -175,9 +175,11 @@ def _request_scenario(scenario: RequestScenario) -> JsonValue:
 
 def _tool_execution_events(value: ToolExecutionEventsCase) -> JsonValue:
     fastuuid.uuid4 = _FixedUuid(value["ids"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1267
-    events = Proxy._create_tool_execution_events(tool_calls=value["tool_calls"], tool_results=value["tool_results"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
+    events = Proxy._create_tool_execution_events(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
+        tool_calls=value["tool_calls"], tool_results=value["tool_results"]
+    )
     dumps: list[JsonValue] = [cast(JsonValue, event.model_dump(mode="json")) for event in events]  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1889
-    return JSON.validate_python({"events": dumps})
+    return JSON.validate_python({"events": dumps})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
 
 
 def _call_parameter_streaming(value: CallParameterStreamingCase) -> JsonValue:
@@ -196,8 +198,12 @@ def _call_parameter_streaming(value: CallParameterStreamingCase) -> JsonValue:
 def _append_output(value: AppendOutputCase) -> JsonValue:
     response = ResponsesAPIResponse.model_validate(value["response"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
     fastuuid.uuid4 = _FixedUuid(value["ids"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1326
-    composed = Proxy._add_mcp_output_elements_to_response(response=response, mcp_tools_fetched=value["mcp_tools_fetched"], tool_results=value["tool_results"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
-    return JSON.validate_python(cast(dict[str, JsonValue], composed.model_dump(mode="json"))["output"])  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1354-L1355
+    composed = Proxy._add_mcp_output_elements_to_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
+        response=response, mcp_tools_fetched=value["mcp_tools_fetched"],
+        tool_results=value["tool_results"],
+    )
+    output = cast(dict[str, JsonValue], composed.model_dump(mode="json"))["output"]  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1354-L1355
+    return JSON.validate_python(output)
 
 
 def _provider_failure_view(recorded: dict[str, JsonValue], status: int) -> JsonValue:
@@ -205,7 +211,7 @@ def _provider_failure_view(recorded: dict[str, JsonValue], status: int) -> JsonV
         **{name: recorded[name] for name in FORWARDED},
         "call_params": {name: item for name, item in recorded.items() if name not in FORWARDED},
     }
-    return JSON.validate_python({"request": forwarded, "error": {"status": status}})
+    return JSON.validate_python({"request": forwarded, "error": {"status": status}})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1103-L1118
 
 
 def _provider_call_error(value: ProviderCallErrorCase) -> JsonValue:
