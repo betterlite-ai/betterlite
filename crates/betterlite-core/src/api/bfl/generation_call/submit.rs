@@ -49,15 +49,3 @@ impl SubmitTransport for ProxiedClient {
         .map_err(SubmitError::Transport)
     }
 }
-
-// LiteLLM keeps a supplied client only when its kind matches the entry point, and builds the other kind otherwise
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportKind {
-    Sync,
-    Async,
-}
-
-pub struct SuppliedTransport<'client, T> {
-    pub kind: TransportKind,
-    pub transport: &'client T,
-}

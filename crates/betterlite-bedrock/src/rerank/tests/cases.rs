@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -23,7 +24,7 @@ use super::fixture::{
 use crate::rerank::error::RerankCallError;
 use crate::rerank::execute::{dispatch_request, resolve_target, transform_response};
 use crate::rerank::plan::{LogContext, ParamMap, RerankCall, RerankEnvironment, prepare_request};
-use crate::rerank::transport::{ClientKind, RerankHttpRequest, SuppliedClient};
+use crate::rerank::transport::RerankHttpRequest;
 
 pub(super) const GENERATED_ID: &str = "00000000-0000-4000-8000-000000000000";
 const MODEL_ARN: &str = "arn:aws:bedrock:us-east-1:123456789012:rerank-model/test";
@@ -821,7 +822,7 @@ fn rerank_error_decode(redactor: &Redactor) {
     let async_run = run_case(
         asynchronous,
         Reply::ok("{not json"),
-        Some(ClientKind::Async),
+        Some(ClientKind::Asynchronous),
         redactor,
     );
     assert!(matches!(async_run.result, Err(RerankCallError::Decode(_))));
@@ -886,7 +887,7 @@ fn transport_logging_async(redactor: &Redactor) {
     let run = run_case(
         asynchronous,
         Reply::ok(VALID_REPLY),
-        Some(ClientKind::Async),
+        Some(ClientKind::Asynchronous),
         redactor,
     );
     assert_eq!(run.supplied_seen.len(), 1);
@@ -917,7 +918,7 @@ fn transport_logging_fallback(redactor: &Redactor) {
     let sync_fallback_run = run_case(
         sync_mismatch,
         Reply::ok(VALID_REPLY),
-        Some(ClientKind::Async),
+        Some(ClientKind::Asynchronous),
         redactor,
     );
     assert!(sync_fallback_run.supplied_seen.is_empty());
