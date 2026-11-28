@@ -69,13 +69,16 @@ async fn run(scenario: &Scenario, api_base: &str) -> Result<Run, SdkHttpError> {
     );
     let scripted = scripted_result(scenario);
     let recorder = Recorder::default();
-    let real: &dyn PolyfillDispatch = &editors;
     let recorded = Recorded {
         calls: recorder.clone(),
-        answer: answer(scenario.dispatcher, real, scripted.as_ref())?,
+        answer: answer(scenario.dispatcher, &editors, scripted.as_ref())?,
     };
+    // ast-grep-ignore: no-long-names
     let outcome = prepare_context_managed_request(request, &recorded).await;
-    assemble(outcome, recorder.take())
+    assemble(
+        outcome,
+        take(&mut *recorder.0.lock().unwrap_or_else(PoisonError::into_inner)),
+    )
 }
 
 fn summary_settings(scenario: &Scenario) -> Settings {
@@ -220,10 +223,5 @@ impl Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(record);
-    }
-
-    fn take(&self) -> Vec<CallRecord> {
-        let mut records = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        take(&mut *records)
     }
 }

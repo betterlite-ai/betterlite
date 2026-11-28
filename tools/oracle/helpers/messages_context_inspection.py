@@ -49,11 +49,11 @@ class SpecEdits(Protocol):
     ) -> bool: ...
 
 
-BLOCK_CHECK: Final = cast(BlockCheck, handler._messages_have_compaction_block)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L51-L60
-ROUTER_FALLBACK: Final = cast(RouterFallback, handler._proxy_router_fallback)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L63-L68
-METADATA: Final = cast(ProxyExtract, handler._extract_proxy_litellm_metadata)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L71-L89
-WILL_RUN: Final = cast(SpecEdits, handler._polyfill_will_run)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L162-L186
-HAS_NON_COMPACT: Final = cast(SpecEdits, handler._spec_has_non_compact_edits)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L189-L212
+BLOCK_CHECK: Final = cast(BlockCheck, handler._messages_have_compaction_block)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L51-L60
+ROUTER_FALLBACK: Final = cast(RouterFallback, handler._proxy_router_fallback)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L63-L68
+METADATA: Final = cast(ProxyExtract, handler._extract_proxy_litellm_metadata)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L71-L89
+WILL_RUN: Final = cast(SpecEdits, handler._polyfill_will_run)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L162-L186
+HAS_NON_COMPACT: Final = cast(SpecEdits, handler._spec_has_non_compact_edits)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L189-L212
 
 
 class ProxyServer(ModuleType):

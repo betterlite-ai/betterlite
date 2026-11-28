@@ -128,6 +128,13 @@ fn calls(calls: &Mutex<Vec<DispatchRecord>>) -> Vec<DispatchRecord> {
     calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
+fn record(calls: &Mutex<Vec<DispatchRecord>>, request: &DispatchRequest<'_>) {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(DispatchRecord::of(request));
+}
+
 // an injected dispatcher: it records its arguments and answers the one scripted outcome
 pub(crate) struct ScriptedDispatch {
     answer: Result<Option<PolyfillResult>, DispatchFailure>,
@@ -153,14 +160,8 @@ impl PolyfillDispatch for ScriptedDispatch {
         &self,
         request: DispatchRequest<'_>,
     ) -> Result<Option<PolyfillResult>, DispatchFailure> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(DispatchRecord::of(&request));
-        match &self.answer {
-            Ok(result) => Ok(result.clone()),
-            Err(error) => Err(error.clone()),
-        }
+        record(&self.calls, &request);
+        self.answer.clone()
     }
 }
 
@@ -192,10 +193,7 @@ where
         &self,
         request: DispatchRequest<'_>,
     ) -> Result<Option<PolyfillResult>, DispatchFailure> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(DispatchRecord::of(&request));
+        record(&self.calls, &request);
         self.inner.dispatch(request).await
     }
 }

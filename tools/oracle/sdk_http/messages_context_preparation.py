@@ -6,9 +6,9 @@ from typing import Final, Literal, Protocol, cast
 import litellm
 from litellm.llms.anthropic.pass_through.adapters import handler
 from litellm.llms.anthropic.pass_through.context_management import (
-    AnthropicContextManagementError,
     PolyfillResult,
     apply_context_management,
+    errors,
 )
 from litellm.llms.anthropic.pass_through.context_management.constants import (
     COMPACT_SUMMARY_MAX_TOKENS,
@@ -38,7 +38,7 @@ class RouterLike(Protocol):
 REAL_ACOMPLETION: Final[Acompletion] = cast(Acompletion, litellm.acompletion)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py
 REAL_COUNTER: Final[CounterFn] = cast(CounterFn, litellm.token_counter)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py
 
-# the dispatcher the handler module imported, kept so the scenario's recorder can forward to it
+
 class Dispatch(Protocol):
     async def __call__(self, **kwargs: JsonValue) -> PolyfillResult: ...
 
@@ -100,7 +100,7 @@ class Prepare(Protocol):
     ) -> PolyfillResult | None: ...
 
 
-PREPARE: Final[Prepare] = cast(Prepare, handler._prepare_context_managed_request)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L92
+PREPARE: Final[Prepare] = cast(Prepare, handler._prepare_context_managed_request)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L92
 
 
 class Setting:
@@ -152,35 +152,28 @@ class Recorder:
     def __init__(self, scenario: Scenario) -> None:
         self.scenario = scenario
         self.calls: list[JsonValue] = []
-        self.scripted = (
-            None
-            if scenario.scripted is None
-            else PolyfillResult(messages=scenario.scripted.messages, system=scenario.scripted.system)
-        )
 
     async def __call__(self, **kwargs: JsonValue) -> PolyfillResult | None:
-        self.calls.append(
-            RECORD.validate_python(
-                {
-                    "model": kwargs["model"],
-                    "messages": kwargs["messages"],
-                    "tools": kwargs["tools"],
-                    "system": kwargs["system"],
-                    "spec": kwargs["context_management_spec"],
-                    "metadata": kwargs["litellm_metadata"],
-                    "has_router": kwargs["llm_router"] is not None,
-                    "has_principal": kwargs["user_api_key_auth"] is not None,
-                }
-            )
-        )
+        payload: dict[str, JsonValue] = {
+            "model": kwargs["model"],
+            "messages": kwargs["messages"],
+            "tools": kwargs["tools"],
+            "system": kwargs["system"],
+            "spec": kwargs["context_management_spec"],
+            "metadata": kwargs["litellm_metadata"],
+            "has_router": kwargs["llm_router"] is not None,
+            "has_principal": kwargs["user_api_key_auth"] is not None,
+        }
+        self.calls.append(RECORD.validate_python(payload))
         if self.scenario.dispatcher == "error":
             raise RuntimeError(ERROR_TEXT)
         if self.scenario.dispatcher == "null":
             return None
         if self.scenario.dispatcher == "result":
-            if self.scripted is None:
+            scripted = self.scenario.scripted
+            if scripted is None:
                 raise RuntimeError("the scripted dispatcher needs a scripted result")
-            return self.scripted
+            return PolyfillResult(messages=scripted.messages, system=scripted.system)
         return await REAL_DISPATCH(**kwargs)
 
 
@@ -214,14 +207,13 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
         )
         if polyfilled is not None:
             result = SHAPE.validate_python(cast(dict[str, JsonValue], asdict(polyfilled)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/result.py#L21
-    except AnthropicContextManagementError as error:
-        failure = SHAPE.validate_python(
-            {
-                "class": ANTHROPIC_ERROR,
-                "status_code": error.status_code,
-                "message": error.message,
-            }
-        )
+    except errors.AnthropicContextManagementError as error:
+        failure_payload: dict[str, JsonValue] = {
+            "class": ANTHROPIC_ERROR,
+            "status_code": error.status_code,
+            "message": error.message,
+        }
+        failure = SHAPE.validate_python(failure_payload)
     finally:
         object.__setattr__(handler, "apply_context_management", REAL_DISPATCH)
         object.__setattr__(litellm, "token_counter", REAL_COUNTER)
