@@ -606,9 +606,8 @@ def test_calls_refuse_provider() -> None:
     assert type(ours_caught.value).__name__ == LITELLM_ERRORS.APIConnectionError.__name__
 
 
-# azure has a LiteLLM config this build does not serve: reads fail as APIConnectionError,
-# writes as BadRequestError, and no request leaves
-def test_calls_refuse_unserved_tags() -> None:
+# azure is a tag LiteLLM serves and this build does not: the refusal is deliberate
+def test_refuses_unserved_tags() -> None:
     with closing(ManageServer()) as server:
         with pytest.raises(APIConnectionError):
             retrieve(
