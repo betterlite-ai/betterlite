@@ -165,6 +165,7 @@ fn initialize_keeps_the_existing_surface() {
     let kept = reused.lock().unwrap();
     assert_eq!(kept.surface, Some(Surface::Responses));
     assert!(kept.config.is_some());
+    drop(kept);
 }
 
 #[test]
@@ -176,18 +177,19 @@ fn initialize_builds_a_fresh_state_with_only_the_surface() {
     assert!(fresh.candidates.is_empty());
     assert!(fresh.summary.is_none());
     assert!(fresh.parent_model.is_none());
+    drop(fresh);
 }
 
 #[test]
 fn initialize_shares_a_write_between_clones() {
     let first = initialize_compaction_state::<()>(None, Surface::Chat);
     let second = initialize_compaction_state(Some(&first), Surface::Chat);
-    {
-        let mut written = second.lock().unwrap();
-        written.candidates.push("compactor".to_owned());
-        written.parent_model = Some("parent".to_owned());
-    }
+    let mut written = second.lock().unwrap();
+    written.candidates.push("compactor".to_owned());
+    written.parent_model = Some("parent".to_owned());
+    drop(written);
     let read = first.lock().unwrap();
     assert_eq!(read.candidates, ["compactor"]);
     assert_eq!(read.parent_model.as_deref(), Some("parent"));
+    drop(read);
 }
