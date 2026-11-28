@@ -25,5 +25,4 @@ pub struct SuppliedClient<'client, Client> {
     pub transport: &'client Client,
 }
 
-#[cfg(test)]
 mod tests;
