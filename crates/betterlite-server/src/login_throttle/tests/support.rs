@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::str::from_utf8;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::trusted_network::request::NetworkRequest;
@@ -64,26 +64,22 @@ impl FakeLocalStore {
         }
     }
 
-    #[must_use]
-    pub fn contains(&self, key: &str) -> bool {
+    fn locked(&self) -> MutexGuard<'_, LocalState> {
         let now = (*self.clock)();
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let state = &mut *guard;
         purge_expired(&mut state.values, &mut state.expiries, now);
-        let contains = state.values.contains_key(key);
-        drop(guard);
-        contains
+        guard
+    }
+
+    #[must_use]
+    pub fn contains(&self, key: &str) -> bool {
+        self.locked().values.contains_key(key)
     }
 
     #[must_use]
     pub fn value(&self, key: &str) -> Option<f64> {
-        let now = (*self.clock)();
-        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let state = &mut *guard;
-        purge_expired(&mut state.values, &mut state.expiries, now);
-        let value = state.values.get(key).copied();
-        drop(guard);
-        value
+        self.locked().values.get(key).copied()
     }
 }
 
@@ -203,15 +199,17 @@ impl FakeRedis {
         }
     }
 
-    #[must_use]
-    pub fn counter(&self, key: &str) -> Option<i64> {
+    fn locked(&self) -> MutexGuard<'_, RedisState> {
         let now = (*self.clock)();
         let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let state = &mut *guard;
         purge_expired(&mut state.counters, &mut state.expiries, now);
-        let counter = state.counters.get(key).copied();
-        drop(guard);
-        counter
+        guard
+    }
+
+    #[must_use]
+    pub fn counter(&self, key: &str) -> Option<i64> {
+        self.locked().counters.get(key).copied()
     }
 
     pub fn block(&self, key: &str, seconds: i64) {

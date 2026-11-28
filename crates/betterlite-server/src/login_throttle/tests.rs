@@ -803,17 +803,24 @@ async fn shared_source_counts_when_declared() {
     source_refusal_and_expiry(&built, &shared, &keys).await;
 }
 
-async fn bob_reaches_his_pair_block(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
-    assert_eq!(fail(built, "bob").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(fail(built, "bob").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(fail(built, "bob").await, BlockTtls { user: 0, source: 0 });
+async fn fail_until_the_pair_blocks(built: &Fixture, username: &str) {
+    for _ in 0..3_u8 {
+        assert_eq!(
+            fail(built, username).await,
+            BlockTtls { user: 0, source: 0 }
+        );
+    }
     assert_eq!(
-        fail(built, "bob").await,
+        fail(built, username).await,
         BlockTtls {
             user: 300,
             source: 0
         }
     );
+}
+
+async fn bob_reaches_his_pair_block(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
+    fail_until_the_pair_blocks(built, "bob").await;
     assert_eq!(shared.counter(&keys.pair_counter), Some(4));
     assert_eq!(shared.counter(&keys.source_counter), Some(3));
 }
@@ -831,16 +838,7 @@ async fn a_blocked_pair_counts_nothing(built: &Fixture, shared: &FakeRedis, keys
 }
 
 async fn a_shared_source_blocks_users(built: &Fixture, shared: &FakeRedis, keys: &LoginKeys) {
-    assert_eq!(fail(built, "carol").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(fail(built, "carol").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(fail(built, "carol").await, BlockTtls { user: 0, source: 0 });
-    assert_eq!(
-        fail(built, "carol").await,
-        BlockTtls {
-            user: 300,
-            source: 0
-        }
-    );
+    fail_until_the_pair_blocks(built, "carol").await;
     assert_eq!(
         fail(built, "dave").await,
         BlockTtls {
