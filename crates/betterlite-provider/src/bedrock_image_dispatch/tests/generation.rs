@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use betterlite_bedrock::image_call::transport::ClientKind;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
 
@@ -128,7 +128,7 @@ async fn titan_asynchronous() {
     assert_eq!(run.calls().len(), 1);
     assert_eq!(
         run.calls()[0],
-        (ClientKind::Async, Some(Duration::from_millis(2500)))
+        (ClientKind::Asynchronous, Some(Duration::from_millis(2500)))
     );
     assert_eq!(
         run.generation_body(),

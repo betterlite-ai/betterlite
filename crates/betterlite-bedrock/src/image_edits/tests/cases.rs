@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
@@ -22,7 +23,7 @@ use super::signing::edit_signed_request;
 use super::transport::edit_transport_selection;
 use crate::canvas_results::COST_HEADER;
 use crate::image_call::plan::LogContext;
-use crate::image_call::transport::{ClientKind, ImageRequest, SuppliedClient};
+use crate::image_call::transport::ImageRequest;
 use crate::image_edits::error::ImageEditError;
 use crate::image_edits::execute::dispatch_request;
 use crate::image_edits::plan::{EditCall, EditEnvironment, EditImage, EditPlan};
