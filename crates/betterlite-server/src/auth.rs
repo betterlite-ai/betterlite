@@ -258,24 +258,26 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
     }
 }
 
-// the budget stages read their limits and current spend before dispatch
+// the budget stages read their limits before dispatch; every variant is named so a new stage cannot pass through
 async fn prefetch_budget_stage(input: StageInput) -> Result<StageInput, StageFailure> {
-    if let StageInput::AuthTagBudgets(stage) = input {
-        return auth_tag_budgets::prefetched(stage).await;
+    match input {
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
+        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
+        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
+        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+        #[rustfmt::skip]
+        other @ (StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_)
+        | StageInput::Authenticated(_) | StageInput::JwtKeys(_)
+        | StageInput::MasterKey(_) | StageInput::TrustedNetwork(_)
+        | StageInput::AuthRequestPolicy(_) | StageInput::RequestBodySafety(_)
+        | StageInput::AuthVirtualKeyRoutes(_) | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_) | StageInput::AuthModelGrants(_)
+        | StageInput::EntityModelAccess(_) | StageInput::AuthResourceGrants(_)
+        | StageInput::AuthPricing(_) | StageInput::OrganizationRoutePolicy(_)
+        | StageInput::AuthOrgLookup(_) | StageInput::AuthEndUsers(_)
+        | StageInput::AuthPolicySupport(_) | StageInput::ModelGrantIntersection(_)) => Ok(other),
     }
-    if let StageInput::AuthKeyBudgets(stage) = input {
-        return auth_key_budgets::prefetched(stage).await;
-    }
-    if let StageInput::AuthModelBudgets(stage) = input {
-        return auth_model_budgets::prefetched(stage).await;
-    }
-    if let StageInput::TeamBudgetAdmission(stage) = input {
-        return team_budget_admission::prefetched(stage).await;
-    }
-    if let StageInput::AuthTenantBudgets(stage) = input {
-        return auth_tenant_budgets::prefetched(stage).await;
-    }
-    Ok(input)
 }
 
 fn master_key_stage(
@@ -318,7 +320,6 @@ fn model_stage_input(
         resolver: Arc::clone(resolver),
     }
 }
-
 pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
     if header_bytes.is_empty() {
         return None;
