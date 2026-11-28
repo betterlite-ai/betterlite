@@ -99,13 +99,12 @@ fn input_value(input: &ResponsesInput) -> JsonValue {
 }
 
 fn tools_value(tools: Option<&[ResponsesTool]>) -> JsonValue {
-    match tools {
-        Some(tools) => JsonValue::Array(
-            tools
+    tools.map_or(JsonValue::Null, |found| {
+        JsonValue::Array(
+            found
                 .iter()
                 .map(|tool| value_from_prompt(&tool.0))
                 .collect(),
-        ),
-        None => JsonValue::Null,
-    }
+        )
+    })
 }

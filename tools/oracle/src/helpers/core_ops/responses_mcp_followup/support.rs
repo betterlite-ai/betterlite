@@ -159,7 +159,9 @@ pub(super) fn streaming_auth(spec: &AuthSpec) -> Result<StreamingAuth, Box<Helpe
         }),
         AuthSpec::Metadata { user_id } => Ok(StreamingAuth {
             direct: None,
-            metadata: MetadataAuth::Mapping(user_id.as_deref().map(principal).transpose()?),
+            metadata: MetadataAuth::Mapping(
+                user_id.as_deref().map(principal).transpose()?.map(Box::new),
+            ),
         }),
     }
 }

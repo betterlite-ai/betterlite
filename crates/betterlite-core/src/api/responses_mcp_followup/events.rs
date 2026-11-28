@@ -19,7 +19,7 @@ const ITEM_ID_PREFIX: &str = "mcp_";
 const OUTPUT_INDEX: i64 = 0;
 
 // B952's create_mcp_call_events behind a seam, so a test can read the request and the ids the flow hands it
-pub trait CallEventsBuilder {
+pub trait CallEventsBuilder: Sync {
     fn create(
         &self,
         request: &McpCallRequest,
@@ -67,10 +67,10 @@ pub struct EventToolResult {
 impl From<&McpToolResult> for EventToolResult {
     fn from(result: &McpToolResult) -> Self {
         Self {
-            tool_call_id: match &result.tool_call_id {
-                Some(id) => ToolCallId::Value(id.clone()),
-                None => ToolCallId::Null,
-            },
+            tool_call_id: result
+                .tool_call_id
+                .as_ref()
+                .map_or(ToolCallId::Null, |id| ToolCallId::Value(id.clone())),
             result: result.result.clone(),
         }
     }
@@ -125,15 +125,15 @@ fn matching_details(
 fn event_arguments(
     details: Option<&McpToolCallDetails>,
 ) -> Result<(String, String), ToolExecutionEventError> {
-    let Some(details) = details else {
+    let Some(found) = details else {
         return Ok((UNKNOWN_TOOL_NAME.to_owned(), EMPTY_ARGUMENTS.to_owned()));
     };
-    let tool_name = details
+    let tool_name = found
         .name
         .as_deref()
         .filter(|text| !text.is_empty())
         .map_or_else(|| UNKNOWN_TOOL_NAME.to_owned(), str::to_owned);
-    Ok((tool_name, arguments_text(details.arguments.as_ref())?))
+    Ok((tool_name, arguments_text(found.arguments.as_ref())?))
 }
 
 fn arguments_text(arguments: Option<&Json>) -> Result<String, ToolExecutionEventError> {

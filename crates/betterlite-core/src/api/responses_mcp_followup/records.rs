@@ -38,7 +38,7 @@ pub struct McpStreamingPlan {
 #[derive(Debug, Clone)]
 pub enum MetadataAuth {
     Absent,
-    Mapping(Option<UserAPIKeyAuth>),
+    Mapping(Option<Box<UserAPIKeyAuth>>),
     NotMapping,
 }
 

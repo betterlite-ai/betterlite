@@ -13,6 +13,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApiResponse};
+use betterlite_openai::api::responses_shapes::{GenericResponseOutputItem, OutputText};
 use betterlite_openai::response_input::ResponsesInput;
 use rstest::rstest;
 use serde::de::DeserializeOwned;
@@ -61,9 +62,8 @@ struct AuthView {
     user_id: Option<String>,
 }
 
-fn user_id(auth: &Option<UserAPIKeyAuth>) -> Option<String> {
-    let principal = auth.as_ref()?;
-    let text = serde_json::to_string(principal).unwrap();
+fn user_id(auth: Option<&UserAPIKeyAuth>) -> Option<String> {
+    let text = serde_json::to_string(auth?).unwrap();
     parse::<AuthView>(&text).user_id
 }
 
@@ -162,24 +162,18 @@ fn request_param_precedence() {
         ]
     );
     assert_eq!(
-        plan.request_params["input"],
-        JsonValue::Text(String::from("what is the weather"))
+        plan.request_params,
+        params(&[
+            ("input", "\"what is the weather\""),
+            ("model", "\"gpt-5-override\""),
+            ("tools", r#"[{"type":"mcp","server_label":"weather"}]"#),
+            ("previous_response_id", "\"resp_previous\""),
+            ("temperature", "0.2"),
+            ("stream", "null"),
+            ("top_p", "0.9"),
+        ])
     );
-    assert_eq!(
-        plan.request_params["model"],
-        JsonValue::Text(String::from("gpt-5-override"))
-    );
-    assert_eq!(
-        plan.request_params["tools"],
-        parse::<JsonValue>(r#"[{"type":"mcp","server_label":"weather"}]"#)
-    );
-    assert_eq!(
-        plan.request_params["previous_response_id"],
-        JsonValue::Text(String::from("resp_previous"))
-    );
-    assert_eq!(plan.request_params["stream"], JsonValue::Null);
-    assert_eq!(plan.request_params["top_p"], parse::<JsonValue>("0.9"));
-    assert_eq!(user_id(&plan.auth), Some(String::from("alice")));
+    assert_eq!(user_id(plan.auth.as_ref()), Some(String::from("alice")));
     assert_eq!(plan.mcp_events, input.mcp_discovery_events);
     assert_eq!(plan.tool_server_map, input.tool_server_map);
     assert_eq!(
@@ -197,16 +191,26 @@ fn request_param_precedence() {
         key_names(&absent_plan.request_params),
         vec!["input", "model", "tools"]
     );
-    assert_eq!(absent_plan.request_params["tools"], JsonValue::Null);
-    assert_eq!(user_id(&absent_plan.auth), None);
+    assert_eq!(
+        absent_plan.request_params,
+        params(&[
+            ("input", "\"what is the weather\""),
+            ("model", "\"gpt-5\""),
+            ("tools", "null"),
+        ])
+    );
+    assert_eq!(user_id(absent_plan.auth.as_ref()), None);
 
     let mut metadata = sample_input();
     metadata.auth = StreamingAuth {
         direct: None,
-        metadata: MetadataAuth::Mapping(Some(auth("bob"))),
+        metadata: MetadataAuth::Mapping(Some(Box::new(auth("bob")))),
     };
     let metadata_plan = create_mcp_streaming_response(&streaming_request(&metadata)).unwrap();
-    assert_eq!(user_id(&metadata_plan.auth), Some(String::from("bob")));
+    assert_eq!(
+        user_id(metadata_plan.auth.as_ref()),
+        Some(String::from("bob"))
+    );
 
     let mut broken = sample_input();
     broken.auth = StreamingAuth {
@@ -541,7 +545,7 @@ fn call_parameter_streaming(#[case] scenario: Scenario) {
         assert!(provider.calls().is_empty());
     } else {
         assert!(result.streaming.is_none());
-        assert_eq!(provider.calls(), vec![result.call.clone()]);
+        assert_eq!(provider.calls(), vec![result.call]);
     }
 }
 
@@ -559,7 +563,7 @@ fn output_element_append_order() {
     let results = vec![
         McpToolResult {
             tool_call_id: Some(String::from("call_1")),
-            result: String::from("sunny and warm, 中"),
+            result: String::from("sunny and warm, \u{4e2d}"),
             name: Some(String::from("get_weather")),
         },
         McpToolResult {
@@ -579,21 +583,17 @@ fn output_element_append_order() {
     );
     assert_eq!(&response.output[..1], existing.as_slice());
     assert_eq!(response.output.len(), 3);
-    let ResponseOutputItem::Message(tools_item) = &response.output[1] else {
-        panic!("the first appended item is a message");
-    };
-    assert_eq!(tools_item.r#type, "mcp_tools_fetched");
-    assert_eq!(tools_item.id, "mcp_tools_01234567");
-    assert_eq!(tools_item.status, "completed");
-    assert_eq!(tools_item.role, "system");
-    assert_eq!(tools_item.phase, None);
-    assert_eq!(tools_item.content.len(), 1);
-    assert_eq!(tools_item.content[0].r#type.as_deref(), Some("output_text"));
-    assert_eq!(tools_item.content[0].annotations, Some(Vec::new()));
     assert_eq!(
-        tools_item.content[0].text.as_deref(),
-        Some(
-            r#"[
+        response.output[1],
+        ResponseOutputItem::Message(GenericResponseOutputItem {
+            r#type: String::from("mcp_tools_fetched"),
+            id: String::from("mcp_tools_01234567"),
+            status: String::from("completed"),
+            role: String::from("system"),
+            content: vec![OutputText {
+                r#type: Some(String::from("output_text")),
+                text: Some(String::from(
+                    r#"[
   {
     "type": "mcp",
     "server_label": "weather"
@@ -609,20 +609,25 @@ fn output_element_append_order() {
     "ratio": 0.5
   }
 ]"#
-        )
+                )),
+                annotations: Some(Vec::new()),
+                extra: BTreeMap::new(),
+            }],
+            phase: None,
+            extra: BTreeMap::new(),
+        })
     );
-    let ResponseOutputItem::Message(results_item) = &response.output[2] else {
-        panic!("the second appended item is a message");
-    };
-    assert_eq!(results_item.r#type, "tool_execution_results");
-    assert_eq!(results_item.id, "tool_results_fedcba98");
-    assert_eq!(results_item.status, "completed");
-    assert_eq!(results_item.role, "system");
-    assert_eq!(results_item.phase, None);
     assert_eq!(
-        results_item.content[0].text.as_deref(),
-        Some(
-            r#"[
+        response.output[2],
+        ResponseOutputItem::Message(GenericResponseOutputItem {
+            r#type: String::from("tool_execution_results"),
+            id: String::from("tool_results_fedcba98"),
+            status: String::from("completed"),
+            role: String::from("system"),
+            content: vec![OutputText {
+                r#type: Some(String::from("output_text")),
+                text: Some(String::from(
+                    r#"[
   {
     "tool_call_id": "call_1",
     "result": "sunny and warm, \u4e2d",
@@ -634,7 +639,13 @@ fn output_element_append_order() {
     "name": null
   }
 ]"#
-        )
+                )),
+                annotations: Some(Vec::new()),
+                extra: BTreeMap::new(),
+            }],
+            phase: None,
+            extra: BTreeMap::new(),
+        })
     );
 }
 

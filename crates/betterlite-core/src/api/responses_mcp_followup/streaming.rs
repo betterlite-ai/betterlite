@@ -58,7 +58,7 @@ fn select_auth(auth: &StreamingAuth) -> Result<Option<UserAPIKeyAuth>, Streaming
     }
     match &auth.metadata {
         MetadataAuth::Absent => Ok(None),
-        MetadataAuth::Mapping(found) => Ok(found.clone()),
+        MetadataAuth::Mapping(found) => Ok(found.as_deref().cloned()),
         MetadataAuth::NotMapping => Err(StreamingError::MetadataNotMapping),
     }
 }
