@@ -52,13 +52,13 @@ pub async fn refresh_users<Gauge>(
     Gauge: Collector + RemovableMetric + Send + Sync,
     Gauge::Error: Send + Sync,
 {
-    let Some(source) = source else {
+    let Some(pages) = source else {
         tracing::debug!("Prometheus: skipping user metrics initialization, DB not initialized");
         return;
     };
     initialize_entity(
         &UserWalk {
-            source,
+            source: pages,
             gauges,
             labels,
             now,

@@ -53,13 +53,13 @@ pub async fn refresh_orgs<Gauge>(
     Gauge: Collector + RemovableMetric + Send + Sync,
     Gauge::Error: Send + Sync,
 {
-    let Some(source) = source else {
+    let Some(pages) = source else {
         tracing::debug!("Prometheus: skipping org metrics initialization, DB not initialized");
         return;
     };
     initialize_entity(
         &OrgWalk {
-            source,
+            source: pages,
             gauges,
             labels,
             now,

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::ready;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::queues::pod_lock::owner::PodId;
@@ -241,33 +242,37 @@ impl FakeCache {
 }
 
 impl LockCache for FakeCache {
-    async fn get_owner(&self, _key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
-        Ok(self
-            .owner
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .map(String::into_bytes))
+    fn get_owner(
+        &self,
+        _key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
+        ready(
+            self.owner
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+                .map(String::into_bytes),
+        )
     }
 
-    async fn set_owner_if_absent(
+    fn set_owner_if_absent(
         &self,
         _key: &str,
         owner: &str,
         _ttl_seconds: i64,
-    ) -> Result<bool, LockCacheError> {
+    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         if self.free {
             *self.owner.lock().unwrap_or_else(PoisonError::into_inner) = Some(owner.to_owned());
         }
-        Ok(self.free)
+        ready(Ok(self.free))
     }
 
-    async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
+    fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         self.deletes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(key.to_owned());
-        Ok(1)
+        ready(Ok(1))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
@@ -286,7 +291,7 @@ fn manager(cache: Arc<FakeCache>) -> PodLockManager<FakeCache> {
 #[tokio::test]
 async fn the_pod_lock_wraps_a_cache_that_grants_the_lease() {
     let cache = Arc::new(FakeCache::free());
-    let manager = manager(cache.clone());
+    let manager = manager(Arc::clone(&cache));
 
     assert!(BudgetRefreshLock::has_cache(&manager));
     assert_eq!(

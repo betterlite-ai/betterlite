@@ -16,15 +16,15 @@ pub async fn refresh_counts<Gauge>(
     source: Option<&dyn BudgetPageSource>,
     gauges: &CountGauges<'_, Gauge>,
 ) where
-    Gauge: Collector,
+    Gauge: Collector + Send + Sync,
 {
-    let Some(source) = source else {
+    let Some(pages) = source else {
         tracing::debug!(
             "Prometheus: skipping user/team count metrics initialization, DB not initialized"
         );
         return;
     };
-    if let Err(error) = set_count_gauges(source, gauges).await {
+    if let Err(error) = set_count_gauges(pages, gauges).await {
         tracing::error!("Error initializing user/team count metrics: {error}");
     }
 }
@@ -34,7 +34,7 @@ async fn set_count_gauges<Gauge>(
     gauges: &CountGauges<'_, Gauge>,
 ) -> Result<(), BudgetPageError>
 where
-    Gauge: Collector,
+    Gauge: Collector + Send + Sync,
 {
     let total_users = source.user_count().await?;
     gauges

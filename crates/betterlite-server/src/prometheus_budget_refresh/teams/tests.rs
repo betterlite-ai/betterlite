@@ -42,8 +42,8 @@ async fn every_page_of_teams_reaches_the_gauges() {
         rows: vec![team(
             "alpha",
             Some("Alpha"),
-            Some(Decimal::from(20)),
-            Some(Decimal::from(100)),
+            Some(Decimal::from(20_i32)),
+            Some(Decimal::from(100_i32)),
         )],
         total_count: Some(51),
     }));
@@ -52,29 +52,25 @@ async fn every_page_of_teams_reaches_the_gauges() {
         total_count: Some(51),
     }));
 
-    refresh_teams(
-        Some(&source),
-        &rig.gauges.team,
-        labels_source(&settings, prometheus_only()),
-        now(),
-    )
-    .await;
+    let labels = labels_source(&settings, prometheus_only());
+    refresh_teams(Some(&source), &rig.gauges.team, labels, now()).await;
 
     assert_eq!(source.calls(), vec!["teams:50:1", "teams:50:2"]);
     let remaining = rig.log.for_metric("remaining");
     assert_eq!(remaining.len(), 2);
-    assert_eq!(remaining[0].value, MetricValue::Finite(Decimal::from(80)));
     assert_eq!(
-        remaining[0].labels,
-        vec![
-            ("team".to_owned(), "alpha".to_owned()),
-            ("team_alias".to_owned(), "Alpha".to_owned()),
-        ]
+        remaining[0].value,
+        MetricValue::Finite(Decimal::from(80_i32))
     );
+    let expected = vec![
+        ("team".to_owned(), "alpha".to_owned()),
+        ("team_alias".to_owned(), "Alpha".to_owned()),
+    ];
+    assert_eq!(remaining[0].labels, expected);
     assert_eq!(remaining[1].value, MetricValue::PositiveInfinity);
     let max = rig.log.for_metric("max");
     assert_eq!(max.len(), 1);
-    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(100)));
+    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(100_i32)));
 }
 
 #[tokio::test]
@@ -83,7 +79,7 @@ async fn a_team_without_a_limit_only_writes_the_remaining_gauge() {
     let settings = PrometheusLabelSettings::with_defaults();
     let source = FakeSource::new();
     source.push_teams(Ok(Page {
-        rows: vec![team("no-limit", None, Some(Decimal::from(4)), None)],
+        rows: vec![team("no-limit", None, Some(Decimal::from(4_i32)), None)],
         total_count: Some(1),
     }));
 

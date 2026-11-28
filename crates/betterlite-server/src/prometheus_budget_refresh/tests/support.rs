@@ -39,7 +39,7 @@ use betterlite_prometheus::no_op_metric::NoOpMetric;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use tracing::Level;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::key_query_plan::response::KeyListEntry as KeyPageEntry;
@@ -48,7 +48,7 @@ use crate::prometheus_budget_refresh::source::{BudgetPageError, BudgetPageSource
 
 // One Set write, with the metric it landed on and the labels it carried.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SetEvent {
+pub(crate) struct SetEvent {
     pub metric: String,
     pub labels: Vec<(String, String)>,
     pub value: MetricValue,
@@ -56,18 +56,18 @@ pub struct SetEvent {
 
 // Every gauge event a test wrote, shared with the gauges built over it.
 #[derive(Clone, Debug, Default)]
-pub struct ProbeLog {
+pub(crate) struct ProbeLog {
     events: Arc<Mutex<Vec<SetEvent>>>,
 }
 
 impl ProbeLog {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     #[must_use]
-    pub fn events(&self) -> Vec<SetEvent> {
+    pub(crate) fn events(&self) -> Vec<SetEvent> {
         self.events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -75,7 +75,7 @@ impl ProbeLog {
     }
 
     #[must_use]
-    pub fn for_metric(&self, metric: &str) -> Vec<SetEvent> {
+    pub(crate) fn for_metric(&self, metric: &str) -> Vec<SetEvent> {
         self.events()
             .into_iter()
             .filter(|event| event.metric == metric)
@@ -92,7 +92,7 @@ impl ProbeLog {
 
 // A gauge that records every Set instead of scraping a registry.
 #[derive(Clone, Debug)]
-pub struct ProbeGauge {
+pub(crate) struct ProbeGauge {
     metric: &'static str,
     labels: Vec<(String, String)>,
     log: ProbeLog,
@@ -127,7 +127,7 @@ impl RemovableMetric for ProbeGauge {
 }
 
 #[must_use]
-pub fn real_gauge(metric: &'static str, log: &ProbeLog) -> MetricLike<ProbeGauge> {
+pub(crate) fn real_gauge(metric: &'static str, log: &ProbeLog) -> MetricLike<ProbeGauge> {
     MetricLike::Real(ProbeGauge {
         metric,
         labels: Vec::new(),
@@ -156,7 +156,10 @@ const fn noop_field(metric: &'static str) -> GaugeField<MetricLike<ProbeGauge>> 
 }
 
 #[must_use]
-pub fn entity(labels: &[&str], log: &ProbeLog) -> EntityBudgetGauges<MetricLike<ProbeGauge>> {
+pub(crate) fn entity(
+    labels: &[&str],
+    log: &ProbeLog,
+) -> EntityBudgetGauges<MetricLike<ProbeGauge>> {
     EntityBudgetGauges {
         remaining: field("remaining", labels, log),
         max: field("max", labels, log),
@@ -165,7 +168,7 @@ pub fn entity(labels: &[&str], log: &ProbeLog) -> EntityBudgetGauges<MetricLike<
 }
 
 #[must_use]
-pub const fn noop_entity() -> EntityBudgetGauges<MetricLike<ProbeGauge>> {
+pub(crate) const fn noop_entity() -> EntityBudgetGauges<MetricLike<ProbeGauge>> {
     EntityBudgetGauges {
         remaining: noop_field("remaining"),
         max: noop_field("max"),
@@ -174,13 +177,13 @@ pub const fn noop_entity() -> EntityBudgetGauges<MetricLike<ProbeGauge>> {
 }
 
 // The five entity gauge groups plus one log every group writes to.
-pub struct BudgetRig {
+pub(crate) struct BudgetRig {
     pub gauges: BudgetGauges<MetricLike<ProbeGauge>>,
     pub log: ProbeLog,
 }
 
 #[must_use]
-pub fn budget_rig(labels: &[&str]) -> BudgetRig {
+pub(crate) fn budget_rig(labels: &[&str]) -> BudgetRig {
     let log = ProbeLog::new();
     BudgetRig {
         gauges: BudgetGauges {
@@ -197,7 +200,7 @@ pub fn budget_rig(labels: &[&str]) -> BudgetRig {
 }
 
 #[must_use]
-pub fn team(
+pub(crate) fn team(
     team_id: &str,
     alias: Option<&str>,
     spend: Option<Decimal>,
@@ -213,7 +216,11 @@ pub fn team(
 }
 
 #[must_use]
-pub fn user(user_id: &str, spend: Decimal, max_budget: Option<Decimal>) -> UserBudgetGaugeInput {
+pub(crate) fn user(
+    user_id: &str,
+    spend: Decimal,
+    max_budget: Option<Decimal>,
+) -> UserBudgetGaugeInput {
     UserBudgetGaugeInput {
         user_id: user_id.to_owned(),
         user_email: None,
@@ -225,7 +232,7 @@ pub fn user(user_id: &str, spend: Decimal, max_budget: Option<Decimal>) -> UserB
 }
 
 #[must_use]
-pub fn org(
+pub(crate) fn org(
     org_id: &str,
     spend: Option<Decimal>,
     budget: Option<BudgetTableSnapshot>,
@@ -240,7 +247,7 @@ pub fn org(
 }
 
 #[must_use]
-pub fn customer(
+pub(crate) fn customer(
     user_id: &str,
     spend: Decimal,
     budget: Option<BudgetTableSnapshot>,
@@ -253,7 +260,7 @@ pub fn customer(
 }
 
 #[must_use]
-pub fn snapshot(
+pub(crate) fn snapshot(
     max_budget: Option<Decimal>,
     reset_at: Option<DateTime<Utc>>,
 ) -> BudgetTableSnapshot {
@@ -264,12 +271,12 @@ pub fn snapshot(
 }
 
 #[must_use]
-pub fn now() -> DateTime<Utc> {
+pub(crate) fn now() -> DateTime<Utc> {
     DateTime::from_timestamp(1_893_456_000, 0).unwrap()
 }
 
 #[must_use]
-pub fn clock() -> BudgetGaugeClock {
+pub(crate) fn clock() -> BudgetGaugeClock {
     BudgetGaugeClock {
         reset: now(),
         monotonic: Instant::now(),
@@ -277,7 +284,7 @@ pub fn clock() -> BudgetGaugeClock {
 }
 
 #[must_use]
-pub const fn no_limits() -> SeriesLimits {
+pub(crate) const fn no_limits() -> SeriesLimits {
     SeriesLimits {
         max_series: None,
         ttl: None,
@@ -286,7 +293,7 @@ pub const fn no_limits() -> SeriesLimits {
 }
 
 #[must_use]
-pub const fn prometheus_only() -> EndUserCostTrackingSettings {
+pub(crate) const fn prometheus_only() -> EndUserCostTrackingSettings {
     EndUserCostTrackingSettings {
         disable_end_user_cost_tracking: None,
         enable_prometheus_only: Some(true),
@@ -294,7 +301,7 @@ pub const fn prometheus_only() -> EndUserCostTrackingSettings {
 }
 
 #[must_use]
-pub const fn end_user_tracking_disabled() -> EndUserCostTrackingSettings {
+pub(crate) const fn end_user_tracking_disabled() -> EndUserCostTrackingSettings {
     EndUserCostTrackingSettings {
         disable_end_user_cost_tracking: Some(true),
         enable_prometheus_only: Some(true),
@@ -302,7 +309,7 @@ pub const fn end_user_tracking_disabled() -> EndUserCostTrackingSettings {
 }
 
 #[must_use]
-pub const fn prometheus_only_off() -> EndUserCostTrackingSettings {
+pub(crate) const fn prometheus_only_off() -> EndUserCostTrackingSettings {
     EndUserCostTrackingSettings {
         disable_end_user_cost_tracking: None,
         enable_prometheus_only: Some(false),
@@ -310,7 +317,7 @@ pub const fn prometheus_only_off() -> EndUserCostTrackingSettings {
 }
 
 #[must_use]
-pub const fn labels_source(
+pub(crate) const fn labels_source(
     settings: &PrometheusLabelSettings,
     end_user: EndUserCostTrackingSettings,
 ) -> LabelSource<'_> {
@@ -321,7 +328,7 @@ pub const fn labels_source(
 }
 
 #[must_use]
-pub const fn customer_context<'context>(
+pub(crate) const fn customer_context<'context>(
     labels: LabelSource<'context>,
     clock: BudgetGaugeClock,
     tracker: &'context BoundedPrometheusSeriesTracker,
@@ -337,13 +344,13 @@ pub const fn customer_context<'context>(
 
 // Captured tracing output, written by a subscriber installed for the current thread.
 #[derive(Clone, Default)]
-pub struct LogBuffer {
+pub(crate) struct LogBuffer {
     written: Arc<Mutex<Vec<u8>>>,
 }
 
 impl LogBuffer {
     #[must_use]
-    pub fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         let bytes = self
             .written
             .lock()
@@ -376,7 +383,7 @@ impl<'writer> MakeWriter<'writer> for LogBuffer {
 }
 
 #[must_use]
-pub fn capture_logs() -> (LogBuffer, DefaultGuard) {
+pub(crate) fn capture_logs() -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -385,7 +392,7 @@ pub fn capture_logs() -> (LogBuffer, DefaultGuard) {
         .with_max_level(Level::DEBUG)
         .with_writer(buffer.clone())
         .finish();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     (buffer, guard)
 }
 
@@ -406,7 +413,7 @@ fn key_fields(
 }
 
 #[must_use]
-pub fn auth_entry(
+pub(crate) fn auth_entry(
     token: &str,
     alias: &str,
     spend: Decimal,
@@ -419,12 +426,12 @@ pub fn auth_entry(
 }
 
 #[must_use]
-pub fn token_entry(token: &str) -> KeyPageEntry {
+pub(crate) fn token_entry(token: &str) -> KeyPageEntry {
     KeyPageEntry::Token(token.to_owned())
 }
 
 #[must_use]
-pub fn deleted_entry(token: &str) -> KeyPageEntry {
+pub(crate) fn deleted_entry(token: &str) -> KeyPageEntry {
     let mut fields = BTreeMap::new();
     fields.insert("token".to_owned(), JsonData::String(token.to_owned()));
     let text = serde_json::to_string(&JsonData::Object(fields)).unwrap();
@@ -435,9 +442,16 @@ pub fn deleted_entry(token: &str) -> KeyPageEntry {
 type PageResult<Row> = Result<Page<Row>, BudgetPageError>;
 type Scripted<Row> = Mutex<VecDeque<PageResult<Row>>>;
 
+const fn empty_page<Row>() -> Page<Row> {
+    Page {
+        rows: Vec::new(),
+        total_count: Some(0),
+    }
+}
+
 // A page source scripted per entity; an unscripted read is an empty page.
 #[derive(Default)]
-pub struct FakeSource {
+pub(crate) struct FakeSource {
     teams: Scripted<TeamBudgetGaugeInput>,
     keys: Scripted<KeyPageEntry>,
     users: Scripted<UserBudgetGaugeInput>,
@@ -449,54 +463,54 @@ pub struct FakeSource {
 
 impl FakeSource {
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     #[must_use]
-    pub fn calls(&self) -> Vec<String> {
+    pub(crate) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
-    pub fn push_teams(&self, page: PageResult<TeamBudgetGaugeInput>) {
+    pub(crate) fn push_teams(&self, page: PageResult<TeamBudgetGaugeInput>) {
         self.teams
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_keys(&self, page: PageResult<KeyPageEntry>) {
+    pub(crate) fn push_keys(&self, page: PageResult<KeyPageEntry>) {
         self.keys
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_users(&self, page: PageResult<UserBudgetGaugeInput>) {
+    pub(crate) fn push_users(&self, page: PageResult<UserBudgetGaugeInput>) {
         self.users
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_orgs(&self, page: PageResult<OrgBudgetGaugeRow>) {
+    pub(crate) fn push_orgs(&self, page: PageResult<OrgBudgetGaugeRow>) {
         self.orgs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_customers(&self, page: PageResult<CustomerBudgetGaugeRow>) {
+    pub(crate) fn push_customers(&self, page: PageResult<CustomerBudgetGaugeRow>) {
         self.customers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push_back(page);
     }
 
-    pub fn push_count(&self, count: Result<u64, BudgetPageError>) {
+    pub(crate) fn push_count(&self, count: Result<u64, BudgetPageError>) {
         self.counts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -516,29 +530,20 @@ impl FakeSource {
     }
 
     fn next_page<Row>(queue: &Scripted<Row>) -> PageResult<Row> {
-        match queue
+        let page = queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        {
-            Some(page) => page,
-            None => Ok(Page {
-                rows: Vec::new(),
-                total_count: Some(0),
-            }),
-        }
+            .pop_front();
+        page.unwrap_or_else(|| Ok(empty_page()))
     }
 
     fn next_count(&self) -> Result<u64, BudgetPageError> {
-        match self
+        let count = self
             .counts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        {
-            Some(count) => count,
-            None => Ok(0),
-        }
+            .pop_front();
+        count.unwrap_or(Ok(0))
     }
 }
 
@@ -587,14 +592,14 @@ impl BudgetPageSource for FakeSource {
 }
 
 // The lookups the customer refresh makes: only the default budget read is answered.
-pub struct FakeLookups {
+pub(crate) struct FakeLookups {
     default_budget: Mutex<Option<Result<Option<BudgetTableSnapshot>, BudgetLookupError>>>,
     default_calls: Mutex<Vec<String>>,
 }
 
 impl FakeLookups {
     #[must_use]
-    pub fn with_budget(budget: Option<BudgetTableSnapshot>) -> Self {
+    pub(crate) fn with_budget(budget: Option<BudgetTableSnapshot>) -> Self {
         Self {
             default_budget: Mutex::new(Some(Ok(budget))),
             default_calls: Mutex::new(Vec::new()),
@@ -602,7 +607,7 @@ impl FakeLookups {
     }
 
     #[must_use]
-    pub fn failing() -> Self {
+    pub(crate) fn failing() -> Self {
         Self {
             default_budget: Mutex::new(Some(Err(BudgetLookupError {
                 message: "lookup down".to_owned(),
@@ -612,7 +617,7 @@ impl FakeLookups {
     }
 
     #[must_use]
-    pub fn default_calls(&self) -> Vec<String> {
+    pub(crate) fn default_calls(&self) -> Vec<String> {
         self.default_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -675,20 +680,17 @@ impl BudgetLookups for FakeLookups {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(budget_id.to_owned());
-        match self
+        let answer = self
             .default_budget
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            Some(answer) => answer,
-            None => Ok(None),
-        }
+            .take();
+        answer.unwrap_or(Ok(None))
     }
 }
 
 // A pod lock whose cache and answer the test picks.
-pub struct FakeLock {
+pub(crate) struct FakeLock {
     cache: bool,
     answer: Option<bool>,
     calls: Mutex<Vec<String>>,
@@ -696,7 +698,7 @@ pub struct FakeLock {
 
 impl FakeLock {
     #[must_use]
-    pub fn with_cache(answer: Option<bool>) -> Self {
+    pub(crate) fn with_cache(answer: Option<bool>) -> Self {
         Self {
             cache: true,
             answer,
@@ -705,7 +707,7 @@ impl FakeLock {
     }
 
     #[must_use]
-    pub fn without_cache() -> Self {
+    pub(crate) fn without_cache() -> Self {
         Self {
             cache: false,
             answer: Some(true),
@@ -714,7 +716,7 @@ impl FakeLock {
     }
 
     #[must_use]
-    pub fn calls(&self) -> Vec<String> {
+    pub(crate) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

@@ -65,8 +65,8 @@ async fn auth_records_reach_the_gauges_with_their_labels() {
         rows: vec![auth_entry(
             "hashed-key",
             "prod",
-            Decimal::from(10),
-            Some(Decimal::from(25)),
+            Decimal::from(10_i32),
+            Some(Decimal::from(25_i32)),
         )],
         total_count: Some(1),
     }));
@@ -81,7 +81,10 @@ async fn auth_records_reach_the_gauges_with_their_labels() {
 
     let remaining = rig.log.for_metric("remaining");
     assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].value, MetricValue::Finite(Decimal::from(15)));
+    assert_eq!(
+        remaining[0].value,
+        MetricValue::Finite(Decimal::from(15_i32))
+    );
     assert_eq!(
         remaining[0].labels,
         vec![
@@ -91,7 +94,7 @@ async fn auth_records_reach_the_gauges_with_their_labels() {
     );
     let max = rig.log.for_metric("max");
     assert_eq!(max.len(), 1);
-    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(25)));
+    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(25_i32)));
 }
 
 #[tokio::test]
@@ -100,15 +103,15 @@ async fn every_page_of_keys_reaches_the_gauges() {
     let settings = PrometheusLabelSettings::with_defaults();
     let source = FakeSource::new();
     source.push_keys(Ok(Page {
-        rows: vec![auth_entry("hashed-one", "one", Decimal::from(1), None)],
+        rows: vec![auth_entry("hashed-one", "one", Decimal::from(1_i32), None)],
         total_count: Some(51),
     }));
     source.push_keys(Ok(Page {
         rows: vec![auth_entry(
             "hashed-two",
             "two",
-            Decimal::from(2),
-            Some(Decimal::from(9)),
+            Decimal::from(2_i32),
+            Some(Decimal::from(9_i32)),
         )],
         total_count: Some(51),
     }));
@@ -125,5 +128,8 @@ async fn every_page_of_keys_reaches_the_gauges() {
     let remaining = rig.log.for_metric("remaining");
     assert_eq!(remaining.len(), 2);
     assert_eq!(remaining[0].value, MetricValue::PositiveInfinity);
-    assert_eq!(remaining[1].value, MetricValue::Finite(Decimal::from(7)));
+    assert_eq!(
+        remaining[1].value,
+        MetricValue::Finite(Decimal::from(7_i32))
+    );
 }

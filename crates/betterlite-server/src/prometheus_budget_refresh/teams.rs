@@ -52,13 +52,13 @@ pub async fn refresh_teams<Gauge>(
     Gauge: Collector + RemovableMetric + Send + Sync,
     Gauge::Error: Send + Sync,
 {
-    let Some(source) = source else {
+    let Some(pages) = source else {
         tracing::debug!("Prometheus: skipping team metrics initialization, DB not initialized");
         return;
     };
     initialize_entity(
         &TeamWalk {
-            source,
+            source: pages,
             gauges,
             labels,
             now,

@@ -56,18 +56,12 @@ impl EntityPageWalk for FakeWalk {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((page_size, page));
-        match self
+        let fetched = self
             .fetches
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        {
-            Some(result) => result,
-            None => Ok(Page {
-                rows: Vec::new(),
-                total_count: Some(0),
-            }),
-        }
+            .pop_front();
+        fetched.unwrap_or_else(|| Ok(empty_page()))
     }
 
     fn apply(&self, rows: Vec<u64>) -> Result<(), BudgetPageError> {
@@ -75,15 +69,12 @@ impl EntityPageWalk for FakeWalk {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(rows);
-        match self
+        let applied = self
             .applies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-        {
-            Some(result) => result,
-            None => Ok(()),
-        }
+            .pop_front();
+        applied.unwrap_or(Ok(()))
     }
 }
 
@@ -96,6 +87,13 @@ const fn window_error(page: u64) -> BudgetPageError {
 
 fn row_error() -> BudgetPageError {
     BudgetPageError::Row(serde_json::from_str::<u64>("not a number").unwrap_err())
+}
+
+const fn empty_page() -> Page<u64> {
+    Page {
+        rows: Vec::new(),
+        total_count: Some(0),
+    }
 }
 
 #[tokio::test]

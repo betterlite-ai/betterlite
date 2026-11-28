@@ -39,11 +39,15 @@ async fn every_page_of_users_reaches_the_gauges() {
     let settings = PrometheusLabelSettings::with_defaults();
     let source = FakeSource::new();
     source.push_users(Ok(Page {
-        rows: vec![user("u-1", Decimal::from(30), Some(Decimal::from(100)))],
+        rows: vec![user(
+            "u-1",
+            Decimal::from(30_i32),
+            Some(Decimal::from(100_i32)),
+        )],
         total_count: Some(51),
     }));
     source.push_users(Ok(Page {
-        rows: vec![user("u-2", Decimal::from(5), None)],
+        rows: vec![user("u-2", Decimal::from(5_i32), None)],
         total_count: Some(51),
     }));
 
@@ -58,7 +62,10 @@ async fn every_page_of_users_reaches_the_gauges() {
     assert_eq!(source.calls(), vec!["users:50:1", "users:50:2"]);
     let remaining = rig.log.for_metric("remaining");
     assert_eq!(remaining.len(), 2);
-    assert_eq!(remaining[0].value, MetricValue::Finite(Decimal::from(70)));
+    assert_eq!(
+        remaining[0].value,
+        MetricValue::Finite(Decimal::from(70_i32))
+    );
     assert_eq!(
         remaining[0].labels,
         vec![("user".to_owned(), "u-1".to_owned())]
@@ -66,5 +73,5 @@ async fn every_page_of_users_reaches_the_gauges() {
     assert_eq!(remaining[1].value, MetricValue::PositiveInfinity);
     let max = rig.log.for_metric("max");
     assert_eq!(max.len(), 1);
-    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(100)));
+    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(100_i32)));
 }

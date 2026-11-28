@@ -31,7 +31,7 @@ where
     let first = walk.fetch(PAGE_SIZE, 1).await?;
     let total = first
         .total_count
-        .unwrap_or(u64::try_from(first.rows.len()).unwrap_or(u64::MAX));
+        .unwrap_or_else(|| u64::try_from(first.rows.len()).unwrap_or(u64::MAX));
     let total_pages = total.div_ceil(PAGE_SIZE);
     walk.apply(first.rows)?;
     for page in 2..=total_pages {

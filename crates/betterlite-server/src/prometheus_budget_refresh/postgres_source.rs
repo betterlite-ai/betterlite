@@ -109,11 +109,11 @@ async fn page_rows(
 
 fn page_inputs<Row, Input>(
     page: Page<Row>,
-    convert: fn(Row) -> Result<Input, BudgetPageError>,
+    convert: fn(&Row) -> Result<Input, BudgetPageError>,
 ) -> Result<Page<Input>, BudgetPageError> {
     let mut rows = Vec::with_capacity(page.rows.len());
     for row in page.rows {
-        rows.push(convert(row)?);
+        rows.push(convert(&row)?);
     }
     Ok(Page {
         rows,
@@ -157,7 +157,7 @@ fn team_input(team: LiteLLMTeamTable) -> TeamBudgetGaugeInput {
     }
 }
 
-fn user_row(row: Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
+fn user_row(row: &Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
     let text: String = row.try_get(0).map_err(backend::<Infallible>)?;
     let stored = decode_user_record(text.as_bytes())
         .map_err(|source| BudgetPageError::UserRecord { source })?
@@ -176,10 +176,10 @@ fn user_row(row: Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
 
 fn budget_of(row: &Row) -> Result<Option<BudgetTableSnapshot>, BudgetPageError> {
     let text: Option<String> = row.try_get(1).map_err(backend::<Infallible>)?;
-    let Some(text) = text else {
+    let Some(stored_text) = text else {
         return Ok(None);
     };
-    let stored = LiteLLMBudgetTableFull::decode_row(&text)
+    let stored = LiteLLMBudgetTableFull::decode_row(&stored_text)
         .map_err(|source| BudgetPageError::BudgetRow { source })?;
     Ok(Some(BudgetTableSnapshot {
         max_budget: stored.budget.max_budget,
@@ -242,13 +242,13 @@ impl BudgetPageSource for PostgresBudgetPageSource<'_> {
     }
 
     async fn users_page(&self, page_size: u64, page: u64) -> PageResult<UserBudgetGaugeInput> {
-        let page = page_rows(self.client, page_size, page, USER_PAGES).await?;
-        page_inputs(page, user_row)
+        let stored_page = page_rows(self.client, page_size, page, USER_PAGES).await?;
+        page_inputs(stored_page, user_row)
     }
 
     async fn orgs_page(&self, page_size: u64, page: u64) -> PageResult<OrgBudgetGaugeRow> {
-        let page = page_rows(self.client, page_size, page, ORG_PAGES).await?;
-        budgeted_inputs(page, org_row)
+        let stored_page = page_rows(self.client, page_size, page, ORG_PAGES).await?;
+        budgeted_inputs(stored_page, org_row)
     }
 
     async fn customers_page(
@@ -258,8 +258,8 @@ impl BudgetPageSource for PostgresBudgetPageSource<'_> {
         budgeted_only: bool,
     ) -> PageResult<CustomerBudgetGaugeRow> {
         let pages = customer_pages(budgeted_only, page);
-        let page = page_rows(self.client, page_size, page, pages).await?;
-        budgeted_inputs(page, customer_row)
+        let stored_page = page_rows(self.client, page_size, page, pages).await?;
+        budgeted_inputs(stored_page, customer_row)
     }
 
     async fn user_count(&self) -> Result<u64, BudgetPageError> {

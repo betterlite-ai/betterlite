@@ -18,7 +18,7 @@ use tokio_postgres::NoTls;
 
 use super::PostgresBudgetPageSource;
 use crate::key_query_plan::response::KeyListEntry;
-use crate::prometheus_budget_refresh::source::{BudgetPageError, BudgetPageSource};
+use crate::prometheus_budget_refresh::source::{BudgetPageError, BudgetPageSource as _};
 
 #[derive(Parser)]
 struct Environment {
@@ -152,10 +152,10 @@ async fn teams_page_reads_alias_order_with_spend_and_reset() {
     assert_eq!(page.rows.len(), 2);
     assert_eq!(page.rows[0].team_id, "t-alpha");
     assert_eq!(page.rows[0].team_alias.as_deref(), Some("Alpha"));
-    assert_eq!(page.rows[0].spend, Some(Decimal::from(5)));
+    assert_eq!(page.rows[0].spend, Some(Decimal::from(5_i32)));
     assert_eq!(page.rows[0].max_budget, None);
     assert_eq!(page.rows[1].team_id, "t-bravo");
-    assert_eq!(page.rows[1].max_budget, Some(Decimal::from(100)));
+    assert_eq!(page.rows[1].max_budget, Some(Decimal::from(100_i32)));
     assert_eq!(page.rows[1].budget_reset_at, None);
     fixture.close().await;
 }
@@ -175,8 +175,8 @@ async fn users_page_orders_by_created_at_descending_with_a_count_each_page() {
     assert_eq!(first.total_count, Some(3));
     let ids: Vec<&str> = first.rows.iter().map(|row| row.user_id.as_str()).collect();
     assert_eq!(ids, vec!["u-newest", "u-middle"]);
-    assert_eq!(first.rows[0].spend, Decimal::from(3));
-    assert_eq!(first.rows[0].max_budget, Some(Decimal::from(20)));
+    assert_eq!(first.rows[0].spend, Decimal::from(3_i32));
+    assert_eq!(first.rows[0].max_budget, Some(Decimal::from(20_i32)));
     assert_eq!(
         first.rows[0].user_email.as_deref(),
         Some("u-newest@example.com")
@@ -204,8 +204,8 @@ async fn users_page_decodes_the_json_text_user_columns() {
         page.rows[0].user_email.as_deref(),
         Some("u-json@example.com")
     );
-    assert_eq!(page.rows[0].spend, Decimal::from(7));
-    assert_eq!(page.rows[0].max_budget, Some(Decimal::from(50)));
+    assert_eq!(page.rows[0].spend, Decimal::from(7_i32));
+    assert_eq!(page.rows[0].max_budget, Some(Decimal::from(50_i32)));
     fixture.close().await;
 }
 
@@ -245,7 +245,7 @@ async fn orgs_page_joins_the_budget_table() {
     assert_eq!(page.total_count, Some(2));
     assert_eq!(page.rows.len(), 2);
     assert_eq!(page.rows[0].organization_id.as_deref(), Some("o-bare"));
-    assert_eq!(page.rows[0].spend, Some(Decimal::from(4)));
+    assert_eq!(page.rows[0].spend, Some(Decimal::from(4_i32)));
     assert_eq!(
         page.rows[0].budget,
         Some(BudgetTableSnapshot {
@@ -259,7 +259,7 @@ async fn orgs_page_joins_the_budget_table() {
         Some("o-budgeted-alias")
     );
     let budget = page.rows[1].budget.as_ref().unwrap();
-    assert_eq!(budget.max_budget, Some(Decimal::from(50)));
+    assert_eq!(budget.max_budget, Some(Decimal::from(50_i32)));
     assert_eq!(budget.budget_reset_at, Some(next_day()));
     fixture.close().await;
 }
@@ -277,7 +277,7 @@ async fn orgs_page_decodes_a_json_text_model_max_budget() {
 
     assert_eq!(page.rows.len(), 1);
     let budget = page.rows[0].budget.as_ref().unwrap();
-    assert_eq!(budget.max_budget, Some(Decimal::from(30)));
+    assert_eq!(budget.max_budget, Some(Decimal::from(30_i32)));
     assert_eq!(budget.budget_reset_at, Some(next_day()));
     fixture.close().await;
 }
@@ -318,14 +318,14 @@ async fn customers_page_filters_budgeted_rows_only_when_asked() {
     assert_eq!(ids, vec!["end-a", "end-b"]);
     assert_eq!(
         unfiltered.rows[0].budget.as_ref().unwrap().max_budget,
-        Some(Decimal::from(30))
+        Some(Decimal::from(30_i32))
     );
 
     let filtered = source.customers_page(10, 1, true).await.unwrap();
     assert_eq!(filtered.total_count, Some(1));
     assert_eq!(filtered.rows.len(), 1);
     assert_eq!(filtered.rows[0].user_id, "end-a");
-    assert_eq!(filtered.rows[0].spend, Decimal::from(3));
+    assert_eq!(filtered.rows[0].spend, Decimal::from(3_i32));
     fixture.close().await;
 }
 

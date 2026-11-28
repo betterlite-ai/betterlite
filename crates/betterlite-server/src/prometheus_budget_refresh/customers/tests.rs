@@ -16,7 +16,7 @@ use crate::prometheus_budget_refresh::tests::support::{
 };
 
 async fn refresh(
-    source: Option<&FakeSource>,
+    source: Option<&dyn BudgetPageSource>,
     lookups: &FakeLookups,
     default_budget_id: Option<&str>,
     gauges: &EntityBudgetGauges<MetricLike<ProbeGauge>>,
@@ -26,12 +26,8 @@ async fn refresh(
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = no_limits();
     let context = customer_context(labels_source(&labels, settings), clock(), &tracker, &limits);
-    let page_source: Option<&dyn BudgetPageSource> = match source {
-        Some(fake) => Some(fake),
-        None => None,
-    };
     let request = CustomerRefresh {
-        source: page_source,
+        source,
         lookups,
         default_budget_id,
         gauges,
@@ -70,7 +66,7 @@ async fn a_missing_database_logs_and_skips_the_customers() {
 async fn noop_gauges_skip_before_the_end_user_gate() {
     let (logs, _guard) = capture_logs();
     let source = FakeSource::new();
-    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100)), None)));
+    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100_i32)), None)));
     let gauges = noop_entity();
 
     refresh(
@@ -92,7 +88,7 @@ async fn disabled_end_user_tracking_skips_before_the_lookup() {
     let (logs, _guard) = capture_logs();
     let rig = budget_rig(&["end_user"]);
     let source = FakeSource::new();
-    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100)), None)));
+    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100_i32)), None)));
 
     refresh(
         Some(&source),
@@ -119,7 +115,7 @@ async fn prometheus_only_off_skips_before_the_lookup() {
     let (logs, _guard) = capture_logs();
     let rig = budget_rig(&["end_user"]);
     let source = FakeSource::new();
-    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100)), None)));
+    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100_i32)), None)));
 
     refresh(
         Some(&source),
@@ -146,10 +142,10 @@ async fn the_default_budget_fills_rows_without_one() {
     let rig = budget_rig(&["end_user"]);
     let source = FakeSource::new();
     source.push_customers(Ok(Page {
-        rows: vec![customer("end-1", Decimal::from(10), None)],
+        rows: vec![customer("end-1", Decimal::from(10_i32), None)],
         total_count: Some(1),
     }));
-    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100)), None)));
+    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100_i32)), None)));
 
     refresh(
         Some(&source),
@@ -164,14 +160,17 @@ async fn the_default_budget_fills_rows_without_one() {
     assert_eq!(lookups.default_calls(), vec!["default-budget"]);
     let remaining = rig.log.for_metric("remaining");
     assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].value, MetricValue::Finite(Decimal::from(90)));
+    assert_eq!(
+        remaining[0].value,
+        MetricValue::Finite(Decimal::from(90_i32))
+    );
     assert_eq!(
         remaining[0].labels,
         vec![("end_user".to_owned(), "end-1".to_owned())]
     );
     let max = rig.log.for_metric("max");
     assert_eq!(max.len(), 1);
-    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(100)));
+    assert_eq!(max[0].value, MetricValue::Finite(Decimal::from(100_i32)));
 }
 
 #[tokio::test]
@@ -181,8 +180,8 @@ async fn without_a_default_budget_only_budgeted_rows_are_read() {
     source.push_customers(Ok(Page {
         rows: vec![customer(
             "end-2",
-            Decimal::from(5),
-            Some(snapshot(Some(Decimal::from(20)), None)),
+            Decimal::from(5_i32),
+            Some(snapshot(Some(Decimal::from(20_i32)), None)),
         )],
         total_count: Some(1),
     }));
@@ -201,7 +200,7 @@ async fn without_a_default_budget_only_budgeted_rows_are_read() {
     assert_eq!(lookups.default_calls(), len_one("default-budget"));
     assert_eq!(
         rig.log.for_metric("remaining")[0].value,
-        MetricValue::Finite(Decimal::from(15))
+        MetricValue::Finite(Decimal::from(15_i32))
     );
 }
 
@@ -210,7 +209,7 @@ async fn a_row_without_any_budget_stays_unlimited() {
     let rig = budget_rig(&["end_user"]);
     let source = FakeSource::new();
     source.push_customers(Ok(Page {
-        rows: vec![customer("end-3", Decimal::from(5), None)],
+        rows: vec![customer("end-3", Decimal::from(5_i32), None)],
         total_count: Some(1),
     }));
     let lookups = FakeLookups::with_budget(None);
@@ -238,8 +237,8 @@ async fn a_failed_default_budget_lookup_falls_back_to_budgeted_rows() {
     source.push_customers(Ok(Page {
         rows: vec![customer(
             "end-4",
-            Decimal::from(10),
-            Some(snapshot(Some(Decimal::from(50)), None)),
+            Decimal::from(10_i32),
+            Some(snapshot(Some(Decimal::from(50_i32)), None)),
         )],
         total_count: Some(1),
     }));
@@ -258,7 +257,7 @@ async fn a_failed_default_budget_lookup_falls_back_to_budgeted_rows() {
     assert_eq!(lookups.default_calls(), len_one("default-budget"));
     assert_eq!(
         rig.log.for_metric("remaining")[0].value,
-        MetricValue::Finite(Decimal::from(40))
+        MetricValue::Finite(Decimal::from(40_i32))
     );
 }
 
@@ -267,14 +266,14 @@ async fn every_page_reaches_the_customer_gauges_and_reads_the_default_once() {
     let rig = budget_rig(&["end_user"]);
     let source = FakeSource::new();
     source.push_customers(Ok(Page {
-        rows: vec![customer("end-1", Decimal::from(1), None)],
+        rows: vec![customer("end-1", Decimal::from(1_i32), None)],
         total_count: Some(51),
     }));
     source.push_customers(Ok(Page {
-        rows: vec![customer("end-2", Decimal::from(2), None)],
+        rows: vec![customer("end-2", Decimal::from(2_i32), None)],
         total_count: Some(999),
     }));
-    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100)), None)));
+    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100_i32)), None)));
 
     refresh(
         Some(&source),
@@ -300,12 +299,12 @@ async fn no_default_budget_id_skips_the_lookup() {
     source.push_customers(Ok(Page {
         rows: vec![customer(
             "end-5",
-            Decimal::from(5),
-            Some(snapshot(Some(Decimal::from(20)), None)),
+            Decimal::from(5_i32),
+            Some(snapshot(Some(Decimal::from(20_i32)), None)),
         )],
         total_count: Some(1),
     }));
-    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100)), None)));
+    let lookups = FakeLookups::with_budget(Some(snapshot(Some(Decimal::from(100_i32)), None)));
 
     refresh(
         Some(&source),
@@ -320,7 +319,7 @@ async fn no_default_budget_id_skips_the_lookup() {
     assert_eq!(source.calls(), vec!["customers:50:1:true"]);
     assert_eq!(
         rig.log.for_metric("remaining")[0].value,
-        MetricValue::Finite(Decimal::from(15))
+        MetricValue::Finite(Decimal::from(15_i32))
     );
 }
 
