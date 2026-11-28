@@ -422,6 +422,23 @@ async fn an_undeclared_anthropic_text_model_is_labelled_without_its_anthropic_pr
 }
 
 #[tokio::test]
+async fn a_model_without_a_resolved_provider_is_labelled_whole() {
+    let fixture = fixture_with_settings(labelled_settings());
+    let mut record = rich_payload(dec("2.5"));
+    record.model = "/gpt-4o".to_owned();
+    record.custom_llm_provider = None;
+    fixture
+        .hooks
+        .async_log_success_event(Arc::new(event(record)))
+        .await
+        .unwrap();
+    assert_eq!(
+        series_label(&fixture.registry, REQUESTS, "model"),
+        "/gpt-4o"
+    );
+}
+
+#[tokio::test]
 async fn deployment_remaining_headers_set_the_gauges() {
     let fixture = fixture();
     let mut record = rich_payload(dec("2.5"));

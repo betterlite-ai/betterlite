@@ -59,6 +59,7 @@ fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> S
         "cohere_chat" => "cohere",
         "anthropic_text" => "anthropic",
         "ai21_chat" => "ai21",
+        "" => return model,
         other => other,
     };
     let rest = [declared, resolved.as_str()]
