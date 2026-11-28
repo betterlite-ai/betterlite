@@ -14,7 +14,6 @@ use betterlite_logging::logging_success::ports::{
 use betterlite_logging::logging_success::types::{SuccessMode, SuccessResult};
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
-use serde_json::Number;
 
 use super::input::MessageFlagsSpec;
 
@@ -120,7 +119,7 @@ impl CallbackLogger for RecordingLogger {
     }
 }
 
-// the minted redacted id is random, so the record carries the same stamp the LiteLLM side pins
+// only the random id is rewritten, so the record's created still compares with the second LiteLLM pins
 fn normalized(response: &Json, stamp: &ResponseStamp) -> Json {
     let Json::Object(fields) = response else {
         return response.clone();
@@ -145,10 +144,6 @@ fn normalized(response: &Json, stamp: &ResponseStamp) -> Json {
     }
     let mut stamped = fields.clone();
     stamped.insert("id".to_owned(), Json::Text(stamp.id.clone()));
-    stamped.insert(
-        "created".to_owned(),
-        Json::Number(Number::from(stamp.created)),
-    );
     Json::Object(stamped)
 }
 

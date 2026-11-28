@@ -135,7 +135,7 @@ fn register(
     Ok(())
 }
 
-fn stamp_value(spec: Option<&StampSpec>) -> ResponseStamp {
+pub(crate) fn stamp_value(spec: Option<&StampSpec>) -> ResponseStamp {
     spec.map_or_else(
         || ResponseStamp {
             id: "chatcmpl-placeholder".to_owned(),
