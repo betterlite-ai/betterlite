@@ -4,12 +4,13 @@ use std::pin::Pin;
 use async_trait::async_trait;
 
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
+use crate::api::responses_compact_http::service::ClientSource;
 use crate::api::responses_create::bridge::Created;
 use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create::deps::{CreateConfigFactory, ResponsesCreateDeps};
 use crate::api::responses_create::error::CreateError;
 use crate::api::responses_create::execute::create;
-use crate::api::responses_create_http::service::{ClientSource, LogContext};
+use crate::api::responses_create_http::service::{CreateTransport, LogContext};
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
 use crate::api::responses_provider_selection::prompting::{
     HookRequest, MergeAnswer, MergeRequest, PromptManagerError,
@@ -67,7 +68,7 @@ where
 
 impl<S, F, D, E, Context> SyncHandoff<Context> for CreateExecution<'_, S, F, D, E, Context>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CreateTransport>,
     F: CreateConfigFactory,
     D: DeploymentHookDispatcher + ?Sized,
     E: ContinuationExecutor + ?Sized,

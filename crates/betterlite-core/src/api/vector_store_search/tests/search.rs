@@ -12,7 +12,7 @@ pub(super) async fn run_search<S>(
     call: &SearchCall<'_>,
 ) -> Result<Json, VectorStoreSearchError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let env = pre_post_env(&logs.redactor, &logs.sink, logs.now);
     search(

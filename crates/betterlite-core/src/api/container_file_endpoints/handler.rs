@@ -7,7 +7,9 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::container_contracts::config::BaseContainerConfig;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
-use betterlite_openai::containers::container_file_http::transport::ClientSource;
+use betterlite_openai::containers::container_file_http::transport::{
+    AsyncClient, BlockingClient, ClientSource,
+};
 use betterlite_openai::containers::container_file_http::{
     ContainerFileHttpCall, ContainerFileUpload, GenericContainerHandler, PreCallHook, ReplyResult,
 };
@@ -63,7 +65,7 @@ pub trait ContainerIdDecoder: Send + Sync {
 
 impl<Source, Hook> ContainerFileHandler for GenericContainerHandler<Source, Hook>
 where
-    Source: ClientSource,
+    Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>,
     Hook: PreCallHook,
 {
     fn handle(&self, call: &ContainerFileHandlerCall<'_>) -> ReplyResult {

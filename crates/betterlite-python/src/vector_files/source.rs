@@ -4,10 +4,8 @@ use std::sync::Arc;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::Config;
-use betterlite_core::api::vector_file_http_create_list::service::ClientSource as FileClientSource;
-use betterlite_core::api::vector_file_http_read::service::ClientSource as ReadClientSource;
-use betterlite_core::api::vector_file_http_write::service::ClientSource as WriteClientSource;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;
@@ -37,38 +35,18 @@ impl ProxiedSource {
             pool: ClientPool::new(CLIENT_POOL_CAPACITY, TransportLimits::DEFAULT),
         }
     }
+}
 
-    // The same client serves the create/list, read and write transports: each trait impl hands its call here
-    fn pooled(&self, ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
+// The same client serves the create/list, read and write transports
+impl ClientSource for ProxiedSource {
+    type Client = ProxiedClient;
+
+    fn client(&self, ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
         let tls = TlsPolicy::resolve(&self.config, &self.environment, ssl_verify)
             .map_err(ClientError::from)?;
         self.pool
             .client(&tls, &self.routing)
             .map_err(ClientError::from)
-    }
-}
-
-impl FileClientSource for ProxiedSource {
-    type Client = ProxiedClient;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
-        self.pooled(ssl_verify)
-    }
-}
-
-impl ReadClientSource for ProxiedSource {
-    type Client = ProxiedClient;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
-        self.pooled(ssl_verify)
-    }
-}
-
-impl WriteClientSource for ProxiedSource {
-    type Client = ProxiedClient;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
-        self.pooled(ssl_verify)
     }
 }
 

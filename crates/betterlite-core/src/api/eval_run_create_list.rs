@@ -11,6 +11,7 @@ use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_openai::evals::types::{ListRunsResponse, Run};
 use betterlite_redact::secret::Redactor;
@@ -23,7 +24,6 @@ use self::providers::{
     CREATE_FLAG, EvalRunProviders, LIST_FLAG, PendingCreateRun, PendingListRuns, RunMode,
     RunTransport,
 };
-use crate::api::eval_http::exchange::EvalLogging;
 
 // LiteLLM's provider fallback when the caller names none
 pub(crate) const DEFAULT_PROVIDER: &str = "openai";
@@ -60,7 +60,7 @@ macro_rules! eval_run_operations {
         pub fn $name<'call>(
             &'call self,
             request: $request<'_>,
-            log: EvalLogging<'call, '_>,
+            log: LogContext<'call, '_>,
         ) -> Result<$work<'call>, EvalRunFailure> {
             let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
             let call = match $prepare(self, request, provider, log.state) {
@@ -100,7 +100,7 @@ macro_rules! eval_run_operations {
         pub async fn $name<'call>(
             &'call self,
             request: $request<'_>,
-            log: EvalLogging<'call, '_>,
+            log: LogContext<'call, '_>,
         ) -> Result<$reply, EvalRunFailure> {
             let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
             let mut kwargs = request.kwargs.clone();

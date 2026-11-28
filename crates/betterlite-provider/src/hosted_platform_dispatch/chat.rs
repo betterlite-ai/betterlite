@@ -1,4 +1,5 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::cloudflare_chat;
 use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
 use betterlite_openai::fireworks_ai_chat_params::extra_body::map_extra_body_params;
@@ -9,7 +10,7 @@ use betterlite_prompts::arguments::json::Object;
 use crate::agent_platform_dispatch::context::headers_or_global;
 
 use super::call::CompletionCall;
-use super::context::{CallLogging, DispatchContext, first_nonempty, first_secret};
+use super::context::{DispatchContext, first_nonempty, first_secret};
 use super::error::DispatchError;
 use super::handler::{ChatCompletionHandler, HandlerError};
 use super::logging;
@@ -24,7 +25,7 @@ pub async fn dispatch<P, R>(
     context: &DispatchContext<'_>,
     capabilities: &mut P,
     handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Option<Result<R, DispatchError>>
 where
     P: FireworksCapabilities + Send,
@@ -69,7 +70,7 @@ async fn fireworks<P, R>(
     context: &DispatchContext<'_>,
     capabilities: &mut P,
     handler: &(dyn ChatCompletionHandler<Reply = R> + Sync),
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<R, DispatchError>
 where
     P: FireworksCapabilities + Send,
@@ -87,7 +88,7 @@ where
 fn logged<R>(
     reply: Result<R, HandlerError>,
     call: &CompletionCall,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<R, DispatchError> {
     match reply {
         Ok(value) => Ok(value),

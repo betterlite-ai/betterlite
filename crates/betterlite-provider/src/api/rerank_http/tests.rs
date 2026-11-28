@@ -10,6 +10,8 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_core::api::file_http_content::service::ClientSource;
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_http_fixture::reply::reply as http_reply;
@@ -37,9 +39,9 @@ use thiserror::Error;
 use url::Url;
 
 use super::client::{
-    ClientKind, ClientSource, RerankHttpRequest, RerankSendError, RerankTransport, SuppliedClient,
+    ClientKind, RerankHttpRequest, RerankSendError, RerankTransport, SuppliedClient,
 };
-use super::error::{ClientError, RerankHttpError};
+use super::error::RerankHttpError;
 use super::{RerankCall, RerankDeps, RerankLogContext, rerank};
 use crate::api::rerank_contracts::{
     BaseLlmException, BaseRerankConfig, EnvironmentRequest, HeaderMap, Headers,
@@ -140,7 +142,7 @@ impl Fixture {
     ) -> Result<RerankResponse, RerankHttpError<C::Error>>
     where
         C: BaseRerankConfig,
-        S: ClientSource,
+        S: ClientSource<Client: RerankTransport>,
     {
         let logger = |_details: &Json| -> Result<(), PrePostError> {
             events.push("pre_call");

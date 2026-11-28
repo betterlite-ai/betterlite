@@ -4,8 +4,7 @@ use std::time::{Duration, Instant};
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::transformation::{BaseEvalsAPIConfig, EvalsHttpResponse};
 use betterlite_openai::openai_base_config::{Headers, Object};
@@ -46,12 +45,6 @@ pub struct EvalExchange<'call> {
     pub timeout: Option<Duration>,
     pub input: &'call str,
     pub complete_input_dict: Option<&'call Object>,
-}
-
-// B249's logging state and the environment a pre-call reads
-pub struct EvalLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
 }
 
 // The reply a transform is handed: the upstream status, headers and text as httpx's response exposes them
@@ -109,7 +102,7 @@ async fn send(
 pub async fn eval_exchange(
     connection: &EvalConnection<'_>,
     exchange: &EvalExchange<'_>,
-    log: &mut EvalLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<EvalReply, EvalHttpError> {
     logging::record_pre_call(connection, exchange, log)?;
     let started = Instant::now();

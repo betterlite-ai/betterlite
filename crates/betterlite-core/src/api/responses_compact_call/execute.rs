@@ -14,7 +14,7 @@ use secrecy::SecretString;
 use crate::api::response_id_traversal::restore::restore_input_item_ids;
 use crate::api::responses_compact_http::config::{CompactConfig, CompactParams};
 use crate::api::responses_compact_http::service::{
-    ClientKind, ClientSource, CompactCall, CompactDeps, LogContext, prepare, send,
+    ClientKind, ClientSource, CompactCall, CompactDeps, CompactTransport, LogContext, prepare, send,
 };
 use crate::api::responses_json::{json_value, object_from_params};
 use crate::api::responses_parameters::optional::optional_params_responses;
@@ -59,7 +59,7 @@ pub(super) async fn run<S, F>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<ResponsesReply, CompactResponsesError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
     F: CompactConfigFactory,
 {
     let request_timeout = RequestTimeout::resolve(deps.environment)?;
@@ -242,7 +242,7 @@ async fn execute<S, P>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<ResponsesReply, CompactResponsesError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
     P: CompactConfig,
 {
     let http = CompactDeps {

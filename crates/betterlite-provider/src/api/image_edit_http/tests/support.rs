@@ -9,7 +9,9 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::vector_store_http_write::error::{
     ClientError, HeaderMap as FactsHeaders,
 };
-use betterlite_core::api::vector_store_http_write::service::{WriteRequest, WriteTransport};
+use betterlite_core::api::vector_store_http_write::service::{
+    ClientSource, WriteRequest, WriteTransport,
+};
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -41,8 +43,7 @@ use super::super::asynchronous::async_image_edit_handler;
 use super::super::error::{ImageEditHttpError, RequestError};
 use super::super::image_edit_handler;
 use super::super::service::{
-    ClientKind, ClientSource, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext,
-    SuppliedClient,
+    ClientKind, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext, SuppliedClient,
 };
 use crate::api::image_contracts::edit::{
     BaseImageEditConfig, ImageEditEnvironment, ImageEditReply, ImageEditRequest,
@@ -578,7 +579,7 @@ impl Fixture {
     ) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>>
     where
         C: BaseImageEditConfig,
-        S: ClientSource,
+        S: ClientSource<Client: WriteTransport + Clone>,
     {
         let env = PrePostEnv {
             debug: DebugSettings::default(),

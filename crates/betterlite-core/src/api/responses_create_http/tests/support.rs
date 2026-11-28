@@ -48,14 +48,16 @@ use crate::api::responses_agentic_execution::executor::{
     AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
 };
 use crate::api::responses_compact_http::error::{ConfigFailure, Stage};
-use crate::api::responses_compact_http::service::{ClientKind, SharedSession, SuppliedClient};
+use crate::api::responses_compact_http::service::{
+    ClientKind, ClientSource, SharedSession, SuppliedClient,
+};
 use crate::api::responses_create_http::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, Headers, Signed,
 };
 use crate::api::responses_create_http::error::CreateError;
 use crate::api::responses_create_http::service::{
-    ClientSource, CreateCall, CreateDeps, CreateHooks, CreateOutcome, CreateRequest,
-    CreateTransport, LogContext, SentReply, run,
+    CreateCall, CreateDeps, CreateHooks, CreateOutcome, CreateRequest, CreateTransport, LogContext,
+    SentReply, run,
 };
 use crate::api::responses_hook_policy::callbacks::{
     CallbackLists, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
