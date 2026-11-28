@@ -178,7 +178,37 @@ fn volcengine_responses_selection_builds_the_config() {
 // B8176's chains put the request's key and base before litellm's global ones, and each before its environment variables
 #[test]
 fn volcengine_responses_config_uses_b8176_key_and_base_chains() {
-    let settings = Settings {
+    let settings = volcengine_settings();
+    let config = responses_config(&ResponsesConfigTag::VolcEngine, &settings)
+        .expect("the volcengine tag builds B8176's config");
+    let request_key = secret("sk-request");
+    let request_headers = config
+        .validate_environment(&BTreeMap::new(), Some(&request_key))
+        .expect("the request key resolves");
+    assert_eq!(
+        request_headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-request")
+    );
+    assert_eq!(
+        config.complete_url(Some("https://request.example")),
+        "https://request.example/api/v3/responses"
+    );
+    let global_headers = config
+        .validate_environment(&BTreeMap::new(), None)
+        .expect("the global key resolves");
+    assert_eq!(
+        global_headers.get("Authorization").map(String::as_str),
+        Some("Bearer sk-global")
+    );
+    assert_eq!(
+        config.complete_url(None),
+        "https://global.example/api/v3/responses"
+    );
+}
+
+// the global key and base, with the ARK and Volcengine environment values B8176's chains read behind them
+fn volcengine_settings() -> Settings {
+    Settings {
         api_base: Some(String::from("https://global.example")),
         api_key: Some(secret("sk-global")),
         headers: None,
@@ -212,32 +242,7 @@ fn volcengine_responses_config_uses_b8176_key_and_base_chains() {
             volcengine_api_base: Some(String::from("https://volcengine.example")),
             volcengine_api_key: Some(secret("sk-volcengine")),
         },
-    };
-    let config = responses_config(&ResponsesConfigTag::VolcEngine, &settings)
-        .expect("the volcengine tag builds B8176's config");
-    let request_key = secret("sk-request");
-    let request_headers = config
-        .validate_environment(&BTreeMap::new(), Some(&request_key))
-        .expect("the request key resolves");
-    assert_eq!(
-        request_headers.get("Authorization").map(String::as_str),
-        Some("Bearer sk-request")
-    );
-    assert_eq!(
-        config.complete_url(Some("https://request.example")),
-        "https://request.example/api/v3/responses"
-    );
-    let global_headers = config
-        .validate_environment(&BTreeMap::new(), None)
-        .expect("the global key resolves");
-    assert_eq!(
-        global_headers.get("Authorization").map(String::as_str),
-        Some("Bearer sk-global")
-    );
-    assert_eq!(
-        config.complete_url(None),
-        "https://global.example/api/v3/responses"
-    );
+    }
 }
 
 // with no request or global value the environment answers: ARK_API_KEY before VOLCENGINE_API_KEY, and VOLCENGINE_API_BASE before ARK_API_BASE
