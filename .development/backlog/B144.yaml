@@ -2,7 +2,7 @@ id: B144
 milestone: M10 admin ui
 title: Keep LiteLLM's admin dashboard, rebrand it, build it and serve it from betterlite
 status: todo
-depends_on: [B9090, B9091, B9092, B9093, B899, B789, B860, B8670, B8671, B1660, B1662, B1655, B8540, B8675, B8770, B066, B813, B1212]
+depends_on: [B9090, B9091, B9092, B9093, B899, B789, B860, B8670, B8671, B1660, B1662, B1655, B8540, B8675, B8770, B066, B813, B1212, B10228]
 file: tasks/B144-dashboard-integration.yaml
 covers:
   - "ui/litellm-dashboard/src/app/{login,connect,onboarding}/**"

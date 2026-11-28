@@ -107,6 +107,7 @@ pub mod resource_hints;
 pub mod route_match;
 pub mod saml_assertion;
 pub mod saml_provider;
+pub mod saml_signature;
 pub mod session_auth;
 pub mod session_budget;
 pub mod session_token_codec;

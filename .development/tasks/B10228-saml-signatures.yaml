@@ -1,0 +1,274 @@
+id: B10228
+title: Verify SAML response signatures with samael behind a non-default saml feature
+description: >-
+  B1625 left SAML login with a SamlResponseVerifier port in crates/betterlite-auth/src/saml_provider/verify.rs and
+  only UnavailableSamlVerifier behind it, so no response is ever accepted. This task adds the real verifier on samael
+  0.0.22 with xmlsec, behind a `saml` cargo feature that is off by default (Max, 11-28): OpenSSL, libxml2 and xmlsec
+  stay out of the default build, the gateway and backend images and the Python wheels. B1626 then calls it from POST
+  /sso/saml/callback. LiteLLM's handle_acs hands the whole check to one python3-saml 1.16.0 call,
+  auth.process_response(request_id=browser_request_id). It runs Response.is_valid and then store_valid_response,
+  and this task ports what that call checks and what it reads, with LiteLLM's settings from _build_settings.
+
+
+  Feature wiring. betterlite-auth gets `samael = { version = "0.0.22", optional = true }` in [dependencies] (name
+  order) and a new `[features]` table with `saml = ["dep:samael", "tokio/rt"]`; betterlite-server adds `saml =
+  ["betterlite-auth/saml"]` to its [features] table next to testing; crates/betterlite gets `[features]` with `saml =
+  ["betterlite-server/saml"]`. No other Cargo.toml and no pyproject.toml names the feature, so `cargo build -p
+  betterlite --features saml` is the only way in, and betterlite-python, betterlite-gateway and betterlite-backend
+  never link it.
+
+
+  The port. Once B1625 has merged, change the trait method to `verify(&self, request: &VerifyRequest<'_>, settings:
+  &MergedSettings, now: i64)`, keep UnavailableSamlVerifier answering Unavailable, make SamlProvider::prepared_settings
+  pub, and make SamlProvider::verify_response take `settings: &MergedSettings` and pass `(self.clock)()`. B1626 then
+  loads the settings with prepared_settings(urls, false) and gets the 501, 502 and 500 answers LiteLLM's
+  _build_auth raises before process_response, then calls verify_response. A test named
+  verify_response_passes_the_settings_and_the_clock proves the verifier gets both. SamlVerificationError::Rejected
+  becomes `Rejected(#[from] ResponseRejection)`, with ResponseRejection defined in this task's module, one variant per
+  python3-saml validation failure below; XML errors keep B1625's IdpMetadataError as their source, and
+  `#[cfg(feature = "saml")] Signature(#[source] samael::crypto::CryptoError)` keeps xmlsec's. Update B1625's
+  RejectingVerifier fake and its two verify_response tests.
+
+
+  Module saml_signature in betterlite-auth (crates/betterlite-auth/src/saml_signature.rs and saml_signature/**). Only
+  one submodule, declared `#[cfg(feature = "saml")] pub mod xmlsec;` in saml_signature.rs, names samael: it holds
+  XmlSignatureVerifier, a unit struct implementing SamlResponseVerifier. Everything else compiles in the default build
+  and is pub, so the gate's clippy lints it and main's scheduled runs test it: ResponseRejection, a typed model of the
+  Response and its Assertion read from B1625's decode_document Element tree (saml_provider::idp_metadata::parse, reuse
+  it, don't copy it), the checks over that model, the signing-certificate list and the projection into B1625's
+  VerifiedResponse and VerifiedAssertion. Tests of that part live in the tests.rs beside each of those modules, on
+  hand-written unsigned XML; tests of XmlSignatureVerifier live in saml_signature/xmlsec/tests.rs on the signed fixtures.
+
+
+  What verify does, in python3-saml's order. (1) decode_document on response_xml, so a DOCTYPE or an entity is refused
+  before libxml2 parses anything, as python3-saml's to_etree forbids DTDs. (2) An EncryptedAssertion or an EncryptedID
+  is refused: LiteLLM configures no SP key, so python3-saml's decryption fails and handle_acs answers 401. (3) Version
+  is "2.0", the Response has an ID, samlp:Status/samlp:StatusCode exists and its Value,
+  when set, is urn:oasis:names:tc:SAML:2.0:status:Success, and the document holds exactly one saml:Assertion. (4) Signature
+  placement as process_signed_elements and validate_signed_elements check it: each ds:Signature's parent is the
+  samlp:Response or the saml:Assertion and has a non-empty ID, no two share an ID, a non-empty first ds:Reference URI is
+  "#" plus that ID and no URI repeats, at most two signatures, and a Response signature sits only at
+  /samlp:Response/ds:Signature and an Assertion one only at /samlp:Response/saml:Assertion/ds:Signature. (5) When
+  settings.strict holds (SAML_STRICT, default true): the Response InResponseTo equals expected_request_id when both
+  are present; exactly one Conditions; Conditions NotBefore later than now + 300 or NotOnOrAfter + 300 at or before now
+  is refused; exactly one AuthnStatement; at least one AttributeStatement; no EncryptedAttribute; a non-empty
+  Destination must start with the receiving URL after both have scheme and host lowercased, Destination="" is
+  refused and a missing one passes; when any Audience is present, sp_entity_id is one of them; the Response Issuer
+  (at most one, empty text ignored) and exactly one Assertion Issuer equal the IdP entity id; a SessionNotOnOrAfter at
+  or before now is refused; at least one SubjectConfirmation whose Method is absent or
+  urn:oasis:names:tc:SAML:2.0:cm:bearer has a SubjectConfirmationData whose InResponseTo, when it and the Response's
+  are both set, matches, whose Recipient, when set, contains the receiving URL, whose NotOnOrAfter, when set, is after now
+  and whose NotBefore, when set, is not after now; want_assertions_signed requires the Assertion signature and want_messages_signed
+  the Response one. The receiving URL is `<scheme>://<host[:port]>/sso/saml/callback` taken from settings.acs_url,
+  as python3-saml's get_self_url_no_query builds it from LiteLLM's http_host and script_name. (6) Whatever strict and
+  the two flags say, at least one of the two signatures must exist. (7) The IdP certificates are
+  settings.idp.x509_cert_multi.signing when it is non-empty, else settings.idp.x509_cert, each stripped of PEM armor
+  and whitespace and base64-decoded; an empty list is refused here. (8) XmlSignatureVerifier passes the bytes and the
+  certificates to `<samael::crypto::Crypto as CryptoProvider>::reduce_xml_to_signed` with
+  ReduceMode::ValidateAndMarkNoAncestors inside tokio::task::spawn_blocking, awaiting the handle in place; it fails
+  unless every signature verifies, and its output holds only verified content. (9) Identity facts come from that
+  output, decoded again: the assertion whose ID matches the original's, its NameID (in strict mode a missing or empty
+  NameID is refused, since LiteLLM sets wantNameId, and an SPNameQualifier must equal sp_entity_id), the NameID Format,
+  SessionIndex, Issuer, Audiences, the first non-empty SubjectConfirmationData InResponseTo, and the attributes by
+  Name with each value trimmed and empty ones dropped; a repeated Attribute Name is refused, since
+  allowRepeatAttributeName defaults to false. not_on_or_after is the NotOnOrAfter of the SubjectConfirmationData that
+  passed step 5, or None outside strict mode, so B1626 falls back to 3600 seconds. The Response's InResponseTo, Issuer
+  and Destination come from the original root, and signed_response says whether a verified signature covers them.
+  Timestamps parse like parse_SAML_to_time: yyyy-mm-ddThh:mm:ss, an optional fraction that is ignored, an optional Z,
+  UTC; anything else is refused. The verifier passes no allowed-algorithm list, as python3-saml's
+  rejectDeprecatedAlgorithm defaults to false and LiteLLM accepts RSA-SHA1.
+
+
+  Known LiteLLM bug to keep: the receiving URL drops any path in PROXY_BASE_URL while the IdP posts to the ACS URL that
+  keeps it, so every strict response fails Destination there; list it under kept_bugs with the _prepare_request_data
+  link.
+
+
+  Fixtures. crates/betterlite-auth/src/saml_signature/fixtures/ holds idp-cert.pem and one XML file per case, made
+  once and never at test time. Make a throwaway key and certificate in $TMPDIR with `openssl req -x509 -newkey
+  rsa:2048 -sha256 -nodes -days 36500 -subj /CN=betterlite-saml-test-idp -keyout "$TMPDIR/saml-idp/key.pem" -out
+  "$TMPDIR/saml-idp/cert.pem"`. Add `signed_element: Literal["assertion", "response", "both"] = "assertion"` to
+  SigningInput in B1631's tools/oracle/fixtures/saml-idp/driver.py: response signs the finished samlp:Response with the
+  same OneLogin_Saml2_Utils.add_sign call, both signs the assertion first and then the response, and mutation unsigned
+  still signs nothing; B1631's Rust side keeps sending the old input. Sign each case with `jq -n ... | uv run --locked
+  --project tools/oracle/litellm python tools/oracle/fixtures/saml-idp/driver.py | base64 -d`, with key_directory
+  $TMPDIR/saml-idp, issuer https://idp.example.test/metadata, subject alice@example.test, attributes {"email":
+  ["alice@example.test"]}, audience https://proxy.example.test/sso/saml/metadata, destination
+  https://proxy.example.test/sso/saml/callback, in_response_to ONELOGIN_request_1, assertion_id _assertion_1,
+  issue_instant and not_before 2026-01-01T00:00:00Z and not_on_or_after 2026-01-01T01:00:00Z. The cases are
+  signed-assertion, signed-response and signed-both (signed_element), unsigned, wrong-key, wrong-audience,
+  wrong-destination and subject-confirmation-only (the driver's mutations), and expired (not_before
+  2000-01-01T00:00:00Z, not_on_or_after 2000-01-01T01:00:00Z). Derive three more from signed-assertion.xml with perl:
+  tampered (the NameID changed to mallory@example.test after signing), wrapped (an unsigned copy of the Assertion with
+  ID _assertion_2 and NameID mallory@example.test inserted before the signed one) and doctype (`<!DOCTYPE
+  samlp:Response [<!ENTITY e "x">]>` after the XML declaration). Copy cert.pem to fixtures/idp-cert.pem and delete the
+  key; regenerating means every file again with a new key. Tests pass now = 1767227400 (2026-01-01T00:30:00Z) except
+  at a boundary.
+
+
+  CI. In .github/workflows/gate-part.yml, "Find the toolchains the task needs" adds `if grep -q -F -- '--features
+  saml' "$file"; then echo "saml=true" >> "$GITHUB_OUTPUT"; fi`, and a new step after it, "Install the SAML signature
+  libraries", runs `apt-get install --yes --no-install-recommends libclang-dev libxml2-dev libxmlsec1-dev libssl-dev
+  pkg-config` if `steps.toolchains.outputs.saml == 'true' || matrix.part == 'saml'`, with a one-line comment that
+  samael's build script runs bindgen and xmlsec1-config. The part case in "Run the gate's checks" gets a `saml)` branch
+  that exports the rustc-turns.sh RUSTC_WRAPPER like the tests parts, runs `cargo clippy --locked --all-targets -p
+  betterlite-auth -p betterlite-server --features betterlite-server/saml -- -D warnings || exit 1` and then `exec
+  cargo nextest run --locked --no-tests=fail -p betterlite-auth --features saml -E 'test(/^saml_signature::/)'`. In
+  .github/workflows/gate.yml the find step appends "saml" to the parts when all_tests is set, after the cache line,
+  so the 01:17 UTC run and every run that tests everything build the feature, while pull requests, the queue and
+  pushes build it only for a task that names it.
+
+
+  deny.toml. The two bans become `{ crate = "openssl", use-instead = "rustls", wrappers = ["samael"] }` and `{ crate =
+  "openssl-sys", use-instead = "rustls", wrappers = ["openssl", "samael"] }`, and skip gets "itertools@0.13.0",
+  "openssl-probe@0.1.6", "prettyplease@0.2.37" and "shlex@1.3.0" under a one-line comment: bindgen 0.72 pulls the
+  first, third and fourth and samael openssl-probe 0.1, beside the locked itertools 0.14 and 0.15, openssl-probe 0.2.2,
+  prettyplease 0.3.0 and shlex 2.0.1. With samael added on 11-28 those six were cargo deny's only errors, and Max
+  approved them; licenses, advisories and sources pass. samael 0.0.22 dates from 2026-07-07.
+
+
+  The task has no mutants check: the mutants parts build default features, where the xmlsec module is not compiled,
+  so its mutants could only be missed. Size: the call covers about 580 python3-saml code lines (is_valid 208, the
+  getters 146, the signed-element rules 102, the rest under 35 each), about 450 of them live under LiteLLM's settings;
+  estimate 520 Rust lines for the model, rules and facts, 60 for the xmlsec module, 70 for the port and its error, 40
+  for CI, deny and manifests and 15 for the driver, near 700 counted lines.
+scope:
+  paths:
+    - deny.toml
+    - .github/workflows/gate.yml
+    - .github/workflows/gate-part.yml
+    - crates/betterlite-auth/src/saml_signature.rs
+    - crates/betterlite-auth/src/saml_signature/**
+    - crates/betterlite-auth/src/saml_provider/verify.rs
+    - crates/betterlite-auth/src/saml_provider/provider.rs
+    - crates/betterlite-auth/src/saml_provider/tests.rs
+    - crates/betterlite-auth/src/saml_provider/tests/**
+    - tools/oracle/fixtures/saml-idp/driver.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L308-L329
+    why: handle_acs, the call site; process_response with the browser cookie as request_id, then get_errors and is_authenticated.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L184-L222
+    why: The strict, wantAssertionsSigned, wantMessagesSigned and wantNameId settings and the http_host and script_name the receiving URL comes from.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/auth.py#L97-L142
+    why: process_response and store_valid_response, the facts read after validation.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/response.py#L24-L326
+    why: Response construction (DTD refusal, encrypted assertions) and is_valid, every check and its order.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/response.py#L328-L617
+    why: Status, Conditions and AuthnStatement counts, audiences, issuers, NameID, session and attribute reads.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/response.py#L619-L793
+    why: One assertion, the signed-element rules and the 300 s timestamp drift.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/utils.py#L306-L327
+    why: get_self_url_no_query, the receiving URL for Destination and Recipient.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/utils.py#L398-L428
+    why: parse_SAML_to_time and now() in whole UTC seconds.
+  - url: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/settings.py#L286-L333
+    why: Security defaults LiteLLM leaves alone, wantAttributeStatement and allowRepeatAttributeName among them.
+  - url: https://docs.rs/samael/0.0.22/samael/crypto/trait.CryptoProvider.html
+    why: reduce_xml_to_signed and ReduceMode, the only samael call.
+dod:
+  - text: >-
+      A response is accepted only when every Response or Assertion signature verifies against the IdP signing
+      certificates in the merged settings; unsigned, wrong-key, tampered, wrapped and DOCTYPE responses, encrypted
+      assertions and a setup with no IdP certificate are refused whatever SAML_STRICT and the two want flags say.
+    proof: [saml-signature-verifier]
+  - text: >-
+      With SAML_STRICT on, a response passes python3-saml 1.16.0's is_valid checks with their literals, including the
+      300 s drift on Conditions only, the required AttributeStatement, Destination and Recipient against the receiving
+      URL, audience, issuers, SessionNotOnOrAfter, the bearer SubjectConfirmation and both want flags; SAML_STRICT=false
+      skips exactly that block.
+    proof: [saml-signature-rules, saml-signature-verifier]
+  - text: >-
+      VerifiedResponse carries only signed identity facts, and a repeated attribute Name, a missing or empty NameID in
+      strict mode and an SPNameQualifier other than the SP entity id are refused.
+    proof: [saml-signature-rules, saml-signature-verifier]
+  - text: The port takes the merged settings and the provider clock, prepared_settings is public, and B1625's provider and entrypoint tests pass on it.
+    proof: [saml-port-tests]
+  - text: >-
+      samael comes in only through betterlite-auth's non-default saml feature, forwarded by betterlite-server and
+      betterlite; no workspace member's default graph and no feature of the wheel reaches it, and cargo deny passes
+      with the approved wrappers and skips.
+    proof: [saml-feature-wiring, saml-deny-wrappers, deny]
+  - text: The saml feature passes clippy with -D warnings over every target of betterlite-auth.
+    proof: [saml-feature-clippy]
+  - text: >-
+      CI installs libclang-dev, libxml2-dev, libxmlsec1-dev, libssl-dev and pkg-config only in the task part of a task
+      whose file names --features saml and in the saml part, and every run that tests everything starts that part.
+    proof: [saml-ci-wiring]
+  - text: B1631's signer signs the Assertion, the Response or both and still passes its ruff and basedpyright checks.
+    proof: [saml-fixture-driver]
+checks:
+  optional: []
+  commands:
+    - id: saml-signature-rules
+      why: The response rules are missing or don't build without the saml feature.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^saml_signature::/)'
+    - id: saml-signature-verifier
+      why: The samael verifier is missing or accepts a response python3-saml refuses.
+      run: cargo nextest run --locked -p betterlite-auth --features saml --no-tests=fail -E 'test(/^saml_signature::xmlsec::/)'
+    - id: saml-feature-clippy
+      why: Code behind the saml feature fails clippy; the gate's default build never compiles it.
+      run: cargo clippy --locked --all-targets -p betterlite-auth --features saml -- -D warnings
+    - id: saml-port-tests
+      why: The port doesn't pass settings and time, or B1625's tests break on the new port.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^saml_provider::.*verify_response_passes_the_settings_and_the_clock$/)' && cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/^saml_provider::/) | test(/^saml_entrypoints::/)'
+    - id: saml-feature-wiring
+      why: The feature isn't forwarded, or samael reaches a default build or the wheel.
+      run: |-
+        set -e
+        cargo tree --locked -p betterlite-server --features saml -e normal -i samael | grep -q -x 'samael v0.0.22'
+        cargo tree --locked -p betterlite --features saml -e normal -i samael | grep -q -x 'samael v0.0.22'
+        if cargo tree --locked --workspace -i samael > /dev/null 2>&1; then echo "a workspace member turns samael on by default"; exit 1; fi
+        if cargo tree --locked -p betterlite-python --all-features -i samael > /dev/null 2>&1; then echo "a betterlite-python feature reaches samael"; exit 1; fi
+    - id: saml-deny-wrappers
+      why: deny.toml lacks the openssl wrappers Max approved for samael.
+      run: |-
+        set -e
+        grep -q -F '{ crate = "openssl", use-instead = "rustls", wrappers = ["samael"] }' deny.toml
+        grep -q -F '{ crate = "openssl-sys", use-instead = "rustls", wrappers = ["openssl", "samael"] }' deny.toml
+    - id: saml-ci-wiring
+      why: CI never installs the native libraries for the feature or never builds it after merge.
+      run: |-
+        set -e
+        grep -q -F 'echo "saml=true"' .github/workflows/gate-part.yml
+        grep -q -F 'libclang-dev libxml2-dev libxmlsec1-dev libssl-dev pkg-config' .github/workflows/gate-part.yml
+        grep -q -E '^ +saml\)$' .github/workflows/gate-part.yml
+        grep -q -F '["saml"]' .github/workflows/gate.yml
+    - id: saml-fixture-driver
+      why: The oracle signer can't sign the Response, or its Python fails the folder's checks.
+      run: |-
+        set -e
+        grep -q -E '^    signed_element: ' tools/oracle/fixtures/saml-idp/driver.py
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/fixtures/saml-idp
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/saml-idp/pyrightconfig.json
+oracle_cases: []
+deviations:
+  - what: >-
+      A strict response is not validated against python3-saml's saml-schema-protocol-2.0.xsd; the typed model, the
+      one-assertion rule and the signature placement rules refuse malformed documents instead, so a response that
+      breaks only the schema can pass where LiteLLM answers 401.
+    why: The XSD bundle and a schema validator are outside python3-saml's call path this task ports, and every rule an attacker needs to break is checked directly.
+    link: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/response.py#L101-L107
+  - what: An AttributeValue that holds a saml:NameID child contributes the NameID text, where python3-saml adds a dict that LiteLLM's attribute mapping then fails on.
+    why: VerifiedAttribute carries strings, and the dict form gives a LiteLLM user nothing but a 401.
+    link: https://github.com/SAML-Toolkits/python3-saml/blob/v1.16.0/src/onelogin/saml2/response.py#L604-L612
+out_of_scope:
+  - B1626 owns the ACS form, browser binding, the replay guard, identity mapping and the SAML callback HTTP cases; it calls prepared_settings and verify_response.
+  - Picking XmlSignatureVerifier under cfg(feature = "saml") where the server builds SamlProvider belongs to that construction site (B063, then B1626).
+  - Decrypting assertions, SP keys and SAML logout; LiteLLM configures none of them.
+  - Release builds with the feature; nothing in packaging/ or python-wheels.yml turns it on.
+pitfalls:
+  - Element and decode_document are pub(crate), so a pub function taking &Element trips private_interfaces and a pub(crate) one only xmlsec calls trips dead_code in the default build; pub functions take bytes, &MergedSettings or this task's own model types, and the Element walk stays private behind a pub parse.
+  - samael's ServiceProvider::parse_xml_response skips signature verification when it has no IdP signing certificate and adds a 90 s IssueInstant cap python3-saml lacks, so call reduce_xml_to_signed directly and refuse an empty certificate list first.
+  - The response's own ds:KeyInfo X509Certificate is attacker input; only settings.idp certificates verify.
+  - ALLOWED_CLOCK_DRIFT 300 applies to Conditions NotBefore and NotOnOrAfter only; SubjectConfirmationData times compare with now exactly.
+  - wantAttributeStatement defaults to True in python3-saml and LiteLLM never sets it, so a strict response without saml:AttributeStatement is refused.
+  - Recipient passes when it contains the receiving URL as a substring, while Destination must start with it.
+  - SAML_STRICT=false skips want_assertions_signed, so a Response-only signature is accepted there but refused in strict mode under the default SAML_WANT_ASSERTIONS_SIGNED=true.
+  - An unsigned Response wrapper can carry its own Subject next to the signed Assertion, so no identity fact may come from the original document.
+  - xmlsec's canonicalization and RSA over a body up to B1626's 5 MiB cap block the thread, so they run in spawn_blocking and nowhere else.
+  - IdpMetadataError has no PartialEq, so SamlVerificationError loses its derive and B1625's two verify_response tests switch to matches!; saml_provider/tests.rs is near its 1000-line cap.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security
