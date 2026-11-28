@@ -231,6 +231,11 @@ async fn index_hint_needs_a_real_index() {
         hint_message("roles.x").await,
         "Authentication Error, No team found in token. Checked team_id field 'roles.x' and team_alias field 'None'."
     );
+    // an empty dot suffix indexes nothing, so it stays plain like a non-numeric one
+    assert_eq!(
+        hint_message("roles.").await,
+        "Authentication Error, No team found in token. Checked team_id field 'roles.' and team_alias field 'None'."
+    );
     assert_eq!(
         hint_message("[0]").await,
         "Authentication Error, No team found in token. Checked team_id field '[0]' and team_alias field 'None'."
