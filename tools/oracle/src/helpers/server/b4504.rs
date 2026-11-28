@@ -113,14 +113,14 @@ impl CostCalculator for CustomCosts {
         response: &ChatResponse,
         custom: Option<&CustomRates<'_>>,
     ) -> Result<Decimal, CostError> {
-        let Some(custom) = custom else {
+        let Some(rates) = custom else {
             return Err(CostError::Unavailable);
         };
         let prompt = Decimal::from(response.usage.prompt_tokens)
-            .checked_mul(custom.input_cost_per_token)
+            .checked_mul(rates.input_cost_per_token)
             .ok_or(CostError::Unavailable)?;
         let completion = Decimal::from(response.usage.completion_tokens)
-            .checked_mul(custom.output_cost_per_token)
+            .checked_mul(rates.output_cost_per_token)
             .ok_or(CostError::Unavailable)?;
         prompt.checked_add(completion).ok_or(CostError::Unavailable)
     }
@@ -236,15 +236,12 @@ fn update_value(call: &AnalyzeInput, update: Update) -> HelperResult {
     updated_state(&prepared)
 }
 
-fn job_of(call: &AnalyzeInput) -> Option<&Job> {
-    match &call.job {
-        Some(job) => Some(job),
-        None => call.lens.jobs.iter().find(|job| job.id == call.job_id),
-    }
-}
-
 fn body_value(call: &AnalyzeInput) -> HelperResult {
-    let Some(job) = job_of(call) else {
+    let Some(job) = call
+        .job
+        .as_ref()
+        .or_else(|| call.lens.jobs.iter().find(|job| job.id == call.job_id))
+    else {
         return Err(invalid("the lens has no such job"));
     };
     let body = AnalysisBody::new(

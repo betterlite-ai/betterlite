@@ -65,10 +65,7 @@ fn rows(store: &Store, query: &str, args: &[SqlBind]) -> Vec<Row> {
     }
     match guard.as_ref() {
         Some(lens) if Some(lens.id.as_str()) == text_argument(args, 0) => {
-            match serde_json::to_string(lens) {
-                Ok(data) => vec![Row { data }],
-                Err(_) => Vec::new(),
-            }
+            serde_json::to_string(lens).map_or_else(|_| Vec::new(), |data| vec![Row { data }])
         }
         _ => Vec::new(),
     }
