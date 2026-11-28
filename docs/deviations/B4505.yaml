@@ -3,4 +3,13 @@ deviations:
   - what: The sample route computes its window start and end as whole milliseconds from the job's integer microsecond timestamps, not from a float seconds value multiplied by 1000.
     why: LiteLLM's int(timestamp() * 1000) can land one millisecond low when the float sits just under a whole millisecond. Integer arithmetic is exact, and the same choice is made for the preview window in B4503.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L400-L405
+  - what: >-
+      A schedule whose start or lease instant falls outside the calendar is dropped, and the claim route answers
+      null where LiteLLM lets the datetime overflow raise and answers 500. When the lease instant is the one that
+      overflows, betterlite keeps the job it queued before the lease step.
+    why: >-
+      The schedule runs inside the repository's update, which cannot fail through this route. The input needs a
+      clock within minutes of the smallest or largest representable date, so no deployed proxy reaches it, and an
+      empty claim is a cleaner answer than an unhandled 500. Two claim tests pin both edges.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L533-L535
 kept_bugs: []
