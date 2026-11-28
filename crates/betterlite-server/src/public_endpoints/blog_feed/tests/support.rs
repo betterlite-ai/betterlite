@@ -79,6 +79,7 @@ where
 {
     let warnings = Arc::new(RecordingWarnings::default());
     let settings = settings(url, local_only);
-    let feed = BlogFeed::new(client, &settings, clock, source, Arc::clone(&warnings));
+    let sink = Arc::clone(&warnings);
+    let feed = BlogFeed::new(client, &settings, clock, source, sink);
     (feed, warnings)
 }

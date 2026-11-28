@@ -186,7 +186,7 @@ fn sequence_answer(calls: &[GetBlogPostsCall]) -> HelperResult {
             call.now,
             &warnings,
         );
-        feed.seed_cache(cached.clone(), last_fetch_time);
+        feed.seed_cache(cached.take(), last_fetch_time);
         let posts = runtime.block_on(feed.get_blog_posts()).or_value_error()?;
         for seen in script.seen() {
             requests.push(json!({ "url": seen.url, "timeout": seen.timeout_seconds }));

@@ -22,12 +22,13 @@ pub(super) fn feed_for(
     warnings: &Arc<RecordingWarnings>,
 ) -> BlogFeed<Script> {
     let settings = settings_for(url, local_only);
+    let sink = Arc::clone(warnings);
     BlogFeed::new(
         script,
         &settings,
         Arc::new(FixedClock { now }),
         Arc::new(BundledBlogPosts),
-        Arc::clone(warnings),
+        sink,
     )
 }
 

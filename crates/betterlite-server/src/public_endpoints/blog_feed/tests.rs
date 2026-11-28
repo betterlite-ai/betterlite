@@ -103,11 +103,12 @@ async fn success_is_cached() {
 async fn expires_at_one_hour() {
     let clock = Arc::new(StepClock::new([3699.0, 3700.0]));
     let script = Script::new(vec![reply(200, OTHER)]);
+    let stepped = Arc::clone(&clock);
     let (feed, _) = feed(
         script.clone(),
         FEED_URL,
         false,
-        Arc::clone(&clock),
+        stepped,
         Arc::new(backup_posts()),
     );
     feed.seed_cache(Some(vec![post("Old", "https://old")]), 100.0);
@@ -128,13 +129,8 @@ async fn expires_at_one_hour() {
 async fn timestamp_precedes_fetch() {
     let clock = Arc::new(StepClock::new([100.0, 500.0]));
     let script = Script::new(vec![reply(200, FRESH)]);
-    let (feed, _) = feed(
-        script,
-        FEED_URL,
-        false,
-        Arc::clone(&clock),
-        Arc::new(backup_posts()),
-    );
+    let stepped = Arc::clone(&clock);
+    let (feed, _) = feed(script, FEED_URL, false, stepped, Arc::new(backup_posts()));
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![post("Fresh", "https://fresh")]);
     assert_eq!(clock.reads.load(Ordering::SeqCst), 1);

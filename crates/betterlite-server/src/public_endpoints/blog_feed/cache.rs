@@ -9,6 +9,7 @@ pub struct Cache {
 }
 
 impl Cache {
+    #[must_use]
     pub fn fresh(&self, now: f64) -> Option<Vec<BlogPost>> {
         // mul_add keeps the TTL comparison off clippy's float-arithmetic restriction
         let expires_at = self.last_fetch_time.mul_add(1.0_f64, TTL_SECONDS);

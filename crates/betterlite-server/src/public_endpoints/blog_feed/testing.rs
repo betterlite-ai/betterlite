@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -56,7 +57,10 @@ impl Script {
 }
 
 impl Transport for Script {
-    async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         let seen = Seen {
             url: request.url.to_string(),
             timeout_seconds: request.deadline.as_secs(),
@@ -70,14 +74,14 @@ impl Transport for Script {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        match answer {
+        ready(match answer {
             Some(Answer::Reply { status, body }) => Ok(UpstreamResponse {
                 status,
                 headers: HeaderMap::new(),
                 body,
             }),
             Some(Answer::Closed) | None => Err(TransportError::Closed),
-        }
+        })
     }
 }
 
@@ -93,8 +97,8 @@ impl Clock for FixedClock {
 }
 
 pub struct StepClock {
-    values: Mutex<VecDeque<f64>>,
-    last: f64,
+    pub values: Mutex<VecDeque<f64>>,
+    pub last: f64,
     pub reads: AtomicUsize,
 }
 
@@ -104,8 +108,8 @@ impl StepClock {
     where
         Values: IntoIterator<Item = f64>,
     {
-        let mut queue: VecDeque<f64> = values.into_iter().collect();
-        let last = queue.back().copied().unwrap_or(0.0);
+        let queue: VecDeque<f64> = values.into_iter().collect();
+        let last = queue.back().copied().unwrap_or(0.0_f64);
         Self {
             values: Mutex::new(queue),
             last,
