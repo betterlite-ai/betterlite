@@ -27,7 +27,7 @@ description: >-
   `shared.proxy_config` (B8380's ProxyConfigState, the config read, save and the config-owned key checks),
   `shared.plugins` (B8230's PluginRegistry; the same Arc that B8595's field update re-registers and that
   plugin_routes reads, so an update shows on the next /api/plugins call), `shared.general_settings`,
-  `shared.proxy_logging` (B8389's span close and denial log), `shared.secrets` where B8596's alert resolution takes
+  `shared.proxy_logging` (B8389's denial log), `shared.secrets` where B8596's alert resolution takes
   it, and `shared.router_views.current()` per request wherever a module reads router settings. B8594 and B8596 end
   with B8381's add_deployment, and B8381's DeploymentSync lives in crates/betterlite, so pass the handle B8613 hands
   over as `shared.deployment_sync` (B10136's DeploymentSyncPort) to the routes functions that take it. The audit sink B10137's config_audit_log writes through is B2330's, over

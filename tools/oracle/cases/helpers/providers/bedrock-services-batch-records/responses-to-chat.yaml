@@ -1,0 +1,39 @@
+kind: helper
+name: bedrock-services-batch-records-responses
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost: {}
+    records:
+      - custom_id: responses-projection
+        url: /v1/responses
+        body:
+          model: custom-model-v1
+          input: hello
+          instructions: system
+          max_output_tokens: 7
+          temperature: 0.2
+          metadata: {tag: a}
+          stream: true
+          unknown: drop
+      - custom_id: responses-tools
+        url: /v1/responses
+        body:
+          model: custom-model-v1
+          input: hello
+          max_output_tokens: 5
+          tools:
+            - type: function
+              name: lookup
+              parameters: {type: object}
+      - custom_id: chat-unchanged
+        url: /v1/chat/completions
+        body:
+          model: custom-model-v1
+          messages:
+            - {role: user, content: hi}
+          max_tokens: 4
+env: {}
+compare: {ignore: []}

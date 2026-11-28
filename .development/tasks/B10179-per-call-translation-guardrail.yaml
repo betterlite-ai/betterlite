@@ -1,0 +1,156 @@
+id: B10179
+title: BaseTranslation takes the guardrail per call
+description: >-
+  LiteLLM's BaseTranslation (litellm/llms/base_llm/guardrail_translation/base_translation.py L58-L265) is ported twice. B3661's BaseTranslation (crates/betterlite-guardrails/src/guardrail_translation.rs L55-L129) is the full port, with 16 production implementers in betterlite-server, LlmPassthroughRouteHandler in betterlite-guardrails and the b3679 oracle fake. B3246's StreamTranslation (crates/betterlite-core/src/guardrails/streaming_rewrite/traits.rs L99-L126, commented "LiteLLM's BaseTranslation") is a second port of the stream half, and only two fakes implement it: core's streaming_rewrite/tests.rs L206 and tools/oracle/src/helpers/core_ops/b3246/fakes.rs L144. The second port exists because B3661 fixed the guardrail type per translation (`type Guardrail`, L56), while LiteLLM passes guardrail_to_apply on every call (base_translation.py L148-L201). The pipeline step needs that: in one call it hands the same translation an observer wrapping the guardrail, or an observer wrapping the legacy hook adapter, and the adapter calls the translation again from inside its apply_guardrail with a scanned-text recorder (pipeline_executor.py L222-L265 and L450-L472). Every production translation is built for one guardrail type, GuardrailToApply<G> (crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs L36-L55), so no real translation can be handed to B3246's step and B3247 cannot call it. This task gives BaseTranslation the per-call guardrail. B10182 then moves the step onto it and deletes StreamTranslation, so the class is ported once. Line numbers here are main at 1b9a032aedd; B10169 lands first and shifts some of them.
+
+
+  The trait stays in betterlite-guardrails. Its signature is made of guardrails types (GuardrailContract, GuardrailApiInputs, GuardrailFailure, GuardrailLogTarget, GuardrailMessage), every implementer imports it from there, and betterlite-core has no translation, so moving it into core would drag those types down and still leave the guardrail type fixed.
+
+
+  Shape. `GuardrailToApply<G>`, its five fields and its GuardrailContract impl (crates/betterlite-server/src/guardrails/unified_chat.rs L30-L66) move unchanged into guardrail_translation.rs, and unified_chat.rs keeps `pub use betterlite_guardrails::guardrail_translation::GuardrailToApply;` so its importers keep their path. It holds betterlite-auth's Principal, so betterlite-guardrails gains `betterlite-auth = { path = "../betterlite-auth" }`; betterlite-auth depends on neither betterlite-core nor betterlite-guardrails, so the edge adds no cycle. `type Guardrail` goes from BaseTranslation, and its three guardrail methods take the guardrail per call: `process_input_messages<G>(&self, data, guardrail: &GuardrailToApply<G>, logging_obj)`, `process_output_response<G>(&self, response, guardrail: &GuardrailToApply<G>, call)` and `process_streaming_response<G>(&self, responses_so_far, guardrail: &GuardrailToApply<G>, call)`, each with `where G: GuardrailContract + Send + Sync` and the same return types as today. Nothing else in the trait changes.
+
+
+  Implementers. Each of these takes the new signatures, and the guardrail type parameter each one carries goes with its PhantomData, since nothing reads it once the guardrail comes per call (unified_simple/completion.rs L12 says it exists only for the fixed type): the six unified_simple adapters (completion, embeddings, image, speech, transcription, video) become unit structs that derive Default; RerankTranslation, GoogleGenAiTranslation and McpTranslation in unified_guardrail/other_adapters become unit structs; A2ATranslation (a2a_translation/adapter.rs), PassthroughEndpointTranslation and BedrockPassthroughTranslation<H> (unified_passthrough) drop G; ChatTranslation<S, A>, ResponsesTranslation<S> and AnthropicTranslation<S> (unified_chat) drop G and keep reading guardrail.guardrail, guardrail_name, principal, skip_flags and global_flags. An adapter that passed its guardrail to a helper generic over GuardrailContract keeps passing it, since GuardrailToApply<G> is a GuardrailContract. LlmPassthroughRouteHandler<H> (crates/betterlite-guardrails/src/llm_passthrough_dispatch.rs L25-L31) forwards the generic methods to H. B3680's `UnifiedTranslation<G, S, A, H>` becomes `UnifiedTranslation<S, A, H>`, and forward_fallible! (translation.rs L82-L88) forwards the generic methods with their where clause. entries.rs's `Entries` and `build_registry` drop G, and hooks.rs's `Translation<G, S, A, H>` alias (L88) becomes the plain `UnifiedTranslation<S, A, H>`. UnifiedGuardrailHooks keeps its G for GuardrailToRun<G> and goes on passing GuardrailToApply<RecordedGuardrail<G>> to the translation as `admitted` builds it today. StreamEndCheck's impl (unified_stream_hook/stream_end.rs L18) drops G. The b3679 oracle fake ScriptedTranslation (tools/oracle/src/helpers/guardrails/b3679/emit.rs L59-L60, `type Guardrail = ()`) takes the generic methods and ignores the guardrail as it does now.
+
+
+  Generic callers. Every function bounded on `T: BaseTranslation<Guardrail = G, ..>` drops that binding and takes `&GuardrailToApply<G>`: B6260's unified_stream_hook end_scan.rs (L17), run.rs (L69, L171) and block_only.rs (L54, L105, L149), B6164's unified_stream inspect.rs (L21), run.rs (L49, L95), tail.rs (L20) and round.rs (L53, L89, L115), and B3666's LoggingHook::logging_hook and LoggedScan (crates/betterlite-guardrails/src/guardrail_deployment/logging_hook.rs L57-L62 and L218-L240). Those two take a G type parameter beside T.
+
+
+  Undeliverable failures keep their type. B10182's step runs on UnifiedTranslation, whose Failure is GuardrailFailure, and must tell an undeliverable rewrite from every other failure, as LiteLLM's step catches UndeliverableStreamRewrite by class (pipeline_executor.py L476-L478). Today B3680's AdapterFailure (unified_guardrail/failures.rs L99-L124) turns the three adapter variants that carry one, EndedStreamError::Undeliverable inside ChatTranslationError::Stream (chat_guardrail_translation/rewrites/error.rs L67), ResponsesTranslationError::Undeliverable (unified_chat/responses.rs L44) and ProcessStreamError::Undeliverable inside AnthropicTranslationError::Stream (anthropic_translation/process_stream/error.rs L25), into GuardrailFailure::Other with their text. B5471's GuardrailFailure (crates/betterlite-guardrails/src/guardrail_base/failure.rs L32-L63) gains `#[error(transparent)] Undeliverable(UndeliverableStreamRewrite)`, with B3246's betterlite_core::guardrails::streaming_rewrite::failure::UndeliverableStreamRewrite, so the text it prints is the text the Other carried. is_intervention gives false for it, as it did for Other, and the three AdapterFailure arms give it back typed. A guardrail that fails with it reaches the caller unchanged through the existing Guardrail arms. Every exhaustive match on GuardrailFailure names the new variant in the arm that holds Other, so code that got it as Other behaves the same: unified_chat.rs failure_parts and modify_response (L90, L112), unified_guardrail/hooks.rs L293, catalog_apply/error.rs L140 and L174, unified_stream_hook/block_only.rs L212, anthropic_translation/process_stream/error.rs L57, unified_stream/round.rs L234 and inspect.rs L47, grayswan/grayswan_monitoring/helpers.rs L55, and the oracle helpers b3699/projection.rs L81, b3722.rs L108, b3724.rs L224, b3725.rs L218, b3794.rs L233, b8212.rs L181, b8214.rs L206, b8773/projection.rs L117 and bedrock/b3726/values.rs L53. The one exception is wrap_unexpected in bedrock_incremental_guardrail/batch.rs (L146-L160), whose Other arm binds its text: the variant joins the arm that passes typed failures through, since a Bedrock call never raises it.
+
+
+  Tests. In crates/betterlite-guardrails/src/guardrail_translation/tests.rs, tests named per_call_guardrail_*: one translation value is called with a GuardrailToApply over one fake guardrail type and then over a second, different fake type, for process_input_messages, process_output_response and process_streaming_response, and each call reaches the guardrail it was given. In crates/betterlite-server/src/guardrails/unified_guardrail/tests.rs, tests named undeliverable_*: UnifiedTranslation::Chat's process_streaming_response with deliver_ended_stream_rewrites true over a two-choice chat stream whose guardrail changes a tool call's arguments fails with GuardrailFailure::Undeliverable carrying that guardrail's name and the reason "the stream carries 2 choices and tool-call rewrites are only written back on single-choice streams"; into_failure on the Responses and Anthropic undeliverable variants gives GuardrailFailure::Undeliverable with the same value and the same to_string; and a guardrail whose apply_guardrail fails with GuardrailFailure::Undeliverable gets it back unchanged from UnifiedTranslation::Chat. In crates/betterlite-guardrails/src/guardrail_base/tests.rs: undeliverable_is_not_an_intervention. Existing tests and test fakes that implement BaseTranslation or call a translation switch to the new signatures, wrap their fake guardrail in a GuardrailToApply, and keep their assertions. The exhaustive GuardrailFailure matches in the xecguard_runtime, azure_prompt_shield, azure_text_moderation and alice tests and in the unified_stream, unified_stream_hook and unified_dispatch test support name the new variant the same way.
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/guardrail_translation.rs
+    - crates/betterlite-guardrails/src/guardrail_translation/tests.rs
+    - crates/betterlite-guardrails/src/llm_passthrough_dispatch.rs
+    - crates/betterlite-guardrails/src/llm_passthrough_dispatch/tests.rs
+    - crates/betterlite-guardrails/src/guardrail_deployment/logging_hook.rs
+    - crates/betterlite-guardrails/src/guardrail_deployment/tests.rs
+    - crates/betterlite-guardrails/src/guardrail_deployment/tests/**
+    - crates/betterlite-guardrails/src/guardrail_base/failure.rs
+    - crates/betterlite-guardrails/src/guardrail_base/tests.rs
+    - crates/betterlite-guardrails/src/grayswan/grayswan_monitoring/helpers.rs
+    - crates/betterlite-guardrails/src/grayswan/grayswan_monitoring/tests.rs
+    - crates/betterlite-guardrails/src/grayswan/grayswan_monitoring/tests/**
+    - crates/betterlite-guardrails/src/bedrock_incremental_guardrail/batch.rs
+    - crates/betterlite-guardrails/src/bedrock_incremental_guardrail/tests/exception_handling.rs
+    - crates/betterlite-guardrails/src/xecguard_runtime/tests/scans.rs
+    - crates/betterlite-guardrails/src/azure_prompt_shield/tests/prompt_shield_event_hooks.rs
+    - crates/betterlite-guardrails/src/azure_text_moderation/tests/text_moderation_submission.rs
+    - crates/betterlite-guardrails/src/alice/tests.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/tests.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/tests/**
+    - crates/betterlite-server/src/guardrails/unified_chat.rs
+    - crates/betterlite-server/src/guardrails/unified_chat/**
+    - crates/betterlite-server/src/guardrails/unified_simple/**
+    - crates/betterlite-server/src/guardrails/unified_guardrail/**
+    - crates/betterlite-server/src/guardrails/unified_passthrough/**
+    - crates/betterlite-server/src/guardrails/a2a_translation/adapter.rs
+    - crates/betterlite-server/src/guardrails/a2a_translation/adapter/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_stream/**
+    - crates/betterlite-server/src/guardrails/unified_stream_hook/**
+    - crates/betterlite-server/src/guardrails/pipeline_slots/tests/streaming.rs
+    - crates/betterlite-server/src/guardrails/catalog_apply/error.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_stream/error.rs
+    - tools/oracle/src/helpers/guardrails/b3679/**
+    - tools/oracle/src/helpers/guardrails/b3699/**
+    - tools/oracle/src/helpers/guardrails/b3722.rs
+    - tools/oracle/src/helpers/guardrails/b3724.rs
+    - tools/oracle/src/helpers/guardrails/b3725.rs
+    - tools/oracle/src/helpers/guardrails/b3794.rs
+    - tools/oracle/src/helpers/guardrails/b8212.rs
+    - tools/oracle/src/helpers/guardrails/b8214.rs
+    - tools/oracle/src/helpers/guardrails/b8773/**
+    - tools/oracle/src/helpers/bedrock/b3726/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L58-L201
+    why: The class flags and the three methods that take guardrail_to_apply as a call argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L186-L265
+    why: The legacy hook adapter calls the same translation again from inside apply_guardrail, with a recorder as the guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L429-L484
+    why: The streaming step hands the translation an observer per call and catches UndeliverableStreamRewrite by class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L52-L62
+    why: UndeliverableStreamRewrite, the exception the new GuardrailFailure variant carries.
+dod:
+  - text: BaseTranslation has no guardrail type; one translation value takes a GuardrailToApply over any guardrail type on each call.
+    proof: [per-call-tests, one-guardrail-shape]
+  - text: GuardrailToApply is defined once, in betterlite-guardrails, and no translation, registry or loop carries a guardrail type parameter or a PhantomData for it.
+    proof: [one-guardrail-shape]
+  - text: An undeliverable rewrite comes out of UnifiedTranslation as GuardrailFailure::Undeliverable with its text unchanged and is not an intervention, and every match that took it as Other keeps doing what it did.
+    proof: [undeliverable-tests, one-guardrail-shape, guardrails-tests, server-tests]
+  - text: The owners' tests and the b3679 helper cases still pass, and the oracle helper groups whose matches changed still build.
+    proof: [guardrails-tests, server-tests, dispatch-oracle, oracle-groups-build]
+checks:
+  optional: [mutants]
+  commands:
+    - id: per-call-tests
+      why: a translation still fixes its guardrail type, or a call does not reach the guardrail it was given
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_translation::tests::per_call_guardrail_/)'
+    - id: undeliverable-tests
+      why: an undeliverable rewrite still comes out of UnifiedTranslation as Other, changes its text, or counts as an intervention
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::tests::undeliverable_/)' && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::undeliverable_/)'
+    - id: one-guardrail-shape
+      why: GuardrailToApply is still defined in the server, a fixed guardrail type or its PhantomData is left, or GuardrailFailure has no Undeliverable variant
+      run: >-
+        grep -q 'pub struct GuardrailToApply' crates/betterlite-guardrails/src/guardrail_translation.rs &&
+        grep -q 'pub use betterlite_guardrails::guardrail_translation::GuardrailToApply' crates/betterlite-server/src/guardrails/unified_chat.rs &&
+        test -z "$(grep -n 'struct GuardrailToApply' crates/betterlite-server/src/guardrails/unified_chat.rs)" &&
+        grep -qE 'Undeliverable[(](#\[from\] )?UndeliverableStreamRewrite[)]' crates/betterlite-guardrails/src/guardrail_base/failure.rs &&
+        test -z "$(grep -rnE 'type Guardrail\b|&Self::Guardrail\b|T::Guardrail\b|H::Guardrail\b|Guardrail = G\b|UnifiedTranslation<G\b|PhantomData'
+        crates/betterlite-guardrails/src/guardrail_translation.rs
+        crates/betterlite-guardrails/src/llm_passthrough_dispatch.rs
+        crates/betterlite-guardrails/src/guardrail_deployment/logging_hook.rs
+        crates/betterlite-server/src/guardrails/unified_simple
+        crates/betterlite-server/src/guardrails/unified_chat/chat.rs
+        crates/betterlite-server/src/guardrails/unified_chat/responses.rs
+        crates/betterlite-server/src/guardrails/unified_chat/anthropic.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/entries.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/hooks.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters/google_genai.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters/mcp.rs
+        crates/betterlite-server/src/guardrails/unified_passthrough/bedrock.rs
+        crates/betterlite-server/src/guardrails/unified_passthrough/endpoint.rs
+        crates/betterlite-server/src/guardrails/unified_passthrough/kinds.rs
+        crates/betterlite-server/src/guardrails/a2a_translation/adapter.rs
+        crates/betterlite-server/src/guardrails/unified_stream
+        crates/betterlite-server/src/guardrails/unified_stream_hook
+        tools/oracle/src/helpers/guardrails/b3679/emit.rs | grep -v '/tests')"
+    - id: guardrails-tests
+      why: a B3661 contract, B3574 pass-through, B3666 logging hook, B5471 base, B3772 Gray Swan, B3727 Bedrock batch or B3679 dispatch test broke
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(guardrail_translation|llm_passthrough_dispatch|guardrail_deployment|guardrail_base|grayswan|bedrock_incremental_guardrail|unified_dispatch)::/) - test(replays_the_helper_case_corpus)'
+    - id: server-tests
+      why: an adapter, registry, unified hook, stream loop, stream hook, pipeline gate, catalog or Anthropic stream test broke on the new signatures
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::(unified_chat|unified_simple|unified_guardrail|unified_passthrough|a2a_translation|unified_stream|unified_stream_hook|pipeline_slots|catalog_apply|anthropic_translation)::/)'
+    - id: dispatch-oracle
+      why: the b3679 helper cases or their corpus no longer agree with LiteLLM
+      run: >-
+        cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-guardrails -- tools/oracle/cases/helpers/unified-guardrail-dispatch &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-guardrails --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: oracle-groups-build
+      why: a guardrails or bedrock oracle helper whose GuardrailFailure match changed no longer builds or replays its corpus
+      run: cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-guardrails,betterlite-oracle-groups/betterlite-oracle-bedrock --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Moving B3246's streaming step, observer, recorder and legacy hook adapter onto BaseTranslation and deleting StreamTranslation, StreamGuardrail and StreamInputs from betterlite-core: B10182. It depends on this task."
+  - "The OCR translation and its UnifiedTranslation arm: B036 builds the translation and B8665 adds the arm, both on this shape."
+  - "The adapters' own stream handling, the StreamItem lists and the decoders: B10169. This task waits for it."
+  - "Other partial ports of CustomGuardrail (GuardrailContract, betterlite-server's callback_caps GuardrailCallback and ProxyCallback, and core's NamedGuardrail): they stay as they are."
+pitfalls:
+  - "forward_fallible! writes each forwarding method itself, so it must carry the method's <G> and its where clause, or UnifiedTranslation stops implementing the trait."
+  - "G needs Send + Sync, not only GuardrailContract: GuardrailToApply holds an Arc<G> across an await inside a future the trait requires to be Send."
+  - "GuardrailToApply moves with its fields and its GuardrailContract impl unchanged; the chat adapters read guardrail_name, principal, skip_flags and global_flags off it."
+  - "The Undeliverable variant prints through #[error(transparent)], since every adapter variant that carries one is transparent and the old Other text was exactly UndeliverableStreamRewrite's message."
+  - "wrap_unexpected's Other arm binds its detail text, so the variant goes into the typed arm there; anywhere else it joins the arm that holds Other, and no match gets a wildcard."
+  - "ChatTranslation, ResponsesTranslation and AnthropicTranslation are built field by field in entries.rs, so dropping their _guardrail field changes those constructors too."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

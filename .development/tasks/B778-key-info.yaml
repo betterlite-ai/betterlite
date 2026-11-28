@@ -200,9 +200,9 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B776 owns bulk_update_keys (L3627-L3783),
     _build_failed_team_key_update (L3786-L3812), bulk_update_team_keys (L3822-L4000).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B777 owns delete_key_fn (L4071-L4175),
-    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), _transform_verification_tokens_to_deleted_records
-    (L5096-L5149), _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens
-    (L5171-L5188), delete_key_aliases (L5191-L5208).'
+    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), delete_key_aliases
+    (L5191-L5208); B10129 owns _transform_verification_tokens_to_deleted_records (L5096-L5149),
+    _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens (L5171-L5188).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B780 owns _check_proxy_or_team_admin_for_key
     (L5989-L6015), _validate_reset_spend_value (L6018-L6053), _set_spend_counter_with_floor_and_broadcast
     (L6056-L6087), _advance_one_key_budget_window (L6107-L6131),
@@ -261,6 +261,7 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - A successful aliases-only v2 response has key null, not the resolved token list.
 budget:
   max_changed_lines: 1500

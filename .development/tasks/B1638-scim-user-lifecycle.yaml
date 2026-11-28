@@ -17,17 +17,17 @@ description: >-
   role only for nonempty supplied teams with admin-group mapping enabled. After the user
   write, evict and broadcast the user cache entry with B878's evict_and_broadcast (betterlite-auth
   auth_pubsub) and the one key user_id, then change key blocks only for an explicitly
-  supplied active transition. DELETE visits the user's teams, removes legacy members
-  entries and canonical membership where present, blocks owned keys, deletes referencing
-  rows through B1637, deletes the user, then calls the same evict_and_broadcast. Keep keys blocked in
-  storage rather than deleting them. Return 204 with an empty body; POST/PUT use the
-  SCIM JSON content type and B1633 projections. Export deletion as a service for B1643.
-  Test every write boundary with PostgreSQL faults, including a PUT error after user update
+  supplied active transition. DELETE calls B10150's ScimUserDeletion::delete_user. That
+  service loads the user, takes it out of its teams, blocks its keys, deletes the referencing
+  rows and the user and evicts its cache entry. Hand its error to B2400's handle_exception_on_proxy
+  and return 204 with an empty body. POST/PUT use the
+  SCIM JSON content type and B1633 projections.
+  Test every POST and PUT write boundary with PostgreSQL faults, including a PUT error after user update
   and retained roster writes before replacement failure. HTTP oracle cases use B1644's
   explicit native_feature_eligibility=true and B1630 transcripts to compare responses and
   subsequent authenticated behavior; license-removal coverage belongs to B064's composition.
-  The 208 owned function lines budget 260 handlers/service, 240 tests, 120 HTTP fixtures and
-  70 decoder seeds/wiring, within 775. Extend B1632's resource corpus rather than add a parser.
+  The 179 owned function lines budget 225 handlers, 200 tests, 120 HTTP fixtures and
+  70 decoder seeds/wiring, within 615. Extend B1632's resource corpus rather than add a parser.
 
   B9941 mounts scim_router and leaves crates/betterlite-server/src/scim_user_lifecycle.rs as a stub routes function
   that scim_router already merges, so fill only scim_user_lifecycle.rs and scim_user_lifecycle/** and leave scim.rs
@@ -53,11 +53,11 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L160-L232
     why: Email upsert preserves identity and unspecified memberships.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1661-L1879
-    why: All three route decorators, distinct create/replace active handling and deletion order.
+    why: All three route decorators, distinct create/replace active handling and the DELETE wrapper around B10150's service (L1836-L1875).
 dod:
   - text: POST and PUT preserve stable ids, unspecified memberships and the source's different handling of active/externalId.
     proof: [user-lifecycle-tests, oracle]
-  - text: Deletion retains blocked keys and failed lifecycle operations expose the same completed earlier writes.
+  - text: DELETE answers 204 after B10150's deletion and leaves the user's keys unusable, and failed POST and PUT operations expose the same completed earlier writes.
     proof: [user-lifecycle-tests, oracle]
   - text: HTTP authentication, 201/200/204 responses, conflicts and malformed bodies have matching observable envelopes.
     proof: [user-lifecycle-tests, oracle, user-lifecycle-corpora]
@@ -81,9 +81,11 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - "Read-only resource queries are B1641; user PATCH is B1639; placeholder merge is B1643."
+  - "The deletion inside delete_user (L1836-L1875: user load, team removals through B1207's team_member_delete, key blocking, reference cleanup, user delete and cache eviction): B10150. This task's DELETE handler calls it."
   - "scim_v2.py helper ownership: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
   - "Other function intervals in scim_v2.py: B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - POST accepts active=false but does not pass active to its metadata builder, so implementing immediate deactivation there would change the pinned response.
   - Empty groups on PUT preserve membership because identity providers update profile fields independently of group pushes.
 budget:

@@ -1,0 +1,16 @@
+kind: helper
+name: proxy-tool-search-by-name
+call:
+  b4686:
+    handler: mcp_proxy_tool
+    name: search_tools
+    arguments: {query: alpha}
+    settings: {top_k: 5}
+    tools:
+      - {name: alpha-tool, server_id: srv, description: finds alpha}
+      - {name: beta-tool, server_id: srv, description: finds beta}
+    caller: {user_id: u1}
+    client_ip: 10.0.0.1
+    raw_headers: {x-request-id: req-1}
+env: {}
+compare: {ignore: []}

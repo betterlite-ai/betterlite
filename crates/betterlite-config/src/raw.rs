@@ -95,9 +95,10 @@ pub(super) struct RawLiteLlm {
     pub(super) modify_params: Option<bool>,
 }
 
+// public so RequestTimeout::resolve_configured can take the decoded value in its public signature
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub(super) enum RawNumber {
+pub enum RawNumber {
     Integer(i64),
     Float(f64),
     Boolean(bool),

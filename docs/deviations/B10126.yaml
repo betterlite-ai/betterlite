@@ -1,0 +1,12 @@
+task: B10126
+deviations:
+  - what: The reload reads users, object permissions and the team rate limits through the UserReads and TeamLimits ports instead of importing prisma_client, user_api_key_cache and MCPRequestHandler from proxy_server.
+    why: betterlite has no module-level state; B8621's production ports run the same get_user_object and get_object_permission reads, so the returned auth and statuses are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1093-L1121
+  - what: The reload returns AdmittedUserError values and each caller renders them; LiteLLM raises HTTPException. For a user row that fails UserAPIKeyAuth's validation, LiteLLM raises an unhandled exception whose 500 detail is the pydantic error text, while betterlite returns AdmittedUserError::Auth with B2314's AuthError as its source and that error's Display as the detail.
+    why: every arm keeps LiteLLM's status, and the 401, 500 no-database and 503 outage details keep LiteLLM's own text. The one detail betterlite writes itself is the unhandled 500, and the source keeps the field that failed validation visible.
+    link: ""
+  - what: Only Rust tests cover the reload; there are no oracle cases.
+    why: reload_admitted_user reads prisma_client and user_api_key_cache from proxy_server and calls _admitted_subject_team_rpm_limits, which needs the whole MCP access chain and global_mcp_server_manager, so a helper adapter cannot drive it. The HTTP cases come with the /mcp routes (B137).
+    link: ""
+kept_bugs: []

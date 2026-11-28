@@ -6,8 +6,9 @@ use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient
 use betterlite_azure::azure_assistant_definitions::operations::{AssistantsApi, ClientRequest};
 use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::endpoints::projection::LiteLlmParams;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::decisions::Json;
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use betterlite_openai::assistants::client::{ClientOptions, SdkClient};
 use betterlite_openai::assistants::operations::AssistantsApi as OpenAiAssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
@@ -116,7 +117,7 @@ where
 
 const fn client_kind(flag: Option<bool>) -> ClientKind {
     match flag {
-        Some(true) => ClientKind::Async,
+        Some(true) => ClientKind::Asynchronous,
         Some(false) | None => ClientKind::Sync,
     }
 }
@@ -200,10 +201,10 @@ where
     {
         let token = super::params::facade_azure_token(self.resources, &resolved.params);
         match client {
-            Some(SuppliedClient::Openai(supplied)) if supplied.kind == ClientKind::Async => {
+            Some(SuppliedClient::Openai(supplied)) if supplied.kind == ClientKind::Asynchronous => {
                 return Ok(Target::Openai(supplied));
             }
-            Some(SuppliedClient::Azure(supplied)) if supplied.kind == ClientKind::Async => {
+            Some(SuppliedClient::Azure(supplied)) if supplied.kind == ClientKind::Asynchronous => {
                 let request = Box::new(self.azure_request(resolved, token)?);
                 return Ok(Target::Azure {
                     request,

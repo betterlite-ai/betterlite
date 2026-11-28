@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_db::stored_cipher::DbCipher;
+use betterlite_models::call_helpers::generic_params::normalize_generic_params;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::deployment_identity::params::litellm_params;
+use betterlite_router::deployment_identity::params::{generic_params_failure, require_model};
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
@@ -61,7 +62,9 @@ pub fn decrypt_model_rows(
             let decrypted = resolve_db_param(key, value, cipher, secrets, environment)?;
             resolved.insert(key.clone(), json_of(&decrypted));
         }
-        let params = match litellm_params(&resolved) {
+        let checked = require_model(&resolved)
+            .and_then(|()| normalize_generic_params(&resolved).map_err(generic_params_failure));
+        let params = match checked {
             Ok(params) => params,
             Err(error) => {
                 tracing::error!("Invalid model added to proxy db. Invalid litellm params. {error}");

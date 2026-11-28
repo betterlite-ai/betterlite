@@ -1,17 +1,13 @@
 use std::future::Future;
+use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::batches::error::SdkError;
 use crate::batches::records::{BatchCreate, BatchQuery};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
 
 // httpx.Timeout: one number for every phase, or one per phase
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -27,6 +23,25 @@ pub struct TimeoutPhases {
     pub read: Option<f64>,
     pub write: Option<f64>,
     pub pool: Option<f64>,
+}
+
+// LiteLLM reads a phase object's read phase, or ten minutes when the read phase is absent
+const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum TimeoutError {
+    #[error("the timeout must be a finite, non-negative number of seconds, not {seconds}")]
+    Invalid { seconds: f64 },
+}
+
+impl Timeout {
+    pub fn duration(&self) -> Result<Duration, TimeoutError> {
+        let seconds = match self {
+            Self::Seconds(seconds) => *seconds,
+            Self::Phases(phases) => phases.read.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
+        };
+        Duration::try_from_secs_f64(seconds).map_err(|_source| TimeoutError::Invalid { seconds })
+    }
 }
 
 #[derive(Debug, Clone, Default)]

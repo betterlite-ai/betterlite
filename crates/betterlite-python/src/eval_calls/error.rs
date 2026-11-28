@@ -1,0 +1,266 @@
+use std::time::TryFromFloatSecsError;
+
+use betterlite_config::env_integer::timeout::TimeoutError;
+use betterlite_core::api::eval_create_list::DEFAULT_EVALS_PROVIDER;
+use betterlite_core::api::eval_create_list::call::EvalsCallParams;
+use betterlite_core::api::eval_create_list::error::{
+    EvalsCreateListError, EvalsCreateListFailureError, failure as create_list_failure,
+};
+use betterlite_core::api::eval_get_update::error::{
+    EvalsGetUpdateError, EvalsGetUpdateFailureError, failure as get_update_failure,
+};
+use betterlite_core::api::eval_lifecycle::error::{
+    EvalLifecycleError, EvalLifecycleFailure, failure as lifecycle_failure,
+};
+use betterlite_error::envelope::WireField;
+use betterlite_error::error::details::ResponseDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
+use betterlite_logging::logging_state::LoggingStateError;
+use betterlite_models::decisions::Json;
+use betterlite_redact::error::RedactionError;
+use betterlite_redact::secret::Redactor;
+use betterlite_sdk::call_wrapper::error::{class_name, class_status};
+use indexmap::IndexMap;
+use pyo3::PyErr;
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use serde::Serialize;
+
+use super::convert::ConvertError;
+use crate::completion::error::SessionError as CompletionSessionError;
+
+create_exception!(betterlite_native, NativeEvalError, PyException);
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum SessionError {
+    #[error(transparent)]
+    Json(#[from] ConvertError),
+    #[error(transparent)]
+    Client(#[from] CompletionSessionError),
+    #[error("the request timeout could not be resolved: {0}")]
+    Timeout(#[from] TimeoutError),
+    #[error("the request timeout of {seconds} seconds is not a usable duration")]
+    Duration {
+        seconds: f64,
+        #[source]
+        source: TryFromFloatSecsError,
+    },
+    #[error("the redactor could not be built: {0}")]
+    Redaction(#[from] RedactionError),
+}
+
+impl From<SessionError> for PyErr {
+    fn from(error: SessionError) -> Self {
+        match &error {
+            SessionError::Json(_) => PyValueError::new_err(error.to_string()),
+            SessionError::Client(_)
+            | SessionError::Timeout(_)
+            | SessionError::Duration { .. }
+            | SessionError::Redaction(_) => PyRuntimeError::new_err(error.to_string()),
+        }
+    }
+}
+
+// Everything one eval operation can fail with: a wrong-typed argument, its payload, a core service's failure, or an answer that would not encode.
+#[derive(Debug)]
+pub(crate) enum EvalOperationFailure {
+    Mapped { class: ErrorClass, provider: String },
+    Session(SessionError),
+    Encode { source: serde_json::Error },
+}
+
+impl From<SessionError> for EvalOperationFailure {
+    fn from(error: SessionError) -> Self {
+        Self::Session(error)
+    }
+}
+
+impl From<ConvertError> for EvalOperationFailure {
+    fn from(error: ConvertError) -> Self {
+        let message = error.to_string();
+        match error {
+            ConvertError::Json { source } => {
+                Self::Session(SessionError::Json(ConvertError::Json { source }))
+            }
+            ConvertError::FieldType { provider, name } => Self::Mapped {
+                class: field_class(message, name, &provider),
+                provider,
+            },
+        }
+    }
+}
+
+// docs/compatibility.md reads a request value outside its declared type as a 400 that names the field
+fn field_class(message: String, name: &str, provider: &str) -> ErrorClass {
+    let context = ErrorContext {
+        message,
+        model: None,
+        provider: Some(provider.to_owned()),
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: Some(name.to_owned()),
+        body_code: None,
+    };
+    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
+}
+
+// Which core service a call's logging state belongs to: the failure mapping each one applies to it.
+#[derive(Clone, Copy)]
+pub(crate) enum FailureGroup {
+    CreateList,
+    GetUpdate,
+    Lifecycle,
+}
+
+impl FailureGroup {
+    pub(crate) fn class(
+        self,
+        error: LoggingStateError,
+        params: &EvalsCallParams<'_>,
+        redactor: &Redactor,
+    ) -> ErrorClass {
+        match self {
+            Self::CreateList => {
+                create_list_failure(EvalsCreateListError::Logging(error), params, redactor).class
+            }
+            Self::GetUpdate => {
+                get_update_failure(EvalsGetUpdateError::Logging(error), params, redactor).class
+            }
+            Self::Lifecycle => {
+                lifecycle_failure(
+                    EvalLifecycleError::Logging(error),
+                    &provider_of(params),
+                    redactor,
+                )
+                .class
+            }
+        }
+    }
+}
+
+// The failure class a core service hands back for one reply.
+pub(crate) trait Classified {
+    fn into_class(self) -> ErrorClass;
+}
+
+impl Classified for EvalsCreateListFailureError {
+    fn into_class(self) -> ErrorClass {
+        self.class
+    }
+}
+
+impl Classified for EvalsGetUpdateFailureError {
+    fn into_class(self) -> ErrorClass {
+        self.class
+    }
+}
+
+impl Classified for EvalLifecycleFailure {
+    fn into_class(self) -> ErrorClass {
+        self.class
+    }
+}
+
+impl EvalOperationFailure {
+    pub(crate) fn mapped(class: ErrorClass, params: &EvalsCallParams<'_>) -> Self {
+        Self::Mapped {
+            class,
+            provider: provider_of(params),
+        }
+    }
+
+    pub(crate) fn reply<T, E>(
+        reply: Result<T, E>,
+        params: &EvalsCallParams<'_>,
+    ) -> Result<String, Self>
+    where
+        T: Serialize,
+        E: Classified,
+    {
+        match reply {
+            Ok(value) => serde_json::to_string(&value).map_err(|source| Self::Encode { source }),
+            Err(failure) => Err(Self::mapped(failure.into_class(), params)),
+        }
+    }
+
+    fn into_exception(self) -> PyErr {
+        match self {
+            Self::Mapped { class, provider } => native_error(&class, &provider),
+            Self::Session(error) => PyErr::from(error),
+            Self::Encode { source } => PyRuntimeError::new_err(source.to_string()),
+        }
+    }
+}
+
+impl From<EvalOperationFailure> for PyErr {
+    fn from(failure: EvalOperationFailure) -> Self {
+        failure.into_exception()
+    }
+}
+
+fn provider_of(params: &EvalsCallParams<'_>) -> String {
+    params
+        .custom_llm_provider
+        .unwrap_or(DEFAULT_EVALS_PROVIDER)
+        .to_owned()
+}
+
+// What _completion/errors.py rebuilds into a LiteLLM exception: its class, message, status and error body.
+#[derive(Debug, Serialize)]
+pub(crate) struct NativeErrorPayload {
+    #[serde(rename = "type")]
+    class: String,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_code: Option<u16>,
+    llm_provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<Json>,
+}
+
+// The provider error class Python raises, keeping the class and cause exception_type chose for it.
+pub(crate) fn native_error(class: &ErrorClass, provider: &str) -> PyErr {
+    match serde_json::to_string(&payload(class, provider)) {
+        Ok(text) => NativeEvalError::new_err(text),
+        Err(_encoding) => PyRuntimeError::new_err(class_message(class)),
+    }
+}
+
+pub(crate) fn payload(class: &ErrorClass, provider: &str) -> NativeErrorPayload {
+    let metadata = class.metadata();
+    NativeErrorPayload {
+        class: class_name(class).to_owned(),
+        message: class_message(class),
+        status_code: class_status(class),
+        llm_provider: provider.to_owned(),
+        // exception_type is called with model=None, so the empty model a dispatch carries is not sent
+        model: metadata.model.filter(|name| !name.is_empty()),
+        body: error_body(class),
+    }
+}
+
+// The flat error object openai.APIError reads type, param and code from; absent fields stay absent.
+fn error_body(class: &ErrorClass) -> Option<Json> {
+    let metadata = class.metadata();
+    let code = metadata
+        .openai_code
+        .as_deref()
+        .map_or(WireField::MISSING, |text| WireField::Text(text.to_owned()));
+    let mut body = IndexMap::new();
+    insert_field(&mut body, "type", &metadata.error_type);
+    insert_field(&mut body, "param", &metadata.param);
+    insert_field(&mut body, "code", &code);
+    (!body.is_empty()).then_some(Json::Object(body))
+}
+
+fn insert_field(body: &mut IndexMap<String, Json>, name: &str, field: &WireField) {
+    let value = match field {
+        WireField::Missing(_) => return,
+        WireField::Null => Json::Null,
+        WireField::Text(text) => Json::Text(text.clone()),
+    };
+    body.insert(name.to_owned(), value);
+}

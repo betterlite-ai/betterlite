@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-client-auth-headers-corpus-lookup
+call:
+  b10155:
+    calls:
+      - function: sanitize_alias
+        alias: GitHub Server
+      - function: lookup
+        headers:
+          github_server: {Authorization: "Bearer test-corpus"}
+        alias: GitHub Server
+        server_name: null
+        access_groups: [team-a]
+env: {}
+compare: {ignore: []}

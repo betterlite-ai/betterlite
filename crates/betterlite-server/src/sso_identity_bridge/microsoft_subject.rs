@@ -1,7 +1,6 @@
 use betterlite_auth::identity::MicrosoftInteractiveSubject;
+use betterlite_auth::oauth_client::microsoft::microsoft_default_discovery;
 use uuid::Uuid;
-
-const GRAPH_USERINFO_ENDPOINT: &str = "https://graph.microsoft.com/v1.0/me";
 
 // a custom or sovereign cloud moves the endpoints, so its subject is not bound to the public Microsoft issuer
 #[must_use]
@@ -12,9 +11,7 @@ pub fn microsoft_interactive_subject(
 ) -> Option<MicrosoftInteractiveSubject> {
     let tenant_text = Uuid::parse_str(tenant?).ok()?.to_string();
     let oid = Uuid::parse_str(response_id?).ok()?.to_string();
-    let authorization =
-        format!("https://login.microsoftonline.com/{tenant_text}/oauth2/v2.0/authorize");
-    let token = format!("https://login.microsoftonline.com/{tenant_text}/oauth2/v2.0/token");
+    let defaults = microsoft_default_discovery(&tenant_text);
     for (name, override_value) in overrides {
         let Some(value) = *override_value else {
             continue;
@@ -24,9 +21,9 @@ pub fn microsoft_interactive_subject(
         }
         // the expected map has no entry for another name, so any truthy value under one suppresses the subject
         let expected = match *name {
-            "MICROSOFT_AUTHORIZATION_ENDPOINT" => authorization.as_str(),
-            "MICROSOFT_TOKEN_ENDPOINT" => token.as_str(),
-            "MICROSOFT_USERINFO_ENDPOINT" => GRAPH_USERINFO_ENDPOINT,
+            "MICROSOFT_AUTHORIZATION_ENDPOINT" => defaults.authorization_endpoint.as_str(),
+            "MICROSOFT_TOKEN_ENDPOINT" => defaults.token_endpoint.as_str(),
+            "MICROSOFT_USERINFO_ENDPOINT" => defaults.userinfo_endpoint.as_str(),
             _ => return None,
         };
         if value != expected {

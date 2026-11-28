@@ -22,9 +22,10 @@ use url::Url;
 use self::error::GenerationCallError;
 use self::params::CallParams;
 use self::prepare::{PreparedGeneration, overlay_headers, prepare};
-use self::submit::{SubmitError, SubmitRequest, SubmitTransport, SuppliedTransport, TransportKind};
+use self::submit::{SubmitError, SubmitRequest, SubmitTransport};
 use crate::api::bfl::generation::{BflImageResponse, apply_image_response};
 use crate::api::bfl::poll::{BflPoller, PollClock, PollSleeper, PollTransport};
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 pub struct GenerationCall<'text> {
     pub model: &'text str,
@@ -61,16 +62,16 @@ where
         &self,
         call: &GenerationCall<'_>,
         prepared: &PreparedGeneration,
-        supplied: Option<SuppliedTransport<'_, T>>,
+        supplied: Option<SuppliedClient<'_, T>>,
         data: Vec<ImageDatum>,
     ) -> Result<BflImageResponse, GenerationCallError>
     where
         T: SubmitTransport + PollTransport + Sync,
     {
         let expected = if call.aimg_generation {
-            TransportKind::Async
+            ClientKind::Asynchronous
         } else {
-            TransportKind::Sync
+            ClientKind::Sync
         };
         match supplied.filter(|client| client.kind == expected) {
             Some(client) => self.execute(call, prepared, client.transport, data).await,

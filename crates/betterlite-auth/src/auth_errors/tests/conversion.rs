@@ -3,15 +3,20 @@ use std::collections::BTreeMap;
 use std::ptr;
 
 use betterlite_db::database_faults::ErrorType;
+use betterlite_error::error::details::BudgetExceededDetails;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use super::support::{CLIENT_IP, database, identity_with, object, wire};
 use crate::auth_errors::client_context::{
     escape_control_chars, identity_log_suffix, with_client_context,
 };
-use crate::auth_errors::conversion::{AuthFailure, ClientFailure, as_proxy_exception};
+use crate::auth_errors::conversion::{
+    AuthFailure, ClientFailure, as_proxy_exception, budget_details_exception,
+    other_message_exception,
+};
 
 #[test]
 fn conversion_order_budget_default_422_and_absent_status_429() {
@@ -31,6 +36,42 @@ fn conversion_order_budget_default_422_and_absent_status_429() {
         wire(&absent),
         ("budget_exceeded".to_owned(), None, "429".to_owned())
     );
+}
+
+#[rstest]
+#[case::absent(None, "Budget has been exceeded! Current cost: 6, Max budget: 5")]
+#[case::empty(Some(""), "Budget has been exceeded! Current cost: 6, Max budget: 5")]
+#[case::given(Some("Budget has been exceeded!"), "Budget has been exceeded!")]
+fn budget_details_exception_message_and_status(
+    #[case] message: Option<&str>,
+    #[case] expected: &str,
+) {
+    let details = BudgetExceededDetails {
+        current_cost: Decimal::new(6, 0),
+        max_budget: Decimal::new(5, 0),
+        message: message.map(str::to_owned),
+        provider: "openai".to_owned(),
+        entity_type: Some("key".to_owned()),
+        entity_id: Some("hashed-key".to_owned()),
+        status_code: 422,
+    };
+    let exception = budget_details_exception(&details);
+    assert_eq!(exception.message, expected);
+    assert_eq!(exception.error_type, "budget_exceeded");
+    assert_eq!(exception.param, None);
+    assert_eq!(exception.code, "422");
+}
+
+#[test]
+fn other_message_exception_is_a_401_auth_error_with_a_null_param() {
+    let exception = other_message_exception("No api key passed in.");
+    assert_eq!(
+        exception.message,
+        "Authentication Error, No api key passed in."
+    );
+    assert_eq!(exception.error_type, "auth_error");
+    assert_eq!(exception.param.as_deref(), Some("None"));
+    assert_eq!(exception.code, "401");
 }
 
 #[test]

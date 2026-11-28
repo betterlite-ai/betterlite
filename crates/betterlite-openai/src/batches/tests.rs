@@ -13,12 +13,14 @@ use crate::batches::BatchOperation;
 use crate::batches::decode::{BatchDecodeError, MAX_BATCH_BYTES, decode_batch_object};
 use crate::batches::error::BatchesError;
 use crate::batches::records::{BatchStatus, ExpiryAnchor, OutputExpiry};
-use crate::batches::sdk::{ClientKind, Timeout};
+use crate::batches::sdk::Timeout;
 use crate::batches::tests::fake::{
     Answer, Recorded, batch, batch_with, connection, create_request, failure, fixture, page, query,
     supplied,
 };
+use betterlite_http::client_kind::ClientKind;
 
+mod conversions;
 mod fake;
 mod http;
 
@@ -187,7 +189,7 @@ async fn sdk_client_argument_projection() {
     let built = fixture.built.lock().unwrap().clone();
     assert_eq!(built.len(), 2);
     let (first, first_kind) = &built[0];
-    assert_eq!(*first_kind, ClientKind::Async);
+    assert_eq!(*first_kind, ClientKind::Asynchronous);
     assert_eq!(first.api_key.as_ref().unwrap().expose_secret(), "");
     assert_eq!(first.base_url.as_deref(), Some("https://example.test/v1"));
     assert_eq!(first.max_retries, Some(0));
@@ -267,7 +269,10 @@ async fn cancel_sync_client_type() {
     let fixture = fixture(true, Answer::Batch(batch("batch_1", "validating")));
     let wrong = || {
         let answer = Answer::Batch(batch("batch_1", "validating"));
-        connection(false, Some(supplied(&fixture, ClientKind::Async, answer)))
+        connection(
+            false,
+            Some(supplied(&fixture, ClientKind::Asynchronous, answer)),
+        )
     };
     let error = fixture
         .api

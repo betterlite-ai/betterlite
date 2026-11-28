@@ -224,9 +224,9 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B776 owns bulk_update_keys (L3627-L3783),
     _build_failed_team_key_update (L3786-L3812), bulk_update_team_keys (L3822-L4000).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B777 owns delete_key_fn (L4071-L4175),
-    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), _transform_verification_tokens_to_deleted_records
-    (L5096-L5149), _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens
-    (L5171-L5188), delete_key_aliases (L5191-L5208).'
+    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), delete_key_aliases
+    (L5191-L5208); B10129 owns _transform_verification_tokens_to_deleted_records (L5096-L5149),
+    _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens (L5171-L5188).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B778 owns _build_model_max_budget_usage
     (L4178-L4188), _window_max_budget (L4191-L4199), _budget_window_usage (L4202-L4228), _build_budget_limits_usage
     (L4231-L4245), info_key_fn_v2 (L4254-L4343), info_key_fn (L4348-L4479), _find_deleted_key_info (L4482-L4491); B10068 owns
@@ -285,6 +285,7 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Reusing the scheduled calendar reset boundary would include old spend in a manually reset window.
   - A Redis write failure is a warning, while a subsequent broadcast failure can fail an already persisted reset.
 budget:

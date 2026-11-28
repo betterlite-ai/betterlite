@@ -1,0 +1,69 @@
+id: B10150
+title: SCIM user deletion service
+description: >-
+  LiteLLM's DELETE /scim/v2/Users/{user_id} handler, delete_user in scim_v2.py, does all its work in one body, and merge_placeholder calls that same handler to delete a placeholder once its teams have moved to the real account. B1638 owns the route and B1643 the merge. This task builds the deletion itself, so the merge waits on this small service instead of the whole user lifecycle task.
+
+
+  Layout. Module scim_user_delete in betterlite-server: crates/betterlite-server/src/scim_user_delete.rs, with submodules as you need and a tests.rs beside each. The file is an empty stub that lib.rs declares. B1638's scim_user_lifecycle and B1643's scim_placeholder_repair call it, and it calls neither of them.
+
+
+  The service. `ScimUserDeletion` holds what the deletion calls, passed in by the caller that builds it: B1633's ScimLookups over the PostgresStore, B1207's team_member_delete service, B1637's set_user_keys_blocked and delete_rows_referencing_user, and the user API key cache as B878's LocalEviction together with the PublishTasks and the optional pub/sub endpoint that evict_and_broadcast (betterlite-auth auth_pubsub) takes. `delete_user(&self, user_id: &str) -> Result<(), ScimUserDeleteError>` runs LiteLLM's steps (scim_v2.py L1836-L1875) in this order. Log "SCIM DELETE USER request for user_id=<user_id>" at debug. Check the database (ScimLookups::connected, NoDatabase) and load the user with check_user_exists (UserNotFound). Read every team the user row's teams column names, in that order, through B724's TeamRepository, all before the first write; an id with no team row is skipped. Then for each team found, in the same order: when its legacy members TEXT[] column holds user_id, write it back without user_id, setting updated_at the way Prisma's @updatedAt does; then, when that team's members_with_roles as read before this write has an entry with that user_id, call B1207's team_member_delete with team_id and user_id and a principal that sets only user_role proxy_admin (B2314's UserAPIKeyAuth). Next block the user's keys with set_user_keys_blocked(user_id, true), delete the referencing rows with delete_rows_referencing_user, delete the user row through B723's USER_TABLE delete, and last call evict_and_broadcast with the one cache key user_id.
+
+
+  No transaction wraps these steps. Every write commits on its own, so a failure stops at its step and keeps everything before it, and the eviction only runs after the user row is gone. Keys stay in storage blocked, except the ones team_member_delete itself archives and deletes.
+
+
+  Errors. `ScimUserDeleteError` has one variant per step and keeps the source error. Both callers hand it to B2400's handle_exception_on_proxy, so the error gives them the CaughtException that function takes: Http with status 500 and detail {"error": "No database connected"} for NoDatabase, Http with 404 and {"error": "User not found with ID: <user_id>"} for UserNotFound, B1207's own HTTP refusal or ProxyException as it is, and Failure carrying the database error for every database failure, so a read-only transaction error still reaches B2400's writer recovery. LiteLLM's merge converts the error twice (delete_user's own handler, then the merge's), and the second pass returns the ProxyException unchanged when there is no call id, so converting once gives the same answer.
+
+
+  Tests run on real PostgreSQL through B860's PostgresFixture over POSTGRES_TEST_URL, with the real B1207 and B1637 services and a recording LocalEviction, and ids like scim-user-a and team-a. Cover: a user in one team only through the legacy members column, one only through a members_with_roles entry and one through both; a teams entry naming a deleted team; a roster entry that matches by user_email alone and stays; a key in a rostered team that ends archived in LiteLLM_DeletedVerificationToken, a key outside any team that ends blocked with metadata scim_blocked true, and a key an admin had already blocked that keeps its metadata; invitation links by user_id, created_by and updated_by, organization and team membership rows all gone before the user row; and exactly one eviction of user_id, after the row is gone. Write-boundary failures use a trigger that raises on the table at that step: a failing team_member_delete on the second team keeps the first team's writes and blocks no key, a failing invitation delete keeps the blocked keys, and a failing user delete keeps the cleanup; none of them evicts. Every test where delete_user returns an error, the unknown user and the missing database included, has failure in its name, and no other test does, so the two checks below select them apart.
+
+
+  Sizing: 29 LiteLLM lines, about 150 lines of service and error code and 300 lines of Postgres tests, with no oracle adapter, decoder or fuzz target. No oracle cases here: the service writes the database and reads the auth cache, so a helper adapter can't call it, and no route reaches it yet. B1638's DELETE cases and B1643's merge cases compare it over HTTP.
+scope:
+  paths:
+    - crates/betterlite-server/src/scim_user_delete.rs
+    - crates/betterlite-server/src/scim_user_delete/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1825-L1879
+    why: Owned L1836-L1875, from the debug line through evict_and_broadcast. The decorator, the 204 response and the exception conversion stay with B1638.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1920-L1962
+    why: Call site. merge_placeholder adds the target to every team and then calls delete_user for the placeholder, in B1643's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3675-L3720
+    why: team_member_delete archives and deletes the member's keys in that team before this service blocks the rest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L180-L220
+    why: The team table's legacy members String[] column and the @updatedAt updated_at the members write moves.
+dod:
+  - text: The user leaves every stored team its teams column names, in that order, through the legacy members write and B1207's team_member_delete for a roster entry with its user_id, and a team id with no row is skipped.
+    proof: [user-delete-tests]
+  - text: Keys that team_member_delete did not remove end blocked with the scim_blocked marker, the referencing rows go before the user row, and user_id is evicted and broadcast once, last.
+    proof: [user-delete-tests]
+  - text: An unknown user or a missing database fails with LiteLLM's status and detail before any write, and a failure at a later write keeps every earlier write and skips the eviction.
+    proof: [failure-boundary-tests]
+checks:
+  optional: []
+  commands:
+    - id: user-delete-tests
+      why: SCIM deletion leaves the user in a team, a key usable, a referencing row behind or a stale cache entry.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_user_delete::/) - test(/failure/)'
+    - id: failure-boundary-tests
+      why: A failed SCIM deletion rolls back writes LiteLLM keeps, writes before its refusal or evicts a user that still exists.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_user_delete::.*failure/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The DELETE /scim/v2/Users/{user_id} route, its 204 empty body and its handle_exception_on_proxy call: B1638, with the HTTP oracle cases. The placeholder merge that also calls this service: B1643."
+  - "team_member_delete and _team_member_delete: B1207. _set_user_keys_blocked and _delete_rows_referencing_user: B1637. _get_prisma_client_or_raise_exception and _check_user_exists: B1633. evict_and_broadcast: B878. This task calls them and copies none of their rules."
+  - "Other scim_v2.py functions: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2819-L2864; B10024 L2200-L2322; B1638 L164-L232/L1661-L1835 and the rest of delete_user; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - "FailureFacts carries B10218's location field: set it with Location::caller() where each Failure is built, so the bug report names that line."
+  - team_member_delete archives and deletes the user's keys in each team where the user has a roster entry, so those keys land in LiteLLM_DeletedVerificationToken and only the rest reach set_user_keys_blocked.
+  - The roster check reads members_with_roles from the team row read before the legacy members write and compares member.user_id only, so an entry addressed by user_email alone stays in the roster.
+  - Prisma's @updatedAt moves updated_at on the legacy members write, so a bare UPDATE of members leaves a different row than LiteLLM.
+  - A missing team here is skipped, not the 404 "Group not found with ID" that check_team_exists raises; this path never calls it.
+  - One transaction around the steps would roll back the members writes and blocked keys LiteLLM keeps when a later step fails, and B1643's merge depends on those partial writes.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

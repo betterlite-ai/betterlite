@@ -1,0 +1,14 @@
+id: B10150
+milestone: M4 keys, spend and management
+title: SCIM user deletion service
+status: todo
+depends_on: [B700, B723, B724, B860, B878, B1207, B1633, B1637, B2314, B2400, B10218]
+file: tasks/B10150-scim-user-delete.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"
+parent: B064
+split_from: B1638
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -19,6 +19,9 @@ description: >-
   120 adapters and 30 wiring, 510 total.
 scope:
   paths:
+  - "tools/oracle/sdk_http/registered.py"
+  - "tools/oracle/sdk_http/file_storage_service.py"
+  - "tools/oracle/sdk_http/context_edit_dispatch_call.py"
   - crates/betterlite-core/src/api/messages_compaction.rs
   - crates/betterlite-core/src/api/messages_compaction/**
   - tools/oracle/src/helpers/core_ops/context_edit_dispatch.rs
@@ -105,5 +108,5 @@ pitfalls:
 - The legacy clear tuple preserves system from the preceding editor, not from the original request.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0

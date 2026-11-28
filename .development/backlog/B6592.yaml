@@ -1,8 +1,8 @@
 id: B6592
 milestone: M9 agents and mcp
-title: MCP server health checks, instructions prefetch and toolset cache
+title: MCP server health checks and instructions prefetch
 status: todo
-depends_on: [B6590, B4731, B4681, B4683, B4710, B858, B6760, B6761, B6763, B6764, B2314]
+depends_on: [B6590, B4731, B4681, B4683, B4710, B858, B6760, B6761, B6763, B6764, B2314, B10147]
 file: tasks/B6592-mcp-server-health.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"

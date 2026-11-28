@@ -1,0 +1,13 @@
+id: B10196
+milestone: R2 bug fixes
+title: The router runs the Google generate content calls, and the call steps route through the production router for any route type
+status: todo
+depends_on: [B6021, B8631, B10154, B8611, B8610, B10183, B10175, B3489, B9800, B247, B303]
+file: tasks/B10196-google-router-calls.yaml
+covers: []
+parent: null
+split_from: B10178
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

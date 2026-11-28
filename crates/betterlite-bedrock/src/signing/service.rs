@@ -1,9 +1,10 @@
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
+
 use super::error::SigningError;
 use super::headers::{
     filter_for_signature, override_authorization, reattach, resolved, set_exact, without_computed,
 };
 use super::request::AwsSignedRequest;
-use super::sigv4::{Signable, sign_request};
 use super::target::{RegionInputs, auth_settings, resolve_region};
 use crate::aws_settings::bedrock_bearer_token;
 use crate::aws_settings::pop_aws_auth_params;
@@ -121,6 +122,7 @@ fn sigv4_signed(
         service: request.service.as_str(),
         region,
         credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })?;
     reattach(&headers, &mut signed, has_token);

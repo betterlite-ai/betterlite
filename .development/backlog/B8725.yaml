@@ -2,7 +2,7 @@ id: B8725
 milestone: M9 agents and mcp
 title: MCP preemptive auth challenges and upstream probes
 status: todo
-depends_on: [B8724, B4731, B6590, B6760, B6762, B4667, B8195, B8196, B6592, B4654, B4679, B2314]
+depends_on: [B8724, B4731, B6590, B6760, B6762, B4667, B8195, B10155, B6592, B4654, B4679, B2314]
 file: tasks/B8725-mcp-auth-challenge.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/server.py"

@@ -1,0 +1,66 @@
+kind: helper
+name: vector-file-resolution-team-model-fallback
+call:
+  vector_file_resolution:
+    calls:
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [all-team-models, m1]}
+        catalog: {m1: {custom_llm_provider: openai, api_key: sk-m1}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [m1]}
+        catalog: {}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [m1, m2]}
+        catalog:
+          m1: {custom_llm_provider: openai, api_key: sk-1}
+          m2: {custom_llm_provider: openai, api_key: sk-2}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [a1, a2]}
+        catalog:
+          a1: {custom_llm_provider: azure, api_key: sk-a}
+          a2: {custom_llm_provider: anthropic, api_key: sk-b}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [az1]}
+        catalog: {az1: {custom_llm_provider: azure, api_key: sk-a}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [g1]}
+        catalog: {g1: {custom_llm_provider: null, model: openai/gpt-4o, api_key: sk-g}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [g2]}
+        catalog: {g2: {model: azure/gpt-4o, api_key: sk-g}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [all-team-models, all-proxy-models, no-default-models]}
+        catalog: {m1: {custom_llm_provider: openai, api_key: sk-m1}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1}
+        catalog: {m1: {custom_llm_provider: openai, api_key: sk-m1}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [m1, m1]}
+        catalog: {m1: {custom_llm_provider: openai, api_key: sk-m1}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [m1, 7, true, null]}
+        catalog: {m1: {custom_llm_provider: openai, api_key: sk-m1}}
+      - function: team_model_fallback
+        data: {model: m1}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [m1]}
+      - function: team_model_fallback
+        data: {}
+        caller: {team_id: team-1, team_models: [m1]}
+        catalog: {m1: {custom_llm_provider: openai, api_key: sk-m1}}
+        deny: [m1]
+env: {}
+compare: {ignore: []}

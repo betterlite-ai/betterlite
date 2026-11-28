@@ -2,7 +2,7 @@ id: B8591
 milestone: M8 platform
 title: Proxy exception handlers, CORS settings and UI folder setup
 status: todo
-depends_on: [B8410, B8389, B3867, B011, B10058, B872]
+depends_on: [B8410, B8389, B10156, B3867, B011, B10058, B872, B10218]
 file: tasks/B8591-app-errors-cors-ui.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

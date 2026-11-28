@@ -1,0 +1,5 @@
+kind: helper
+name: login-return-relative
+call: {login_return: {function: same_origin_path, return_to: "/ui/return"}}
+env: {}
+compare: {ignore: []}

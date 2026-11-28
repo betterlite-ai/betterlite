@@ -1,0 +1,13 @@
+id: B10173
+milestone: R2 bug fixes
+title: SigV4 signing and AWS credentials live in a new betterlite-sigv4 crate, and Polly signs through it
+status: done
+depends_on: [B595, B594, B1544]
+file: tasks/B10173-sigv4-crate.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3419

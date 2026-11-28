@@ -7,7 +7,6 @@ use betterlite_azure::azure_message_attachments::legacy::{
     ParamsError, SUPPORTED_MESSAGE_PARAMS, map_create_message_params,
 };
 use betterlite_azure::azure_message_attachments::operations::{MessageReply, MessagesReply};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::threads::error::ThreadsError;
 use serde_json::{Value, json};
@@ -61,13 +60,6 @@ pub(super) fn failure(error: &MessagesError) -> Result<Value, Box<HelperError>> 
     }
 }
 
-const fn kind_name(kind: ClientKind) -> &'static str {
-    match kind {
-        ClientKind::Sync => "sync",
-        ClientKind::Async => "async",
-    }
-}
-
 // The facade's own reply and kind, plus everything the wire saw before answering.
 pub(super) fn operation(
     wire: &Wire,
@@ -82,7 +74,7 @@ pub(super) fn operation(
             };
             Ok(json!({
                 "requests": requests,
-                "kind": kind_name(reply.kind),
+                "kind": reply.kind.label(),
                 "result": result.unwrap_or(Value::Null),
             }))
         }

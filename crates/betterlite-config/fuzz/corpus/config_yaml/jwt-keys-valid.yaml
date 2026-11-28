@@ -1,0 +1,3 @@
+model_list: []
+environment_variables:
+  JWT_PUBLIC_KEY_URL: "https://keys.example.com/jwks"

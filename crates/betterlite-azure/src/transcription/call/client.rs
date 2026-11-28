@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_endpoints::Settings;
+use betterlite_http::client_kind::ClientKind as CallKind;
 use betterlite_http::user_url::httpx_url::HttpxUrl;
-use betterlite_openai::transcription::client::ClientKind as CallKind;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::azure_urls::{EndpointSelection, select_base_url_or_endpoint};
@@ -63,12 +63,12 @@ pub fn select_client<'data>(
     kind: CallKind,
     wiring: &mut ClientWiring<'_, 'data>,
 ) -> Result<SelectedClient<'data>, AzureTranscriptionError> {
-    let is_async = kind == CallKind::Async;
+    let is_async = kind == CallKind::Asynchronous;
     let request = client_request(connection, is_async, wiring);
     let outcome = get_azure_openai_client(&request, wiring.cache, wiring.refresh)?;
     let accepted = match kind {
         CallKind::Sync => outcome.kind == ClientKind::AzureOpenAi,
-        CallKind::Async => outcome.kind == ClientKind::AsyncAzureOpenAi,
+        CallKind::Asynchronous => outcome.kind == ClientKind::AsyncAzureOpenAi,
     };
     if !accepted {
         return Err(not_azure(is_async));

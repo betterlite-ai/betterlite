@@ -1,0 +1,98 @@
+id: B10152
+title: Paginated team reader for the Prometheus budget refresh
+description: >-
+  Prometheus's periodic budget refresh (B3884) reads the team table one page at a time through LiteLLM's
+  get_paginated_teams (team_endpoints.py L5934-L5965). The function lives in team_endpoints.py next to the team list
+  routes, but no route calls it: at the pin its only caller is PrometheusLogger._initialize_team_budget_metrics
+  (prometheus.py L3658-L3681). This task builds just that reader, so B3884 no longer waits for B813's three list routes.
+
+
+  Module team_pagination in betterlite-server: crates/betterlite-server/src/team_pagination.rs, tests in
+  team_pagination/tests.rs. The file is an empty stub that lib.rs already declares. It exposes one public function,
+  `get_paginated_teams(client: PrismaClient<'_>, page_size: u64, page: u64) -> (Vec<LiteLLMTeamTable>, u64)`, with
+  PrismaClient from betterlite_db::auxiliary_repository::repository and LiteLLMTeamTable from
+  betterlite_db::team_rows::team. The client is not an Option because B3884 logs and skips before the call when no
+  database is configured. LiteLLM's defaults (page_size 10, page 1) are never relied on by a caller, so both are plain
+  arguments.
+
+
+  The steps, in LiteLLM's order. Compute skip = (page - 1) * page_size with checked arithmetic and convert it to i64.
+  Count the table with `SELECT count(*) FROM "LiteLLM_TeamTable"`. Read the page with
+  `SELECT row_to_json(t)::text FROM "LiteLLM_TeamTable" t ORDER BY t."team_alias" ASC OFFSET $1 LIMIT $2`, skip and
+  page_size bound as i64. Return (rows, count). Both statements read through B801's
+  `team_table(Some(client))` store. That store is the reader unless B714's reader_unavailable flag is set, the same
+  handle LiteLLM's _team_db gets from client.db. The two statements run on their own, with no transaction, so the count can
+  disagree with the page under concurrent writes, as it can in LiteLLM.
+
+
+  Row decoding is not new code. B1209 already reads team rows with row_to_json and decodes each through B724's
+  decode_team_record in `find_teams` (crates/betterlite-server/src/team_list_query/read.rs), today pub(super). Widen
+  it to pub and call it with `Some(client)` and the page SQL; that visibility word is the only change in read.rs.
+
+
+  Failures never reach the caller, as LiteLLM's broad except returns `[], 0`. Page 0 or a skip that overflows, a
+  failed count, a failed page query and a row that does not decode each log at error level
+  `[Non-Blocking] Error getting paginated teams: <error>` and return (empty, 0), dropping a count that was already
+  read. The private steps return Result with this module's own error enum TeamPageError (one variant for the skip,
+  one for B700's DbError, one for B1209's TeamListQueryError), and only the public function logs and swallows it.
+  B3884's page walk therefore sees an empty page, never an error.
+
+
+  Tests in team_pagination::tests run on real Postgres with betterlite_postgres_fixture's PostgresFixture and the
+  packaged catalogs, the way team_list_query's tests build their database. Five teams inserted out of alias order
+  come back in pages of 2 in ascending alias order with a total of 5 on every page, and page 4 is empty with the
+  total still 5. A team with a NULL alias comes after every named team. A page_size of 0 returns no rows and the full
+  count. With the reader and writer stores seeded with different teams, the rows and the count come from the reader,
+  and from the writer once reader_unavailable is set. The failure tests each have failure in their name: a client
+  whose store has no pool, page 0, and a stored members_with_roles entry with role "owner" each return (empty, 0)
+  and write the [Non-Blocking] line at error level, captured by a tracing_subscriber writer set as the test's
+  default subscriber.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_pagination.rs
+    - crates/betterlite-server/src/team_pagination/**
+    - crates/betterlite-server/src/team_list_query/read.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965
+    why: Owned. get_paginated_teams, the skip arithmetic, count before page, team_alias ascending and the [Non-Blocking] catch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L397-L398
+    why: _team_db, the TeamRepository table both statements read; B801's team_table is its native counterpart.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L95-L102
+    why: TeamRepository.table reads client.db unless the writer is asked for, and returns raw Prisma rows without _to_model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3658-L3681
+    why: The only caller at the pin, B3884's team fetch. It passes page_size 50 and the page number.
+dod:
+  - text: Pages come back in ascending team_alias order with NULL aliases last, skip (page - 1) * page_size, the full table count on every page, an empty page past the end and no rows for a page_size of 0.
+    proof: [page-tests]
+  - text: The count and the page both read the reader store, and the writer once reader_unavailable is set.
+    proof: [page-tests]
+  - text: A store without a pool, page 0 and an undecodable row each return (empty, 0) and log "[Non-Blocking] Error getting paginated teams:" at error level.
+    proof: [failure-tests]
+checks:
+  optional: []
+  commands:
+    - id: page-tests
+      why: The reader pages, orders, counts or picks its store wrongly against real Postgres.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_pagination::/) - test(/failure/)'
+    - id: failure-tests
+      why: A failed skip, count or page read escapes, keeps the count, or is not logged.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_pagination::.*failure/)'
+oracle_cases: []
+deviations:
+  - what: A stored team row that betterlite's LiteLLMTeamTable refuses, for example a members_with_roles entry whose role is neither admin nor user, fails the whole call, and the call logs and returns (empty, 0).
+    why: LiteLLM returns raw Prisma rows here and would pass that row on; betterlite has no untyped team row, the decoder is B724's shared one, and such a row only comes from a direct database edit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L95-L102
+out_of_scope:
+  - "list_team_v2, list_team and ui_view_teams with their routes: B813. None of them calls this reader."
+  - "The Prometheus team fetch, the page walk and the gauge setters: B3884 calls this function; the setters are B3882's."
+  - "TeamRepository, TeamRecord and decode_team_record: B724. team_table and the read store choice: B801. find_teams and the list query SQL: B1209."
+pitfalls:
+  - "Don't saturate the skip: page 0 is a negative skip in LiteLLM that Prisma refuses, so it must end in (empty, 0) after the log, not quietly return page 1."
+  - "NULL aliases sort last because Postgres puts NULLs after values in ASC order and Prisma sends no NULLS clause; don't COALESCE them to an empty string the way B813's legacy /team/list sort does."
+  - "Count first, then the page, without a transaction or REPEATABLE READ; LiteLLM promises no snapshot, and a failure in the page read must drop the count it already has."
+  - "Read through team_table's store, not client.writer; LiteLLM's _team_db reads client.db, the replica when one is configured."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -10,7 +10,7 @@ description: >-
   error_handlers. `proxy_exception_response(request, error)` ports openai_exception_handler: log the denial through
   B8389's log_model_access_denial, build the body as {"error": error.to_dict()} with B011's call id stamped in when
   general_settings asks for it (header LITELLM_CALL_ID_HEADER), status int(code) or 500 when code is empty, the
-  exception's own headers on the response, close the span through B8389's close_error_span, and return B3867's
+  exception's own headers on the response, close the span through B10156's close_error_span with its exception_facts of the error, and return B3867's
   otlp_error_response instead when the request is an OTLP ingest request. `http_exception_response` ports
   otlp_http_exception_handler: the OTLP response when there is one (span closed first), else Starlette's default
   {"detail": ...} answer with the exception's status and headers. `management_problem_response` closes the span with
@@ -19,7 +19,7 @@ description: >-
   prefix the answer is the request-validation problem, else the OTLP answer or 422 {"detail": errors}.
   `unhandled_error_response` ports otel_unhandled_exception_handler: a database-unavailable error anywhere in the
   cause chain becomes B872's service-unavailable ProxyException answered by proxy_exception_response; anything else
-  logs "Unhandled exception in request: <type>", logs B10058's bug report when should_report_bug says so, closes the span
+  logs "Unhandled exception in request: <type>", logs bug_report_notice of B10218's BugReportNotices::report (from state.proxy_diagnostics.notices, call_type B10218's betterlite_auth::known_proxy_routes::known_proxy_route over the request path) when it answers one, closes the span
   with 500, and answers the OTLP response or 500 {"error": {"message": "Internal server error", "type":
   "internal_server_error"}}.
 
@@ -94,7 +94,7 @@ deviations:
 out_of_scope:
   - "Installing the handlers, the CORS layer and the static UI mounts on the app, and the HTTP oracle cases for them: B8680 (app/edge layers and UI mounts)."
   - "The other middlewares (security headers, gzip, in-flight, Redis batch, budget release, billing, Prometheus auth): B122 and their own tasks."
-  - "close_error_span and log_model_access_denial: B8389. otlp_error_response: B3867. ProxyException: B8410. Bug reports: B10058."
+  - "close_error_span and exception_facts: B10156. log_model_access_denial: B8389. otlp_error_response: B3867. ProxyException: B8410. Bug reports: B10058."
 pitfalls:
   - With LITELLM_CORS_ORIGINS="*" and no credentials env var, credentials are off; any explicit list turns them on unless the env says otherwise.
   - The validation handler strips internal fields with public_validation_errors before the span sees the error.

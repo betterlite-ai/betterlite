@@ -6,7 +6,8 @@ use betterlite_bedrock::rerank::execute::{dispatch_request, resolve_target, tran
 use betterlite_bedrock::rerank::plan::{
     LogContext, ParamMap, RerankCall, RerankEnvironment, prepare_request,
 };
-use betterlite_bedrock::rerank::transport::{ClientKind, RerankHttpRequest, SuppliedClient};
+use betterlite_bedrock::rerank::transport::RerankHttpRequest;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
 use betterlite_models::decisions::Json;
@@ -178,7 +179,7 @@ fn measure(
         &prepared,
         Some(SuppliedClient {
             kind: match harness.probe.supplied {
-                Supplied::Async => ClientKind::Async,
+                Supplied::Async => ClientKind::Asynchronous,
                 Supplied::Sync => ClientKind::Sync,
             },
             transport: &harness.supplied,

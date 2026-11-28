@@ -1,0 +1,54 @@
+id: B10197
+title: The Google countTokens route translates contents and counts tokens through the production adapter and the proxy's token counter
+description: >-
+  B3506's countTokens route (crates/betterlite-server/src/api/genai_routes) takes two ports in GenaiRoutesState: `translator: Arc<dyn TranslateContents>` (ports.rs L58), LiteLLM's `GoogleGenAIAdapter().translate_generate_content_to_completion(model_name, contents).get("messages", [])`, and `token_counter: Arc<dyn TokenCounter>` (ports.rs L68), `proxy_server.token_counter(request=TokenCountRequest(model, contents, messages), call_endpoint=True)` (google_endpoints/endpoints.py L153-L203). Nothing outside tests implements either, so B8774 has nothing to pass and its four countTokens cases cannot pass. B8598 builds the /utils/token_counter handler and exposes its body as `utility_routes::token_counter`; B3484 built the translation as `translate_generate_content` (crates/betterlite-core/src/api/genai_chat_input.rs L41). This task writes the two thin adapters over them and copies neither.
+
+
+  Module `app::inference::google_count_tokens` (crates/betterlite-server/src/app/inference/google_count_tokens.rs and google_count_tokens/tests.rs). Main already declares `pub mod google_count_tokens;` in app/inference.rs over an empty file.
+
+
+  Translator. `ContentTranslator::new(call: Arc<GoogleSdkCall>)` implements TranslateContents over B10196's GoogleSdkCall and its `session()`. Add `pub fn translate_contents(&self, model: &str, contents: &Json) -> Result<Vec<ChatMessage>, GenAiInputError>` to B10183's GenaiSession (crates/betterlite-vertex/src/genai/session.rs): it builds a GenerateContentRequest with only the model and the contents, calls translate_generate_content with no litellm params and a TranslationContext over the session's resolution, CatalogCapabilities and schema limits, the same three values B3489's adapter gets from the session (crates/betterlite-core/src/api/genai/generate_content/adapter.rs L28-L32), and answers the ChatRequest's messages. A translation error becomes a ProxyException with status 500 and the error's text, since LiteLLM's route catches nothing there.
+
+
+  Counter. `ProxyTokenCounter::new(state: &Arc<ServerState>)` implements TokenCounter over B8598's `token_counter(state, request, call_endpoint)`. It hands over the route's model, contents and messages as B8598's TokenCountRequest, passes call_endpoint through, and maps B8598's answer into the port's TokenCountResponse: total_tokens, and original_response parsed into TokenCountOriginal when the provider gave one. A UtilityRouteError becomes the ProxyException B8598's own mapping gives for it, called, not rewritten. The port's Option is always Some, since LiteLLM's token_counter returns a response or raises.
+
+
+  Tests in google_count_tokens/tests.rs build a ServerState without a database from a config whose model_list has a `gemini/gemini-2.0-flash` deployment with api_base on a betterlite_http_fixture mock upstream that answers countTokens, and drive `api::genai_routes::routes` with these two values and a fake generation. They check: a countTokens call answers the provider's totalTokens and promptTokensDetails; a model with no provider counter answers the local count with empty promptTokensDetails; and `translate_contents` turns a user and a model turn into a user and an assistant message.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/google_count_tokens.rs
+    - crates/betterlite-server/src/app/inference/google_count_tokens/**
+    - crates/betterlite-vertex/src/genai/session.rs
+    - crates/betterlite-vertex/src/genai/session/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L143-L203
+    why: google_count_tokens, the adapter translation and the internal token_counter call with call_endpoint true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py
+    why: GoogleGenAIAdapter.translate_generate_content_to_completion, whose messages the translator answers.
+dod:
+  - text: ContentTranslator answers the chat messages B3484's translation gives for a model and its contents, through the GenAI session's context.
+    proof: [count-tokens-tests, session-tests]
+  - text: ProxyTokenCounter answers through B8598's token_counter with call_endpoint passed through, and a provider count keeps its original response.
+    proof: [count-tokens-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: count-tokens-tests
+      why: the translator or the counter answers another shape, drops the original response or rewrites B8598's error mapping
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::google_count_tokens::/)'
+    - id: session-tests
+      why: translate_contents builds another request or context than the adapter does
+      run: grep -q 'fn translate_contents' crates/betterlite-vertex/src/genai/session.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^genai::session::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting the routes and the four countTokens HTTP cases: B8774."
+  - "The token counter itself, its provider counters and its errors: B8598."
+pitfalls:
+  - "Read B8598's merged TokenCountRequest and TokenCountResponse before mapping; LiteLLM's request also carries prompt, system and tools, which this route leaves unset."
+  - "B10183 and B10196 land first; read the session and GoogleSdkCall on main when this task starts."
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

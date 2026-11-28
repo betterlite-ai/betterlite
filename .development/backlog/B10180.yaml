@@ -1,0 +1,13 @@
+id: B10180
+milestone: R2 bug fixes
+title: One errors="replace" UTF-8 decoder in betterlite-models
+status: todo
+depends_on: [B504, B512, B554, B580, B587, B612, B632, B681, B695, B878, B1055, B1101, B1316, B1327, B1341, B1387, B1391, B1412, B1501, B1539, B1549, B195, B2307, B2463, B3335, B3455, B3494, B3516, B3605, B3608, B3610, B3648, B3774, B3775, B3788, B4053, B4584, B4652, B4789, B4832, B4833, B4839, B5096, B5834, B6412, B7530, B8103, B8194, B8330, B8724, B10003, B3663, B3673, B3676, B10169]
+file: tasks/B10180-utf8-replace-decoder.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

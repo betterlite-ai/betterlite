@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::io;
+use std::panic::Location;
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -47,7 +48,8 @@ fn prisma_failure(message: &str) -> DbError {
     }
 }
 
-const fn failure_facts<'caught>(
+#[track_caller]
+fn failure_facts<'caught>(
     message: &'caught str,
     status_code: Option<u16>,
     param: Option<&'caught str>,
@@ -59,6 +61,7 @@ const fn failure_facts<'caught>(
         status_code,
         param,
         database_error,
+        location: Location::caller(),
     }
 }
 

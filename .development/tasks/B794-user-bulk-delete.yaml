@@ -9,7 +9,7 @@ description: >-
   Exact proxy_admin bypasses organization reads. Other callers with a truthy user_id load memberships
   with user_role=org_admin and keep truthy organization IDs; caller.role itself need not be org_admin.
   An unbound/empty-ID caller gets no memberships. Non-admin without any administered organizations
-  raises B1202 ManagementProblem status=403,type=urn:litellm:error:forbidden,title='Forbidden',detail=
+  raises B10130's forbidden ManagementProblem status=403,type=urn:litellm:error:forbidden,title='Forbidden',detail=
   'Only PROXY_ADMIN or ORG_ADMIN users may delete users.'. No OpenAI param/code exists here.
   Cases proxy_admin_skips_org_lookup, membership_grants_not_role_label, unbound_caller_forbidden
   and no_admin_memberships_problem compare the exact preflight behavior.
@@ -31,7 +31,7 @@ description: >-
   and writes. B1202 owns the advisory SQL, roster reread and team-key archival inside this same tx.
 
   Next read remaining keys for candidate users inside tx, snapshot JWT-mapping cache keys through
-  B738 using the OUTER Prisma client, then B777 archives keys with tx and changed-by before token
+  B738 using the OUTER Prisma client, then B10129 archives keys with tx and changed-by before token
   delete_many. Skip archive/token delete if no keys. Delete invitation links matching user_id OR
   created_by OR updated_by, then organization memberships, team memberships, and users, all in tx.
   Cases delete_order_and_invitation_references, no_keys_skip_archive, jwt_snapshot_outer_client,
@@ -203,16 +203,16 @@ oracle_cases:
   - tools/oracle/cases/helpers/user-bulk-delete/duplicates-after-failed-first.yaml
 deviations: []
 out_of_scope:
-  - B1222 owns the HTTP route/problem envelope; B2334 owns wire contracts; B777 owns archive
+  - B1222 owns the HTTP route/problem envelope; B2334 owns wire contracts; B10129 owns archive
     row projection; B738 owns JWT cache-key snapshots; B734 owns token cache eviction;
     B784 owns the key audit sink and B065 the user audit sink create_object_audit_log. B1202 owns shared team records and the transaction timeout.
   - 'litellm/proxy/management_helpers/bulk_user_deletion.py: B1202 owns _TeamRemoval.deleted_key_tokens
-    (L99-L100), _team_not_found (L120-L128), _team_tx_db (L153-L154), _membership_tx_db (L161-L162), _same_email
+    (L99-L100), _team_tx_db (L153-L154), _membership_tx_db (L161-L162), _same_email
     (L177-L178), _addresses_member (L181-L184), _with_row_email (L187-L190), _remove_members_from_team
     (L219-L288), _emit_team_members_metric (L291-L298), _duplicate_member_indexes (L301-L310), bulk_remove_team_members
-    (L313-L365), _forbidden (L131-L134), _in_filter (L137-L138), _eq_filter (L141-L142), _team_users_filter
+    (L313-L365), _in_filter (L137-L138), _eq_filter (L141-L142), _team_users_filter
     (L145-L146), _any_filter (L149-L150), _user_tx_db (L157-L158), _token_tx_db (L165-L166), _addresses_user
-    (L193-L196).'
+    (L193-L196); B10130 owns _team_not_found (L120-L128), _forbidden (L131-L134).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as user_bulk_delete in the server group. Replace the stub Op in tools/oracle/src/helpers/server/user_bulk_delete.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/user_bulk_delete.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
