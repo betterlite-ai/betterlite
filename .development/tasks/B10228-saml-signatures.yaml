@@ -75,8 +75,9 @@ description: >-
   passed step 5, or None outside strict mode, so B1626 falls back to 3600 seconds. The Response's InResponseTo, Issuer
   and Destination come from the original root, and signed_response says whether a verified signature covers them.
   Timestamps parse like parse_SAML_to_time: yyyy-mm-ddThh:mm:ss, an optional fraction that is ignored, an optional Z,
-  UTC; anything else is refused. The verifier passes no allowed-algorithm list, as python3-saml's
-  rejectDeprecatedAlgorithm defaults to false and LiteLLM accepts RSA-SHA1.
+  UTC; anything else is refused. A ds:SignatureMethod of rsa-sha1 or dsa-sha1 or a ds:DigestMethod of sha1 in any
+  signature is refused before xmlsec runs, as process_signed_elements does with rejectDeprecatedAlgorithm on;
+  LiteLLM leaves that setting at its default false and accepts SHA-1, so this is a deviation.
 
 
   Known LiteLLM bug to keep: the receiving URL drops any path in PROXY_BASE_URL while the IdP posts to the ACS URL that
@@ -90,14 +91,15 @@ description: >-
   "$TMPDIR/saml-idp/cert.pem"`. Add `signed_element: Literal["assertion", "response", "both"] = "assertion"` to
   SigningInput in B1631's tools/oracle/fixtures/saml-idp/driver.py: response signs the finished samlp:Response with the
   same OneLogin_Saml2_Utils.add_sign call, both signs the assertion first and then the response, and mutation unsigned
-  still signs nothing; B1631's Rust side keeps sending the old input. Sign each case with `jq -n ... | uv run --locked
+  still signs nothing. Add `algorithm: Literal["sha256", "sha1"] = "sha256"` beside it: sha1 passes
+  sign_algorithm=OneLogin_Saml2_Constants.RSA_SHA1 and digest_algorithm=OneLogin_Saml2_Constants.SHA1 to every add_sign; B1631's Rust side keeps sending the old input. Sign each case with `jq -n ... | uv run --locked
   --project tools/oracle/litellm python tools/oracle/fixtures/saml-idp/driver.py | base64 -d`, with key_directory
   $TMPDIR/saml-idp, issuer https://idp.example.test/metadata, subject alice@example.test, attributes {"email":
   ["alice@example.test"]}, audience https://proxy.example.test/sso/saml/metadata, destination
   https://proxy.example.test/sso/saml/callback, in_response_to ONELOGIN_request_1, assertion_id _assertion_1,
   issue_instant and not_before 2026-01-01T00:00:00Z and not_on_or_after 2026-01-01T01:00:00Z. The cases are
-  signed-assertion, signed-response and signed-both (signed_element), unsigned, wrong-key, wrong-audience,
-  wrong-destination and subject-confirmation-only (the driver's mutations), and expired (not_before
+  signed-assertion, signed-response and signed-both (signed_element), signed-sha1 (algorithm sha1),
+  unsigned, wrong-key, wrong-audience, wrong-destination and subject-confirmation-only (the driver's mutations), and expired (not_before
   2000-01-01T00:00:00Z, not_on_or_after 2000-01-01T01:00:00Z). Derive three more from signed-assertion.xml with perl:
   tampered (the NameID changed to mallory@example.test after signing), wrapped (an unsigned copy of the Assertion with
   ID _assertion_2 and NameID mallory@example.test inserted before the signed one) and doctype (`<!DOCTYPE
@@ -169,8 +171,8 @@ references:
 dod:
   - text: >-
       A response is accepted only when every Response or Assertion signature verifies against the IdP signing
-      certificates in the merged settings; unsigned, wrong-key, tampered, wrapped and DOCTYPE responses, encrypted
-      assertions and a setup with no IdP certificate are refused whatever SAML_STRICT and the two want flags say.
+      certificates in the merged settings; unsigned, wrong-key, SHA-1 signed, tampered, wrapped and DOCTYPE
+      responses, encrypted assertions and a setup with no IdP certificate are refused whatever SAML_STRICT and the two want flags say.
     proof: [saml-signature-verifier]
   - text: >-
       With SAML_STRICT on, a response passes python3-saml 1.16.0's is_valid checks with their literals, including the
@@ -243,6 +245,14 @@ checks:
         uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/saml-idp/pyrightconfig.json
 oracle_cases: []
 deviations:
+  - what: >-
+      A signature whose ds:SignatureMethod is rsa-sha1 or dsa-sha1, or whose ds:DigestMethod is sha1, is refused, as
+      python3-saml 1.16.0 does with rejectDeprecatedAlgorithm on; LiteLLM leaves that setting at its default false, so it
+      accepts SHA-1 signed login responses.
+    why: >-
+      SHA-1 is broken for collisions, and a forged signature on a login response is an account takeover. Okta, Entra ID,
+      Google and ADFS sign with SHA-256 by default, so only an IdP still set to SHA-1 has to change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L184-L222
   - what: >-
       A strict response is not validated against python3-saml's saml-schema-protocol-2.0.xsd; the typed model, the
       one-assertion rule and the signature placement rules refuse malformed documents instead, so a response that
