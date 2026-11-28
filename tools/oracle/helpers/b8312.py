@@ -167,8 +167,8 @@ def called(case: Case) -> None:
     )
 
 
-def speech_view(case: Case) -> JsonValue:
-    voice, params = SPEECH().map_openai_params(
+def speech_view(config: SpeechConfig, case: Case) -> JsonValue:
+    voice, params = config.map_openai_params(
         case["model"], {}, case.get("voice"), drop_params=False
     )
     answer: dict[str, JsonValue] = {"voice": voice, "params": params}
@@ -178,7 +178,7 @@ def speech_view(case: Case) -> JsonValue:
 def value(case: Case, exchange: Exchange) -> JsonValue:
     operation = case["op"]
     if operation == "minimax_speech":
-        return speech_view(case)
+        return speech_view(SPEECH(), case)
     try:
         called(case)
     except openai.APIError as raised:
