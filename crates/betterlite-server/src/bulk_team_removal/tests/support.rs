@@ -23,7 +23,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::member_removal_identity::identity::MemberIdentity;
-use betterlite_db::team_rows::member::{Member, MemberBase, MemberRole};
+use betterlite_db::team_rows::member::Member;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::prometheus::budget_gauges::gauge::GaugeField;
@@ -719,34 +719,19 @@ where
     serde_json::from_value(value).unwrap()
 }
 
-pub(crate) fn member(user_id: &str) -> Member {
-    Member {
-        base: MemberBase {
-            user_id: Some(user_id.to_owned()),
-            user_email: None,
-        },
-        role: MemberRole::User,
-    }
+#[derive(Serialize)]
+struct MemberJson<'row> {
+    user_id: Option<&'row str>,
+    user_email: Option<&'row str>,
+    role: &'row str,
 }
 
-pub(crate) fn email_member(user_email: &str) -> Member {
-    Member {
-        base: MemberBase {
-            user_id: None,
-            user_email: Some(user_email.to_owned()),
-        },
-        role: MemberRole::User,
-    }
-}
-
-pub(crate) fn member_with_email(user_id: &str, user_email: &str) -> Member {
-    Member {
-        base: MemberBase {
-            user_id: Some(user_id.to_owned()),
-            user_email: Some(user_email.to_owned()),
-        },
-        role: MemberRole::User,
-    }
+pub(crate) fn member(user_id: Option<&str>, user_email: Option<&str>) -> Member {
+    from_json(MemberJson {
+        user_id,
+        user_email,
+        role: "user",
+    })
 }
 
 pub(crate) fn team(team_id: &str, members: &[Member]) -> LiteLLMTeamTable {

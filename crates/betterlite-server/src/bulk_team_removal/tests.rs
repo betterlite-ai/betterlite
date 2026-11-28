@@ -37,7 +37,10 @@ const COMMIT_EVENTS: [&str; 18] = [
 
 #[tokio::test]
 async fn duplicate_removed_before_transaction() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u1"), None)],
+    ));
     let members = [support::identity_id("u1"), support::identity_id("u1")];
     let results = fixture
         .remove("team-1", &members, &support::proxy_admin())
@@ -64,7 +67,7 @@ async fn duplicate_removed_before_transaction() {
 #[tokio::test]
 async fn email_backfill_requires_user_team() {
     let fixture = support::fixture();
-    let email_only = [support::email_member("u1@example.com")];
+    let email_only = [support::member(None, Some("u1@example.com"))];
     fixture
         .session
         .add_team(support::team("team-1", &email_only));
@@ -113,7 +116,7 @@ async fn exact_missing_team_problem() {
 
 #[tokio::test]
 async fn exact_forbidden_problem() {
-    let team = support::team_with_org("team-1", "org-1", &[support::member("u2")]);
+    let team = support::team_with_org("team-1", "org-1", &[support::member(Some("u2"), None)]);
     let fixture = support::fixture_with_team(team);
     let error = fixture
         .remove(
@@ -169,9 +172,9 @@ async fn result_original_identity_and_index() {
     let fixture = support::fixture_with_team(support::team(
         "team-1",
         &[
-            support::member("u1"),
-            support::member("u2"),
-            support::member("u3"),
+            support::member(Some("u1"), None),
+            support::member(Some("u2"), None),
+            support::member(Some("u3"), None),
         ],
     ));
     fixture
@@ -198,13 +201,16 @@ async fn result_original_identity_and_index() {
     assert_eq!(results[2].user_id.as_deref(), Some("u3"));
     assert_eq!(
         fixture.session.roster_of("team-1"),
-        vec![support::member("u2")]
+        vec![support::member(Some("u2"), None)]
     );
 }
 
 #[tokio::test]
 async fn missing_logger_noop() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u1"), None)],
+    ));
     let access = fixture.team_access();
     let service: BulkTeamRemoval<'_, support::LogGauge> = BulkTeamRemoval {
         session: &fixture.session,
@@ -235,7 +241,10 @@ async fn missing_logger_noop() {
 
 #[tokio::test]
 async fn metric_exception_debug_only() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u1"), None)],
+    ));
     fixture.session.add_key(support::key("k1", "team-1", "u1"));
     fixture.jwt.add_mapping("k1", "sub", "claim-k1", "iss");
     let context = support::mismatched_context(&fixture.settings);
@@ -277,7 +286,10 @@ async fn metric_exception_debug_only() {
 async fn writes_commit_in_source_order() {
     let fixture = support::fixture_with_team(support::team(
         "team-1",
-        &[support::member("u1"), support::member("u2")],
+        &[
+            support::member(Some("u1"), None),
+            support::member(Some("u2"), None),
+        ],
     ));
     fixture
         .session
@@ -299,7 +311,10 @@ async fn writes_commit_in_source_order() {
 
 #[tokio::test]
 async fn stale_array_only_member_matches_and_loses_the_team() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u2")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u2"), None)],
+    ));
     fixture
         .session
         .add_user(support::user("u1", None, &["team-1", "other", "team-1"]));
@@ -316,7 +331,7 @@ async fn stale_array_only_member_matches_and_loses_the_team() {
     assert!(results[0].success);
     assert_eq!(
         fixture.session.roster_of("team-1"),
-        vec![support::member("u2")]
+        vec![support::member(Some("u2"), None)]
     );
     assert_eq!(fixture.session.user_teams("u1"), support::lines(&["other"]));
     assert!(fixture.session.memberships().is_empty());
@@ -335,7 +350,7 @@ async fn stale_array_only_member_matches_and_loses_the_team() {
 async fn explicit_email_is_never_replaced() {
     let fixture = support::fixture_with_team(support::team(
         "team-1",
-        &[support::email_member("row@example.com")],
+        &[support::member(None, Some("row@example.com"))],
     ));
     fixture
         .session
@@ -352,14 +367,17 @@ async fn explicit_email_is_never_replaced() {
     );
     assert_eq!(
         fixture.session.roster_of("team-1"),
-        vec![support::email_member("row@example.com")]
+        vec![support::member(None, Some("row@example.com"))]
     );
     assert!(fixture.session.user_teams("u1").is_empty());
 }
 
 #[tokio::test]
 async fn a_removal_without_keys_skips_archive_and_audit() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u1"), None)],
+    ));
     let results = fixture
         .remove(
             "team-1",
@@ -431,7 +449,10 @@ fn disabled_audit_schedules_nothing() {
 
 #[tokio::test]
 async fn removed_member_without_user_row_loses_keys_and_membership() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u1"), None)],
+    ));
     fixture.session.add_membership("team-1", "u1");
     fixture.session.add_key(support::key("k1", "team-1", "u1"));
     let results = fixture
@@ -453,7 +474,7 @@ async fn removed_member_without_user_row_loses_keys_and_membership() {
 async fn removed_roster_id_fetches_its_own_user_row() {
     let fixture = support::fixture_with_team(support::team(
         "team-1",
-        &[support::member_with_email("u2", "e@example.com")],
+        &[support::member(Some("u2"), Some("e@example.com"))],
     ));
     fixture
         .session
@@ -470,7 +491,10 @@ async fn removed_roster_id_fetches_its_own_user_row() {
 
 #[tokio::test]
 async fn empty_email_request_is_not_backfilled_from_a_user_row() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u2")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u2"), None)],
+    ));
     fixture
         .session
         .add_user(support::user("u1", Some(""), &["team-1"]));
@@ -489,7 +513,10 @@ async fn empty_email_request_is_not_backfilled_from_a_user_row() {
 
 #[tokio::test]
 async fn email_only_request_matches_a_stale_user_row() {
-    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u2")]));
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member(Some("u2"), None)],
+    ));
     fixture
         .session
         .add_user(support::user("u1", Some("u1@example.com"), &["team-1"]));
