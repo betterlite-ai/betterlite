@@ -26,6 +26,11 @@ pub(crate) struct ChatFixture {
 }
 
 impl ChatFixture {
+    // field_reassign_with_default rejects a Default value followed by field assignment, so tests start here
+    pub(crate) fn baseline() -> Self {
+        Self::default()
+    }
+
     pub(crate) fn context(&self) -> DispatchContext<'_> {
         DispatchContext {
             acompletion: self.acompletion,

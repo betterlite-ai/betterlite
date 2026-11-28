@@ -19,6 +19,11 @@ pub(crate) struct EmbeddingFixture {
 }
 
 impl EmbeddingFixture {
+    // field_reassign_with_default rejects a Default value followed by field assignment, so tests start here
+    pub(crate) fn baseline() -> Self {
+        Self::default()
+    }
+
     pub(crate) fn context(&self) -> EmbeddingContext<'_> {
         EmbeddingContext {
             aembedding: false,

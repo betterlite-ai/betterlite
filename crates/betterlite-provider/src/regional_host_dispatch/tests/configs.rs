@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::regional_host_keys::Settings;
+use betterlite_config::sections::regional_host_keys::{Environment, Settings};
 use betterlite_context::media_config_selection::image_generation::ImageGenerationConfigTag;
 use betterlite_context::resource_config_selection::responses::ResponsesConfigTag;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -178,13 +178,41 @@ fn volcengine_responses_selection_builds_the_config() {
 // B8176's chains put the request's key and base before litellm's global ones, and each before its environment variables
 #[test]
 fn volcengine_responses_config_uses_b8176_key_and_base_chains() {
-    let mut settings = Settings::default();
-    settings.api_key = Some(secret("sk-global"));
-    settings.api_base = Some(String::from("https://global.example"));
-    settings.environment.ark_api_key = Some(secret("sk-ark"));
-    settings.environment.volcengine_api_key = Some(secret("sk-volcengine"));
-    settings.environment.volcengine_api_base = Some(String::from("https://volcengine.example"));
-    settings.environment.ark_api_base = Some(String::from("https://ark.example"));
+    let settings = Settings {
+        api_base: Some(String::from("https://global.example")),
+        api_key: Some(secret("sk-global")),
+        headers: None,
+        gigachat_key: None,
+        nlp_cloud_key: None,
+        environment: Environment {
+            ark_api_key: Some(secret("sk-ark")),
+            ark_api_base: Some(String::from("https://ark.example")),
+            dashscope_api_key: None,
+            dashscope_base: None,
+            dashscope_image_base: None,
+            dashscope_rerank_base: None,
+            gigachat_api_key: None,
+            gigachat_credentials: None,
+            minimax_api_base: None,
+            minimax_api_key: None,
+            modelscope_api_base: None,
+            modelscope_api_key: None,
+            nlp_cloud_api_base: None,
+            nlp_cloud_api_key: None,
+            qwen_ai_platform_base: None,
+            qwen_ai_platform_image_base: None,
+            qwen_ai_platform_key: None,
+            qwen_ai_platform_rerank_base: None,
+            qwencloud_base: None,
+            qwencloud_image_base: None,
+            qwencloud_key: None,
+            qwencloud_rerank_base: None,
+            tencent_api_base: None,
+            tencent_api_key: None,
+            volcengine_api_base: Some(String::from("https://volcengine.example")),
+            volcengine_api_key: Some(secret("sk-volcengine")),
+        },
+    };
     let config = responses_config(&ResponsesConfigTag::VolcEngine, &settings)
         .expect("the volcengine tag builds B8176's config");
     let request_key = secret("sk-request");

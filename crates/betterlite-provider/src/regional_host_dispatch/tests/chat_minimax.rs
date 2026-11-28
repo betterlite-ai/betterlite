@@ -84,7 +84,7 @@ fn minimax_chain(
     #[case] expected_key: Option<&str>,
     #[case] expected_base: &str,
 ) {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("minimax");
     fixture.api_key = sources.request_key.map(secret);
     fixture.settings.environment.minimax_api_key = sources.env_key.map(secret);
@@ -108,7 +108,7 @@ fn minimax_chain(
 // an empty string is falsy in LiteLLM's `api_key or litellm.api_key` chain, so each step skips it
 #[test]
 fn minimax_skips_an_empty_request_key_and_base() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("minimax");
     fixture.api_key = Some(secret(""));
     fixture.settings.api_key = Some(secret("sk-global"));
@@ -129,7 +129,7 @@ fn minimax_skips_an_empty_request_key_and_base() {
 
 #[test]
 fn minimax_passes_the_request_headers_and_provider_config_as_they_came() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.provider = String::from("minimax");
     fixture.provider_config = Some(ChatConfigTag::MinimaxChat);
     fixture.headers = Some(headers(&[("x-request", "1")]));
@@ -144,7 +144,7 @@ fn minimax_passes_the_request_headers_and_provider_config_as_they_came() {
 
 #[test]
 fn minimax_logs_the_reply_on_success() {
-    let fixture = ChatFixture::default();
+    let fixture = ChatFixture::baseline();
     let handler = ChatRecorder::succeeding();
     let (outcome, state) = chat_dispatch(ChatConfigTag::MinimaxChat, &fixture, &handler);
     outcome.expect("the minimax arm answers");
@@ -161,7 +161,7 @@ fn minimax_logs_the_reply_on_success() {
 
 #[test]
 fn minimax_returns_the_handler_error_without_logging() {
-    let fixture = ChatFixture::default();
+    let fixture = ChatFixture::baseline();
     let handler = ChatRecorder::failing(500);
     let (outcome, state) = chat_dispatch(ChatConfigTag::MinimaxChat, &fixture, &handler);
     assert!(matches!(

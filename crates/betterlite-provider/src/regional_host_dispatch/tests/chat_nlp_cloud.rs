@@ -89,7 +89,7 @@ fn nlp_cloud_chain(
     #[case] expected_key: Option<&str>,
     #[case] expected_base: &str,
 ) {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.api_key = sources.request_key.map(secret);
     fixture.settings.nlp_cloud_key = sources.section_key.map(secret);
     fixture.settings.environment.nlp_cloud_api_key = sources.env_key.map(secret);
@@ -112,7 +112,7 @@ fn nlp_cloud_chain(
 
 #[test]
 fn nlp_cloud_drops_the_request_headers_and_the_provider_config() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.headers = Some(headers(&[("x-scope", "tenant")]));
     fixture.provider_config = Some(ChatConfigTag::NlpCloud);
     let handler = ChatRecorder::succeeding();
@@ -133,7 +133,7 @@ fn nlp_cloud_sets_the_stream_flag_from_optional_params(
     #[case] options: &str,
     #[case] expected: Option<bool>,
 ) {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.optional_params = params(options);
     let handler = ChatRecorder::succeeding();
     let (outcome, _state) = chat_dispatch(ChatConfigTag::NlpCloud, &fixture, &handler);
@@ -150,7 +150,7 @@ fn nlp_cloud_logs_only_for_a_streaming_or_async_call(
     #[case] acompletion: bool,
     #[case] logged: bool,
 ) {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.optional_params = params(options);
     fixture.acompletion = acompletion;
     let handler = ChatRecorder::succeeding();
@@ -164,7 +164,7 @@ fn nlp_cloud_logs_only_for_a_streaming_or_async_call(
 
 #[test]
 fn nlp_cloud_returns_a_streaming_handler_error_without_logging() {
-    let mut fixture = ChatFixture::default();
+    let mut fixture = ChatFixture::baseline();
     fixture.optional_params = params(r#"{"stream":true}"#);
     let handler = ChatRecorder::failing(429);
     let (outcome, state) = chat_dispatch(ChatConfigTag::NlpCloud, &fixture, &handler);

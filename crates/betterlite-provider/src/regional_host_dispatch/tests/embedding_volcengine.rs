@@ -33,7 +33,7 @@ fn volcengine_key_chain(
     #[case] volcengine_key: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
     fixture.settings.environment.ark_api_key = ark_key.map(secret);
@@ -49,7 +49,7 @@ fn volcengine_key_chain(
 
 #[test]
 fn volcengine_without_a_key_names_both_environment_variables() {
-    let fixture = EmbeddingFixture::default();
+    let fixture = EmbeddingFixture::baseline();
     let outcome = call_for(ProviderId::Volcengine, &fixture);
     assert!(matches!(
         outcome,
@@ -61,7 +61,7 @@ fn volcengine_without_a_key_names_both_environment_variables() {
 
 #[test]
 fn volcengine_passes_extra_headers_and_an_empty_litellm_params() {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = Some(secret("sk-request"));
     fixture.extra_headers = Some(headers(&[("x-scope", "tenant")]));
     fixture.api_base = Some(String::from("https://ark.example/v1"));
@@ -76,7 +76,7 @@ fn volcengine_passes_extra_headers_and_an_empty_litellm_params() {
 
 #[test]
 fn volcengine_without_extra_headers_passes_an_empty_map() {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = Some(secret("sk-request"));
     let call = call_for(ProviderId::Volcengine, &fixture).expect("the arm answers");
     assert_eq!(call.headers, Some(headers(&[])));

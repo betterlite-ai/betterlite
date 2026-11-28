@@ -25,7 +25,7 @@ fn qwencloud_key_chain(
     #[case] dashscope_key: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = request_key.map(secret);
     fixture.settings.environment.qwencloud_key = brand_key.map(secret);
     fixture.settings.environment.dashscope_api_key = dashscope_key.map(secret);
@@ -40,7 +40,7 @@ fn qwencloud_key_chain(
 
 #[test]
 fn qwencloud_without_a_key_names_its_own_variables() {
-    let fixture = EmbeddingFixture::default();
+    let fixture = EmbeddingFixture::baseline();
     let outcome = call_for(ProviderId::Qwencloud, &fixture);
     assert!(matches!(
         outcome,

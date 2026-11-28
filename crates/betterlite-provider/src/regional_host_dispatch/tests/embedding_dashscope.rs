@@ -24,7 +24,7 @@ fn dashscope_key_chain(
     #[case] dashscope_key: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = request_key.map(secret);
     fixture.settings.api_key = global_key.map(secret);
     fixture.settings.environment.dashscope_api_key = dashscope_key.map(secret);
@@ -39,7 +39,7 @@ fn dashscope_key_chain(
 
 #[test]
 fn dashscope_without_a_key_names_only_dashscope() {
-    let fixture = EmbeddingFixture::default();
+    let fixture = EmbeddingFixture::baseline();
     let outcome = call_for(ProviderId::Dashscope, &fixture);
     assert!(matches!(
         outcome,
@@ -52,7 +52,7 @@ fn dashscope_without_a_key_names_only_dashscope() {
 // the family arms read extra_headers rather than the request headers, and carry no litellm_params
 #[test]
 fn dashscope_passes_extra_headers_and_an_empty_litellm_params() {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = Some(secret("sk-request"));
     fixture.extra_headers = Some(headers(&[("x-scope", "tenant")]));
     let call = call_for(ProviderId::Dashscope, &fixture).expect("the arm answers");
@@ -62,7 +62,7 @@ fn dashscope_passes_extra_headers_and_an_empty_litellm_params() {
 
 #[test]
 fn dashscope_without_extra_headers_passes_an_empty_map() {
-    let mut fixture = EmbeddingFixture::default();
+    let mut fixture = EmbeddingFixture::baseline();
     fixture.api_key = Some(secret("sk-request"));
     let call = call_for(ProviderId::Dashscope, &fixture).expect("the arm answers");
     assert_eq!(call.headers, Some(headers(&[])));
