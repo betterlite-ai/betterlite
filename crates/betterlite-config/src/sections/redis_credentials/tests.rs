@@ -578,6 +578,47 @@ fn elasticache_provider_matches_botocore_sigv4_query_auth_known_answer() {
     assert_eq!(signed.expose_secret(), expected);
 }
 
+struct StaticSessionAwsCredentials;
+
+impl AwsCredentialsResolver for StaticSessionAwsCredentials {
+    fn resolve(&self) -> Result<Credentials, super::aws::ElastiCacheSigningError> {
+        Ok(Credentials::new(
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            Some("tokenEXAMPLE".to_owned()),
+            None,
+            "redis-credentials-tests",
+        ))
+    }
+}
+
+#[test]
+fn elasticache_provider_puts_the_session_token_before_the_signature() {
+    let settings = AwsSettings {
+        user_name: "app".to_owned(),
+        cache_name: "cache.example".to_owned(),
+        region: "eu-west-1".to_owned(),
+        serverless: false,
+        token_ttl_seconds: 900,
+    };
+    let provider = ElastiCacheIamProvider { settings };
+    let (_user_name, signed) = provider
+        .get_credentials(&StaticSessionAwsCredentials, SystemTime::UNIX_EPOCH)
+        .unwrap();
+    let signed_url = signed.expose_secret();
+    let token = signed_url
+        .find("X-Amz-Security-Token=tokenEXAMPLE")
+        .expect("the session token is in the query");
+    let signature = signed_url
+        .find("X-Amz-Signature=")
+        .expect("the signature is in the query");
+    assert!(token < signature);
+    let (_before, after_signature) = signed_url
+        .split_once("X-Amz-Signature=")
+        .expect("the signature is in the query");
+    assert!(!after_signature.contains('&'));
+}
+
 #[test]
 fn elasticache_provider_marks_serverless_caches_in_the_signed_url() {
     let settings = AwsSettings {
