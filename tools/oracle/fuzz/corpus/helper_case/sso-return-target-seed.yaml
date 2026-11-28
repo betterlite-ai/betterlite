@@ -1,0 +1,12 @@
+kind: helper
+name: sso-return-target-seed
+call:
+  sso_return_target:
+    same_origin:
+      - "/dashboard"
+      - "//evil.example"
+    validate:
+      - return_to: "https://cp.example.com/done"
+        control_plane_url: "https://cp.example.com"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: sso-return-target-control-characters
+call:
+  sso_return_target:
+    same_origin:
+      - "/a b"
+      - "/a\tb"
+      - "/a\nb"
+      - "/a\u007fb"
+      - "/ok"
+    validate: []
+env: {}
+compare: {ignore: []}
