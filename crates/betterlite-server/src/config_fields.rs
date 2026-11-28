@@ -24,6 +24,8 @@ use crate::config_overlay_port::ConfigOverlayPort;
 use crate::plugin_routes::config::PluginRegistry;
 use crate::proxy_config_state::state::ProxyConfigState;
 
+use self::ports::{ConfigFieldDatabase, ConfigFieldRuntime};
+
 // what B8612 holds for the four routes: B8380's config state behind the lock its writes need, and the ports beside it
 #[derive(Clone)]
 pub struct ConfigFieldState {

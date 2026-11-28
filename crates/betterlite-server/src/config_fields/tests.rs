@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use axum::body::to_bytes;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::audit_events::Settings;
 use betterlite_config::sections::settings::{FieldSource, JsonValue};
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
@@ -759,11 +759,19 @@ async fn list_returns_the_catalog_then_the_ui_fields() {
     let rollover = listed_entry(&listed, "budget_rollover");
     assert_eq!(rollover.stored_in_db, Some(true));
     assert_eq!(rollover.field_default_value, json!(false));
+}
+
+#[tokio::test]
+async fn list_carries_the_max_ui_session_budget_description() {
+    let fakes = fixtures();
+    let mut state = state_with_general("{}");
+    let listed = list_config_general_settings(services!(fakes, state), &caller(ADMIN))
+        .await
+        .expect("the config list");
     let budget = listed_entry(&listed, "max_ui_session_budget");
-    assert!(
-        budget
-            .field_description
-            .contains("playground and auto router Test Connection")
+    assert_eq!(
+        budget.field_description,
+        "USD spend cap for each dashboard login session; covers LLM calls made from the dashboard such as the playground and auto router Test Connection. Each login starts a fresh session with this budget. Clearing restores the $1 default."
     );
 }
 

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::IntoResponse as _;
 use betterlite_config::sections::settings::{JsonValue, Section};
 use serde_json::json;
 

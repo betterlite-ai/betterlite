@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, Query, State};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
