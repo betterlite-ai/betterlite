@@ -465,18 +465,34 @@ async fn extra_headers_forwarded() {
     assert_eq!(outcome.header("x-trace"), Some("t1"));
 }
 
-// api_base replaces the runtime endpoint the signed embedding request is posted to
-async fn api_base_endpoint() {
-    let env = environment("{}");
+// api_base or the environment's runtime endpoint replaces the host the signed request is posted to
+async fn endpoint_overrides() {
     let text = String::from("hello");
-    let fixture = scripted(&[Reply::status(200, VECTOR)]);
-    let mut call = embedding_call(&text, IDENTITY, &env);
-    call.api_base = Some("https://proxy.example/bedrock");
-    let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
-    assert_eq!(
-        outcome.posted().url,
-        "https://proxy.example/bedrock/model/amazon.titan-embed-text-v1/invoke"
-    );
+    let overrides = [
+        (
+            Some("https://proxy.example/bedrock"),
+            None,
+            "https://proxy.example/bedrock/model/amazon.titan-embed-text-v1/invoke",
+        ),
+        (
+            None,
+            Some("https://environment.example"),
+            "https://environment.example/model/amazon.titan-embed-text-v1/invoke",
+        ),
+    ];
+    for (api_base, runtime_endpoint, expected) in overrides {
+        let env = environment("{}");
+        let fixture = scripted(&[Reply::status(200, VECTOR)]);
+        let mut call = embedding_call(&text, IDENTITY, &env);
+        call.api_base = api_base;
+        call.environment.runtime_endpoint = runtime_endpoint;
+        let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
+        assert_eq!(
+            outcome.posted().url,
+            expected,
+            "overrides {api_base:?} {runtime_endpoint:?}"
+        );
+    }
 }
 
 // aembedding asks for the async bedrock client and hands it the caller's timeout
@@ -545,20 +561,6 @@ async fn drop_params_forwarded() {
     );
 }
 
-// the environment's runtime endpoint replaces the regional host
-async fn environment_endpoint() {
-    let variables = environment("{}");
-    let text = String::from("hello");
-    let fixture = scripted(&[Reply::status(200, VECTOR)]);
-    let mut call = embedding_call(&text, IDENTITY, &variables);
-    call.environment.runtime_endpoint = Some("https://environment.example");
-    let outcome = run(&fixture, BedrockOtherOperation::Embedding(call)).await;
-    assert_eq!(
-        outcome.posted().url,
-        "https://environment.example/model/amazon.titan-embed-text-v1/invoke"
-    );
-}
-
 // an environment region signs against that region when no optional param names one
 async fn environment_region() {
     let variables = environment(r#"{"AWS_REGION": "eu-west-1"}"#);
@@ -576,7 +578,7 @@ async fn environment_region() {
     assert_eq!(outcome.regions, [String::from("eu-west-1")]);
 }
 
-pub(super) async fn case() {
+async fn payloads() {
     titan_g1_vector().await;
     titan_v2_binary_vector().await;
     sequential_successes().await;
@@ -585,12 +587,19 @@ pub(super) async fn case() {
     nova_text_payload().await;
     nova_media_payloads().await;
     marengo_payloads().await;
+}
+
+async fn forwarding() {
     async_status().await;
     extra_headers_forwarded().await;
-    api_base_endpoint().await;
+    endpoint_overrides().await;
     async_client_timeout().await;
     bearer_api_key().await;
     drop_params_forwarded().await;
-    environment_endpoint().await;
     environment_region().await;
+}
+
+pub(super) async fn case() {
+    payloads().await;
+    forwarding().await;
 }

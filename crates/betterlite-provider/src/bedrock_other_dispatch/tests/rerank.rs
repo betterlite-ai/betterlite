@@ -69,7 +69,7 @@ fn operation<'call>(
     })
 }
 
-fn rerank_call<'call>(request: RerankRequest, optional: &'call str) -> RerankOperation<'call> {
+fn rerank_call(request: RerankRequest, optional: &str) -> RerankOperation<'_> {
     RerankOperation {
         request,
         optional_params: params(optional),
