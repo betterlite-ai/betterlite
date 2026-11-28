@@ -5,11 +5,9 @@ use std::collections::BTreeMap;
 use betterlite_env::number;
 use serde::de::IgnoredAny;
 
+use crate::env_integer::timeout::RequestTimeout;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
-
-// LiteLLM's constants.request_timeout: REQUEST_TIMEOUT or 6000, read once at import
-const DEFAULT_REQUEST_TIMEOUT: f64 = 6000.0;
 
 // env-only section: no YAML key is read here, and the newtype keeps this Section impl off other sections' map type
 #[derive(Default, serde::Deserialize)]
@@ -25,7 +23,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT,
+            request_timeout_seconds: RequestTimeout::DEFAULT_SECONDS,
         }
     }
 }
@@ -38,8 +36,8 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
-        let request_timeout_seconds =
-            number::<f64>("REQUEST_TIMEOUT", &environment_text)?.unwrap_or(DEFAULT_REQUEST_TIMEOUT);
+        let request_timeout_seconds = number::<f64>("REQUEST_TIMEOUT", &environment_text)?
+            .unwrap_or(RequestTimeout::DEFAULT_SECONDS);
         Ok(Settings {
             request_timeout_seconds,
         })

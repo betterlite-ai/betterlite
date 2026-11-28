@@ -3,12 +3,13 @@ use std::time::Duration;
 
 use betterlite_bedrock::canvas_results::COST_HEADER;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::image_call::transport::{ClientKind, ImageRequest};
+use betterlite_bedrock::image_call::transport::ImageRequest;
 use betterlite_bedrock::image_edits::execute::dispatch_request;
 use betterlite_bedrock::image_edits::plan::{EditCall, EditPlan, PreparedRequest};
 use betterlite_bedrock::image_edits::prepare::{prepare_request, resolve_target};
 use betterlite_bedrock::image_edits::response::{EditReply, ObservedReply, transform_response};
 use betterlite_bedrock::model_routes::ParamMap;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Map, Value, json};
@@ -165,7 +166,7 @@ impl Run {
             "factory": match kind {
                 None => "none",
                 Some(ClientKind::Sync) => "sync",
-                Some(ClientKind::Async) => "async",
+                Some(ClientKind::Asynchronous) => "async",
             },
             "timeout_ms": last.and_then(|(_, timeout)| *timeout)
                 .and_then(|value| u64::try_from(value.as_millis()).ok()),

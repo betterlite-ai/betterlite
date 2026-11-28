@@ -37,10 +37,9 @@ use super::{EditCall, EditExecutor, LogContext, prepare_call};
 use crate::api::bfl::edit::media::{MaskInput, SuppliedMedia};
 use crate::api::bfl::generation::BflImageResponse;
 use crate::api::bfl::generation_call::params::CallParams;
-use crate::api::bfl::generation_call::submit::{
-    SubmitError, SubmitRequest, SubmitTransport, SuppliedTransport, TransportKind,
-};
+use crate::api::bfl::generation_call::submit::{SubmitError, SubmitRequest, SubmitTransport};
 use crate::api::bfl::poll::{MonotonicClock, PollError, PollTransport, TokioSleeper};
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 const MODEL: &str = "black_forest_labs/flux-kontext-pro";
 const PROMPT: &str = "make it blue";
@@ -273,7 +272,7 @@ async fn run(wire: &Wire, call: &mut EditCall<'_>) -> Outcome {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let supplied: Option<SuppliedTransport<'_, Wire>> = None;
+    let supplied: Option<SuppliedClient<'_, Wire>> = None;
     let result = match preparation {
         Ok(prepared) => executor.image_edit(call, &prepared, supplied).await,
         Err(error) => Err(error),
@@ -820,14 +819,14 @@ async fn a_ready_reply_without_a_sample_is_a_500() {
 }
 
 #[rstest]
-#[case(false, TransportKind::Sync, true)]
-#[case(true, TransportKind::Async, true)]
-#[case(false, TransportKind::Async, false)]
-#[case(true, TransportKind::Sync, false)]
+#[case(false, ClientKind::Sync, true)]
+#[case(true, ClientKind::Asynchronous, true)]
+#[case(false, ClientKind::Asynchronous, false)]
+#[case(true, ClientKind::Sync, false)]
 #[tokio::test]
 async fn only_a_supplied_transport_of_the_entry_points_kind_is_kept(
     #[case] async_call: bool,
-    #[case] kind: TransportKind,
+    #[case] kind: ClientKind,
     #[case] kept: bool,
 ) {
     let provider = Wire::ready();
@@ -847,7 +846,7 @@ async fn only_a_supplied_transport_of_the_entry_points_kind_is_kept(
         clock: &clock,
         sleeper: &sleeper,
     };
-    let handed = SuppliedTransport {
+    let handed = SuppliedClient {
         kind,
         transport: &supplied,
     };
@@ -877,7 +876,7 @@ async fn dropping_a_pending_edit_poll_cancels_the_poll() {
         clock: &clock,
         sleeper: &sleeper,
     };
-    let supplied: Option<SuppliedTransport<'_, Wire>> = None;
+    let supplied: Option<SuppliedClient<'_, Wire>> = None;
 
     let mut future = Box::pin(executor.image_edit(&call, &prepared, supplied));
     assert!(poll_once(future.as_mut()).is_pending());

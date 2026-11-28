@@ -1,0 +1,130 @@
+id: B10217
+title: The Sync and Async client class copies in bedrock, vertex, soniox and bfl take core's ClientKind and SuppliedClient
+description: >-
+  Four more handler families spell the httpx client class `Sync, Async` instead of core's `Sync, Asynchronous`, and three of them pair it with a borrowed transport in a struct of their own. They mean what core's `ClientKind` and `SuppliedClient<'client, Client>` in crates/betterlite-core/src/api/vector_store_http_write/service.rs (L30-L34 and L51-L54) mean: the class LiteLLM's isinstance check tests on a supplied client, and that client. betterlite-bedrock and betterlite-vertex already depend on betterlite-core, and soniox and bfl are core modules, so all of them take the core home with no new crate edge, and none of their files is in B10200's or B10216's scope, so this lands without waiting for either. It is a refactor: what each family sends, logs and raises stays the same.
+
+
+  The copies. betterlite-bedrock's bedrock_embedding_io/transport.rs L97-L107, image_call/transport.rs L49-L59 and rerank/transport.rs L59-L69 each declare `ClientKind { Sync, Async }` with its one-line comment and `SuppliedClient<'client, Client> { kind, transport: &'client Client }`. betterlite-vertex's gemini_http/call.rs L30-L34 declares the same ClientKind; its `SuppliedClient` (L36-L39) holds an owned `Arc<dyn GeminiPost>`, which the core home cannot hold, so that struct stays and only its `kind` field takes the core type. Core's soniox/pipeline/client.rs is nothing but the two copies (L1-L11), so the file goes with `pub mod client;` in soniox/pipeline.rs L2, and pipeline.rs L18 imports the home. bfl's generation_call/submit.rs L53-L63 calls them `TransportKind` and `SuppliedTransport<'client, T>`, and both take the home's names.
+
+
+  The variant. Every `ClientKind::Async` and `TransportKind::Async` in these families and their users becomes `ClientKind::Asynchronous`, and `TransportKind::Sync` becomes `ClientKind::Sync`. The users: bedrock's bedrock_embedding_io (tests/cases.rs, tests/secrets.rs), embedding_call (embedding_call.rs L28, execute.rs L17, execute/bridge.rs L20 and its tests), image_call (execute.rs and its tests), image_edits (execute.rs L10 and its tests), rerank (execute.rs and its tests) and converse_call, which takes rerank's ClientKind (converse_call.rs L31, buffered.rs L22, streaming.rs L17, transport.rs L5, tests.rs, tests/fixtures/transport.rs); betterlite-provider's bedrock_image_dispatch (call.rs L4, test_support.rs L9 and its tests); vertex's gemini_http (call.rs and its tests) and gemini_call (sync_call.rs L14, tests/support.rs, tests/ordered_effects.rs); core's soniox pipeline (pipeline.rs L75-L77, tests/selection.rs) and bfl (generation_call.rs, edit_call.rs L27 and both modules' tests); and the oracle helpers that build these clients: tools/oracle/src/helpers/bedrock embedding_io (http.rs, transport.rs), other_embedding_call/fixtures/harness.rs, other_image_call (other_image_call.rs, fixtures.rs, handlers.rs), other_image_edits (driver.rs, fixtures/harness.rs, fixtures/support.rs) and other_rerank/driver.rs, and helpers/core_ops bfl_edit_call/job.rs, bfl_jobs/job.rs and soniox_pipeline/perform.rs. Each imports `ClientKind` and `SuppliedClient` from betterlite-core's vector_store_http_write::service, as `crate::api::vector_store_http_write::service` inside core.
+
+
+  Tests. No new test: the families' tests already pick the supplied client by class and rebuild the other class, and they pass with only the import and the variant name changed.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/tests/cases.rs
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/tests/secrets.rs
+    - crates/betterlite-bedrock/src/bedrock_embedding_io/transport.rs
+    - crates/betterlite-bedrock/src/converse_call/buffered.rs
+    - crates/betterlite-bedrock/src/converse_call.rs
+    - crates/betterlite-bedrock/src/converse_call/streaming.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/input.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/run.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/transport.rs
+    - crates/betterlite-bedrock/src/converse_call/tests.rs
+    - crates/betterlite-bedrock/src/converse_call/transport.rs
+    - crates/betterlite-bedrock/src/embedding_call/execute/bridge.rs
+    - crates/betterlite-bedrock/src/embedding_call/execute.rs
+    - crates/betterlite-bedrock/src/embedding_call.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/cases/cohere.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/cases/order.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/fixture.rs
+    - crates/betterlite-bedrock/src/image_call/execute.rs
+    - crates/betterlite-bedrock/src/image_call/tests/cases.rs
+    - crates/betterlite-bedrock/src/image_call/tests/identity.rs
+    - crates/betterlite-bedrock/src/image_call/transport.rs
+    - crates/betterlite-bedrock/src/image_edits/execute.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/cases.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/identity.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/signing.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/transport.rs
+    - crates/betterlite-bedrock/src/rerank/execute.rs
+    - crates/betterlite-bedrock/src/rerank/tests/cases.rs
+    - crates/betterlite-bedrock/src/rerank/tests/identity.rs
+    - crates/betterlite-bedrock/src/rerank/transport.rs
+    - crates/betterlite-core/src/api/bfl/edit_call.rs
+    - crates/betterlite-core/src/api/bfl/edit_call/tests.rs
+    - crates/betterlite-core/src/api/bfl/generation_call.rs
+    - crates/betterlite-core/src/api/bfl/generation_call/submit.rs
+    - crates/betterlite-core/src/api/bfl/generation_call/tests.rs
+    - crates/betterlite-core/src/api/soniox/pipeline/client.rs
+    - crates/betterlite-core/src/api/soniox/pipeline.rs
+    - crates/betterlite-core/src/api/soniox/pipeline/tests/selection.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/call.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/edit_fixture.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/editing.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/fixture.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/generation.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/test_support.rs
+    - crates/betterlite-vertex/src/gemini_call/sync_call.rs
+    - crates/betterlite-vertex/src/gemini_call/tests/ordered_effects.rs
+    - crates/betterlite-vertex/src/gemini_call/tests/support.rs
+    - crates/betterlite-vertex/src/gemini_http/call.rs
+    - crates/betterlite-vertex/src/gemini_http/tests/execution.rs
+    - crates/betterlite-vertex/src/gemini_http/tests/execution/streaming.rs
+    - crates/betterlite-vertex/src/gemini_http/tests/support.rs
+    - tools/oracle/src/helpers/bedrock/embedding_io/http.rs
+    - tools/oracle/src/helpers/bedrock/embedding_io/transport.rs
+    - tools/oracle/src/helpers/bedrock/other_embedding_call/fixtures/harness.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call/fixtures.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call/handlers.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/driver.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/fixtures/harness.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/fixtures/support.rs
+    - tools/oracle/src/helpers/bedrock/other_rerank/driver.rs
+    - tools/oracle/src/helpers/core_ops/bfl_edit_call/job.rs
+    - tools/oracle/src/helpers/core_ops/bfl_jobs/job.rs
+    - tools/oracle/src/helpers/core_ops/soniox_pipeline/perform.rs
+  lint_tables: false
+references: []
+dod:
+  - text: Bedrock's three transports, vertex's gemini_http, soniox's pipeline and bfl's submit declare no client class enum or supplied client pair of their own, and soniox's client.rs is gone.
+    proof: [async-kind-copies]
+  - text: Every user names core's ClientKind with the Asynchronous variant and core's SuppliedClient, and the families' tests in bedrock, provider, vertex and core pass unchanged.
+    proof: [async-variants, bedrock-kind-tests, bedrock-dispatch-kind-tests, vertex-kind-tests, core-kind-tests]
+checks:
+  optional: []
+  commands:
+    - id: async-kind-copies
+      why: a family still declares its own Sync and Async client class or its own supplied client pair
+      run: |-
+        test -z "$(grep -lE '^pub (enum (ClientKind|TransportKind)|struct (SuppliedClient|SuppliedTransport))\b' crates/betterlite-bedrock/src/bedrock_embedding_io/transport.rs crates/betterlite-bedrock/src/image_call/transport.rs crates/betterlite-bedrock/src/rerank/transport.rs crates/betterlite-core/src/api/bfl/generation_call/submit.rs)" &&
+        test -z "$(grep -l '^pub enum ClientKind' crates/betterlite-vertex/src/gemini_http/call.rs)" &&
+        test ! -e crates/betterlite-core/src/api/soniox/pipeline/client.rs &&
+        test -z "$(grep -rnwE 'TransportKind|SuppliedTransport' crates/betterlite-core/src/api/bfl tools/oracle/src/helpers/core_ops/bfl_edit_call tools/oracle/src/helpers/core_ops/bfl_jobs --include=*.rs)"
+    - id: async-variants
+      why: a user still spells the async client class Async, so it names a deleted enum
+      run: |-
+        test -z "$(grep -rnE '\b(ClientKind|TransportKind)::Async\b' crates/betterlite-bedrock/src crates/betterlite-provider/src/bedrock_image_dispatch crates/betterlite-vertex/src/gemini_http crates/betterlite-vertex/src/gemini_call crates/betterlite-core/src/api/soniox crates/betterlite-core/src/api/bfl tools/oracle/src/helpers/bedrock tools/oracle/src/helpers/core_ops/bfl_edit_call tools/oracle/src/helpers/core_ops/bfl_jobs tools/oracle/src/helpers/core_ops/soniox_pipeline --include=*.rs)"
+    - id: bedrock-kind-tests
+      why: a bedrock family no longer reuses a supplied client of the matching class or rebuilds the other one
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^(bedrock_embedding_io|image_call|rerank|converse_call|embedding_call|image_edits)::/) - test(/replays_/)'
+    - id: bedrock-dispatch-kind-tests
+      why: the provider's Bedrock image dispatch no longer hands its supplied client to bedrock's image call
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^bedrock_image_dispatch::/)'
+    - id: vertex-kind-tests
+      why: the Gemini HTTP call no longer picks the supplied poster by class
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^(gemini_http|gemini_call)::/) - test(/replays_/)'
+    - id: core-kind-tests
+      why: soniox's pipeline or bfl's jobs no longer pick the supplied transport by class
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(soniox::pipeline|bfl::(generation_call|edit_call))::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10216's families in core and provider, which already spell the class `Asynchronous` and also share the request and transport."
+  - "The same class in crates below betterlite-core, which cannot import this home: betterlite-anthropic's chat_call/transport.rs (ClientKind and SuppliedChatClient) and betterlite-foundry's embeddings/call.rs (EmbeddingMode and its SuppliedClient with `mode` and `client`)."
+  - "vertex gemini_http's own `SuppliedClient` with an `Arc<dyn GeminiPost>` transport, and gemma_call's four-way `SuppliedClientKind` (gemma_call/plan.rs L27), which tells HTTPHandler from a raw httpx client."
+pitfalls:
+  - "converse_call never declares a ClientKind: it borrows rerank::transport's, so it breaks as soon as rerank's enum goes, and its six files need the core import too."
+  - "soniox's pipeline.rs L18 imports `self::client::{ClientKind, SuppliedClient}`; once client.rs and `pub mod client;` are gone that line reads `crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient}`."
+  - "vertex gemini_http/call.rs keeps a struct named SuppliedClient, so it imports only ClientKind from core; importing core's SuppliedClient there clashes with the local name."
+  - "betterlite-provider's bedrock_image_dispatch and the oracle's bedrock helpers reach the types through `betterlite_bedrock::image_call::transport` and its siblings today; they import betterlite_core's path directly, since a `pub use` left in bedrock would be one more copy of the name."
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

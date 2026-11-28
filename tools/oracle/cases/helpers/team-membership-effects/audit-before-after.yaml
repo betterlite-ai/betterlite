@@ -1,0 +1,23 @@
+kind: helper
+name: team-membership-audit-before-after
+call:
+  b10140:
+    team_alias: Alpha
+    members:
+      - {"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "admin"}
+      - {"user_id": "test-user-2", "user_email": "test-2@example.com", "role": "user"}
+calls:
+  - b10140:
+      team_alias: Alpha
+      members:
+        - {"user_id": "test-user-2", "user_email": "test-2@example.com", "role": "user"}
+  - b10140:
+      team_alias: Alpha
+      members:
+        - {"user_id": "test-user-2", "user_email": "test-2@example.com", "role": "user"}
+        - {"user_id": "test-user-1", "user_email": "test-1@example.com", "role": "admin"}
+  - b10140:
+      team_alias: Alpha
+      members: []
+env: {}
+compare: {ignore: []}

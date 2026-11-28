@@ -1,0 +1,13 @@
+id: B10215
+milestone: R2 bug fixes
+title: Production realtime logging, success queue and failure dispatch over the logging lifecycle
+status: todo
+depends_on: [B1006, B1008, B190, B191, B249, B251, B10185]
+file: tasks/B10215-realtime-session-logging.yaml
+covers: []
+parent: null
+split_from: B10213
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

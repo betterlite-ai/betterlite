@@ -1,0 +1,12 @@
+task: B10135
+deviations:
+  - what: The management mode is a ManagementMode value the config section resolves once at load, where LiteLLM reads general_settings.get("user_mcp_management_mode") from the live proxy settings on every call.
+    why: betterlite has no module-level state and its config is immutable after load, so the route states carry the mode to the two functions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1112-L1120
+  - what: authorize_and_fetch_mcp_server takes the database lookup as &dyn DbLookup and the access check as a named generic port, resolve_accessible_mcp_servers takes the sources as a named generic port, and both return ManagementAccessError values or the ports' own errors, where LiteLLM raises HTTPException and passes plain callables.
+    why: the server crate has no HTTP layer, the route layer renders the same 404 and 403 bodies from B4731's detail maps, and the lint lane refuses impl Trait in argument position (B4731's resolve_server takes Option<&dyn DbLookup> for the same reason) while an access port's associated error needs a named generic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L1-L122
+  - what: The context walk and the allowed-table read go through the AccessibleServerSources port declared in this module, where LiteLLM calls build_effective_auth_contexts and get_all_allowed_mcp_servers directly.
+    why: B10127 and B6591 own those reads and this task names none of their symbols, so the module is tested against a fake and the production adapter lands with the MCP identity wiring.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L136-L152
+kept_bugs: []

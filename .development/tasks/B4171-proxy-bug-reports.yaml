@@ -4,7 +4,10 @@ description: >-
   Register GET /debug/report in betterlite-server. It returns the same LiteLLM-owned environment facts the bug report link puts in a GitHub issue (versions, deployment kind and the safe config lines) to a proxy admin, and answers HTTP 403 to every other authenticated principal.
 
 
-  B10058 builds the report: build_proxy_environment_report in betterlite-reporting's safe_proxy_config, over B4170's build_environment_report, with the safe_config_lines filter and its name tables. This task only serves it. The handler passes build_proxy_environment_report a ProxyConfigSnapshot of the running proxy (the loaded config and general_settings) and the host facts B4170's Host takes (the /.dockerenv path, no Python version), and returns the EnvironmentReport as JSON.
+  B10058 builds the report: build_proxy_environment_report in betterlite-reporting's safe_proxy_config, over B4170's build_environment_report, with the safe_config_lines filter and its name tables. This task only serves it. The handler passes build_proxy_environment_report the ProxyConfigSnapshot that B10218's state.proxy_diagnostics.notices holds (the running config and general_settings) and the host facts B4170's Host takes (that value's dockerenv path, no Python version), so the report and the error notice share one snapshot, and returns the EnvironmentReport as JSON.
+
+
+  This task fills that snapshot at startup. B10218's proxy_diagnostics::Slot::new leaves it empty, since the typed Config keeps no copy of the loaded document. Keep a copy of the loaded document's top-level map and its general_settings where betterlite-config's loader parses the file (loader.rs load_document), as plain data and not a config section view, so unknown-key detection stays as it is. Slot::new converts it once into B10058's ProxyConfigSnapshot, so every bug report notice shows the safe config lines too. Then delete the empty-snapshot row from docs/deviations/B10218.yaml.
 
 
   Register the route as GET /debug/report, left out of the OpenAPI schema (include_in_schema=False).
@@ -26,6 +29,11 @@ scope:
     - tools/oracle/helpers/b4171/**
     - tools/oracle/src/helpers/reporting/b4171.rs
     - tools/oracle/src/helpers/reporting/b4171/**
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-server/src/state/proxy_diagnostics.rs
+    - crates/betterlite-server/src/state/proxy_diagnostics/**
+    - docs/deviations/B10218.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L789-L803
@@ -41,9 +49,16 @@ dod:
     proof: [oracle]
   - text: The EnvironmentReport returned by /debug/report is B10058's build_proxy_environment_report over the running config, safe config lines included.
     proof: [oracle]
+  - text: At startup the proxy_diagnostics slot's snapshot holds the loaded config and general_settings, and docs/deviations/B10218.yaml no longer lists the empty snapshot.
+    proof: [oracle, snapshot-filled]
 checks:
   optional: []
-  commands: []
+  commands:
+    - id: snapshot-filled
+      why: B10218's empty-snapshot row is still listed, so the slot was not filled at startup
+      run: >-
+        test -e docs/deviations/B10218.yaml &&
+        ! grep -q 'ProxyConfigSnapshot' docs/deviations/B10218.yaml
 oracle_cases:
   - tools/oracle/cases/debug/report/admin-access.yaml
   - tools/oracle/cases/debug/report/non-admin-403.yaml
@@ -57,7 +72,7 @@ out_of_scope:
   - Request dispatch and other debug routes. GET /memory-usage, /debug/asyncio-tasks and others are owned by B4173 and B4174.
   - The exporter's get_finished_spans callable used by GET /otel-spans. B4174 owns that route; the exporter is a dependency.
   - Custom secrets manager operations and other config dependencies referenced but not owned by B002.
-  - Caller wiring for build_proxy_bug_report in proxy exception paths (proxy_server.py, utils.py, common_request_processing.py). B10058 builds the function; B2400 and B8591 call it at error time.
+  - Caller wiring for build_proxy_bug_report in proxy exception paths (proxy_server.py, utils.py, common_request_processing.py). B10058 builds the function; B10218's BugReportNotices calls it, and B2400's callers, B8591 and B10178 use that at error time.
 pitfalls:
   - The 403 detail is exactly "Only proxy admins can read /debug/report", raised after auth succeeds, so an unauthenticated call gets the auth error instead.
   - Proxy admin status is checked through is_proxy_admin from B1018. If that callable changes ownership or interface, update the reference here.

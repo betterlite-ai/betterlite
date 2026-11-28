@@ -1,0 +1,17 @@
+kind: helper
+name: vector-file-resolution-routing
+call:
+  vector_file_resolution:
+    calls:
+      - function: unified_file_routing
+        data: {model: old, file_id: old_file}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1, api_base: "http://m1"}}
+      - function: unified_file_routing
+        data: {}
+        file_id: file_plain
+        caller: {}
+        catalog: {}
+env: {}
+compare: {ignore: []}

@@ -1,12 +1,21 @@
 use crate::state::shared::Shared;
 use betterlite_config::types::Config;
 
-pub struct Slot;
+// general_settings.admin_only_routes, which betterlite enforces without the license LiteLLM asks for
+pub struct Slot {
+    pub admin_only_routes: Vec<String>,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub fn new(config: &Config, _shared: &Shared) -> Self {
+        Self {
+            admin_only_routes: config
+                .sections
+                .auth_route_policy
+                .admin_only_routes
+                .clone()
+                .unwrap_or_default(),
+        }
     }
 }

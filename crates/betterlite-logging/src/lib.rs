@@ -7,6 +7,7 @@ pub mod analytics;
 pub mod argilla_logging;
 pub mod arize;
 pub mod audit;
+pub mod aws_credentials;
 pub mod azure_sentinel_logging;
 pub mod azure_storage_logging;
 pub mod batch;
