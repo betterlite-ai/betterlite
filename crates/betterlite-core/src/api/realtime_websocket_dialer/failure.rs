@@ -58,22 +58,24 @@ impl OpenFailure {
         }
     }
 
-    // a TLS config that will not build is an ssl error, which LiteLLM's retry loop does not catch
-    pub(super) fn config(error: TlsError) -> Self {
-        Self::new(
-            Class::OSError,
-            DialError::Other {
-                message: error.to_string(),
-            },
-        )
-    }
-
     pub(super) fn into_probe(self) -> ProbeDialError {
         ProbeDialError {
             class: self.class.text().to_owned(),
             message: self.error.to_string(),
             status: self.status,
         }
+    }
+}
+
+// a TLS config that will not build is an ssl error, which LiteLLM's retry loop does not catch
+impl From<TlsError> for OpenFailure {
+    fn from(error: TlsError) -> Self {
+        Self::new(
+            Class::OSError,
+            DialError::Other {
+                message: error.to_string(),
+            },
+        )
     }
 }
 

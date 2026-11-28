@@ -8,9 +8,10 @@ use crate::api::realtime_contracts::error::HeaderMap;
 use super::failure::{Class, OpenFailure};
 
 // the map a dialer hands in: B2457's backend headers carry JSON values, the health check's carry strings
-pub(super) enum HeaderSource<'a> {
-    Backend(&'a HeaderMap),
-    Probe(&'a Headers),
+#[derive(Clone, Copy)]
+pub(super) enum HeaderSource<'source> {
+    Backend(&'source HeaderMap),
+    Probe(&'source Headers),
 }
 
 pub(super) fn dialer_headers(

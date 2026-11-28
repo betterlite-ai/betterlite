@@ -32,7 +32,7 @@ impl RealtimeBackend for DialedSender {
             RealtimeMessage::Text(text) => self.sender.send_text(&text).await,
             RealtimeMessage::Binary(bytes) => self.sender.send_binary(&bytes).await,
         };
-        outcome.map_err(websocket_error)
+        outcome.map_err(WebSocketError::from)
     }
 
     // B2457 splits the socket, so the relay reads the receiving half and never this one
@@ -47,7 +47,7 @@ impl RealtimeBackend for DialedSender {
         self.sender
             .close(NORMAL_CLOSE_CODE, "")
             .await
-            .map_err(websocket_error)
+            .map_err(WebSocketError::from)
     }
 }
 
@@ -70,7 +70,7 @@ impl RealtimeBackendSource for DialedSource {
                 self.close_oversized(size, max_size).await
             }
             Err(WebSocketClientError::KeepaliveTimeout) => Err(keepalive_closed()),
-            Err(error) => Err(RelayReceiveError::Failed(websocket_error(error))),
+            Err(error) => Err(RelayReceiveError::Failed(WebSocketError::from(error))),
         }
     }
 }
@@ -83,7 +83,7 @@ impl DialedSource {
     ) -> Result<RealtimeMessage, RelayReceiveError> {
         let Some(close) = oversized_message_close(size, self.max_size) else {
             let error = WebSocketClientError::Capacity { size, max_size };
-            return Err(RelayReceiveError::Failed(websocket_error(error)));
+            return Err(RelayReceiveError::Failed(WebSocketError::from(error)));
         };
         // the value SizeLimitedSource builds once a frame passes the client's own cap
         let message = format!(
@@ -157,9 +157,12 @@ fn keepalive_closed() -> RelayReceiveError {
     })
 }
 
-fn websocket_error(error: WebSocketClientError) -> WebSocketError {
-    WebSocketError {
-        message: error.to_string(),
+// a client failure reaches the relay as the contract's message error
+impl From<WebSocketClientError> for WebSocketError {
+    fn from(error: WebSocketClientError) -> Self {
+        Self {
+            message: error.to_string(),
+        }
     }
 }
 

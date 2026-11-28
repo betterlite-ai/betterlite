@@ -116,10 +116,10 @@ impl WebSocketDialer {
                 ));
             }
             RealtimeSsl::Insecure => Some(Arc::new(
-                websocket_client_config(&Verification::Disabled).map_err(OpenFailure::config)?,
+                websocket_client_config(&Verification::Disabled).map_err(OpenFailure::from)?,
             )),
             RealtimeSsl::Shared(verification) => Some(Arc::new(
-                websocket_client_config(verification).map_err(OpenFailure::config)?,
+                websocket_client_config(verification).map_err(OpenFailure::from)?,
             )),
             RealtimeSsl::Disabled => None,
         };
@@ -143,7 +143,7 @@ impl WebSocketDialer {
     fn proxy_target(&self, url: &Url) -> Result<Option<Arc<ProxyServer>>, OpenFailure> {
         match self.proxy.websocket_route(url) {
             None => Ok(None),
-            Some(ProxyRoute::Forward(server)) => Ok(Some(server)),
+            Some(ProxyRoute::Forward(server)) => Ok(Some(Arc::clone(server))),
             Some(ProxyRoute::Unsupported { scheme }) if scheme.starts_with("socks") => {
                 Err(OpenFailure::new(
                     Class::ImportError,
