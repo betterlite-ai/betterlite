@@ -374,6 +374,12 @@ impl RatesCost {
             .get(model)
             .copied()
     }
+
+    // the arm's own buckets priced at its rates, shared by the scenario and price lookups below
+    fn input_cost(&self, model: &str, tokens: &CacheTokenBuckets) -> Option<Decimal> {
+        let rates = self.rates_for(model)?;
+        Some(tokens_cost(rates, tokens))
+    }
 }
 
 impl CacheCostService for RatesCost {
@@ -398,10 +404,10 @@ impl CacheCostService for RatesCost {
         request: &ScenarioRequest<'_>,
         _moment: DateTime<Utc>,
     ) -> Option<CacheCostScenario> {
-        let rates = self.rates_for(request.model)?;
+        let input_cost = self.input_cost(request.model, request.tokens)?;
         Some(CacheCostScenario {
             tokens: *request.tokens,
-            input_cost: tokens_cost(rates, request.tokens),
+            input_cost,
         })
     }
 
