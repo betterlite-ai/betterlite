@@ -640,31 +640,37 @@ def test_calls_refuse_azure() -> None:
         assert server.calls == []
 
 
-def test_error_keeps_class() -> None:
-    authentication_class = LITELLM_ERRORS.AuthenticationError
-    not_found_class = LITELLM_ERRORS.NotFoundError
+# a GET answers with the reply body for an error status, and retrieve keeps only its declared fields
+def test_error_reads_body() -> None:
     with closing(ManageServer()) as server:
-        # a GET answers with the reply body, and retrieve keeps only its declared fields
-        reference_error = LITELLM.retrieve(
-            vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY
+        reference = (
+            LITELLM.retrieve(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY),
+            LITELLM.list(api_base=server.url, api_key=BAD_KEY),
         )
-        assert reference_error == error_payload("Incorrect API key provided")
-        assert retrieve(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY) == {}
-        reference_list = LITELLM.list(api_base=server.url, api_key=BAD_KEY)
-        assert list_call(api_base=server.url, api_key=BAD_KEY) == reference_list
-        with pytest.raises(AuthenticationError) as authenticated_update:
+        ours = (
+            retrieve(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY),
+            list_call(api_base=server.url, api_key=BAD_KEY),
+        )
+    assert reference[0] == error_payload("Incorrect API key provided")
+    assert ours[0] == {}
+    assert ours[1] == reference[1]
+
+
+def test_error_keeps_class() -> None:
+    with closing(ManageServer()) as server:
+        with pytest.raises(AuthenticationError) as authenticated:
             update(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
-        with pytest.raises(authentication_class):
+        with pytest.raises(LITELLM_ERRORS.AuthenticationError):
             LITELLM.update(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
-        with pytest.raises(NotFoundError) as missing_delete:
+        with pytest.raises(NotFoundError) as missing:
             delete(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(not_found_class):
+        with pytest.raises(LITELLM_ERRORS.NotFoundError):
             LITELLM.delete(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
-    caught = (
-        (authenticated_update, authentication_class, UNAUTHORIZED),
-        (missing_delete, not_found_class, NOT_FOUND),
+    raised = (
+        (authenticated, LITELLM_ERRORS.AuthenticationError, UNAUTHORIZED),
+        (missing, LITELLM_ERRORS.NotFoundError, NOT_FOUND),
     )
-    for ours_caught, reference_class, status in caught:
+    for ours_caught, reference_class, status in raised:
         assert type(ours_caught.value).__name__ == reference_class.__name__
         assert ours_caught.value.status_code == status
         match ours_caught.value.__cause__:
