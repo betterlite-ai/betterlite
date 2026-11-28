@@ -46,10 +46,11 @@ const PING_INTERVAL: Duration = Duration::from_millis(50);
 const PING_TIMEOUT: Duration = Duration::from_millis(50);
 const SERVER_SILENCE: Duration = Duration::from_millis(250);
 
-// the recorder keeps what the client asked with, for the test to check once the handshake returned
+// the recorder keeps what the client asked with, and answers with a rejection when the test asks for one
 struct Recorder<'headers> {
     headers: &'headers mut Vec<(String, String)>,
     target: &'headers mut String,
+    rejection: Option<StatusCode>,
 }
 
 impl Callback for Recorder<'_> {
@@ -61,23 +62,13 @@ impl Callback for Recorder<'_> {
                 value.to_str().expect("header text").to_owned(),
             ));
         }
-        Ok(response)
-    }
-}
-
-struct Rejecter;
-
-impl Callback for Rejecter {
-    fn on_request(
-        self,
-        _request: &Request,
-        _response: Response,
-    ) -> Result<Response, ErrorResponse> {
-        let rejection = Response::builder()
-            .status(StatusCode::FORBIDDEN)
-            .body(Some("forbidden".to_owned()))
-            .expect("rejection");
-        Err(rejection)
+        match self.rejection {
+            Some(status) => Err(Response::builder()
+                .status(status)
+                .body(Some("forbidden".to_owned()))
+                .expect("rejection")),
+            None => Ok(response),
+        }
     }
 }
 
@@ -118,6 +109,7 @@ async fn serve_plain(listener: TcpListener) -> (String, Vec<(String, String)>) {
         Recorder {
             headers: &mut headers,
             target: &mut target,
+            rejection: None,
         },
     )
     .await
@@ -138,7 +130,14 @@ async fn serve_tls(listener: TcpListener, config: Arc<ServerConfig>) -> String {
 
 async fn serve_rejection(listener: TcpListener) -> bool {
     let (stream, _peer) = listener.accept().await.expect("accept");
-    accept_hdr_async(stream, Rejecter).await.is_err()
+    let mut headers = Vec::new();
+    let mut target = String::new();
+    let recorder = Recorder {
+        headers: &mut headers,
+        target: &mut target,
+        rejection: Some(StatusCode::FORBIDDEN),
+    };
+    accept_hdr_async(stream, recorder).await.is_err()
 }
 
 async fn serve_hung_upgrade(listener: TcpListener) {
@@ -191,25 +190,27 @@ async fn read_head(stream: &mut TcpStream) -> String {
     String::from_utf8(head).expect("head text")
 }
 
-async fn serve_proxy_rejection(listener: TcpListener) -> String {
-    let (mut stream, _peer) = listener.accept().await.expect("accept");
-    let head = read_head(&mut stream).await;
-    stream
-        .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\ncontent-length: 0\r\n\r\n")
-        .await
-        .expect("response");
-    head
-}
-
-async fn serve_proxy(listener: TcpListener, target: SocketAddr) -> String {
+async fn serve_proxy(listener: TcpListener, forward: Option<SocketAddr>) -> String {
     let (mut downstream, _peer) = listener.accept().await.expect("accept");
     let head = read_head(&mut downstream).await;
-    let mut upstream = TcpStream::connect(target).await.expect("upstream");
-    downstream
-        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-        .await
-        .expect("response");
-    drop(tokio::io::copy_bidirectional(&mut downstream, &mut upstream).await);
+    match forward {
+        None => {
+            downstream
+                .write_all(
+                    b"HTTP/1.1 407 Proxy Authentication Required\r\ncontent-length: 0\r\n\r\n",
+                )
+                .await
+                .expect("response");
+        }
+        Some(target) => {
+            let mut upstream = TcpStream::connect(target).await.expect("upstream");
+            downstream
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+                .expect("response");
+            drop(tokio::io::copy_bidirectional(&mut downstream, &mut upstream).await);
+        }
+    }
     head
 }
 
@@ -499,7 +500,7 @@ async fn websocket_client_tests_report_a_proxy_status_and_send_basic_auth() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_proxy_rejection(listener));
+    tasks.spawn(serve_proxy(listener, None));
     let proxy = ProxyServer {
         host: "127.0.0.1".to_owned(),
         port: address.port(),

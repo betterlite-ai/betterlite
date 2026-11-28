@@ -24,7 +24,7 @@ use crate::api::realtime_connection_plan::{ProbeConnection, ProbeDialError, Real
 
 use self::failure::{Class, OpenFailure, connect_failure};
 use self::halves::{DialedSender, DialedSource};
-use self::headers::{backend_headers, probe_headers};
+use self::headers::{HeaderSource, dialer_headers};
 
 // websockets' ping_interval and ping_timeout defaults, kept by every realtime backend socket
 const DEFAULT_KEEPALIVE: Keepalive = Keepalive {
@@ -53,8 +53,8 @@ struct OpenRequest<'open> {
 #[async_trait]
 impl RealtimeWebSocketDialer for WebSocketDialer {
     async fn connect(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
-        let headers =
-            backend_headers(request.headers).map_err(|open_failure| open_failure.error)?;
+        let headers = dialer_headers(HeaderSource::Backend(request.headers))
+            .map_err(|open_failure| open_failure.error)?;
         let opened = self
             .open(OpenRequest {
                 url: request.url,
@@ -82,7 +82,8 @@ impl RealtimeWebSocketDialer for WebSocketDialer {
 #[async_trait]
 impl RealtimeProbeDialer for WebSocketDialer {
     async fn probe(&self, connection: &ProbeConnection) -> Result<(), ProbeDialError> {
-        let headers = probe_headers(&connection.headers).map_err(OpenFailure::into_probe)?;
+        let headers = dialer_headers(HeaderSource::Probe(&connection.headers))
+            .map_err(OpenFailure::into_probe)?;
         let opened = self
             .open(OpenRequest {
                 url: &connection.url,

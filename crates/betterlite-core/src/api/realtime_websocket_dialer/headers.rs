@@ -7,54 +7,51 @@ use crate::api::realtime_contracts::error::HeaderMap;
 
 use super::failure::{Class, OpenFailure};
 
-// B2457's backend headers carry JSON values; a text value is the header text and any other value names the header
-pub(super) fn backend_headers(
-    headers: &HeaderMap,
+// the map a dialer hands in: B2457's backend headers carry JSON values, the health check's carry strings
+pub(super) enum HeaderSource<'a> {
+    Backend(&'a HeaderMap),
+    Probe(&'a Headers),
+}
+
+pub(super) fn dialer_headers(
+    source: HeaderSource<'_>,
 ) -> Result<Vec<(HeaderName, HeaderValue)>, OpenFailure> {
-    let mut pairs = Vec::with_capacity(headers.len());
-    for (name, value) in headers {
-        let Json::Text(text) = value else {
-            return Err(OpenFailure::new(
-                Class::ValueError,
-                DialError::Other {
-                    message: format!("the realtime backend header {name} is not a string"),
-                },
-            ));
-        };
-        pairs.push((header_name(name)?, header_value(name, text)?));
+    let mut pairs = Vec::new();
+    match source {
+        HeaderSource::Backend(headers) => {
+            for (name, value) in headers {
+                let Json::Text(text) = value else {
+                    return Err(OpenFailure::new(
+                        Class::ValueError,
+                        DialError::Other {
+                            message: format!("the realtime backend header {name} is not a string"),
+                        },
+                    ));
+                };
+                pairs.push(parse_pair(name, text)?);
+            }
+        }
+        HeaderSource::Probe(headers) => {
+            for (name, text) in headers {
+                pairs.push(parse_pair(name, text)?);
+            }
+        }
     }
     Ok(pairs)
 }
 
-// the health check's headers are already strings
-pub(super) fn probe_headers(
-    headers: &Headers,
-) -> Result<Vec<(HeaderName, HeaderValue)>, OpenFailure> {
-    let mut pairs = Vec::with_capacity(headers.len());
-    for (name, text) in headers {
-        pairs.push((header_name(name)?, header_value(name, text)?));
-    }
-    Ok(pairs)
+fn parse_pair(name: &str, text: &str) -> Result<(HeaderName, HeaderValue), OpenFailure> {
+    let parsed_name =
+        HeaderName::from_bytes(name.as_bytes()).map_err(|_error| invalid_header(name))?;
+    let parsed_value = HeaderValue::from_str(text).map_err(|_error| invalid_header(name))?;
+    Ok((parsed_name, parsed_value))
 }
 
-fn header_name(name: &str) -> Result<HeaderName, OpenFailure> {
-    HeaderName::from_bytes(name.as_bytes()).map_err(|_error| {
-        OpenFailure::new(
-            Class::InvalidUri,
-            DialError::WebSocket {
-                message: format!("the realtime backend header {name} is not valid"),
-            },
-        )
-    })
-}
-
-fn header_value(name: &str, text: &str) -> Result<HeaderValue, OpenFailure> {
-    HeaderValue::from_str(text).map_err(|_error| {
-        OpenFailure::new(
-            Class::InvalidUri,
-            DialError::WebSocket {
-                message: format!("the realtime backend header {name} is not valid"),
-            },
-        )
-    })
+fn invalid_header(name: &str) -> OpenFailure {
+    OpenFailure::new(
+        Class::InvalidUri,
+        DialError::WebSocket {
+            message: format!("the realtime backend header {name} is not valid"),
+        },
+    )
 }

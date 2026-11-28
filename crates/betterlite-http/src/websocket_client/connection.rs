@@ -72,21 +72,13 @@ pub struct WebSocketSender {
 
 impl WebSocketSender {
     pub async fn send_text(&self, text: &str) -> Result<(), WebSocketClientError> {
-        self.sink
-            .lock()
+        self.write_message(Message::Text(Utf8Bytes::from(text)))
             .await
-            .send(Message::Text(Utf8Bytes::from(text)))
-            .await
-            .map_err(WebSocketClientError::from_tungstenite)
     }
 
     pub async fn send_binary(&self, bytes: &[u8]) -> Result<(), WebSocketClientError> {
-        self.sink
-            .lock()
+        self.write_message(Message::Binary(Bytes::copy_from_slice(bytes)))
             .await
-            .send(Message::Binary(Bytes::copy_from_slice(bytes)))
-            .await
-            .map_err(WebSocketClientError::from_tungstenite)
     }
 
     pub async fn close(&self, code: u16, reason: &str) -> Result<(), WebSocketClientError> {
@@ -94,10 +86,12 @@ impl WebSocketSender {
             code: CloseCode::from(code),
             reason: Utf8Bytes::from(reason),
         };
-        self.sink
-            .lock()
-            .await
-            .send(Message::Close(Some(frame)))
+        self.write_message(Message::Close(Some(frame))).await
+    }
+
+    async fn write_message(&self, message: Message) -> Result<(), WebSocketClientError> {
+        let mut sink = self.sink.lock().await;
+        sink.send(message)
             .await
             .map_err(WebSocketClientError::from_tungstenite)
     }

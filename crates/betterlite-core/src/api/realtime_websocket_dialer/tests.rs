@@ -96,27 +96,27 @@ fn probe_connection(url: String) -> ProbeConnection {
     }
 }
 
-// a proxy that answers every upgrade attempt with the same status, counting the attempts
-async fn serve_rejection(listener: TcpListener, attempts: Arc<AtomicUsize>, status: StatusCode) {
-    loop {
-        let Ok((stream, _peer)) = listener.accept().await else {
-            return;
-        };
-        attempts.fetch_add(1, Ordering::SeqCst);
-        drop(tokio_tungstenite::accept_hdr_async(stream, Rejector { status }).await);
-    }
-}
-
-// a server that accepts and never answers, holding each attempt open until the open timeout fires
-async fn serve_hung(listener: TcpListener, attempts: Arc<AtomicUsize>) {
+// a server that answers each upgrade attempt with the same status, or holds it open until the open timeout fires
+async fn serve_attempts(
+    listener: TcpListener,
+    attempts: Arc<AtomicUsize>,
+    rejection: Option<StatusCode>,
+) {
     let mut held = Vec::new();
     loop {
         let Ok((stream, _peer)) = listener.accept().await else {
             return;
         };
         attempts.fetch_add(1, Ordering::SeqCst);
-        held.push(stream);
-        assert!(held.len() <= ATTEMPTS);
+        match rejection {
+            Some(status) => {
+                drop(tokio_tungstenite::accept_hdr_async(stream, Rejector { status }).await);
+            }
+            None => {
+                held.push(stream);
+                assert!(held.len() <= ATTEMPTS);
+            }
+        }
     }
 }
 
@@ -129,10 +129,12 @@ async fn serve_frames(listener: TcpListener, frames: Vec<Message>) {
     pending::<()>().await;
 }
 
-async fn serve_frame_and_close(listener: TcpListener, frame: Message) -> (u16, String) {
+async fn serve_close_after(listener: TcpListener, first: Option<Message>) -> (u16, String) {
     let (stream, _peer) = listener.accept().await.expect("accept");
     let mut socket = accept_async(stream).await.expect("handshake");
-    socket.send(frame).await.expect("frame");
+    if let Some(frame) = first {
+        socket.send(frame).await.expect("frame");
+    }
     let read = socket.next().await.expect("close").expect("frame");
     let Message::Close(Some(close)) = read else {
         panic!("expected a close frame");
@@ -158,26 +160,16 @@ async fn serve_end(listener: TcpListener) {
     drop(accept_async(stream).await);
 }
 
-async fn serve_probe(listener: TcpListener) -> (u16, String) {
-    let (stream, _peer) = listener.accept().await.expect("accept");
-    let mut socket = accept_async(stream).await.expect("handshake");
-    let read = socket.next().await.expect("close").expect("frame");
-    let Message::Close(Some(close)) = read else {
-        panic!("expected a close frame");
-    };
-    (u16::from(close.code), close.reason.as_str().to_owned())
-}
-
 #[tokio::test]
 async fn dialer_answers_a_rejected_upgrade_with_the_status_after_one_attempt() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_rejection(
+    tasks.spawn(serve_attempts(
         listener,
         Arc::clone(&attempts),
-        StatusCode::UNAUTHORIZED,
+        Some(StatusCode::UNAUTHORIZED),
     ));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
@@ -210,7 +202,7 @@ async fn dialer_retries_a_hung_upgrade_three_times() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_hung(listener, Arc::clone(&attempts)));
+    tasks.spawn(serve_attempts(listener, Arc::clone(&attempts), None));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
     let headers = HeaderMap::new();
@@ -353,7 +345,7 @@ async fn dialer_closes_a_frame_over_its_own_cap_with_1009() {
     let address = listener.local_addr().expect("address");
     let frame = Message::Text(Utf8Bytes::from("x".repeat(OVER_LIMIT_FRAME)));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_frame_and_close(listener, frame));
+    tasks.spawn(serve_close_after(listener, Some(frame)));
     let url = format!("ws://{address}/realtime");
     let ssl = RealtimeSsl::Disabled;
     let headers = HeaderMap::new();
@@ -534,7 +526,7 @@ async fn probe_answers_ok_on_an_accepted_upgrade_and_closes_1000() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_probe(listener));
+    tasks.spawn(serve_close_after(listener, None));
     let dialer = web_dialer(no_proxy());
     let connection = probe_connection(format!("ws://{address}/realtime"));
     timeout(TEST_TIMEOUT, dialer.probe(&connection))
@@ -556,10 +548,10 @@ async fn probe_reports_a_rejected_upgrade_as_invalid_status() {
     let address = listener.local_addr().expect("address");
     let attempts = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_rejection(
+    tasks.spawn(serve_attempts(
         listener,
         Arc::clone(&attempts),
-        StatusCode::FORBIDDEN,
+        Some(StatusCode::FORBIDDEN),
     ));
     let dialer = web_dialer(no_proxy());
     let connection = probe_connection(format!("ws://{address}/realtime"));

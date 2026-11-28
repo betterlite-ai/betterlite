@@ -94,33 +94,51 @@ impl ProxyPolicy {
     pub fn route(&self, url: &Url) -> Option<&ProxyRoute> {
         // httpx hands LiteLLM an IPv6 host without its brackets
         let host = url.host_str().unwrap_or_default();
-        if bypasses(&self.no_proxy, host.trim_matches(['[', ']'])) {
-            return None;
-        }
-        self.primary
-            .get(url.scheme())
-            .or_else(|| self.primary.get("all"))
-            .or_else(|| self.fallback.get(url.scheme()))
+        self.lookup(
+            Some(host.trim_matches(['[', ']'])),
+            &[
+                (&self.primary, url.scheme()),
+                (&self.primary, "all"),
+                (&self.fallback, url.scheme()),
+            ],
+        )
     }
 
     // websockets' get_proxy: NO_PROXY on "host:port", then one scheme order, and never ALL_PROXY or the netrc fallback
     #[must_use]
     pub fn websocket_route(&self, url: &Url) -> Option<&ProxyRoute> {
         let host = url.host_str().unwrap_or_default();
-        if let Some(port) = url.port_or_known_default()
-            && bypasses(
-                &self.no_proxy,
-                &format!("{}:{port}", host.trim_matches(['[', ']'])),
-            )
-        {
+        let bypass_target = url
+            .port_or_known_default()
+            .map(|port| format!("{}:{port}", host.trim_matches(['[', ']'])));
+        let candidates: &[(&BTreeMap<String, ProxyRoute>, &str)] = if url.scheme() == "wss" {
+            &[
+                (&self.primary, "wss"),
+                (&self.primary, "socks"),
+                (&self.primary, "https"),
+            ]
+        } else {
+            &[
+                (&self.primary, "ws"),
+                (&self.primary, "socks"),
+                (&self.primary, "https"),
+                (&self.primary, "http"),
+            ]
+        };
+        self.lookup(bypass_target.as_deref(), candidates)
+    }
+
+    fn lookup<'policy>(
+        &'policy self,
+        bypass_target: Option<&str>,
+        candidates: &[(&'policy BTreeMap<String, ProxyRoute>, &'policy str)],
+    ) -> Option<&'policy ProxyRoute> {
+        if bypass_target.is_some_and(|target| bypasses(&self.no_proxy, target)) {
             return None;
         }
-        let schemes: &[&str] = if url.scheme() == "wss" {
-            &["wss", "socks", "https"]
-        } else {
-            &["ws", "socks", "https", "http"]
-        };
-        schemes.iter().find_map(|scheme| self.primary.get(*scheme))
+        candidates
+            .iter()
+            .find_map(|(routes, scheme)| routes.get(*scheme))
     }
 }
 

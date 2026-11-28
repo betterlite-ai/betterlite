@@ -13,8 +13,7 @@ pub struct Keepalive {
     pub timeout: Duration,
 }
 
-// websockets.connect's arguments this client needs: the URL, the ordered handshake headers, the TLS setting, the message
-// cap, one deadline over the whole open, the keepalive and the proxy chosen for the URL
+// websockets.connect's arguments this client needs: url, ordered headers, tls, message cap, open deadline, keepalive, proxy
 #[derive(Debug, Clone)]
 pub struct WebSocketRequest<'a> {
     pub url: Url,
