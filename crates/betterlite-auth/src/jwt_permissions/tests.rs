@@ -8,9 +8,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::ExposeSecret as _;
 
 use super::admin::{AdminIdentity, check_admin_access};
-use super::role::{
-    can_rbac_role_call_model, can_rbac_role_call_route, check_rbac_role, role_permissions,
-};
+use super::role::{RoleCheck, can_rbac_role_call, check_rbac_role, role_permissions};
 use super::scope::check_scope_based_access;
 use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use crate::auth_user_lookup::roles::RolePermissions;
@@ -156,7 +154,7 @@ fn missing_model() {
         "/user/info",
     )
     .unwrap();
-    can_rbac_role_call_model(&permissions, RbacRole::InternalUser, None).unwrap();
+    can_rbac_role_call(&permissions, RbacRole::InternalUser, RoleCheck::Model(None)).unwrap();
 }
 
 #[test]
@@ -170,50 +168,74 @@ fn role_permissions_absent() {
         "/any/route",
     )
     .unwrap();
-    can_rbac_role_call_route(&permissions, RbacRole::Team, CHAT).unwrap();
+    can_rbac_role_call(&permissions, RbacRole::Team, RoleCheck::Route(CHAT)).unwrap();
 }
 
 #[test]
 fn role_model_none() {
     let permissions = permissions(r#"[{"role":"internal_user","models":null}]"#);
-    can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("gpt-4o")).unwrap();
+    can_rbac_role_call(
+        &permissions,
+        RbacRole::InternalUser,
+        RoleCheck::Model(Some("gpt-4o")),
+    )
+    .unwrap();
 }
 
 #[test]
 fn role_model_exact() {
     let permissions = permissions(r#"[{"role":"internal_user","models":["gpt-4o"]}]"#);
-    can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("gpt-4o")).unwrap();
+    can_rbac_role_call(
+        &permissions,
+        RbacRole::InternalUser,
+        RoleCheck::Model(Some("gpt-4o")),
+    )
+    .unwrap();
 }
 
 // LiteLLM checks `model is None` only, so the empty string is matched literally like any other name
 #[test]
 fn role_model_empty() {
     let permissions = permissions(r#"[{"role":"internal_user","models":["gpt-4o"]}]"#);
-    let failure =
-        can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("")).unwrap_err();
+    let failure = can_rbac_role_call(
+        &permissions,
+        RbacRole::InternalUser,
+        RoleCheck::Model(Some("")),
+    )
+    .unwrap_err();
     assert_model_denial(&failure);
 }
 
 #[test]
 fn role_model_star_literal() {
     let permissions = permissions(r#"[{"role":"internal_user","models":["*"]}]"#);
-    let failure =
-        can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("gpt-4o")).unwrap_err();
+    let failure = can_rbac_role_call(
+        &permissions,
+        RbacRole::InternalUser,
+        RoleCheck::Model(Some("gpt-4o")),
+    )
+    .unwrap_err();
     assert_model_denial(&failure);
-    can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("*")).unwrap();
+    can_rbac_role_call(
+        &permissions,
+        RbacRole::InternalUser,
+        RoleCheck::Model(Some("*")),
+    )
+    .unwrap();
 }
 
 #[test]
 fn role_routes_none() {
     let permissions = permissions(r#"[{"role":"team","routes":null}]"#);
-    can_rbac_role_call_route(&permissions, RbacRole::Team, CHAT).unwrap();
+    can_rbac_role_call(&permissions, RbacRole::Team, RoleCheck::Route(CHAT)).unwrap();
 }
 
 #[test]
 fn role_route_group() {
     let permissions = permissions(r#"[{"role":"team","routes":["openai_routes"]}]"#);
-    can_rbac_role_call_route(&permissions, RbacRole::Team, CHAT).unwrap();
-    let failure = can_rbac_role_call_route(&permissions, RbacRole::Team, "/user/info").unwrap_err();
+    can_rbac_role_call(&permissions, RbacRole::Team, RoleCheck::Route(CHAT)).unwrap();
+    let failure = can_rbac_role_call(&permissions, RbacRole::Team, RoleCheck::Route("/user/info"))
+        .unwrap_err();
     assert!(matches!(failure, AuthFailure::Http { .. }));
 }
 
@@ -280,9 +302,12 @@ fn scope_star_literal() {
 #[test]
 fn role_model_denial() {
     let permissions = permissions(r#"[{"role":"internal_user","models":["gpt-4o"]}]"#);
-    let failure =
-        can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("gpt-4o-mini"))
-            .unwrap_err();
+    let failure = can_rbac_role_call(
+        &permissions,
+        RbacRole::InternalUser,
+        RoleCheck::Model(Some("gpt-4o-mini")),
+    )
+    .unwrap_err();
     assert_model_denial(&failure);
 }
 

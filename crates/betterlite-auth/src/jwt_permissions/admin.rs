@@ -10,12 +10,12 @@ use crate::user_roles::UserRole;
 const UNAUTHORIZED: u16 = 401;
 
 // the verified identity authorize_jwt passes into check_admin_access
-pub struct AdminIdentity<'a> {
-    pub token: &'a str,
-    pub user_id: Option<&'a str>,
-    pub user_email: Option<&'a str>,
-    pub org_id: Option<&'a str>,
-    pub agent_id: Option<&'a str>,
+pub struct AdminIdentity<'identity> {
+    pub token: &'identity str,
+    pub user_id: Option<&'identity str>,
+    pub user_email: Option<&'identity str>,
+    pub org_id: Option<&'identity str>,
+    pub agent_id: Option<&'identity str>,
 }
 
 // JWTAuthBuilderResult fields the admin branch owns: the JWT's identity with no team or end-user object

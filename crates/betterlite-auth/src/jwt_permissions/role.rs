@@ -12,60 +12,76 @@ const FORBIDDEN: u16 = 403;
 const UNMATCHED_ROLE: &str = "Unmatched token passed in. enforce_rbac is set to True. Token must \
                               belong to a proxy admin, team, or user.";
 
-// get_role_based_routes then _allowed_routes_check: the first entry naming the role decides, and a null list leaves every route open
-pub fn can_rbac_role_call_route(
-    permissions: &RolePermissions,
-    rbac_role: RbacRole,
-    route: &str,
-) -> Result<(), AuthFailure> {
-    let Some(allowed_routes) = permissions
-        .selected(rbac_role)
-        .and_then(|entry| entry.routes.as_deref())
-    else {
-        return Ok(());
-    };
-    // auth_checks.get_role_based_routes hands _allowed_routes_check a plain list, whose group names still expand
-    if allowed_routes_check(UserRole::ProxyAdmin, route, allowed_routes, None) {
-        return Ok(());
-    }
-    Err(AuthFailure::Http {
-        detail: format!(
-            "Role={rbac_role:?} not allowed to call route={route}. Allowed routes={allowed_routes:?}"
-        ),
-        param: None,
-        status_code: FORBIDDEN,
-        invalid_virtual_key: false,
-    })
+#[derive(Clone, Copy)]
+enum RoleList {
+    Models,
+    Routes,
 }
 
-// get_role_based_models: models match by literal membership, so a '*' grants only the model named '*'
-pub fn can_rbac_role_call_model(
+#[derive(Clone, Copy)]
+pub enum RoleCheck<'request> {
+    Model(Option<&'request str>),
+    Route(&'request str),
+}
+
+// get_role_based_routes and get_role_based_models read one list off the first entry naming the role, and a null list leaves that dimension open
+fn role_list(
     permissions: &RolePermissions,
     rbac_role: RbacRole,
-    model: Option<&str>,
-) -> Result<(), AuthFailure> {
-    let Some(allowed_models) = permissions
-        .selected(rbac_role)
-        .and_then(|entry| entry.models.as_deref())
-    else {
-        return Ok(());
-    };
-    let Some(model) = model else {
-        return Ok(());
-    };
-    if allowed_models
-        .iter()
-        .any(|allowed| allowed.as_str() == model)
-    {
-        return Ok(());
+    list: RoleList,
+) -> Option<&[String]> {
+    let entry = permissions.selected(rbac_role)?;
+    match list {
+        RoleList::Models => entry.models.as_deref(),
+        RoleList::Routes => entry.routes.as_deref(),
     }
-    Err(AuthFailure::ModelAccessDenied {
-        detail: model_denied_client_message(model),
-        internal_message: format!(
-            "Role={rbac_role:?} not allowed to call model={model}. Allowed models={allowed_models:?}"
-        ),
-        status_code: FORBIDDEN,
-    })
+}
+
+// can_rbac_role_call_route then can_rbac_role_call_model: a null list or a missing model leaves that dimension open, models match by literal membership, and route names still expand their groups
+pub fn can_rbac_role_call(
+    permissions: &RolePermissions,
+    rbac_role: RbacRole,
+    check: RoleCheck<'_>,
+) -> Result<(), AuthFailure> {
+    match check {
+        RoleCheck::Route(route) => {
+            let Some(allowed_routes) = role_list(permissions, rbac_role, RoleList::Routes) else {
+                return Ok(());
+            };
+            if allowed_routes_check(UserRole::ProxyAdmin, route, allowed_routes, None) {
+                return Ok(());
+            }
+            Err(AuthFailure::Http {
+                detail: format!(
+                    "Role={rbac_role:?} not allowed to call route={route}. Allowed routes={allowed_routes:?}"
+                ),
+                param: None,
+                status_code: FORBIDDEN,
+                invalid_virtual_key: false,
+            })
+        }
+        RoleCheck::Model(model) => {
+            let Some(allowed_models) = role_list(permissions, rbac_role, RoleList::Models) else {
+                return Ok(());
+            };
+            let Some(model) = model else {
+                return Ok(());
+            };
+            if allowed_models
+                .iter()
+                .any(|allowed| allowed.as_str() == model)
+            {
+                return Ok(());
+            }
+            Err(AuthFailure::ModelAccessDenied {
+                detail: model_denied_client_message(model),
+                internal_message: format!(
+                    "Role={rbac_role:?} not allowed to call model={model}. Allowed models={allowed_models:?}"
+                ),
+                status_code: FORBIDDEN,
+            })
+        }
+    }
 }
 
 // enforce_rbac turns the role mappings on, and the model check runs before the route check
@@ -87,8 +103,8 @@ pub fn check_rbac_role(
             invalid_virtual_key: false,
         });
     };
-    can_rbac_role_call_model(permissions, rbac_role, model)?;
-    can_rbac_role_call_route(permissions, rbac_role, route)
+    can_rbac_role_call(permissions, rbac_role, RoleCheck::Model(model))?;
+    can_rbac_role_call(permissions, rbac_role, RoleCheck::Route(route))
 }
 
 #[derive(Debug, thiserror::Error)]
