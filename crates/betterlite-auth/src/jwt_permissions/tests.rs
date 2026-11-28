@@ -185,6 +185,15 @@ fn role_model_exact() {
     can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("gpt-4o")).unwrap();
 }
 
+// LiteLLM checks `model is None` only, so the empty string is matched literally like any other name
+#[test]
+fn role_model_empty() {
+    let permissions = permissions(r#"[{"role":"internal_user","models":["gpt-4o"]}]"#);
+    let failure =
+        can_rbac_role_call_model(&permissions, RbacRole::InternalUser, Some("")).unwrap_err();
+    assert_model_denial(&failure);
+}
+
 #[test]
 fn role_model_star_literal() {
     let permissions = permissions(r#"[{"role":"internal_user","models":["*"]}]"#);
