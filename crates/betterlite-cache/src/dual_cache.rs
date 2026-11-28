@@ -1,9 +1,16 @@
+#![expect(
+    clippy::pub_use,
+    reason = "B1047 reaches the one Json-to-CacheValue mapper through dual_cache, not its private value module"
+)]
+
 mod increments;
 pub mod limited_size;
 mod operations;
 mod reads;
 mod value;
 mod writes;
+
+pub use value::cache_from_json;
 
 #[path = "dual_cache/tests.rs"]
 mod tests;

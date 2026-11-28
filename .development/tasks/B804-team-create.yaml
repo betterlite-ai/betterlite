@@ -340,6 +340,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - A failed access-group reconciliation leaves the previously created model-alias, permission and budget rows.
   - soft_budget is compared before default max_budget is inherited, so defaulting cannot add another rejection.
   - An encrypted team row and the audit snapshot originate from different metadata representations.
