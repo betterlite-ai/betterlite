@@ -1,14 +1,14 @@
 id: B4676
 milestone: M9 agents and mcp
 title: MCP gateway token grants, revocation and introspection
-status: todo
+status: done
 depends_on: [B1600, B4652, B4653, B4654, B4674, B4675, B4731, B6590]
 file: tasks/B4676-mcp-gateway-token-grants.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py"
 parent: B137
 split_from: B137
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3476
