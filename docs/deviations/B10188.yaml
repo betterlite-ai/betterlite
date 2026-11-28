@@ -6,7 +6,7 @@ deviations:
   - what: A decoded file whose header rate is zero or negative fails with the same HTTP 413 and audio_too_large code, where LiteLLM's resamplers divide by that rate and return a 500, or its linear fallback silently skips resampling.
     why: No finite output length exists for such a rate, so betterlite refuses the invalid input as a client error before any resampler runs instead of dividing by zero or returning unresampled audio.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L229
-  - what: A decoded file whose header rate is above 384,000 Hz fails with the same HTTP 413 and audio_too_large code, where LiteLLM hands that rate to scipy.signal.resample_poly, whose filter of 20 * max(up, down) + 1 taps grows with the rate ratio.
+  - what: A decoded file whose header rate is above 384,000 Hz fails with the same HTTP 413 and audio_too_large code before soxr, scipy or the linear fallback runs, where LiteLLM hands that rate to scipy.signal.resample_poly, whose filter of 20 * max(up, down) + 1 taps grows with the rate ratio.
     why: A 46-byte WAV declaring 50,000,001 Hz yields a one-sample output that passes the output cap, and resample_poly then builds about a billion float64 taps; betterlite refuses the rate at the ceiling its WAV decoder already enforces, so the allocation stays bounded before any resampler runs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L210-L218
 kept_bugs: []
