@@ -109,6 +109,13 @@ impl RecordingLookups {
             .clone()
     }
 
+    fn push_id(entries: &Mutex<Vec<String>>, id: &str) {
+        entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(id.to_owned());
+    }
+
     pub(crate) fn keys(&self) -> Vec<String> {
         Self::recorded(&self.keys)
     }
@@ -148,10 +155,7 @@ impl BudgetLookups for RecordingLookups {
     }
 
     async fn team_info(&self, team_id: &str) -> Result<TeamRecord, BudgetLookupError> {
-        self.teams
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(team_id.to_owned());
+        Self::push_id(&self.teams, team_id);
         Err(BudgetLookupError {
             message: "no team store in the fixture".to_owned(),
         })
@@ -162,10 +166,7 @@ impl BudgetLookups for RecordingLookups {
         org_id: &str,
         _include_budget_table: bool,
     ) -> Result<Option<OrgRecord>, BudgetLookupError> {
-        self.orgs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(org_id.to_owned());
+        Self::push_id(&self.orgs, org_id);
         if self.org_errors.load(Ordering::SeqCst) {
             return Err(BudgetLookupError {
                 message: "the org store is down".to_owned(),
@@ -184,10 +185,7 @@ impl BudgetLookups for RecordingLookups {
         hashed_token: &str,
         _check_cache_only: bool,
     ) -> Result<KeyRecord, BudgetLookupError> {
-        self.keys
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(hashed_token.to_owned());
+        Self::push_id(&self.keys, hashed_token);
         Ok(KeyRecord {
             budget_reset_at: None,
         })
@@ -198,10 +196,7 @@ impl BudgetLookups for RecordingLookups {
         user_id: &str,
         _options: UserLookupOptions,
     ) -> Result<Option<UserRecord>, BudgetLookupError> {
-        self.users
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(user_id.to_owned());
+        Self::push_id(&self.users, user_id);
         Ok(None)
     }
 
@@ -209,10 +204,7 @@ impl BudgetLookups for RecordingLookups {
         &self,
         end_user_id: &str,
     ) -> Result<Option<CachedEndUser>, BudgetLookupError> {
-        self.customers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(end_user_id.to_owned());
+        Self::push_id(&self.customers, end_user_id);
         Ok(None)
     }
 
