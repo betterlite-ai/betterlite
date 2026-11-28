@@ -25,6 +25,16 @@ deviations:
       Production code in betterlite carries no assert. The case cannot occur when the temp lookup and
       the registry are the only two resolution sources, so the typed error only documents the state.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2205
+  - what: >-
+      A request body whose declared field has the wrong JSON type answers 422 with one value_error
+      issue at loc ["body"] carrying serde_json's message, where FastAPI answers with pydantic's
+      per-field type (such as string_type) and loc ["body", "<field>"].
+    why: >-
+      NewMCPServerRequest is built by B4716 and reports a shape failure as RequestError::Shape,
+      which carries only the serde_json error; the field path is gone before the route sees it, so
+      the route cannot put the field in loc or tell pydantic's type names apart. The status, the
+      issue-list shape and the value_error and json_invalid cases match FastAPI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2049
 kept_bugs:
   - what: >-
       A session is cached in the process-local table before the shared draft row is written, so when
