@@ -3,17 +3,25 @@
 mod support;
 mod transport;
 
+use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 use self::support::{
     EMPTY_FEED, FEED_URL, FRESH, MissingPosts, OTHER, backup_post, backup_posts, feed, post,
 };
-use super::MAX_FEED_BYTES;
+use super::Clock as _;
 use super::error::{BlogFeedError, LocalPostsError};
 use super::local::BundledBlogPosts;
-use super::testing::{FixedClock, Script, StepClock, reply};
-use super::warnings::FeedWarning;
+use super::testing::{Answer, FixedClock, Script, StepClock, reply};
+use super::warnings::{FeedWarning, WarnLog, WarningSink};
+use super::{BlogPostsResponse, MAX_FEED_BYTES, SystemClock};
+
+const SIXTEEN_MEBIBYTES: usize = 16 * 1024 * 1024;
 
 fn title_nested_in(inline_elements: usize) -> String {
     let mut xml = String::from("<rss><channel><item><title>Deep");
@@ -172,6 +180,36 @@ async fn fallback_is_not_cached() {
     assert_eq!(warnings.len(), 1);
     assert_eq!(warnings[0].subject.as_deref(), Some(FEED_URL));
     assert!(warnings[0].message.contains("never closed"));
+    assert!(warnings[0].message.starts_with(&format!(
+        "LiteLLM: Failed to fetch blog posts from {FEED_URL}: "
+    )));
+    assert!(
+        warnings[0]
+            .message
+            .ends_with(". Falling back to local backup.")
+    );
+}
+
+#[tokio::test]
+async fn non_utf8_body_falls_back() {
+    let script = Script::new(vec![Answer::Reply {
+        status: 200,
+        body: vec![0xff, 0xfe],
+    }]);
+    let clock = Arc::new(FixedClock { now: 100.0 });
+    let (feed, warnings) = feed(script, FEED_URL, false, clock, Arc::new(backup_posts()));
+    let posts = feed.get_blog_posts().await.unwrap();
+    assert_eq!(posts, vec![backup_post()]);
+    assert_eq!(feed.cache_snapshot().cached_posts, None);
+    let warnings = warnings.warnings();
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].message.contains("not valid UTF-8"));
+}
+
+#[test]
+fn a_response_without_posts_is_empty() {
+    let response: BlogPostsResponse = serde_json::from_str("{}").unwrap();
+    assert!(response.posts.is_empty());
 }
 
 #[tokio::test]
@@ -271,7 +309,8 @@ async fn independent_apps() {
 
 #[tokio::test]
 async fn accepts_a_body_at_the_size_cap() {
-    let body = capped_feed(MAX_FEED_BYTES);
+    assert_eq!(MAX_FEED_BYTES, SIXTEEN_MEBIBYTES);
+    let body = capped_feed(SIXTEEN_MEBIBYTES);
     let script = Script::new(vec![reply(200, &body)]);
     let clock = Arc::new(FixedClock { now: 100.0 });
     let (feed, warnings) = feed(script, FEED_URL, false, clock, Arc::new(backup_posts()));
@@ -299,4 +338,30 @@ async fn rejects_a_body_over_the_size_cap() {
             .message
             .contains(&format!("larger than {MAX_FEED_BYTES} bytes"))
     );
+}
+
+#[test]
+fn system_clock_reads_epoch_seconds() {
+    let now = Duration::try_from_secs_f64(SystemClock.now_seconds()).unwrap();
+    assert!(now > Duration::from_secs(1_600_000_000));
+}
+
+#[test]
+fn warn_log_reports_the_warning_and_its_subject() {
+    let warning = FeedWarning {
+        subject: Some("https://feed.test/rss.xml".to_owned()),
+        message: "the feed could not be fetched".to_owned(),
+    };
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    with_default(subscriber, || WarningSink::warn(&WarnLog, &warning));
+    let text = fs::read_to_string(log.path()).unwrap();
+    assert!(text.contains("WARN"));
+    assert!(text.contains("the feed could not be fetched"));
+    assert!(text.contains("https://feed.test/rss.xml"));
 }
