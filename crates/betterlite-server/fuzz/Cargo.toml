@@ -679,3 +679,10 @@ path = "fuzz_targets/protected_resource_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "config_update"
+path = "fuzz_targets/config_update.rs"
+test = false
+doc = false
+bench = false

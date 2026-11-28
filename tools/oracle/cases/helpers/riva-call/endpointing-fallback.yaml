@@ -1,0 +1,47 @@
+kind: helper
+name: riva-call-endpointing-fallback
+call:
+  riva_call:
+    calls:
+      - model: nvidia-riva/parakeet
+        audio_name: clip.wav
+        file_hex: "0000"
+        samples: 1600
+        optional_params:
+          endpointing_config:
+            start_history: 500
+            stop_history: 800
+        api_base: localhost:50051
+        api_key: riva-secret
+        timeout_seconds: 30.0
+        service: timeout
+        legacy_auth: false
+        endpointing: fails
+        stream:
+          - results:
+              - is_final: true
+                alternatives:
+                  - transcript: "hello"
+                    words: []
+      - model: nvidia-riva/parakeet
+        audio_name: clip.wav
+        file_hex: "0000"
+        samples: 1600
+        optional_params:
+          endpointing_config:
+            start_history: 500
+            stop_history: 800
+        api_base: localhost:50051
+        api_key: riva-secret
+        timeout_seconds: 30.0
+        service: timeout
+        legacy_auth: false
+        endpointing: copy_fails
+        stream:
+          - results:
+              - is_final: true
+                alternatives:
+                  - transcript: "hello"
+                    words: []
+compare: {ignore: []}
+env: {}
