@@ -29,20 +29,26 @@ pub(super) fn key_read_error(error: &KeyLookupError) -> SubjectReadError {
     if let KeyLookupError::Lookup(lookup @ DbLookupError::Deadline(_)) = error {
         return deadline_error(lookup);
     }
-    match error.failure() {
+    key_failure_error(error.failure())
+}
+
+fn key_failure_error(failure: AuthFailure) -> SubjectReadError {
+    match failure {
         AuthFailure::Proxy { .. } | AuthFailure::Http { .. } => SubjectReadError::Refused,
-        AuthFailure::Database(fault) => {
-            let chain = Chain::from_error(&fault);
-            if chain.failures.first().is_some_and(is_service_unavailable) {
-                outage_error(&chain)
-            } else {
-                SubjectReadError::Other
-            }
-        }
+        AuthFailure::Database(fault) => database_fault_error(&fault),
         AuthFailure::BudgetExceeded { .. }
         | AuthFailure::ModelAccessDenied { .. }
         | AuthFailure::Other { .. } => SubjectReadError::Other,
     }
+}
+
+// is_database_service_unavailable_error reads the error itself, not its cause chain
+fn database_fault_error(fault: &DbError) -> SubjectReadError {
+    let chain = Chain::from_error(fault);
+    if chain.failures.first().is_some_and(is_service_unavailable) {
+        return outage_error(&chain);
+    }
+    SubjectReadError::Other
 }
 
 fn outage_error(chain: &Chain) -> SubjectReadError {
@@ -61,18 +67,19 @@ fn deadline_error(lookup: &DbLookupError) -> SubjectReadError {
 
 // load_active_user_by_id walks the whole chain, because get_user_object wraps a failure in a ValueError
 pub(super) fn user_read_error(error: &UserLookupError) -> SubjectReadError {
-    match error {
-        UserLookupError::NotFound(_) | UserLookupError::NoDatabase => SubjectReadError::Other,
+    let (outage, fallback) = match error {
+        UserLookupError::NotFound(_) | UserLookupError::NoDatabase => {
+            (None, SubjectReadError::Other)
+        }
         UserLookupError::Unavailable(cause) => {
-            user_outage(cause.as_ref()).unwrap_or(SubjectReadError::Unavailable)
+            (user_outage(cause.as_ref()), SubjectReadError::Unavailable)
         }
         UserLookupError::UserMissing(failure) => {
-            user_outage(failure.cause.as_ref()).unwrap_or(SubjectReadError::Other)
+            (user_outage(failure.cause.as_ref()), SubjectReadError::Other)
         }
-        UserLookupError::PreLookup(cause) => {
-            user_outage(cause.as_ref()).unwrap_or(SubjectReadError::Other)
-        }
-    }
+        UserLookupError::PreLookup(cause) => (user_outage(cause.as_ref()), SubjectReadError::Other),
+    };
+    outage.unwrap_or(fallback)
 }
 
 // find_database_service_unavailable_error_in_chain: a permanent fault outranks a transient one
@@ -184,26 +191,9 @@ fn native_outage<Failure>(fault: &NativeDbError<Failure>) -> LinkOutage {
 
 // _opaque_bearer_is_gateway_credential: anything but a missing key must not permit the cookie fallback
 pub(super) fn identity_error(error: &IdentityStoreError) -> IdentityLookup {
-    match error {
-        IdentityStoreError::KeyLookup(KeyLookupError::MissingKey { .. }) => {
-            IdentityLookup::NotFound
-        }
-        IdentityStoreError::KeyLookup(
-            KeyLookupError::NoDatabase
-            | KeyLookupError::NotInCache { .. }
-            | KeyLookupError::Read(_)
-            | KeyLookupError::Lookup(_)
-            | KeyLookupError::Row(_)
-            | KeyLookupError::NotAnObject
-            | KeyLookupError::Json(_)
-            | KeyLookupError::Permission(_)
-            | KeyLookupError::CacheWrite(_),
-        )
-        | IdentityStoreError::Cache(_)
-        | IdentityStoreError::PrincipalMissingSourceKey
-        | IdentityStoreError::MissingPorts { .. } => {
-            tracing::debug!(error = %error, "OAuth bearer ownership could not be checked");
-            IdentityLookup::Faulted
-        }
+    if let IdentityStoreError::KeyLookup(KeyLookupError::MissingKey { .. }) = error {
+        return IdentityLookup::NotFound;
     }
+    tracing::debug!(error = %error, "OAuth bearer ownership could not be checked");
+    IdentityLookup::Faulted
 }

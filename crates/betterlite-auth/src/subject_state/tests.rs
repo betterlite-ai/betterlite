@@ -36,37 +36,31 @@ fn shifted(offset_seconds: i64) -> DateTime<Utc> {
 #[case::naive_past_text_expiry(r#"{"user_id":"user-1","expires":"2020-01-01T00:00:00"}"#, false)]
 #[case::offset_future_expiry(r#"{"user_id":"user-1","expires":"2099-01-01T00:00:00+02:00"}"#, true)]
 #[case::offset_past_expiry(r#"{"user_id":"user-1","expires":"2020-01-01T00:00:00-05:00"}"#, false)]
-#[case::unparseable_expiry(r#"{"user_id":"user-1","expires":"not-a-timestamp"}"#, false)]
+#[case::bad_expiry(r#"{"user_id":"user-1","expires":"not-a-timestamp"}"#, false)]
 #[case::team_key_without_user_id(r#"{"expires":"2099-01-01T00:00:00Z"}"#, true)]
 fn key_is_active_reads_blocked_and_expiry(#[case] fields: &str, #[case] expected: bool) {
     assert_eq!(key_is_active(&key_row(fields), now()), expected);
 }
 
 #[rstest]
-#[case::at_now(0_i64, true)]
-#[case::one_second_past(-1_i64, false)]
-#[case::one_second_ahead(1_i64, true)]
-fn key_is_active_compares_a_datetime_expiry_with_the_instant(
+#[case::datetime_at_now(0_i64, true, false)]
+#[case::datetime_one_second_past(-1_i64, false, false)]
+#[case::datetime_one_second_ahead(1_i64, true, false)]
+#[case::text_at_now(0_i64, true, true)]
+#[case::text_one_second_past(-1_i64, false, true)]
+fn key_is_active_compares_a_stored_expiry_with_the_instant(
     #[case] offset_seconds: i64,
     #[case] expected: bool,
+    #[case] as_text: bool,
 ) {
     let mut auth = key_row(r#"{"user_id":"user-1"}"#);
-    auth.view.token.expires = Some(Expiry::DateTime(shifted(offset_seconds).fixed_offset()));
+    let instant = shifted(offset_seconds);
+    auth.view.token.expires = Some(if as_text {
+        Expiry::Text(instant.to_rfc3339())
+    } else {
+        Expiry::DateTime(instant.fixed_offset())
+    });
     assert_eq!(key_is_active(&auth, now()), expected);
-}
-
-#[rstest]
-#[case::at_now(0_i64, true)]
-#[case::one_second_past(-1_i64, false)]
-fn key_is_active_compares_a_text_expiry_with_the_instant(
-    #[case] offset_seconds: i64,
-    #[case] expected: bool,
-) {
-    let fields = format!(
-        r#"{{"user_id":"user-1","expires":"{}"}}"#,
-        shifted(offset_seconds).to_rfc3339()
-    );
-    assert_eq!(key_is_active(&key_row(&fields), now()), expected);
 }
 
 #[test]

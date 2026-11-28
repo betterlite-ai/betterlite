@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_auth::session_token_codec::LITELLM_SESSION_TOKEN_PREFIX;
 use betterlite_models::key_digest::hashing::hash_token;
 use betterlite_secrets::secret_codec::bearer::encrypt_bearer_token;
@@ -16,11 +18,11 @@ use super::super::tests::{
 use super::super::{ActiveSubjects, IdentityLookup};
 
 const HEADER: &str = "eyJhbGciOiJub25lIn0";
-const ISS_CONFIGURED: &str = "eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIn0";
-const ISS_UNKNOWN: &str = "eyJpc3MiOiJodHRwczovL290aGVyLmV4YW1wbGUifQ";
-const ISS_NUMBER: &str = "eyJpc3MiOjQyfQ";
-const ISS_EMPTY: &str = "eyJpc3MiOiIifQ";
-const NO_ISS: &str = "e30";
+const ISS_CONFIGURED: &str = r#"{"iss":"https://issuer.example"}"#;
+const ISS_UNKNOWN: &str = r#"{"iss":"https://other.example"}"#;
+const ISS_NUMBER: &str = r#"{"iss":42}"#;
+const ISS_EMPTY: &str = r#"{"iss":""}"#;
+const NO_ISS: &str = "{}";
 
 fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
     let mut map = HeaderMap::new();
@@ -38,7 +40,7 @@ fn auth_headers(token: &str) -> HeaderMap {
 }
 
 fn jwt(payload: &str) -> String {
-    format!("{HEADER}.{payload}.")
+    format!("{HEADER}.{}.", URL_SAFE_NO_PAD.encode(payload))
 }
 
 fn with_issuers(global: Option<&str>, issuers: &[&str]) -> ActiveSubjects<FakeStore> {

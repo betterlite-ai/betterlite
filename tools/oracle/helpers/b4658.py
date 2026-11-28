@@ -68,10 +68,6 @@ def auth_of(fields: KeyFields) -> UserAPIKeyAuth:
     )
 
 
-def user_of(fields: UserFields) -> LiteLLM_UserTable:
-    return LiteLLM_UserTable(user_id=fields["user_id"], metadata=fields.get("metadata"))
-
-
 def run(input_value: Input) -> JsonValue:
     match input_value["operation"]:
         case "presented_key":
@@ -81,5 +77,9 @@ def run(input_value: Input) -> JsonValue:
         case "active_key_user_id":
             return _active_key_user_id(auth_of(input_value["key"]))
         case "user_record":
-            record = _active_user_record(user_of(input_value["user"]))
-            return "no_active_key" if isinstance(record, str) else "active"
+            user = LiteLLM_UserTable(
+                user_id=input_value["user"]["user_id"],
+                metadata=input_value["user"].get("metadata"),
+            )
+            # _active_user_record hands back the row it was given, or the failure string
+            return "active" if _active_user_record(user) is user else "no_active_key"

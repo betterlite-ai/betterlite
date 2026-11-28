@@ -167,11 +167,9 @@ impl SubjectStore for FakeStore {
     }
 
     fn identity_by_hash(&self, key_hash: &str) -> impl Future<Output = IdentityLookup> + Send {
-        self.calls
-            .lock()
-            .unwrap()
-            .identities
-            .push(key_hash.to_owned());
+        let mut calls = self.calls.lock().unwrap();
+        calls.identities.push(key_hash.to_owned());
+        drop(calls);
         ready(self.identity)
     }
 
@@ -188,13 +186,30 @@ pub(crate) fn subjects<S: SubjectStore>(store: S) -> ActiveSubjects<S> {
     ActiveSubjects {
         store,
         settings: ActiveSubjectSettings {
+            master_key: None,
             admin_name: ADMIN_NAME.to_owned(),
-            ..ActiveSubjectSettings::default()
+            custom_auth: false,
+            oidc_userinfo_enabled: false,
+            global_issuer: None,
+            issuers: Vec::new(),
+            cli_token_hours: 24,
         },
         secret: Some(SecretString::from(SALT)),
         clock: Arc::new(FixedClock(fixed_now())),
         nonces: Arc::new(CountingNonces),
     }
+}
+
+#[test]
+fn default_settings_match_litellm() {
+    let settings = ActiveSubjectSettings::default();
+    assert!(settings.master_key.is_none());
+    assert_eq!(settings.admin_name, ADMIN_NAME);
+    assert!(!settings.custom_auth);
+    assert!(!settings.oidc_userinfo_enabled);
+    assert!(settings.global_issuer.is_none());
+    assert!(settings.issuers.is_empty());
+    assert_eq!(settings.cli_token_hours, 24);
 }
 
 pub(crate) fn detail(team_id: &str, alias: &str, models: &[&str]) -> CliSsoTeamDetail {

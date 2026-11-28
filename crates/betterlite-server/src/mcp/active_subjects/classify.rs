@@ -34,7 +34,7 @@ impl<S: SubjectStore> ActiveSubjects<S> {
             return true;
         }
         if !is_jwt(Some(&token)) {
-            return self.opaque_bearer_is_gateway_credential(&token).await;
+            return self.opaque_bearer_credential(&token).await;
         }
         self.jwt_issuer_is_trusted(&token)
     }
@@ -76,7 +76,7 @@ impl<S: SubjectStore> ActiveSubjects<S> {
                 .any(|configured| configured.as_str() == issuer)
     }
 
-    async fn opaque_bearer_is_gateway_credential(&self, token: &str) -> bool {
+    async fn opaque_bearer_credential(&self, token: &str) -> bool {
         if token.is_envelope() || token.is_refresh_envelope() || token.starts_with(V2_GCM_PREFIX) {
             return true;
         }

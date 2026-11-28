@@ -76,7 +76,7 @@ fn no_presented_token_is_null() {
     json!({"operation": "key_is_active", "key": {"token": "sk-past", "expires": "2000-01-01T00:00:00Z"}}),
     false
 )]
-#[case::unparseable(
+#[case::bad_expiry(
     json!({"operation": "key_is_active", "key": {"token": "sk-text", "expires": "not-a-date"}}),
     false
 )]

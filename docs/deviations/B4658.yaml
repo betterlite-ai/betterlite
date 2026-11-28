@@ -3,7 +3,7 @@ deviations:
   - what: When the CLI token can't be built (no salt key and no master key), the mint gives unresolvable, so B4676's route answers 500 with the OAuth error server_error.
     why: LiteLLM lets the ValueError escape and answers an uncaught 500. B4674's MintProxyCredential port has no error channel beyond its failure enum, and the status stays 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/proxy_api_credentials.py#L27-L92
-  - what: An expiry text of a bare date followed by Z, such as 2099-01-01Z, parses as midnight UTC instead of counting as unparseable.
+  - what: An expiry text of a bare date followed by Z, such as 2099-01-01Z, parses as midnight UTC instead of counting as unparsable.
     why: decode_billed_at rewrites Z to +00:00 before it parses, and that text then reads as a date with a time of 00:00. The key table's expires column is a DateTime, so a stored row can't hold this text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L136-L149
   - what: key_owner_deactivated gives false for an inactive key without reading its owner.
