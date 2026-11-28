@@ -1,0 +1,103 @@
+id: B10222
+title: The handler modules in core and provider take betterlite-openai's Selected client enum instead of their own copies
+description: >-
+  Twenty-one handler modules in betterlite-core and betterlite-provider declare a private enum for the client a call sends with: the caller's client by reference, `Supplied(&'client Client)`, or one the module's source built, `Created(Client)`, each with the same `get` that hands back `&Client`. betterlite-openai already has this type as a public item, `Selected<'client, Client>` with `choose` and `get` in crates/betterlite-openai/src/containers/container_file_http/transport.rs L83-L106, and core's container_collection_http.rs L16, container_resource_http.rs L29, container_file_list/execution.rs L20 and container_file_list/execution/blocking.rs L5 import it today. betterlite-core and betterlite-provider both depend on betterlite-openai, so this task deletes the 21 copies and points every user at that enum. No crate gains a dependency and the openai file does not change. It is a refactor: which client a call picks, what it sends, its timeout, its errors and its log lines stay the same.
+
+
+  The copies, each the enum with its `impl<Client> Selected<'_, Client>` block and `get`: core api/file_http_metadata/service.rs L87-L99, file_http_upload/service.rs L97-L109, genai_http/service.rs L112-L124, responses_compact_http/service.rs L101-L113, responses_create_http/service.rs L133-L145 (`pub(super)`), responses_read_http/service.rs L131-L143, responses_write_http/service.rs L132-L144, vector_file_http_create_list/service.rs L110-L122, vector_file_http_read/service.rs L88-L100, vector_file_http_write/service.rs L93-L105, vector_search_execution/service.rs L52-L65 with its comment, vector_store_http_create_read/service.rs L96-L108, vector_store_http_write/service.rs L114-L126, video_edit_transport/seams.rs L21-L34, video_status_transport/clients.rs L38-L52 and videos_http_transport/client.rs L112-L125 (both mark `get` `#[must_use]`), and provider api/rerank_http/client.rs L65-L77, speech_http.rs L104-L116 and transcription_http/wire.rs L45-L57. Two differ only in a name or a missing method. video_remix_list_transport/client.rs L63-L75 calls it `Chosen` and the created variant `Pooled`, so `Chosen::Supplied` and `Chosen::Pooled` read `Selected::Supplied` and `Selected::Created` in client.rs (choose_async's return type at L83, L99, L101) and in remix.rs (the import at L12, L53, L61). Provider image_generation_http.rs L61-L64 declares no `get` and matches both variants by hand at L139-L142, so that `let transport: &S::Client = match &client { ... };` becomes `let transport = client.get();`.
+
+
+  The users. Each copy's own file swaps the enum for `use betterlite_openai::containers::container_file_http::transport::Selected;`, and its struct fields (`client: Selected<'deps, S::Client>`) and select functions keep their text. The child files that take the enum through their parent today import it from the openai path too and drop it from the parent list: file_http_metadata/service/endpoints.rs L12, genai_http/service/prepare.rs L17, responses_compact_http/service/request.rs L11, responses_create_http/service/request.rs L21, responses_read_http/service/request.rs L10, responses_write_http/service/request.rs L12, vector_file_http_read/service/request.rs L10, vector_file_http_write/service/request.rs L15, vector_search_execution/service/request.rs L12, vector_store_http_create_read/service/request.rs L17, vector_store_http_write/service/request.rs L11, video_edit_transport/handler.rs L5, video_status_transport/handler.rs L10, videos_http_transport/content.rs L9 and generation.rs L15, and provider image_generation_http/request.rs L7 and speech_http/request.rs L9. Every `.get()` call already uses method syntax and compiles against the openai `pub const fn get(&self) -> &Client`. `choose` stays where it is for the container callers; the 21 select functions keep their own class check and error type and only build the two variants. No test file and nothing under tools/oracle/src names one of these enums.
+
+
+  Not copies, because the shape differs. betterlite-azure's speech/client.rs L57 `Selected<'data>` is a struct of request fields. Core's vector_store_search/executor.rs L21 `SelectedExecutor` and betterlite-foundry's agent_runs/flow.rs L82 `ClientRef` borrow `&dyn Trait` and own `Box<dyn Trait>`, so `Selected<'_, Box<dyn Trait>>` would ask their callers for a `&Box<dyn Trait>` they do not have. Core's file_provider_write.rs L148 `DeleteLogger`, file_provider_read/target.rs L52 `ReadLogger` and file_content_stream/target.rs L71 `ContentLogger` own a different type than they borrow (`LoggerSeed`, `Box<NewLogger>`). betterlite-vertex's gemma_envelope/post.rs L41 `CallerClient`, betterlite-db's database_replica/pinned.rs L7 `WriterPinnedClient` and core's video_status_transport/records.rs L58 `SuppliedClient` borrow in both variants. Core's response_synthetic_events/billing.rs L30 `BilledTerminal` and copies.rs L10 `LoggedCopy` hold a response or an event, not a client.
+
+
+  Why not std's Cow. `Cow<'client, Client>` has the same two variants but needs `Client: ToOwned`, which for a sized client means `Clone`, written on every struct and function that names it. Several clients these modules run with are not Clone (core file_http_upload/tests/cancellation.rs L39 `Dropper`, video_status_transport/tests/support.rs L379 `FakeSyncClient` and L410 `FakeAsyncClient`, provider image_generation_http/tests/support.rs L277 `ClosedClient`), and B10200 takes the bounds off these client types rather than adding one. `either` sits in Cargo.lock only as another crate's dependency, would be a new direct one, and `Either<&Client, Client>` has no method that returns `&Client` from both sides. So betterlite-openai's enum stays the one type.
+
+
+  Tests. No new test: each module's tests already pin which client a call sends with, a supplied one of the matching class or one the source built, and they pass with only imports and the two video_remix_list_transport variant names changed.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/file_http_metadata/service.rs
+    - crates/betterlite-core/src/api/file_http_metadata/service/endpoints.rs
+    - crates/betterlite-core/src/api/file_http_upload/service.rs
+    - crates/betterlite-core/src/api/genai_http/service.rs
+    - crates/betterlite-core/src/api/genai_http/service/prepare.rs
+    - crates/betterlite-core/src/api/responses_compact_http/service.rs
+    - crates/betterlite-core/src/api/responses_compact_http/service/request.rs
+    - crates/betterlite-core/src/api/responses_create_http/service.rs
+    - crates/betterlite-core/src/api/responses_create_http/service/request.rs
+    - crates/betterlite-core/src/api/responses_read_http/service.rs
+    - crates/betterlite-core/src/api/responses_read_http/service/request.rs
+    - crates/betterlite-core/src/api/responses_write_http/service.rs
+    - crates/betterlite-core/src/api/responses_write_http/service/request.rs
+    - crates/betterlite-core/src/api/vector_file_http_create_list/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/service/request.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/service/request.rs
+    - crates/betterlite-core/src/api/vector_search_execution/service.rs
+    - crates/betterlite-core/src/api/vector_search_execution/service/request.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/service.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/service/request.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service/request.rs
+    - crates/betterlite-core/src/api/video_edit_transport/seams.rs
+    - crates/betterlite-core/src/api/video_edit_transport/handler.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/client.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/remix.rs
+    - crates/betterlite-core/src/api/video_status_transport/clients.rs
+    - crates/betterlite-core/src/api/video_status_transport/handler.rs
+    - crates/betterlite-core/src/api/videos_http_transport/client.rs
+    - crates/betterlite-core/src/api/videos_http_transport/content.rs
+    - crates/betterlite-core/src/api/videos_http_transport/generation.rs
+    - crates/betterlite-provider/src/api/image_generation_http.rs
+    - crates/betterlite-provider/src/api/image_generation_http/request.rs
+    - crates/betterlite-provider/src/api/rerank_http/client.rs
+    - crates/betterlite-provider/src/api/speech_http.rs
+    - crates/betterlite-provider/src/api/speech_http/request.rs
+    - crates/betterlite-provider/src/api/transcription_http/wire.rs
+  lint_tables: false
+references: []
+dod:
+  - text: No core or provider handler module declares its own enum over a supplied and a created client, video_remix_list_transport's Chosen is gone, nothing re-exports the enum under another path, and betterlite-openai's Selected is the one left.
+    proof: [selected-copies]
+  - text: Every former copy's module and its child files name betterlite-openai's Selected, and the owners' tests in core and provider pass unchanged.
+    proof: [selected-core-tests, selected-provider-tests]
+checks:
+  optional: []
+  commands:
+    - id: selected-copies
+      why: a handler module still declares its own Supplied and Created client enum, video_remix_list_transport keeps Chosen, or a module re-exports the shared enum
+      run: |-
+        test -z "$(grep -rlE '^ +Supplied\(&.[a-z]+ Client\),$' crates tools --include='*.rs' | grep -vxF crates/betterlite-openai/src/containers/container_file_http/transport.rs)" &&
+        test -z "$(grep -rnwE 'Chosen|Pooled' crates/betterlite-core/src/api/video_remix_list_transport --include='*.rs')" &&
+        test -z "$(grep -rnE '^ *pub(\([a-z]+\))? use .*\bSelected\b' crates tools --include='*.rs')" &&
+        grep -qxF "pub enum Selected<'client, Client> {" crates/betterlite-openai/src/containers/container_file_http/transport.rs
+    - id: selected-core-tests
+      why: a core handler no longer sends with the supplied client of its class or the one its source built
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(file_http_metadata|file_http_upload|genai_http|responses_compact_http|responses_create_http|responses_read_http|responses_write_http|vector_file_http_create_list|vector_file_http_read|vector_file_http_write|vector_search_execution|vector_store_http_create_read|vector_store_http_write|video_edit_transport|video_remix_list_transport|video_status_transport|videos_http_transport)::/) - test(/replays_/)'
+    - id: selected-provider-tests
+      why: the provider image generation, rerank, speech or transcription handler lost its client choice
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::(image_generation_http|rerank_http|speech_http|transcription_http)::/) - test(/replays_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The enums the description lists as not copies: azure speech's Selected struct, the two boxed trait-object selectors in core vector_store_search and foundry agent_runs, the three logger enums, the three enums that borrow in both variants and the two response copies."
+  - "The 21 select functions themselves (select_client, choose_async and the like): each checks a different client class, reads different params and returns its module's own error, so they stay."
+  - "Moving the enum out of betterlite-openai into betterlite-http: every user depends on betterlite-openai today, so the move waits for a user below it."
+  - "The per-module LogContext borrow pairs in the same service files, which B10216 also leaves out."
+pitfalls:
+  - "B10200 edits most of these files before this task and shifts the line numbers above, so find each site with `grep -rnwE 'Selected|Chosen' <module dir>` instead of by line; a dispatched run builds nothing, and each missed import costs a CI round."
+  - "The openai file is not in scope and must not change: its `get` has no `#[must_use]` and its `choose` returns PoolError, and the containers build against it as it is."
+  - "A `pub use` of the openai enum, or a `type Selected<'c, C> = ...` alias in a module, is the same copy under a new name; import the openai path in each file that names the type."
+  - "container_collection_http.rs L90 declares an unrelated tuple alias named `Chosen`; only video_remix_list_transport's enum goes, so the Chosen check looks only in that module."
+  - "video_edit_transport's and video_status_transport's copies are `pub`, but nothing outside their own modules names them, not betterlite-python and not the oracle, so no other crate needs an edit."
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
