@@ -665,3 +665,10 @@ path = "fuzz_targets/login_return.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mcp_user_env_vars_body"
+path = "fuzz_targets/mcp_user_env_vars_body.rs"
+test = false
+doc = false
+bench = false

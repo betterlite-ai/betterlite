@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 // LiteLLM's MCPUserEnvVarsRequest; the map holds secrets, so the type carries no Debug at all
-pub(crate) struct MCPUserEnvVarsRequest {
+pub struct MCPUserEnvVarsRequest {
     pub(crate) values: BTreeMap<String, String>,
 }
 

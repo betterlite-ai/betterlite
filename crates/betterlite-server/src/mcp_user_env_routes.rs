@@ -1,11 +1,11 @@
-pub(crate) mod body;
+pub mod body;
 pub(crate) mod error;
 pub(crate) mod flows;
 pub(crate) mod management;
 pub(crate) mod ports;
 pub(crate) mod router;
 pub(crate) mod status;
-pub(crate) mod types;
+pub mod types;
 
 mod tests;
 

@@ -2,6 +2,7 @@
 
 mod body_cases;
 mod clear_cases;
+mod corpus;
 mod error_cases;
 mod hygiene_cases;
 mod list_cases;
