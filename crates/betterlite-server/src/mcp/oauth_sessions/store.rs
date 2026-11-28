@@ -138,11 +138,11 @@ where
         let Some(database) = self.database.as_deref() else {
             return Ok(None);
         };
-        let row = database
+        let found = database
             .get_draft(server_id)
             .await
             .map_err(|error| ResolveError::Table(Box::new(draft_read_failure(server_id, error))))?;
-        let Some(row) = row else {
+        let Some(row) = found else {
             return Ok(None);
         };
         let server = self.builder.build_server(&row, true).await?;
@@ -175,11 +175,11 @@ where
         request: &NewMCPServerRequest,
         registry: &ServerRegistry,
     ) -> Result<String, SessionError<Access::Error>> {
-        let supplied = request
+        let requested = request
             .server_id
             .as_deref()
             .filter(|server_id| !server_id.is_empty());
-        let Some(supplied) = supplied else {
+        let Some(supplied) = requested else {
             return Ok(self.ids.fresh_id());
         };
         if registry.server_by_id(supplied, None).is_some() {

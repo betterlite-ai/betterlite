@@ -294,6 +294,7 @@ async fn resolve_session_id_mints_a_fresh_id_when_none_is_supplied() {
         .resolve_session_id(&request(body), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
@@ -307,6 +308,7 @@ async fn resolve_session_id_mints_a_fresh_id_for_an_empty_id() {
         .resolve_session_id(&request(body), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
@@ -325,6 +327,7 @@ async fn resolve_session_id_keeps_an_id_the_registry_knows() {
         .resolve_session_id(&request(r#"{"server_id":"saved-1"}"#), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "saved-1");
 }
 
@@ -337,6 +340,7 @@ async fn resolve_session_id_keeps_the_supplied_id_without_a_database() {
         .resolve_session_id(&request(SESSION), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "test-session-1");
 }
 
@@ -351,6 +355,7 @@ async fn resolve_session_id_keeps_an_id_that_names_a_saved_row() {
         .resolve_session_id(&request(SESSION), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "test-session-1");
 }
 
@@ -365,6 +370,7 @@ async fn resolve_session_id_mints_a_fresh_id_for_a_draft_row() {
         .resolve_session_id(&request(SESSION), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
@@ -377,6 +383,7 @@ async fn resolve_session_id_mints_a_fresh_id_for_a_missing_row() {
         .resolve_session_id(&request(SESSION), &registry)
         .await
         .expect("the id resolves");
+    drop(registry);
     assert_eq!(id, "fresh-session-1");
 }
 
@@ -388,6 +395,7 @@ async fn resolve_session_id_returns_the_database_error() {
         .store
         .resolve_session_id(&request(SESSION), &registry)
         .await;
+    drop(registry);
     assert!(matches!(
         outcome,
         Err(SessionError::Table(McpTableError::MissingServerId))
@@ -403,6 +411,7 @@ async fn an_unknown_id_is_not_found() {
         .store
         .cached_temporary_server_or_404("missing", &auth, None, &registry)
         .await;
+    drop(registry);
     let Err(error) = outcome else {
         panic!("an unknown id is not found");
     };
@@ -427,6 +436,7 @@ async fn a_temporary_session_is_forbidden_for_a_caller_who_is_not_an_admin() {
         .store
         .cached_temporary_server_or_404("test-session-1", &auth, None, &registry)
         .await;
+    drop(registry);
     let Err(error) = outcome else {
         panic!("a temporary session is admin-only");
     };
@@ -452,6 +462,7 @@ async fn a_temporary_session_serves_an_admin_view() {
         .cached_temporary_server_or_404("test-session-1", &auth, None, &registry)
         .await
         .expect("an admin view gets the session");
+    drop(registry);
     assert_eq!(server.fields.server_id, "test-session-1");
 }
 
@@ -469,6 +480,7 @@ async fn a_saved_server_serves_a_caller_the_access_check_allows() {
         .cached_temporary_server_or_404("saved-1", &auth, None, &registry)
         .await
         .expect("the access check allows the caller");
+    drop(registry);
     assert_eq!(server.fields.server_id, "saved-1");
 }
 
@@ -485,6 +497,7 @@ async fn a_saved_server_is_forbidden_when_the_access_check_denies() {
         .store
         .cached_temporary_server_or_404("saved-1", &auth, None, &registry)
         .await;
+    drop(registry);
     let Err(error) = outcome else {
         panic!("the access check denies the caller");
     };
@@ -504,6 +517,7 @@ async fn an_access_check_error_keeps_its_own_variant() {
         .store
         .cached_temporary_server_or_404("saved-1", &auth, None, &registry)
         .await;
+    drop(registry);
     let Err(error) = outcome else {
         panic!("the access check fails");
     };
@@ -533,5 +547,6 @@ async fn the_request_ip_gates_the_name_lookup() {
         .cached_temporary_server_or_404("test-alias", &auth, None, &registry)
         .await
         .expect("no ip means the name lookup passes");
+    drop(registry);
     assert_eq!(allowed.fields.alias.as_deref(), Some("test-alias"));
 }

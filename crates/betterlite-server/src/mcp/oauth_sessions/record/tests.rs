@@ -69,6 +69,17 @@ fn the_record_copies_every_string_field_the_session_keeps() {
     let credentials = record.credentials.as_ref().expect("the credentials copy");
     assert_eq!(credentials.client_id, Some(Some("abc".to_owned())));
     assert_eq!(record.mcp_access_groups, vec!["group-a".to_owned()]);
+}
+
+#[test]
+fn the_record_copies_the_tool_lists_and_the_oauth_urls() {
+    let record = build_temporary_record(
+        &request(FULL_SESSION),
+        Some("admin-1"),
+        "test-session-1",
+        now(),
+    )
+    .expect("the record builds");
     assert_eq!(record.allowed_tools, vec!["tool-a".to_owned()]);
     assert_eq!(record.extra_headers, vec!["X-Tenant: acme".to_owned()]);
     assert_eq!(record.args, vec!["--flag".to_owned()]);
@@ -101,7 +112,7 @@ fn the_record_copies_the_flagged_and_numeric_fields() {
     assert_eq!(record.max_concurrent_requests, Some(7));
     assert_eq!(
         record.timeout,
-        Some(Decimal::try_from(30.0).expect("30 is a decimal"))
+        Some(Decimal::try_from(30.0_f64).expect("30 is a decimal"))
     );
 }
 
@@ -186,6 +197,12 @@ fn every_field_the_session_does_not_take_keeps_its_row_default() {
     assert!(record.audience.is_none());
     assert!(record.subject_token_type.is_none());
     assert!(record.token_exchange_profile.is_none());
+}
+
+#[test]
+fn the_byok_and_passthrough_fields_keep_their_row_defaults() {
+    let record = build_temporary_record(&request(FULL_SESSION), None, "test-session-1", now())
+        .expect("the record builds");
     assert!(!record.delegate_auth_to_upstream.0);
     assert!(!record.oauth_passthrough.0);
     assert!(record.dcr_bridge.is_none());
@@ -194,6 +211,12 @@ fn every_field_the_session_does_not_take_keeps_its_row_default() {
     assert!(record.byok_description.is_empty());
     assert!(record.byok_api_key_help_url.is_none());
     assert!(record.source_url.is_none());
+}
+
+#[test]
+fn the_status_and_review_fields_keep_their_row_defaults() {
+    let record = build_temporary_record(&request(FULL_SESSION), None, "test-session-1", now())
+        .expect("the record builds");
     assert_eq!(record.status, Some(McpStatus::Unknown));
     assert_eq!(record.approval_status.as_deref(), Some("active"));
     assert!(record.submitted_by.is_none());

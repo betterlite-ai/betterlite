@@ -108,29 +108,29 @@ pub fn build_temporary_record(
 
 // every request field the record keeps, with the name fallback LiteLLM gives the server
 fn fill_request(row: &mut McpServerTable, request: &NewMCPServerRequest, server_id: &str) {
-    row.server_id = server_id.to_owned();
+    server_id.clone_into(&mut row.server_id);
     row.server_name = Some(temporary_server_name(request, server_id));
-    row.alias = request.alias.clone();
-    row.description = request.description.clone();
-    row.url = request.url.clone();
+    row.alias.clone_from(&request.alias);
+    row.description.clone_from(&request.description);
+    row.url.clone_from(&request.url);
     row.transport = request.transport;
     row.auth_type = request.auth_type;
-    row.credentials = request.credentials.clone();
-    row.mcp_access_groups = request.mcp_access_groups.clone();
+    row.credentials.clone_from(&request.credentials);
+    row.mcp_access_groups.clone_from(&request.mcp_access_groups);
     row.allowed_tools = request.allowed_tools.clone().unwrap_or_default();
     row.extra_headers = request.extra_headers.clone().unwrap_or_default();
-    row.mcp_info = request.mcp_info.clone();
+    row.mcp_info.clone_from(&request.mcp_info);
     row.static_headers = request
         .static_headers
         .as_ref()
         .map(|headers| SecretMapField(secret_values(headers)));
-    row.command = request.command.clone();
-    row.args = request.args.clone();
+    row.command.clone_from(&request.command);
+    row.args.clone_from(&request.args);
     row.env = SecretMapField(secret_values(&request.env));
-    row.issuer = request.issuer.clone();
-    row.authorization_url = request.authorization_url.clone();
-    row.token_url = request.token_url.clone();
-    row.registration_url = request.registration_url.clone();
+    row.issuer.clone_from(&request.issuer);
+    row.authorization_url.clone_from(&request.authorization_url);
+    row.token_url.clone_from(&request.token_url);
+    row.registration_url.clone_from(&request.registration_url);
 }
 
 // the timestamps and defaults LiteLLM stamps on a row it has not saved yet
@@ -143,7 +143,7 @@ fn fill_audit(
     let timestamp = stored_timestamp(now)?;
     let audit = created_by.map(str::to_owned);
     row.created_at = Some(timestamp);
-    row.created_by = audit.clone();
+    row.created_by.clone_from(&audit);
     row.updated_at = Some(timestamp);
     row.updated_by = audit;
     row.status = default_status();

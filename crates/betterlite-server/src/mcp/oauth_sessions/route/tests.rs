@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_identity::records::{Principal, SourceKey};
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
@@ -83,7 +83,7 @@ async fn the_router_answers_an_admin_over_http() {
         .await
         .expect("the router answers");
     assert_eq!(response.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(response.into_body(), 1_000_000)
+    let body = to_bytes(response.into_body(), 1_000_000)
         .await
         .expect("the response body reads");
     let text = String::from_utf8(body.to_vec()).expect("the body is utf-8");
@@ -267,6 +267,12 @@ fn the_failure_facts_carry_the_status_and_the_message() {
     assert!(failure.exception.category.is_none());
     assert!(failure.exception.rate_limit_type.is_none());
     assert!(failure.exception.budget_entity_type.is_none());
+}
+
+#[test]
+fn the_failure_facts_leave_the_rest_of_the_span_empty() {
+    let error = SessionError::<AccessFailure>::Unauthenticated;
+    let failure = management_failure(error);
     assert!(failure.exception.budget_entity_id.is_none());
     assert!(failure.exception.budget_limit.is_none());
     assert!(failure.exception.budget_spend.is_none());

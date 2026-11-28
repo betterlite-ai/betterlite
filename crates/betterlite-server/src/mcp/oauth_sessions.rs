@@ -78,13 +78,13 @@ where
     #[must_use]
     pub const fn status(&self) -> StatusCode {
         match self {
-            Self::Body(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Request(RequestError::Value(_)) => StatusCode::BAD_REQUEST,
-            Self::Request(RequestError::Shape(_)) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Body(_) | Self::Request(RequestError::Shape(_)) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             Self::Payload(PayloadError::UnknownRequiredFields { .. }) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::Payload(_) => StatusCode::BAD_REQUEST,
+            Self::Request(RequestError::Value(_)) | Self::Payload(_) => StatusCode::BAD_REQUEST,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
@@ -104,7 +104,21 @@ where
     fn detail(&self) -> BTreeMap<String, String> {
         match self {
             Self::NotFound(detail) | Self::Forbidden(detail) => detail.clone(),
-            other => BTreeMap::from([("error".to_owned(), other.to_string())]),
+            other @ Self::Body(_)
+            | other @ Self::Request(_)
+            | other @ Self::Payload(_)
+            | other @ Self::Record(_)
+            | other @ Self::Table(_)
+            | other @ Self::Write(_)
+            | other @ Self::Build(_)
+            | other @ Self::Resolve(_)
+            | other @ Self::CredentialView(_)
+            | other @ Self::Access(_)
+            | other @ Self::MissingRuntime { .. }
+            | other @ Self::Caching { .. }
+            | other @ Self::Unauthenticated => {
+                BTreeMap::from([("error".to_owned(), other.to_string())])
+            }
         }
     }
 }
@@ -119,7 +133,7 @@ where
     Failure: StdError + Send + Sync + 'static,
 {
     fn into_response(self) -> Response {
-        if let Self::Unauthenticated = self {
+        if matches!(self, Self::Unauthenticated) {
             return unauthenticated();
         }
         let status = self.status();

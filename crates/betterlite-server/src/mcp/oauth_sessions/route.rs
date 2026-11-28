@@ -27,7 +27,6 @@ use chrono::Utc;
 
 use self::effects::NoManagementEffects;
 use crate::auth::auth_identity::AuthContext;
-use crate::failure_hook::ports::Clock as _;
 use crate::management_effects::wrapper::{
     ManagementCall, ManagementDeps, ManagementFailure, management_endpoint_wrapper,
 };
@@ -78,7 +77,6 @@ impl<Access> SessionRoute<Access>
 where
     Access: ServerAccessCheck + 'static,
 {
-    #[must_use]
     pub fn router(self) -> Router {
         Router::new()
             .route(SESSION_PATH, post(session_endpoint::<Access>))
@@ -101,6 +99,7 @@ where
         cache_session(self, &record, &payload, &server_id, &created_by).await?;
         let registry = self.registry.read().await;
         let redacted = redact_mcp_credentials(&record, &registry, registry.public_mcp_servers())?;
+        drop(registry);
         Ok(redacted)
     }
 }
@@ -208,8 +207,9 @@ where
         .unwrap_or(DEFAULT_CREATED_BY)
         .to_owned();
     let registry = route.registry.read().await;
-    let payload = inherit_credentials(&payload, &registry);
-    Ok((payload, created_by))
+    let inherited = inherit_credentials(&payload, &registry);
+    drop(registry);
+    Ok((inherited, created_by))
 }
 
 // step (g): every failure in this scope becomes the 500 whose text names the caching step

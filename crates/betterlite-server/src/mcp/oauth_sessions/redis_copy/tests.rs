@@ -15,7 +15,7 @@ async fn a_copy_round_trips_under_the_prefixed_key_and_ttl() {
     write_redis_copy(&harness.store, &stored, 300).await;
     let redis = harness.redis.as_ref().expect("the backend is set");
     let key = temporary_key("test-session-1");
-    assert_eq!(redis.ttl(&key), Some(300.0));
+    assert_eq!(redis.ttl(&key), Some(300.0_f64));
     let value = redis.get(&key).expect("the write stored a value");
     let CacheValue::Text(sealed) = value else {
         panic!("the copy is an encrypted string");
@@ -36,7 +36,7 @@ async fn a_non_positive_ttl_is_raised_to_one_second_in_redis() {
     let harness = harness(HarnessConfig::new().with_redis(RedisFault::None));
     write_redis_copy(&harness.store, &server("test-session-1"), 0).await;
     let redis = harness.redis.as_ref().expect("the backend is set");
-    assert_eq!(redis.ttl(&temporary_key("test-session-1")), Some(1.0));
+    assert_eq!(redis.ttl(&temporary_key("test-session-1")), Some(1.0_f64));
 }
 
 #[tokio::test]

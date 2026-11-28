@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use axum::body::to_bytes;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_db::mcp::table_access::types::McpTableError;
 use betterlite_mcp::registry::resolution::{AuthorizeError, ResolveError};
 use betterlite_mcp::server_build::BuildError;

@@ -67,16 +67,14 @@ where
 {
     let redis = store.redis.as_ref()?;
     let key = format!("{REDIS_PREFIX}:{server_id}");
-    let cached = match redis.async_get_cache(&key).await {
-        Ok(cached) => cached,
+    let response = match redis.async_get_cache(&key).await {
+        Ok(response) => response,
         Err(error) => {
             tracing::debug!("Failed reading temporary MCP server from Redis cache: {error}");
             return None;
         }
     };
-    let Some(cached) = cached else {
-        return None;
-    };
+    let cached = response?;
     let CacheValue::Text(sealed) = cached else {
         tracing::debug!(
             "Temporary MCP Redis cache value must be an encrypted string; rejecting non-string payload"

@@ -105,10 +105,10 @@ pub(crate) fn request(body: &str) -> NewMCPServerRequest {
 }
 
 pub(crate) fn auth_with(user_id: Option<&str>, role: &str) -> UserAPIKeyAuth {
-    let encoded = match user_id {
-        Some(user_id) => format!(r#"{{"user_id":"{user_id}","user_role":"{role}"}}"#),
-        None => format!(r#"{{"user_role":"{role}"}}"#),
-    };
+    let encoded = user_id.map_or_else(
+        || format!(r#"{{"user_role":"{role}"}}"#),
+        |identifier| format!(r#"{{"user_id":"{identifier}","user_role":"{role}"}}"#),
+    );
     let fields: BTreeMap<String, JsonData> =
         serde_json::from_str(&encoded).expect("the key fixture parses");
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture constructs")
@@ -214,6 +214,7 @@ impl CacheBackend for FakeRedis {
         self.put(key, value);
         let mut ttls = self.ttls.lock().unwrap_or_else(PoisonError::into_inner);
         ttls.insert(key.to_owned(), ttl);
+        drop(ttls);
         Ok(())
     }
 }
@@ -359,10 +360,9 @@ impl ServerFromTable for FakeBuilder {
             &table.server_id,
             table.server_name.as_deref().unwrap_or(&table.server_id),
         );
-        {
-            let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-            calls.push((table.server_id.clone(), credentials_are_encrypted));
-        }
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.push((table.server_id.clone(), credentials_are_encrypted));
+        drop(calls);
         Box::pin(async move {
             if failing {
                 return Err(BuildError::PrefixExhausted {
@@ -392,6 +392,7 @@ impl SessionIds for FakeIds {
         let mut next = self.next.lock().unwrap_or_else(PoisonError::into_inner);
         let current = *next;
         *next = next.saturating_add(1);
+        drop(next);
         format!("fresh-session-{current}")
     }
 }
@@ -528,14 +529,10 @@ fn harness_fakes(config: &HarnessConfig) -> Fakes {
         CipherChoice::Working => test_cipher(),
         CipherChoice::Keyless => keyless_cipher(),
     });
-    let redis = match config.redis {
-        Some(fault) => Some(Arc::new(FakeRedis::new(fault))),
-        None => None,
-    };
-    let database = match config.database {
-        Some(fault) => Some(Arc::new(FakeDatabase::new(fault))),
-        None => None,
-    };
+    let redis = config.redis.map(|fault| Arc::new(FakeRedis::new(fault)));
+    let database = config
+        .database
+        .map(|fault| Arc::new(FakeDatabase::new(fault)));
     let builder = Arc::new(match config.builder {
         BuilderChoice::Working => FakeBuilder::new(),
         BuilderChoice::Failing => FakeBuilder::failing(),
@@ -549,11 +546,7 @@ fn harness_fakes(config: &HarnessConfig) -> Fakes {
     }
 }
 
-fn harness_store(
-    fakes: &Fakes,
-    registry: &SharedRegistry,
-    access: AccessOutcome,
-) -> Arc<SessionStore<FakeAccess>> {
+fn harness_store(fakes: &Fakes, access: AccessOutcome) -> Arc<SessionStore<FakeAccess>> {
     let ids = Arc::new(FakeIds::new());
     Arc::new(SessionStore::new(SessionStoreParts {
         clock: as_clock(&fakes.clock),
@@ -577,7 +570,7 @@ pub(crate) fn harness(config: HarnessConfig) -> Harness {
         config.servers,
         Vec::new(),
     )));
-    let store = harness_store(&fakes, &registry, config.access);
+    let store = harness_store(&fakes, config.access);
     Harness {
         clock: fakes.clock,
         cipher: fakes.cipher,
