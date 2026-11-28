@@ -100,6 +100,7 @@ pub mod budget_admission_handoff;
 pub mod budget_primitives;
 pub mod budget_reset;
 pub mod budget_windows;
+pub mod bug_report_link;
 pub mod cache_cost_routing;
 pub mod callback_settings;
 pub mod capability_classifier;
@@ -291,6 +292,7 @@ pub mod messages_native_stream;
 pub mod messages_response_call;
 pub mod messages_responses_output;
 pub mod messages_thinking;
+pub mod microsoft_sso;
 pub mod migration_drift;
 pub mod migration_ledger;
 pub mod migration_recovery;
@@ -586,7 +588,8 @@ sections! {
     bedrock_services_batch_create, bedrock_services_batch_records, bedrock_services_invoke_agent,
     bedrock_services_s3_access, bedrock_services_s3_signing, bedrock_services_search,
     bedrock_services_vector_stores, bedrock_settings, bedrock_web_identity, billing_metrics,
-    budget_admission_handoff, budget_primitives, budget_reset, budget_windows, cache_cost_routing,
+    budget_admission_handoff, budget_primitives, budget_reset, budget_windows, bug_report_link,
+    cache_cost_routing,
     callback_settings, capability_classifier, capability_forecast, catalog_source, catalog_updates,
     cato_lifecycle, cato_projections, central_auth_checks, chatgpt_headers, chatgpt_token_store,
     cisco_verdict_contracts, classifier_context, classifier_message_text, claude_gateway_oauth,
@@ -622,7 +625,7 @@ sections! {
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
     mcp_gateway_env, mcp_management_mode, mcp_redirect_trust, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
-    messages_responses_output, messages_thinking, migration_drift, migration_ledger,
+    messages_responses_output, messages_thinking, microsoft_sso, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response, mock_testing_params,
     model_create, model_effective_fields, model_generalizations, model_info_v1, model_management,
     model_patch, model_public_settings, model_rate_limits, model_visibility, moderation_model,

@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-client-auth-headers-sanitize-alias-non-ascii
+call:
+  b10155:
+    calls:
+      - {function: sanitize_alias, alias: "Kelvin"}
+      - {function: sanitize_alias, alias: "İ"}
+env: {}
+compare: {ignore: []}

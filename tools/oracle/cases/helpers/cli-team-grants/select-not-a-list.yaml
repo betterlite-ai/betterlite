@@ -1,0 +1,15 @@
+kind: helper
+name: select-not-a-list
+call:
+  b10114:
+    team_details:
+      team_id: team-1
+      team_models: []
+    team_id: team-1
+    row:
+      team_id: team-1
+      team_alias: Team One
+      models: [gpt-4]
+      aliases: null
+env: {}
+compare: {ignore: []}

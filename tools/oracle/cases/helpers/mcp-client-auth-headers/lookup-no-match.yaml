@@ -1,0 +1,24 @@
+kind: helper
+name: mcp-client-auth-headers-lookup-no-match
+call:
+  b10155:
+    calls:
+      - function: lookup
+        headers: {}
+        alias: github
+        server_name: null
+        access_groups: []
+      - function: lookup
+        headers:
+          github: {Authorization: "Bearer test-github"}
+        alias: gitlab
+        server_name: gitlab
+        access_groups: []
+      - function: lookup
+        headers:
+          team-a: {Authorization: "Bearer test-group"}
+        alias: null
+        server_name: null
+        access_groups: [team-b]
+env: {}
+compare: {ignore: []}

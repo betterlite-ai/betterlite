@@ -1,0 +1,5 @@
+general_settings:
+  ui_access_mode:
+    type: restricted_sso_group
+    restricted_sso_group: litellm-admins
+    sso_group_jwt_field: 7

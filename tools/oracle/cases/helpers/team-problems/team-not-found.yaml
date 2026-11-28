@@ -1,0 +1,10 @@
+kind: helper
+name: team-problems-team-not-found
+call:
+  b10130:
+    calls:
+      - team_not_found: team-1
+      - team_not_found: ""
+      - team_not_found: "team with spaces/and-slash"
+env: {}
+compare: {ignore: []}

@@ -8,7 +8,7 @@ use betterlite_openai::watsonx_auth::credentials::get_watsonx_credentials;
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 pub(super) struct WatsonxRequest<'request> {
     pub(super) model: &'request str,
     pub(super) provider: &'request str,
@@ -32,7 +32,7 @@ pub(super) fn watsonx_credentials(
         &mut params,
         request.resolved.api_key.as_ref(),
         request.resolved.api_base.as_deref(),
-        &watsonx_environment(request.environment),
+        &WatsonxEnvironment::from_lookup(request.environment),
     ) {
         Ok(credentials) => {
             if let Some(token) = credentials.token {
@@ -72,31 +72,5 @@ fn watsonx_failure(error: &WatsonxError, model: &str, provider: &str) -> RawExce
         | WatsonxError::IamReply(_)
         | WatsonxError::IamReplyField { .. }
         | WatsonxError::Cache(_) => value_failure(&error.to_string(), model, provider),
-    }
-}
-fn watsonx_environment(lookup: &dyn EnvironmentLookup) -> WatsonxEnvironment {
-    let text = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
-    let secret = |name: &str| text(name).map(SecretString::from);
-    WatsonxEnvironment {
-        watsonx_iam_url: text("WATSONX_IAM_URL"),
-        wx_api_key: secret("WX_API_KEY"),
-        watsonx_api_key: secret("WATSONX_API_KEY"),
-        watsonx_apikey: secret("WATSONX_APIKEY"),
-        watsonx_zenapikey: secret("WATSONX_ZENAPIKEY"),
-        watsonx_token: secret("WATSONX_TOKEN"),
-        watsonx_api_base: text("WATSONX_API_BASE"),
-        watsonx_url: text("WATSONX_URL"),
-        wx_url: text("WX_URL"),
-        wml_url: text("WML_URL"),
-        watsonx_project_id: text("WATSONX_PROJECT_ID"),
-        wx_project_id: text("WX_PROJECT_ID"),
-        project_id: text("PROJECT_ID"),
-        watsonx_region: text("WATSONX_REGION"),
-        wx_region: text("WX_REGION"),
-        region: text("REGION"),
-        watsonx_deployment_space_id: text("WATSONX_DEPLOYMENT_SPACE_ID"),
-        watsonx_space_id: text("WATSONX_SPACE_ID"),
-        wx_space_id: text("WX_SPACE_ID"),
-        space_id: text("SPACE_ID"),
     }
 }

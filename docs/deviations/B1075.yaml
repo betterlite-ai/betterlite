@@ -1,0 +1,20 @@
+task: B1075
+deviations:
+  - what: >-
+      Keep open-source LiteLLM's managed-file behavior: require_managed_files=false accepts raw provider ids and
+      decoded managed ids alike, while true rejects a raw id with 400, wants the enterprise ManagedResourceAccessChecker
+      hook, and answers 500 when no hook is injected; a hook that denies answers 403.
+    why: >-
+      Open-source LiteLLM raises those answers without the enterprise ownership hook, and betterlite builds no managed
+      files (decision 2026-10-31), so it ports the check with an injected hook and leaves the hook's implementation to
+      whatever wires the route; a deployment that injects no hook keeps the 500 rather than a check that never runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1062-L1118
+kept_bugs:
+  - what: >-
+      restore_file_identifiers rewrites only a response dict's top-level id and file_id keys, and an object's id
+      first, so a list response keeps the provider ids inside data and vector_store_id.
+    why: >-
+      A vector store files list call gets no id rewritten at all, so callers still see provider file ids there; a
+      working LiteLLM setup can depend on that exact response shape, and a recursive rewrite would change bytes
+      LiteLLM never touches, so betterlite copies the projection and the oracle case records it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L174-L204

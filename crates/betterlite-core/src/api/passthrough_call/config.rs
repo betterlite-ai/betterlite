@@ -1,4 +1,10 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use betterlite_azure::passthrough::config::AzurePassthroughConfig;
+use betterlite_azure::passthrough::logging::{NoChatReplyProjection, NoChatStreamAssembly};
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::azure_provider_globals;
 use betterlite_context::resource_config_selection::passthrough::PassthroughConfigTag;
 use betterlite_foundry::passthrough::plan::FoundryPassthroughPlan;
 use betterlite_http::interactions::base::{ErrorClasses, ResponseHeaders};
@@ -80,12 +86,40 @@ impl From<ConfigError> for Fault {
     }
 }
 
-// The eight configs LiteLLM's pass-through factory returns, chosen by B5360's tag
+// The eight configs LiteLLM's pass-through factory returns, chosen by B5360's tag; the Arc keeps the caller's map alive for the relay
 pub struct PassthroughCallConfig {
     pub tag: PassthroughConfigTag,
+    pub environment: Arc<BTreeMap<String, String>>,
 }
 
-// the Foundry plan the azure_ai tag reads, built over its merged config
+// B10044's reader of the AZURE_* variables, shared by the Azure URL arm and its key branch
+pub(crate) struct AzureGlobals {
+    pub(crate) config: AzurePassthroughConfig,
+    pub(crate) environment: azure_provider_globals::Environment,
+}
+
+pub(crate) fn azure_globals(
+    environment: &BTreeMap<String, String>,
+) -> Result<AzureGlobals, ConfigError> {
+    let settings = azure_provider_globals::Raw::default()
+        .convert(environment)
+        .map_err(|error| ConfigError::ValueError {
+            message: error.to_string(),
+        })?;
+    let config = AzurePassthroughConfig {
+        api_base_env: settings.environment.api_base.clone(),
+        api_key_env: settings.environment.api_key.clone(),
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
+    };
+    Ok(AzureGlobals {
+        config,
+        environment: settings.environment,
+    })
+}
+
+// the Foundry plan the azure_ai tag reads; get_llm_provider already applied AZURE_AI_API_BASE and AZURE_AI_API_KEY, so its env fields stay empty
 pub(crate) fn foundry_plan(litellm_params: Object) -> FoundryPassthroughPlan {
     FoundryPassthroughPlan {
         global_api_base: None,
@@ -100,6 +134,7 @@ impl BasePassthroughConfig for PassthroughCallConfig {
     type Error = ConfigError;
     type Logged = ();
 
+    // is_streaming_request reads the request data alone, so its provider arms keep their default configs
     fn is_streaming_request(&self, endpoint: &str, request_data: &Object) -> bool {
         match self.tag {
             PassthroughConfigTag::VLLM => request_data.contains_key("stream"),

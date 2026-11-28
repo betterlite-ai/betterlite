@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-listing-content-request-seed
+call:
+  bedrock_services_s3_listing:
+    operation: content_request
+    contents:
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: us-east-1}
+        trusted: [[s3_bucket_name, bucket]]
+env: {}
+compare: {ignore: []}

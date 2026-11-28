@@ -114,6 +114,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::RequestBodySafety(_)
             | StageFailure::VirtualKeyRoutes(_)
             | StageFailure::KeyBudgets(_)
+            | StageFailure::ModelBudgets(_)
             | StageFailure::TeamBudgets(_)
             | StageFailure::OrganizationRoutePolicy(_)
             | StageFailure::OrgLookup(_)
@@ -123,6 +124,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::KeyLookup(_)
             | StageFailure::TenantBudgets(_)
             | StageFailure::TrustedNetwork(_)
+            | StageFailure::JwtKeys(_)
             | StageFailure::OauthTokens(_),
         ) => panic!("the master key stage runs no other auth check"),
     }

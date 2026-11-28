@@ -1,0 +1,12 @@
+kind: helper
+name: unarmed-state
+call:
+  b10153:
+    state: unarmed
+    payload:
+      model: openai/gpt-4o
+      messages:
+        - role: user
+          content: hello
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-listing-delete-response-seed
+call:
+  bedrock_services_s3_listing:
+    operation: delete_response
+    delete_responses:
+      - status: 204
+        body: ""
+        additional_args: {file_id: s3://bucket/litellm-batch-outputs/job.jsonl}
+env: {}
+compare: {ignore: []}

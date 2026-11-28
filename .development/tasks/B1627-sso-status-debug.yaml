@@ -6,7 +6,8 @@ description: >-
   Register authenticated GET /sso/get/ui_settings and /sso/readiness, plus public
   GET /sso/debug/login and /sso/debug/callback gated by ENABLE_SSO_DEBUG (absent unless
   explicitly true, otherwise 404). Readiness selects the first present Google/Microsoft/
-  generic client ID and reports missing variables in source order; missing requirements
+  generic client ID and reports missing variables in source order (MICROSOFT_CLIENT_SECRET and
+  MICROSOFT_TENANT come from B10148's microsoft_sso section); missing requirements
   yield 503. It deliberately ignores SAML, while UI settings call B881's SAML-aware
   has_user_setup_sso. UI output includes PROXY_BASE_URL, PROXY_LOGOUT_URL and
   LITELLM_UI_API_DOC_BASE_URL, all absent by default, and B4172's spend_logs_row_count (written by B8396, initially

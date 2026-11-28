@@ -1,0 +1,10 @@
+kind: helper
+name: failure-metadata-seed
+call:
+  failure_metadata: {function: stamp, request_data: {metadata: {used_client_oauth_token: true}}, request_route: null}
+calls:
+  - failure_metadata: {function: patch, request_data: {litellm_params: {metadata: {user_api_key_alias: null}}}, metadata: {user_api_key_alias: seed, user_api_key: null}}
+  - failure_metadata: {function: tags, standard_logging_object: null, metadata: {tags: [seed]}}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: seed, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: null}
+env: {}
+compare: {ignore: []}

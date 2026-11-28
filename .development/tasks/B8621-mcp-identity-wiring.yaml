@@ -44,14 +44,19 @@ description: >-
   LiveServerAccess and keep it on McpIdentity: can_access(auth, server_id) is B4672's UiSession::can_access_mcp_server(auth,
   server_id, lister) with that same ContextServers as the lister (LiteLLM passes
   global_mcp_server_manager.get_allowed_mcp_servers), the UiSession built from McpAccess and B4672's LiveSessionReads, and
-  Error is UiSessionError.
+  Error is UiSessionError. Also implement B10135's AccessibleServerSources as LiveAccessibleSources and keep it on
+  McpIdentity: effective_auth_contexts(auth) is B10127's build_effective_auth_contexts(auth, teams, human) with the same
+  teams port and human this file builds B4672's UiSession from, and allowed_server_tables(auth) is B6591's
+  ServerUnion::allowed_tables(auth) on McpIdentity's ServerUnion. Its Error is UnionError, since the context walk cannot fail.
 
 
   Access (access.rs). B4671's McpAccess with LiveAccessReads over B737's team read, B887 and B752's budget checks, and
   B4668's key object permission read, all named in B4671's AccessReads text. Its DelegatedHuman port is
   B10126's AdmittedUserReload over the UserReads and TeamLimits below. B6591's ServerUnion with UnionSettings, the registry from McpCore,
   LiveUnionReads over B4711 and B4681, GrantSource over McpAccess (B4671) and B4670's admin_view_unscoped, and the
-  toolset cache with McpCore's toolset_ttl_secs.
+  toolset cache with McpCore's toolset_ttl_secs. The same shared.auth_cache also implements B10147's ToolsetCache port (get, set with a ttl, and
+  remove_where over the in-memory keys through betterlite-cache's MemoryCacheOps), so invalidate_toolset_cache clears the
+  toolset_perms: entries B6591 caches, and B10147 never gets a cache of its own.
 
 
   Admission (admission.rs). B4673's RequestAdmission: KeyAuthenticator calls B052's user_api_key_auth with the given
@@ -81,7 +86,7 @@ references:
 dod:
   - text: The four settings structs are filled from config and mcp_gateway_env with LiteLLM's defaults.
     proof: [identity-tests]
-  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591, and B4731's ServerAccessCheck, has a production
+  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591, B4731's ServerAccessCheck and B10135's AccessibleServerSources, has a production
       implementation over its owning crate.
     proof: [identity-tests]
   - text: McpIdentity builds once from McpCore and Shared with no global.

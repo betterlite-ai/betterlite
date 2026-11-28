@@ -20,15 +20,11 @@ description: >-
   distinguish these paths. B737 loads teams without cache; B800 checks team membership.
 
 
-  Archive transformation samples one aware UTC deleted_at for the batch, copies deleted_by from
-  caller.user_id, deleted_by_api_key from caller.api_key, and litellm_changed_by from the header.
-  Rename a non-null org_id to organization_id. JSON encode non-null aliases, config, permissions,
-  metadata, model_spend, model_max_budget, budget_fallbacks and router_settings. Drop relations
-  litellm_budget_table, litellm_organization_table, object_permission, id and budget_limits.
-  Preserve record order; empty transformation/save does nothing. An explicitly supplied transaction
-  is used for create_many, otherwise use B770's archived-token repository adapter. Cases
-  archive_audit_identity, archive_json_columns, archive_relation_removal, archive_empty_no_clock
-  and archive_supplied_transaction cover every field and branch. Never recover plaintext secrets.
+  Archive the authorized rows by calling B10129's persist_deleted_verification_tokens with the
+  caller's CallerIdentity, the litellm-changed-by header and a pooled Client from PostgresStore::session,
+  since LiteLLM passes no transaction here. B10129 owns the record transform (batch deleted_at, actor
+  fields, organization_id, JSON columns, dropped relations) and the insert; this task decides only
+  which rows are archived and when. Never recover plaintext secrets.
 
 
   After archive insertion snapshot B738 JWT mapping cache keys before the schema's delete cascade.
@@ -52,9 +48,7 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/key_management_endpoints.py:
   delete_key_fn (L4071-L4175; 90 source lines), can_modify_verification_token (L4895-L4963; 47 source
-  lines), delete_verification_tokens (L4966-L5093; 110 source lines), _transform_verification_tokens_to_deleted_records
-  (L5096-L5149; 47 source lines), _save_deleted_verification_token_records (L5152-L5168; 16 source lines),
-  _persist_deleted_verification_tokens (L5171-L5188; 18 source lines), delete_key_aliases (L5191-L5208;
+  lines), delete_verification_tokens (L4966-L5093; 110 source lines), delete_key_aliases (L5191-L5208;
   17 source lines).
 
 
@@ -92,9 +86,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 345 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  345 production, 355 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 765 changed lines estimated within an 800-line gate. Only the repository fixture/corpus/lock
+  Sizing: 264 nonblank, noncomment pinned source lines (including owned declarations/static SQL) after
+  the 81 archive lines moved to B10129; allow 264 production, 320 behavior/Postgres tests, 0 helper
+  adapters, 65 route/manifests/wiring, 0 decoder/fuzz and 0 config lines, 649 changed lines estimated. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -128,21 +122,16 @@ references:
     why: Own can_modify_verification_token; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4966-L5093
     why: Own delete_verification_tokens; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5096-L5149
-    why: Own _transform_verification_tokens_to_deleted_records; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5152-L5168
-    why: Own _save_deleted_verification_token_records; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5171-L5188
-    why: Own _persist_deleted_verification_tokens; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5027-L5032
+    why: The archive call into B10129, before the delete and without a transaction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5191-L5208
     why: Own delete_key_aliases; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
   - text: Implement every named case in the description, including the four partial-write failures,
-      plus postgres_pinned_rows and postgres_failure_effects. Exercise route cases through HTTP and
-      archive transformations with injected repositories and clock.
+      plus postgres_pinned_rows and postgres_failure_effects. Exercise route cases through HTTP; the
+      archive rows themselves come from B10129.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -182,6 +171,9 @@ out_of_scope:
   - B8411 owns KeyRequest validation and B8397 (proxy/utils.py) delete_data; B720 owns archived row contracts; B726/B770
     own repository adapters. B2314 owns SHA-256 token hashing. This task archives existing stored
     representations and does not encrypt or decode credentials.
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B10129 owns _transform_verification_tokens_to_deleted_records
+    (L5096-L5149), _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens
+    (L5171-L5188); this task calls persist_deleted_verification_tokens.'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -277,6 +269,7 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - The successful response is an echo, not proof that each requested identifier existed or was deleted.
   - Cache cleanup hashes an already normalized token again; replacing it with raw-key eviction changes behavior.
 budget:

@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use betterlite_config::sections::gigachat_auth::Settings as GigachatSettings;
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::gigachat_auth::Raw as GigachatRaw;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_context::resource_config_selection::passthrough::PassthroughConfigTag;
 use betterlite_http::gigachat_tokens::authenticator::GigachatAuthenticator;
@@ -30,7 +32,7 @@ use http::header::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use self::providers::{AzureKind, azure_headers, gigachat_error, status_error};
-use super::config::ConfigError;
+use super::config::{ConfigError, PassthroughCallConfig};
 use super::logging::json_object;
 use super::wire::header_text;
 
@@ -52,27 +54,35 @@ const MANTLE_NO_CREDENTIALS: &str = "Bedrock Mantle auth failed: no Bearer token
 
 // step 8: provider_api_key = config.get_api_key(api_key), then validate_environment's headers
 pub(crate) async fn validate(
-    tag: PassthroughConfigTag,
+    config: &PassthroughCallConfig,
     api_key: Option<&SecretString>,
     params: &Object,
     base: &str,
     http: &ProxiedClient,
 ) -> Result<Headers, ConfigError> {
-    match tag {
+    let environment = config.environment.as_ref();
+    match config.tag {
         PassthroughConfigTag::VLLM
         | PassthroughConfigTag::Bedrock
         | PassthroughConfigTag::BedrockMantle => Ok(Headers::new()),
         PassthroughConfigTag::Watsonx => {
-            watsonx_headers(WatsonxEnvironment::default(), api_key, http).await
+            watsonx_headers(WatsonxEnvironment::from_lookup(environment), api_key, http).await
         }
-        PassthroughConfigTag::Azure => azure_headers(AzureKind::Key, api_key, params, base),
-        PassthroughConfigTag::AzureAI => azure_headers(AzureKind::Entra, api_key, params, base),
-        PassthroughConfigTag::GigaChat => gigachat_headers(api_key, params, http).await,
+        PassthroughConfigTag::Azure => {
+            azure_headers(AzureKind::Key, api_key, params, base, environment)
+        }
+        PassthroughConfigTag::AzureAI => {
+            azure_headers(AzureKind::Entra, api_key, params, base, environment)
+        }
+        PassthroughConfigTag::GigaChat => {
+            gigachat_headers(api_key, params, environment, http).await
+        }
         PassthroughConfigTag::NvidiaNim => {
-            let config: NvidiaNimPassthroughConfig = NvidiaNimPassthroughConfig::default();
+            // get_llm_provider already applied NVIDIA_NIM_API_BASE and NVIDIA_NIM_API_KEY, so the config's env fields stay empty
+            let nim: NvidiaNimPassthroughConfig = NvidiaNimPassthroughConfig::default();
             Ok(nvidia_nim_validate(
                 Headers::new(),
-                config.get_api_key(api_key),
+                nim.get_api_key(api_key),
             ))
         }
     }
@@ -137,15 +147,18 @@ fn epoch_seconds() -> f64 {
 async fn gigachat_headers(
     api_key: Option<&SecretString>,
     params: &Object,
+    environment: &BTreeMap<String, String>,
     http: &ProxiedClient,
 ) -> Result<Headers, ConfigError> {
+    let settings = GigachatRaw::default()
+        .convert(environment)
+        .map_err(|error| ConfigError::ValueError {
+            message: error.to_string(),
+        })?;
+    // get_llm_provider already applied GIGACHAT_API_BASE and GIGACHAT_API_KEY, so the config's env fields stay empty
     let config: GigachatPassthroughConfig = GigachatPassthroughConfig::default();
     let bearer = GigachatTokenBearer {
-        authenticator: GigachatAuthenticator::new(
-            GigachatSettings::default(),
-            http.client.clone(),
-            SystemRuntime,
-        ),
+        authenticator: GigachatAuthenticator::new(settings, http.client.clone(), SystemRuntime),
         request: GigachatTokenRequest {
             access_token: optional_text(params, ACCESS_TOKEN_PARAM)?.map(SecretString::from),
             credentials: None,

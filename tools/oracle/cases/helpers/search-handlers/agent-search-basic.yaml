@@ -1,0 +1,14 @@
+kind: helper
+name: agent-search-basic
+call:
+  b4686:
+    handler: agent_search
+    query: alpha agents
+    top_k: 3
+    agents:
+      - {id: a1, name: Agent One}
+      - {id: a2, name: Agent Two}
+    agent_embedding_model: text-embedding-3-small
+    caller: {user_id: u1, team_id: t1, end_user_id: e1}
+env: {}
+compare: {ignore: []}

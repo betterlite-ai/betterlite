@@ -1,0 +1,34 @@
+kind: helper
+name: bedrock-services-s3-listing-delete-response-context
+call:
+  bedrock_services_s3_listing:
+    operation: delete_response
+    delete_responses:
+      - status: 204
+        body: ""
+        additional_args: {file_id: s3://bucket/litellm-batch-outputs/job.jsonl}
+      - status: 204
+        body: ""
+        additional_args: {file_id: ""}
+      - status: 204
+        body: ""
+      - status: 204
+        body: ""
+        additional_args: {file_id: 5}
+      - status: 204
+        body: ""
+        additional_args: {}
+      - status: 204
+        body: ""
+        additional_args: {file_id: s3://bucket/litellm-batch-outputs/job.jsonl, extra: ignored}
+      - status: 200
+        body: slow down
+        headers: [[x-amzn-requestid, r-1]]
+      - status: 201
+        body: ""
+      - status: 404
+        body: ""
+      - status: 500
+        body: boom
+env: {}
+compare: {ignore: []}

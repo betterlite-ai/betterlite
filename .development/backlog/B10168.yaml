@@ -1,0 +1,13 @@
+id: B10168
+milestone: R2 bug fixes
+title: The SDK pass-through call reads VLLM_API_BASE through B8153's moved VLLM config
+status: todo
+depends_on: [B10164, B10166, B8153, B8157, B8150, B8690]
+file: tasks/B10168-passthrough-vllm-base.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

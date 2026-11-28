@@ -4,11 +4,48 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::api::api_boundaries::ApiLimitError;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
+use betterlite_error::proxy_exception::ProxyException;
 
-use crate::auth::auth_identity::StageFailure;
-use crate::auth::auth_model_patterns::rejection_response;
+use crate::auth::auth_model_patterns::{ModelAccessRejection, rejection_response};
 use crate::auth::auth_resource_grants::denial_response;
-use crate::error_body::authentication_error;
+use crate::error_body::{AuthenticationFailure, authentication_error};
+
+pub(crate) enum StageFailure {
+    JwtKeys(Box<ProxyException>),
+    Authentication(Box<AuthenticationFailure>),
+    KeyLookup(Box<ProxyException>),
+    ModelAccess(Box<ModelAccessRejection>),
+    AuthModelGrants(Box<ProxyException>),
+    EntityModelAccess(Box<ProxyException>),
+    TrustedNetwork(Box<ProxyException>),
+    AuthRequestPolicy(Box<ProxyException>),
+    ResourceGrants(Box<ProxyException>),
+    TagBudgets(Box<ProxyException>),
+    RequestBodySafety(Box<ProxyException>),
+    VirtualKeyRoutes(Box<ProxyException>),
+    KeyBudgets(Box<ProxyException>),
+    ModelBudgets(Box<ProxyException>),
+    TeamBudgets(Box<ProxyException>),
+    TenantBudgets(Box<ProxyException>),
+    OrganizationRoutePolicy(Box<ProxyException>),
+    OrgLookup(Box<ProxyException>),
+    EndUsers(Box<ProxyException>),
+    AuthPolicySupport(Box<ProxyException>),
+    ModelGrants(Box<ProxyException>),
+    OauthTokens(Box<ProxyException>),
+}
+
+impl From<AuthenticationFailure> for StageFailure {
+    fn from(failure: AuthenticationFailure) -> Self {
+        Self::Authentication(Box::new(failure))
+    }
+}
+
+impl From<ModelAccessRejection> for StageFailure {
+    fn from(rejection: ModelAccessRejection) -> Self {
+        Self::ModelAccess(Box::new(rejection))
+    }
+}
 
 pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
@@ -16,6 +53,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
         StageFailure::KeyLookup(exception)
         | StageFailure::AuthModelGrants(exception)
+        | StageFailure::JwtKeys(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)
@@ -24,6 +62,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
+        | StageFailure::ModelBudgets(exception)
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)

@@ -203,9 +203,22 @@ b10118
 b10122
 b10123
 b10124
+b10130
 b10137
+b10140
+b10141
+b10148
+b10149
+b10151
+b10153
+b10159
+b10160
+b10161
+b10218
 b1010
 b10134
+b10155
+b10158
 b1014
 b10003
 b10010
@@ -882,7 +895,6 @@ b4722
 b4723
 b4724
 b4725
-b4726
 b4727
 b4728
 b4729
@@ -1366,7 +1378,6 @@ budget_primitives
 budget_reset
 budget_window_start
 builtin_prompts
-bulk_team_removal
 bulk_user_write
 bytez_record
 call_context
@@ -2092,7 +2103,6 @@ vertex_lyria_speech
 vertex_messages
 vertex_model_policy
 vertex_model_urls
-vertex_partner_factory
 vertex_partner_openai
 vertex_rag_chunking
 vertex_rag_store

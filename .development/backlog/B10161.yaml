@@ -1,0 +1,14 @@
+id: B10161
+milestone: M4 keys, spend and management
+title: JWT-to-OAuth routing override selection
+status: done
+depends_on: [B171, B760, B869, B890]
+file: tasks/B10161-jwt-oauth-routing.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"
+parent: B052
+split_from: B756
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3381

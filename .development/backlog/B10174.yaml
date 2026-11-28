@@ -1,0 +1,13 @@
+id: B10174
+milestone: R2 bug fixes
+title: One AWS credential source trait, one owned secret lookup and one bearer or-chain
+status: todo
+depends_on: [B10173, B679, B594, B2207, B625, B5840, B3724, B3725, B3726]
+file: tasks/B10174-aws-credential-copies.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
