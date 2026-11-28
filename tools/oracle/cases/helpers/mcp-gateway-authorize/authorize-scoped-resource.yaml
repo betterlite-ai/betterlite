@@ -1,0 +1,112 @@
+kind: helper
+name: mcp-gateway-authorize-authorize-scoped-resource
+call:
+  b4675:
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback', 'https://claude.ai/api/mcp/auth_callback']
+    servers:
+      - {server_id: srv-a, name: alpha, transport: sse, auth_type: oauth2, oauth2_flow: authorization_code}
+      - {server_id: srv-c, name: gamma, transport: sse, auth_type: oauth2, oauth2_flow: authorization_code, delegate_auth_to_upstream: true}
+    steps:
+      - name: scoped
+        kind: aggregate
+        now: 1700000000
+        path: /authorize
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: 'https://proxy.test:8443/alpha/mcp'
+        tokens: [handle-1, jti-1]
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: aggregate-resource
+        kind: aggregate
+        now: 1700000000
+        path: /authorize
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: 'https://proxy.test:8443/mcp'
+        tokens: [handle-1, jti-1]
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: delegated-resource
+        kind: aggregate
+        now: 1700000000
+        path: /authorize
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: 'https://proxy.test:8443/gamma/mcp'
+        tokens: [handle-1, jti-1]
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+      - name: unknown-resource
+        kind: aggregate
+        now: 1700000000
+        path: /authorize
+        query: null
+        cookie_from: -1
+        client: 0
+        client_id: ''
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        state: st-1
+        code_challenge: challenge-1
+        code_challenge_method: S256
+        response_type: code
+        user: alice
+        resource: 'https://proxy.test:8443/srv-z/mcp'
+        tokens: [handle-1, jti-1]
+        handle: ''
+        delivery: null
+        team_id: null
+        decision: null
+        teams: []
+        teams_failure: null
+        vendor: unavailable
+        reachable: true
+        token_exchange: false
+env: {}
+compare: {ignore: []}
