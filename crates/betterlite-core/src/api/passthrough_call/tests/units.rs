@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_azure::credentials::source::SourceFailure;
@@ -29,7 +30,8 @@ use super::super::mantle;
 use super::super::params;
 use super::MODEL_ARN;
 use super::support::{
-    MODEL, base_args, logging_state, object, proxy_client, resolved, vllm_args, watsonx_environment,
+    MODEL, base_args, empty_environment, logging_state, object, proxy_client, resolved, vllm_args,
+    watsonx_environment,
 };
 
 const EAST_ARN: &str = "arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/abc";
@@ -256,7 +258,11 @@ async fn auth_refuses_non_string_provider_credentials(
 ) {
     let http = proxy_client(1024);
     let params = object(&[(name, JsonValue::Bool(true))]);
-    let Err(failure) = auth::validate(tag, None, &params, "https://example.test", &http).await
+    let config = PassthroughCallConfig {
+        tag,
+        environment: Arc::new(empty_environment()),
+    };
+    let Err(failure) = auth::validate(&config, None, &params, "https://example.test", &http).await
     else {
         panic!("a boolean credential is refused");
     };
@@ -274,8 +280,12 @@ async fn auth_refuses_non_string_provider_credentials(
 async fn auth_nvidia_nim_sets_the_bearer_header_only_for_a_key() {
     let http = proxy_client(1024);
     let key = SecretString::from("nim-key");
+    let config = PassthroughCallConfig {
+        tag: PassthroughConfigTag::NvidiaNim,
+        environment: Arc::new(empty_environment()),
+    };
     let headers = auth::validate(
-        PassthroughConfigTag::NvidiaNim,
+        &config,
         Some(&key),
         &Object::new(),
         "https://example.test",
@@ -287,15 +297,9 @@ async fn auth_nvidia_nim_sets_the_bearer_header_only_for_a_key() {
         headers.get("Authorization"),
         Some(&String::from("Bearer nim-key"))
     );
-    let bare = auth::validate(
-        PassthroughConfigTag::NvidiaNim,
-        None,
-        &Object::new(),
-        "https://example.test",
-        &http,
-    )
-    .await
-    .unwrap();
+    let bare = auth::validate(&config, None, &Object::new(), "https://example.test", &http)
+        .await
+        .unwrap();
     assert_eq!(bare.get("Authorization"), None);
 }
 
@@ -314,6 +318,7 @@ fn auth_mantle_signs_the_data_and_sets_the_json_content_type() {
     };
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::BedrockMantle,
+        environment: Arc::new(empty_environment()),
     };
     let (headers, body) = config.sign_request(Headers::new(), &context).unwrap();
     assert_eq!(
@@ -334,6 +339,7 @@ fn auth_mantle_signs_the_data_and_sets_the_json_content_type() {
 fn auth_mantle_without_a_key_is_refused() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::BedrockMantle,
+        environment: Arc::new(empty_environment()),
     };
     let empty = Object::new();
     let unsigned = PassthroughSigning {
@@ -359,7 +365,7 @@ async fn auth_watsonx_mints_the_iam_token_from_the_key() {
         Duration::ZERO,
     )
     .unwrap();
-    let environment = watsonx_environment(format!("http://{}/identity/token", serving.address));
+    let environment = watsonx_environment(&format!("http://{}/identity/token", serving.address));
     let key = SecretString::from("watsonx-key");
     let http = proxy_client(1024);
     let headers = auth::watsonx_headers(environment, Some(&key), &http)
@@ -385,7 +391,7 @@ async fn auth_watsonx_mints_the_iam_token_from_the_key() {
 #[tokio::test]
 async fn auth_watsonx_reports_a_refused_iam_token() {
     let serving = serve(reply("401 fixture", &[], ""), Duration::ZERO).unwrap();
-    let environment = watsonx_environment(format!("http://{}/identity/token", serving.address));
+    let environment = watsonx_environment(&format!("http://{}/identity/token", serving.address));
     let key = SecretString::from("watsonx-key");
     let http = proxy_client(1024);
     let Err(error) = auth::watsonx_headers(environment, Some(&key), &http).await else {
@@ -435,6 +441,7 @@ fn auth_credentials_failure_keeps_its_upstream_status() {
 fn urls_vllm_without_a_base_is_a_value_error() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::VLLM,
+        environment: Arc::new(empty_environment()),
     };
     let params = Object::new();
     let request = PassthroughUrlRequest {
@@ -465,6 +472,7 @@ fn urls_vllm_without_a_base_is_a_value_error() {
 fn urls_bedrock_reads_the_region_and_model_fields() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::Bedrock,
+        environment: Arc::new(empty_environment()),
     };
     let params = object(&[
         (
@@ -486,6 +494,7 @@ fn urls_bedrock_reads_the_region_and_model_fields() {
 fn urls_bedrock_refuses_an_invalid_region() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::Bedrock,
+        environment: Arc::new(empty_environment()),
     };
     let params = object(&[(
         "aws_region_name",
@@ -509,6 +518,7 @@ fn urls_bedrock_refuses_an_invalid_region() {
 fn urls_bedrock_region_from_the_model_arn() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::Bedrock,
+        environment: Arc::new(empty_environment()),
     };
     let params = Object::new();
     let request = bedrock_request(None, EAST_ARN, "model/foo/converse", &params);
@@ -521,6 +531,7 @@ fn urls_bedrock_region_from_the_model_arn() {
 fn urls_mantle_reads_the_region_from_its_host() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::BedrockMantle,
+        environment: Arc::new(empty_environment()),
     };
     let host = "https://bedrock-mantle.eu-central-1.api.aws";
     let params = object(&[("api_base", JsonValue::String(String::from(host)))]);
@@ -554,9 +565,10 @@ async fn call_sends_the_cookies_it_is_given_and_none_for_an_empty_list() {
     ]);
     let mut cookie_state = logging_state();
     let http = proxy_client(1024);
-    let cookie_answer = allm_passthrough_route(cookie_args, &mut cookie_state, &http)
-        .await
-        .expect("the upstream answers");
+    let cookie_answer =
+        allm_passthrough_route(cookie_args, &mut cookie_state, &http, &empty_environment())
+            .await
+            .expect("the upstream answers");
     assert_eq!(cookie_answer.status, 200);
     assert!(
         cookie_server
@@ -569,9 +581,10 @@ async fn call_sends_the_cookies_it_is_given_and_none_for_an_empty_list() {
     let mut empty_args = vllm_args(&format!("http://{}/v1", empty_server.address));
     empty_args.cookies = Some(Vec::new());
     let mut empty_state = logging_state();
-    let empty_answer = allm_passthrough_route(empty_args, &mut empty_state, &http)
-        .await
-        .expect("the upstream answers");
+    let empty_answer =
+        allm_passthrough_route(empty_args, &mut empty_state, &http, &empty_environment())
+            .await
+            .expect("the upstream answers");
     assert_eq!(empty_answer.status, 200);
     assert!(!empty_server.finish().unwrap().head.contains("cookie:"));
 }

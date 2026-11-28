@@ -2,14 +2,18 @@
 
 use axum::http::{Method, StatusCode};
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::model_secrets::DEFAULT_USER_ID;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
+use secrecy::SecretString;
 
 use super::support::{
     ErrorReply, FakeLookup, FakeStore, ListReply, StoreFailure, SuccessReply, USER_ID, call,
     create_body, credential, credential_values, decrypt_text, payload, principal, registry, row,
     state, text,
 };
+use crate::auth::auth_key_lookup::master_key_context;
+use crate::auth::auth_key_lookup::tests::caller_through_key_stage;
 
 #[tokio::test]
 async fn create_stores_encrypted_values_and_records_the_actor() {
@@ -39,6 +43,47 @@ async fn create_stores_encrypted_values_and_records_the_actor() {
         credential_values(&[("api_key", text("sk-abcdefgh"))]),
         registry.get_credential_values("openai")
     );
+}
+
+#[tokio::test]
+async fn create_records_the_key_user_as_actor() {
+    let registry = registry(Vec::new());
+    let store = FakeStore::seeded(Vec::new());
+    let caller = caller_through_key_stage(r#"{"user_id":"u1"}"#).principal;
+    let reply = call(
+        state(&registry, Some(&store), None),
+        Method::POST,
+        "/credentials",
+        &create_body("openai", r#"{"api_key":"sk-abcdefgh"}"#),
+        Some(&caller),
+    )
+    .await;
+    assert_eq!(StatusCode::OK, reply.status);
+    let writes = store.created();
+    assert_eq!(1, writes.len());
+    assert_eq!(Some("u1".to_owned()), writes[0].1);
+}
+
+#[tokio::test]
+async fn create_records_the_master_key_admin_user_as_actor() {
+    let registry = registry(Vec::new());
+    let store = FakeStore::seeded(Vec::new());
+    let master = SecretString::from("master".to_owned());
+    let caller = master_key_context(Some(&master), &master)
+        .expect("the master key authenticates")
+        .principal;
+    let reply = call(
+        state(&registry, Some(&store), None),
+        Method::POST,
+        "/credentials",
+        &create_body("openai", r#"{"api_key":"sk-abcdefgh"}"#),
+        Some(&caller),
+    )
+    .await;
+    assert_eq!(StatusCode::OK, reply.status);
+    let writes = store.created();
+    assert_eq!(1, writes.len());
+    assert_eq!(Some(DEFAULT_USER_ID.to_owned()), writes[0].1);
 }
 
 #[tokio::test]

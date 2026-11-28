@@ -1,13 +1,13 @@
 id: B10189
 milestone: R2 bug fixes
 title: test_package.py holds on main and the wheel workflow runs it
-status: todo
+status: done
 depends_on: [B5369, B170]
 file: tasks/B10189-python-package-tests-run.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3388
