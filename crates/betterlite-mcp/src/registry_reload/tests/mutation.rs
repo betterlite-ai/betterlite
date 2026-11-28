@@ -113,6 +113,22 @@ async fn mutation_add_registers_openapi_tools() {
 }
 
 #[tokio::test]
+async fn mutation_add_primes_deferred_discovery() {
+    let fixture = test_fixture();
+    fixture.discovery.set_deferred("srv-1", true);
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    mutator.add(&row(OAUTH_ROW)).await.unwrap();
+    sleep(Duration::from_millis(500)).await;
+    assert!(
+        fixture
+            .fetcher
+            .calls()
+            .contains(&String::from("https://mcp.test"))
+    );
+}
+
+#[tokio::test]
 async fn mutation_add_returns_build_failure_after_the_debug_log() {
     let fixture = test_fixture();
     let (captured, _guard) = capture();
@@ -350,6 +366,27 @@ async fn mutation_initialize_maps_original_and_listed_names() {
         Some("prefix-one")
     );
     assert_eq!(owners.get("bare").map(String::as_str), Some("prefix-one"));
+}
+
+#[tokio::test]
+async fn mutation_initialize_maps_config_server_tools() {
+    let fixture = test_fixture();
+    fixture
+        .put_config_server(server(
+            r#"{"server_id":"srv-cfg","name":"cfg","transport":"http","url":"https://mcp.test","alias":"cfg"}"#,
+        ))
+        .await;
+    fixture
+        .lister
+        .plan("srv-cfg", ToolPlan::Tools(strings(&["cfg-echo"])));
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    mutator.initialize_tool_owners();
+    fixture.settle().await;
+    assert_eq!(fixture.lister.calls(), strings(&["srv-cfg"]));
+    let owners = fixture.owners.read().unwrap().mapping.clone();
+    assert_eq!(owners.get("echo").map(String::as_str), Some("cfg"));
+    assert_eq!(owners.get("cfg-echo").map(String::as_str), Some("cfg"));
 }
 
 #[tokio::test]

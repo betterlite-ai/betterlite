@@ -25,6 +25,14 @@ async fn warn_shadowed_config_id_logs_once_and_again_after_change() {
     assert_eq!(occurrences(&captured.text(), CAPTURE_WARNING), 0);
     mutator.reload().await.unwrap();
     assert_eq!(occurrences(&captured.text(), SHADOW_WARNING), 1);
+    fixture.rows.set(Vec::new());
+    mutator.reload().await.unwrap();
+    assert_eq!(occurrences(&captured.text(), SHADOW_WARNING), 1);
+    fixture.rows.set(vec![row(
+        r#"{"server_id":"srv-shared","transport":"http"}"#,
+    )]);
+    mutator.reload().await.unwrap();
+    assert_eq!(occurrences(&captured.text(), SHADOW_WARNING), 2);
     fixture
         .put_config_server(server(
             r#"{"server_id":"srv-other","name":"srv-other","transport":"http"}"#,
@@ -36,7 +44,7 @@ async fn warn_shadowed_config_id_logs_once_and_again_after_change() {
     ]);
     mutator.reload().await.unwrap();
     let text = captured.text();
-    assert_eq!(occurrences(&text, SHADOW_WARNING), 2);
+    assert_eq!(occurrences(&text, SHADOW_WARNING), 3);
     assert!(text.contains("config.yaml MCP server_id(s) srv-other, srv-shared are also"));
 }
 
