@@ -104,7 +104,7 @@ class _FixedUuid:
     def __init__(self, ids: list[str]) -> None:
         self._ids = list(ids)
 
-    def next_id(self) -> fastuuid.UUID:
+    def __call__(self) -> fastuuid.UUID:
         return fastuuid.UUID(hex=self._ids.pop(0))
 
 
@@ -124,17 +124,21 @@ class _Recorder:
         raise _ProviderError(self._status)
 
 
+def _auth_state(
+    scenario: RequestScenario,
+) -> tuple[UserAPIKeyAuth | None, dict[str, UserAPIKeyAuth | None]]:
+    auth = scenario.get("auth")
+    if auth is None:
+        return None, {}
+    if auth["kind"] == "direct":
+        return UserAPIKeyAuth.model_validate({"user_id": auth["user_id"]}), {}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+    principal = None if auth["user_id"] is None else UserAPIKeyAuth.model_validate({"user_id": auth["user_id"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+    return None, {"user_api_key_auth": principal}
+
+
 def _streaming_iterator(scenario: RequestScenario) -> MCPEnhancedStreamingIterator:
     request = scenario["request"]
-    auth = scenario.get("auth")
-    direct: UserAPIKeyAuth | None = None
-    metadata: dict[str, UserAPIKeyAuth | None] = {}
-    if auth is not None and auth["kind"] == "direct":
-        direct = UserAPIKeyAuth.model_validate({"user_id": auth["user_id"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
-    if auth is not None and auth["kind"] == "metadata":
-        user_id = auth["user_id"]
-        principal = None if user_id is None else UserAPIKeyAuth.model_validate({"user_id": user_id})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
-        metadata = {"user_api_key_auth": principal}
+    direct, metadata = _auth_state(scenario)
     return cast(MCPEnhancedStreamingIterator, Proxy._create_mcp_streaming_response(  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1145-L1188
         input=request["input"],
         model=request["model"],
@@ -167,14 +171,10 @@ def _request_scenario(scenario: RequestScenario) -> JsonValue:
 
 
 def _tool_execution_events(value: ToolExecutionEventsCase) -> JsonValue:
-    fastuuid.uuid4 = _FixedUuid(value["ids"]).next_id  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1267
-    events = Proxy._create_tool_execution_events(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
-        value["tool_calls"],
-        value["tool_results"],
-    )
+    fastuuid.uuid4 = _FixedUuid(value["ids"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1267
+    events = Proxy._create_tool_execution_events(tool_calls=value["tool_calls"], tool_results=value["tool_results"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1224-L1272
     dumps: list[JsonValue] = [cast(JsonValue, event.model_dump(mode="json")) for event in events]  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1889
-    view: dict[str, JsonValue] = {"events": dumps}
-    return JSON.validate_python(view)
+    return JSON.validate_python({"events": dumps})
 
 
 def _call_parameter_streaming(value: CallParameterStreamingCase) -> JsonValue:
@@ -192,14 +192,13 @@ def _call_parameter_streaming(value: CallParameterStreamingCase) -> JsonValue:
 
 def _append_output(value: AppendOutputCase) -> JsonValue:
     response = ResponsesAPIResponse.model_validate(value["response"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
-    fastuuid.uuid4 = _FixedUuid(value["ids"]).next_id  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1326
+    fastuuid.uuid4 = _FixedUuid(value["ids"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1326
     composed = Proxy._add_mcp_output_elements_to_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
         response,
         value["mcp_tools_fetched"],
         value["tool_results"],
     )
-    dumped: dict[str, JsonValue] = composed.model_dump(mode="json")
-    return JSON.validate_python(dumped["output"])
+    return JSON.validate_python(cast(dict[str, JsonValue], composed.model_dump(mode="json"))["output"])  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1354-L1355
 
 
 def _provider_call_error(value: ProviderCallErrorCase) -> JsonValue:
@@ -209,7 +208,7 @@ def _provider_call_error(value: ProviderCallErrorCase) -> JsonValue:
         original_stream_setting=False,
     )
     recorder = _Recorder(value["status"])
-    handler.aresponses = recorder  # type: ignore[assignment, attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L19
+    handler.aresponses = recorder  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L19
     try:
         _outcome = asyncio.run(
             Proxy._make_follow_up_call(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1103-L1118
