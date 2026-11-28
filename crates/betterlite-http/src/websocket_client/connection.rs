@@ -58,7 +58,7 @@ impl WebSocketConnection {
             stream,
             sender: sender.clone(),
             keepalive,
-            next_ping: keepalive.map(|options| Instant::now() + options.interval),
+            next_ping: keepalive.and_then(|options| Instant::now().checked_add(options.interval)),
             pong_deadline: None,
         };
         Self { sender, receiver }
@@ -135,7 +135,8 @@ impl WebSocketReceiver {
             sink.send(Message::Ping(Bytes::new()))
                 .await
                 .map_err(WebSocketClientError::from_tungstenite)?;
-            self.pong_deadline = Some(now + options.timeout);
+            drop(sink);
+            self.pong_deadline = now.checked_add(options.timeout);
         }
         Ok(())
     }
@@ -174,7 +175,7 @@ impl WebSocketReceiver {
             return;
         };
         self.pong_deadline = None;
-        self.next_ping = Some(Instant::now() + options.interval);
+        self.next_ping = Instant::now().checked_add(options.interval);
     }
 }
 

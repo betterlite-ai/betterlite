@@ -47,6 +47,7 @@ const PING_INTERVAL: Duration = Duration::from_millis(50);
 const PING_TIMEOUT: Duration = Duration::from_millis(50);
 const SERVER_SILENCE: Duration = Duration::from_millis(250);
 const PONG_INTERVAL: Duration = Duration::from_millis(300);
+const PONG_HALF_INTERVAL: Duration = Duration::from_millis(150);
 const PONG_TIMEOUT: Duration = Duration::from_millis(300);
 const PONG_WINDOW: Duration = Duration::from_millis(700);
 
@@ -193,9 +194,8 @@ async fn serve_ponging(listener: TcpListener, pings: Arc<Mutex<Vec<Duration>>>) 
     let (stream, _peer) = listener.accept().await.expect("accept");
     let started = Instant::now();
     let mut socket = accept_async(stream).await.expect("handshake");
-    loop {
-        let ping = socket.next().await.expect("ping").expect("frame");
-        if matches!(ping, Message::Ping(_)) {
+    while let Some(frame) = socket.next().await {
+        if matches!(frame.expect("frame"), Message::Ping(_)) {
             pings.lock().expect("pings").push(started.elapsed());
         }
     }
@@ -590,7 +590,7 @@ async fn websocket_client_tests_answer_pongs_without_closing() {
     let recorded = pings.lock().expect("pings");
     let first = recorded.first().copied().expect("a ping");
     assert!(
-        first >= PONG_INTERVAL / 2,
+        first >= PONG_HALF_INTERVAL,
         "the first ping came after {first:?}"
     );
     assert!(
@@ -650,7 +650,7 @@ async fn websocket_client_tests_tunnel_through_a_connect_proxy() {
     let mut servers = JoinSet::new();
     servers.spawn(serve_plain(backend));
     let mut proxies = JoinSet::new();
-    proxies.spawn(serve_proxy(proxy_listener, backend_address));
+    proxies.spawn(serve_proxy(proxy_listener, Some(backend_address)));
     let proxy = ProxyServer {
         host: "127.0.0.1".to_owned(),
         port: proxy_address.port(),
