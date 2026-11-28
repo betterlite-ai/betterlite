@@ -15,9 +15,7 @@ use super::ConfigFieldState;
 use super::error::ConfigFieldError;
 use super::ports::{ConfigFieldCaller, ConfigFieldServices};
 use super::read::{get_config_general_settings, list_config_general_settings};
-use super::records::{
-    ConfigFieldDelete, ConfigFieldUpdate, ConfigFieldUpdateResponse, ConfigList, GENERAL_SETTINGS,
-};
+use super::records::{ConfigFieldDelete, ConfigFieldUpdate, ConfigList, GENERAL_SETTINGS};
 use super::write::{delete_config_general_settings, update_config_general_settings};
 
 const INVALID_BODY: &str = "Invalid request body";
@@ -30,6 +28,9 @@ pub(super) struct HttpState {
     pub(super) overlay: Arc<dyn ConfigOverlayPort>,
 }
 
+// user_api_key_dict for these routes: optional because FastAPI answers 401 when it is missing
+pub(super) type Auth = Option<Extension<AuthContext>>;
+
 #[derive(Deserialize)]
 pub(super) struct InfoQuery {
     field_name: Option<String>,
@@ -38,6 +39,12 @@ pub(super) struct InfoQuery {
 #[derive(Deserialize)]
 pub(super) struct ListQuery {
     config_type: Option<String>,
+}
+
+// the decoded body each write route carries, and the catalog edit it asks for
+enum FieldWrite {
+    Update(ConfigFieldUpdate),
+    Delete(ConfigFieldDelete),
 }
 
 // the body decode both write routes run; the fuzz target and its corpus replay feed it arbitrary bytes
@@ -50,42 +57,25 @@ where
     })
 }
 
-pub(super) async fn update(
-    State(state): State<HttpState>,
-    caller: Option<Extension<AuthContext>>,
-    body: Bytes,
-) -> Result<Json<ConfigFieldUpdateResponse>, ConfigFieldError> {
-    let update = decode_body::<ConfigFieldUpdate>(&body)?;
-    let client = caller_of(caller.as_ref())?;
-    let row = {
-        let mut config = state.fields.config.lock().await;
-        update_config_general_settings(services(&state, &mut config), &client, &update).await?
-    };
-    Ok(Json(row))
-}
-
-pub(super) async fn delete(
-    State(state): State<HttpState>,
-    caller: Option<Extension<AuthContext>>,
-    body: Bytes,
-) -> Response {
-    let Ok(delete) = decode_body::<ConfigFieldDelete>(&body) else {
-        return ConfigFieldError::Unprocessable {
-            detail: INVALID_BODY,
-        }
-        .into_response();
-    };
-    let client = match caller_of(caller.as_ref()) {
-        Ok(client) => client,
+pub(super) async fn update(State(state): State<HttpState>, auth: Auth, body: Bytes) -> Response {
+    let request = match decode_body::<ConfigFieldUpdate>(&body) {
+        Ok(update) => FieldWrite::Update(update),
         Err(error) => return error.into_response(),
     };
-    let mut config = state.fields.config.lock().await;
-    respond(delete_config_general_settings(services(&state, &mut config), &client, &delete).await)
+    respond_write(&state, auth.as_ref(), request).await
+}
+
+pub(super) async fn delete(State(state): State<HttpState>, auth: Auth, body: Bytes) -> Response {
+    let request = match decode_body::<ConfigFieldDelete>(&body) {
+        Ok(delete) => FieldWrite::Delete(delete),
+        Err(error) => return error.into_response(),
+    };
+    respond_write(&state, auth.as_ref(), request).await
 }
 
 pub(super) async fn info(
     State(state): State<HttpState>,
-    caller: Option<Extension<AuthContext>>,
+    auth: Auth,
     Query(query): Query<InfoQuery>,
 ) -> Response {
     let Some(field_name) = query.field_name else {
@@ -94,7 +84,7 @@ pub(super) async fn info(
         }
         .into_response();
     };
-    match caller_of(caller.as_ref()) {
+    match caller_of(auth.as_ref()) {
         Ok(client) => {
             let info = {
                 let mut config = state.fields.config.lock().await;
@@ -109,7 +99,7 @@ pub(super) async fn info(
 
 pub(super) async fn list(
     State(state): State<HttpState>,
-    caller: Option<Extension<AuthContext>>,
+    auth: Auth,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<ConfigList>>, ConfigFieldError> {
     let Some(config_type) = query.config_type else {
@@ -122,12 +112,36 @@ pub(super) async fn list(
             detail: LITERAL_ERROR,
         });
     }
-    let client = caller_of(caller.as_ref())?;
+    let client = caller_of(auth.as_ref())?;
     let fields = {
         let mut config = state.fields.config.lock().await;
         list_config_general_settings(services(&state, &mut config), &client).await?
     };
     Ok(Json(fields))
+}
+
+// POST /config/field/update and /config/field/delete share the caller check, the config lock and the row edit
+async fn respond_write(
+    state: &HttpState,
+    caller: Option<&Extension<AuthContext>>,
+    request: FieldWrite,
+) -> Response {
+    let client = match caller_of(caller) {
+        Ok(client) => client,
+        Err(error) => return error.into_response(),
+    };
+    let row = {
+        let mut config = state.fields.config.lock().await;
+        match request {
+            FieldWrite::Update(update) => {
+                update_config_general_settings(services(state, &mut config), &client, &update).await
+            }
+            FieldWrite::Delete(delete) => {
+                delete_config_general_settings(services(state, &mut config), &client, &delete).await
+            }
+        }
+    };
+    respond(row)
 }
 
 // user_api_key_dict for these routes: the caller the role gates and the config audit log read
