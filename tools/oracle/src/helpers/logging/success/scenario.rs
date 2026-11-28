@@ -97,8 +97,12 @@ fn loggers(
     let first = Arc::new(RecordingCounter::default());
     let second = Arc::new(RecordingCounter::default());
     // logging_success.py puts both counters in litellm.callbacks, ahead of the probe loggers
-    register(&mut registry, "recording-counter-1", Arc::clone(&first))?;
-    register(&mut registry, "recording-counter-2", Arc::clone(&second))?;
+    let first_handle = Arc::clone(&first);
+    let first_sink: Arc<dyn CallbackLogger> = first_handle;
+    register(&mut registry, "recording-counter-1", first_sink)?;
+    let second_handle = Arc::clone(&second);
+    let second_sink: Arc<dyn CallbackLogger> = second_handle;
+    register(&mut registry, "recording-counter-2", second_sink)?;
     let mut recording = Vec::new();
     for logger in specs {
         let record = Arc::new(RecordingLogger::new(
@@ -107,7 +111,9 @@ fn loggers(
             logger.fail,
             stamp,
         ));
-        register(&mut registry, &logger.name, Arc::clone(&record))?;
+        let handle = Arc::clone(&record);
+        let sink: Arc<dyn CallbackLogger> = handle;
+        register(&mut registry, &logger.name, sink)?;
         recording.push(record);
     }
     Ok((registry, recording, vec![first, second]))
