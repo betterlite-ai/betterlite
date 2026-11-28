@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::sync::Arc;
 
 use axum::Extension;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -11,10 +10,9 @@ use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::management_effects::wrapper::{
-    ManagementCall, ManagementDeps, ManagementFailure, NoEffects, SystemClock,
-    default_management_auth, management_endpoint_wrapper,
+    ManagementCall, ManagementFailure, NoEffects, default_management_auth,
+    management_endpoint_wrapper, no_effect_deps,
 };
-use crate::management_payload::otel_span::ManagementSpanDeps;
 use crate::mcp::management_server_access::AccessibleServerSources;
 
 use super::UserEnvRoutesState;
@@ -45,7 +43,7 @@ where
         let limits = ApiLimits::default();
         let body_settings = RequestBodySettings::default();
         let effects = NoEffects;
-        let deps = management_deps(&auth, &limits, &body_settings, &effects);
+        let deps = no_effect_deps(&body_settings, &limits, &effects, &auth);
         let call = ManagementCall {
             function_name,
             request_kwargs: JsonObject::new(),
@@ -69,27 +67,6 @@ where
             })
         })
         .await
-    }
-}
-
-// The wrapper sees no alert transport, no span transport and no key cache: these routes have none
-fn management_deps<'deps>(
-    auth: &'deps UserAPIKeyAuth,
-    limits: &'deps ApiLimits,
-    body_settings: &'deps RequestBodySettings,
-    effects: &'deps NoEffects,
-) -> ManagementDeps<'deps, NoEffects, NoEffects, NoEffects> {
-    ManagementDeps {
-        alert: None,
-        span: ManagementSpanDeps {
-            transport: None,
-            otel_v2_enabled: false,
-            body_settings,
-            limits,
-        },
-        cache: effects,
-        default_auth: auth,
-        clock: Arc::new(SystemClock),
     }
 }
 

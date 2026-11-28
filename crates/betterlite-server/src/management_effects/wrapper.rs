@@ -7,6 +7,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::alert_settings::types::AlertType;
+use betterlite_config::sections::request_body::Settings as RequestBodySettings;
+use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
 use betterlite_logging::otel::service::management::ManagementPayload;
 use betterlite_logging::otel::v2_callback::live_span::LiveSpan;
@@ -247,6 +249,27 @@ impl ManagementCacheEviction for NoEffects {
 
     fn delete_cache(&self, _key: &str) -> Result<(), Infallible> {
         Ok(())
+    }
+}
+
+// The deps a route with no alert, no parent span and no cached key hands the wrapper
+pub fn no_effect_deps<'deps>(
+    body_settings: &'deps RequestBodySettings,
+    limits: &'deps ApiLimits,
+    effects: &'deps NoEffects,
+    default_auth: &'deps UserAPIKeyAuth,
+) -> ManagementDeps<'deps, NoEffects, NoEffects, NoEffects> {
+    ManagementDeps {
+        alert: None,
+        span: ManagementSpanDeps {
+            transport: None,
+            otel_v2_enabled: false,
+            body_settings,
+            limits,
+        },
+        cache: effects,
+        default_auth,
+        clock: Arc::new(SystemClock),
     }
 }
 

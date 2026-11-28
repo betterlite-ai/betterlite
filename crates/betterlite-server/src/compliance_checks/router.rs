@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::Extension;
 use axum::Json;
 use axum::Router;
@@ -12,10 +10,8 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::management_effects::wrapper::{
-    ManagementCall, ManagementDeps, NoEffects, SystemClock, default_management_auth,
-    management_endpoint_wrapper,
+    ManagementCall, NoEffects, default_management_auth, management_endpoint_wrapper, no_effect_deps,
 };
-use crate::management_payload::otel_span::ManagementSpanDeps;
 use crate::state::ServerState;
 
 use super::checker::{ComplianceChecker, Regulation};
@@ -73,18 +69,8 @@ async fn evaluate(
     let (_, function_name) = regulation.names();
     let limits = ApiLimits::default();
     let effects = NoEffects;
-    let deps = ManagementDeps {
-        alert: Option::<&NoEffects>::None,
-        span: ManagementSpanDeps {
-            transport: Option::<&NoEffects>::None,
-            otel_v2_enabled: false,
-            body_settings: &state.server.config.sections.request_body,
-            limits: &limits,
-        },
-        cache: &effects,
-        default_auth: &default_auth,
-        clock: Arc::new(SystemClock),
-    };
+    let body_settings = &state.server.config.sections.request_body;
+    let deps = no_effect_deps(body_settings, &limits, &effects, &default_auth);
     let call = ManagementCall {
         function_name,
         request_kwargs: JsonObject::new(),
