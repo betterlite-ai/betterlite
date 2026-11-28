@@ -72,7 +72,7 @@ async fn local_mode_skips_fetch() {
         snapshot.cached_posts,
         Some(vec![post("Cached", "https://cached")])
     );
-    assert_eq!(snapshot.last_fetch_time, 100.0);
+    assert_eq!(snapshot.last_fetch_time.to_bits(), 100.0_f64.to_bits());
 }
 
 #[tokio::test]
@@ -96,7 +96,7 @@ async fn success_is_cached() {
     assert!(warnings.warnings().is_empty());
     let snapshot = feed.cache_snapshot();
     assert_eq!(snapshot.cached_posts, Some(first));
-    assert_eq!(snapshot.last_fetch_time, 100.0);
+    assert_eq!(snapshot.last_fetch_time.to_bits(), 100.0_f64.to_bits());
 }
 
 #[tokio::test]
@@ -118,7 +118,10 @@ async fn expires_at_one_hour() {
     assert_eq!(fetched, vec![post("Other", "https://other")]);
     assert_eq!(script.seen().len(), 1);
     assert_eq!(clock.reads.load(Ordering::SeqCst), 2);
-    assert_eq!(feed.cache_snapshot().last_fetch_time, 3700.0);
+    assert_eq!(
+        feed.cache_snapshot().last_fetch_time.to_bits(),
+        3700.0_f64.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -135,7 +138,10 @@ async fn timestamp_precedes_fetch() {
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![post("Fresh", "https://fresh")]);
     assert_eq!(clock.reads.load(Ordering::SeqCst), 1);
-    assert_eq!(feed.cache_snapshot().last_fetch_time, 100.0);
+    assert_eq!(
+        feed.cache_snapshot().last_fetch_time.to_bits(),
+        100.0_f64.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -157,13 +163,16 @@ async fn failed_refresh_keeps_cache() {
         snapshot.cached_posts,
         Some(vec![post("Old", "https://old")])
     );
-    assert_eq!(snapshot.last_fetch_time, 100.0);
+    assert_eq!(snapshot.last_fetch_time.to_bits(), 100.0_f64.to_bits());
     assert_eq!(warnings.warnings().len(), 1);
     assert_eq!(warnings.warnings()[0].subject.as_deref(), Some(FEED_URL));
     let refreshed = feed.get_blog_posts().await.unwrap();
     assert_eq!(refreshed, vec![post("Other", "https://other")]);
     assert_eq!(script.seen().len(), 2);
-    assert_eq!(feed.cache_snapshot().last_fetch_time, 4001.0);
+    assert_eq!(
+        feed.cache_snapshot().last_fetch_time.to_bits(),
+        4001.0_f64.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -175,16 +184,16 @@ async fn fallback_is_not_cached() {
     assert_eq!(posts, vec![backup_post()]);
     let snapshot = feed.cache_snapshot();
     assert_eq!(snapshot.cached_posts, None);
-    assert_eq!(snapshot.last_fetch_time, 0.0);
-    let warnings = warnings.warnings();
-    assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].subject.as_deref(), Some(FEED_URL));
-    assert!(warnings[0].message.contains("never closed"));
-    assert!(warnings[0].message.starts_with(&format!(
+    assert_eq!(snapshot.last_fetch_time.to_bits(), 0.0_f64.to_bits());
+    let recorded = warnings.warnings();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].subject.as_deref(), Some(FEED_URL));
+    assert!(recorded[0].message.contains("never closed"));
+    assert!(recorded[0].message.starts_with(&format!(
         "LiteLLM: Failed to fetch blog posts from {FEED_URL}: "
     )));
     assert!(
-        warnings[0]
+        recorded[0]
             .message
             .ends_with(". Falling back to local backup.")
     );
@@ -201,9 +210,9 @@ async fn non_utf8_body_falls_back() {
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![backup_post()]);
     assert_eq!(feed.cache_snapshot().cached_posts, None);
-    let warnings = warnings.warnings();
-    assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].message.contains("not valid UTF-8"));
+    let recorded = warnings.warnings();
+    assert_eq!(recorded.len(), 1);
+    assert!(recorded[0].message.contains("not valid UTF-8"));
 }
 
 #[test]
@@ -227,19 +236,21 @@ async fn empty_feed_falls_back() {
 async fn deep_nesting_falls_back() {
     let at_limit = Script::new(vec![reply(200, &title_nested_in(60))]);
     let clock = Arc::new(FixedClock { now: 100.0 });
-    let (feed, warnings) = feed(at_limit, FEED_URL, false, clock, Arc::new(backup_posts()));
-    let posts = feed.get_blog_posts().await.unwrap();
-    assert_eq!(posts, vec![post("Deep", "https://deep")]);
-    assert!(warnings.warnings().is_empty());
+    let (within_feed, within_warnings) =
+        feed(at_limit, FEED_URL, false, clock, Arc::new(backup_posts()));
+    let within_limit = within_feed.get_blog_posts().await.unwrap();
+    assert_eq!(within_limit, vec![post("Deep", "https://deep")]);
+    assert!(within_warnings.warnings().is_empty());
     let past_limit = Script::new(vec![reply(200, &title_nested_in(61))]);
     let later = Arc::new(FixedClock { now: 200.0 });
-    let (feed, warnings) = feed(past_limit, FEED_URL, false, later, Arc::new(backup_posts()));
-    let posts = feed.get_blog_posts().await.unwrap();
-    assert_eq!(posts, vec![backup_post()]);
-    assert_eq!(feed.cache_snapshot().cached_posts, None);
-    let warnings = warnings.warnings();
-    assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].message.contains("nests deeper than 64"));
+    let (over_feed, over_warnings) =
+        feed(past_limit, FEED_URL, false, later, Arc::new(backup_posts()));
+    let over_limit = over_feed.get_blog_posts().await.unwrap();
+    assert_eq!(over_limit, vec![backup_post()]);
+    assert_eq!(over_feed.cache_snapshot().cached_posts, None);
+    let recorded = over_warnings.warnings();
+    assert_eq!(recorded.len(), 1);
+    assert!(recorded[0].message.contains("nests deeper than 64"));
 }
 
 #[tokio::test]
@@ -257,7 +268,10 @@ async fn backwards_clock_keeps_cache() {
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![post("Old", "https://old")]);
     assert!(script.seen().is_empty());
-    assert_eq!(feed.cache_snapshot().last_fetch_time, 1000.0);
+    assert_eq!(
+        feed.cache_snapshot().last_fetch_time.to_bits(),
+        1000.0_f64.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -331,10 +345,10 @@ async fn rejects_a_body_over_the_size_cap() {
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![backup_post()]);
     assert_eq!(feed.cache_snapshot().cached_posts, None);
-    let warnings = warnings.warnings();
-    assert_eq!(warnings.len(), 1);
+    let recorded = warnings.warnings();
+    assert_eq!(recorded.len(), 1);
     assert!(
-        warnings[0]
+        recorded[0]
             .message
             .contains(&format!("larger than {MAX_FEED_BYTES} bytes"))
     );

@@ -129,9 +129,9 @@ async fn rejects_a_non_success_status() {
     );
     let posts = feed.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![backup_post()]);
-    let warnings = warnings.warnings();
-    assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].subject.as_deref(), Some(server.url.as_str()));
+    let recorded = warnings.warnings();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].subject.as_deref(), Some(server.url.as_str()));
 }
 
 #[tokio::test]
