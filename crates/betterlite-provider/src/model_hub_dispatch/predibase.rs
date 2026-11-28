@@ -3,6 +3,7 @@ use std::str::from_utf8;
 
 use betterlite_http::proxy::{StreamResponse, UpstreamResponse};
 use betterlite_logging::logging_pre_post::args::RawBody;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
@@ -16,7 +17,7 @@ use super::credentials::{PREDIBASE_BASE, PREDIBASE_KEY, PREDIBASE_TENANT_ID, Sou
 use super::hub::headers_from;
 use super::json::{self, additional_args, header_values, log_opened_stream};
 use super::transport::WireRequest;
-use super::{CallLogging, ChatContext, CustomPromptTable, DispatchDeps, HubDispatchError};
+use super::{ChatContext, CustomPromptTable, DispatchDeps, HubDispatchError};
 use crate::operation::OperationError;
 use crate::predibase::config::{
     CallFailure, PredibaseConfig, call_error, get_complete_url, validate_environment,
@@ -139,7 +140,7 @@ async fn stream_error(response: StreamResponse) -> HubDispatchError {
 
 fn log_pre_call(
     call: &ChatContext<'_>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     endpoint: &Endpoint,
     data: &RequestBody,
 ) -> Result<(), HubDispatchError> {
@@ -161,7 +162,7 @@ fn log_pre_call(
 pub async fn complete<'call>(
     call: &'call mut ChatContext<'_>,
     deps: &'call DispatchDeps<'_>,
-    log: &'call mut CallLogging<'_, '_>,
+    log: &'call mut LogContext<'_, '_>,
 ) -> Result<Completion, HubDispatchError> {
     let endpoint = endpoint(call, deps)?;
     let data = request_body(call, deps, &endpoint.options).await?;
@@ -193,7 +194,7 @@ pub async fn complete<'call>(
 // call_error raises before LiteLLM logs the post_call, which carries the request body
 fn checked_reply(
     call: &ChatContext<'_>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     response: &UpstreamResponse,
     data: &RequestBody,
 ) -> Result<(), HubDispatchError> {

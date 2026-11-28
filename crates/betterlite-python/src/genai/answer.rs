@@ -1,5 +1,4 @@
-use super::convert::GenaiCall;
-use super::session::{Entry, GenaiCore, Outcome};
+use super::session::{GenaiCore, Outcome};
 use super::stream::{NativeGenaiStream, StreamKind};
 use betterlite_core::api::genai::chat_call::{
     CompletionCall, CompletionExecutor, CompletionOutput, GenerateContentOutcome as AdapterOutcome,
@@ -9,6 +8,8 @@ use betterlite_core::api::genai_http::service::{
     AsyncGenerateContentOutcome, GenerateContentOutcome as NativeOutcome,
 };
 use betterlite_prompts::arguments::json::Json;
+use betterlite_vertex::genai::session::Entry;
+use betterlite_vertex::genai::session::call::GenaiCall;
 use betterlite_vertex::google_native_content::response::GenerateContentResponse;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;

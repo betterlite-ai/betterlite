@@ -7,13 +7,13 @@ use betterlite_anthropic::count_tokens::handler::CountTokensTransport;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
 use http::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 
-use super::super::CallLogging;
 use super::super::base::Surface;
 use super::super::completion::{CompletionHandler, HandlerFuture, ResolvedCall};
 use super::{FixtureError, Input, Recorded};
@@ -42,7 +42,7 @@ impl CompletionHandler<String, String> for Recorder<'_> {
     fn complete<'call>(
         &'call mut self,
         call: ResolvedCall<String, String>,
-        _log: &'call mut CallLogging<'_, '_>,
+        _log: &'call mut LogContext<'_, '_>,
     ) -> HandlerFuture<'call, Json, Failure> {
         Box::pin(async move {
             if let Some(status) = self.0.failure {

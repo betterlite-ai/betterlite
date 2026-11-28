@@ -1,14 +1,14 @@
 id: B1202
 milestone: M4 keys, spend and management
 title: Bulk team-member removal transaction
-status: todo
+status: done
 depends_on: [B007, B171, B714, B722, B723, B724, B732, B734, B738, B784, B800, B819, B856, B859, B860, B878, B2363, B3882, B10129, B10130, B10140]
 file: tasks/B1202-bulk-team-removal.yaml
 covers:
   - "litellm/proxy/management_helpers/bulk_user_deletion.py"
 parent: B056
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3441

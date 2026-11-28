@@ -1,14 +1,14 @@
 id: B951
 milestone: M5 api families
 title: Responses mcp followup
-status: todo
+status: done
 depends_on: [B171, B902, B10121, B10122, B10123, B10124, B1087, B932, B952]
 file: tasks/B951-responses-mcp-followup.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3448

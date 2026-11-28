@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-key-active-future-offset-text
+call:
+  b4658:
+    operation: key_is_active
+    key:
+      token: sk-future
+      expires: "2099-01-01T00:00:00+05:30"
+env: {}
+compare: {ignore: []}

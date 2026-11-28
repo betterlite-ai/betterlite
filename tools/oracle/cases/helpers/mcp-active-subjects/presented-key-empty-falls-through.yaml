@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-presented-key-empty-falls-through
+call:
+  b4658:
+    operation: presented_key
+    headers:
+      - ["x-litellm-api-key", ""]
+      - ["authorization", "sk-fallback"]
+env: {}
+compare: {ignore: []}

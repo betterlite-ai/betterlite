@@ -1,11 +1,11 @@
 use betterlite_error::error::ErrorClass;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 
 use super::support::{
     Failure, Fixture, Recorder, RecordingConfig, awaited_create, awaited_list, caller, create_args,
     error, json, kwargs, list_args, object, run_fixture, runs_fixture,
 };
-use crate::api::eval_http::exchange::EvalLogging;
 use crate::api::eval_run_create_list::providers::RunMode;
 use crate::api::eval_run_create_list::{CreateRunWork, ListRunsWork};
 
@@ -21,7 +21,7 @@ fn create_with_the_flag_returns_the_pending_work() {
     );
     let mut fixture = Fixture::new("create_run");
     let env = fixture.env.pre_post();
-    let log = EvalLogging {
+    let log = LogContext {
         state: &mut fixture.state,
         env: &env,
     };
@@ -44,7 +44,7 @@ fn list_with_the_flag_returns_the_pending_work() {
     );
     let mut fixture = Fixture::new("list_runs");
     let env = fixture.env.pre_post();
-    let log = EvalLogging {
+    let log = LogContext {
         state: &mut fixture.state,
         env: &env,
     };

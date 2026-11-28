@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::{Duration, Instant};
 
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -16,7 +17,7 @@ use http::{HeaderMap, Method};
 use secrecy::SecretString;
 use url::Url;
 
-use self::error::{ClientError, SpeechError, handle_error};
+use self::error::{SpeechError, handle_error};
 use self::facts::Sent;
 use self::request::{
     Payload, call_endpoint, payload, request_headers, select_client, validated_headers,
@@ -77,12 +78,6 @@ pub trait SpeechTransport: Send + Sync {
         &self,
         request: SpeechWireRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: SpeechTransport;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
 
 pub struct SuppliedClient<'client, Client> {
@@ -178,7 +173,7 @@ pub async fn send<S>(
     model: &str,
 ) -> Result<SpeechBinaryResponse, SpeechError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: SpeechTransport>,
 {
     let PreparedSpeech {
         config,
@@ -246,7 +241,7 @@ async fn execute<S>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<SpeechBinaryResponse, SpeechError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: SpeechTransport>,
 {
     let prepared = prepare(deps, mode, call, log)?;
     send(prepared, call.model).await
@@ -254,7 +249,7 @@ where
 
 impl<S> SpeechDeps<'_, S>
 where
-    S: ClientSource,
+    S: ClientSource<Client: SpeechTransport>,
 {
     // ast-grep-ignore: no-one-line-functions - the public sync entry point forwards to the shared pipeline with its client class
     pub async fn text_to_speech_handler(
