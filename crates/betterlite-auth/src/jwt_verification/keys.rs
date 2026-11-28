@@ -71,7 +71,25 @@ fn verify_with_jwk(
             }
             let x = required_text(fields, "x")?;
             let y = required_text(fields, "y")?;
-            verify_with_ec_components(algorithm, &x, &y, signing_input, signature)
+            if Algorithm::from_str(algorithm.wire_name()).is_err() {
+                // ES512 has no jsonwebtoken verifier, so the point goes to RustCrypto's P-521 instead
+                let mut point = Vec::with_capacity(133);
+                point.push(4_u8);
+                point.extend_from_slice(
+                    &URL_SAFE_NO_PAD
+                        .decode(&x)
+                        .map_err(|error| unusable_key(&error))?,
+                );
+                point.extend_from_slice(
+                    &URL_SAFE_NO_PAD
+                        .decode(&y)
+                        .map_err(|error| unusable_key(&error))?,
+                );
+                return verify_with_p521(&point, signing_input, signature);
+            }
+            let key =
+                DecodingKey::from_ec_components(&x, &y).map_err(|error| unusable_key(&error))?;
+            verify_with_library(&key, algorithm, signing_input, signature)
         }
         (Family::Ed, "OKP") => {
             let curve = required_text(fields, "crv")?;
@@ -92,33 +110,6 @@ fn required_text(fields: &IndexMap<String, Json>, name: &str) -> Result<String, 
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => Err(incompatible_key()),
     }
-}
-
-fn verify_with_ec_components(
-    algorithm: JwtAlgorithm,
-    x: &str,
-    y: &str,
-    signing_input: &[u8],
-    signature: &str,
-) -> Result<(), VerificationError> {
-    if Algorithm::from_str(algorithm.wire_name()).is_err() {
-        // ES512 has no jsonwebtoken verifier, so the point goes to RustCrypto's P-521 instead
-        let mut point = Vec::with_capacity(133);
-        point.push(4_u8);
-        point.extend_from_slice(
-            &URL_SAFE_NO_PAD
-                .decode(x)
-                .map_err(|error| unusable_key(&error))?,
-        );
-        point.extend_from_slice(
-            &URL_SAFE_NO_PAD
-                .decode(y)
-                .map_err(|error| unusable_key(&error))?,
-        );
-        return verify_with_p521(&point, signing_input, signature);
-    }
-    let key = DecodingKey::from_ec_components(x, y).map_err(|error| unusable_key(&error))?;
-    verify_with_library(&key, algorithm, signing_input, signature)
 }
 
 fn verify_with_library(
