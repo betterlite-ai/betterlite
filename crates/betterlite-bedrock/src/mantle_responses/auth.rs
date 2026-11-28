@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 
-use crate::mantle_inputs::credentials::resolve_bearer_token;
+use crate::aws_settings::or_bearer_token;
 use crate::mantle_inputs::records::MantleGlobals;
 
 pub const AUTHORIZATION: &str = "Authorization";
@@ -20,11 +20,11 @@ pub fn validate_environment(
     params: EnvironmentParams<'_>,
     globals: &MantleGlobals,
 ) {
-    let bearer = resolve_bearer_token(
+    let bearer = or_bearer_token(&[
         params.api_key,
         globals.mantle_api_key.as_ref(),
         globals.aws_bearer_token.as_ref(),
-    );
+    ]);
     if let Some(token) = bearer.filter(|value| !value.expose_secret().is_empty()) {
         headers.insert(
             AUTHORIZATION.to_owned(),

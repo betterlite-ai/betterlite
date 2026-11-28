@@ -1,0 +1,21 @@
+kind: helper
+name: byok-consent-get-no-code-challenge
+call:
+  b4677:
+    route: get
+    query:
+      response_type: code
+      client_id: client-1
+      redirect_uri: "http://127.0.0.1:1456/callback"
+      state: state-1
+      server_id: ""
+    servers: null
+    form: null
+    cookie_header: null
+    master_key: null
+    now: 1700000000
+    prefill_live: 0
+    prefill_expired: 0
+env: {}
+compare:
+  ignore: []

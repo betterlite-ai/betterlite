@@ -1,0 +1,24 @@
+kind: helper
+name: riva-call-seed
+call:
+  riva_call:
+    calls:
+      - model: nvidia-riva/parakeet
+        audio_name: clip.wav
+        file_hex: "0000"
+        samples: 1600
+        optional_params: {}
+        api_base: localhost:50051
+        api_key: riva-secret
+        timeout_seconds: 30.0
+        service: timeout
+        legacy_auth: false
+        endpointing: ok
+        stream:
+          - results:
+              - is_final: true
+                alternatives:
+                  - transcript: "hello"
+                    words: []
+compare: {ignore: []}
+env: {}

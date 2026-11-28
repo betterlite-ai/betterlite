@@ -19,7 +19,7 @@ use crate::bedrock_embedding_io::credentials::{
 };
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{ASYNC_CLIENT_PROVIDER, ClientFactory};
-use crate::image_call::plan::CredentialSource;
+use crate::credentials::CredentialSource;
 use crate::signing::executor::AwsSigningExecutor;
 
 const RUNTIME_ENDPOINT_VARIABLE: &str = "AWS_BEDROCK_RUNTIME_ENDPOINT";
@@ -53,7 +53,7 @@ pub async fn get_async_invoke_status<Source, Factory>(
     mut log: Option<&mut StatusLogger<'_>>,
 ) -> Result<Json, EmbeddingJobsError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
     Factory::Client: StatusTransport,
 {
@@ -76,7 +76,7 @@ async fn prepare_status_request<Source, Factory>(
     services: &StatusServices<'_, Source, Factory>,
 ) -> Result<PreparedStatusRequest, EmbeddingJobsError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: Sync,
 {
     let configured = configured_endpoint(call.optional_params)?;
@@ -111,7 +111,7 @@ async fn status_credentials<Source, Factory>(
     services: &StatusServices<'_, Source, Factory>,
 ) -> Result<Credentials, EmbeddingJobsError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: Sync,
 {
     let loaded = load_credentials(

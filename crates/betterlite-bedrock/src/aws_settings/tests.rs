@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 mod aws_settings_cases;
 mod metadata;
+mod or_bearer_token_cases;
 mod selectors;
 mod support;
 
