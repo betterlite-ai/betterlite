@@ -8,10 +8,10 @@ use crate::api::messages_compaction::error::SpecError;
 pub fn normalize_context_edit_shapes(
     spec: Option<&Json>,
 ) -> Result<Vec<IndexMap<String, Json>>, SpecError> {
-    let Some(spec) = spec else {
+    let Some(raw) = spec else {
         return Ok(Vec::new());
     };
-    let normalized = match spec {
+    let normalized = match raw {
         Json::List(_) => map_context_management(spec)?.map(Json::Object),
         Json::Object(fields) => Some(Json::Object(fields.clone())),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => None,

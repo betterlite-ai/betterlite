@@ -183,7 +183,7 @@ where
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     };
-    let Some(edit_type) = edit_type else {
+    let Some(known) = edit_type else {
         tracing::debug!(
             "context_management polyfill: unknown edit type '{}' \u{2014} skipping",
             displayed_type(edit_spec.get("type"))
@@ -192,13 +192,7 @@ where
     };
     let fallback_system = state.system.take();
     let messages = take(&mut state.messages);
-    let call = edit_call(
-        edit_type,
-        shared,
-        messages,
-        fallback_system.clone(),
-        edit_spec,
-    );
+    let call = edit_call(known, shared, messages, fallback_system.clone(), edit_spec);
     let outcome = editor.edit(call).await.map_err(DispatchError::Editor)?;
     state.carry(outcome, fallback_system);
     Ok(())
