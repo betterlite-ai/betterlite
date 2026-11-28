@@ -16,6 +16,11 @@ on:
 
 permissions: {}
 
+# macOS runs five jobs at a time, and on 11-28 146 runs from 36 branches waited up to 20 hours, so a new push of a pull request cancels its older run
+concurrency:
+  group: python-wheels-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 defaults:
   run:
     shell: bash
