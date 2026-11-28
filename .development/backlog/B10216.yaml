@@ -1,0 +1,13 @@
+id: B10216
+milestone: R2 bug fixes
+title: One ClientKind, one SuppliedClient and one handler request with its transport for the core and provider HTTP families
+status: todo
+depends_on: [B10200, B7877]
+file: tasks/B10216-client-kind-copies.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

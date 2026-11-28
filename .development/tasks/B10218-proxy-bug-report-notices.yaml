@@ -1,0 +1,274 @@
+id: B10218
+title: A production ProxyDiagnostics for handle_exception_on_proxy, built once and handed out by the server state
+description: >-
+  B2400's handle_exception_on_proxy (crates/betterlite-server/src/api/proxy_endpoint_support.rs L140) takes a
+  `&dyn ProxyDiagnostics` (L62-L65) for LiteLLM's bug report notice, and the only impl is the oracle's
+  ScriptedDiagnostics (tools/oracle/src/helpers/server/proxy_endpoint_support.rs L67). B5094 inlined B4170's
+  bug_report_enabled and should_report_bug into a test, so no code on main reads LITELLM_DISABLE_BUG_REPORT_LINK or
+  applies LiteLLM's status rule. Every route that calls handle_exception_on_proxy would have to write its own impl or
+  pass one that never answers. This task builds the production impl once and puts it in ServerState, and every caller
+  takes it from there.
+
+
+  The flag. Config section bug_report_link (crates/betterlite-config/src/sections/bug_report_link.rs, tests in
+  bug_report_link/tests.rs). The skeleton registered it in sections.rs over a stub_section!() stub. Its Raw reads no
+  config key. convert reads LITELLM_DISABLE_BUG_REPORT_LINK through the lookup with betterlite_env::flag, the one env
+  parser docs/compatibility.md names, and `Settings { disabled: bool }` is false when the variable is unset or empty.
+  The variable name becomes a pub const of this section. Delete crates/betterlite-reporting/src/bug_report/eligibility.rs
+  and its `pub mod eligibility;` line in bug_report.rs: its DISABLE_ENV_VAR has no reader, and the name lives where it
+  is read. The test bug_report_eligibility_reads_flag_and_status in bug_report/tests.rs only checks an expression it
+  writes itself; its cases move to the section tests and the notices tests.
+
+
+  The report input. FailureFacts carries the exception type as text, while B4170's build_bug_report and B10058's
+  build_proxy_bug_report take a concrete `&E: Error` and derive the name with type_name_of_val (report.rs L30-L34).
+  Change both to take `exception_type: &str` in that place, and move the naming rule unchanged into
+  `pub fn exception_type_name<E: Error>(exception: &E) -> &'static str` in report.rs, so a caller that holds a concrete
+  error names it the way B4170 does; the reporting tests call it. FailureFacts gains
+  `pub location: &'static Location<'static>`, the place the caller built the failure, captured with
+  Location::caller() as B9979 decided for the report's frame. Update the FailureFacts literal in
+  proxy_endpoint_support/tests.rs and in the oracle's proxy_endpoint_support helper (L136-L142).
+
+
+  The impl. Module api::proxy_diagnostics (crates/betterlite-server/src/api/proxy_diagnostics.rs and
+  proxy_diagnostics/tests.rs); the skeleton declared it in api/mod.rs over an empty file. `pub struct BugReportNotices
+  { pub enabled: bool, pub snapshot: ProxyConfigSnapshot, pub dockerenv: PathBuf }`. `report(&self, failure:
+  &FailureFacts<'_>, call: ProxyCall) -> Option<BugReport>` is LiteLLM's should_report_bug followed by
+  build_proxy_bug_report: None when the link is disabled or the failure carries a status_code, else B10058's
+  build_proxy_bug_report with the failure's exception_type and location, the call, the snapshot and
+  `Host { dockerenv, python_version: None }`. `impl ProxyDiagnostics for BugReportNotices` answers B4170's
+  bug_report_notice of report with a ProxyCall of three Nones, since handle_exception_on_proxy builds the report with
+  no call fields (utils.py L8229-L8230). The impl only returns the text: B2400's failure_record logs it at error and
+  then strips the notice from the client message, so nothing here logs.
+
+
+  The slot. crates/betterlite-server/src/state/proxy_diagnostics.rs, declared in state.rs over an empty file.
+  `pub struct Slot { pub notices: Arc<BugReportNotices> }` and `Slot::new(config: &Config) -> Self`, the way
+  azure_runtime's slot takes only the config: enabled is `!config.sections.bug_report_link.disabled`, dockerenv is
+  B4170's DOCKERENV_PATH, and the snapshot is an empty ProxyConfigSnapshot with a one-line comment that no running
+  config map reaches the server yet (see deviations). state.rs gains the field `proxy_diagnostics:
+  proxy_diagnostics::Slot` and the line `proxy_diagnostics: proxy_diagnostics::Slot::new(config)` in ServerState::new.
+  A route passes `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics, a handler that logs
+  the notice with call fields calls report with its ProxyCall, and GET /debug/report reads snapshot and dockerenv
+  from the same value. Change the comment above ProxyDiagnostics (L62) to name BugReportNotices and the slot in
+  place of B4170, so a worker who reads the signature finds the impl.
+
+
+  The route allowlist. LiteLLM fills call_type from KNOWN_PROXY_ROUTES (common_request_processing.py L129-L131),
+  every route that starts with "/" in every LiteLLMRoutes member, through allowlisted (bug_report.py L74-L75).
+  Module known_proxy_routes in betterlite-auth (crates/betterlite-auth/src/known_proxy_routes.rs, tests in
+  known_proxy_routes/tests.rs), declared in lib.rs over an empty file, is their one home, built over the member lists
+  betterlite-auth already ports; don't copy a route. `pub fn known_proxy_routes() -> BTreeSet<&'static str>` inserts
+  the routes that start with "/" from auxiliary_routes' OPENAI_ROUTE_NAMES, MAPPED_PASS_THROUGH_ROUTES,
+  PASSTHROUGH_ROUTES_WILDCARD, LITELLM_NATIVE_ROUTES, MCP_INFERENCE_ROUTES, MCP_MANAGEMENT_ROUTES, MCP_ROUTES,
+  AGENT_INFERENCE_ROUTES, AGENT_MANAGEMENT_ROUTES, AGENT_ROUTES, GOOGLE_ROUTES, APPLY_GUARDRAIL_ROUTES,
+  MODEL_INFO_ROUTES, INFO_ROUTES, UI_ROUTES, COMPLIANCE_CHECK_ROUTES, SELF_MANAGED_ROUTES and public_routes();
+  inference_routes' OPENAI_ROUTES, ANTHROPIC_ROUTES and llm_api_routes(); and management_routes'
+  MASTER_KEY_ONLY_ROUTES, KEY_MANAGEMENT_ROUTES, TEAM_SERVICE_ACCOUNT_ROUTES, management_routes(),
+  SPEND_TRACKING_ROUTES, GLOBAL_SPEND_TRACKING_ROUTES, internal_user_routes(), INTERNAL_USER_VIEW_ONLY_ROUTES,
+  ORG_ADMIN_ONLY_ROUTES, admin_viewer_routes() and org_admin_allowed_routes(). Those stand for the 32 LiteLLMRoutes
+  members (_types.py L328-L1129). `pub fn known_proxy_route(path: &str) -> Option<&'static str>` is
+  allowlisted(path, KNOWN_PROXY_ROUTES): the set's entry equal to the path, else None, so a route template such as
+  "/key/{key_id}" matches only that exact text. B8591's unhandled handler and B10178's _handle_llm_api_exception
+  call it for call_type. betterlite-server already depends on betterlite-auth, so no crate edge is new.
+
+
+  Oracle. Helper cases on b10218 in the server group. The input is `{env, calls}`, and env repeats the case env for
+  the Rust side, since a helper sees only its input. A `notice` call takes a whole BugReport record, with
+  litellm_version and python_version pinned in the case, and answers bug_report_notice's text: the Python adapter
+  builds LiteLLM's EnvironmentReport and BugReport dataclasses from it, and the Rust side deserializes B4170's
+  BugReport. A `failure` call takes status_code and answers report's record or null: the Rust side loads a config
+  from "{}" with ConfigLoader over the input env, builds `proxy_diagnostics::Slot::new(&config)` and calls report
+  with a FailureFacts of exception type FailureError and no call fields; the Python side builds the
+  proxy_endpoint_support helper's FailureError (import it from there, don't declare another) and answers
+  `build_proxy_bug_report(error)` when `should_report_bug(error)` is true, else None, as utils.py L8229-L8230 does,
+  writing the record into a TypedDict field by field. Cases: notice-text.yaml gives notice the record a 500 from
+  handle_exception_on_proxy builds (surface proxy, exception FailureError, no frames, no config lines, no call fields,
+  no deployment), the same with deployment Docker, one with a frame, config lines, a provider and stream true, and one
+  whose config lines push the URL past 6,000 characters. report-eligibility.yaml sends failures with status_code null,
+  429 and 500 with no env. link-disabled.yaml sets LITELLM_DISABLE_BUG_REPORT_LINK to True and link-kept.yaml to
+  false, each with a failure of status_code null. The failure cases ignore the two version fields of each record
+  (B4170's and B9979's deviations); deployment and config_lines stay compared, since both sides read /.dockerenv on
+  the same machine and both see an empty config. known-proxy-routes.yaml sends a `routes` call, answered with
+  known_proxy_routes() in order and LiteLLM's sorted KNOWN_PROXY_ROUTES, so a missing or extra member route shows
+  as a difference, and `route` calls for "/chat/completions", "/v1/chat/completions", "/key/generate",
+  "/key/{key_id}", "chat_completion", "/chat/completions/" and "/not/a/route", answered with known_proxy_route and
+  allowlisted(path, KNOWN_PROXY_ROUTES). The diagnostics-order case B2400 wrote runs again to show its helper
+  still answers with the location field. No byte parser is added, so there is no fuzz target.
+
+
+  Budget: about 15 owned LiteLLM lines (bug_report_enabled, should_report_bug, the notice in
+  handle_exception_on_proxy, KNOWN_PROXY_ROUTES and allowlisted), about 50 lines for the section, 70 for the
+  notices module, 30 for the slot and state.rs, 30 for the reporting and FailureFacts changes, 40 for the route
+  allowlist, 230 for the two adapters and 350 test lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/proxy_diagnostics.rs
+    - crates/betterlite-server/src/api/proxy_diagnostics/**
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/proxy_diagnostics.rs
+    - crates/betterlite-server/src/state/proxy_diagnostics/**
+    - crates/betterlite-server/src/api/proxy_endpoint_support.rs
+    - crates/betterlite-server/src/api/proxy_endpoint_support/**
+    - crates/betterlite-config/src/sections/bug_report_link.rs
+    - crates/betterlite-config/src/sections/bug_report_link/**
+    - crates/betterlite-reporting/src/bug_report.rs
+    - crates/betterlite-reporting/src/bug_report/eligibility.rs
+    - crates/betterlite-reporting/src/bug_report/report.rs
+    - crates/betterlite-reporting/src/bug_report/tests.rs
+    - crates/betterlite-reporting/src/safe_proxy_config.rs
+    - crates/betterlite-reporting/src/safe_proxy_config/tests.rs
+    - crates/betterlite-auth/src/known_proxy_routes.rs
+    - crates/betterlite-auth/src/known_proxy_routes/**
+    - tools/oracle/src/helpers/server/proxy_endpoint_support.rs
+    - tools/oracle/src/helpers/server/b10218.rs
+    - tools/oracle/src/helpers/server/b10218/**
+    - tools/oracle/helpers/b10218.py
+    - tools/oracle/helpers/b10218/**
+    - tools/oracle/cases/helpers/bug-report-notices/**
+    - tools/oracle/fuzz/corpus/helper_case/bug-report-notices-*
+    - docs/deviations/B10218.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8237
+    why: handle_exception_on_proxy; L8229-L8230 log bug_report_notice(build_proxy_bug_report(e)) when should_report_bug(e), with no call fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L44-L50
+    why: Owned. bug_report_enabled (LITELLM_DISABLE_BUG_REPORT_LINK lowered and compared with "true") and should_report_bug (enabled and no status_code).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L94-L110
+    why: build_bug_report names the exception type(exc).__name__, the rule exception_type_name keeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L183-L195
+    why: strip_bug_report_notice and bug_report_notice, the text the notice cases compare.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L201-L228
+    why: _proxy_config_lines reads proxy_config.config and general_settings for every report; build_proxy_bug_report passes surface proxy and the call fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6078-L6079
+    why: update_config_state, the running config map the snapshot stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3742-L3762
+    why: _handle_llm_api_exception logs the notice with call_type, custom_llm_provider and stream; report takes them as a ProxyCall.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2059-L2067
+    why: The unhandled exception handler logs the notice with call_type only; B8591 calls report for it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L129-L131
+    why: Owned. KNOWN_PROXY_ROUTES, every route starting with "/" in every LiteLLMRoutes member.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L74-L75
+    why: Owned. allowlisted, the exact-match lookup known_proxy_route ports for the route set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L328-L1129
+    why: The 32 LiteLLMRoutes members betterlite-auth already ports, the inputs of known_proxy_routes.
+dod:
+  - text: >-
+      LITELLM_DISABLE_BUG_REPORT_LINK set to true in any case disables the link, false, unset and empty keep it, and a
+      value betterlite_env::flag rejects is a load error that names the variable.
+    proof: [bug-report-flag, oracle, bug-report-helper-python]
+  - text: >-
+      report answers None when the link is disabled or the failure carries a status_code (429 and 500 included), and
+      otherwise B10058's proxy bug report with the failure's exception type, the frame of its location, the given call
+      fields and the snapshot's config lines; the ProxyDiagnostics impl answers bug_report_notice of that report with
+      no call fields.
+    proof: [bug-report-notices, oracle, bug-report-helper-python]
+  - text: >-
+      For a failure without a status, report's record matches LiteLLM's build_proxy_bug_report apart from the two
+      version fields, and bug_report_notice's text matches LiteLLM's for the same record, the URL bound included.
+    proof: [oracle, bug-report-helper-python, bug-report-helper-corpus]
+  - text: >-
+      ServerState holds proxy_diagnostics::Slot built from the config alone, its notices follow the flag, and the
+      comment above ProxyDiagnostics names the impl and the slot.
+    proof: [bug-report-slot]
+  - text: >-
+      FailureFacts carries the caller's location, build_bug_report and build_proxy_bug_report take the exception type as
+      text, exception_type_name keeps B4170's naming rule, and B2400's, B4170's and B10058's tests still pass.
+    proof: [bug-report-records, bug-report-callers, oracle]
+  - text: >-
+      The variable name has one home and ProxyDiagnostics one production impl: eligibility.rs is gone, and no other
+      source file under crates names LITELLM_DISABLE_BUG_REPORT_LINK or implements ProxyDiagnostics.
+    proof: [bug-report-single-home]
+  - text: >-
+      known_proxy_routes() equals LiteLLM's KNOWN_PROXY_ROUTES, built over betterlite-auth's ported member lists with no
+      route copied, and known_proxy_route answers a path only when it is exactly one of those routes.
+    proof: [bug-report-routes, oracle, bug-report-helper-python]
+  - text: A new b10218 seed reaches the shared helper case parser.
+    proof: [bug-report-helper-corpus, oracle, bug-report-helper-python]
+  - text: docs/deviations/B10218.yaml lists the empty config snapshot.
+    proof: [bug-report-deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: bug-report-flag
+      why: the bug_report_link section is missing, reads the flag wrong or lets a bad value through
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::bug_report_link::/)'
+    - id: bug-report-notices
+      why: the notices answer for a status, a disabled link or a missing frame, or the trait impl passes call fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_diagnostics::/)'
+    - id: bug-report-slot
+      why: ServerState does not build the slot from the config, or its notices ignore the flag
+      run: >-
+        grep -qF 'proxy_diagnostics::Slot::new(config)' crates/betterlite-server/src/state.rs &&
+        grep -qF 'BugReportNotices' crates/betterlite-server/src/api/proxy_endpoint_support.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::proxy_diagnostics::/)'
+    - id: bug-report-records
+      why: the report builders still take a concrete error, or a B4170 or B10058 test broke
+      run: >-
+        grep -qF 'exception_type: &str' crates/betterlite-reporting/src/bug_report/report.rs &&
+        cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^bug_report::/) | test(/^safe_proxy_config::/)'
+    - id: bug-report-callers
+      why: FailureFacts has no location, or a B2400 test broke
+      run: >-
+        grep -qF "pub location: &'static Location<'static>" crates/betterlite-server/src/api/proxy_endpoint_support.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::/)'
+    - id: bug-report-single-home
+      why: the flag name or a production ProxyDiagnostics impl lives in a second place
+      run: >-
+        test ! -e crates/betterlite-reporting/src/bug_report/eligibility.rs &&
+        test "$(git grep -l -F '"LITELLM_DISABLE_BUG_REPORT_LINK"' -- crates ':(exclude,glob)**/tests.rs' ':(exclude,glob)**/tests/**' | wc -l)" -eq 1 &&
+        test "$(git grep -l 'impl ProxyDiagnostics for' -- crates ':(exclude,glob)**/tests.rs' ':(exclude,glob)**/tests/**' | wc -l)" -eq 1
+    - id: bug-report-routes
+      why: the route allowlist is missing, drops a member list or matches more than the exact route
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^known_proxy_routes::/)'
+    - id: bug-report-helper-python
+      why: the b10218 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10218.py tools/oracle/helpers/b10218)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: bug-report-helper-corpus
+      why: no new b10218 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bug-report-notices-*")" &&
+        grep -lE 'b10218"?:' tools/oracle/fuzz/corpus/helper_case/bug-report-notices-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: bug-report-deviation-rows
+      why: the empty config snapshot is not recorded as a deviation
+      run: test -s docs/deviations/B10218.yaml && grep -q 'ProxyConfigSnapshot' docs/deviations/B10218.yaml
+oracle_cases:
+  - tools/oracle/cases/helpers/bug-report-notices/notice-text.yaml
+  - tools/oracle/cases/helpers/bug-report-notices/report-eligibility.yaml
+  - tools/oracle/cases/helpers/bug-report-notices/link-disabled.yaml
+  - tools/oracle/cases/helpers/bug-report-notices/link-kept.yaml
+  - tools/oracle/cases/helpers/bug-report-notices/known-proxy-routes.yaml
+  - tools/oracle/cases/helpers/proxy-endpoint-support/diagnostics-order.yaml
+deviations:
+  - what: >-
+      The notice carries no Config block for now: the slot's ProxyConfigSnapshot is empty, where LiteLLM lists the
+      safe lines of the running config in every proxy bug report.
+    why: >-
+      No code on main keeps the loaded config as a map. B8380's ProxyConfigState.snapshot has no startup writer, and a
+      config section that read general_settings, litellm_settings and router_settings as open maps would count every
+      key as read, so an unsupported key would no longer stop startup. Slot::new is the one place to fill it; B4171
+      fills it at startup and deletes this row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/bug_report_config.py#L201-L207
+out_of_scope:
+  - "Passing the notices into each route's handle_exception_on_proxy call: the route tasks that depend on this one."
+  - "The notice _handle_llm_api_exception logs with call fields (common_request_processing.py L3747-L3762): B10178, through report and known_proxy_route."
+  - "The unhandled exception handler's notice (proxy_server.py L2059-L2067): B8591, through report and known_proxy_route."
+  - "GET /debug/report: B4171, reading snapshot and dockerenv from this slot."
+  - "Filling the snapshot from the running config at startup and deleting the empty-snapshot row: B4171."
+  - "The record, the issue URL and the notice text: B4170. safe_config_lines and the proxy report builder: B10058. The exception conversion and its log lines: B2400."
+  - "The SDK's notice (exception_mapping_utils.py L2696-L2703): B186."
+pitfalls:
+  - should_report_bug looks only at status_code, so a failure whose status_code is 500 gets no notice although it answers a 500, and only a failure with no status gets one.
+  - B2400's failure_record logs whatever the impl returns, so BugReportNotices must not log the notice a second time.
+  - LITELLM_DISABLE_BUG_REPORT_LINK is read once at config load; Slot::new and report never touch the process environment.
+  - handle_exception_on_proxy calls build_proxy_bug_report(e) alone, so the trait impl sends call_type, custom_llm_provider and stream as None, while report keeps its ProxyCall parameter for the handlers that fill it.
+  - FailureFacts.location is `&'static Location<'static>`, the type Location::caller() returns, so the struct keeps its single 'caught lifetime.
+  - The failure cases ignore only /value/calls/<i>/environment/litellm_version and python_version, so a record that differs in deployment or config_lines still fails.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

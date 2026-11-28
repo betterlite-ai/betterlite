@@ -1,0 +1,12 @@
+kind: helper
+name: null-client-fields
+call:
+  b10153:
+    state: armed
+    payload:
+      previous_response_id: null
+      conversation: null
+      context_management: null
+      compaction: null
+env: {}
+compare: {ignore: []}

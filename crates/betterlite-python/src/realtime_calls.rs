@@ -1,6 +1,16 @@
+mod convert;
+mod error;
+mod http;
+mod native;
+mod session;
+
+use self::error::NativeRealtimeError;
+use self::native::NativeRealtimeSession;
 use pyo3::prelude::*;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The realtime_calls family task adds its native functions here.
-    Ok(())
+// main.py's realtime entry points: one session, its async call methods and the exception every failure carries.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeRealtimeSession>()?;
+    let error = module.py().get_type::<NativeRealtimeError>();
+    module.add("NativeRealtimeError", error)
 }
