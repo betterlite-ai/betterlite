@@ -4,6 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -15,7 +16,7 @@ use crate::plugin_routes::routes::caller_identity;
 use crate::proxy_config_state::database::ConfigStateDatabase;
 use crate::proxy_config_state::state::ProxyConfigState;
 
-use super::error::{ConfigFieldError, DB_NOT_CONNECTED, NOT_ALLOWED};
+use super::error::ConfigFieldError;
 use super::litellm_fields::UiLitellmField;
 
 pub const PROXY_ADMIN_ROLE: &str = "proxy_admin";
@@ -113,9 +114,13 @@ pub fn require_admin(caller: &ConfigFieldCaller, gate: AdminGate) -> Result<(), 
         return Ok(());
     }
     let detail = if with_role {
-        format!("{NOT_ALLOWED}, your role={}", role.unwrap_or("None"))
+        format!(
+            "{}, your role={}",
+            CommonProxyErrors::NotAllowedAccess.as_str(),
+            role.unwrap_or("None")
+        )
     } else {
-        NOT_ALLOWED.to_owned()
+        CommonProxyErrors::NotAllowedAccess.as_str().to_owned()
     };
     Err(ConfigFieldError::BadRequest { detail })
 }
@@ -125,7 +130,7 @@ pub fn require_database(
     database: Option<&ConfigFieldDatabase>,
 ) -> Result<&ConfigFieldDatabase, ConfigFieldError> {
     database.ok_or(ConfigFieldError::BadRequest {
-        detail: DB_NOT_CONNECTED.to_owned(),
+        detail: CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
     })
 }
 

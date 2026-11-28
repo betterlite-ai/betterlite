@@ -18,10 +18,16 @@ use super::records::{
     GeneralSettingsRow,
 };
 use super::ui::{UiFieldEdit, edit_ui_litellm_field};
-use super::validation::{kind_of, validate, validate_alerting_args};
+use super::validation::{invalid_field, kind_of, validate_field};
 
-const ALERTING_ARGS: &str = "alerting_args";
 const PLUGINS: &str = "plugins";
+
+// which catalog edit a route asks for: the value update writes, or the pop delete makes
+#[derive(Clone, Copy)]
+enum ConfigFieldEdit<'value> {
+    Update(&'value JsonValue),
+    Delete,
+}
 
 // POST /config/field/update
 pub async fn update_config_general_settings(
@@ -29,23 +35,10 @@ pub async fn update_config_general_settings(
     caller: &ConfigFieldCaller,
     update: &ConfigFieldUpdate,
 ) -> Result<ConfigFieldUpdateResponse, ConfigFieldError> {
-    let database = require_database(services.database)?;
-    require_admin(caller, AdminGate::Proxy)?;
     let field_name = update.field_name.as_str();
-    if let Some(field) = ui_field(field_name) {
-        let edit = UiFieldEdit::Persist(&update.field_value);
-        let body = edit_ui_litellm_field(services, caller, field, edit).await?;
-        return Ok(ConfigFieldUpdateResponse::Ui(body));
-    }
-    let Some(kind) = kind_of(field_name) else {
-        return Err(invalid_field(field_name));
-    };
-    validate(kind, &update.field_value)?;
-    if field_name == ALERTING_ARGS {
-        validate_alerting_args(&update.field_value)?;
-    }
-    let row = write_field(services, database, caller, field_name, &update.field_value).await?;
-    Ok(ConfigFieldUpdateResponse::Row(row))
+    let value = &update.field_value;
+    let edit = ConfigFieldEdit::Update(value);
+    edit_config_general_settings(services, caller, field_name, edit).await
 }
 
 // POST /config/field/delete
@@ -54,17 +47,46 @@ pub async fn delete_config_general_settings(
     caller: &ConfigFieldCaller,
     delete: &ConfigFieldDelete,
 ) -> Result<ConfigFieldUpdateResponse, ConfigFieldError> {
+    edit_config_general_settings(
+        services,
+        caller,
+        &delete.field_name,
+        ConfigFieldEdit::Delete,
+    )
+    .await
+}
+
+// the database and role checks, the UI litellm branch, then the row edit both routes share
+async fn edit_config_general_settings(
+    services: ConfigFieldServices<'_>,
+    caller: &ConfigFieldCaller,
+    field_name: &str,
+    edit: ConfigFieldEdit<'_>,
+) -> Result<ConfigFieldUpdateResponse, ConfigFieldError> {
     let database = require_database(services.database)?;
-    require_admin(caller, AdminGate::ProxyWithRole)?;
-    let field_name = delete.field_name.as_str();
+    let gate = match edit {
+        ConfigFieldEdit::Update(_) => AdminGate::Proxy,
+        ConfigFieldEdit::Delete => AdminGate::ProxyWithRole,
+    };
+    require_admin(caller, gate)?;
     if let Some(field) = ui_field(field_name) {
-        let body = edit_ui_litellm_field(services, caller, field, UiFieldEdit::Reset).await?;
+        let ui_edit = match edit {
+            ConfigFieldEdit::Update(value) => UiFieldEdit::Persist(value),
+            ConfigFieldEdit::Delete => UiFieldEdit::Reset,
+        };
+        let body = edit_ui_litellm_field(services, caller, field, ui_edit).await?;
         return Ok(ConfigFieldUpdateResponse::Ui(body));
     }
     let Some(_kind) = kind_of(field_name) else {
         return Err(invalid_field(field_name));
     };
-    let row = delete_field(services, database, caller, field_name).await?;
+    let row = match edit {
+        ConfigFieldEdit::Update(value) => {
+            validate_field(field_name, value)?;
+            write_field(services, database, caller, field_name, value).await?
+        }
+        ConfigFieldEdit::Delete => delete_field(services, database, caller, field_name).await?,
+    };
     Ok(ConfigFieldUpdateResponse::Row(row))
 }
 
@@ -75,12 +97,6 @@ fn ui_field(name: &str) -> Option<UiLitellmField> {
         }
     }
     None
-}
-
-fn invalid_field(name: &str) -> ConfigFieldError {
-    ConfigFieldError::BadRequest {
-        detail: format!("Invalid field={name} passed in."),
-    }
 }
 
 // the row edit, upsert and in-memory apply the two routes share

@@ -12,9 +12,6 @@ use crate::tracing_routes::router::unauthenticated;
 
 use super::ports::ConfigFieldRowError;
 
-pub const DB_NOT_CONNECTED: &str = "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys";
-pub const NOT_ALLOWED: &str = "Admin-only endpoint. Not allowed to access.";
-
 // every refusal LiteLLM raises with HTTPException(detail={"error": ...}), plus the errors behind its unhandled handler
 #[derive(Debug, Error)]
 pub enum ConfigFieldError {
