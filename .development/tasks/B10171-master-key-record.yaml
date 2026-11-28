@@ -37,6 +37,8 @@ description: >-
   There are no HTTP oracle cases. The booted proxy installs no KeyAuthenticator, so no booted request authenticates with a virtual key, and the master key's booted answers on composed routes don't change.
 scope:
   paths:
+    - "crates/betterlite-server/src/auth/auth_route_policy.rs"
+    - "crates/betterlite-auth/src/auth_route_policy/admission.rs"
     - crates/betterlite-auth/src/master_key_admin.rs
     - crates/betterlite-core/src/api/request_metadata_safety/identity.rs
     - crates/betterlite-server/src/auth/auth_key_lookup.rs
