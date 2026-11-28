@@ -155,6 +155,24 @@ async fn swap_skips_initialization_without_openapi_tools() {
 }
 
 #[tokio::test]
+async fn swap_warns_on_shared_identifier_prefixes() {
+    let fixture = test_fixture();
+    fixture.rows.set(vec![
+        row(
+            r#"{"server_id":"srv-1","transport":"http","url":"https://mcp.test","alias":"shared"}"#,
+        ),
+        row(
+            r#"{"server_id":"srv-2","transport":"http","url":"https://mcp.test","alias":"shared"}"#,
+        ),
+    ]);
+    let (captured, _guard) = capture();
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    mutator.reload().await.unwrap();
+    assert!(captured.text().contains("share the identifier 'shared'"));
+}
+
+#[tokio::test]
 async fn swap_hydrates_config_servers() {
     let mut fixture = test_fixture();
     fixture.hydrator = FakeHydrator::returning(true);
