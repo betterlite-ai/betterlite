@@ -3,7 +3,6 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
@@ -12,7 +11,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
-use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
+use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
@@ -21,6 +20,8 @@ use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+pub(crate) use crate::auth::failures::StageFailure;
+use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
 use crate::auth::jwt_verification::{self, JwtVerificationStageInput};
 use crate::auth::master_key_stage;
@@ -87,6 +88,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 #[derive(Clone, Debug)]
 pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
+    AuthIdentity(Box<IdentityStageInput>),
     Authenticated(Box<AuthContext>),
     JwtKeys(Box<JwtKeyStageInput>),
     JwtVerification(Box<JwtVerificationStageInput>),
@@ -132,36 +134,6 @@ pub trait BudgetAdmission {
     ) -> Result<AdmissionLease, AuthError>;
 }
 
-pub(crate) enum StageFailure {
-    JwtKeys(Box<ProxyException>),
-    JwtVerification(Box<ProxyException>),
-    Authentication(Box<AuthenticationFailure>),
-    KeyLookup(Box<ProxyException>),
-    ModelAccess(Box<ModelAccessRejection>),
-    AuthModelGrants(Box<ProxyException>),
-    EntityModelAccess(Box<ProxyException>),
-    TrustedNetwork(Box<ProxyException>),
-    AuthRequestPolicy(Box<ProxyException>),
-    ResourceGrants(Box<ProxyException>),
-    TagBudgets(Box<ProxyException>),
-    RequestBodySafety(Box<ProxyException>),
-    VirtualKeyRoutes(Box<ProxyException>),
-    KeyBudgets(Box<ProxyException>),
-    TeamBudgets(Box<ProxyException>),
-    TenantBudgets(Box<ProxyException>),
-    OrganizationRoutePolicy(Box<ProxyException>),
-    OrgLookup(Box<ProxyException>),
-    EndUsers(Box<ProxyException>),
-    AuthPolicySupport(Box<ProxyException>),
-    ModelGrants(Box<ProxyException>),
-}
-
-impl From<AuthenticationFailure> for StageFailure {
-    fn from(failure: AuthenticationFailure) -> Self {
-        Self::Authentication(Box::new(failure))
-    }
-}
-
 impl StageInput {
     // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
     pub(crate) async fn prefetch_model_grants(
@@ -175,7 +147,9 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
-            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
+            Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
+                AuthBackend::AuthKeyLookup
+            }
             Self::JwtKeys(_) => AuthBackend::JwtKeys,
             Self::JwtVerification(_) => AuthBackend::JwtVerification,
             Self::MasterKey(_) => MasterKey,
@@ -210,8 +184,19 @@ pub(crate) fn dispatch(
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
-        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
+        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
         StageInput::JwtVerification(_) => jwt_verification::run_stage(input),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
@@ -226,26 +211,15 @@ pub(crate) fn dispatch(
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
         StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
-        StageInput::AuthModelPatterns(stage) => {
-            run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
-        }
-        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
-        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
-        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
-        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
-        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
 }
 

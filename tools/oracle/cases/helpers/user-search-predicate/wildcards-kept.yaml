@@ -1,0 +1,10 @@
+kind: helper
+name: user-search-predicate-wildcards-kept
+call:
+  b10149:
+    search: 'a%b_c\'
+calls:
+  - b10149:
+      search: "%_"
+env: {}
+compare: {ignore: []}

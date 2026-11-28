@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-partner-response-config-anthropic
+call:
+  b10159:
+    publisher: anthropic
+    model: claude-sonnet-4-5
+    status: 200
+    raw_text: |
+      {"model":"claude-3-sonnet-20240229","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    headers: {x-request-id: req-b10159}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+env: {}
+compare: {ignore: []}

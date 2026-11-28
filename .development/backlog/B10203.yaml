@@ -1,0 +1,13 @@
+id: B10203
+milestone: R2 bug fixes
+title: The Python Textract OCR client and the S3 bucket module reader sign through the credential chain
+status: todo
+depends_on: [B10173, B10175, B10176, B10190, B10192, B10193]
+file: tasks/B10203-ocr-and-bucket-reader-aws-chain.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

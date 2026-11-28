@@ -2,7 +2,7 @@ id: B8992
 milestone: M6 guardrails
 title: Native Google A2A and MCP guardrail HTTP parity
 status: todo
-depends_on: [B3680, B3771, B3506, B8774, B8648, B8589, B8626, B4682, B8198, B6163, B6370, B10169]
+depends_on: [B3680, B3771, B3506, B8774, B8648, B8589, B8626, B4682, B8198, B6163, B6370, B10169, B10178]
 file: tasks/B8992-native-guardrail-http.yaml
 covers: []
 parent: B104
