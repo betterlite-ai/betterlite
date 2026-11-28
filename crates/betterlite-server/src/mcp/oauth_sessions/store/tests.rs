@@ -5,6 +5,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::mcp::table_access::types::McpTableError;
 use betterlite_mcp::registry::resolution::ResolveError;
 
+use super::ports::{SessionIds as _, UuidSessionIds};
 use crate::mcp::oauth_sessions::SessionError;
 use crate::mcp::oauth_sessions::tests::testing::{
     AccessOutcome, BuilderChoice, DatabaseFault, HarnessConfig, RedisFault, alias_server,
@@ -271,6 +272,16 @@ async fn persist_draft_returns_the_draft_write_error() {
         outcome,
         Err(SessionError::Write(ServerWriteError::InsertedRowMissing))
     ));
+}
+
+#[test]
+fn uuid_session_ids_mint_distinct_v4_ids() {
+    let ids = UuidSessionIds;
+    let first = ids.fresh_id();
+    let second = ids.fresh_id();
+    assert_ne!(first, second);
+    let parsed = uuid::Uuid::parse_str(&first).expect("a fresh id is a uuid");
+    assert_eq!(parsed.get_version_num(), 4);
 }
 
 #[tokio::test]

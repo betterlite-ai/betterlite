@@ -15,7 +15,10 @@ use betterlite_mcp::server_build::BuildError;
 use betterlite_mcp::server_payload::{PayloadError, RequestError};
 use serde::Deserialize;
 
-use super::SessionError;
+use super::{
+    DEFAULT_CREATED_BY, SessionError, TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX,
+    TEMPORARY_MCP_SERVER_TTL_SECONDS,
+};
 use crate::mcp::admin_credential_view::CredentialViewError;
 use crate::mcp::oauth_sessions::record::RecordError;
 use crate::mcp::server_writes::ServerWriteError;
@@ -214,4 +217,14 @@ async fn a_caching_response_renders_the_wrapped_message() {
         rendered.detail.get("error"),
         Some(&"Error caching temporary mcp server: the access check is unavailable".to_owned())
     );
+}
+
+#[test]
+fn the_constants_keep_litellm_values() {
+    assert_eq!(TEMPORARY_MCP_SERVER_TTL_SECONDS, 300);
+    assert_eq!(
+        TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX,
+        "litellm:mcp:temporary_server"
+    );
+    assert_eq!(DEFAULT_CREATED_BY, "default_user_id");
 }

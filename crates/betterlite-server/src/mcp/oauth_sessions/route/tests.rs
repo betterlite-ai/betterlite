@@ -1,10 +1,16 @@
 #![cfg(test)]
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use betterlite_auth::auth_identity::records::{Principal, SourceKey};
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use rstest::rstest;
+use tower::ServiceExt as _;
 
-use super::{FORBIDDEN_MESSAGE, add_session_server, authenticate, management_failure};
+use super::{
+    FORBIDDEN_MESSAGE, SESSION_PATH, add_session_server, authenticate, management_failure,
+};
+use crate::auth::auth_identity::AuthContext;
 use crate::mcp::oauth_sessions::SessionError;
 use crate::mcp::oauth_sessions::tests::testing::{
     AccessFailure, DatabaseFault, HarnessConfig, auth_with, harness, row, server, session_route,
@@ -56,6 +62,35 @@ async fn an_admin_creates_a_redacted_session() {
         .expect("the local lookup has no error")
         .expect("the session is cached locally");
     assert_eq!(cached.fields.server_id, "test-session-1");
+}
+
+#[tokio::test]
+async fn the_router_answers_an_admin_over_http() {
+    let harness = harness(HarnessConfig::new());
+    let route = session_route(&harness);
+    let auth = auth_with(Some("admin-1"), "proxy_admin");
+    let mut principal: Principal = serde_json::from_str(
+        r#"{"principal_type":"human","subject":"admin-1","roles":[],"auth_method":"api_key"}"#,
+    )
+    .expect("the test principal parses");
+    principal.source_key = SourceKey(Some(auth));
+    let request = Request::post(SESSION_PATH)
+        .header("litellm-changed-by", "admin-2")
+        .extension(AuthContext { principal })
+        .body(Body::from(SESSION_BODY))
+        .expect("the request builds");
+    let response = route
+        .router()
+        .oneshot(request)
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), 1_000_000)
+        .await
+        .expect("the response body reads");
+    let text = String::from_utf8(body.to_vec()).expect("the body is utf-8");
+    assert!(text.contains(r#""server_id":"test-session-1""#));
+    assert!(!text.contains("client-secret"));
 }
 
 // the admin view keeps the scopes and the upstream resource, and drops every secret
