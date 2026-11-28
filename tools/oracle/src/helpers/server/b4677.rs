@@ -23,6 +23,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::runtime::Builder;
+use uuid::Uuid;
 
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 const JSON_CONTENT_TYPE: &str = "application/json";
@@ -40,7 +41,7 @@ pub(crate) struct Input {
     #[serde(default)]
     query: Option<BTreeMap<String, String>>,
     #[serde(default)]
-    servers: Option<Vec<serde_json::Value>>,
+    servers: Option<Vec<MCPServer>>,
     #[serde(default)]
     form: Option<FormInput>,
     #[serde(default)]
@@ -101,9 +102,9 @@ struct PostCall<'call> {
 
 fn get_report(
     fields: Option<&BTreeMap<String, String>>,
-    servers: Option<&[serde_json::Value]>,
+    servers: Option<&[MCPServer]>,
 ) -> HelperResult {
-    let registry = servers.map(registry_of).transpose()?;
+    let registry = servers.map(registry_of);
     match authorize_get(&query_of(fields), registry.as_ref()) {
         Ok(html) => Ok(json!({
             "status": 200_u16,
@@ -130,20 +131,16 @@ fn query_of(fields: Option<&BTreeMap<String, String>>) -> GetQuery {
     query
 }
 
-fn registry_of(servers: &[serde_json::Value]) -> Result<ServerRegistry, Box<HelperError>> {
-    let mut parsed = Vec::with_capacity(servers.len());
-    for row in servers {
-        parsed.push(serde_json::from_value::<MCPServer>(row.clone()).or_value_error()?);
-    }
-    Ok(ServerRegistry::new(
+fn registry_of(servers: &[MCPServer]) -> ServerRegistry {
+    ServerRegistry::new(
         RegistrySettings {
             public_mcp_servers: Vec::new(),
             public_hub_strict: false,
             internal_ip_ranges: None,
         },
-        parsed,
+        servers.to_vec(),
         Vec::new(),
-    ))
+    )
 }
 
 fn error_report(error: &ConsentError, store_size: Option<usize>) -> HelperResult {
@@ -254,12 +251,8 @@ fn prefill_record(expires_at: f64) -> AuthCodeRecord {
 }
 
 fn is_uuid4(code: &str) -> bool {
-    code.len() == 36
-        && code.bytes().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => byte == b'-',
-            14 => byte == b'4',
-            _ => matches!(byte, b'0'..=b'9' | b'a'..=b'f'),
-        })
+    Uuid::parse_str(code)
+        .is_ok_and(|parsed| parsed.get_version_num() == 4 && parsed.to_string() == code)
 }
 
 fn value_error(message: &str) -> Box<HelperError> {

@@ -72,6 +72,7 @@ tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
