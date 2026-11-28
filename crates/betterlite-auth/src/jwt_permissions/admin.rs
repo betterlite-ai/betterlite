@@ -1,4 +1,5 @@
 use betterlite_config::sections::jwt_settings::Settings;
+use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 
 use crate::auth_errors::conversion::AuthFailure;
@@ -52,12 +53,13 @@ pub fn check_admin_access(
     ) {
         return Err(route_denial(settings, route));
     }
-    let jwt_claims = match claims {
-        Some(value) => value.clone(),
-        None => TypedValue {
-            json: serde_json::json!({}),
+    // `claims or {}`: an empty typed map becomes the wire document, since json!({}) names the banned Map type
+    let jwt_claims = claims.map_or_else(
+        || TypedValue {
+            json: serde_json::json!(JsonObject::new()),
         },
-    };
+        Clone::clone,
+    );
     Ok(Some(admin_result(identity, jwt_claims)))
 }
 
