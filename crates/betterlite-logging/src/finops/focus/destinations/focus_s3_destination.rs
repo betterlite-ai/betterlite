@@ -148,7 +148,7 @@ impl FocusS3Destination {
         let content_sha256 = hex::encode(Sha256::digest(content));
         let mut headers = vec![
             ("Content-Type".to_owned(), CONTENT_TYPE.to_owned()),
-            ("x-amz-content-sha256".to_owned(), content_sha256.clone()),
+            ("x-amz-content-sha256".to_owned(), content_sha256),
         ];
         let signed = sign_request(&Signable {
             method: "PUT",
