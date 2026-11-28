@@ -1,0 +1,23 @@
+task: B10166
+deviations:
+  - what: >-
+      In the Python package a plain Bedrock or Bedrock Mantle pass-through with no Bearer token fails
+      with a synthesized 500 ("AWS credential provider is unavailable"), even when litellm_params
+      carry aws_access_key_id and aws_secret_access_key. LiteLLM resolves those keys or boto3's
+      default chain and signs with SigV4.
+    why: >-
+      betterlite builds no production AWS credential chain yet, so the session passes
+      NoCredentialChain until a task builds one. Bearer tokens from api_key, BEDROCK_MANTLE_API_KEY
+      and AWS_BEARER_TOKEN_BEDROCK work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1697-L1699
+  - what: >-
+      An invalid AWS region fails with betterlite's "invalid AWS region format: <region>" text,
+      where LiteLLM raises "Invalid AWS region format: '<region>'. Region names must contain only
+      lowercase letters, digits, and hyphens." A Bedrock call keeps B8690's synthesized 500 for a
+      ValueError; a Bedrock Mantle call is the new variant's 400 BadRequestError, as in LiteLLM.
+    why: >-
+      The call asks betterlite-bedrock for the URL now, and that crate's AWS endpoint error owns the
+      text for every AWS caller. LiteLLM raises the Bedrock ValueError at get_complete_url rather
+      than inside get_llm_provider, so no BadRequestError wraps it there either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L792-L804
+kept_bugs: []
