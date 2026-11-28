@@ -1,0 +1,13 @@
+id: B10205
+milestone: R2 bug fixes
+title: The secret lookup and the secret manager dispatch read asynchronously, so os.environ/ references reach AWS Secrets Manager and KMS
+status: todo
+depends_on: [B10195, B10206, B8610, B10174, B10193, B10180, B10190, B10191, B10192, B10194, B069, B10171, B836, B1069, B8482, B8661, B8662, B4787]
+file: tasks/B10205-async-secret-lookup.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

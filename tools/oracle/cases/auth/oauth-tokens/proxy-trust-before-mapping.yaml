@@ -1,0 +1,30 @@
+name: auth-oauth-tokens-proxy-trust-before-mapping
+config: |
+  general_settings:
+    master_key: oracle-master
+    enable_oauth2_proxy_auth: true
+    oauth2_config_mappings:
+      user_role: x-user-role
+  model_list:
+    - model_name: proxy-model
+      litellm_params:
+        model: openai/proxy-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    x-user-role: proxy_admin
+  body:
+    model: proxy-model
+    messages:
+      - {role: user, content: Say hello.}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

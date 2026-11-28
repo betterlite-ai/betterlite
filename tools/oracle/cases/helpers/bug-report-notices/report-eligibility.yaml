@@ -1,0 +1,18 @@
+kind: helper
+name: bug-report-notices-report-eligibility
+call:
+  b10218:
+    env: {}
+    calls:
+      # no status_code, so should_report_bug says yes and report answers LiteLLM's proxy record
+      - {function: failure, status_code: null}
+      # a status the caller handles is not a bug, so the notice stays away
+      - {function: failure, status_code: 429}
+      - {function: failure, status_code: 500}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/calls/0/environment/litellm_version
+      why: betterlite reports its own crate version where LiteLLM reports its package version
+    - pointer: /value/calls/0/environment/python_version
+      why: no CPython interpreter runs inside betterlite, so the field says unknown

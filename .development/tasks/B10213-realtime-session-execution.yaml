@@ -1,0 +1,126 @@
+id: B10213
+title: A production realtime session relay and the executor that runs B1011's connection plans
+description: >-
+  B1011's `arealtime` (crates/betterlite-core/src/api/realtime_connect/dispatch.rs L43) returns a `RealtimeConnection { args, branch }` and runs nothing, and B10211 gives a dialer, but three pieces between them have no owner. First, B2457's `RealtimeCall::async_realtime` hands the session to a `RealtimeSessionRelay` (realtime_backend_transport/protocol.rs L78), and the only impls are fakes: B1009's `bidirectional_forward` takes the two directions as futures, while B1009's client loop and B1008's backend loop each hold `&mut RealtimeStreaming` for their whole run, so nothing can run both over one session. Second, the OpenAI, xAI and Azure branches end in connection plans (B528, B1405, B545) that nobody dials; B528 left the socket pumping to B084, and B084 is now only the SDP calls route. Third, no production value implements B1011's `RealtimeConnectDispatch`, so neither B1125's route nor B10212's Python `_arealtime` can call `arealtime` at all. This task builds the three: the relay in betterlite-core, and the executor and the dispatch in betterlite-provider, the lowest crate that sees core and the OpenAI, Azure, Bedrock and Vertex leaves. B1125 and B10212 call it the same way.
+
+
+  Relay (crates/betterlite-core/src/api/realtime_session_relay.rs and realtime_session_relay/). Main declares `pub mod realtime_session_relay;` in api.rs. `RealtimeRelay<'deps, Config, CallbackError>` holds `provider: Option<Arc<Config>>`, the guardrails, callbacks and redactor RealtimeClientRelay takes and the `failure_dispatch` RealtimeBackendRelay takes, and implements RealtimeSessionRelay. relay(session) owns the state alone and runs one loop with `tokio::select!` (biased in the order cancellation, backend, client) over `session.cancellation.cancelled()`, `source.recv(Some(false))` and, while the client side is open, the client's `receive_text()`. Each frame is handed to a RealtimeClientRelay or RealtimeBackendRelay built over `&mut *session.state` for that one step, and the loop ends the way LiteLLM's bidirectional_forward (realtime_streaming.py L1565-L1576) ends its two tasks:
+
+  1. A client frame runs B1009's per-frame step. A backend-closed error stops reading the client (ClientLoopExit::BackendClosed) and the loop keeps draining the backend until it closes; any other error, or a receive that answers None, is ClientLoopExit::ClientDisconnected.
+
+  2. ClientDisconnected, or the cancellation token firing, ends the backend the way a cancelled backend task ends: B1008's finish with RelayExit::Cancelled flushes unbilled usage and logs the messages. The client is not closed, and relay answers Ok.
+
+  3. A backend frame runs B1008's per-frame step. A Closed receive or a failed step goes through B1008's finish to a BackendClose, and `close_client(&close)` closes the client with it, as _close_client does.
+
+  4. A `None` source is `RealtimeSessionRelayError::NoSource`; B10211's dialer always splits the socket.
+
+  To call those steps without copying them, make `mod ack` and `ack::handle` in crates/betterlite-core/src/api/realtime_client_relay.rs and realtime_client_relay/ack.rs `pub(crate)`, and give RealtimeClientRelay one `pub(crate)` step that answers `Option<ClientLoopExit>` for one message; client_ack_messages then calls it in its loop. In crates/betterlite-core/src/api/realtime_backend_relay/relay.rs split relay_once into the receive (with its UnsupportedDecode fallback to recv(None)) and a `pub(crate)` step over one received message, and make finish `pub(crate)`; backend_to_client_send_messages keeps calling them. Every B1008 and B1009 test keeps passing unchanged.
+
+
+  Executor (crates/betterlite-provider/src/api/realtime_websocket_session.rs and realtime_websocket_session/). Main declares `pub mod realtime_websocket_session;` in api.rs. `run_realtime_session(connection, configs, deps) -> Result<(), RealtimeSessionError>` takes B1011's connection, a `&impl RealtimeConfigs` and `RealtimeSessionDeps` (the default dialer `Arc<dyn RealtimeWebSocketDialer>`, the ClientHandle, the logging session id, the logged event types, guardrails and callbacks, the Redactor, the Verification, the max message size, the CancellationToken, Bedrock's runtime and credential resolver, an IdSource, and `logging: RealtimeLoggingPorts` holding B1006's RealtimeLogging and RealtimeSuccessQueue and B1008's RealtimeFailureDispatch, the three values B10215 builds) and runs the branch the way _arealtime does (realtime_api/main.py L407-L589). The logging and the queue go into the session state and the failure dispatch into the backend relay.
+
+  - ProviderConfig { config, .. } runs B2457's `RealtimeCall { .. }.async_realtime()` with that config, `connection.args.client` as the dialer when set and the default one otherwise, and a RealtimeRelay over the same config.
+
+  - Vertex { access_token, refresh, project, location } asks `configs.vertex_config(..)` for the config (LiteLLM's vertex_realtime_config), then runs the same generic path with `api_key: None` and the args' api_base. A VertexRealtimeError from the port is returned before any client write, as vertex_realtime_config raises before async_realtime.
+
+  - OpenAi builds `betterlite_openai::realtime::connect::prepare_connection` from the args (api_base, api_key, model, the Connector query, `client_wants_beta` of the client scope, the Verification, the max size), Xai builds `betterlite_openai::xai_realtime::connect::prepare_connection`, and Azure builds `betterlite_azure::realtime::connect::prepare_connection` with the branch's api_version, protocol and azure_ad_token. A plan error is returned before any client write, as the ValueErrors before LiteLLM's try are. Each plan then runs the direct session below.
+
+  - Bedrock(params) runs `bedrock_interactive_dispatch::realtime_bridge::session` with the deps' runtime and resolver, an adapter from the ClientHandle to Bedrock's RealtimeClientWebSocket, and the region, auth and endpoint fields of params.
+
+
+  Direct session (realtime_websocket_session/direct.rs), LiteLLM's OpenAIRealtime and AzureOpenAIRealtime async_realtime (openai/realtime/handler.py L109-L190, azure/realtime/handler.py L133-L202). Log the masked request preview the way crates/betterlite-provider/src/openai_assistant_dispatch/execute.rs does for OpenAI and xAI. Dial once through the default dialer with the plan's url, headers, max size and SSL (the OpenAI and Azure RealtimeSsl None, Insecure and Shared become core's Disabled, Insecure and Shared(verification)) and `open_timeout` 10 seconds, websockets' default, with no retry. Build the RealtimeStreaming with `RealtimeStreaming::new(ConnectionSetup { .. })` as B2457's build_state does, with no provider config, the plan's event normalizer (the xAI normalizer for xAI), its force_transcription_model, `backend_uses_beta_protocol` from the Azure plan, and request data `{"litellm_metadata": <metadata or {}>}`, then run RealtimeRelay with no provider. When the relay returns on any path, take `state.backend` and close it, as B2457's async_realtime does after forward for the `async with` exit; tungstenite sends no close frame on drop. The failures below cover the dial, the relay and that close alike, since LiteLLM's try wraps all three:
+
+  - InvalidStatus calls B1004's close_after_handshake_refusal with the status, for all three.
+
+  - Any other OpenAI or xAI failure follows B528's `client_action(RealtimeFailure::Other { .. })`: close 1011 with the redacted "Internal server error: <error>", no event, a RuntimeError close failure containing "already completed" or "websocket.close" ignored and any other close failure returned.
+
+  - Any other Azure failure sends `realtime_error_event("Internal server error", "server_error")`, then closes 1011 with "Internal server error", and swallows a failure of either.
+
+
+  Dispatch (realtime_websocket_session/dispatch.rs). ProviderRealtimeDispatch also implements core's `AzureAdTokens` (crates/betterlite-core/src/api/realtime_connection_plan/azure.rs L21) through the same get_azure_ad_token call and GrantSources, with its error as RealtimeProbeError, so B8540's health probe and the session read Azure AD tokens the same way. `RealtimeConfigs` is the port for the configs B10214 builds: `type Config: BaseRealtimeConfig + 'static`, `provider_config(&self, tag: RealtimeConfigTag) -> Arc<Self::Config>` and `vertex_config(&self, request: VertexConfigRequest<'_>) -> Result<Arc<Self::Config>, VertexRealtimeError>`. `ProviderRealtimeDispatch<Configs>` implements RealtimeConnectDispatch with `ProviderConfig = Configs::Config` and `Error = VertexTokenError`: provider_config asks the port; vertex_access_tokens answers the `Arc<VertexTokenSource>` the dispatch is built with (core's `dyn VertexAccessTokenSource<Error = VertexTokenError>`, crates/betterlite-core/src/api/realtime_connection_plan/vertex.rs L19); azure_ad_token calls `betterlite_azure::credentials::selection::get_azure_ad_token` with the request's params and the GrantSources the dispatch is built with. B1125 passes B10214's ProviderRealtimeConfigs and the server's CredentialCache through B10214's token impl; B10212 passes the same configs and B10214's impl over the Python lookup.
+
+
+  Tests. api::realtime_session_relay::tests drive RealtimeRelay with a scripted client and source and check: frames flow both ways in one session; a backend frame is delivered while the client sends nothing; a client disconnect flushes usage, logs the messages and leaves the client unclosed; a backend close 1000 closes the client with B1008's close; a backend send failure during a client frame stops client reads, drains the backend and then closes the client; the cancellation token ends the session like a disconnect. api::realtime_websocket_session::tests run the executor against local tokio-tungstenite servers with B10211's WebSocketDialer: an OpenAI plan connects once with its Authorization and OpenAI-Beta headers and relays session.created; a 401 upgrade gives B1004's refusal close after one attempt; an OpenAI connect error closes 1011 with the redacted reason and sends no event; an Azure connect error sends the server_error event and closes 1011 "Internal server error"; xAI events pass the normalizer; a ProviderConfig branch with a test config goes through B2457 (three attempts on a hung handshake); a Vertex branch hands the port its token, project and location and runs the config it answers, and a port error reaches the caller before any client write; a Bedrock branch reaches a fake runtime with the params' region; and the dispatch's azure_ad_token returns the request's token.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/realtime_session_relay.rs
+    - crates/betterlite-core/src/api/realtime_session_relay/**
+    - crates/betterlite-core/src/api/realtime_client_relay.rs
+    - crates/betterlite-core/src/api/realtime_client_relay/ack.rs
+    - crates/betterlite-core/src/api/realtime_backend_relay/relay.rs
+    - crates/betterlite-provider/src/api/realtime_websocket_session.rs
+    - crates/betterlite-provider/src/api/realtime_websocket_session/**
+    - Cargo.lock
+    - docs/deviations/B10213.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1121-L1589
+    why: backend_to_client_send_messages, client_ack_messages, bidirectional_forward and _close_client, the two tasks the relay runs as one loop and how each ending closes the session.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L348-L589
+    why: _arealtime's branches, the arguments each provider call gets and the vertex_realtime_config step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L109-L190
+    why: OpenAIRealtime.async_realtime, one connect with no retry and its two failure paths around the connect and the relay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/realtime/handler.py#L16-L48
+    why: XAIRealtime, the OpenAI handler with the xAI base, headers and event normalizer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L133-L202
+    why: AzureOpenAIRealtime.async_realtime, the beta protocol flag and the server_error event before the 1011 close.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6180-L6295
+    why: The generic async_realtime B2457 ports; the ProviderConfig and Vertex branches run it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_errors.py#L26-L80
+    why: realtime_error_event and close_after_upstream_handshake_refusal, the B1004 helpers the direct sessions call.
+  - url: https://docs.rs/tokio/latest/tokio/macro.select.html
+    why: select! and its cancel-safety notes, since every receive future is dropped when another branch wins.
+dod:
+  - text: RealtimeRelay runs the client and backend relays over one session state and ends on a client disconnect, a backend close, a backend-closed client step or cancellation the way bidirectional_forward does.
+    proof: [relay-tests]
+  - text: B1009's client step and B1008's backend step are shared with their loops, and the B1008 and B1009 tests still pass.
+    proof: [relay-regressions]
+  - text: run_realtime_session runs every B1011 branch, with the direct OpenAI, xAI and Azure sessions connecting once and failing the way their LiteLLM handlers do.
+    proof: [session-tests]
+  - text: ProviderRealtimeDispatch implements RealtimeConnectDispatch over the RealtimeConfigs port, the Vertex token port and get_azure_ad_token.
+    proof: [session-tests, production-impl]
+  - text: Neither module holds its own close mapping, error event, size check or socket code.
+    proof: [no-copies]
+  - text: docs/deviations/B10213.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+    - id: relay-tests
+      why: the relay misses a direction, waits on the client, or ends a session wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_relay::/)'
+    - id: relay-regressions
+      why: the shared steps changed what the B1008 or B1009 loops do
+      run: test -n "$(grep -rl --exclude-dir=tests 'impl.*RealtimeSessionRelay for' crates/betterlite-core/src/api/realtime_session_relay.rs crates/betterlite-core/src/api/realtime_session_relay)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_backend_relay::/) | test(/^api::realtime_client_relay::/) | test(/^api::realtime_backend_transport::/)'
+    - id: session-tests
+      why: a branch is not run, a direct session retries or fails wrong, or the dispatch answers wrong
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::realtime_websocket_session::/)'
+    - id: production-impl
+      why: the dispatch port still has no production impl
+      run: test -n "$(grep -rl --exclude-dir=tests 'impl.*RealtimeConnectDispatch for' crates/betterlite-provider/src/api/realtime_websocket_session.rs crates/betterlite-provider/src/api/realtime_websocket_session)"
+    - id: no-copies
+      why: a module rebuilt a helper B1004, B528, B2457 or B10211 owns
+      run: test -n "$(grep -rl --exclude-dir=tests 'fn run_realtime_session' crates/betterlite-provider/src/api/realtime_websocket_session.rs crates/betterlite-provider/src/api/realtime_websocket_session)" && test -z "$(grep -rnE --exclude-dir=tests 'fn (close_after_handshake_refusal|realtime_error_event|oversized_message_close|client_action|backend_close_from|open_realtime_backend_ws)\b|tokio_tungstenite|bidirectional_forward\(' crates/betterlite-provider/src/api/realtime_websocket_session.rs crates/betterlite-provider/src/api/realtime_websocket_session crates/betterlite-core/src/api/realtime_session_relay.rs crates/betterlite-core/src/api/realtime_session_relay)"
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10213.yaml && grep -q 'one at a time' docs/deviations/B10213.yaml
+oracle_cases: []
+deviations:
+  - what: One session handles its client and backend frames one at a time, so a client frame waiting on a guardrail call holds back the next backend frame, where LiteLLM's two asyncio tasks interleave at every await.
+    why: Both relays write the one session state; a single owner keeps it without a lock, and what a client receives and in which order per direction is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1565-L1576
+out_of_scope:
+  - "The dialer, the shared WebSocket client and the proxy choice: B10211."
+  - "The Gemini, Vertex and Meta configs behind RealtimeConfigs and the two Vertex token source impls: B10214. The proxy route that calls the executor: B1125. The Python caller: B10212."
+  - "Production RealtimeLogging, RealtimeSuccessQueue and RealtimeFailureDispatch for callers to pass in RealtimeLoggingPorts: B10215."
+pitfalls:
+  - "select! drops the losing receive futures every turn, so a frame is lost unless each receive is cancel safe; tungstenite's stream and axum's socket are, and B10212's Python adapter has to keep its pending receive across calls."
+  - "The client socket is one Arc<tokio Mutex> that both the receive and every client send lock, so never hold a receive in flight while a backend step sends to the client; select! ending the receive before the step runs is what keeps this free of deadlock."
+  - "LiteLLM's direct handlers wrap the connect and bidirectional_forward in one try, so a relay error after a good handshake also takes the 1011 path, while a plan ValueError (no api_key for OpenAI, no api_base or api_version for Azure) is raised before the try and never touches the client."
+  - "The direct sessions always send request_data {\"litellm_metadata\": {}} when there is no metadata, while B2457's build_state leaves an empty metadata out; keep each path's shape."
+  - "B1008's finish runs exactly once per session: a client disconnect followed by a backend close in the same turn must not flush usage twice."
+  - "The direct sessions dial once with a 10 second open timeout through dialer.connect, never through open_realtime_backend_ws, whose three tries of 8 seconds belong to the generic path only."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

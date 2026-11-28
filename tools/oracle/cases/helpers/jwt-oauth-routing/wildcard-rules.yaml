@@ -1,0 +1,24 @@
+kind: helper
+name: jwt-oauth-routing-wildcard-rules
+env: {}
+compare: {ignore: []}
+call:
+  b10161: {operation: selector, selector: "trusted.*", claim: "trusted.example.com", split_space_delimited: false}
+calls:
+  - b10161: {operation: selector, selector: "trusted.*", claim: "trusted.example.com", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "trusted.*", claim: "trusted.example.com evil.com", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "trusted.*", claim: "trusted.example.com evil.com", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "App:*", claim: "App:\tLiteLLM", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "App:*", claim: "App:\tLiteLLM", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "TRUSTED.*", claim: "trusted.example.com", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "a?c", claim: "abc", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "a?c", claim: "ac", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "a?c", claim: "a c", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "[ab]c", claim: "[ab]c", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "[ab]c", claim: "ac", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "[ab]*", claim: "acme", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "a b", claim: "a b", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "*", claim: "trusted.example.com", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "a*", claim: "a b", split_space_delimited: false}
+  - b10161: {operation: selector, selector: "a*", claim: "a b", split_space_delimited: true}
+  - b10161: {operation: selector, selector: "a*b", claim: "a x b", split_space_delimited: false}

@@ -1,0 +1,39 @@
+kind: helper
+name: mcp-client-auth-headers-lookup-group-default
+call:
+  b10155:
+    calls:
+      - function: lookup
+        headers:
+          team-a: {Authorization: "Bearer test-group"}
+        alias: null
+        server_name: null
+        access_groups: [team-a]
+      - function: lookup
+        headers:
+          team-a: {Authorization: "Bearer test-equal"}
+          team-b: {Authorization: "Bearer test-equal"}
+        alias: null
+        server_name: null
+        access_groups: [team-a, team-b]
+      - function: lookup
+        headers:
+          team-a: {Authorization: "Bearer test-group"}
+        alias: null
+        server_name: null
+        access_groups: [missing, team-a]
+      - function: lookup
+        headers:
+          "": {Authorization: "Bearer test-empty"}
+        alias: null
+        server_name: null
+        access_groups: [""]
+      - function: lookup
+        headers:
+          github: {Authorization: "Bearer test-github"}
+          team-a: {Authorization: "Bearer test-group"}
+        alias: github
+        server_name: null
+        access_groups: [team-a]
+env: {}
+compare: {ignore: []}

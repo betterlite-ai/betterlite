@@ -1,0 +1,9 @@
+kind: helper
+name: bug-report-notices-link-disabled
+call:
+  b10218:
+    env: {LITELLM_DISABLE_BUG_REPORT_LINK: "True"}
+    calls:
+      - {function: failure, status_code: null}
+env: {LITELLM_DISABLE_BUG_REPORT_LINK: "True"}
+compare: {ignore: []}

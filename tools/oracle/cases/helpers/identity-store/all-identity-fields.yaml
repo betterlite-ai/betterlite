@@ -1,0 +1,28 @@
+kind: helper
+name: identity-store-all-identity-fields
+call:
+  identity_store:
+    aspect: principal
+    key:
+      token: sk-hashed-all
+      key_name: sk-all
+      key_alias: alias-all
+      user_id: u1
+      user_email: alice@example.com
+      user_role: org_admin
+      team_id: t1
+      team_alias: team-one
+      team_member: {user_id: u1, role: admin}
+      org_id: o1
+      organization_alias: org-one
+      project_id: p1
+      project_alias: project-one
+      end_user_id: eu1
+    auth_method: bearer_jwt
+    issuer: https://issuer.example.com
+    subject_fallback: fallback-all
+    scopes: [read, write]
+    credential_ref: {key_id: key-1, token_id: sk-hashed-all}
+    network: {client_ip: 10.0.0.7, host: proxy.example.com, via_trusted_proxy: true}
+env: {}
+compare: {ignore: []}

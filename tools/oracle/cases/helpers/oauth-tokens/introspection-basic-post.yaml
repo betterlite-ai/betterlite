@@ -1,0 +1,13 @@
+kind: helper
+name: oauth-tokens-introspection-basic-post
+call:
+  oauth_tokens:
+    token: opaque-token-1
+    endpoint: https://idp.example/introspect
+    client_id: betterlite-client
+    client_secret: betterlite-secret
+    response:
+      status: 200
+      body: '{"active": true, "sub": "user-1", "role": "internal_user", "team_id": "team-1"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+id: B10227
+milestone: R2 bug fixes
+title: One RequestHost in betterlite-server reads a request's scheme and host for the agent skills index, the agent hub and the queue route
+status: todo
+depends_on: []
+file: tasks/B10227-request-host-copies.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

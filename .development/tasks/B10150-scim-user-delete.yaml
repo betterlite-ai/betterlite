@@ -57,6 +57,7 @@ out_of_scope:
   - "team_member_delete and _team_member_delete: B1207. _set_user_keys_blocked and _delete_rows_referencing_user: B1637. _get_prisma_client_or_raise_exception and _check_user_exists: B1633. evict_and_broadcast: B878. This task calls them and copies none of their rules."
   - "Other scim_v2.py functions: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2819-L2864; B10024 L2200-L2322; B1638 L164-L232/L1661-L1835 and the rest of delete_user; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
 pitfalls:
+  - "FailureFacts carries B10218's location field: set it with Location::caller() where each Failure is built, so the bug report names that line."
   - team_member_delete archives and deletes the user's keys in each team where the user has a roster entry, so those keys land in LiteLLM_DeletedVerificationToken and only the rest reach set_user_keys_blocked.
   - The roster check reads members_with_roles from the team row read before the legacy members write and compares member.user_id only, so an entry addressed by user_email alone stays in the roster.
   - Prisma's @updatedAt moves updated_at on the legacy members write, so a bare UPDATE of members leaves a different row than LiteLLM.

@@ -1,0 +1,97 @@
+id: B10215
+title: Production realtime logging, success queue and failure dispatch over the logging lifecycle
+description: >-
+  B1006's RealtimeStreaming logs a realtime session through two ports, RealtimeLogging (pre_call, record_model_call_detail and dispatch_success_handlers) and RealtimeSuccessQueue (the bounded worker), and B1008's backend relay sends a refused session through RealtimeFailureDispatch (crates/betterlite-core/src/api/realtime_session_state/logging.rs L19-L28 and realtime_backend_relay/source.rs L33-L40). Only test fakes implement them, so neither B1125's route nor B10212's Python session can log a session the way LiteLLM's RealTimeStreaming does through its Logging object (realtime_streaming.py L404-L425 and L1148-L1154). B1125 named B247 and B187 for logging, but both are done and give the logging state and the redaction, not these ports. This task builds the three impls in betterlite-core over B190's LoggingLifecycle (crates/betterlite-logging/src/payload/lifecycle.rs L46-L140, the one type that runs both of LiteLLM's Logging dispatches) and B191's LoggingWorker, and the two pieces the lifecycle still lacks in production.
+
+
+  Logging object (crates/betterlite-core/src/api/realtime_session_logging.rs and realtime_session_logging/). Main declares `pub mod realtime_session_logging;` in api.rs. `RealtimeLoggingObject` is one call's Logging object: a Clone handle over one Arc, so the session state, the relay and the success work all hold the same object. It holds the `Arc<LoggingLifecycle>`, the Arc of the CallbackRegistry the lifecycle was built with, the redactor and pre-call settings, and one std Mutex over a slot with the LoggingState and CorrelationContext that B1011's arealtime wrote (an Option, empty while a dispatch owns them) and the detail writes that arrived while they were out. It implements RealtimeLogging:
+
+  - pre_call builds B249's PreCall with the frame as input (a text frame as Json::Text, a record as Json::Object), model None and default additional_args, and calls `logging_pre_post::pre_call::pre_call` with a PrePostEnv built from the object's settings and redactor the way crates/betterlite-core/src/api/passthrough_call/logging.rs L164-L197 builds one. LiteLLM's `api_key=""` adds nothing B249 records.
+
+  - record_model_call_detail inserts the key into model_call_details, or queues the write when the state is out.
+
+  - dispatch_success_handlers returns a SuccessWork that takes the state out, runs `LoggingLifecycle::success` with `SuccessRequest { result: SuccessResult::Other(Json::List(messages)), start_time: None, end_time: None, cache_hit: None, prefer_async_handlers: true, standard_logging_object: None, guardrail_snapshot: None }`, puts the state back and applies the queued writes in order. This is litellm_logging.py L2151-L2203 called with the session's messages.
+
+  It also implements RealtimeFailureDispatch the same way around `LoggingLifecycle::failure` with prefer_async true, a FailureRecord::default(), `FailureCallbacks { registry, dynamic: Some(&DynamicCallbackLists::from(&state.dynamic_callbacks)) }` and a FailureReport of the refusal (litellm_logging.py L2217-L2246). The refusal becomes ExceptionFacts the way get_error_information reads a websockets 15.0.1 ConnectionClosed (litellm_logging.py L6105-L6131): class_name ConnectionClosedOK when the code is in websockets' OK_CLOSE_CODES (1000, 1001, 1005) and ConnectionClosedError otherwise, message the refusal text, and code the close code as text, since getattr(e, "code") answers the received code or 1006. `detail(&self, key) -> Option<Json>` answers a queued write first and the state second, so B1125 reads realtime_session_success_logged and realtime_session_failure_logged after the session as proxy_server.py L13041-L13045 does.
+
+
+  Queue. `RealtimeLogQueue` implements RealtimeSuccessQueue over `Arc<LoggingWorker<RealtimeLogJob>>`. RealtimeLogJob wraps one SuccessWork and implements B191's Callback with the name `realtime_session_log` and `Error = Infallible`. enqueue answers true only for Admission::Accepted, so a full queue leaves realtime_session_success_logged unset, as B1006 expects. This is LiteLLM's GLOBAL_LOGGING_WORKER.ensure_initialized_and_enqueue (logging_worker.py L448-L453).
+
+
+  Lifecycle parts in betterlite-logging. `impl FailureClock for SystemClock` in crates/betterlite-logging/src/logging_service_events/clock.rs, next to its SuccessClock impl. `BlockingFailureExecutor` in crates/betterlite-logging/src/logging_failure/blocking_executor.rs (main declares `pub mod blocking_executor;` in logging_failure.rs) implements SyncFailureExecutor: built with a tokio Handle, it hands each SyncFailureJob to handlers.rs's `run_sync_failure` on the blocking pool and answers Accepted, as LiteLLM's executor.submit hands failure_handler to its thread pool. With these, a caller builds LoggingLifecycleConfig from production parts only: SystemClock for both clocks, this executor, StdoutEmitter, ChatStreamAssembler and B190's PayloadBuilder.
+
+
+  Tests. api::realtime_session_logging::tests build a LoggingLifecycle over a registry with a recording logger: pre_call writes input and log_event_type pre_api_call; the success work runs one async success whose result is the messages list and whose model_call_details carry the messages and realtime_tools B1006 recorded; a record_model_call_detail made while the work holds the state is applied when it returns and detail answers it before; a refusal with code 1008 reaches the failure logger with error_code 1008 and class ConnectionClosedError, and one with 1001 with ConnectionClosedOK; through a started LoggingWorker with a queue of one, a second enqueue answers false. logging_failure::blocking_executor::tests: a queued job runs a sync failure logger on the blocking pool.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/realtime_session_logging.rs
+    - crates/betterlite-core/src/api/realtime_session_logging/**
+    - crates/betterlite-logging/src/logging_failure/blocking_executor.rs
+    - crates/betterlite-logging/src/logging_failure/blocking_executor/**
+    - crates/betterlite-logging/src/logging_service_events/clock.rs
+    - docs/deviations/B10215.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L404-L425
+    why: store_input's pre_call and log_messages, the details they write and the worker enqueue before the success key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1148-L1154
+    why: log_backend_refusal, the failure dispatch for a backend that closed before any frame.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2151-L2246
+    why: dispatch_success_handlers and dispatch_failure_handlers with prefer_async_handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6105-L6131
+    why: get_error_information reads the exception's code attribute and class name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L448-L453
+    why: ensure_initialized_and_enqueue, the bounded worker the realtime logs go through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13041-L13045
+    why: The route reads both logged keys after the session to decide the budget and slot release.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/protocol.py#L233-L242
+    why: ConnectionClosedOK only when both close codes are in OK_CLOSE_CODES (frames.py L114-L118), ConnectionClosedError otherwise.
+  - url: https://github.com/python-websockets/websockets/blob/15.0.1/src/websockets/exceptions.py#L123-L132
+    why: The deprecated code property answers the received close code, or 1006 without a close frame.
+dod:
+  - text: RealtimeLoggingObject implements RealtimeLogging and RealtimeFailureDispatch over B190's LoggingLifecycle, and a write made while a dispatch holds the state is kept.
+    proof: [logging-tests, production-impl]
+  - text: RealtimeLogQueue implements RealtimeSuccessQueue over B191's LoggingWorker and answers false for a rejected job.
+    proof: [logging-tests, production-impl]
+  - text: SystemClock is a FailureClock and BlockingFailureExecutor runs queued sync failure jobs.
+    proof: [executor-tests, production-impl]
+  - text: The impls build no success handler or failure deps of their own.
+    proof: [no-copies]
+  - text: docs/deviations/B10215.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+    - id: logging-tests
+      why: a realtime pre_call, success or failure log is missing or wrong, a detail write is lost, or a full queue reports success
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_session_logging::/)'
+    - id: executor-tests
+      why: a queued sync failure job never runs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_failure::blocking_executor::/)'
+    - id: production-impl
+      why: a realtime logging port or a lifecycle part still has no production impl
+      run: for port in RealtimeLogging RealtimeSuccessQueue RealtimeFailureDispatch; do test -n "$(grep -rl --exclude-dir=tests "impl.*$port for" crates/betterlite-core/src/api/realtime_session_logging.rs crates/betterlite-core/src/api/realtime_session_logging)" || exit 1; done && grep -q 'impl FailureClock for SystemClock' crates/betterlite-logging/src/logging_service_events/clock.rs && grep -q 'impl SyncFailureExecutor for BlockingFailureExecutor' crates/betterlite-logging/src/logging_failure/blocking_executor.rs
+    - id: no-copies
+      why: the module rebuilt the success handler or the failure deps the lifecycle owns
+      run: test -n "$(grep -rl --exclude-dir=tests 'LoggingLifecycle' crates/betterlite-core/src/api/realtime_session_logging.rs crates/betterlite-core/src/api/realtime_session_logging)" && test -z "$(grep -rnE --exclude-dir=tests 'SuccessHandler \{|FailureDeps \{|struct OwnedSuccessHandler|fn (async_success_handler|async_failure_handler|success_handler|failure_handler)\b' crates/betterlite-core/src/api/realtime_session_logging.rs crates/betterlite-core/src/api/realtime_session_logging)"
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10215.yaml && grep -q 'traceback' docs/deviations/B10215.yaml
+oracle_cases: []
+deviations:
+  - what: The failure log of a refused realtime session carries an empty traceback where LiteLLM passes traceback.format_exc() of the ConnectionClosed.
+    why: A Rust error has no Python stack to format; the class, message and code the payload reads are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1148-L1154
+out_of_scope:
+  - "Building the server's LoggingLifecycle and passing these values in B10213's RealtimeLoggingPorts: B1125 for the route, B10212 for Python."
+  - "Merging the owned success handler copies and building the handler at server start: B10185."
+  - "The RealtimeStreaming flow that calls these ports and the refusal rule: B1006 and B1008."
+pitfalls:
+  - "B1006 calls pre_call and record_model_call_detail from synchronous steps, so a tokio Mutex would need blocking_lock inside the runtime and panic. Keep the std Mutex slot, never hold its guard across an await, and take the state out for the dispatch the way B3605's StreamLoggingObject does (crates/betterlite-logging/src/passthrough_stream_logging/object.rs L20-L46)."
+  - "B1006 writes realtime_session_success_logged right after enqueue answers true (crates/betterlite-core/src/api/realtime_session_state.rs L237), and the worker may already hold the state by then. Dropping that write makes the route release the budget reservation of a session that was logged."
+  - "B1008 runs exactly one of the two dispatches per session, so a work never waits for another; a work that finds the slot empty logs a warning and returns."
+  - "LoggingWorker::start needs a running runtime (Handle::try_current), so tests start it inside #[tokio::test] and callers start it once, not per session."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,13 @@
+id: B10217
+milestone: R2 bug fixes
+title: The Sync and Async client class copies in bedrock, vertex, soniox and bfl take core's ClientKind and SuppliedClient
+status: done
+depends_on: []
+file: tasks/B10217-async-client-kind-copies.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3431

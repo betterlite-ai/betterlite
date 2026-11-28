@@ -249,6 +249,7 @@ fn the_saturation_of_an_unbounded_seconds_value_never_changes_a_decision() {
 #[case::sixty_one(b"61", 61)]
 #[case::negative_one(b"-1", -1)]
 #[case::negative_at_the_signed_limit(b"-9223372036854775807", -0x7FFF_FFFF_FFFF_FFFF_i64)]
+#[case::underscore_between_digits(b"1_0", 10)]
 fn seconds_are_read_exactly(#[case] bytes: &[u8], #[case] expected: i64) {
     assert_eq!(
         parse_retry_after(bytes).unwrap(),
@@ -264,7 +265,6 @@ fn seconds_are_read_exactly(#[case] bytes: &[u8], #[case] expected: i64) {
 #[case::bare_plus(b"+")]
 #[case::bare_minus(b"-")]
 #[case::words(b"soon")]
-#[case::underscore(b"1_0")]
 #[case::year_past_9999(b"21 Oct 10000 07:28:00 GMT")]
 #[case::year_before_one(b"21 Oct -5000 07:28:00 GMT")]
 #[case::unknown_month(b"21 Foo 2015 07:28:00 GMT")]

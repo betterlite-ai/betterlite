@@ -7,6 +7,5 @@ pub mod headers;
 pub mod json_post;
 pub mod request;
 pub mod service;
-pub mod sigv4;
 pub mod target;
 mod tests;

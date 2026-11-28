@@ -1,0 +1,12 @@
+kind: helper
+name: microsoft-sso-client-userinfo-override
+call:
+  b10148:
+    client_id: seed-client-id
+    redirect_url: https://proxy.example.test/sso/callback
+    environment:
+      MICROSOFT_CLIENT_SECRET: seed-secret
+      MICROSOFT_TENANT: seed.example.test
+      MICROSOFT_USERINFO_ENDPOINT: https://graph.example.test/v1.0/me
+env: {}
+compare: {ignore: []}

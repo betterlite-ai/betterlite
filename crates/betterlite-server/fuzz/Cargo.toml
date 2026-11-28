@@ -345,6 +345,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "callback_config_body"
+path = "fuzz_targets/callback_config_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "pass_through_config_reads"
 path = "fuzz_targets/pass_through_config_reads.rs"
 test = false
@@ -655,6 +662,20 @@ bench = false
 [[bin]]
 name = "oauth_callback_query"
 path = "fuzz_targets/oauth_callback_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "login_return"
+path = "fuzz_targets/login_return.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "protected_resource_body"
+path = "fuzz_targets/protected_resource_body.rs"
 test = false
 doc = false
 bench = false

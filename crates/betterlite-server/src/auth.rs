@@ -53,7 +53,10 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, PoisonError},
+};
 
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
@@ -62,11 +65,14 @@ use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
+use crate::auth::auth_model_budgets::SharedViews;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
+use crate::auth::organization_route_policy::stage_input as org_route_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -85,20 +91,64 @@ pub(crate) async fn authenticate(
     if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
     }
+    // both OAuth2 branches run before LiteLLM reads the master key, so they run here too
+    let pre_stage = oauth_tokens::pre_stage(
+        request.headers(),
+        request.uri().path(),
+        request.extensions(),
+    )
+    .await;
+    match pre_stage {
+        oauth_tokens::PreStage::Skipped => {}
+        oauth_tokens::PreStage::Authenticated(context) => {
+            request.extensions_mut().insert(*context);
+            return next.run(request).await;
+        }
+        oauth_tokens::PreStage::Rejected(failure) => {
+            let context = auth_errors::FailureContext::of(&request, None);
+            return context.respond(&failure, failure_response).await;
+        }
+    }
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
     request
         .extensions_mut()
         .insert(ConfiguredMasterKey(master_key.clone()));
+    request.extensions_mut().insert(SharedViews::default());
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
-        Ok((staged, authenticated, body)) => {
-            auth_stage_loop::forward(staged, authenticated, body, next).await
+        Ok((mut staged, authenticated, body)) => {
+            let rewritten = rewritten_body(&mut staged, body);
+            auth_stage_loop::forward(staged, authenticated, rewritten, next).await
         }
         Err(response) => *response,
     }
 }
+
+// a per-model budget fallback rewrites the buffered body, which every downstream handler parses in place of the client's
+fn rewritten_body(request: &mut Request<Body>, body: Option<Bytes>) -> Option<Bytes> {
+    let snapshots = request
+        .extensions()
+        .get::<SharedViews>()
+        .and_then(|shared| {
+            shared
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        });
+    let Some(views) = snapshots else {
+        return body;
+    };
+    if let Some(parsed) = views.parsed_body.clone() {
+        request.extensions_mut().insert(parsed);
+    }
+    let rewritten = views.serialized_body.clone().map(Bytes::from).or(body);
+    request.extensions_mut().insert(views);
+    rewritten
+}
+
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -107,7 +157,7 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
+        AuthBackend::AuthKeyLookup => Ok(identity_store::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
@@ -130,11 +180,11 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthModelBudgets => auth_model_budgets::stage(request, authenticated, body),
         TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
-        AuthBackend::OrganizationRoutePolicy => {
-            organization_route_policy::stage_input(request, authenticated, body)
-        }
+        AuthBackend::OrganizationRoutePolicy => org_route_stage_input(request, authenticated, body),
+        AuthBackend::AuthRoutePolicy => route_policy_stage_input(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
@@ -173,9 +223,7 @@ fn model_pattern_input(
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
     let stage = model_stage_input(request, context.clone(), resolver);
-    if backend == AuthBackend::AuthRequestModels {
-        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
-    }
+    // the request model stage only resolves, so it runs in the shared input builder
     let requested = match resolve(&stage) {
         Ok(requested) => requested,
         Err(error) => {
@@ -183,6 +231,9 @@ fn model_pattern_input(
             return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
     };
+    if backend == AuthBackend::AuthRequestModels {
+        return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+    }
     let rule = rule_for_request(request);
     let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
@@ -205,9 +256,11 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
+        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
+        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
@@ -225,7 +278,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
-        | StageInput::AuthPolicySupport(_)) => Ok(other),
+        | StageInput::AuthPolicySupport(_)
+        | StageInput::AuthRoutePolicy(_)) => Ok(other),
     }
 }
 

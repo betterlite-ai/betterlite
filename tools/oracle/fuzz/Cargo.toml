@@ -12,15 +12,13 @@ workspace = true
 cargo-fuzz = true
 
 [package.metadata.cargo-shear]
-ignored = ["betterlite-logging", "chrono", "quick-xml", "serde", "thiserror", "tl"]
+ignored = ["betterlite-logging", "serde", "thiserror", "tl"]
 
 [dependencies]
 betterlite-logging = { path = "../../../crates/betterlite-logging" }
 betterlite-oracle = { path = ".." }
 betterlite-oracle-runner = { path = "../runner" }
-chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 libfuzzer-sys = "0.4.9"
-quick-xml = "0.41.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 thiserror = "2.0.17"
@@ -36,13 +34,6 @@ bench = false
 [[bin]]
 name = "helper_case"
 path = "fuzz_targets/helper_case.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "blog_feed_xml"
-path = "fuzz_targets/blog_feed_xml.rs"
 test = false
 doc = false
 bench = false

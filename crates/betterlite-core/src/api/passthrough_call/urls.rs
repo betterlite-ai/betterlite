@@ -1,4 +1,3 @@
-use betterlite_azure::passthrough::config::AzurePassthroughConfig;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_context::aws_partition::{contains_bedrock_arn, get_aws_partition};
 use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn;
@@ -14,7 +13,7 @@ use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
 use regex::{NoExpand, Regex};
 use url::Url;
 
-use super::config::{ConfigError, PassthroughCallConfig, foundry_plan};
+use super::config::{ConfigError, PassthroughCallConfig, azure_globals, foundry_plan};
 
 // VLLM's ValueError text, braces and all: LiteLLM never formats the placeholder
 const VLLM_MISSING_BASE: &str = "VLLM_API_BASE is not set. Please set the environment variable, to use VLLM's pass-through - `{LITELLM_API_BASE}/vllm/{endpoint}`.";
@@ -42,19 +41,21 @@ pub(crate) fn complete_url(
         PassthroughConfigTag::Bedrock => bedrock_url(config, request, false),
         PassthroughConfigTag::BedrockMantle => bedrock_url(config, request, true),
         PassthroughConfigTag::Azure => {
-            let azure: AzurePassthroughConfig = AzurePassthroughConfig::default();
-            merged_url(&azure, request)
+            let azure = azure_globals(config.environment.as_ref())?;
+            merged_url(&azure.config, request)
         }
         PassthroughConfigTag::AzureAI => {
             let plan: FoundryPassthroughPlan = foundry_plan(request.litellm_params.clone());
             merged_url(&plan, request)
         }
         PassthroughConfigTag::GigaChat => {
+            // get_llm_provider already applied GIGACHAT_API_BASE and GIGACHAT_API_KEY, so the config's env fields stay empty
             let gigachat: GigachatPassthroughConfig = GigachatPassthroughConfig::default();
             merged_url(&gigachat, request)
         }
-        PassthroughConfigTag::Watsonx => watsonx_url(request),
+        PassthroughConfigTag::Watsonx => watsonx_url(config, request),
         PassthroughConfigTag::NvidiaNim => {
+            // get_llm_provider already applied NVIDIA_NIM_API_BASE and NVIDIA_NIM_API_KEY, so the config's env fields stay empty
             let nim: NvidiaNimPassthroughConfig = NvidiaNimPassthroughConfig::default();
             merged_url(&nim, request)
         }
@@ -76,12 +77,15 @@ where
     })
 }
 
-fn watsonx_url(request: &PassthroughUrlRequest<'_>) -> Result<(Url, String), ConfigError> {
-    let environment = WatsonxEnvironment::default();
-    let config = WatsonxPassthroughConfig {
+fn watsonx_url(
+    config: &PassthroughCallConfig,
+    request: &PassthroughUrlRequest<'_>,
+) -> Result<(Url, String), ConfigError> {
+    let environment = WatsonxEnvironment::from_lookup(config.environment.as_ref());
+    let watsonx = WatsonxPassthroughConfig {
         environment: &environment,
     };
-    BasePassthroughConfig::get_complete_url(&config, request).map_err(|error| {
+    BasePassthroughConfig::get_complete_url(&watsonx, request).map_err(|error| {
         error.status().map_or_else(
             || ConfigError::ValueError {
                 message: error.to_string(),
