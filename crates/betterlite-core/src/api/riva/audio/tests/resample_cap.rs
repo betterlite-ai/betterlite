@@ -1,3 +1,5 @@
+use betterlite_openai::api::audio_file_input::decoder::DEFAULT_MAX_SAMPLE_RATE;
+
 use super::super::resample::check_output_size;
 use super::{
     PROBE, PYTHON, RivaAudioError, decode, install, install_scipy, oracle_host, probe_events,
@@ -33,6 +35,19 @@ fn rejects_a_fractional_output_past_the_cap() {
 #[test]
 fn rejects_a_zero_source_rate() {
     let error = check_output_size(1_000, 0).unwrap_err();
+    assert!(matches!(error, RivaAudioError::TooLarge));
+}
+
+#[test]
+fn accepts_a_source_rate_at_the_wav_decoder_ceiling() {
+    check_output_size(1, i64::from(DEFAULT_MAX_SAMPLE_RATE)).unwrap();
+}
+
+// One sample at 384,001 Hz yields a one-sample output, so only the rate ceiling can refuse it
+#[test]
+fn rejects_a_source_rate_past_the_wav_decoder_ceiling() {
+    let past = DEFAULT_MAX_SAMPLE_RATE.checked_add(1).unwrap();
+    let error = check_output_size(1, i64::from(past)).unwrap_err();
     assert!(matches!(error, RivaAudioError::TooLarge));
 }
 
