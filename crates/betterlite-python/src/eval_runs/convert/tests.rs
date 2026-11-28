@@ -6,6 +6,7 @@ use betterlite_core::api::eval_run_create_list::error::{EvalRunCallError, EvalRu
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use pyo3::PyErr;
@@ -46,10 +47,9 @@ const LIST: &str = r#"{
 fn request_create_reads_the_typed_fields() {
     let payload = CreateRunPayload::parse(CREATE).unwrap();
     assert_eq!(payload.eval_id, "eval_1");
-    assert_eq!(
-        serde_json::to_string(&payload.data_source).unwrap(),
-        r#"{"type":"inline","samples":[{"item":1}]}"#
-    );
+    let data_source: Object =
+        serde_json::from_str(r#"{"type":"inline","samples":[{"item":1}]}"#).unwrap();
+    assert_eq!(payload.data_source, data_source);
     assert_eq!(payload.name.as_deref(), Some("probe"));
     assert_eq!(
         serde_json::to_string(&payload.metadata).unwrap(),
@@ -173,10 +173,9 @@ fn request_list_reads_every_pagination_field() {
 #[test]
 fn request_list_keeps_extra_query_as_given() {
     let payload = ListRunPayload::parse(LIST).unwrap();
-    assert_eq!(
-        serde_json::to_string(&payload.params.extra_query).unwrap(),
-        r#"{"limit":9,"after":"run_c","unknown":"x"}"#
-    );
+    let expected: Object =
+        serde_json::from_str(r#"{"limit":9,"after":"run_c","unknown":"x"}"#).unwrap();
+    assert_eq!(payload.params.extra_query, Some(expected));
 }
 
 #[test]
