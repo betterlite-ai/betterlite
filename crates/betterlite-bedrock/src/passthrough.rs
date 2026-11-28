@@ -168,7 +168,7 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         &self,
         request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), Self::Error> {
-        url::complete_url(&self.environment, request)
+        url::RuntimeUrl::resolve(&self.environment, request)?.get_complete_url(request)
     }
     fn sign_request(
         &self,

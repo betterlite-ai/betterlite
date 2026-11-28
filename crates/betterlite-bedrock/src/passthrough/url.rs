@@ -25,6 +25,35 @@ pub(crate) struct RuntimeUrl {
     pub(crate) endpoint: RuntimeEndpoint,
 }
 
+impl RuntimeUrl {
+    // B658's get_complete_url steps: llm_region_name over the environment, then the runtime endpoint
+    pub(crate) fn resolve(
+        environment: &PassthroughEnvironment,
+        request: &PassthroughUrlRequest<'_>,
+    ) -> Result<Self, PassthroughFailure> {
+        let model_id = optional_text(request.litellm_params, "model_id")?;
+        let explicit = optional_text(request.litellm_params, "aws_region_name")?;
+        let configured_endpoint =
+            optional_text(request.litellm_params, "aws_bedrock_runtime_endpoint")?;
+        let region = llm_region_name(LlmRegion {
+            explicit: explicit.as_deref(),
+            model: Some(request.target.model),
+            model_id: model_id.as_deref(),
+            environment_region_name: environment.region_name.as_deref(),
+            environment_region: environment.region.as_deref(),
+            session_region: environment.session_region.as_deref(),
+        })?;
+        let endpoint = runtime_endpoint(RuntimeEndpointInput {
+            api_base: request.api_base,
+            configured_endpoint: configured_endpoint.as_deref(),
+            environment_endpoint: environment.runtime_endpoint.as_deref(),
+            region: &region,
+            endpoint_type: BedrockEndpointType::Runtime,
+        });
+        Ok(Self { endpoint })
+    }
+}
+
 impl BasePassthroughConfig for RuntimeUrl {
     type Error = PassthroughFailure;
     type Logged = ();
@@ -49,33 +78,6 @@ impl BasePassthroughConfig for RuntimeUrl {
         )?;
         Ok((url, self.endpoint.endpoint_url.clone()))
     }
-}
-
-// B658's get_complete_url steps: llm_region_name over the environment, then the runtime endpoint and the model_id rewrite
-pub fn complete_url(
-    environment: &PassthroughEnvironment,
-    request: &PassthroughUrlRequest<'_>,
-) -> Result<(Url, String), PassthroughFailure> {
-    let model_id = optional_text(request.litellm_params, "model_id")?;
-    let explicit = optional_text(request.litellm_params, "aws_region_name")?;
-    let configured_endpoint =
-        optional_text(request.litellm_params, "aws_bedrock_runtime_endpoint")?;
-    let region = llm_region_name(LlmRegion {
-        explicit: explicit.as_deref(),
-        model: Some(request.target.model),
-        model_id: model_id.as_deref(),
-        environment_region_name: environment.region_name.as_deref(),
-        environment_region: environment.region.as_deref(),
-        session_region: environment.session_region.as_deref(),
-    })?;
-    let endpoint = runtime_endpoint(RuntimeEndpointInput {
-        api_base: request.api_base,
-        configured_endpoint: configured_endpoint.as_deref(),
-        environment_endpoint: environment.runtime_endpoint.as_deref(),
-        region: &region,
-        endpoint_type: BedrockEndpointType::Runtime,
-    });
-    RuntimeUrl { endpoint }.get_complete_url(request)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -117,7 +117,9 @@ where
         request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), ConfigError> {
         match flavor {
-            AwsFlavor::Bedrock => Ok(url::complete_url(&self.environment, request)?),
+            AwsFlavor::Bedrock => {
+                Ok(RuntimeUrl::resolve(&self.environment, request)?.get_complete_url(request)?)
+            }
             AwsFlavor::Mantle => {
                 let region = passthrough_region(request.litellm_params, &self.globals)?;
                 let configured =
