@@ -41,6 +41,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
+betterlite-sigv4 = { path = "../../../../../crates/betterlite-sigv4" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }

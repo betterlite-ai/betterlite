@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
-use betterlite_bedrock::bedrock_embedding_io::transport::{ClientKind, SuppliedClient, Timeout};
+use betterlite_bedrock::bedrock_embedding_io::transport::Timeout;
 use betterlite_bedrock::embedding_call::error::EmbeddingCallError;
 use betterlite_bedrock::embedding_call::plan::remaining_options;
 use betterlite_bedrock::embedding_call::{
@@ -11,6 +11,7 @@ use betterlite_bedrock::embedding_call::{
     ParamMap, embeddings,
 };
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json as Decisions;
@@ -188,7 +189,7 @@ fn supplied(case: &Case, factory: &Factory) -> Option<(ClientKind, FixtureClient
     let kind = match case.supplied {
         Supplied::None => return None,
         Supplied::Sync => ClientKind::Sync,
-        Supplied::Async => ClientKind::Async,
+        Supplied::Async => ClientKind::Asynchronous,
     };
     Some((kind, supplied_client(factory)))
 }
