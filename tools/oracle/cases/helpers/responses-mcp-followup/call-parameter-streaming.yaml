@@ -1,0 +1,12 @@
+kind: helper
+name: call-parameter-streaming
+call:
+  responses_mcp_followup:
+    operation: call_parameter_streaming
+    request: {input: x, model: m, tools: null, previous_response_id: null}
+    call_params: {stream: false, tool_choice: required, temperature: 0.2}
+    should_auto_execute: true
+    original_stream: true
+    ids: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+kind: helper
+name: request-param-precedence
+call:
+  responses_mcp_followup:
+    operation: request_params
+    scenarios:
+      - request: {input: what is the weather, model: gpt-5, tools: [{type: function, name: lookup}], previous_response_id: resp_previous}
+        call_params: {temperature: 0.2, model: gpt-5-override, stream: false}
+        kwargs: {top_p: 0.9, tools: [{type: mcp, server_label: weather}]}
+        auth: {kind: direct, user_id: alice}
+        mcp_tools: [{type: mcp, server_label: weather}]
+        mcp_events: [{type: response.mcp_list_tools.completed, sequence_number: 2, output_index: 0, item_id: mcp_list_1}]
+        tool_server_map: {weather: "http://weather.example"}
+      - request: {input: hello, model: gpt-5, tools: null, previous_response_id: null}
+        call_params: {}
+        kwargs: {}
+        auth: {kind: none}
+        mcp_tools: []
+        mcp_events: []
+        tool_server_map: {}
+      - request: {input: hi, model: gpt-5, tools: null, previous_response_id: resp_1}
+        call_params: {stream: true}
+        kwargs: {temperature: 0.1}
+        auth: {kind: metadata, user_id: bob}
+        mcp_tools: []
+        mcp_events: []
+        tool_server_map: {}
+      - request: {input: hi, model: gpt-5, tools: null, previous_response_id: resp_1}
+        call_params: {}
+        kwargs: {}
+        auth: {kind: metadata, user_id: null}
+        mcp_tools: []
+        mcp_events: []
+        tool_server_map: {}
+env: {}
+compare: {ignore: []}
