@@ -386,6 +386,24 @@ async fn a_code_grant_needs_all_three_fields() {
         error(harness.token(&missing_verifier).await).description,
         REQUIRED
     );
+    let mut empty_code = code_form(&code);
+    empty_code.code = Some("");
+    assert_eq!(
+        error(harness.token(&empty_code).await).description,
+        REQUIRED
+    );
+    let mut empty_redirect = code_form(&code);
+    empty_redirect.redirect_uri = Some("");
+    assert_eq!(
+        error(harness.token(&empty_redirect).await).description,
+        REQUIRED
+    );
+    let mut empty_verifier = code_form(&code);
+    empty_verifier.code_verifier = Some("");
+    assert_eq!(
+        error(harness.token(&empty_verifier).await).description,
+        REQUIRED
+    );
 }
 
 #[tokio::test]
@@ -422,6 +440,20 @@ async fn a_verifier_at_each_bound_is_accepted() {
     let mut long = code_form(&other);
     long.code_verifier = Some(&long_verifier);
     session_pair(harness.token(&long).await);
+}
+
+// 43 code points but 172 UTF-8 bytes, so the length gate counts characters and PKCE then fails
+#[tokio::test]
+async fn a_verifier_length_counts_characters() {
+    let harness = Harness::new();
+    let code = harness.sealed_code(&auth_code(CHALLENGE, "jti-1"));
+    let emoji_verifier = "\u{1f600}".repeat(43);
+    let mut request = code_form(&code);
+    request.code_verifier = Some(&emoji_verifier);
+    let refusal = error(harness.token(&request).await);
+    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.error, OauthErrorCode::InvalidGrant);
+    assert_eq!(refusal.description, "PKCE verification failed");
 }
 
 #[tokio::test]
@@ -636,6 +668,13 @@ async fn a_refresh_grant_needs_its_fields() {
     let refusal = error(harness.token(&absent).await);
     assert_eq!(refusal.error, OauthErrorCode::InvalidRequest);
     assert_eq!(refusal.description, "refresh_token is required");
+    let mut empty = form("refresh_token");
+    empty.client_id = Some("client-1");
+    empty.refresh_token = Some("");
+    assert_eq!(
+        error(harness.token(&empty).await).description,
+        "refresh_token is required"
+    );
     let refresh = harness.minted(&alice(), SessionTokenKind::Refresh, 9);
     let mut other_client = refresh_form(&refresh);
     other_client.client_id = Some("client-2");
@@ -708,6 +747,18 @@ async fn an_exchange_needs_both_subject_fields() {
     missing_type.subject_token_type = None;
     assert_eq!(
         error(harness.token(&missing_type).await).description,
+        refusal.description
+    );
+    let mut empty_token = exchange_form(&client);
+    empty_token.subject_token = Some("");
+    assert_eq!(
+        error(harness.token(&empty_token).await).description,
+        refusal.description
+    );
+    let mut empty_type = exchange_form(&client);
+    empty_type.subject_token_type = Some("");
+    assert_eq!(
+        error(harness.token(&empty_type).await).description,
         refusal.description
     );
 }
