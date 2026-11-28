@@ -1,0 +1,16 @@
+kind: helper
+name: login-return-relative-paths
+call:
+  login_return: {function: same_origin_path, return_to: "/ui/return?tab=keys", control_plane_url: null}
+calls:
+  - login_return: {function: same_origin_path, return_to: "//evil.example/v1", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: '/a\b', control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "/a b", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "/a\tb", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "/a\u007fb", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "/%2F..%2Fadmin", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "/café/keys", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "", control_plane_url: null}
+  - login_return: {function: same_origin_path, return_to: "ui/keys", control_plane_url: null}
+env: {}
+compare: {ignore: []}

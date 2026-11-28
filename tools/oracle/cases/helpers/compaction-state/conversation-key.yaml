@@ -1,0 +1,9 @@
+kind: helper
+name: conversation-key
+call:
+  b10153:
+    state: armed
+    payload:
+      conversation: conv_123
+env: {}
+compare: {ignore: []}

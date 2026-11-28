@@ -6,22 +6,19 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use crate::env_integer::timeout::RequestTimeout;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
 mod tests;
 
-const REQUEST_TIMEOUT_PATH: &str = "litellm_settings.request_timeout";
 const GRACEFUL_TIMEOUT_VARIABLE: &str = "GRACEFUL_SHUTDOWN_TIMEOUT";
 const DRAIN_TOKEN_VARIABLE: &str = "DRAIN_ENDPOINT_TOKEN";
 const STALL_WINDOW_VARIABLE: &str = "PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS";
 const NO_REDIS_VARIABLE: &str = "LITELLM_DISABLE_NO_REDIS_WARNING";
-const REQUEST_TIMEOUT_VARIABLE: &str = "REQUEST_TIMEOUT";
 const DEFAULT_GRACEFUL_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_STALL_WINDOW_SECONDS: f64 = 30.0;
-const DEFAULT_REQUEST_TIMEOUT: f64 = 6000.0;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -86,7 +83,7 @@ impl Default for Settings {
             graceful_shutdown_timeout: DEFAULT_GRACEFUL_TIMEOUT,
             db_lookup_stall_window_seconds: DEFAULT_STALL_WINDOW_SECONDS,
             disable_no_redis_warning: false,
-            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            request_timeout: RequestTimeout::DEFAULT_SECONDS,
             alerting: None,
         }
     }
@@ -116,7 +113,11 @@ impl Section for Raw {
             graceful_shutdown_timeout: graceful_shutdown_timeout(lookup),
             db_lookup_stall_window_seconds: stall_window(lookup)?,
             disable_no_redis_warning,
-            request_timeout: request_timeout(self.litellm_settings.request_timeout, lookup)?,
+            request_timeout: RequestTimeout::resolve_configured(
+                self.litellm_settings.request_timeout,
+                lookup,
+            )?
+            .seconds,
             alerting: general.alerting,
         })
     }
@@ -188,17 +189,4 @@ where
             name: STALL_WINDOW_VARIABLE.to_owned(),
         })?;
     Ok(seconds.max(0.0))
-}
-
-// the same resolution B002's router timeouts apply: the config value, then REQUEST_TIMEOUT, then 6000
-fn request_timeout<L>(configured: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let configured_value = resolve_number(configured, REQUEST_TIMEOUT_PATH, lookup, parse_float)?;
-    let environment_text = lookup.lookup(REQUEST_TIMEOUT_VARIABLE).unwrap_or_default();
-    let environment = betterlite_env::number::<f64>(REQUEST_TIMEOUT_VARIABLE, &environment_text)?;
-    Ok(configured_value
-        .or(environment)
-        .unwrap_or(DEFAULT_REQUEST_TIMEOUT))
 }

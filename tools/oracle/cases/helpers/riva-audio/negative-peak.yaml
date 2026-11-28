@@ -1,0 +1,11 @@
+kind: helper
+name: riva-audio-negative-peak
+call:
+  riva_audio:
+    calls:
+      - file_hex: "524946462800000057415645666d74201000000001000100401f0000803e00000200100064617461040000000080ff7f"
+        soundfile_error: null
+        audioread: null
+        resamplers: []
+compare: {ignore: []}
+env: {}

@@ -1301,7 +1301,6 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-bedrockruntime",
  "aws-sdk-sts",
- "aws-sigv4",
  "aws-smithy-async",
  "aws-smithy-eventstream",
  "aws-smithy-http",
@@ -1324,6 +1323,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-sdk",
  "betterlite-secret-managers",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "bytes",
@@ -1667,9 +1667,6 @@ name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "aws-credential-types",
- "aws-sigv4",
- "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -1699,6 +1696,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-secrets",
  "betterlite-semantic",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-test-ports",
  "betterlite-tokenizer",
@@ -1711,7 +1709,6 @@ dependencies = [
  "futures-util",
  "hex",
  "http 1.5.0",
- "httpdate",
  "indexmap 2.14.2",
  "jiff",
  "jsonschema",
@@ -1758,6 +1755,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-pyhost",
  "betterlite-secrets",
  "chrono",
  "http 1.5.0",
@@ -3030,11 +3028,13 @@ dependencies = [
  "betterlite-policy",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-pyhost",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
@@ -3045,6 +3045,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
+ "pyo3",
  "rand 0.10.3",
  "reqwest",
  "rstest",
@@ -3820,6 +3821,7 @@ dependencies = [
  "betterlite-analytics",
  "betterlite-auth",
  "betterlite-backend",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4354,6 +4356,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-secret-managers",
+ "betterlite-sigv4",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -4615,6 +4618,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
+ "bytes",
  "chrono",
  "futures-util",
  "hex",
@@ -4872,6 +4876,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-sigv4"
+version = "0.1.0"
+dependencies = [
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
+ "secrecy",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-streaming"
 version = "0.1.0"
 dependencies = [
@@ -4999,6 +5014,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-sigv4",
  "chrono",
  "claxon",
  "futures-util",
@@ -5053,6 +5069,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-sigv4",
  "betterlite-streaming",
  "betterlite-test-ports",
  "betterlite-tokenizer",

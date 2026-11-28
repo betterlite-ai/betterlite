@@ -1,0 +1,12 @@
+kind: helper
+name: encrypted-content-item
+call:
+  b10153:
+    state: armed
+    payload:
+      input:
+        - type: message
+          role: user
+          encrypted_content: gAAAAABopaque
+env: {}
+compare: {ignore: []}

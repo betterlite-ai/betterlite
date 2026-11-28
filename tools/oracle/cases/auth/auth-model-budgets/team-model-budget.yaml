@@ -1,0 +1,32 @@
+kind: helper
+name: auth-model-budgets-auth-team-model-budget
+call:
+  auth_model_budgets:
+    calls:
+      - function: team_budget
+        token:
+          team_id: t-2
+          team_model_max_budget:
+            gpt-4: 1.0
+            claude: 2.0
+          model_max_budget:
+            claude: 9.0
+        models: [gpt-4]
+      - function: team_budget
+        token:
+          team_id: t-3
+          team_model_max_budget: {}
+          model_max_budget:
+            gpt-4: 2.0
+        models: [gpt-4]
+      - function: team_budget
+        token:
+          team_id: t-4
+          team_model_max_budget:
+            gpt-4: 1.0
+          model_max_budget: {}
+        models: [gpt-4, claude]
+        failing_models: [gpt-4]
+env: {}
+compare:
+  ignore: []

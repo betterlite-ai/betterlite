@@ -4,10 +4,9 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
+use crate::env_integer::timeout::RequestTimeout;
 use crate::loader::ConfigLoader;
-use crate::sections::routing_timeouts::{
-    DeploymentTimeouts, GlobalTimeout, RouterTimeouts, Settings,
-};
+use crate::sections::routing_timeouts::{DeploymentTimeouts, RouterTimeouts, Settings};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
     let lookup: BTreeMap<String, String> = variables
@@ -45,7 +44,7 @@ fn global_timeout(
     let resolved = settings(source, variables).unwrap();
     assert_eq!(
         resolved.global,
-        GlobalTimeout {
+        RequestTimeout {
             seconds: expected.0,
             explicitly_set: expected.1,
         }
@@ -78,7 +77,7 @@ fn the_shipped_valid_seed_loads() {
     assert_eq!(resolved.router.default_stream_timeout, Some(25.0_f64));
     assert_eq!(
         resolved.global,
-        GlobalTimeout {
+        RequestTimeout {
             seconds: 6000.0_f64,
             explicitly_set: true,
         }

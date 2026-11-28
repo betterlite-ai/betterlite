@@ -1,0 +1,5 @@
+kind: helper
+name: "scope-client-header"
+call: {"b7490":{"function":"challenge_scope","route":"/mcp","error_status":401,"mcp_auth_header":"Bearer client-token"}}
+env: {}
+compare: {"ignore":[]}

@@ -1,0 +1,10 @@
+kind: helper
+name: context-management
+call:
+  b10153:
+    state: armed
+    payload:
+      context_management:
+        - type: compaction
+env: {}
+compare: {ignore: []}
