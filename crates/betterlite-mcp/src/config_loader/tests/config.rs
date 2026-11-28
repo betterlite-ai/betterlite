@@ -266,6 +266,41 @@ async fn config_mcp_info_description_wins_over_the_top_level_one() {
 }
 
 #[tokio::test]
+async fn config_mcp_info_skips_an_empty_description() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "description": ""}}"#,
+        ))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
+    let Json::Object(entries) = mcp_info(&server) else {
+        panic!("the mcp_info must serialize as an object");
+    };
+    assert_eq!(entries.get("description"), None);
+}
+
+#[tokio::test]
+async fn config_mcp_info_keeps_a_configured_server_name() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "mcp_info": {"server_name": "Custom"}}}"#,
+        ))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
+    let Json::Object(entries) = mcp_info(&server) else {
+        panic!("the mcp_info must serialize as an object");
+    };
+    assert_eq!(
+        entries.get("server_name"),
+        Some(&Json::Text(String::from("Custom")))
+    );
+}
+
+#[tokio::test]
 async fn config_env_vars_are_copied() {
     let fixture = Fixture::new();
     fixture

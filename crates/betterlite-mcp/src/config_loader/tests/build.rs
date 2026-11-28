@@ -231,6 +231,41 @@ async fn build_a_short_prefix_is_assigned_when_enabled() {
 }
 
 #[tokio::test]
+async fn build_a_used_prefix_forces_a_rehash() {
+    let mut fixture = Fixture::new();
+    fixture.prefixes.short_prefix_enabled = true;
+    let pinned_id = "pinned-prefix-id";
+    let taken = compute_short_server_prefix(pinned_id, 0).unwrap();
+    fixture
+        .add_db_server(json_server(&format!(
+            r#"{{"server_id": "db-other", "name": "db_other", "transport": "http", "short_prefix": "{taken}"}}"#
+        )))
+        .await;
+    fixture
+        .load(&config(&format!(
+            r#"{{"test_server": {{"url": "https://mcp.test", "server_id": "{pinned_id}"}}}}"#
+        )))
+        .await
+        .unwrap();
+    let server = fixture.server(pinned_id).await.unwrap();
+    let expected = compute_short_server_prefix(pinned_id, 1).unwrap();
+    assert_eq!(server.fields.short_prefix, Some(expected));
+}
+
+#[tokio::test]
+async fn build_an_empty_alias_uses_the_server_name() {
+    let fixture = Fixture::new();
+    fixture
+        .load(&config(
+            r#"{"test_server": {"url": "https://mcp.test", "alias": ""}}"#,
+        ))
+        .await
+        .unwrap();
+    let server = fixture.server_named("test_server").await.unwrap();
+    assert_eq!(server.fields.name, "test_server");
+}
+
+#[tokio::test]
 async fn build_warns_when_a_stdio_server_is_blocked() {
     let mut fixture = Fixture::new();
     fixture.stdio = FakeStdioPolicy(true);

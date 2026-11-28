@@ -1,6 +1,7 @@
 #[tokio::test]
 async fn openapi_registers_every_operation_with_prefixed_names() {
     let fixture = Fixture::new();
+    let (captured, _guard) = capture();
     let spec = corpus("petstore.json");
     let source =
         format!(r#"{{"test_server": {{"url": "https://api.test", "spec_path": "{spec}"}}}}"#);
@@ -32,6 +33,11 @@ async fn openapi_registers_every_operation_with_prefixed_names() {
             .get("test_server-get.pet_by_id")
             .map(String::as_str),
         Some("GET /pets/{petId}")
+    );
+    assert!(
+        captured
+            .text()
+            .contains("Successfully registered 4 OpenAPI tools for server test_server")
     );
 }
 
@@ -200,6 +206,38 @@ async fn openapi_tools_use_the_short_prefix_when_enabled() {
         names
             .iter()
             .all(|name| name.starts_with(&format!("{prefix}-")))
+    );
+}
+
+#[tokio::test]
+async fn openapi_an_empty_authentication_token_adds_no_header() {
+    let fixture = Fixture::new();
+    let spec = corpus("petstore.json");
+    let source = format!(
+        r#"{{"test_server": {{"url": "https://api.test", "spec_path": "{spec}", "auth_type": "bearer_token", "authentication_token": ""}}}}"#
+    );
+    fixture.load(&config(&source)).await.unwrap();
+    let headers = fixture.tools.config_for("test_server-listpets").headers;
+    assert_eq!(headers.get("Authorization"), None);
+}
+
+#[tokio::test]
+async fn openapi_the_server_label_skips_an_empty_name() {
+    let fixture = Fixture::new();
+    let spec = corpus("petstore.json");
+    let source = format!(r#"{{"": {{"url": "https://api.test", "spec_path": "{spec}"}}}}"#);
+    fixture.load(&config(&source)).await.unwrap();
+    let server = fixture.server_named("").await.unwrap();
+    let name = fixture
+        .tools
+        .names()
+        .into_iter()
+        .find(|name| name.ends_with("listpets"))
+        .unwrap();
+    let tool = fixture.tools.config_for(&name);
+    assert_eq!(
+        tool.server_label.as_deref(),
+        Some(server.fields.server_id.as_str())
     );
 }
 
