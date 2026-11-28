@@ -1,0 +1,24 @@
+task: B3124
+deviations:
+  - what: The optional steps return typed `CacheAlternativesError` values, and only `choose_cached_model` turns them into None with the one debug line, instead of LiteLLM's broad `except Exception` around the whole comparison.
+    why: The rules forbid broad catches. A caller sees the same thing as in LiteLLM, the classified model and one "Cache-aware routing unavailable; keeping the classified model" line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L341-L343
+  - what: A tier's `max_tokens` that is not a positive integer cannot reach the comparison in the first place, since tier parameters are typed; only zero and negative limits are refused here, where LiteLLM also rejects a bool, a float or a string.
+    why: Python's duck typing beyond the declared types follows docs/compatibility.md, so a value of the wrong type is an error that names the field rather than a silent refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L189-L195
+  - what: The deadline expires by dropping the comparison future, in-flight prediction counts included, where LiteLLM's `asyncio.wait_for` cancels the task.
+    why: Rust cancellation by drop ends open provider count requests the same way as cancelling the Python task, and the choice is still None with one debug line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L330-L343
+  - what: The eligible tiers are emitted in the router's ladder order (`tier_names()`, severity order for built-in tiers and definition order for a custom set), where LiteLLM emits them in the order the `tiers` mapping happens to be written in the YAML.
+    why: The ladder order is the router's own notion of tier severity and the order betterlite's tier set stores; the two agree whenever the configured map is written in ladder order, and deduplicating a model repeated across tiers keeps the same first tier either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L94-L98
+  - what: The proxy state a comparison reads (routing plugins, request transforms, the compaction marker, the parallel request limiter and the deployments) arrives through the injected `CacheRoutingHost`, and the refusal switches through `CacheRoutingConfig`, instead of being read from `proxy_server` and `litellm.logging_callback_manager` globals.
+    why: The proxy layer that owns those reads is another task's, and injecting them keeps the comparison testable; each answer is the same true/false that LiteLLM's check computes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L249-L256
+  - what: The caller is decoded from the `user_api_key_auth` record in the request metadata through the shared B206 helper, instead of an `isinstance(caller, UserAPIKeyAuth)` check on a live object.
+    why: A Rust proxy carries request metadata as JSON, so the record is the boundary where a live UserAPIKeyAuth lives; an entry that does not decode to a key refuses the comparison, as the isinstance check does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L257-L265
+  - what: Every prediction of one comparison is stamped with the instant the comparison checked warmth, where LiteLLM's `predict_arm` reads the clock again inside each arm when no explicit `now` is given.
+    why: One instant per comparison keeps the warm check and the predictions on the same observation, so an observation cannot pass the warm filter and then be treated as expired by its own arm; with an explicit `now` both implementations use it, and the second read that filters the finished evidence is still taken.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/cache_aware_routing.py#L192-L193
+kept_bugs: []
