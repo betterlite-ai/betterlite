@@ -692,6 +692,33 @@ def test_calls_credential_name() -> None:
     assert header_of(their_named_call, "authorization") == "Bearer sk-caller"
 
 
+# a credential fills the shared parameters the caller left out, as LiteLLM's loader does
+def test_calls_credential_provider() -> None:
+    values: dict[str, JsonValue] = {
+        "api_key": GOOD_KEY, "api_base": CLOSED_BASE, "custom_llm_provider": ANTHROPIC,
+    }
+    stored: dict[str, JsonValue] = {
+        "credential_name": CREDENTIAL_NAME, "credential_values": values,
+    }
+    theirs = StoredCredential(
+        credential_name=CREDENTIAL_NAME, credential_info={}, credential_values=values
+    )
+    betterlite.credential_list.append(stored)
+    LITELLM_CREDENTIALS.credential_list.append(theirs)
+    try:
+        with pytest.raises(BadRequestError) as ours:
+            create_run(EVAL_ID, DATA_SOURCE, litellm_credential_name=CREDENTIAL_NAME)
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError):
+            LITELLM.create_run(
+                eval_id=EVAL_ID, data_source=DATA_SOURCE,
+                litellm_credential_name=CREDENTIAL_NAME,
+            )
+    finally:
+        betterlite.credential_list.remove(stored)
+        LITELLM_CREDENTIALS.credential_list.remove(theirs)
+    assert f"CREATE run is not supported for {ANTHROPIC}" in str(ours.value)
+
+
 # a structured httpx.Timeout becomes one deadline; docs/deviations/B7886.yaml records the phase loss
 def test_calls_structured_timeout() -> None:
     with RunsServer() as server:

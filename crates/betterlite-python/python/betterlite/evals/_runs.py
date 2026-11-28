@@ -71,8 +71,8 @@ def _with_credentials(values: dict[str, CallValue]) -> None:
 # LiteLLM's logging object belongs to its own runtime, so it never crosses into the payload
 def _payload(named: dict[str, CallValue], shared: dict[str, CallValue]) -> CallPayload:
     values = {name: value for name, value in named.items() if name != LOGGING_OBJECT}
+    values.update({name: value for name, value in shared.items() if value is not None})
     _with_credentials(values)
-    values.update(shared)
     return to_call_payload(values)
 
 
