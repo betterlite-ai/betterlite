@@ -6,6 +6,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::jwt_verification::decode::{
     DecodeError, JwtHeader, MAX_SIGNED_JWT_BYTES, MAX_SIGNED_JWT_DEPTH, decode_signed_jwt,
@@ -92,9 +93,7 @@ fn decodes_jwk_and_compact_payload() {
     assert_eq!(text_claim(&payload_fields, "sub"), Some("user-1"));
     assert_eq!(
         payload_fields.get("exp"),
-        Some(&Json::Number(serde_json::Number::from(
-            fixtures::FUTURE_EXP
-        )))
+        Some(&Json::Number(Number::from(fixtures::FUTURE_EXP)))
     );
     assert_eq!(
         decode_signed_jwt(b"").unwrap_err().to_string(),

@@ -55,8 +55,8 @@ pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
         Some(injected) => Some(Arc::clone(injected)),
         None => match state.and_then(|server| server.jwt_keys.resolver.as_ref()) {
             Some(resolver) => {
-                let source: Arc<dyn PublicKeySource> = Arc::clone(resolver);
-                Some(source)
+                let key_source: Arc<dyn PublicKeySource> = Arc::clone(resolver);
+                Some(key_source)
             }
             None => None,
         },

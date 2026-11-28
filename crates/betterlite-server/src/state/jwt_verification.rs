@@ -32,17 +32,14 @@ impl Slot {
             let system = Arc::new(SystemClock);
             Arc::new(move || system.now())
         };
-        let Some(ordinary) =
-            LocalMemoryOps::new(CACHE_MAX_SIZE_PER_ITEM_KIB, Arc::clone(&fetch_clock)).ok()
-        else {
-            return Self { verifier: None };
-        };
-        let Some(userinfo) = LocalMemoryOps::new(CACHE_MAX_SIZE_PER_ITEM_KIB, fetch_clock).ok()
-        else {
+        let (Some(ordinary), Some(userinfo)) = (
+            LocalMemoryOps::new(CACHE_MAX_SIZE_PER_ITEM_KIB, Arc::clone(&fetch_clock)).ok(),
+            LocalMemoryOps::new(CACHE_MAX_SIZE_PER_ITEM_KIB, fetch_clock).ok(),
+        ) else {
             return Self { verifier: None };
         };
         // the userinfo entries always carry their own ttl, so nothing here reads the management fallback
-        let cache = gateway_cache(
+        let cache_tier: Arc<dyn KeyCache> = Arc::new(gateway_cache(
             Arc::new(ordinary),
             Arc::new(userinfo),
             None,
@@ -54,8 +51,7 @@ impl Slot {
                 redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
             },
             0.0,
-        );
-        let cache_tier: Arc<dyn KeyCache> = Arc::new(cache);
+        ));
         let http = Arc::new(ProxiedUserinfoHttp {
             client: shared.client.clone(),
         });

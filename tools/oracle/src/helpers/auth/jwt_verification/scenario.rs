@@ -16,7 +16,9 @@ use betterlite_config::sections::jwt_settings::records::Selector;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
+use serde_json::Value;
 use tokio::runtime::Builder;
+use tracing::Level;
 use tracing::subscriber::set_default;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
@@ -168,17 +170,17 @@ fn decode_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) 
 }
 
 // TypedValue carries serde_json's value, and the answer reports this crate's JSON type.
-fn json_value(value: serde_json::Value) -> Json {
+fn json_value(value: Value) -> Json {
     match value {
-        serde_json::Value::Null => Json::Null,
-        serde_json::Value::Bool(flag) => Json::Bool(flag),
-        serde_json::Value::Number(number) => Json::Number(number),
-        serde_json::Value::String(text) => Json::Text(text),
-        serde_json::Value::Array(items) => Json::List(items.into_iter().map(json_value).collect()),
-        serde_json::Value::Object(fields) => Json::Object(
+        Value::Null => Json::Null,
+        Value::Bool(flag) => Json::Bool(flag),
+        Value::Number(number) => Json::Number(number),
+        Value::String(text) => Json::Text(text),
+        Value::Array(items) => Json::List(items.into_iter().map(json_value).collect()),
+        Value::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(field, value)| (field, json_value(value)))
+                .map(|(field, entry)| (field, json_value(entry)))
                 .collect(),
         ),
     }
@@ -209,7 +211,7 @@ struct RecordLevels {
 impl<S: tracing::Subscriber> Layer<S> for RecordLevels {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
         let metadata = event.metadata();
-        if metadata.target() == "LiteLLM Proxy" && *metadata.level() == tracing::Level::WARN {
+        if metadata.target() == "LiteLLM Proxy" && *metadata.level() == Level::WARN {
             lock(&self.levels).push("warning".to_owned());
         }
     }
