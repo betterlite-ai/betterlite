@@ -307,7 +307,7 @@ pub(crate) fn fixture_with_ports(
     settings: PrometheusHookSettings,
     ports: PrometheusHookPorts,
 ) -> Fixture {
-    build_fixture(settings, ports, PrometheusExporterSettings::default())
+    build_fixture(settings, ports, &PrometheusExporterSettings::default())
 }
 
 // both switches must be on for the label: the collector computes the bucket and the schema registers the label
@@ -327,17 +327,17 @@ pub(crate) fn fixture_with_input_sequence_length() -> Fixture {
         prometheus_latency_buckets: None,
         prometheus_emit_input_sequence_length_label: true,
     };
-    build_fixture(settings, PrometheusHookPorts::default(), exporter)
+    build_fixture(settings, PrometheusHookPorts::default(), &exporter)
 }
 
 fn build_fixture(
     settings: PrometheusHookSettings,
     ports: PrometheusHookPorts,
-    exporter: PrometheusExporterSettings,
+    exporter: &PrometheusExporterSettings,
 ) -> Fixture {
     let registry = CollectorRegistry::default();
     let collectors = Arc::new(
-        PrometheusCollectors::register(&exporter, &settings.labels, &registry)
+        PrometheusCollectors::register(exporter, &settings.labels, &registry)
             .expect("the collectors register"),
     );
     let lookups = Arc::new(RecordingLookups::new());
