@@ -100,7 +100,8 @@ where
             sequence_start: completed.saturating_add(1),
             output_index: OUTPUT_INDEX,
         };
-        let mut next_id = || ids();
+        // every id the builder generates is uuid.uuid4().hex[:8] (L191, L242), so the source is truncated here too
+        let mut next_id = || -> String { ids().chars().take(SHORT_ID_LENGTH).collect() };
         let built = builder.create(&request, &mut next_id)?;
         events.extend(built);
     }
