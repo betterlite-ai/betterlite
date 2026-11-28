@@ -5,7 +5,7 @@ use crate::aws_endpoints::runtime::{
     BedrockEndpointType, RuntimeEndpoint, RuntimeEndpointInput, runtime_endpoint,
 };
 use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig;
 use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest;
 use url::Url;
 

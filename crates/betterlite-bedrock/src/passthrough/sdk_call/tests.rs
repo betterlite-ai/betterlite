@@ -15,7 +15,7 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
     PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{BedrockSdkCall, NoCredentialChain};
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
