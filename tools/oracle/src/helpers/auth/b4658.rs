@@ -18,10 +18,19 @@ mod tests;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    PresentedKey { headers: Vec<(String, String)> },
-    KeyIsActive { key: KeyFields },
-    ActiveKeyUserId { key: KeyFields },
-    UserRecord { user: LiteLLMUserTable },
+    PresentedKey {
+        headers: Vec<(String, String)>,
+    },
+    KeyIsActive {
+        key: KeyFields,
+    },
+    ActiveKeyUserId {
+        key: KeyFields,
+    },
+    UserRecord {
+        // the box keeps the input enum's largest variant small enough for clippy large_enum_variant
+        user: Box<LiteLLMUserTable>,
+    },
 }
 
 // the case's key object, built into a UserAPIKeyAuth the way LiteLLM's pydantic model takes it
