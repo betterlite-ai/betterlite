@@ -105,16 +105,15 @@ description: >-
   has to catch each attempt's error; give retries.py its own per-file-ignores entry for PERF203 with that reason.
 
 
-  Claude Code refuses worker writes to pyrightconfig.json, so the architect commits this content to
-  crates/betterlite-python/pyrightconfig.json on the task branch before the first worker run, and the worker keeps
-  that commit:
-  `{"include": ["python", "tests"], "extraPaths": ["python"], "typeCheckingMode": "strict", "pythonVersion": "3.10",
-  "reportMissingModuleSource": "none", "executionEnvironments": [{"root": "tests", "pythonVersion": "3.11"}]}`. An
-  execution environment inherits the top-level extraPaths, so the tests still find the package. The python-lint
-  check passes `--pythonversion 3.10` too: basedpyright 1.40.2 applies command-line options over the config file
-  outside the language server and builds the execution environments afterwards, each keeping its own pythonVersion,
-  so tests/ stays at 3.11 while the check fails on main by itself, and the committed file makes every other task's
-  python-lint check run at 3.10 from the day this merges.
+  Claude Code refuses worker writes to pyrightconfig.json, so the architect commits two configs on the task branch
+  and the worker keeps that commit. crates/betterlite-python/pyrightconfig.json checks the package at 3.10:
+  `{"include": ["python"], "typeCheckingMode": "strict", "pythonVersion": "3.10", "reportMissingModuleSource": "none"}`.
+  crates/betterlite-python/tests/pyrightconfig.json checks the tests at 3.11, finding the package through extraPaths:
+  `{"include": ["."], "extraPaths": ["../python"], "typeCheckingMode": "strict", "pythonVersion": "3.11",
+  "reportMissingModuleSource": "none"}`. basedpyright 1.40.2 binds the typeshed standard library once per run at the
+  run's top-level version, and an execution environment's pythonVersion does not change which stdlib names exist,
+  so one run cannot check two versions: python-lint runs both configs, and every other task's check that names the
+  crate config checks the package at 3.10 from the day this merges.
 
 
   tools/python-release/smoke_wheel.py only imports betterlite, so a module that `import betterlite` never reaches can
@@ -132,6 +131,7 @@ scope:
   - "crates/betterlite-python/python/betterlite/evals/_evals.py"
   - crates/betterlite-python/ruff.toml
   - crates/betterlite-python/pyrightconfig.json
+  - crates/betterlite-python/tests/pyrightconfig.json
   - crates/betterlite-python/python/betterlite/fine_tuning/ruff.toml
   - crates/betterlite-python/python/betterlite/_model_info/ruff.toml
   - crates/betterlite-python/python/betterlite/_completion/adapters.py
@@ -425,7 +425,8 @@ checks:
       set -e
       uv run --locked --project tools/oracle/litellm ruff check --target-version py310 crates/betterlite-python/python crates/betterlite-python/tests
       uv run --locked --project tools/oracle/litellm ruff check tools/python-release
-      uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json --pythonversion 3.10
+      uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+      uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
       uv run --locked --project tools/oracle/litellm basedpyright --project tools/python-release/pyrightconfig.json
 oracle_cases: []
 deviations: []
@@ -441,6 +442,7 @@ out_of_scope:
   smoke_wheel.py itself runs on 3.10 in the imports-on-310 check and in python-wheels.yml.
 - The root ruff.toml, which the oracle helpers share at py311, and the Rust side of the wheel.
 pitfalls:
+- One pyright config with executionEnvironments at two versions cannot keep the package at 3.10. A top level of 3.10 fails the tests on 1548 errors (typing.Self, NotRequired, Unpack and datetime.UTC unknown), and a top level of 3.11 or a root "/" environment at 3.11 passes a `from typing import Self` in python/ with 0 errors (measured 11-28 with a probe file). Keep the two configs.
 - pydantic raises typed-dict-version only when a TypeAdapter or a model first reads a typing.TypedDict and basedpyright accepts typing.TypedDict at 3.10, so TypedDict moves with the other names even where nothing complains yet.
 - ruff's isort counts typing_extensions as third-party, so its import goes in the block with pydantic, httpx2 and dotenv (last there by name), never beside `from typing import`.
 - Inside one import ruff sorts constants, then classes, then functions, as in `from typing_extensions import NotRequired, TypedDict, override`, and a `from typing import` or `from enum import` line left with no names is deleted.
