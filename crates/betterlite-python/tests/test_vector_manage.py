@@ -33,7 +33,6 @@ from betterlite.exceptions import (
     APIConnectionError,
     AuthenticationError,
     BadRequestError,
-    NotFoundError,
 )
 from betterlite.vector_stores._create_search import acreate, asearch, create, search
 from betterlite.vector_stores._manage import (
@@ -662,13 +661,13 @@ def test_error_keeps_class() -> None:
             update(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
         with pytest.raises(LITELLM_ERRORS.AuthenticationError):
             LITELLM.update(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
-        with pytest.raises(NotFoundError) as missing:
+        with pytest.raises(BadRequestError) as missing:
             delete(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(LITELLM_ERRORS.NotFoundError):
+        with pytest.raises(LITELLM_ERRORS.BadRequestError):
             LITELLM.delete(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
     raised = (
         (authenticated, LITELLM_ERRORS.AuthenticationError, UNAUTHORIZED),
-        (missing, LITELLM_ERRORS.NotFoundError, NOT_FOUND),
+        (missing, LITELLM_ERRORS.BadRequestError, NOT_FOUND),
     )
     for ours_caught, reference_class, status in raised:
         assert type(ours_caught.value).__name__ == reference_class.__name__
