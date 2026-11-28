@@ -28,7 +28,7 @@ use crate::auth::auth_context_sources::model_stage_input;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
-use crate::auth::{headers_json, query_json};
+use crate::auth::{headers_json, query_json, resolver_stage_input};
 use crate::error_body::AuthenticationFailure;
 use crate::routes;
 use crate::routes::tests::state_for;
@@ -118,6 +118,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::ModelBudgets(_)
             | StageFailure::TeamBudgets(_)
             | StageFailure::OrganizationRoutePolicy(_)
+            | StageFailure::AuthRoutePolicy(_)
             | StageFailure::OrgLookup(_)
             | StageFailure::EndUsers(_)
             | StageFailure::AuthPolicySupport(_)
@@ -203,15 +204,19 @@ fn stage_is_registered() {
         catalog: Arc::new(FailingCatalog),
         decoders: Arc::new(CoreDecoders),
     });
-    let failing_stage = stage_input(
-        master_context(&master_key),
-        "/azure/gpt-4/chat/completions",
-        r#"{"model": "gpt-4"}"#,
-        failing,
-    );
-    let failing_input = StageInput::AuthRequestModels(Box::new(failing_stage));
+    let context = master_context(&master_key);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/azure/gpt-4/chat/completions")
+        .body(Body::from(r#"{"model": "gpt-4"}"#))
+        .expect("the request builds");
     assert!(matches!(
-        dispatch(AuthBackend::AuthRequestModels, &failing_input, &master_key),
+        resolver_stage_input(
+            AuthBackend::AuthRequestModels,
+            &request,
+            Some(&context),
+            &failing,
+        ),
         Err(StageFailure::Authentication(failure))
             if matches!(*failure, AuthenticationFailure::Missing)
     ));
