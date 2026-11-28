@@ -31,6 +31,10 @@ use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
+use crate::auth::{
+    auth_key_budgets, auth_model_budgets, auth_tag_budgets, auth_tenant_budgets,
+    team_budget_admission,
+};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,6 +153,23 @@ impl StageInput {
             .await
             .map_err(StageFailure::ModelGrants)?;
         Ok(Self::ModelGrantIntersection(stage))
+    }
+
+    // the budget stages read their limits before dispatch; the closing match names every variant so a new stage cannot pass through
+    pub(crate) async fn prefetch_budget(self) -> Result<Self, StageFailure> {
+        match self {
+            Self::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
+            Self::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
+            Self::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
+            Self::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
+            Self::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+            #[rustfmt::skip]
+            other @ (Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) | Self::JwtKeys(_) | Self::MasterKey(_)
+            | Self::TrustedNetwork(_) | Self::AuthRequestPolicy(_) | Self::RequestBodySafety(_) | Self::AuthVirtualKeyRoutes(_)
+            | Self::AuthRequestModels(_) | Self::AuthModelPatterns(_) | Self::AuthModelGrants(_) | Self::EntityModelAccess(_)
+            | Self::AuthResourceGrants(_) | Self::AuthPricing(_) | Self::OrganizationRoutePolicy(_) | Self::AuthRoutePolicy(_)
+            | Self::AuthOrgLookup(_) | Self::AuthEndUsers(_) | Self::AuthPolicySupport(_) | Self::ModelGrantIntersection(_)) => Ok(other),
+        }
     }
 
     const fn backend(&self) -> AuthBackend {

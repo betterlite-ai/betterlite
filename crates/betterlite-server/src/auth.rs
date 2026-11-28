@@ -263,7 +263,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthKeyBudgets(_)
         | StageInput::AuthModelBudgets(_)
         | StageInput::TeamBudgetAdmission(_)
-        | StageInput::AuthTenantBudgets(_)) => prefetch_budget_stage(budget).await,
+        | StageInput::AuthTenantBudgets(_)) => budget.prefetch_budget().await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
@@ -276,26 +276,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)
         | StageInput::AuthRoutePolicy(_)) => Ok(other),
-    }
-}
-
-// the budget stages read their limits before dispatch; the closing match names every variant so a new stage cannot pass through
-#[rustfmt::skip]
-async fn prefetch_budget_stage(input: StageInput) -> Result<StageInput, StageFailure> {
-    if let StageInput::AuthTagBudgets(stage) = input { return auth_tag_budgets::prefetched(stage).await; }
-    if let StageInput::AuthKeyBudgets(stage) = input { return auth_key_budgets::prefetched(stage).await; }
-    if let StageInput::AuthModelBudgets(stage) = input { return auth_model_budgets::prefetched(stage).await; }
-    if let StageInput::TeamBudgetAdmission(stage) = input { return team_budget_admission::prefetched(stage).await; }
-    if let StageInput::AuthTenantBudgets(stage) = input { return auth_tenant_budgets::prefetched(stage).await; }
-    match input {
-        budget @ (StageInput::AuthTagBudgets(_) | StageInput::AuthKeyBudgets(_) | StageInput::AuthModelBudgets(_) | StageInput::TeamBudgetAdmission(_)
-        | StageInput::AuthTenantBudgets(_)) => Ok(budget),
-        other @ (StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) | StageInput::Authenticated(_) | StageInput::JwtKeys(_)
-        | StageInput::MasterKey(_) | StageInput::TrustedNetwork(_) | StageInput::AuthRequestPolicy(_) | StageInput::RequestBodySafety(_)
-        | StageInput::AuthVirtualKeyRoutes(_) | StageInput::AuthRequestModels(_) | StageInput::AuthModelPatterns(_) | StageInput::AuthModelGrants(_)
-        | StageInput::EntityModelAccess(_) | StageInput::AuthResourceGrants(_) | StageInput::AuthPricing(_) | StageInput::OrganizationRoutePolicy(_)
-        | StageInput::AuthRoutePolicy(_)
-        | StageInput::AuthOrgLookup(_) | StageInput::AuthEndUsers(_) | StageInput::AuthPolicySupport(_) | StageInput::ModelGrantIntersection(_)) => Ok(other),
     }
 }
 
