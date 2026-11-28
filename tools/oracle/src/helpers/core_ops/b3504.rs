@@ -96,7 +96,7 @@ fn answer(
             if matches!(input.function, Function::Acreate) {
                 let answered = runtime()?.block_on(acreate(fixture.collection(), call));
                 let record = answered.map_err(|error| support::raised(&error))?;
-                return record_value(&record);
+                return serde_json::to_value(record).map_err(support::helper_failure);
             }
             let handled = create(fixture.collection(), &call);
             finished(handled, "the create was unexpectedly pending")
@@ -111,7 +111,7 @@ fn answer(
             if matches!(input.function, Function::Alist) {
                 let answered = runtime()?.block_on(alist(fixture.collection(), call));
                 let record = answered.map_err(|error| support::raised(&error))?;
-                return record_value(&record);
+                return serde_json::to_value(record).map_err(support::helper_failure);
             }
             let handled = list(fixture.collection(), &call);
             finished(handled, "the list was unexpectedly pending")
@@ -127,17 +127,12 @@ where
     Record: Serialize,
 {
     match answered {
-        Ok(AgentCollectionHandled::Done(record)) => record_value(&record),
+        Ok(AgentCollectionHandled::Done(record)) => {
+            serde_json::to_value(record).map_err(support::helper_failure)
+        }
         Ok(AgentCollectionHandled::Pending(_pending)) => Err(support::helper_failure(pending)),
         Err(error) => Err(support::raised(&error)),
     }
-}
-
-fn record_value<Record>(record: &Record) -> Result<Value, Box<HelperError>>
-where
-    Record: Serialize,
-{
-    serde_json::to_value(record).map_err(support::helper_failure)
 }
 
 fn injected(input: &Input, server: &Server) -> IndexMap<String, Json> {
