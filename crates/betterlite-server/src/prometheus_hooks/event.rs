@@ -52,8 +52,7 @@ fn labelled_model(payload: &StandardLoggingPayload, catalog: &ModelCatalog) -> S
     let (cohere_model, cohere_provider) = cohere_chat_provider(&payload.model, custom, catalog);
     let (model, provider) = anthropic_text_provider(&cohere_model, cohere_provider.as_deref());
     let resolved = provider.unwrap_or_default();
-    // the payload records the resolved provider, so the declared prefix is the rename it replaced;
-    // an empty provider, or ragflow whose prefix get_llm_provider re-adds, keeps the model whole
+    // the payload carries the resolved provider, so strip the prefix its rename replaced; ragflow and none keep it whole
     let declared = match resolved.as_str() {
         "cohere_chat" => "cohere",
         "anthropic_text" => "anthropic",
