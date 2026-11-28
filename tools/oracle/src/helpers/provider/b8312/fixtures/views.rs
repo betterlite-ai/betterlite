@@ -16,7 +16,9 @@ use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
 use super::super::oracle::Case;
-use super::{chat_call, embedding_call, input_failure, kept, request_view, section_settings};
+use super::calls::{
+    chat_call, embedding_call, input_failure, kept, request_view, section_settings,
+};
 
 pub(crate) fn minimax_chat_view(case: &Case) -> HelperResult {
     let call = chat_call(case, ChatConfigTag::MinimaxChat, "minimax")?;

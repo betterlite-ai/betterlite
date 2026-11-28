@@ -8,10 +8,8 @@ use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::fixtures::{
-    chat_call, dashscope_view, embedding_call, input_failure, minimax_chat_view, nlp_cloud_view,
-    volcengine_view,
-};
+use super::fixtures::calls::{chat_call, embedding_call, input_failure};
+use super::fixtures::views::{dashscope_view, minimax_chat_view, nlp_cloud_view, volcengine_view};
 
 // the litellm globals, the request values and the variables each arm falls back to
 #[derive(Deserialize, Default)]

@@ -8,7 +8,7 @@ use betterlite_provider::regional_host_dispatch::error::DispatchError;
 use betterlite_provider::regional_host_dispatch::speech::SpeechHandler;
 use serde_json::{Value, json};
 
-use super::input_failure;
+use super::calls::input_failure;
 
 #[derive(Default)]
 pub(crate) struct SpeechRecorder {
