@@ -177,6 +177,17 @@ async fn serve_silent(listener: TcpListener) -> (u16, String) {
     (u16::from(code.code), code.reason.as_str().to_owned())
 }
 
+// a server that records the one binary frame a test sends, so send_binary has an observer
+async fn serve_binary_frame(listener: TcpListener) -> Vec<u8> {
+    let (stream, _peer) = listener.accept().await.expect("accept");
+    let mut socket = accept_async(stream).await.expect("handshake");
+    let frame = socket.next().await.expect("frame").expect("frame");
+    match frame {
+        Message::Binary(bytes) => bytes.to_vec(),
+        other => panic!("frame: {other:?}"),
+    }
+}
+
 // a server that answers every ping the way tungstenite does, recording when each one arrived
 async fn serve_ponging(listener: TcpListener, pings: Arc<Mutex<Vec<Duration>>>) {
     let (stream, _peer) = listener.accept().await.expect("accept");
@@ -370,6 +381,23 @@ async fn websocket_client_tests_open_plain_socket_with_ordered_headers() {
         .expect("server task");
     assert_eq!(target, "/realtime?model=x");
     assert_handshake_order(&recorded, address);
+}
+
+#[tokio::test]
+async fn websocket_client_tests_send_a_binary_frame() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_binary_frame(listener));
+    let url = format!("ws://{address}/realtime");
+    let connection = plain_connection(&url, &[], None).await;
+    connection.sender.send_binary(b"raw").await.expect("send");
+    let payload = timeout(TEST_TIMEOUT, tasks.join_next())
+        .await
+        .expect("deadline")
+        .expect("server")
+        .expect("server task");
+    assert_eq!(payload, b"raw".to_vec());
 }
 
 #[tokio::test]
