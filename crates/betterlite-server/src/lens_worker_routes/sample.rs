@@ -74,11 +74,6 @@ const fn next_window(base: &SampleWindow, cursor: String) -> SampleWindow {
     }
 }
 
-// true when no cursor follows, or when the executions gathered so far reach the first page's selected
-fn last_page(page: &Sample, gathered: usize, target: i64) -> bool {
-    page.next_cursor.is_none() || i64::try_from(gathered).unwrap_or(i64::MAX) >= target
-}
-
 fn frozen_from(pages: Vec<Sample>) -> Sample {
     let eligible = pages.first().map_or(0, |page| page.eligible);
     let executions: Vec<Execution> = pages.into_iter().flat_map(|page| page.executions).collect();
@@ -118,7 +113,9 @@ where
             .map(|stored| stored.executions.len())
             .sum::<usize>()
             .saturating_add(page.executions.len());
-        let done = last_page(&page, gathered, wanted);
+        // no cursor follows, or the executions gathered so far reach the first page's selected
+        let done =
+            page.next_cursor.is_none() || i64::try_from(gathered).unwrap_or(i64::MAX) >= wanted;
         pages.push(page);
         if done {
             break;

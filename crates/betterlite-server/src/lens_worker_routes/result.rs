@@ -47,8 +47,7 @@ where
     let placeholder = empty_sample();
     let selected = job.sample.as_ref().unwrap_or(&placeholder);
     let allowed = selected_ids(selected);
-    check_assessments(&job, &request, &allowed)?;
-    check_findings(&job, &request, &allowed)?;
+    check_request(&job, &request, &allowed)?;
     for finding in &request.findings {
         validate_finding(&lens, selected, finding, state.routes.storage.as_ref()).await?;
     }
@@ -89,7 +88,8 @@ fn check_ids(job: &Job) -> BTreeSet<String> {
         .collect()
 }
 
-fn check_assessments(
+// inference.result's four 422 checks, run in LiteLLM's order before any storage call
+fn check_request(
     job: &Job,
     request: &JobResult,
     allowed: &BTreeSet<&str>,
@@ -120,15 +120,6 @@ fn check_assessments(
     if unknown {
         return Err(LensWorkerError::CheckUnknown);
     }
-    Ok(())
-}
-
-fn check_findings(
-    job: &Job,
-    request: &JobResult,
-    allowed: &BTreeSet<&str>,
-) -> Result<(), LensWorkerError> {
-    let checks = check_ids(job);
     let stray = request.findings.iter().any(|finding| {
         !checks.contains(finding.check_id.as_str())
             || finding

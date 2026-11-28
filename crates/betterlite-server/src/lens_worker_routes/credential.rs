@@ -15,7 +15,9 @@ where
     Db: LensDatabase,
 {
     let token = bearer_token(header)?;
-    let worker = lens_repository(state)?.worker(&sha256_hex(&token)).await?;
+    let worker = lens_repository(state)?
+        .worker(&hex::encode(Sha256::digest(token.as_bytes())))
+        .await?;
     match worker {
         Some(found) if !found.revoked => Ok(found),
         Some(_) | None => Err(LensWorkerError::InvalidCredential),
@@ -34,10 +36,6 @@ fn bearer_token(header: Option<&HeaderValue>) -> Result<String, LensWorkerError>
         return Err(LensWorkerError::NotAuthenticated);
     }
     Ok(credentials.to_owned())
-}
-
-fn sha256_hex(token: &str) -> String {
-    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 mod tests;

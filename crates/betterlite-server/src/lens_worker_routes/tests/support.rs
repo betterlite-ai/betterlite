@@ -122,7 +122,8 @@ pub(crate) fn team_worker() -> Worker {
     let mut stored = worker_fixture();
     stored.scope = Scope {
         team_id: "team-1".to_owned(),
-        ..Scope::default()
+        api_key_hash: String::new(),
+        all_teams: false,
     };
     stored
 }
@@ -307,6 +308,39 @@ impl WorkerDatabase {
             *stored = replacement;
         }
     }
+
+    fn observe_query(&self, query: &str) {
+        if query.contains("WITH previous") {
+            self.events.lock().expect("the event lock").push("update");
+        }
+        if query.contains(r#""LiteLLM_Lens" WHERE id=$1"#) {
+            self.maybe_swap();
+        }
+    }
+
+    fn record_heartbeat_query(&self, query: &str, args: &[SqlBind]) -> bool {
+        if !query.contains("'{last_seen}'") {
+            return false;
+        }
+        self.events
+            .lock()
+            .expect("the event lock")
+            .push("heartbeat");
+        self.record_heartbeat(args);
+        true
+    }
+
+    fn queried<'db>(&'db self, query: &'db str, args: &'db [SqlBind]) -> QueryFuture<'db> {
+        self.observe_query(query);
+        self.inner.query_raw(query, args)
+    }
+
+    fn written<'db>(&'db self, query: &'db str, args: &'db [SqlBind]) -> ExecuteFuture<'db> {
+        if self.record_heartbeat_query(query, args) {
+            return Box::pin(ready(Ok(1)));
+        }
+        self.inner.execute_raw(query, args)
+    }
 }
 
 impl Database for WorkerDatabase {
@@ -315,13 +349,7 @@ impl Database for WorkerDatabase {
         query: &'database str,
         args: &'database [SqlBind],
     ) -> QueryFuture<'database> {
-        if query.contains("WITH previous") {
-            self.events.lock().expect("the event lock").push("update");
-        }
-        if query.contains(r#""LiteLLM_Lens" WHERE id=$1"#) {
-            self.maybe_swap();
-        }
-        self.inner.query_raw(query, args)
+        self.queried(query, args)
     }
 
     fn execute_raw<'database>(
@@ -329,16 +357,20 @@ impl Database for WorkerDatabase {
         query: &'database str,
         args: &'database [SqlBind],
     ) -> ExecuteFuture<'database> {
-        if query.contains("'{last_seen}'") {
-            self.events
-                .lock()
-                .expect("the event lock")
-                .push("heartbeat");
-            self.record_heartbeat(args);
-            return Box::pin(ready(Ok(1)));
-        }
-        self.inner.execute_raw(query, args)
+        self.written(query, args)
     }
+}
+
+enum Recorded {
+    Sample(SampleParameters),
+    Content(ContentParameters),
+    Evidence(EvidenceParameters),
+}
+
+enum Reply {
+    Sample,
+    Content,
+    Evidence,
 }
 
 #[derive(Clone, Default)]
@@ -396,6 +428,64 @@ impl WorkerStorage {
         }
         Ok(())
     }
+
+    fn record(&self, recorded: Recorded) {
+        match recorded {
+            Recorded::Sample(parameters) => self
+                .samples
+                .lock()
+                .expect("the sample lock")
+                .push(parameters),
+            Recorded::Content(parameters) => self
+                .contents
+                .lock()
+                .expect("the content lock")
+                .push(parameters),
+            Recorded::Evidence(parameters) => self
+                .evidence
+                .lock()
+                .expect("the evidence lock")
+                .push(parameters),
+        }
+    }
+
+    fn stored(&self, reply: Reply) -> Vec<u8> {
+        match reply {
+            Reply::Sample => self
+                .pages
+                .lock()
+                .expect("the page lock")
+                .pop_front()
+                .unwrap_or_else(|| "[]".to_owned())
+                .into_bytes(),
+            Reply::Content => {
+                let text = self
+                    .content_json
+                    .lock()
+                    .expect("the content json lock")
+                    .clone();
+                if text.is_empty() {
+                    b"[]".to_vec()
+                } else {
+                    text.into_bytes()
+                }
+            }
+            Reply::Evidence => {
+                let found = *self.evidence_found.lock().expect("the evidence lock");
+                if found {
+                    br#"[{"count":1}]"#.to_vec()
+                } else {
+                    b"[]".to_vec()
+                }
+            }
+        }
+    }
+
+    fn reply(&self, recorded: Recorded, reply: Reply) -> Result<Vec<u8>, TestError> {
+        self.record(recorded);
+        self.broken()?;
+        Ok(self.stored(reply))
+    }
 }
 
 impl Storage for WorkerStorage {
@@ -419,69 +509,21 @@ impl Storage for WorkerStorage {
         &self,
         parameters: SampleParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        self.samples
-            .lock()
-            .expect("the sample lock")
-            .push(parameters);
-        let outcome = match self.broken() {
-            Ok(()) => Ok(self
-                .pages
-                .lock()
-                .expect("the page lock")
-                .pop_front()
-                .unwrap_or_else(|| "[]".to_owned())
-                .into_bytes()),
-            Err(error) => Err(error),
-        };
-        ready(outcome)
+        ready(self.reply(Recorded::Sample(parameters), Reply::Sample))
     }
 
     fn lens_content(
         &self,
         parameters: ContentParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        self.contents
-            .lock()
-            .expect("the content lock")
-            .push(parameters);
-        let outcome = match self.broken() {
-            Ok(()) => {
-                let text = self
-                    .content_json
-                    .lock()
-                    .expect("the content json lock")
-                    .clone();
-                Ok(if text.is_empty() {
-                    b"[]".to_vec()
-                } else {
-                    text.into_bytes()
-                })
-            }
-            Err(error) => Err(error),
-        };
-        ready(outcome)
+        ready(self.reply(Recorded::Content(parameters), Reply::Content))
     }
 
     fn lens_evidence(
         &self,
         parameters: EvidenceParameters,
     ) -> impl Future<Output = Result<Vec<u8>, Self::Error>> + Send {
-        self.evidence
-            .lock()
-            .expect("the evidence lock")
-            .push(parameters);
-        let outcome = match self.broken() {
-            Ok(()) => {
-                let found = *self.evidence_found.lock().expect("the evidence lock");
-                Ok(if found {
-                    br#"[{"count":1}]"#.to_vec()
-                } else {
-                    b"[]".to_vec()
-                })
-            }
-            Err(error) => Err(error),
-        };
-        ready(outcome)
+        ready(self.reply(Recorded::Evidence(parameters), Reply::Evidence))
     }
 }
 
@@ -719,8 +761,8 @@ impl Harness {
             })
         });
         let keys: Arc<Resolver> = Arc::new(Resolver::new());
-        WorkerRoutesState::new(
-            LensRoutesState {
+        WorkerRoutesState {
+            routes: LensRoutesState {
                 repository,
                 storage: self.storage.clone(),
                 models: None,
@@ -728,8 +770,8 @@ impl Harness {
                 clock: Arc::new(FixedClock { now: self.instant }),
                 ids: Arc::<Ids>::clone(&self.ids),
             },
-            self.inference.clone(),
-        )
+            inference: self.inference.clone(),
+        }
     }
 
     pub(crate) fn app(&self) -> Router {

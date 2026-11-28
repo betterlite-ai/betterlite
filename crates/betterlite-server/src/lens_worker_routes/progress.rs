@@ -2,7 +2,7 @@ use std::convert::Infallible;
 
 use axum::Json;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{MatchedPath, Path, State};
 use axum::http::{HeaderMap, header};
 use betterlite_db::lens_repository::update::DEFAULT_ATTEMPTS;
 use betterlite_lens::models::job::{Job, Lens, Worker};
@@ -18,9 +18,11 @@ use crate::lens_worker_routes::credential::worker_auth;
 use crate::lens_worker_routes::error::{LensWorkerError, infallible_update};
 use crate::lens_worker_routes::lease::assigned;
 
+// LiteLLM's heartbeat calls progress with the job's stage, so one handler serves both routes
 pub(crate) async fn progress<Db, Store>(
     State(state): State<WorkerRoutesState<Db, Store>>,
     Path((lens_id, job_id)): Path<(String, String)>,
+    matched: MatchedPath,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<bool>, LensWorkerError>
@@ -29,29 +31,31 @@ where
     Store: LensStorage,
 {
     let worker = worker_auth(&state.routes, headers.get(header::AUTHORIZATION)).await?;
-    let request: Progress = decode(&body)?;
+    let request: Progress = if matched.as_str().ends_with("/heartbeat") {
+        carried(&state.routes, &lens_id, &job_id, &worker).await?
+    } else {
+        decode(&body)?
+    };
     apply(&state.routes, &lens_id, &job_id, &worker, &request).await?;
     Ok(Json(true))
 }
 
-pub(crate) async fn heartbeat<Db, Store>(
-    State(state): State<WorkerRoutesState<Db, Store>>,
-    Path((lens_id, job_id)): Path<(String, String)>,
-    headers: HeaderMap,
-) -> Result<Json<bool>, LensWorkerError>
+// heartbeat's own assigned check, before progress's check runs again inside apply
+async fn carried<Db, Store>(
+    state: &LensRoutesState<Db, Store>,
+    lens_id: &str,
+    job_id: &str,
+    worker: &Worker,
+) -> Result<Progress, LensWorkerError>
 where
     Db: LensDatabase,
-    Store: LensStorage,
 {
-    let worker = worker_auth(&state.routes, headers.get(header::AUTHORIZATION)).await?;
-    let now = state.routes.clock.now();
-    let (_, job) = assigned(&state.routes, &lens_id, &job_id, &worker, now).await?;
-    let body = Progress {
+    let now = state.clock.now();
+    let (_, job) = assigned(state, lens_id, job_id, worker, now).await?;
+    Ok(Progress {
         stage: job.stage.clone(),
         coverage: job.coverage.clone(),
-    };
-    apply(&state.routes, &lens_id, &job_id, &worker, &body).await?;
-    Ok(Json(true))
+    })
 }
 
 // progress's handler body, which heartbeat reaches again with the job's own stage and coverage
