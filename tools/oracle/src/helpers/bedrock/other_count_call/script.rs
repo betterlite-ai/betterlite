@@ -5,10 +5,10 @@ use std::time::SystemTime;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::count_call::handler::{
-    CountTokensCredentials, CountTokensHandler, CountTokensHandlerError, CountTokensHandlerRequest,
-    CountTokensTransport,
+    CountTokensHandler, CountTokensHandlerError, CountTokensHandlerRequest, CountTokensTransport,
 };
 use betterlite_bedrock::count_call::reply::CountResponse;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::UpstreamResponse;
@@ -117,7 +117,7 @@ pub(super) struct FixtureCredentials {
     pub(super) resolved: Arc<AtomicUsize>,
 }
 
-impl CountTokensCredentials for FixtureCredentials {
+impl CredentialSource for FixtureCredentials {
     fn resolve(
         &self,
         settings: AwsSettings,

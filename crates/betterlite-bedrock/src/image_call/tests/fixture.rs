@@ -18,8 +18,8 @@ use secrecy::SecretString;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::aws_settings::sources::Credentials;
+use crate::credentials::CredentialSource;
 use crate::credentials::error::CredentialError;
-use crate::image_call::plan::CredentialSource;
 use crate::image_call::transport::{
     ClientFactory, ImageReply, ImageRequest, ImageTransport, TransferError,
 };

@@ -22,9 +22,9 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use crate::bedrock_credentials::CredentialSource;
 use crate::bedrock_post::{GuardrailTransport, TransportLog};
 use crate::bedrock_transport::{BedrockGuardrail, BedrockGuardrailInit};
+use betterlite_bedrock::credentials::CredentialSource;
 
 pub(crate) fn guardrail_init() -> BedrockGuardrailInit {
     BedrockGuardrailInit {
