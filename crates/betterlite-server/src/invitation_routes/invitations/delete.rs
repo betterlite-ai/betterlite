@@ -5,12 +5,12 @@ use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::response::IntoResponse as _;
 use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::roles::Role;
 use serde::Deserialize;
 
 use super::super::state::{InvitationDatabase, InvitationRouteState};
 use super::super::{Caller, InvitationRouteError};
 use super::{RouteResult, role_text};
-use crate::api::agents::collection_routes::guards::is_proxy_admin;
 use crate::search_tool_routes::body::decode_body;
 use crate::user_invitation::InvitationRecord;
 
@@ -38,7 +38,7 @@ async fn remove_invitation(
     invitation_id: &str,
 ) -> Result<InvitationRecord, InvitationRouteError> {
     let database = state.database()?;
-    let proxy_admin = is_proxy_admin(principal);
+    let proxy_admin = principal.roles.contains(&Role::PlatformAdmin);
     let other_admin = database.scope.has_admin_privileges(principal).await;
     if !proxy_admin && !other_admin {
         return Err(InvitationRouteError::NotAllowed {

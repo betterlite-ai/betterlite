@@ -2,25 +2,11 @@ use std::error::Error as StdError;
 
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
-use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
 use betterlite_prompts::registry::prompt_registry_helpers::get_base_prompt_id;
 use serde::Deserialize;
 
-use super::MASTER_KEY_SUBJECT;
 use super::error::PromptReadError;
-
-// LiteLLM's user_api_key_has_admin_view, and the master key, which carries no key record to read a role from
-pub(super) fn has_admin_view(principal: &Principal) -> bool {
-    principal.subject == MASTER_KEY_SUBJECT
-        || principal
-            .source_key
-            .0
-            .as_ref()
-            .is_some_and(user_api_key_has_admin_view)
-        || principal.roles.contains(&Role::PlatformAdmin)
-        || principal.roles.contains(&Role::PlatformViewer)
-}
+use crate::management_guards::caller::caller_has_admin_view;
 
 // The key metadata the prompt routes read, taken from the key's serde form
 #[derive(Debug, Default, Deserialize)]
@@ -73,7 +59,7 @@ where
             detail: format!("Prompt {prompt_id} not found"),
         });
     }
-    if !has_admin_view(principal) {
+    if !caller_has_admin_view(principal) {
         return Err(PromptReadError::Denied {
             status: StatusCode::FORBIDDEN,
             detail: "You are not authorized to access this prompt".to_owned(),

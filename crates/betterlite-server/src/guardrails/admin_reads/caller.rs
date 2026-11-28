@@ -1,7 +1,5 @@
 use axum::extract::Extension;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
-use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
 use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 
 use super::error::ReadError;
@@ -9,7 +7,7 @@ use super::state::ReadState;
 use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::caller_identity;
 
-const MASTER_KEY_SUBJECT: &str = "master_key";
+pub(super) use crate::management_guards::caller::caller_has_admin_view as has_admin_view;
 
 pub(super) fn authenticated(
     caller: Option<Extension<AuthContext>>,
@@ -18,18 +16,6 @@ pub(super) fn authenticated(
         Some(Extension(context)) => Ok(context),
         None => Err(ReadError::Unauthenticated),
     }
-}
-
-// LiteLLM's _user_has_admin_view, the same predicate root_routes applies, plus the master key and the roles a caller without a key record carries
-pub(super) fn has_admin_view(principal: &Principal) -> bool {
-    principal.subject == MASTER_KEY_SUBJECT
-        || principal
-            .source_key
-            .0
-            .as_ref()
-            .is_some_and(user_api_key_has_admin_view)
-        || principal.roles.contains(&Role::PlatformAdmin)
-        || principal.roles.contains(&Role::PlatformViewer)
 }
 
 // _get_user_team_ids: no user id or no database answers no teams, and empty strings are dropped

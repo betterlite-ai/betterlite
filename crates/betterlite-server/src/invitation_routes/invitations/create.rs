@@ -6,6 +6,7 @@ use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::response::IntoResponse as _;
 use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::roles::Role;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use serde::Deserialize;
@@ -13,7 +14,6 @@ use serde::Deserialize;
 use super::super::state::{InvitationDatabase, InvitationRouteState};
 use super::super::{Caller, InvitationRouteError};
 use super::{RouteResult, role_text};
-use crate::api::agents::collection_routes::guards::is_proxy_admin;
 use crate::auth::auth_resource_grants::denial_response;
 use crate::search_tool_routes::body::decode_body;
 use crate::user_invitation::InvitationRecord;
@@ -61,7 +61,7 @@ async fn admit_inviter(
     principal: &Principal,
     user_id: &str,
 ) -> Result<(), InvitationRouteError> {
-    if is_proxy_admin(principal) {
+    if principal.roles.contains(&Role::PlatformAdmin) {
         return Ok(());
     }
     if !database.scope.has_admin_privileges(principal).await {
