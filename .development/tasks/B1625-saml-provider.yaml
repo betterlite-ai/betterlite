@@ -34,6 +34,9 @@ description: >-
   80 HTTP wiring lines within 800, including native dependency declarations.
 scope:
   paths:
+    - "crates/betterlite-server/src/public_endpoints/resource_hubs/agent_hub.rs"
+    - "crates/betterlite-server/src/middleware/request_root_paths.rs"
+    - "crates/betterlite-server/src/agent_skills_routes/index.rs"
     - Cargo.toml
     - Cargo.lock
     - crates/betterlite-auth/Cargo.toml
