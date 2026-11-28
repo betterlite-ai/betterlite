@@ -123,14 +123,14 @@ CREATE TRIGGER test_fail_archive BEFORE INSERT ON "LiteLLM_DeletedVerificationTo
 CREATE TRIGGER test_fail_key_delete BEFORE DELETE ON "LiteLLM_VerificationToken" FOR EACH ROW EXECUTE FUNCTION test_fail_delete('key-delete');
 CREATE TRIGGER test_require_archived BEFORE DELETE ON "LiteLLM_VerificationToken" FOR EACH ROW EXECUTE FUNCTION test_archived_first();"#;
 
-const INSERT_TEAM: &str = r#"INSERT INTO "LiteLLM_TeamTable" ("team_id", "members_with_roles") VALUES ($1, to_jsonb($2::TEXT))"#;
+const INSERT_TEAM: &str = r#"INSERT INTO "LiteLLM_TeamTable" ("team_id", "members_with_roles", "admins", "members", "models") VALUES ($1, to_jsonb($2::TEXT), ARRAY[]::TEXT[], ARRAY[]::TEXT[], ARRAY[]::TEXT[])"#;
 const SET_ROSTER: &str = r#"UPDATE "LiteLLM_TeamTable" SET "members_with_roles" = to_jsonb($2::TEXT) WHERE "team_id" = $1"#;
 const DELETE_TEAM: &str = r#"DELETE FROM "LiteLLM_TeamTable" WHERE "team_id" = $1"#;
 const INSERT_USER: &str =
     r#"INSERT INTO "LiteLLM_UserTable" ("user_id", "user_email", "teams") VALUES ($1, $2, $3)"#;
 const INSERT_MEMBERSHIP: &str =
     r#"INSERT INTO "LiteLLM_TeamMembership" ("user_id", "team_id") VALUES ($1, $2)"#;
-const INSERT_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "user_id", "team_id", "key_name") VALUES ($1, $2, $3, $1)"#;
+const INSERT_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "user_id", "team_id", "key_name", "models") VALUES ($1, $2, $3, $1, ARRAY[]::TEXT[])"#;
 const DELETE_KEY_DIRECTLY: &str = r#"DELETE FROM "LiteLLM_VerificationToken" WHERE "token" = $1"#;
 const SELECT_ROSTER: &str =
     r#"SELECT ("members_with_roles" #>> '{}') FROM "LiteLLM_TeamTable" WHERE "team_id" = $1"#;
