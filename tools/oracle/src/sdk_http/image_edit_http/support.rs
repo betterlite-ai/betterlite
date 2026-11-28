@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::{ClientSource, WriteTransport};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -23,7 +24,7 @@ use betterlite_provider::api::image_edit_http::asynchronous::async_image_edit_ha
 use betterlite_provider::api::image_edit_http::error::ImageEditHttpError;
 use betterlite_provider::api::image_edit_http::image_edit_handler;
 use betterlite_provider::api::image_edit_http::service::{
-    ClientKind, ClientSource, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext,
+    ClientKind, ImageEditCall, ImageEditDeps, ImageEditOutcome, LogContext,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
@@ -187,7 +188,7 @@ impl Fixture {
     ) -> Result<ImageEditOutcome, ImageEditHttpError<C::Error>>
     where
         C: BaseImageEditConfig,
-        S: ClientSource,
+        S: ClientSource<Client: WriteTransport + Clone>,
     {
         let env = PrePostEnv {
             debug: DebugSettings::default(),

@@ -1,18 +1,18 @@
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 
+use crate::aws_settings::or_bearer_token;
 use crate::mantle_inputs::chat_endpoint::{ChatEndpointParams, chat_endpoint_inputs};
-use crate::mantle_inputs::credentials::resolve_bearer_token;
 use crate::mantle_inputs::records::MantleGlobals;
 
 use super::support::{empty_cost, exposed, globals, secret};
 
 fn token(globals: &MantleGlobals, api_key: Option<&SecretString>) -> Option<String> {
-    resolve_bearer_token(
+    or_bearer_token(&[
         api_key,
         globals.mantle_api_key.as_ref(),
         globals.aws_bearer_token.as_ref(),
-    )
+    ])
     .map(|selected| selected.expose_secret().to_owned())
 }
 

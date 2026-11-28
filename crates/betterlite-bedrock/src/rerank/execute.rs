@@ -10,13 +10,14 @@ use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 
 use super::decode::decode_rerank_reply;
 use super::error::RerankCallError;
-use super::plan::{CredentialSource, LogContext, PreparedRequest, RerankCall};
+use super::plan::{LogContext, PreparedRequest, RerankCall};
 use super::transport::{
     ClientFactory, RerankHttpReply, RerankHttpRequest, RerankTransport as _, TransferError,
 };
 use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
 };
+use crate::credentials::CredentialSource;
 use crate::signing::target::{RegionInputs, RequestTarget, TargetRequest, request_target};
 
 pub async fn resolve_target<Source>(
@@ -24,7 +25,7 @@ pub async fn resolve_target<Source>(
     source: &Source,
 ) -> Result<RequestTarget, RerankCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     // no bearer shortcut: LiteLLM prepares rerank with supports_bearer_token=False
     let target = request_target(

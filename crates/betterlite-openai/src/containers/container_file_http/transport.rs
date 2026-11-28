@@ -71,8 +71,8 @@ pub trait AsyncClient: Send + Sync {
 
 // B173 owns the pool behind this: the blocking and async clients are different types, as HTTPHandler and AsyncHTTPHandler are
 pub trait ClientSource: Send + Sync {
-    type Blocking: BlockingClient;
-    type Asynchronous: AsyncClient;
+    type Blocking;
+    type Asynchronous;
 
     fn blocking_client(&self, ssl_verify: Option<&SslVerify>) -> Result<Self::Blocking, PoolError>;
 

@@ -8,7 +8,9 @@ use betterlite_http::proxy::pool::PoolError;
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::request::SslVerify;
-use betterlite_openai::containers::container_file_http::transport::ContainerMethod;
+use betterlite_openai::containers::container_file_http::transport::{
+    ClientSource, ContainerMethod,
+};
 use betterlite_openai::openai_base_config::Object;
 use serde_json::json;
 
@@ -17,9 +19,9 @@ use super::tests::{
     RecordingHook, deadline_failure, provider_error, url_failure,
 };
 use super::{
-    CollectionBase, CollectionClientSource, CollectionReply, CollectionRequest,
-    CollectionTransport, ContainerCollectionError, ContainerCreateCall, DEFAULT_TIMEOUT,
-    acontainer_create_handler, container_create_handler,
+    CollectionBase, CollectionReply, CollectionRequest, CollectionTransport,
+    ContainerCollectionError, ContainerCreateCall, DEFAULT_TIMEOUT, acontainer_create_handler,
+    container_create_handler,
 };
 
 fn api_key_params(value: &str) -> Object {
@@ -364,7 +366,7 @@ impl CollectionTransport for HeldClient {
 
 struct HeldSource;
 
-impl CollectionClientSource for HeldSource {
+impl ClientSource for HeldSource {
     type Blocking = HeldClient;
     type Asynchronous = HeldClient;
 

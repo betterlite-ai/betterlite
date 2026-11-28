@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-active-subjects-user-record-scim-zero
+call:
+  b4658:
+    operation: user_record
+    user:
+      user_id: user-1
+      metadata:
+        scim_active: 0
+env: {}
+compare: {ignore: []}

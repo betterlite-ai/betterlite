@@ -6,11 +6,13 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::responses_agentic_execution::executor::ContinuationExecutor;
-use betterlite_core::api::responses_compact_http::service::{ClientKind, SharedSession};
+use betterlite_core::api::responses_compact_http::service::{
+    ClientKind, ClientSource, SharedSession,
+};
 use betterlite_core::api::responses_create_http::config::CreateConfig;
 use betterlite_core::api::responses_create_http::error::CreateError;
 use betterlite_core::api::responses_create_http::service::{
-    ClientSource, CreateCall, CreateDeps, CreateHooks, CreateOutcome, LogContext, run,
+    CreateCall, CreateDeps, CreateHooks, CreateOutcome, CreateTransport, LogContext, run,
 };
 use betterlite_core::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
@@ -120,7 +122,7 @@ impl Fixture {
     ) -> Result<CreateOutcome, CreateError>
     where
         C: CreateConfig,
-        S: ClientSource,
+        S: ClientSource<Client: CreateTransport>,
         D: DeploymentHookDispatcher + ?Sized,
         E: ContinuationExecutor + ?Sized,
     {

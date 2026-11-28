@@ -1,7 +1,6 @@
 use betterlite_anthropic::anthropic_http_stream::call::{StreamLogger, StreamPostCall};
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
+pub(crate) use betterlite_logging::logging_pre_post::env::TracingSink;
+use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, LogSink, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -15,20 +14,6 @@ use std::time::Duration;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
-
-// The production sink: LiteLLM's debug logging writes the record and the client never sees it.
-pub(crate) struct TracingSink;
-
-impl LogSink for TracingSink {
-    fn emit(&self, record: LogRecord) {
-        tracing::debug!(
-            level = ?record.level,
-            fields = ?record.fields,
-            "{}",
-            record.message
-        );
-    }
-}
 
 // The stream handler's post-call record: counts only, so no prompt or answer text reaches a log.
 pub struct TracingStreamLogger;

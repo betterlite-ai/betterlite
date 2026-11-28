@@ -2,6 +2,9 @@ use std::str::from_utf8;
 use std::sync::Arc;
 
 use aws_credential_types::Credentials;
+use betterlite_sigv4::credentials::Credentials as SigV4Credentials;
+use betterlite_sigv4::error::SigV4Error;
+use betterlite_sigv4::sign::header_map::sign_in_place;
 use http::header::CONTENT_TYPE;
 use http::{Method, Request};
 use url::Url;
@@ -14,10 +17,10 @@ use super::credentials::{CredentialError, CredentialSource};
 use super::health::HealthPayloadFactory;
 use super::message::{FORM_CONTENT_TYPE, MessageError, form_body, message_json};
 use super::settings::Settings;
-use super::signing::{SigningError, sign_request};
 
 // httpx's raise_for_status only raises for 4xx and 5xx, so a redirect counts as a delivered message
 const FIRST_ERROR_STATUS: u16 = 400;
+const SERVICE_NAME: &str = "sqs";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SendError<E> {
@@ -34,7 +37,7 @@ pub enum SendError<E> {
     #[error("the SQS request could not be built")]
     Request(#[source] http::Error),
     #[error("the SQS request could not be signed")]
-    Signing(#[source] SigningError),
+    Signing(#[source] SigV4Error),
     #[error("the SQS delivery failed")]
     Transport(#[source] E),
     #[error("SQS answered with status {status}")]
@@ -117,8 +120,15 @@ where
         .header(CONTENT_TYPE, FORM_CONTENT_TYPE)
         .body(body)
         .map_err(SendError::Request)?;
-    sign_request(&mut request, credentials, region, sender.clock.now())
-        .map_err(SendError::Signing)?;
+    let sigv4_credentials = SigV4Credentials::from(credentials);
+    sign_in_place(
+        &mut request,
+        &sigv4_credentials,
+        SERVICE_NAME,
+        region,
+        sender.clock.now(),
+    )
+    .map_err(SendError::Signing)?;
     Ok(PostRequest {
         url,
         headers: request.headers().clone(),

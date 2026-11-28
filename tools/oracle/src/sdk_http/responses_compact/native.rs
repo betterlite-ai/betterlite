@@ -4,7 +4,7 @@ use betterlite_core::api::responses_compact_call::call::CompactResponsesCall;
 use betterlite_core::api::responses_compact_call::deps::{
     CompactConfigFactory, CompactResponsesDeps,
 };
-use betterlite_core::api::responses_compact_http::service::ClientSource;
+use betterlite_core::api::responses_compact_http::service::{ClientSource, CompactTransport};
 use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use betterlite_models::decisions::Json;
 use betterlite_openai::response_events::{ReplyBody, ResponsesReply};
@@ -52,7 +52,7 @@ async fn run_once<S, F>(
     fixture: &mut Fixture,
 ) -> Result<RunOutcome, SdkHttpError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: CompactTransport>,
     F: CompactConfigFactory,
 {
     let request = compact_call(run, api_base);

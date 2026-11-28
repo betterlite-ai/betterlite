@@ -5,7 +5,7 @@ use serde_json::value::RawValue;
 use crate::aws_settings::pop_aws_auth_params;
 use crate::aws_settings::sources::Credentials;
 use crate::batch_status::handler::SIGNATURE_VERSION;
-use crate::image_call::plan::CredentialSource;
+use crate::credentials::CredentialSource;
 use crate::signing::request::AwsSignedRequest;
 use crate::signing::target::auth_settings;
 
@@ -29,7 +29,7 @@ pub async fn control_plane<Source, Factory>(
     factory: &Factory,
 ) -> Result<ControlPlane<Factory::Client>, BatchCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ControlPlaneFactory,
 {
     let mut parameters = kwargs.clone();

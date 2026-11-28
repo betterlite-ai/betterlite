@@ -1,11 +1,12 @@
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_models::decisions::Json;
 use secrecy::ExposeSecret as _;
 
 use crate::agent_platform_dispatch::context::headers_or_global;
 
 use super::call::CompletionCall;
-use super::context::{CallLogging, DispatchContext};
+use super::context::DispatchContext;
 use super::error::DispatchError;
 use super::handler::{ChatCompletionHandler, HandlerError};
 use super::logging;
@@ -19,7 +20,7 @@ pub fn dispatch<R>(
     tag: ChatConfigTag,
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Option<Result<R, DispatchError>> {
     match tag {
         ChatConfigTag::Databricks => Some(complete_databricks(context, handler, log)),
@@ -57,7 +58,7 @@ fn complete_cloud<R>(
     call: &CompletionCall,
     stream_record: bool,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<R, DispatchError> {
     let reply = handler.complete(call);
     if let Err(error) = &reply {
@@ -74,7 +75,7 @@ fn complete_cloud<R>(
 pub fn complete_databricks<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
 ) -> Result<R, DispatchError> {
     match databricks_call(context) {
         Ok(call) => complete_cloud(context, &call, true, handler, log),
@@ -84,7 +85,7 @@ pub fn complete_databricks<R>(
 
 // the post_call record LiteLLM writes before the handler error goes back unchanged
 fn log_failure(
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     context: &DispatchContext<'_>,
     call: &CompletionCall,
     error: &HandlerError,

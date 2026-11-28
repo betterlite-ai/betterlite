@@ -72,6 +72,7 @@ description: >-
   tests; unavailable selected Postgres fails. These tests fit the existing behavior-test allowance.
 scope:
   paths:
+    - "crates/betterlite-server/src/key_events/deleted.rs"
     - crates/betterlite-server/src/bulk_team_removal.rs
     - crates/betterlite-server/src/bulk_team_removal/**
     - crates/betterlite-server/Cargo.toml

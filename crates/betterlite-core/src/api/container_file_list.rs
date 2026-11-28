@@ -13,7 +13,9 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::records::ContainerFileListResponse;
 use betterlite_openai::containers::container_file_http::PreCallHook;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
-use betterlite_openai::containers::container_file_http::transport::ClientSource;
+use betterlite_openai::containers::container_file_http::transport::{
+    AsyncClient, BlockingClient, ClientSource,
+};
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -82,7 +84,7 @@ pub fn list_container_files<Source, Hook, Configs>(
     request: &ContainerFileListRequest<'_>,
 ) -> Result<ContainerFileListResponse, ContainerFileListFailure>
 where
-    Source: ClientSource,
+    Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>,
     Hook: PreCallHook,
     Configs: ContainerConfigLookup,
 {

@@ -23,8 +23,8 @@ use super::bedrock::agentcore_stream::transport::{
 };
 use super::bedrock::aws_settings::sources::Credentials;
 use super::bedrock::converse_call::transport::{ConverseClientFactory, StreamClient};
+use super::bedrock::credentials::CredentialSource;
 use super::bedrock::credentials::error::CredentialError;
-use super::bedrock::rerank::plan::CredentialSource;
 use super::bedrock::rerank::transport::{
     RerankHttpReply, RerankHttpRequest, RerankTransport, TransferError,
 };

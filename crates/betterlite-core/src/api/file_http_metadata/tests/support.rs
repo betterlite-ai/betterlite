@@ -123,7 +123,7 @@ impl Fixture {
     ) -> Result<MetadataValue, MetadataError>
     where
         C: MetadataConfig,
-        S: ClientSource,
+        S: ClientSource<Client: WriteTransport>,
     {
         let logger = |_details: &Json| -> Result<(), PrePostError> {
             events.push("log");
@@ -172,7 +172,7 @@ pub(crate) async fn run<C, S>(
 ) -> Result<MetadataValue, MetadataError>
 where
     C: MetadataConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     fixture.execute(deps, mode, call, events).await
 }

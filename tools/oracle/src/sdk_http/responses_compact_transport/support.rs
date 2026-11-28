@@ -8,7 +8,8 @@ use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_core::api::responses_compact_http::config::CompactConfig;
 use betterlite_core::api::responses_compact_http::error::CompactError;
 use betterlite_core::api::responses_compact_http::service::{
-    ClientKind, ClientSource, CompactCall, CompactDeps, LogContext, SharedSession, prepare, send,
+    ClientKind, ClientSource, CompactCall, CompactDeps, CompactTransport, LogContext,
+    SharedSession, prepare, send,
 };
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::proxy::ProxiedClient;
@@ -117,7 +118,7 @@ impl Fixture {
     ) -> Result<ResponsesReply, CompactError>
     where
         C: CompactConfig,
-        S: ClientSource,
+        S: ClientSource<Client: CompactTransport>,
     {
         let env = PrePostEnv {
             debug: DebugSettings::default(),

@@ -12,6 +12,7 @@ use event::LoggerEvent;
 
 use crate::audit::payload::StandardAuditLogPayload;
 use crate::cold_storage_key::ColdStorageTarget;
+use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::mcp_tool_hook::types::{McpPostCallResponse, McpToolHookCall};
 
 // CustomLogger's own body is pass, so a logger overrides only the events it handles
@@ -34,6 +35,11 @@ pub trait CallbackLogger: Send + Sync {
 
     // only the s3_v2 logger has a path and a partition granularity a cold-storage key can follow
     fn cold_storage_target(&self) -> Option<ColdStorageTarget> {
+        None
+    }
+
+    // only the Prometheus logger has increment_callback_logging_failure, so a failed call counts there
+    fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter> {
         None
     }
 

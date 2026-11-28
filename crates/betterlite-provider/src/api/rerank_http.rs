@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::time::{Duration, Instant};
 
+use betterlite_core::api::file_http_content::service::ClientSource;
 use betterlite_core::api::vector_store_http_write::error::handle_error;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -14,9 +15,8 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use url::Url;
 
-use self::client::RerankTransport as _;
 use self::client::{
-    ClientKind, ClientSource, RerankHttpRequest, SuppliedClient, client_kind, select_client,
+    ClientKind, RerankHttpRequest, RerankTransport, SuppliedClient, client_kind, select_client,
 };
 use self::convert::{Sent, provider_response, send_facts, status_facts};
 use self::error::RerankHttpError;
@@ -170,7 +170,7 @@ pub async fn rerank<C, S>(
 ) -> Result<RerankResponse, RerankHttpError<C::Error>>
 where
     C: BaseRerankConfig,
-    S: ClientSource,
+    S: ClientSource<Client: RerankTransport>,
 {
     let prepared = prepare(deps.config, &call, log)?;
     let kind = client_kind(&call.is_async);
