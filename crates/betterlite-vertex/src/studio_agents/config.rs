@@ -114,8 +114,7 @@ impl AgentsApiConfig for GeminiAgentsConfig {
         _api_base: &str,
         litellm_params: &Params,
     ) -> Result<PreparedRequest, GeminiAgentError> {
-        let params = agent_params(litellm_params)?;
-        Ok(prepared_request(collection_target(&params, &self.settings)))
+        collection_request(litellm_params, &self.settings)
     }
 
     fn transform_list_response(
@@ -201,6 +200,15 @@ impl AgentsConfig for GeminiAgentsConfig {
     ) -> Result<AgentVersionsPage, GeminiAgentError> {
         expected(response, AgentOperation::Versions, name)
     }
+}
+
+fn collection_request(
+    litellm_params: &Params,
+    settings: &Settings,
+) -> Result<PreparedRequest, GeminiAgentError> {
+    let params = agent_params(litellm_params)?;
+    let target = collection_target(&params, settings);
+    Ok(prepared_request(target))
 }
 
 fn prepared_request(target: AgentTarget) -> PreparedRequest {
