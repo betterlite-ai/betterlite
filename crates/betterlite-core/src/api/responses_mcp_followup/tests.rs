@@ -568,7 +568,7 @@ fn output_element_append_order() {
             name: None,
         },
     ];
-    add_mcp_output_elements_to_response(
+    append_mcp_output_items(
         &mut response,
         &fetched,
         &results,
