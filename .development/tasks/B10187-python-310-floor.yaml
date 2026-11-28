@@ -130,6 +130,8 @@ scope:
   - "crates/betterlite-python/python/betterlite/types/llms/openai/realtime/*"
   - "crates/betterlite-python/python/betterlite/realtime_api/main.py"
   - "crates/betterlite-python/python/betterlite/evals/_evals.py"
+  - "crates/betterlite-python/python/betterlite/evals/_runs.py"
+  - "crates/betterlite-python/python/betterlite/vector_stores/_manage.py"
   - crates/betterlite-python/ruff.toml
   - crates/betterlite-python/pyrightconfig.json
   - crates/betterlite-python/tests/pyrightconfig.json
