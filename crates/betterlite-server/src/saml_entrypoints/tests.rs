@@ -99,8 +99,7 @@ impl SamlCache for FakeCache {
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
         let request = (cache_key.to_owned(), ttl_seconds);
-        let mut writes = lock(&self.authn_requests);
-        writes.push(request);
+        lock(&self.authn_requests).push(request);
         Ok(())
     }
 }
@@ -263,18 +262,13 @@ async fn login_redirects_to_the_idp_with_the_state_cookie() {
         "{location}"
     );
     let xml = authn_request(&location);
-    assert!(
-        xml.contains(r#"AssertionConsumerServiceURL="http://proxy.test/sso/saml/callback""#),
-        "{xml}"
-    );
-    assert!(
-        xml.contains(r#"Destination="https://idp.example/sso""#),
-        "{xml}"
-    );
-    assert!(
-        xml.contains("<saml:Issuer>http://proxy.test/sso/saml/metadata</saml:Issuer>"),
-        "{xml}"
-    );
+    for needle in [
+        r#"AssertionConsumerServiceURL="http://proxy.test/sso/saml/callback""#,
+        r#"Destination="https://idp.example/sso""#,
+        "<saml:Issuer>http://proxy.test/sso/saml/metadata</saml:Issuer>",
+    ] {
+        assert!(xml.contains(needle), "{xml}");
+    }
     let cookie = header_of(&headers, header::SET_COOKIE);
     let request_id = request_id_of(&cookie);
     assert_eq!(
@@ -410,19 +404,19 @@ async fn metadata_uses_the_public_base_url_and_the_root_path() {
         "{metadata}"
     );
 
-    let router = routes(configured_state(IDP_XML, &[]));
+    let second_router = routes(configured_state(IDP_XML, &[]));
     let request = Request::builder()
         .uri("/sso/saml/metadata")
         .header(header::HOST, "proxy.test")
         .extension(RequestRootPath("/tenant".to_owned()))
         .body(Body::empty())
         .unwrap();
-    let (status, _headers, body) = call(router, request).await;
-    assert_eq!(status, StatusCode::OK);
-    let metadata = text_of(&body);
+    let (second_status, _, second_body) = call(second_router, request).await;
+    assert_eq!(second_status, StatusCode::OK);
+    let second_metadata = text_of(&second_body);
     assert!(
-        metadata.contains(r#"entityID="http://proxy.test/tenant/sso/saml/metadata""#),
-        "{metadata}"
+        second_metadata.contains(r#"entityID="http://proxy.test/tenant/sso/saml/metadata""#),
+        "{second_metadata}"
     );
 }
 
@@ -463,10 +457,10 @@ async fn a_provider_without_configuration_answers_501_on_both_routes() {
     let (status, _headers, body) = call(router, get("/sso/saml/login")).await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
     assert_eq!(text_of(&body), detail_body(UNCONFIGURED_DETAIL));
-    let router = routes(configured_state_empty());
-    let (status, _headers, body) = call(router, get("/sso/saml/metadata")).await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
-    assert_eq!(text_of(&body), detail_body(UNCONFIGURED_DETAIL));
+    let second_router = routes(configured_state_empty());
+    let (second_status, _, second_body) = call(second_router, get("/sso/saml/metadata")).await;
+    assert_eq!(second_status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(text_of(&second_body), detail_body(UNCONFIGURED_DETAIL));
 }
 
 fn configured_state_empty() -> SamlEntrypointsState {
@@ -544,10 +538,10 @@ async fn metadata_parse_and_fetch_failures_answer_the_unhandled_500() {
         cache,
         Arc::clone(&fetcher),
     );
-    let router = routes(state(provider, &[]));
-    let (status, _headers, body) = call(router, get("/sso/saml/login")).await;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(text_of(&body), INTERNAL_BODY);
+    let second_router = routes(state(provider, &[]));
+    let (second_status, _, second_body) = call(second_router, get("/sso/saml/login")).await;
+    assert_eq!(second_status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(text_of(&second_body), INTERNAL_BODY);
     assert_eq!(
         lock(&fetcher.calls).clone(),
         vec![String::from("https://idp.example/metadata.xml true")]

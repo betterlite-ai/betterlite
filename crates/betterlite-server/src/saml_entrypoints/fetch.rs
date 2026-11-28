@@ -95,6 +95,6 @@ fn next_location(current: &str, answered: &UpstreamResponse) -> Result<String, M
         })?;
     Url::parse(current)
         .and_then(|base| base.join(location))
-        .map(Url::into_string)
+        .map(String::from)
         .map_err(|_error| MetadataFetchError::InvalidUrl)
 }

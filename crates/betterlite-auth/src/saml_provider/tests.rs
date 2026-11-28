@@ -918,7 +918,7 @@ impl AuthCacheTier for TestTier {
     }
 }
 
-fn test_cache(recorded: &Arc<Mutex<Recorded>>) -> AuthCache {
+fn test_cache(recorded: &Arc<Mutex<Recorded>>) -> AuthCache<TestTier> {
     AuthCache {
         ordinary: TestTier {
             memory: Arc::new(TestMemory),
