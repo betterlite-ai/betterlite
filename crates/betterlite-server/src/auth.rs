@@ -55,6 +55,7 @@ pub mod virtual_key_routes;
 
 use std::{
     collections::BTreeSet,
+    future::ready,
     sync::{Arc, PoisonError},
 };
 
@@ -80,6 +81,7 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
+use futures_util::future::BoxFuture;
 use secrecy::{ExposeSecret as _, SecretString};
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -232,23 +234,29 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
-// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
-pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
+// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits this dispatch, which boxes each stage's own prefetch into the one future type
+pub(crate) fn prefetch_stage(
+    input: StageInput,
+) -> BoxFuture<'static, Result<StageInput, StageFailure>> {
     match input {
-        StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
-        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)).await,
-        StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
-        StageInput::JwtVerification(stage) => jwt_verification::prefetched(*stage).await,
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
-        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
-        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        other @ (StageInput::AuthTenantBudgets(_)
-        | StageInput::AuthOrgLookup(_)
-        | StageInput::AuthEndUsers(_)
-        | StageInput::ModelGrantIntersection(_)
-        | StageInput::AuthModelGrants(_)
-        | StageInput::EntityModelAccess(_)) => prefetch_remaining(other).await,
+        StageInput::AuthKeyLookup(stage) => Box::pin(auth_key_lookup::prefetch(*stage)),
+        StageInput::AuthIdentity(stage) => Box::pin(identity_store::prefetch(*stage)),
+        StageInput::JwtKeys(stage) => Box::pin(jwt_keys::prefetched(*stage)),
+        StageInput::JwtVerification(stage) => Box::pin(jwt_verification::prefetched(*stage)),
+        StageInput::AuthTagBudgets(stage) => Box::pin(auth_tag_budgets::prefetched(stage)),
+        StageInput::AuthKeyBudgets(stage) => Box::pin(auth_key_budgets::prefetched(stage)),
+        StageInput::AuthModelBudgets(stage) => Box::pin(auth_model_budgets::prefetched(stage)),
+        StageInput::TeamBudgetAdmission(stage) => {
+            Box::pin(team_budget_admission::prefetched(stage))
+        }
+        StageInput::AuthTenantBudgets(stage) => Box::pin(auth_tenant_budgets::prefetched(stage)),
+        StageInput::AuthOrgLookup(stage) => Box::pin(auth_org_lookup::prefetched(stage)),
+        StageInput::AuthEndUsers(stage) => Box::pin(auth_end_users::prefetched(stage)),
+        StageInput::ModelGrantIntersection(stage) => {
+            Box::pin(StageInput::prefetch_model_grants(stage))
+        }
+        StageInput::AuthModelGrants(stage) => Box::pin(auth_model_grants::prefetched(stage)),
+        StageInput::EntityModelAccess(stage) => Box::pin(entity_model_access::prefetched(stage)),
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
         | StageInput::TrustedNetwork(_)
@@ -259,20 +267,9 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
         | StageInput::OrganizationRoutePolicy(_)
-        | StageInput::AuthPolicySupport(_)) => Ok(other),
-    }
-}
-
-// the stages after the key fetch: a second dispatch keeps both matches under the cognitive-complexity limit
-async fn prefetch_remaining(input: StageInput) -> Result<StageInput, StageFailure> {
-    match input {
-        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
-        StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
-        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
-        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
-        StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
-        other => Ok(other),
+        | StageInput::AuthPolicySupport(_)) => {
+            Box::pin(ready(Ok::<StageInput, StageFailure>(other)))
+        }
     }
 }
 fn master_key_stage(
