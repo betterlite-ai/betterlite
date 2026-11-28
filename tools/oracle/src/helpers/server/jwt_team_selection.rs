@@ -59,7 +59,7 @@ async fn answer(scenario: &Scenario) -> HelperResult {
         aliases: scenario.aliases.clone(),
         events: std::sync::Mutex::new(Vec::new()),
     });
-    let lookup = lookup(&script, scenario.database);
+    let lookup = lookup(&script, scenario.database.unwrap_or(true));
     let claims_settings = claim_settings(&scenario.fields);
     let document = Document {
         json: scenario.token.clone().unwrap_or(Value::Null),
@@ -82,7 +82,7 @@ async fn answer(scenario: &Scenario) -> HelperResult {
                 &claims,
                 &lookup,
                 &settings,
-                scenario.fields.team_id_upsert.then_some(true),
+                scenario.fields.team_id_upsert,
             )
             .await
             .map(|(team_id, _team)| json!({"team_id": team_id})),
@@ -100,8 +100,8 @@ async fn answer(scenario: &Scenario) -> HelperResult {
             validate_object_id(
                 scenario.user_id.as_deref(),
                 scenario.team_id.as_deref(),
-                scenario.enforce_rbac,
-                scenario.is_proxy_admin,
+                scenario.enforce_rbac.unwrap_or(false),
+                scenario.is_proxy_admin.unwrap_or(false),
             )
             .map(|()| json!({"ok": true})),
             &script,

@@ -49,22 +49,20 @@ pub(super) struct Scenario {
     pub(super) route: String,
     #[serde(default)]
     pub(super) request_method: Option<String>,
+    // an absent switch keeps the false default, as LiteLLM_JWTAuth does; Option<bool> keeps these
+    // wire records under clippy's struct_excessive_bools limit
     #[serde(default)]
-    pub(super) registered_route: bool,
+    pub(super) registered_route: Option<bool>,
     #[serde(default)]
     pub(super) user_id: Option<String>,
     #[serde(default)]
     pub(super) team_id: Option<String>,
     #[serde(default)]
-    pub(super) enforce_rbac: bool,
+    pub(super) enforce_rbac: Option<bool>,
     #[serde(default)]
-    pub(super) is_proxy_admin: bool,
-    #[serde(default = "database_default")]
-    pub(super) database: bool,
-}
-
-fn database_default() -> bool {
-    true
+    pub(super) is_proxy_admin: Option<bool>,
+    #[serde(default)]
+    pub(super) database: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -75,10 +73,10 @@ pub(super) struct Fields {
     pub(super) team_id_default: Option<String>,
     pub(super) team_alias_jwt_field: Option<String>,
     pub(super) agent_id_jwt_field: Option<String>,
-    pub(super) team_id_upsert: bool,
-    pub(super) team_claim_fallback: bool,
-    pub(super) fallback_to_db_teams: bool,
-    pub(super) enforce_team_based_model_access: bool,
+    pub(super) team_id_upsert: Option<bool>,
+    pub(super) team_claim_fallback: Option<bool>,
+    pub(super) fallback_to_db_teams: Option<bool>,
+    pub(super) enforce_team_based_model_access: Option<bool>,
     // absent keeps the pinned default list, as LiteLLM_JWTAuth's own default does
     pub(super) team_allowed_routes: Option<Vec<String>>,
 }
@@ -100,10 +98,10 @@ pub(super) fn selection_settings(fields: &Fields) -> SelectionSettings {
     settings.teams.team_ids_jwt_field = fields.team_ids_jwt_field.clone();
     settings.teams.team_id_default = fields.team_id_default.clone();
     settings.teams.team_alias_jwt_field = fields.team_alias_jwt_field.clone();
-    settings.teams.team_id_upsert = fields.team_id_upsert;
-    settings.routing.team_claim_fallback = fields.team_claim_fallback;
-    settings.routing.fallback_to_db_teams = fields.fallback_to_db_teams;
-    settings.scopes.team_model_access = fields.enforce_team_based_model_access;
+    settings.teams.team_id_upsert = fields.team_id_upsert.unwrap_or(false);
+    settings.routing.team_claim_fallback = fields.team_claim_fallback.unwrap_or(false);
+    settings.routing.fallback_to_db_teams = fields.fallback_to_db_teams.unwrap_or(false);
+    settings.scopes.team_model_access = fields.enforce_team_based_model_access.unwrap_or(false);
     if let Some(routes) = &fields.team_allowed_routes {
         settings.routes.team_allowed_routes.clone_from(routes);
     }
@@ -112,7 +110,7 @@ pub(super) fn selection_settings(fields: &Fields) -> SelectionSettings {
 
 // the case sets one protected route; the fake registry LiteLLM reads accepts the same route and method
 pub(super) fn registry(scenario: &Scenario) -> PassThroughRegistry {
-    if !scenario.registered_route {
+    if !scenario.registered_route.unwrap_or(false) {
         return PassThroughRegistry {
             root_path: String::new(),
             registrations: Vec::new(),
