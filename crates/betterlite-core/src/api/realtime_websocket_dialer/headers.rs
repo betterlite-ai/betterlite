@@ -22,12 +22,13 @@ pub(super) fn dialer_headers(
         HeaderSource::Backend(headers) => {
             for (name, value) in headers {
                 let Json::Text(text) = value else {
-                    return Err(OpenFailure::new(
-                        Class::ValueError,
-                        DialError::Other {
+                    return Err(OpenFailure {
+                        class: Class::ValueError,
+                        status: None,
+                        error: DialError::Other {
                             message: format!("the realtime backend header {name} is not a string"),
                         },
-                    ));
+                    });
                 };
                 pairs.push(parse_pair(name, text)?);
             }
@@ -42,17 +43,16 @@ pub(super) fn dialer_headers(
 }
 
 fn parse_pair(name: &str, text: &str) -> Result<(HeaderName, HeaderValue), OpenFailure> {
-    let parsed_name =
-        HeaderName::from_bytes(name.as_bytes()).map_err(|_error| invalid_header(name))?;
-    let parsed_value = HeaderValue::from_str(text).map_err(|_error| invalid_header(name))?;
-    Ok((parsed_name, parsed_value))
-}
-
-fn invalid_header(name: &str) -> OpenFailure {
-    OpenFailure::new(
-        Class::InvalidUri,
-        DialError::WebSocket {
-            message: format!("the realtime backend header {name} is not valid"),
-        },
-    )
+    let parsed_name = HeaderName::from_bytes(name.as_bytes());
+    let parsed_value = HeaderValue::from_str(text);
+    match (parsed_name, parsed_value) {
+        (Ok(header_name), Ok(header_value)) => Ok((header_name, header_value)),
+        (Err(_), _) | (_, Err(_)) => Err(OpenFailure {
+            class: Class::InvalidUri,
+            status: None,
+            error: DialError::WebSocket {
+                message: format!("the realtime backend header {name} is not valid"),
+            },
+        }),
+    }
 }

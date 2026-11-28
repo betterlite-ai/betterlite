@@ -82,8 +82,14 @@ impl RealtimeWebSocketDialer for WebSocketDialer {
 #[async_trait]
 impl RealtimeProbeDialer for WebSocketDialer {
     async fn probe(&self, connection: &ProbeConnection) -> Result<(), ProbeDialError> {
-        let headers = dialer_headers(HeaderSource::Probe(&connection.headers))
-            .map_err(OpenFailure::into_probe)?;
+        let headers =
+            dialer_headers(HeaderSource::Probe(&connection.headers)).map_err(|failure| {
+                ProbeDialError {
+                    class: failure.class.text().to_owned(),
+                    message: failure.error.to_string(),
+                    status: failure.status,
+                }
+            })?;
         let opened = self
             .open(&OpenRequest {
                 url: &connection.url,
@@ -94,7 +100,11 @@ impl RealtimeProbeDialer for WebSocketDialer {
                 keepalive: None,
             })
             .await
-            .map_err(OpenFailure::into_probe)?;
+            .map_err(|failure| ProbeDialError {
+                class: failure.class.text().to_owned(),
+                message: failure.error.to_string(),
+                status: failure.status,
+            })?;
         // `async with websockets.connect(...)` closes 1000 on the way out, after the health check answered
         drop(opened.sender.close(1000, "").await);
         Ok(())
@@ -108,12 +118,13 @@ impl WebSocketDialer {
         let plain = url.scheme() == "ws";
         let tls = match request.ssl {
             RealtimeSsl::Shared(_) | RealtimeSsl::Insecure if plain => {
-                return Err(OpenFailure::new(
-                    Class::ValueError,
-                    DialError::Other {
+                return Err(OpenFailure {
+                    class: Class::ValueError,
+                    status: None,
+                    error: DialError::Other {
                         message: "ssl argument is incompatible with a ws:// URI".to_owned(),
                     },
-                ));
+                });
             }
             RealtimeSsl::Insecure => Some(Arc::new(
                 websocket_client_config(&Verification::Disabled).map_err(OpenFailure::from)?,
@@ -145,47 +156,50 @@ impl WebSocketDialer {
             None => Ok(None),
             Some(ProxyRoute::Forward(server)) => Ok(Some(Arc::clone(server))),
             Some(ProxyRoute::Unsupported { scheme }) if scheme.starts_with("socks") => {
-                Err(OpenFailure::new(
-                    Class::ImportError,
-                    DialError::Other {
+                Err(OpenFailure {
+                    class: Class::ImportError,
+                    status: None,
+                    error: DialError::Other {
                         message: "python-socks is required to use a SOCKS proxy".to_owned(),
                     },
-                ))
+                })
             }
-            Some(ProxyRoute::Unsupported { scheme }) => Err(OpenFailure::new(
-                Class::InvalidProxy,
-                DialError::Other {
+            Some(ProxyRoute::Unsupported { scheme }) => Err(OpenFailure {
+                class: Class::InvalidProxy,
+                status: None,
+                error: DialError::Other {
                     message: format!("websockets can't connect through a {scheme} proxy"),
                 },
-            )),
-            Some(ProxyRoute::Invalid { name }) => Err(OpenFailure::new(
-                Class::InvalidProxy,
-                DialError::WebSocket {
+            }),
+            Some(ProxyRoute::Invalid { name }) => Err(OpenFailure {
+                class: Class::InvalidProxy,
+                status: None,
+                error: DialError::WebSocket {
                     message: format!("the {name} proxy isn't a valid proxy"),
                 },
-            )),
+            }),
         }
     }
 }
 
 // websockets.connect's URI check: only a ws or wss URL reaches a socket
 fn websocket_url(raw: &str) -> Result<Url, OpenFailure> {
-    let url = Url::parse(raw).map_err(|error| {
-        OpenFailure::new(
-            Class::InvalidUri,
-            DialError::WebSocket {
-                message: error.to_string(),
-            },
-        )
+    let url = Url::parse(raw).map_err(|error| OpenFailure {
+        class: Class::InvalidUri,
+        status: None,
+        error: DialError::WebSocket {
+            message: error.to_string(),
+        },
     })?;
     let scheme = url.scheme();
     if scheme != "ws" && scheme != "wss" {
-        return Err(OpenFailure::new(
-            Class::InvalidUri,
-            DialError::WebSocket {
+        return Err(OpenFailure {
+            class: Class::InvalidUri,
+            status: None,
+            error: DialError::WebSocket {
                 message: format!("scheme isn't ws or wss: '{scheme}'"),
             },
-        ));
+        });
     }
     Ok(url)
 }

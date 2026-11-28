@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use betterlite_http::websocket_client::connection::{
-    PeerClose, WebSocketReceive, WebSocketReceiver, WebSocketSender,
+    WebSocketReceive, WebSocketReceiver, WebSocketSender,
 };
 use betterlite_http::websocket_client::error::WebSocketClientError;
 use betterlite_openai::realtime::message_cap::{
@@ -64,12 +64,32 @@ impl RealtimeBackendSource for DialedSource {
         match self.receiver.recv().await {
             Ok(WebSocketReceive::Text(text)) => Ok(decode_text(text, decode)),
             Ok(WebSocketReceive::Binary(bytes)) => decode_binary(bytes.to_vec(), decode),
-            Ok(WebSocketReceive::Close(close)) => Err(received_close(close)),
-            Ok(WebSocketReceive::End) => Err(ended_without_close()),
+            Ok(WebSocketReceive::Close(close)) => {
+                let message = format!(
+                    "received {}; no close frame sent",
+                    close_text(close.code, &close.reason)
+                );
+                Err(RelayReceiveError::Closed(ConnectionClosed {
+                    received: Some(CloseFrame {
+                        code: close.code,
+                        reason: close.reason,
+                    }),
+                    message,
+                }))
+            }
+            Ok(WebSocketReceive::End) => Err(RelayReceiveError::Closed(ConnectionClosed {
+                received: None,
+                message: NO_CLOSE.to_owned(),
+            })),
             Err(WebSocketClientError::Capacity { size, max_size }) => {
                 self.close_oversized(size, max_size).await
             }
-            Err(WebSocketClientError::KeepaliveTimeout) => Err(keepalive_closed()),
+            Err(WebSocketClientError::KeepaliveTimeout) => {
+                Err(RelayReceiveError::Closed(ConnectionClosed {
+                    received: None,
+                    message: KEEPALIVE_CLOSE.to_owned(),
+                }))
+            }
             Err(error) => Err(RelayReceiveError::Failed(WebSocketError::from(error))),
         }
     }
@@ -127,34 +147,6 @@ fn decode_binary(
             message: "the realtime backend sent a binary frame that is not UTF-8".to_owned(),
         })),
     }
-}
-
-fn received_close(close: PeerClose) -> RelayReceiveError {
-    let message = format!(
-        "received {}; no close frame sent",
-        close_text(close.code, &close.reason)
-    );
-    let received = Some(CloseFrame {
-        code: close.code,
-        reason: close.reason,
-    });
-    RelayReceiveError::Closed(ConnectionClosed { received, message })
-}
-
-fn ended_without_close() -> RelayReceiveError {
-    let message = NO_CLOSE.to_owned();
-    RelayReceiveError::Closed(ConnectionClosed {
-        received: None,
-        message,
-    })
-}
-
-fn keepalive_closed() -> RelayReceiveError {
-    let message = KEEPALIVE_CLOSE.to_owned();
-    RelayReceiveError::Closed(ConnectionClosed {
-        received: None,
-        message,
-    })
 }
 
 // a client failure reaches the relay as the contract's message error
