@@ -3,6 +3,7 @@
     reason = "A helper carries arbitrary provider JSON, so its input and results are serde_json::Value."
 )]
 
+pub mod entry_point;
 pub mod error;
 pub mod group;
 pub mod helper;
