@@ -21,7 +21,9 @@ use self::request::{
     pre_call_record, read_params, request_headers,
 };
 use self::response::transform_reply;
-use self::transport::{ClientSource, ContainerHttpRequest, Selected, TransferError};
+use self::transport::{
+    AsyncClient, BlockingClient, ClientSource, ContainerHttpRequest, Selected, TransferError,
+};
 use crate::api::container_contracts::catalog::{
     CatalogError, ContainerEndpoint, container_endpoints,
 };
@@ -140,7 +142,9 @@ fn find_endpoint(name: &str) -> Result<ContainerEndpoint, ContainerFileHttpError
         })
 }
 
-impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Hook> {
+impl<Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>, Hook: PreCallHook>
+    GenericContainerHandler<Source, Hook>
+{
     pub fn handle(&self, call: &ContainerFileHttpCall<'_, Source>) -> ReplyResult {
         let waker = Waker::noop();
         let mut context = Context::from_waker(waker);

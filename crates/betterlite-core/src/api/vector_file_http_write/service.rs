@@ -13,8 +13,10 @@ use http::{HeaderMap as HttpHeaders, Method};
 use indexmap::IndexMap;
 use url::Url;
 
-use crate::api::vector_store_http_write::error::{ClientError, status_facts};
-use crate::api::vector_store_http_write::service::{ClientKind, Operation};
+use crate::api::vector_store_http_write::error::status_facts;
+use crate::api::vector_store_http_write::service::{
+    ClientKind, ClientSource, Operation, SuppliedClient,
+};
 
 use self::facts::Sent;
 use self::request::{request_parts, select_client, validated_headers, wire_headers};
@@ -24,11 +26,6 @@ use super::error::FileWriteError;
 mod facts;
 mod proxied;
 mod request;
-
-pub struct SuppliedClient<'client, Client> {
-    pub kind: ClientKind,
-    pub transport: &'client Client,
-}
 
 // httpx's request as the handler builds it: a body for an update, query params for a delete, and the timeout it was handed
 pub struct WriteRequest {
@@ -48,12 +45,6 @@ pub trait WriteTransport: Send + Sync {
         &self,
         request: WriteRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: WriteTransport;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
 
 pub struct WriteDeps<'deps, C: FileWriteConfig, S: ClientSource> {
@@ -161,7 +152,7 @@ const fn http_method(operation: Operation) -> Method {
 pub async fn send<C, S>(prepared: PreparedWrite<'_, C, S>) -> Result<Json, FileWriteError>
 where
     C: FileWriteConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let PreparedWrite {
         config,

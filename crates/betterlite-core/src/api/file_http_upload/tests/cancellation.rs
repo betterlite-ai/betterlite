@@ -9,10 +9,9 @@ use http::HeaderMap;
 use tokio::time::timeout;
 
 use crate::api::file_http_upload::plan::{MediaPlan, UploadPlan};
-use crate::api::file_http_upload::service::{
-    ClientSource, Mode, UploadBody, UploadRequest, UploadTransport,
-};
+use crate::api::file_http_upload::service::{Mode, UploadBody, UploadRequest, UploadTransport};
 use crate::api::vector_store_http_write::error::ClientError;
+use crate::api::vector_store_http_write::service::ClientSource;
 
 use super::{API_BASE, Harness, RunCall, create_call, params};
 

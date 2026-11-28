@@ -16,8 +16,8 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use url::Url;
 
-use crate::api::vector_store_http_write::error::{ClientError, handle_error, status_facts};
-use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
+use crate::api::vector_store_http_write::error::{handle_error, status_facts};
+use crate::api::vector_store_http_write::service::{ClientKind, ClientSource, SuppliedClient};
 
 use super::config::{QueryParams, ReadConfig, ReadParams};
 use super::error::ReadError;
@@ -49,12 +49,6 @@ pub trait ReadTransport: Send + Sync {
         &self,
         request: ReadRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
-}
-
-pub trait ClientSource: Send + Sync {
-    type Client: ReadTransport;
-
-    fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>;
 }
 
 pub struct ReadDeps<'deps, C: ReadConfig, S: ClientSource> {
@@ -221,7 +215,7 @@ fn wire_headers(headers: &OpenAiHeaders) -> Result<HttpHeaders, ReadError> {
 pub async fn send<C, S>(prepared: PreparedRead<'_, C, S>) -> Result<Json, ReadError>
 where
     C: ReadConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     let PreparedRead {
         config,
