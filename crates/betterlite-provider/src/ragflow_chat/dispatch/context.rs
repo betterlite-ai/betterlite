@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -15,11 +13,6 @@ pub struct DispatchGlobals<'settings> {
     pub api_base: Option<&'settings str>,
     pub api_key: Option<&'settings SecretString>,
     pub headers: Option<&'settings BTreeMap<String, String>>,
-}
-
-pub struct CallLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
 }
 
 pub struct DispatchContext<'request> {

@@ -25,6 +25,7 @@ use serde::de::DeserializeOwned;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::endpoints::passthrough_config_reads::caller::CallerAccess;
 use crate::endpoints::passthrough_config_reads::ports::ConfigEndpointsSource;
 use crate::endpoints::passthrough_config_reads::ports::GeneralSettingsReader;
@@ -247,7 +248,7 @@ pub(crate) fn admin() -> AuthContext {
 }
 
 pub(crate) fn master_key() -> AuthContext {
-    caller("master_key", Vec::new())
+    master_caller()
 }
 
 pub(crate) fn viewer() -> AuthContext {

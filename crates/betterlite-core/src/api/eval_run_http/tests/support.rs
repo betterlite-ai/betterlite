@@ -11,6 +11,7 @@ use betterlite_http_fixture::error::FixtureError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::request::Request;
 use betterlite_http_fixture::server::{Serving, serve};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -37,7 +38,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 
 use crate::api::eval_http::error::EvalHttpError;
-use crate::api::eval_http::exchange::{EvalConnection, EvalLogging};
+use crate::api::eval_http::exchange::EvalConnection;
 use crate::api::eval_run_http::{
     cancel_run_handler, create_run_handler, delete_run_handler, get_run_handler, list_runs_handler,
 };
@@ -427,7 +428,7 @@ pub(crate) enum Call<'call> {
 pub(crate) async fn run(bench: &mut Bench, call: Call<'_>) -> Result<Answer, EvalHttpError> {
     let env = bench.fixture.env.pre_post();
     let connection = EvalConnection { config: &bench.config, client: &bench.client, url: &bench.url, headers: &bench.headers };
-    let mut log = EvalLogging { state: &mut bench.fixture.state, env: &env };
+    let mut log = LogContext { state: &mut bench.fixture.state, env: &env };
     match call {
         Call::Create { timeout, body } => Ok(Answer::Run(Box::new(create_run_handler(&connection, &mut log, timeout, body).await?))),
         Call::List { query } => Ok(Answer::Runs(Box::new(list_runs_handler(&connection, &mut log, query).await?))),

@@ -9,9 +9,6 @@ use thiserror::Error;
 
 use crate::tracing_routes::receiver::TraceRuntime;
 
-// the subject the master-key stage stamps; LiteLLM authenticates the master key as PROXY_ADMIN
-const MASTER_KEY_SUBJECT: &str = "master_key";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tenant {
     pub team_id: String,
@@ -54,9 +51,7 @@ pub struct TraceAuth {
 impl TraceAuth {
     #[must_use]
     pub fn from_principal(principal: &Principal) -> Self {
-        let role = if principal.subject == MASTER_KEY_SUBJECT
-            || principal.roles.contains(&Role::PlatformAdmin)
-        {
+        let role = if principal.roles.contains(&Role::PlatformAdmin) {
             TraceRole::Admin
         } else if principal.roles.contains(&Role::PlatformViewer) {
             TraceRole::AdminViewOnly

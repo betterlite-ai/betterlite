@@ -1,0 +1,13 @@
+# enforce_user_param rejects a POST LLM request that names no user, reject_clientside_metadata_tags
+# refuses a request whose metadata carries tags, and max_budget caps the proxy's global spend.
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  enforce_user_param: true
+  reject_clientside_metadata_tags: false
+litellm_settings:
+  max_budget: 25.5
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY

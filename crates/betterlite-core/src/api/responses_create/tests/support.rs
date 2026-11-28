@@ -42,7 +42,7 @@ use crate::api::responses_agentic_execution::executor::{
     AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
 };
 use crate::api::responses_compact_http::error::ConfigFailure;
-use crate::api::responses_compact_http::service::SharedSession;
+use crate::api::responses_compact_http::service::{ClientSource, SharedSession};
 use crate::api::responses_create::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
 use crate::api::responses_create::deps::{
     ConfigRequest, CreateCapabilities, CreateConfigFactory, PromptSource, ResponsesCreateDeps,
@@ -56,7 +56,7 @@ use crate::api::responses_create_http::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, Headers, Signed,
 };
 use crate::api::responses_create_http::service::{
-    ClientSource, CreateHooks, CreateRequest, CreateTransport, SentReply,
+    CreateHooks, CreateRequest, CreateTransport, SentReply,
 };
 use crate::api::responses_hook_policy::callbacks::{
     CallbackLists, DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,

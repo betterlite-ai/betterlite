@@ -2,14 +2,13 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 
 use betterlite_config::sections::hosted_platform_keys::Settings as SectionSettings;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_openai::fireworks_ai_chat_params::FireworksCapabilities;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::hosted_platform_dispatch::chat::dispatch;
-use betterlite_provider::hosted_platform_dispatch::context::{
-    CallLogging, DispatchContext, DispatchSettings,
-};
+use betterlite_provider::hosted_platform_dispatch::context::{DispatchContext, DispatchSettings};
 use betterlite_provider::hosted_platform_dispatch::error::DispatchError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
@@ -45,7 +44,7 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let prepared = prepare(case)?;
     let (mut state, prepost) = logging(&redactor)?;
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &prepost,
     };
@@ -84,7 +83,7 @@ fn call_arm(
     runtime: &Runtime,
     case: &Case,
     prepared: &Prepared,
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     handler: &Recorder,
 ) -> Result<Result<String, DispatchError>, Box<HelperError>> {
     let tag = case.provider.chat_tag();

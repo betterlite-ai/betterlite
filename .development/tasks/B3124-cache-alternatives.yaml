@@ -83,6 +83,7 @@ description: >-
 
 scope:
   paths:
+    - deny.toml
     - crates/betterlite-server/src/routing/cache_alternatives.rs
     - crates/betterlite-server/src/routing/cache_alternatives/**
     - tools/oracle/cases/helpers/cache-alternatives/**

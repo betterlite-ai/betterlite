@@ -30,7 +30,6 @@ mod validation;
 
 const ADMIN_REQUIRED: &str = "Admin access required to update cache settings";
 const CHANGED_BY_HEADER: &str = "litellm-changed-by";
-const MASTER_KEY_SUBJECT: &str = "master_key";
 const NO_DATABASE: &str = "Database not connected. Please connect a database.";
 const STORE_MODEL_IN_DB_REQUIRED: &str =
     "Set `'STORE_MODEL_IN_DB='True'` in your env to enable this feature.";
@@ -81,7 +80,7 @@ async fn update_cache_settings(
     let Some(Extension(context)) = caller else {
         return unauthenticated();
     };
-    if !is_proxy_admin(&context) {
+    if !context.principal.roles.contains(&Role::PlatformAdmin) {
         return forbidden();
     }
     let settings = match validation::decode_request(&body) {
@@ -114,11 +113,6 @@ async fn update_cache_settings(
         Ok(response) => response,
         Err(error) => failure(&error),
     }
-}
-
-fn is_proxy_admin(caller: &AuthContext) -> bool {
-    caller.principal.subject == MASTER_KEY_SUBJECT
-        || caller.principal.roles.contains(&Role::PlatformAdmin)
 }
 
 fn forbidden() -> Response {

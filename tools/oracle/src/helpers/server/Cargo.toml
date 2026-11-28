@@ -41,6 +41,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../../../../crates/betterlite-redis" }
 betterlite-reporting = { path = "../../../../../crates/betterlite-reporting" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
+betterlite-router = { path = "../../../../../crates/betterlite-router" }
 betterlite-routes = { path = "../../../../../crates/betterlite-routes" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
@@ -73,6 +74,7 @@ tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

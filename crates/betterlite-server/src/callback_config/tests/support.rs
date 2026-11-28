@@ -31,6 +31,7 @@ use crate::audit_events::sink::{
     AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError,
 };
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::cache_settings_update::route::StoreModelInDbSettings;
 use crate::callback_config::ports::{
     AlertingState, CallbackClock, ConfigSaver, RouterSettingsReader, RuntimeCallback,
@@ -80,7 +81,7 @@ pub(crate) fn principal(subject: &str) -> Principal {
 }
 
 pub(crate) fn master_key() -> Principal {
-    principal("master_key")
+    master_caller().principal
 }
 
 pub(crate) fn internal_key() -> Principal {

@@ -1,0 +1,53 @@
+kind: helper
+name: auth-pricing-auth-required-user
+call:
+  auth_pricing:
+    calls:
+      # the two request checks report their own envelopes in the same call
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {metadata: {tags: [client]}}
+        enforce: true
+        reject: true
+      # a user key satisfies the user check, the tags check still rejects
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1, metadata: {tags: [client]}}
+        enforce: true
+        reject: true
+      # both settings off on a plain POST
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: gpt-4o}
+        enforce: false
+        reject: false
+      # the user check alone on an embeddings route
+      - function: request_checks
+        router:
+          cache: {}
+        route: /v1/embeddings
+        method: POST
+        body: {model: text-embedding-3-small}
+        enforce: true
+        reject: false
+      # a GET skips the user check, while the tags check reads the body regardless of method
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: GET
+        body: {metadata: {tags: [client]}}
+        enforce: true
+        reject: true
+env: {}
+compare:
+  ignore: []

@@ -30,7 +30,8 @@ use tokio::sync::RwLock;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
-use crate::routes::prompts::read::{MASTER_KEY_SUBJECT, PromptReadState, routes};
+use crate::auth::auth_key_lookup::tests::master_caller;
+use crate::routes::prompts::read::{PromptReadState, routes};
 
 #[derive(Debug, Error)]
 #[error("the fake prompt table reports a failure")]
@@ -163,7 +164,7 @@ pub(super) fn role_context(roles: &[Role]) -> AuthContext {
 }
 
 pub(super) fn master_context() -> AuthContext {
-    context(MASTER_KEY_SUBJECT, &[], SourceKey::default())
+    master_caller()
 }
 
 pub(super) fn ordinary_context() -> AuthContext {

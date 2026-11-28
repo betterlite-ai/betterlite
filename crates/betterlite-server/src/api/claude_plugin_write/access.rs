@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::Extension;
 use betterlite_core::api::api_boundaries::{ApiBoundariesInput, JsonBoundary};
 use betterlite_core::api::claude_plugin_policy::{
-    ClaudePluginPolicyError, PluginCaller, plugin_not_found_error, require_proxy_admin,
+    PluginCaller, plugin_not_found_error, require_proxy_admin,
 };
 use betterlite_core::api::claude_plugin_write::ClaudePluginWriteInput;
 use betterlite_db::auxiliary_repository::repository::TableError;
@@ -12,11 +12,6 @@ use super::ClaudePluginWriteState;
 use super::error::{BackendSource, ClaudePluginWriteError};
 use super::store::ClaudePluginStore;
 use crate::auth::auth_identity::AuthContext;
-
-// LiteLLM authenticates the master key as PROXY_ADMIN; B003's stage carries it as this subject
-const MASTER_KEY_SUBJECT: &str = "master_key";
-// LiteLLM's litellm_proxy_admin_name, which the master key leaves in created_by
-const MASTER_KEY_USER_ID: &str = "default_user_id";
 
 pub(super) struct Gate {
     pub(super) caller: AuthContext,
@@ -30,7 +25,11 @@ pub(super) fn gate(
     let Some(Extension(caller)) = extension else {
         return Err(ClaudePluginWriteError::Unauthenticated);
     };
-    require_admin(&caller)?;
+    require_proxy_admin(Some(&PluginCaller {
+        principal: caller.principal.clone(),
+        object_permission: None,
+        team_object_permission: None,
+    }))?;
     let store = state.connected_store()?;
     Ok(Gate { caller, store })
 }
@@ -45,26 +44,9 @@ pub(super) fn prepare(
     Ok(checked)
 }
 
-// is_proxy_admin checks the PROXY_ADMIN role, which the master key's stage does not carry here
-fn require_admin(context: &AuthContext) -> Result<(), ClaudePluginPolicyError> {
-    if context.principal.subject == MASTER_KEY_SUBJECT {
-        return Ok(());
-    }
-    require_proxy_admin(Some(&PluginCaller {
-        principal: context.principal.clone(),
-        object_permission: None,
-        team_object_permission: None,
-    }))
-}
-
+// ast-grep-ignore: no-one-line-functions - B10171 cannot change flow.rs, the only caller
 pub(super) fn creator_id(context: &AuthContext) -> Option<String> {
-    if let Some(user) = context.principal.user.as_ref() {
-        return Some(user.id.clone());
-    }
-    if context.principal.subject == MASTER_KEY_SUBJECT {
-        return Some(MASTER_KEY_USER_ID.to_owned());
-    }
-    None
+    context.principal.user.as_ref().map(|user| user.id.clone())
 }
 
 pub(super) const fn check_body(

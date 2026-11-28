@@ -9,6 +9,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 
 use super::QueueLateFailure;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::first_byte_sse::LateFailureHook as _;
 use crate::invitation_routes::state::QueueFailureHook;
 use crate::sse_error_frames::SseFailure;
@@ -38,10 +39,7 @@ impl QueueFailureHook for RecordingHook {
 }
 
 fn principal() -> Principal {
-    serde_json::from_str(
-        r#"{"principal_type":"service_account","subject":"master_key","auth_method":"api_key"}"#,
-    )
-    .expect("a principal")
+    master_caller().principal
 }
 
 fn failure() -> SseFailure {

@@ -6,7 +6,6 @@ pub mod health;
 pub mod message;
 pub mod sender;
 pub mod settings;
-pub mod signing;
 
 pub(crate) mod tests;
 

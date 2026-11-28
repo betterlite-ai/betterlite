@@ -14,13 +14,13 @@ use super::error::VectorFileReadError;
 use crate::api::vector_file_http_read::config::{QueryParams, ReadConfig, ReadParams};
 use crate::api::vector_file_http_read::error::PrepareFailure;
 use crate::api::vector_file_http_read::service::{
-    ClientSource, LogContext, Operation, ReadDeps, ReadTarget, prepare, send,
+    LogContext, Operation, ReadDeps, ReadTarget, ReadTransport, prepare, send,
 };
 use crate::api::vector_file_provider::{
     CredentialLookup, OperationKwargs, ensure_provider, prepare_registry_credentials,
 };
 use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
-use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
+use crate::api::vector_store_http_write::service::{ClientKind, ClientSource, SuppliedClient};
 
 mod log;
 
@@ -135,7 +135,7 @@ pub(super) async fn read_attachment<S>(
     flag: &str,
 ) -> Result<Json, VectorFileReadError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     let mut kwargs = ctx.call.kwargs.clone();
     kwargs.shift_remove(flag);
@@ -204,7 +204,7 @@ async fn read_send<S>(
     handler: &HandlerCall<'_>,
 ) -> Result<Json, VectorFileReadError>
 where
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     let target = ReadTarget {
         vector_store_id: handler.vector_store_id,

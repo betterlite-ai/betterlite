@@ -37,6 +37,7 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::guardrails::admin_reads::state::{TeamIdsFuture, UserTeams};
 
 use super::error::SubmissionError;

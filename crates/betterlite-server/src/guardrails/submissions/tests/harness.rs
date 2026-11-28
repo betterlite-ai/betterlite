@@ -286,7 +286,7 @@ fn principal(subject: &str, roles: Vec<Role>) -> AuthContext {
 }
 
 pub(super) fn admin() -> AuthContext {
-    principal("master_key", Vec::new())
+    master_caller()
 }
 
 pub(super) fn role_admin() -> AuthContext {

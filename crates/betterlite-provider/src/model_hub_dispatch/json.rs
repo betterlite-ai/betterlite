@@ -1,5 +1,6 @@
-use super::{CallLogging, HubDispatchError};
+use super::HubDispatchError;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
@@ -48,7 +49,7 @@ pub const fn additional_args(
 }
 // LiteLLM logs the opened stream itself as the original response; the stream is not rendered here
 pub fn log_opened_stream(
-    log: &mut CallLogging<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     messages: &[Message],
     body: Option<RawBody>,
 ) -> Result<(), HubDispatchError> {

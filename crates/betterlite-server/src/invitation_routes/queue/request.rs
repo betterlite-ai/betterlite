@@ -17,11 +17,6 @@ use crate::pre_call::rewrites::apply_overrides;
 const STRIP_STREAM_USAGE: &str = "_litellm_strip_stream_usage";
 const HOST: &str = "host";
 const AUTHORIZATION: &str = "authorization";
-const MASTER_KEY_SUBJECT: &str = "master_key";
-// LiteLLM's litellm_proxy_admin_name, the user id its master key authenticates with
-const MASTER_KEY_USER_ID: &str = "default_user_id";
-// LiteLLM's LITELLM_PROXY_MASTER_KEY_ALIAS, the api_key its master key authenticates with
-const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 
 #[derive(Clone, Copy)]
 pub(super) struct QueueRequest<'call> {
@@ -118,20 +113,6 @@ fn queue_user_id<'call>(caller: &'call Principal, key: &'call KeyView) -> Option
 }
 
 fn key_view(caller: &Principal) -> KeyView {
-    if caller.subject == MASTER_KEY_SUBJECT {
-        // LiteLLM's master key authenticates as a key object with this alias and user id (user_api_key_auth L2090-L2098)
-        return KeyView {
-            api_key: Some(String::from(MASTER_KEY_ALIAS)),
-            token: None,
-            is_session_token: false,
-            key_alias: None,
-            user_id: Some(String::from(MASTER_KEY_USER_ID)),
-            team_id: None,
-            object_permission_id: None,
-            team_object_permission_id: None,
-            metadata: JsonValue::Null,
-        };
-    }
     let Some(key) = caller.source_key.0.as_ref() else {
         return KeyView::default();
     };

@@ -11,6 +11,7 @@ use betterlite_router::request_scheduler::error::SchedulerError;
 use betterlite_router::request_scheduler::schedule::ScheduledCall as _;
 
 use super::{QueuedCompletion, scheduler_exception};
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::invitation_routes::state::{QueueAnswer, QueueCompletion};
 
 struct FixedCompletion {
@@ -52,10 +53,7 @@ impl QueueCompletion for FixedCompletion {
 }
 
 fn principal() -> Principal {
-    serde_json::from_str(
-        r#"{"principal_type":"service_account","subject":"master_key","auth_method":"api_key"}"#,
-    )
-    .expect("a principal")
+    master_caller().principal
 }
 
 fn request(model: &str) -> JsonMap {

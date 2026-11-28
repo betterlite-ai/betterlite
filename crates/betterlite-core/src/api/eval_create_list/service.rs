@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_context::core_settings::CoreSettings;
 use betterlite_context::resource_config_selection::skills_evals::select_evals_config;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -22,7 +23,7 @@ use super::handler::{CreateEvalHttpCall, EvalsCreateListHandler, ListEvalsHttpCa
 use super::logging::log_pre_call;
 use super::request::{create_request, list_params, merge_extra_body};
 use super::{DEFAULT_EVALS_PROVIDER, DEFAULT_OPENAI_API_BASE};
-use crate::api::eval_http::exchange::{EvalConfig, EvalConnection, EvalLogging};
+use crate::api::eval_http::exchange::{EvalConfig, EvalConnection};
 use crate::api::passthrough_call::logging::json_object;
 
 // the collaborators the operations call: B9370's handler, the provider configs, the pooled client and B247's logging
@@ -129,7 +130,7 @@ where
                     url: &url,
                     headers: &prepared.headers,
                 },
-                logging: EvalLogging {
+                logging: LogContext {
                     state: logging,
                     env,
                 },
@@ -165,7 +166,7 @@ where
                     url: &url,
                     headers: &prepared.headers,
                 },
-                logging: EvalLogging {
+                logging: LogContext {
                     state: logging,
                     env,
                 },

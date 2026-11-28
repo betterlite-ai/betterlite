@@ -27,6 +27,7 @@ use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::auth::auth_identity::AuthContext;
+pub(crate) use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::organization_create::creation::OrganizationCreateState;
 use crate::organization_create::http::mount;
 
@@ -491,29 +492,6 @@ fn jwt_principal(user_id: Option<&str>, roles: &[Role]) -> AuthContext {
             roles: roles.to_vec(),
             scopes: Vec::new(),
             auth_method: AuthMethod::BearerJwt,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey(None),
-        },
-    }
-}
-
-#[must_use]
-pub(crate) fn master_caller() -> AuthContext {
-    AuthContext {
-        principal: Principal {
-            principal_type: PrincipalType::Human,
-            subject: String::from("master_key"),
-            issuer: None,
-            audience: Vec::new(),
-            user: None,
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: Vec::new(),
-            scopes: Vec::new(),
-            auth_method: AuthMethod::ApiKey,
             credential_ref: CredentialRef::default(),
             network: NetworkContext::default(),
             source_key: SourceKey(None),

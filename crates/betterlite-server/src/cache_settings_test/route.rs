@@ -49,7 +49,6 @@ mod tests;
 mod validation;
 
 const ADMIN_REQUIRED: &str = "Admin access required to test cache settings";
-const MASTER_KEY_SUBJECT: &str = "master_key";
 const NOT_SUPPORTED_MESSAGE: &str = "Only Redis cache type is currently supported for testing";
 const REDIS_CACHE_TYPE: &str = "redis";
 const UNAUTHENTICATED: &str = "the API key is not valid";
@@ -88,7 +87,7 @@ async fn test_cache_connection(
     let Some(Extension(context)) = caller else {
         return unauthenticated();
     };
-    if !is_proxy_admin(&context) {
+    if !context.principal.roles.contains(&Role::PlatformAdmin) {
         return forbidden();
     }
     let request = match decode_request(&body) {
@@ -147,11 +146,6 @@ async fn connection_answer(
             }
         }
     }
-}
-
-fn is_proxy_admin(caller: &AuthContext) -> bool {
-    caller.principal.subject == MASTER_KEY_SUBJECT
-        || caller.principal.roles.contains(&Role::PlatformAdmin)
 }
 
 async fn connection_test(

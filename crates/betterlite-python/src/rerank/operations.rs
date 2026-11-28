@@ -1,9 +1,11 @@
 use super::options::{FamilyChoice, family_choice, map_with, optional_params, refusal};
 use super::session::RerankSession;
 use betterlite_config::sections::{cohere_rerank_settings, jina_infinity_rerank};
+use betterlite_core::api::file_http_content::service::ClientSource;
 use betterlite_core::api::rerank_provider_plan::dispatch::{
     OptionsRequest, Params, RerankOperations, SendRequest, provider_failure, value_failure,
 };
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
@@ -15,8 +17,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_provider::api::rerank_contracts::{BaseRerankConfig, RerankLogging};
-use betterlite_provider::api::rerank_http::client::ClientSource;
-use betterlite_provider::api::rerank_http::error::{ClientError, RerankHttpError};
+use betterlite_provider::api::rerank_http::error::RerankHttpError;
 use betterlite_provider::api::rerank_http::rerank as rerank_http;
 use betterlite_provider::api::rerank_http::{RerankCall as HttpCall, RerankDeps, RerankLogContext};
 use betterlite_provider::embedding_rerank_providers::rerank::FamilyRerankConfig;

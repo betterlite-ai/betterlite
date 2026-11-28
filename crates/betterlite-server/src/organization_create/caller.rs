@@ -5,10 +5,6 @@ use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
 
-pub const MASTER_KEY_SUBJECT: &str = "master_key";
-// litellm_proxy_admin_name: the user id every master-key write is attributed to
-pub const DEFAULT_ADMIN_USER_ID: &str = "default_user_id";
-
 // the user_api_key_dict fields the organization handlers read, taken once from the key's serde form
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrgCaller {
@@ -30,14 +26,6 @@ struct KeyView {
 
 impl OrgCaller {
     pub fn from_principal(principal: &Principal) -> Result<Self, serde_json::Error> {
-        if principal.subject == MASTER_KEY_SUBJECT {
-            return Ok(Self {
-                user_id: Some(DEFAULT_ADMIN_USER_ID.to_owned()),
-                user_role: Some(UserRole::ProxyAdmin),
-                models: Vec::new(),
-                admin_view: true,
-            });
-        }
         let key = principal.source_key.0.as_ref();
         let stored = key
             .map(|record| serde_json::from_value::<KeyView>(serde_json::to_value(record)?))

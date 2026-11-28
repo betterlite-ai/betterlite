@@ -5,6 +5,8 @@ use betterlite_azure::speech::dispatch::{
     DispatchCall, HandlerFailure, HandlerRequest, SpeechEnvironment, SpeechGlobals,
     TextToSpeechHandler, dispatch_text_to_speech,
 };
+use betterlite_core::api::vector_store_http_write::error::ClientError;
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -13,10 +15,10 @@ use betterlite_openai::transcription::transport::TranscriptionTransport;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::api::speech_http::error::{ClientError, SpeechError};
+use crate::api::speech_http::error::SpeechError;
 use crate::api::speech_http::{
-    ClientSource, LogContext, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams,
-    SpeechTransport, SpeechWireRequest,
+    LogContext, SpeechBinaryResponse, SpeechCall, SpeechDeps, SpeechParams, SpeechTransport,
+    SpeechWireRequest,
 };
 use crate::api::speech_provider_contract::SpeechHeaders;
 

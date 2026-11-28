@@ -15,6 +15,7 @@ use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::workflow_runs::WorkflowRunsState;
 use crate::workflow_runs::models::{
     RunCreateData, RunUpdateData, RunWhere, SequenceRow, SequenceTable, StatusFilter,
@@ -334,7 +335,7 @@ pub(super) fn principal(subject: &str, roles: Vec<Role>, token: Option<&str>) ->
 }
 
 pub(super) fn master() -> Principal {
-    principal("master_key", Vec::new(), None)
+    master_caller().principal
 }
 
 pub(super) fn proxy_admin(token: &str) -> Principal {

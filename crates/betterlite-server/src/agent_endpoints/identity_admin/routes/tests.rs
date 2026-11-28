@@ -23,6 +23,7 @@ use tower::ServiceExt as _;
 use super::{IdentityStatusReads, agent_identity_routes};
 use crate::agent_endpoints::identity_admin::issuers::IdentitySettings;
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 
 const FIRST_ISSUER: &str =
     "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/v2.0";
@@ -86,12 +87,6 @@ fn caller(role: &str) -> AuthContext {
 fn keyless_caller() -> AuthContext {
     let mut context = caller("proxy_admin");
     context.principal.source_key = SourceKey(None);
-    context
-}
-
-fn master_caller() -> AuthContext {
-    let mut context = keyless_caller();
-    context.principal.subject = String::from("master_key");
     context
 }
 

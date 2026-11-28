@@ -1,21 +1,12 @@
 use std::error::Error;
 
-use betterlite_config::tls::TlsPolicyError;
-use betterlite_http::proxy::pool::PoolError;
+use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 use url::ParseError;
 
 use crate::api::rerank_contracts::BaseLlmException;
-
-#[derive(Debug, Error)]
-pub enum ClientError {
-    #[error(transparent)]
-    Tls(#[from] TlsPolicyError),
-    #[error(transparent)]
-    Pool(#[from] PoolError),
-}
 
 // The provider error is the one a working setup catches; the rest name a failure that never reached the provider
 #[derive(Debug, Error)]

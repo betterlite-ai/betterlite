@@ -132,7 +132,7 @@ async fn new_invitation_by_a_proxy_admin_skips_the_scope_checks() {
 }
 
 #[tokio::test]
-async fn new_invitation_by_the_master_key_has_no_actor() {
+async fn new_invitation_by_the_master_key_records_the_admin_user() {
     let (store, scope, router) = setup(Vec::new(), FakeScope::new(ScopeRights::Refused));
     let (status, _, _) = Box::pin(send(
         &router,
@@ -145,7 +145,10 @@ async fn new_invitation_by_the_master_key_has_no_actor() {
     assert_eq!(status, StatusCode::OK);
     assert!(scope.calls().is_empty());
     let rows = store.rows.lock().expect("the store lock");
-    assert_eq!(rows.created, vec![("alice".to_owned(), None)]);
+    assert_eq!(
+        rows.created,
+        vec![("alice".to_owned(), Some("default_user_id".to_owned()))]
+    );
 }
 
 #[tokio::test]

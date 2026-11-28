@@ -29,7 +29,9 @@ pub struct BlockingKind;
 
 pub struct AsyncKind;
 
-impl<Source: ClientSource> Channel<Source> for BlockingKind {
+impl<Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>> Channel<Source>
+    for BlockingKind
+{
     type Client = Source::Blocking;
 
     fn supplied<'client>(
@@ -54,7 +56,9 @@ impl<Source: ClientSource> Channel<Source> for BlockingKind {
     }
 }
 
-impl<Source: ClientSource> Channel<Source> for AsyncKind {
+impl<Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>> Channel<Source>
+    for AsyncKind
+{
     type Client = Source::Asynchronous;
 
     fn supplied<'client>(

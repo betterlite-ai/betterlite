@@ -2,7 +2,7 @@ use std::future::{Future, ready};
 use std::time::Duration;
 
 use betterlite_core::api::container_collection_http::{
-    CollectionClientSource, CollectionReply, CollectionRequest, CollectionTransport,
+    CollectionReply, CollectionRequest, CollectionTransport,
 };
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -54,22 +54,6 @@ impl ClientSource for Source {
             client: self.client.clone(),
             deadline: self.deadline,
         })
-    }
-}
-
-impl CollectionClientSource for Source {
-    type Blocking = BlockingTransport;
-    type Asynchronous = AsyncTransport;
-
-    fn blocking_client(
-        &self,
-        ssl_verify: Option<&SslVerify>,
-    ) -> Result<BlockingTransport, PoolError> {
-        ClientSource::blocking_client(self, ssl_verify)
-    }
-
-    fn async_client(&self, ssl_verify: Option<&SslVerify>) -> Result<AsyncTransport, PoolError> {
-        ClientSource::async_client(self, ssl_verify)
     }
 }
 

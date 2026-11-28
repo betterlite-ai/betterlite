@@ -45,7 +45,6 @@ use super::run::TestCall;
 use super::run::run_test;
 
 const ADMIN_REQUIRED: &str = "Admin access required to test custom code guardrails";
-const MASTER_KEY_SUBJECT: &str = "master_key";
 const UNAUTHENTICATED: &str = "the API key is not valid";
 
 pub struct SandboxedCode {
@@ -81,16 +80,11 @@ async fn test_custom_code(
         Ok(request) => request,
         Err(error) => return error.into_response(),
     };
-    if !is_proxy_admin(&context) {
+    if !context.principal.roles.contains(&Role::PlatformAdmin) {
         return forbidden();
     }
     let response = run_test(request, state.sandbox.as_ref()).await;
     (StatusCode::OK, Json(response)).into_response()
-}
-
-fn is_proxy_admin(caller: &AuthContext) -> bool {
-    caller.principal.subject == MASTER_KEY_SUBJECT
-        || caller.principal.roles.contains(&Role::PlatformAdmin)
 }
 
 // LiteLLM's auth_error carries param "None" rather than null, which WireField::MISSING serializes

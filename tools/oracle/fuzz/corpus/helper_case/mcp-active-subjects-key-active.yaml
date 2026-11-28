@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-active-subjects-key-active-seed
+call:
+  b4658:
+    operation: key_is_active
+    key:
+      token: sk-blocked
+      blocked: true
+calls:
+  - b4658:
+      operation: key_is_active
+      key:
+        token: sk-future
+        expires: "2099-01-01T00:00:00+05:30"
+  - b4658:
+      operation: key_is_active
+      key:
+        token: sk-text
+        expires: "not-a-date"
+env: {}
+compare: {ignore: []}

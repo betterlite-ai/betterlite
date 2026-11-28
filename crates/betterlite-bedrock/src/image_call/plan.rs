@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::{Duration, SystemTime};
 
-use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
@@ -18,9 +16,8 @@ use super::error::ImageCallError;
 use crate::aws_endpoints::model_id::bedrock_model_id;
 use crate::aws_endpoints::provider::invoke_provider;
 use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
-use crate::aws_settings::sources::Credentials;
 use crate::aws_settings::{AUTHENTICATION_PARAMS, bedrock_bearer_token};
-use crate::credentials::error::CredentialError;
+use crate::credentials::CredentialSource;
 use crate::image_models::family::{Family, select_family};
 use crate::image_models::params::{Field, Params};
 use crate::image_models::stability1::ClassSettings;
@@ -58,14 +55,6 @@ pub struct PreparedRequest {
     pub data: IndexMap<String, Json>,
 }
 
-pub trait CredentialSource {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
-}
-
 pub struct LogContext<'borrow, 'env> {
     pub state: &'borrow mut LoggingState,
     pub env: &'borrow PrePostEnv<'env>,
@@ -76,7 +65,7 @@ pub async fn resolve_target<Source>(
     source: &Source,
 ) -> Result<RequestTarget, ImageCallError>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
 {
     let mut raw = BTreeMap::new();
     for (key, field) in &call.optional_params {

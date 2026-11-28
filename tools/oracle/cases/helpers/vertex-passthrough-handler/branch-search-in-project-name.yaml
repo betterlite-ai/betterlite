@@ -1,0 +1,7 @@
+kind: helper
+name: vertex-passthrough-handler-branch-search-in-project-name
+call:
+  b3642:
+    url_route: "https://us-central1-aiplatform.googleapis.com/v1/projects/search-project/locations/us-central1/publishers/google/models/gemini-2.0-flash:generateContent"
+env: {}
+compare: {ignore: []}

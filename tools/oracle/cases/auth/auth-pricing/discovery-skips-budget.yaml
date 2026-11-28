@@ -1,0 +1,60 @@
+kind: helper
+name: auth-pricing-auth-discovery-skips-budget
+call:
+  auth_pricing:
+    calls:
+      - function: request_skip
+        router:
+          cache: {}
+        route: /v1/models
+        model: charged
+      - function: request_skip
+        router:
+          cache: {}
+        route: /models
+        model: charged
+      - function: request_skip
+        router:
+          cache: {}
+        route: /model/info
+        model: charged
+      - function: request_skip
+        router:
+          cache: {}
+        route: /v1/model/info
+        model: charged
+      - function: request_skip
+        router:
+          cache: {}
+        route: /v2/model/info
+        model: charged
+      - function: request_skip
+        router:
+          cache: {}
+        route: /model_group/info
+        model: charged
+      - function: request_skip
+        router:
+          cache: {}
+        route: /utils/model_info
+        model: charged
+      # the inference route is the one that enforces
+      - function: request_skip
+        router:
+          groups:
+            charged: {input: 0.0001, output: 0.0}
+          cache: {}
+        route: /v1/chat/completions
+        model: charged
+      # spend past the ceiling is ignored on a discovery route
+      - function: request_checks
+        router:
+          cache: {}
+        route: /models
+        method: GET
+        body: {}
+        max_budget: 1.0
+        global_spend: 1000.0
+env: {}
+compare:
+  ignore: []

@@ -21,6 +21,7 @@ use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::organization_create::access::OrgAccessError;
 use crate::spend::reports::rows::{
     DailyTeamSpend, ModelSpend, OrganizationKeySpend, OrganizationModelSpend, ScopedKeySpend,
@@ -151,7 +152,7 @@ fn principal(subject: &str, roles: Vec<Role>, user_id: Option<&str>) -> Principa
 }
 
 pub(super) fn master_key() -> Principal {
-    principal("master_key", Vec::new(), None)
+    master_caller().principal
 }
 
 pub(super) fn jwt_user(user_id: &str) -> Principal {

@@ -1,0 +1,74 @@
+kind: helper
+name: auth-pricing-missing-price-denial
+call:
+  auth_pricing:
+    calls:
+      # a group with zero rates but no explicit price is unpriced, and the single model message names it
+      - function: unpriced
+        router:
+          groups:
+            noprice: {input: 0.0, output: 0.0}
+          deployments:
+            noprice:
+              - model_info: {id: dep-noprice}
+          costs:
+            dep-noprice: {id: dep-noprice}
+          cache: {}
+        model: noprice
+      # both candidates are reported in request order
+      - function: unpriced
+        router:
+          groups:
+            alpha: {input: 0.0, output: 0.0}
+            beta: {input: 0.0, output: 0.0}
+          deployments:
+            alpha:
+              - model_info: {id: dep-alpha}
+            beta:
+              - model_info: {id: dep-beta}
+          costs: {}
+          cache: {}
+        model: [alpha, beta]
+      # a cost_per key on the deployment's params prices the group, even at zero
+      - function: unpriced
+        router:
+          groups:
+            params-priced: {input: 0.0, output: 0.0}
+          deployments:
+            params-priced:
+              - litellm_params: {input_cost_per_token: 0.0}
+                model_info: {id: dep-params}
+          costs: {}
+          cache: {}
+        model: params-priced
+      # a priced metric on the resolved model info prices the group too
+      - function: unpriced
+        router:
+          groups:
+            image: {input: 0.0, output: 0.0}
+          deployments:
+            image:
+              - model_info: {id: dep-image}
+          resolved:
+            dep-image: {cost_per_image: 0.5}
+          costs: {}
+          cache: {}
+        model: image
+      # an unknown group is not unpriced, and neither is no requested model
+      - function: unpriced
+        router:
+          groups: {}
+          cache: {}
+        model: ghost
+      - function: unpriced
+        router:
+          groups:
+            noprice: {input: 0.0, output: 0.0}
+          deployments:
+            noprice:
+              - model_info: {id: dep-noprice}
+          costs: {}
+          cache: {}
+env: {}
+compare:
+  ignore: []

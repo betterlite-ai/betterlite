@@ -1,0 +1,126 @@
+kind: helper
+name: auth-pricing-auth-tags-and-global-budget
+call:
+  auth_pricing:
+    calls:
+      # client-side metadata.tags is a 400 bad_request_error carrying the param
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {metadata: {tags: []}}
+        reject: true
+      # an empty tags list, a null tags value and extra metadata keys all reject
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {metadata: {tags: null}}
+        reject: true
+      # metadata without tags, a non-object metadata and an absent metadata pass
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {metadata: {user_id: user-1}}
+        reject: true
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {metadata: [tags]}
+        reject: true
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {model: gpt-4o}
+        reject: true
+      # a non-LLM route and the setting off both pass
+      - function: request_checks
+        router:
+          cache: {}
+        route: /health
+        method: POST
+        body: {metadata: {tags: [client]}}
+        reject: true
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {metadata: {tags: [client]}}
+        reject: false
+      # the global budget denies only spend strictly over a positive known ceiling
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1}
+        max_budget: 5.0
+        global_spend: 4.99
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1}
+        max_budget: 5.0
+        global_spend: 5.0
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1}
+        max_budget: 5.0
+        global_spend: 5.01
+      # a zero ceiling, an absent spend and an absent ceiling all leave it alone
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1}
+        max_budget: 0.0
+        global_spend: 5.0
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1}
+        max_budget: 5.0
+      - function: request_checks
+        router:
+          cache: {}
+        route: /chat/completions
+        method: POST
+        body: {user: user-1}
+        global_spend: 5.0
+      # the model discovery routes and any non-LLM route are outside the check
+      - function: request_checks
+        router:
+          cache: {}
+        route: /models
+        method: GET
+        body: {}
+        max_budget: 5.0
+        global_spend: 5.01
+      - function: request_checks
+        router:
+          cache: {}
+        route: /key/info
+        method: GET
+        body: {}
+        max_budget: 5.0
+        global_spend: 5.01
+env: {}
+compare:
+  ignore: []

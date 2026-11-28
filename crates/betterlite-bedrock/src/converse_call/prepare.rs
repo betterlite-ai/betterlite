@@ -17,9 +17,9 @@ use crate::aws_settings::bedrock_bearer_token;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_response::environment::should_fake_stream;
 use crate::converse_response::request::OptionalParams;
+use crate::credentials::CredentialSource;
 use crate::event_frames::beta::BetaHeader;
 use crate::model_routes::{ParamMap, ParamValue};
-use crate::rerank::plan::CredentialSource;
 use crate::signing::body::Body;
 use crate::signing::endpoint::RequestHeaders;
 use crate::signing::request::AwsSignedRequest;
@@ -108,7 +108,7 @@ pub(super) async fn prepare<Cred, Source, Transport, Lookup, R, Ids>(
     assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
 ) -> Result<CallPlan, ConverseCallError>
 where
-    Cred: CredentialSource + Sync,
+    Cred: CredentialSource,
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
     Lookup: ModelInfoLookup,

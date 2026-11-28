@@ -21,6 +21,7 @@ use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::spend::tag_reports::rows::{DailyTagSpend, KeyAliasedUser, RawTagSpend};
 use crate::spend::tag_reports::store::{TagReportError, TagReportHandle, TagReportStore};
 
@@ -167,7 +168,7 @@ pub(super) fn org_admin(user_id: &str) -> Principal {
 }
 
 pub(super) fn master_key() -> Principal {
-    principal("master_key", Vec::new(), None)
+    master_caller().principal
 }
 
 pub(super) fn key_principal(fields: &str) -> Principal {

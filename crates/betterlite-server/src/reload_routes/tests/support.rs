@@ -26,6 +26,7 @@ use indexmap::IndexMap;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::periodic_reloads::state::PeriodicReloads;
 use crate::reload_routes::ports::{
     BetaHeadersReload, BetaReloadFuture, CatalogReload, CatalogReloadFuture, ReloadConfigStore,
@@ -515,7 +516,7 @@ pub(crate) fn context(subject: &str, roles: &[Role], source_key: SourceKey) -> A
 }
 
 pub(crate) fn master() -> AuthContext {
-    context("master_key", &[], SourceKey(None))
+    master_caller()
 }
 
 pub(crate) fn platform_admin() -> AuthContext {
