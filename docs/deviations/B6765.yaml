@@ -1,5 +1,8 @@
 task: B6765
 deviations:
+  - what: The mutator's operations live on one trait per module (RegistryMutations, RegistryReload, ToolOwnerInitialization, ToolRoutingCleanup, OpenApiRegistration) rather than on inherent methods of RegistryMutator.
+    why: The workspace denies clippy's multiple_inherent_impl, which allows one inherent impl block per type per crate; the operations split across five modules, so each module exposes its operations as a trait the callers import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3277-L3340
   - what: The collaborators arrive through the RegistryMutator constructor (ServerRows, CacheInvalidator, ToolLister, the shared registry, DiscoverySlots, tool owners, instructions cache, DcrHydrator) instead of being called on one global MCPServerManager singleton with a prisma client and module-level dicts.
     why: betterlite keeps no module-level state and passes dependencies through constructors; B4731's ServerRegistry and B6762's DiscoverySlots own what LiteLLM keeps on the manager.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6769-L6780
