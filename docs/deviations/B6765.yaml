@@ -1,0 +1,45 @@
+task: B6765
+deviations:
+  - what: The mutator's operations live on one trait per module (RegistryMutations, RegistryReload, ToolOwnerInitialization, ToolRoutingCleanup, OpenApiRegistration) rather than on inherent methods of RegistryMutator.
+    why: The workspace denies clippy's multiple_inherent_impl, which allows one inherent impl block per type per crate; the operations split across five modules, so each module exposes its operations as a trait the callers import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3277-L3340
+  - what: The collaborators arrive through the RegistryMutator constructor (ServerRows, CacheInvalidator, ToolLister, the shared registry, DiscoverySlots, tool owners, instructions cache, DcrHydrator) instead of being called on one global MCPServerManager singleton with a prisma client and module-level dicts.
+    why: betterlite keeps no module-level state and passes dependencies through constructors; B4731's ServerRegistry and B6762's DiscoverySlots own what LiteLLM keeps on the manager.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6769-L6780
+  - what: The registry swap replaces ServerRegistry::db_servers under its async RwLock, where LiteLLM assigns self.registry a plain dict; get_registry() overlays config on database servers, so the reload only touches the database half.
+    why: betterlite's registry holds the config and database halves separately (B4731), and the reload owns the database half only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6853-L6861
+  - what: The last-warned shadowed and capturing id sets live in WarnedIds fields on the mutator, so whoever owns the mutator across reloads passes them in; a mutator built fresh for each reload warns again.
+    why: LiteLLM keeps the two sets as manager attributes that live as long as the proxy; betterlite has no singleton to hang them on, and the owner that builds the mutator (B9997) supplies the state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6877-L6899
+  - what: A row skipped during reload logs at error level without a Python traceback, and the reason after the colon is betterlite's typed error Display rather than str(e).
+    why: LiteLLM calls verbose_logger.exception, which appends exc_info; tracing has no traceback concept and our build and registration errors are Rust enums with their own messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6823-L6829
+  - what: The updated_at equality check parses the row's timestamp text into an instant (RFC3339 with an offset, else naive as UTC) and compares it with MCPServer's DateTime<Utc>, where LiteLLM compares two pydantic datetimes directly.
+    why: MCPServer stores updated_at as DateTime<Utc> while McpServerTable keeps the wire text in RowTimestamp; both sides come from the same Postgres value, so the instant is the comparable part.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6790-L6803
+  - what: Reload registers OpenAPI tools through ConfigLoader with a sink whose rebuild_tool_name_mapping is a no-op, then calls initialize_tool_owners once when any spec was registered; LiteLLM passes initialize_mapping=False and calls initialize_tool_name_to_mcp_server_name_mapping once itself.
+    why: B6764's ConfigLoader calls the sink rebuild inside maybe_register_openapi_tools, and LiteLLM's own path suppresses that call during reload so a hundred servers do not rebuild the mapping a hundred times.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6835-L6844
+  - what: initialize_tool_name_to_mcp_server_name_mapping spawns on the TaskTracker the owner supplies and never runs without a runtime; LiteLLM's "No running event loop" exception branch has no counterpart.
+    why: betterlite rejects detached tokio::spawn and requires a runtime-owned tracker, so the fire-and-forget call always has a runtime to spawn on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6681
+  - what: The tool listing that fills the name mapping goes through the ToolLister port, whose error type separates the upstream auth error from every other failure, where LiteLLM calls manager._get_tools_from_server and catches MCPUpstreamAuthError in the same class.
+    why: the lister lives on the transport side in betterlite and is injected; the two log lines and their levels match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6688-L6714
+  - what: Hydrating the config servers' DCR clients is its own module function that snapshots the config servers, hydrates each clone, then writes back only the servers still present; LiteLLM iterates self.config_mcp_servers.values() and mutates each server in place.
+    why: the equivalent private helper in config_loader::loader::state is pub(super) to the loader module and loader.rs is outside this task's scope, so the reload path carries its own copy; the write-back guard is defensive against a config server removed while hydration runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2709-L2729
+  - what: The per-server DCR hydration failure line from LiteLLM, the one beginning "load_servers_from_config", is not emitted from the reload, because DcrHydrator::hydrate returns bool and the error stays inside the implementation.
+    why: the trait B6764 declares (and B6595 implements) has no error channel, so only the success debug line belongs to this path, as in B6764's config load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2717-L2729
+  - what: The "Database not connected. Connect a database to your proxy" failure is not raised by the mutator; a missing database surfaces as the ServerRows error and reload returns MutationError::Rows.
+    why: the row read is a port in betterlite and its failure type carries the repository error, where LiteLLM calls get_prisma_client_or_throw from inside the reload method.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6764-L6777
+  - what: add and update log the failure at debug and return the typed error, where LiteLLM logs and then re-raises the original exception; remove and the ineligible-update eviction return the unit type because LiteLLM lets them return silently.
+    why: betterlite reports failures as a thiserror enum value the caller decides on, and a caller that would have crashed on the Python exception gets the same decision point as an Err.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3301-L3340
+kept_bugs:
+  - what: The update failure debug line keeps LiteLLM's spelling of "update" as u-d-p-a-t-e, so the emitted text matches LiteLLM's log line.
+    why: the line is a log message a working setup and its log dashboards can key on, and every other log line in this port matches LiteLLM's text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3338-L3339
