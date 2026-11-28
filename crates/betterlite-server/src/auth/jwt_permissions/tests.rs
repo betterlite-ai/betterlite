@@ -35,6 +35,14 @@ fn loaded() -> Config {
     .unwrap()
 }
 
+fn config(source: &str) -> Config {
+    ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(source)
+    .unwrap()
+}
+
 fn master_key() -> SecretString {
     SecretString::from(MASTER_KEY.to_owned())
 }
@@ -51,52 +59,34 @@ fn master_context() -> AuthContext {
     context
 }
 
-// an admin-scope token that must still meet the configured admin_allowed_routes
-fn admin_rule() -> JwtPermissionRule {
+// a verified token's role and scopes; the master key and virtual keys carry neither
+fn rule(role: Option<RbacRole>, scopes: Vec<String>) -> JwtPermissionRule {
     JwtPermissionRule {
-        scopes: vec!["litellm_proxy_admin".to_owned()],
-        ..JwtPermissionRule::default()
+        role,
+        scopes,
+        claims: None,
+        token: None,
+        user_id: None,
+        user_email: None,
+        org_id: None,
+        agent_id: None,
     }
 }
 
 // enforce_rbac and the role mapping both come from general_settings in this config
 fn role_config() -> Config {
-    let source = format!(
+    config(&format!(
         "general_settings:\n  master_key: {MASTER_KEY}\n  litellm_jwtauth:\n    enforce_rbac: true\n  \
          role_permissions:\n    - role: internal_user\n      models: ['gpt-4o']\n      routes: ['/user/new']\n"
-    );
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(&source)
-    .unwrap()
-}
-
-fn internal_rule() -> JwtPermissionRule {
-    JwtPermissionRule {
-        role: Some(RbacRole::InternalUser),
-        ..JwtPermissionRule::default()
-    }
+    ))
 }
 
 // enforce_scope_based_access and its scope_mappings come from litellm_jwtauth in this config
 fn scope_config() -> Config {
-    let source = format!(
+    config(&format!(
         "general_settings:\n  master_key: {MASTER_KEY}\n  litellm_jwtauth:\n    enforce_scope_based_access: true\n    \
          scope_mappings:\n      - scope: chat\n        models: ['gpt-4o']\n"
-    );
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(&source)
-    .unwrap()
-}
-
-fn scoped_rule() -> JwtPermissionRule {
-    JwtPermissionRule {
-        scopes: vec!["chat".to_owned()],
-        ..JwtPermissionRule::default()
-    }
+    ))
 }
 
 fn stage_from(rule: JwtPermissionRule, uri: &str, body: &'static str) -> JwtPermissionStageInput {
@@ -218,7 +208,11 @@ fn stage_is_registered() {
         .map(|index| index.saturating_add(1));
     assert_eq!(position, after_safety);
     let master = master_key();
-    let denied = stage_from(admin_rule(), CHAT_ROUTE, r#"{"model":"gpt-4o"}"#);
+    let denied = stage_from(
+        rule(None, vec!["litellm_proxy_admin".to_owned()]),
+        CHAT_ROUTE,
+        r#"{"model":"gpt-4o"}"#,
+    );
     let Err(StageFailure::JwtPermissions(exception)) = dispatch(
         AuthBackend::JwtPermissions,
         &StageInput::JwtPermissions(Box::new(denied)),
@@ -241,7 +235,7 @@ async fn failure_stops_downstream() {
     let configuration = loaded();
     let (status, body, reached) = run_request(
         &configuration,
-        admin_rule(),
+        rule(None, vec!["litellm_proxy_admin".to_owned()]),
         CHAT_ROUTE,
         r#"{"model":"gpt-4o"}"#,
     )
@@ -259,7 +253,7 @@ async fn role_permissions_from_config() {
     let configuration = role_config();
     let (status, body, reached) = run_request(
         &configuration,
-        internal_rule(),
+        rule(Some(RbacRole::InternalUser), Vec::new()),
         USER_ROUTE,
         r#"{"model":"gpt-4o"}"#,
     )
@@ -268,7 +262,7 @@ async fn role_permissions_from_config() {
     assert!(reached);
     let (status, body, reached) = run_request(
         &configuration,
-        internal_rule(),
+        rule(Some(RbacRole::InternalUser), Vec::new()),
         USER_ROUTE,
         r#"{"model":"gpt-4o-mini"}"#,
     )
@@ -284,7 +278,7 @@ async fn scope_mappings_from_config() {
     let configuration = scope_config();
     let (status, body, reached) = run_request(
         &configuration,
-        scoped_rule(),
+        rule(None, vec!["chat".to_owned()]),
         USER_ROUTE,
         r#"{"model":"gpt-4o"}"#,
     )
@@ -293,7 +287,7 @@ async fn scope_mappings_from_config() {
     assert!(reached);
     let (status, body, reached) = run_request(
         &configuration,
-        scoped_rule(),
+        rule(None, vec!["chat".to_owned()]),
         USER_ROUTE,
         r#"{"model":"gpt-4o-mini"}"#,
     )
