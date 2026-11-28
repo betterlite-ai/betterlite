@@ -189,6 +189,17 @@ async fn serve_binary_frame(listener: TcpListener) -> Vec<u8> {
     }
 }
 
+// a server that reads the one close frame a test sends
+async fn serve_close_frame(listener: TcpListener) -> (u16, String) {
+    let (stream, _peer) = listener.accept().await.expect("accept");
+    let mut socket = accept_async(stream).await.expect("handshake");
+    let frame = socket.next().await.expect("close").expect("frame");
+    let Message::Close(Some(close)) = frame else {
+        panic!("expected a close frame");
+    };
+    (u16::from(close.code), close.reason.as_str().to_owned())
+}
+
 // a server that answers every ping the way tungstenite does, recording when each one arrived
 async fn serve_ponging(listener: TcpListener, pings: Arc<Mutex<Vec<Duration>>>) {
     let (stream, _peer) = listener.accept().await.expect("accept");
@@ -398,6 +409,24 @@ async fn websocket_client_tests_send_a_binary_frame() {
         .expect("server")
         .expect("server task");
     assert_eq!(payload, b"raw".to_vec());
+}
+
+#[tokio::test]
+async fn websocket_client_tests_send_a_normal_close() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_close_frame(listener));
+    let url = format!("ws://{address}/realtime");
+    let connection = plain_connection(&url, &[], None).await;
+    connection.sender.close(1000, "bye").await.expect("close");
+    let (code, reason) = timeout(TEST_TIMEOUT, tasks.join_next())
+        .await
+        .expect("deadline")
+        .expect("server")
+        .expect("server task");
+    assert_eq!(code, 1000);
+    assert_eq!(reason, "bye");
 }
 
 #[tokio::test]
