@@ -34,7 +34,7 @@ mod speech;
 mod views;
 
 pub(super) use speech::SpeechRecorder;
-pub(super) use views::{dashscope_view, minimax_chat_view, nlp_cloud_view, volcengine_view};
+pub(crate) use views::{dashscope_view, minimax_chat_view, nlp_cloud_view, volcengine_view};
 
 const INIT: &str = r#"{"model":"oracle","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 // the two headers both sides build themselves; the HTTP client adds the rest

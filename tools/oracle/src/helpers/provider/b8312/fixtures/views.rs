@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use super::super::oracle::Case;
 use super::{chat_call, embedding_call, input_failure, kept, request_view, section_settings};
 
-pub(super) fn minimax_chat_view(case: &Case) -> HelperResult {
+pub(crate) fn minimax_chat_view(case: &Case) -> HelperResult {
     let call = chat_call(case, ChatConfigTag::MinimaxChat, "minimax")?;
     let mut headers = BTreeMap::from([(
         String::from("content-type"),
@@ -47,7 +47,7 @@ pub(super) fn wire_request(
     }
 }
 
-pub(super) fn nlp_cloud_view(case: &Case) -> HelperResult {
+pub(crate) fn nlp_cloud_view(case: &Case) -> HelperResult {
     let call = chat_call(case, ChatConfigTag::NlpCloud, "nlp_cloud")?;
     let headers = nlp_headers(&BTreeMap::new(), call.api_key.as_ref());
     match call.api_base.as_deref() {
@@ -62,7 +62,7 @@ pub(super) fn nlp_cloud_view(case: &Case) -> HelperResult {
     }
 }
 
-pub(super) fn volcengine_view(case: &Case) -> HelperResult {
+pub(crate) fn volcengine_view(case: &Case) -> HelperResult {
     let call = embedding_call(case, ProviderId::Volcengine)?;
     let caller = call.headers.clone().unwrap_or_default();
     let headers = request::validate_environment(&caller, call.api_key.as_ref()).or_value_error()?;
@@ -71,7 +71,7 @@ pub(super) fn volcengine_view(case: &Case) -> HelperResult {
     Ok(wire_request(&url, &headers, Some(Value::Object(body))))
 }
 
-pub(super) fn dashscope_view(case: &Case) -> HelperResult {
+pub(crate) fn dashscope_view(case: &Case) -> HelperResult {
     let call = embedding_call(case, ProviderId::Dashscope)?;
     let settings = section_settings(case);
     let env = FamilyEnv {
