@@ -139,6 +139,14 @@ async fn claim_non404_propagates() {
         message,
         "Authentication Error, No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
     );
+    // the fallback only swallows a proven 404, so the same read failure still propagates
+    let fallback = selection(|fields| fields.routing.team_claim_fallback = true);
+    let (status, _, _) = rendered(
+        find_and_validate_specific_team_id(&jwt, &lookup, &fallback, None)
+            .await
+            .unwrap_err(),
+    );
+    assert_eq!(status, 401);
 }
 
 #[tokio::test]
@@ -200,6 +208,37 @@ async fn bracket_index_hint() {
     assert_eq!(
         message,
         "Authentication Error, No team found in token. Checked team_id field 'roles[0]' and team_alias field 'None'. Hint: array indexing (e.g. 'roles[0]') is not supported in team_id_jwt_field. Use 'roles' instead — LiteLLM automatically uses the first element when the field value is a list."
+    );
+}
+
+async fn hint_message(field: &str) -> String {
+    let script = Arc::new(Script::new());
+    let lookup = lookup(&script, true);
+    let fields = settings(|fields| fields.team_id_jwt_field = Some(field.to_owned()));
+    let jwt = claims(serde_json::json!({"sub": "someone"}), &fields);
+    rendered(
+        find_and_validate_specific_team_id(&jwt, &lookup, &hint_settings(field), None)
+            .await
+            .unwrap_err(),
+    )
+    .2
+}
+
+// only a real list index gets a hint: a non-numeric suffix, an empty base and an empty index stay plain
+#[tokio::test]
+async fn index_hint_needs_a_real_index() {
+    assert_eq!(
+        hint_message("roles.x").await,
+        "Authentication Error, No team found in token. Checked team_id field 'roles.x' and team_alias field 'None'."
+    );
+    assert_eq!(
+        hint_message("[0]").await,
+        "Authentication Error, No team found in token. Checked team_id field '[0]' and team_alias field 'None'."
+    );
+    assert!(
+        hint_message("team_roles[0]")
+            .await
+            .contains("Hint: array indexing (e.g. 'team_roles[0]')")
     );
 }
 

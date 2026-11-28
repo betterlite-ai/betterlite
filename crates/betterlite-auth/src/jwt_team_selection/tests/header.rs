@@ -209,6 +209,28 @@ async fn id_read_error_membership_denial() {
     );
 }
 
+// without a database the provisional read is a plain 401, not a membership decision
+#[tokio::test]
+async fn provisional_no_db_propagates() {
+    let script = Arc::new(Script::new());
+    let lookup = lookup(&script, false);
+    let (status, _, message) = rendered(
+        resolve_team_from_header(
+            Some(&headers(&[("x-litellm-team-id", "team-x")])),
+            &ids(&["team-a"]),
+            true,
+            &lookup,
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_eq!(status, 401);
+    assert_eq!(
+        message,
+        "Authentication Error, No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"
+    );
+}
+
 #[tokio::test]
 async fn alias_no_db() {
     let script = Arc::new(Script::new().with_alias("alias-a", &[TEAM_A]));

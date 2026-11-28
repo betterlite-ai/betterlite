@@ -7,3 +7,4 @@ mod candidates;
 mod claims_teams;
 mod header;
 mod object;
+mod settings;

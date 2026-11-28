@@ -126,6 +126,13 @@ fn rule(enforce_rbac: bool) -> Arc<JwtTeamSelectionRule> {
     })
 }
 
+// the manual Debug renders the stage because the lookup behind it has no Debug
+#[test]
+fn rule_debug_names_the_stage() {
+    let text = format!("{:?}", rule(false));
+    assert!(text.contains("JwtTeamSelectionRule"), "{text}");
+}
+
 fn config_with_required_team() -> Config {
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
