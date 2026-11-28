@@ -8,9 +8,9 @@ use crate::api::responses_mcp_tool_selection::{
     McpToolCall, McpToolCallDetails, extract_tool_call_details,
 };
 
+use super::SHORT_ID_LENGTH;
 use super::error::ToolExecutionEventError;
 use super::records::IdSource;
-use super::short_id;
 
 const UNKNOWN_TOOL_NAME: &str = "unknown";
 const UNKNOWN_TOOL_CALL_ID: &str = "unknown";
@@ -58,7 +58,6 @@ impl ToolCallId {
     }
 }
 
-// the two fields of one MCPToolResult the event projection reads
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventToolResult {
     pub tool_call_id: ToolCallId,
@@ -92,15 +91,16 @@ where
         let details = matching_details(tool_calls, &result.tool_call_id)?;
         let (tool_name, arguments) = event_arguments(details.as_ref())?;
         let completed = i64::try_from(events.len()).unwrap_or(i64::MAX);
+        let suffix: String = ids().chars().take(SHORT_ID_LENGTH).collect();
         let request = McpCallRequest {
             tool_name,
             arguments,
             result: Some(result.result.clone()),
-            base_item_id: Some(format!("{ITEM_ID_PREFIX}{}", short_id(ids))),
+            base_item_id: Some(format!("{ITEM_ID_PREFIX}{suffix}")),
             sequence_start: completed.saturating_add(1),
             output_index: OUTPUT_INDEX,
         };
-        let mut next_id = || (ids)();
+        let mut next_id = || ids();
         let built = builder.create(&request, &mut next_id)?;
         events.extend(built);
     }

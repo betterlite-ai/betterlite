@@ -7,7 +7,6 @@ use crate::api::responses_mcp_tool_selection::ToolSelectionError;
 
 use super::streaming::StreamingError;
 
-// every failure _create_tool_execution_events (L1224-L1272) can report: a tool call B10122 refuses to read, non-text arguments, or the builder's overflow check
 #[derive(Debug, Error)]
 pub enum ToolExecutionEventError {
     #[error(transparent)]
@@ -18,7 +17,6 @@ pub enum ToolExecutionEventError {
     Events(#[from] McpEventError),
 }
 
-// one error type for the whole follow-up stage, widened as the provider's error joins it
 #[derive(Debug, Error)]
 pub enum McpFollowupError<ProviderError = Infallible> {
     #[error(transparent)]

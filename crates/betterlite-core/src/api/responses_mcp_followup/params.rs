@@ -9,7 +9,6 @@ use super::records::FollowUpCall;
 const STREAM: &str = "stream";
 const TOOL_CHOICE: &str = "tool_choice";
 
-// the six sources _build_request_params (L1190-L1222) merges
 pub struct RequestParamsInput<'request> {
     pub input: &'request ResponsesInput,
     pub model: &'request str,

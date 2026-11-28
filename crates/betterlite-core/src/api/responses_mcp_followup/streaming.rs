@@ -17,7 +17,6 @@ pub enum StreamingError {
     MetadataNotMapping,
 }
 
-// the arguments _create_mcp_streaming_response (L1145-L1188) reads before it builds the plan
 pub struct StreamingRequest<'request> {
     pub input: &'request ResponsesInput,
     pub model: &'request str,

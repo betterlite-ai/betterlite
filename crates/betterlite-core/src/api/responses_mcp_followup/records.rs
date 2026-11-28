@@ -15,7 +15,6 @@ use crate::api::responses_tool_namespaces::values::Fields;
 // uuid.uuid4().hex behind every generated MCP identifier (litellm_proxy_mcp_handler.py:1267, L1326, L1341)
 pub type IdSource = Arc<dyn Fn() -> String + Send + Sync>;
 
-// one aresponses call as _make_follow_up_call (L1103-L1118) forwards it: the named arguments and every call parameter
 #[derive(Debug, Clone, PartialEq)]
 pub struct FollowUpCall {
     pub input: ResponsesInput,
@@ -50,7 +49,6 @@ pub struct StreamingAuth {
     pub metadata: MetadataAuth,
 }
 
-// the records the Responses dispatcher resolves before this stage; B10124 built follow_up_input and the caller resolved follow_up_response_id
 #[derive(Debug, Clone)]
 pub struct ResponsesMcpFollowupInput {
     pub input: ResponsesInput,
@@ -70,7 +68,6 @@ pub struct ResponsesMcpFollowupInput {
     pub mcp_tools_fetched: Vec<Json>,
 }
 
-// the parameter plans, the pending provider call and, per branch, the streaming plan or the composed response
 #[derive(Debug, Clone)]
 pub struct ResponsesMcpFollowupResult {
     pub initial_params: ParameterMap,
