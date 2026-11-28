@@ -176,7 +176,7 @@ async def scenario_answer(entry: Scenario, recorder: Recorder) -> ScenarioResult
     set_variable(AUDIENCE_VARIABLE, audience)
     set_variable(ISSUER_VARIABLE, issuer)
     os.environ[PUBLIC_KEY_URL_VARIABLE] = PUBLIC_KEY_URL
-    object.__setattr__(JWTHandler, "_unscoped_jwt_warning_emitted", False)
+    JWTHandler._unscoped_jwt_warning_emitted = False  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1068
     cache = Cache(entry["now"])
     transport = KeyTransport(entry["key"], entry.get("userinfo_endpoint"))
     handler = build_handler(entry, cache, transport)
