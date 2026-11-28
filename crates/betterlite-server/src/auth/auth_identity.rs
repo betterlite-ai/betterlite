@@ -237,13 +237,12 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
     }
 }
 
-// auth.rs's master stage reads the record as optional and answers a refusal itself; the key lookup stage takes the Result.
+// ast-grep-ignore: no-one-line-functions - B10171 cannot change auth.rs, whose master stage takes Option
 pub(crate) fn master_key_context(
     presented: Option<&SecretString>,
     master_key: &SecretString,
 ) -> Option<AuthContext> {
-    let key = presented?;
-    auth_key_lookup::master_key_context(Some(key), master_key).unwrap_or_default()
+    auth_key_lookup::master_key_context(presented, Some(master_key)).unwrap_or_default()
 }
 
 mod tests;

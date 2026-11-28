@@ -44,9 +44,9 @@ pub(super) fn prepare(
     Ok(checked)
 }
 
+// ast-grep-ignore: no-one-line-functions - B10171 cannot change flow.rs, the only caller
 pub(super) fn creator_id(context: &AuthContext) -> Option<String> {
-    let user = context.principal.user.as_ref()?;
-    Some(user.id.clone())
+    context.principal.user.as_ref().map(|user| user.id.clone())
 }
 
 pub(super) const fn check_body(
