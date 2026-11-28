@@ -69,14 +69,13 @@ impl Callback for UpgradeRecorder {
                 .unwrap_or_else(PoisonError::into_inner)
                 .extend(recorded);
         }
-        match self.rejection {
-            Some(status) => {
+        self.rejection
+            .map(|status| {
                 let mut rejected = ErrorResponse::new(Some("rejected".to_owned()));
                 *rejected.status_mut() = status;
-                Err(rejected)
-            }
-            None => Ok(response),
-        }
+                rejected
+            })
+            .map_or(Ok(response), Err)
     }
 }
 
@@ -771,7 +770,7 @@ async fn dialer_sends_the_backend_headers() {
         .expect("server")
         .expect("server")
         .expect("server task");
-    let recorded = seen.lock().expect("recorded headers");
+    let recorded = seen.lock().expect("recorded headers").clone();
     let mut pairs = custom_headers(recorded.as_slice());
     pairs.sort_unstable();
     assert_eq!(

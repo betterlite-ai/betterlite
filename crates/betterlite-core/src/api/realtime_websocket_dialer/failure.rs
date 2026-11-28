@@ -64,7 +64,7 @@ pub(super) fn connect_failure(error: WebSocketClientError) -> OpenFailure {
 }
 
 // the exception class websockets raises for each failure, and the status the probe reports
-fn class_and_status(error: &WebSocketClientError) -> (Class, Option<u16>) {
+const fn class_and_status(error: &WebSocketClientError) -> (Class, Option<u16>) {
     match error {
         WebSocketClientError::Timeout | WebSocketClientError::KeepaliveTimeout => {
             (Class::TimeoutError, None)

@@ -67,14 +67,13 @@ impl Callback for Recorder<'_> {
                     .push((name.as_str().to_owned(), text.to_owned()));
             }
         }
-        match self.rejection {
-            Some(status) => {
+        self.rejection
+            .map(|status| {
                 let mut rejected = ErrorResponse::new(Some("forbidden".to_owned()));
                 *rejected.status_mut() = status;
-                Err(rejected)
-            }
-            None => Ok(response),
-        }
+                rejected
+            })
+            .map_or(Ok(response), Err)
     }
 }
 
