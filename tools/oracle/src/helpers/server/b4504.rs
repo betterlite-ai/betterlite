@@ -236,12 +236,14 @@ fn update_value(call: &AnalyzeInput, update: Update) -> HelperResult {
     updated_state(&prepared)
 }
 
-fn body_value(call: &AnalyzeInput) -> HelperResult {
-    let Some(job) = call
-        .job
+fn job_of(call: &AnalyzeInput) -> Option<&Job> {
+    call.job
         .as_ref()
         .or_else(|| call.lens.jobs.iter().find(|job| job.id == call.job_id))
-    else {
+}
+
+fn body_value(call: &AnalyzeInput) -> HelperResult {
+    let Some(job) = job_of(call) else {
         return Err(invalid("the lens has no such job"));
     };
     let body = AnalysisBody::new(
