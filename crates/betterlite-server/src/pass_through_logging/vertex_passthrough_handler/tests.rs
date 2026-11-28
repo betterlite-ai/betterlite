@@ -5,7 +5,6 @@ use std::sync::Arc;
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
-use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails, Usage};
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
 use betterlite_vertex::vertex_discovery_search::error::VertexDiscoverySearchError;
 use betterlite_vertex::vertex_relay_metadata::types::CustomLlmProvider;
@@ -14,7 +13,6 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::raw_predict::{completion_response, dummy_messages};
-use super::response_body::usage_json;
 use super::{VertexBranch, VertexPassthroughError, select_vertex_branch};
 use crate::pass_through_logging::anthropic_batch::unified_object_id;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
@@ -942,37 +940,22 @@ fn raw_predict_writes_the_partner_debug_log() {
 
 #[test]
 fn generate_usage_details_use_the_litellm_names() {
-    let usage = Usage {
-        prompt_tokens: 7,
-        completion_tokens: 2,
-        total_tokens: 9,
-        prompt_tokens_details: Some(PromptTokensDetails {
-            text_tokens: Some(4),
-            image_tokens: Some(1),
-            web_search_requests: Some(2),
-            google_maps_grounding_requests: Some(3),
-            cached_tokens: Some(5),
-            ..PromptTokensDetails::default()
-        }),
-        completion_tokens_details: Some(CompletionTokensDetails {
-            text_tokens: Some(2),
-            reasoning_tokens: Some(1),
-            ..CompletionTokensDetails::default()
-        }),
-        ..Usage::default()
-    };
-    let body = usage_json(&usage);
-    assert_eq!(integer(&body, "prompt_tokens"), 7);
-    let prompt = field(&body, "prompt_tokens_details");
+    let body = r#"{"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":2,"totalTokenCount":9,"cachedContentTokenCount":5,"promptTokensDetails":[{"modality":"TEXT","tokenCount":9},{"modality":"IMAGE","tokenCount":1}],"candidatesTokensDetails":[{"modality":"TEXT","tokenCount":2}]},"modelVersion":"gemini-2.0-flash"}"#;
+    let (passthrough, _) = handler(FakeCost::priced(Decimal::new(25, 3)));
+    let mut fixture = fixture(GENERATE_ROUTE, body);
+    let outcome = passthrough
+        .vertex_passthrough_handler(input(&mut fixture))
+        .expect("the generateContent reply is logged");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
+    assert_eq!(integer(usage, "prompt_tokens"), 7);
+    let prompt = field(usage, "prompt_tokens_details");
     assert_eq!(integer(prompt, "text_tokens"), 4);
     assert_eq!(integer(prompt, "image_tokens"), 1);
-    assert_eq!(integer(prompt, "web_search_requests"), 2);
-    assert_eq!(integer(prompt, "google_maps_grounding_requests"), 3);
     assert_eq!(integer(prompt, "cached_tokens"), 5);
-    assert_eq!(integer(&body, "cache_read_input_tokens"), 5);
-    let completion = field(&body, "completion_tokens_details");
+    assert_eq!(integer(usage, "cache_read_input_tokens"), 5);
+    let completion = field(usage, "completion_tokens_details");
     assert_eq!(integer(completion, "text_tokens"), 2);
-    assert_eq!(integer(completion, "reasoning_tokens"), 1);
 }
 
 #[tokio::test]

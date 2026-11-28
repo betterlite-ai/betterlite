@@ -156,7 +156,7 @@ fn message_json(message: &Message) -> Result<Json, serde_json::Error> {
 }
 
 // LiteLLM's ModelResponse.model_dump() usage block, which the Vertex factory's cost record reads back too.
-pub(super) fn usage_json(usage: &Usage) -> Json {
+fn usage_json(usage: &Usage) -> Json {
     let mut fields = IndexMap::new();
     insert_counts(
         &mut fields,
