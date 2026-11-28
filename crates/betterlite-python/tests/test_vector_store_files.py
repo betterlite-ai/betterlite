@@ -395,9 +395,9 @@ def test_calls_delete() -> None:
         )
         reference_call = server.calls[-1]
     removed = DELETED.validate_python(ours)
-    assert removed["id"] == FILE_ID
-    assert removed["object"] == "vector_store.file.deleted"
-    assert removed["deleted"] is True
+    assert removed.get("id") == FILE_ID
+    assert removed.get("object") == "vector_store.file.deleted"
+    assert removed.get("deleted") is True
     assert ours_call["method"] == reference_call["method"] == "DELETE"
     assert ours_call["route"] == reference_call["route"] == FILE_PATH
     assert ours_call["body"] == reference_call["body"] == {}
