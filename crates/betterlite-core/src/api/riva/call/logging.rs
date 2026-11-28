@@ -1,9 +1,8 @@
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -37,12 +36,12 @@ pub trait RivaLogger {
     fn record(&mut self, event: RivaEvent) -> Result<(), PrePostError>;
 }
 
-pub struct PrePostLogger<'call, 'env> {
-    pub state: &'call mut LoggingState,
-    pub env: &'call PrePostEnv<'env>,
+// LogContext belongs to betterlite-logging, so its record_pre helper rides a private trait instead of an inherent impl.
+trait RivaPreCallLogging {
+    fn record_pre(&mut self, record: RivaPreCall) -> Result<(), PrePostError>;
 }
 
-impl RivaLogger for PrePostLogger<'_, '_> {
+impl RivaLogger for LogContext<'_, '_> {
     fn record(&mut self, event: RivaEvent) -> Result<(), PrePostError> {
         match event {
             RivaEvent::PreCall(record) => self.record_pre(record),
@@ -66,7 +65,7 @@ impl RivaLogger for PrePostLogger<'_, '_> {
     }
 }
 
-impl PrePostLogger<'_, '_> {
+impl RivaPreCallLogging for LogContext<'_, '_> {
     fn record_pre(&mut self, record: RivaPreCall) -> Result<(), PrePostError> {
         let fields = IndexMap::from([
             (
