@@ -1,139 +1,72 @@
-use betterlite_server::public_endpoints::blog_feed_parser::parse_rss_to_posts;
-use serde_json::Value;
+use std::sync::Arc;
 
-use super::{
-    BLOG_POSTS_TTL_SECONDS, BlogPost, Failure, MockResponse, default_max_posts, default_timeout,
+use betterlite_config::sections::public_discovery::Settings;
+use betterlite_server::public_endpoints::blog_feed::BlogFeed;
+use betterlite_server::public_endpoints::blog_feed::cache::CacheSnapshot;
+use betterlite_server::public_endpoints::blog_feed::local::BundledBlogPosts;
+use betterlite_server::public_endpoints::blog_feed::testing::{
+    Answer, FixedClock, RecordingWarnings, Script, reply,
 };
+use betterlite_server::public_endpoints::blog_feed::warnings::FeedWarning;
+use betterlite_server::public_endpoints::blog_feed_parser::BlogPost;
+use indexmap::IndexMap;
+use serde_json::{Value, json};
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub(super) struct Warning {
-    pub(super) subject: String,
-    pub(super) message: String,
-}
+use super::MockResponse;
 
-pub(super) fn local_posts() -> Vec<BlogPost> {
-    let post = BlogPost {
-        title: "Realtime WebRTC HTTP Endpoints".to_owned(),
-        description: "Use the LiteLLM proxy to route OpenAI-style WebRTC realtime via HTTP: client_secrets and SDP exchange.".to_owned(),
-        date: "2026-03-12".to_owned(),
-        url: "https://docs.litellm.ai/blog/realtime_webrtc_http_endpoints".to_owned(),
-    };
-    vec![post]
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub(super) struct FetchRequest {
-    pub(super) url: String,
-    pub(super) timeout: u64,
-}
-
-// The oracle never actually waits on the clock; `timeout` is only recorded for observability.
-pub(super) fn fetch_rss_feed(
+pub(super) fn feed_for(
+    script: Script,
     url: &str,
-    timeout: u64,
-    response: &MockResponse,
-) -> (FetchRequest, Result<String, Failure>) {
-    let request = FetchRequest {
-        url: url.to_owned(),
-        timeout,
-    };
-    if response.error {
-        return (
-            request,
-            Err(Failure::Connect {
-                url: url.to_owned(),
-            }),
-        );
-    }
-    if !(200..=299).contains(&response.status) {
-        return (
-            request,
-            Err(Failure::Status {
-                status: response.status,
-            }),
-        );
-    }
-    (request, Ok(response.text.clone()))
-}
-
-fn fetch_and_parse(
-    url: &str,
-    response: &MockResponse,
-) -> (FetchRequest, Result<Vec<BlogPost>, Failure>) {
-    let (request, fetched) = fetch_rss_feed(url, default_timeout(), response);
-    let parsed = fetched.and_then(|xml| {
-        parse_rss_to_posts(&xml, default_max_posts(), usize::MAX).map_err(Failure::from)
-    });
-    (request, parsed)
-}
-
-pub(super) fn validate_blog_posts(posts: &Value) -> (bool, Vec<Warning>) {
-    let valid = posts.as_array().is_some_and(|entries| !entries.is_empty());
-    if valid {
-        return (valid, Vec::new());
-    }
-    let warning = Warning {
-        subject: "None".to_owned(),
-        message: "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
-            .to_owned(),
-    };
-    (valid, vec![warning])
-}
-
-// Mirrors `GetBlogPosts._cached_posts`/`_last_fetch_time`, populated on a successful fetch.
-pub(super) struct Cache {
-    pub(super) posts: Option<Vec<BlogPost>>,
-    pub(super) last_fetch_time: f64,
-}
-
-impl Cache {
-    pub(super) fn store(&mut self, posts: Vec<BlogPost>, now: f64) {
-        self.posts = Some(posts);
-        self.last_fetch_time = now;
-    }
-}
-
-pub(super) fn get_blog_posts(
-    cache: &mut Cache,
-    url: &str,
-    now: f64,
     local_only: bool,
-    response: &MockResponse,
-) -> (Vec<BlogPost>, Vec<Warning>, Option<FetchRequest>) {
-    if local_only {
-        return (local_posts(), Vec::new(), None);
+    now: f64,
+    warnings: &Arc<RecordingWarnings>,
+) -> BlogFeed<Script> {
+    let settings = settings_for(url, local_only);
+    BlogFeed::new(
+        script,
+        &settings,
+        Arc::new(FixedClock { now }),
+        Arc::new(BundledBlogPosts),
+        Arc::clone(warnings),
+    )
+}
+
+pub(super) fn answer_for(response: &MockResponse) -> Answer {
+    if response.error {
+        return Answer::Closed;
     }
-    // mul_add avoids clippy's float-arithmetic-operator restriction, as `local_ttl_cache.rs` does.
-    let cache_hit = cache
-        .posts
-        .clone()
-        .filter(|_| now < cache.last_fetch_time.mul_add(1.0, BLOG_POSTS_TTL_SECONDS));
-    if let Some(posts) = cache_hit {
-        return (posts, Vec::new(), None);
+    reply(response.status, &response.text)
+}
+
+pub(super) fn settings_for(url: &str, local_only: bool) -> Settings {
+    Settings {
+        blog_posts_url: url.to_owned(),
+        local_blog_posts: local_only,
+        public_mcp_servers: None,
+        public_mcp_hub_strict: true,
+        public_model_groups_links: IndexMap::new(),
+        docs_title: String::new(),
     }
-    let (request, fetched) = fetch_and_parse(url, response);
-    match fetched {
-        Err(failure) => {
-            let warning = Warning {
-                subject: url.to_owned(),
-                message: format!(
-                    "LiteLLM: Failed to fetch blog posts from {url}: {failure}. Falling back to local backup."
-                ),
-            };
-            (local_posts(), vec![warning], Some(request))
-        }
-        Ok(posts) if posts.is_empty() => {
-            let warning = Warning {
-                subject: "None".to_owned(),
-                message:
-                    "LiteLLM: Parsed RSS feed has no valid posts. Falling back to local backup."
-                        .to_owned(),
-            };
-            (local_posts(), vec![warning], Some(request))
-        }
-        Ok(posts) => {
-            cache.store(posts.clone(), now);
-            (posts, Vec::new(), Some(request))
-        }
-    }
+}
+
+pub(super) fn warning_value(warning: &FeedWarning) -> Value {
+    json!({
+        "subject": warning.subject.as_deref().unwrap_or("None"),
+        "message": warning.message.as_str(),
+    })
+}
+
+pub(super) fn call_value(posts: &[BlogPost], warnings: &RecordingWarnings) -> Value {
+    let entries = warnings.warnings();
+    json!({
+        "posts": posts,
+        "warnings": entries.iter().map(warning_value).collect::<Vec<Value>>(),
+    })
+}
+
+pub(super) fn snapshot_value(snapshot: &CacheSnapshot) -> Value {
+    json!({
+        "cached_posts": snapshot.cached_posts,
+        "last_fetch_time": snapshot.last_fetch_time,
+    })
 }
