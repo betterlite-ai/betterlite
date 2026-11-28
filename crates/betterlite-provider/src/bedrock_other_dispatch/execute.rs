@@ -2,15 +2,11 @@ use std::sync::Arc;
 
 use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use betterlite_bedrock::bedrock_embedding_io::transport::ClientFactory as EmbeddingClientFactory;
-use betterlite_bedrock::count_call::handler::{
-    CountTokensCredentials, CountTokensHandler, CountTokensTransport,
-};
+use betterlite_bedrock::count_call::handler::{CountTokensHandler, CountTokensTransport};
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::embedding_call::Clock;
-use betterlite_bedrock::embedding_call::CredentialSource as EmbeddingCredentials;
 use betterlite_bedrock::embedding_jobs::transport::StatusTransport;
-use betterlite_bedrock::image_call::plan::CredentialSource as ImageCredentials;
 use betterlite_bedrock::image_call::transport::ClientFactory as ImageClientFactory;
-use betterlite_bedrock::rerank::plan::CredentialSource as RerankCredentials;
 use betterlite_bedrock::rerank::transport::ClientFactory as RerankClientFactory;
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_bedrock::transcription::auth::ChainCredentials;
@@ -69,12 +65,7 @@ pub async fn dispatch<Source, Factory, Transport, Files, H, B>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<OperationResult, BedrockOtherError<B::Error>>
 where
-    Source: EmbeddingCredentials
-        + ImageCredentials
-        + RerankCredentials
-        + CountTokensCredentials
-        + ChainCredentials
-        + Sync,
+    Source: CredentialSource + ChainCredentials,
     Factory: EmbeddingClientFactory + RerankClientFactory + ImageClientFactory + Sync,
     <Factory as EmbeddingClientFactory>::Client: LegacyEmbeddingTransport + StatusTransport,
     Transport: LegacyEmbeddingTransport + CountTokensTransport + TranscriptionTransport,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_bedrock::bedrock_embedding_io::transport::ClientFactory as EmbeddingClientFactory;
-use betterlite_bedrock::embedding_call::CredentialSource as EmbeddingCredentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::embedding_call::error::EmbeddingCallError;
 use betterlite_bedrock::embedding_call::{
     Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext as EmbeddingLogContext,
@@ -19,7 +19,7 @@ pub(super) async fn embedding<Source, Factory, Transport, Files>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<EmbeddingCallResponse, EmbeddingCallError>
 where
-    Source: EmbeddingCredentials + Sync,
+    Source: CredentialSource,
     Factory: EmbeddingClientFactory + Sync,
     <Factory as EmbeddingClientFactory>::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,

@@ -1,11 +1,11 @@
 use betterlite_bedrock::bedrock_embedding_io::transport::ClientFactory as EmbeddingClientFactory;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::embedding_jobs::error::EmbeddingJobsError;
 use betterlite_bedrock::embedding_jobs::logging::{StatusEvent, log_call};
 use betterlite_bedrock::embedding_jobs::status::{
     AsyncInvokeStatusCall, StatusServices, get_async_invoke_status,
 };
 use betterlite_bedrock::embedding_jobs::transport::StatusTransport;
-use betterlite_bedrock::image_call::plan::CredentialSource as ImageCredentials;
 use betterlite_bedrock::image_call::plan::LogContext as ImageLogContext;
 use betterlite_models::decisions::Json;
 
@@ -19,7 +19,7 @@ pub(super) async fn embedding_status<Source, Factory, Transport, Files>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<Json, EmbeddingJobsError>
 where
-    Source: ImageCredentials + Sync,
+    Source: CredentialSource,
     Factory: EmbeddingClientFactory + Sync,
     <Factory as EmbeddingClientFactory>::Client: StatusTransport,
     Transport: Sync,

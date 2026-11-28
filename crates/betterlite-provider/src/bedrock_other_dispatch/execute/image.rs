@@ -1,6 +1,5 @@
-use betterlite_bedrock::image_call::plan::{
-    CredentialSource as ImageCredentials, LogContext as ImageLogContext,
-};
+use betterlite_bedrock::credentials::CredentialSource;
+use betterlite_bedrock::image_call::plan::LogContext as ImageLogContext;
 use betterlite_bedrock::image_call::transport::ClientFactory as ImageClientFactory;
 
 use crate::bedrock_image_dispatch::BedrockImageRequest;
@@ -18,7 +17,7 @@ pub(super) async fn image<Source, Factory, Transport, Files>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<OperationResult, BedrockImageError>
 where
-    Source: ImageCredentials + Sync,
+    Source: CredentialSource,
     Factory: ImageClientFactory + Sync,
     Transport: Sync,
     Files: Sync,

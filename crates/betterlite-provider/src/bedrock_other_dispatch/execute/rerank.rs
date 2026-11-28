@@ -1,8 +1,8 @@
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::rerank::error::RerankCallError;
 use betterlite_bedrock::rerank::execute::{dispatch_request, resolve_target, transform_response};
 use betterlite_bedrock::rerank::plan::{
-    CredentialSource as RerankCredentials, LogContext as RerankLogContext, RerankCall,
-    prepare_request,
+    LogContext as RerankLogContext, RerankCall, prepare_request,
 };
 use betterlite_bedrock::rerank::transport::ClientFactory as RerankClientFactory;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
@@ -17,7 +17,7 @@ pub(super) async fn rerank<Source, Factory, Transport, Files>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<RerankResponse, RerankCallError>
 where
-    Source: RerankCredentials + Sync,
+    Source: CredentialSource,
     Factory: RerankClientFactory + Sync,
     Transport: Sync,
     Files: Sync,
