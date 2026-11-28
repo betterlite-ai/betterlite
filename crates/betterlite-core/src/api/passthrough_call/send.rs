@@ -21,6 +21,7 @@ use tokio_util::task::TaskTracker;
 use url::Url;
 
 use super::auth::validate as validate_auth;
+use super::aws::{AwsFlavor, AwsPassthrough};
 use super::config::{ConfigError, Fault, FaultDetail, PassthroughCallConfig};
 use super::logging::{self, RelayLogging};
 use super::params;
@@ -56,6 +57,7 @@ impl From<ConfigError> for Failure {
 pub(crate) struct RelayContext<'call> {
     pub tag: PassthroughConfigTag,
     pub environment: Arc<BTreeMap<String, String>>,
+    pub aws: Arc<dyn AwsPassthrough>,
     pub model: &'call str,
     pub provider: &'call str,
     pub endpoint: &'call str,
@@ -80,7 +82,14 @@ pub(crate) async fn run(
     let client = params::client(http, &timeouts)?;
     logging::record_environment(state, args, resolved, &call)?;
     let upstream = upstream(config, args, resolved, &call.params, &client).await?;
-    let (headers, signing) = signed_headers(config, args, resolved, &call.params, &upstream)?;
+    let signing = PassthroughSigning {
+        litellm_params: &call.params,
+        request_data: object_data(args.data.as_ref(), args.json.as_ref()),
+        api_base: upstream.url.as_str(),
+        model: Some(&resolved.model),
+    };
+    let request_headers = args.request_headers.as_deref().unwrap_or_default();
+    let (headers, signed) = signed_headers(config, request_headers, &upstream, &signing).await?;
     let json = replaced_model(args.json.as_ref(), &resolved.model);
     let empty = Object::new();
     let streaming = config.is_streaming_request(
@@ -95,7 +104,7 @@ pub(crate) async fn run(
         url: &upstream.url,
         headers: &headers,
         content: args.content.as_ref(),
-        signed: signing.as_deref(),
+        signed: signed.as_deref(),
         data: args.data.as_ref(),
         files: args.files.as_deref(),
         json: json.as_ref(),
@@ -117,6 +126,7 @@ fn relay_context<'call>(
     RelayContext {
         tag: config.tag,
         environment: Arc::clone(&config.environment),
+        aws: Arc::clone(&config.aws),
         model: &resolved.model,
         provider: resolved.provider.slug(),
         endpoint: &args.endpoint,
@@ -160,17 +170,13 @@ async fn upstream(
 }
 
 // steps 9 and 10: the caller's pass-through headers, then the provider's signature over them
-fn signed_headers(
+async fn signed_headers(
     config: &PassthroughCallConfig,
-    args: &PassthroughCallArgs,
-    resolved: &ResolvedModel,
-    params: &Object,
+    request_headers: &[(String, String)],
     upstream: &Upstream,
+    signing: &PassthroughSigning<'_>,
 ) -> Result<(Headers, Option<Vec<u8>>), Failure> {
-    let mut requested = IndexMap::new();
-    for (name, value) in args.request_headers.iter().flatten() {
-        requested.insert(name.clone(), value.clone());
-    }
+    let requested: IndexMap<String, String> = request_headers.iter().cloned().collect();
     let auth_headers: IndexMap<String, String> = upstream
         .headers
         .iter()
@@ -179,13 +185,20 @@ fn signed_headers(
     let headers = forward_headers_from_request(&requested, auth_headers, false)
         .into_iter()
         .collect();
-    let signing = PassthroughSigning {
-        litellm_params: params,
-        request_data: object_data(args.data.as_ref(), args.json.as_ref()),
-        api_base: upstream.url.as_str(),
-        model: Some(&resolved.model),
+    let aws_flavor = match config.tag {
+        PassthroughConfigTag::Bedrock => Some(AwsFlavor::Bedrock),
+        PassthroughConfigTag::BedrockMantle => Some(AwsFlavor::Mantle),
+        PassthroughConfigTag::VLLM
+        | PassthroughConfigTag::Azure
+        | PassthroughConfigTag::AzureAI
+        | PassthroughConfigTag::GigaChat
+        | PassthroughConfigTag::Watsonx
+        | PassthroughConfigTag::NvidiaNim => None,
     };
-    Ok(config.sign_request(headers, &signing)?)
+    let Some(flavor) = aws_flavor else {
+        return Ok(config.sign_request(headers, signing)?);
+    };
+    Ok(config.aws.sign_request(flavor, headers, signing).await?)
 }
 
 async fn send(
@@ -206,6 +219,7 @@ async fn send(
         PassthroughCallConfig {
             tag: context.tag,
             environment: Arc::clone(&context.environment),
+            aws: Arc::clone(&context.aws),
         },
         Arc::clone(&relay_logging),
         TaskTracker::new(),

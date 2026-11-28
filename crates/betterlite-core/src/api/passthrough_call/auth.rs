@@ -12,7 +12,6 @@ use betterlite_http::gigachat_tokens::request::GigachatTokenRequest;
 use betterlite_http::gigachat_tokens::runtime::SystemRuntime;
 use betterlite_http::gigachat_tokens::tokens::GigachatTokens as _;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::python_json::dumps_object;
 use betterlite_openai::gigachat_chat::config::GigachatBearer;
 use betterlite_openai::gigachat_chat::error::GigaChatError;
 use betterlite_openai::gigachat_passthrough::{
@@ -22,35 +21,23 @@ use betterlite_openai::nvidia_nim_passthrough::{
     NvidiaNimPassthroughConfig, validate_environment as nvidia_nim_validate,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
-use betterlite_openai::passthrough::transformation::types::PassthroughSigning;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use betterlite_openai::watsonx_passthrough::{WatsonxPassthroughConfig, WatsonxPassthroughError};
 use http::header::HeaderMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use self::providers::{AzureKind, azure_headers, gigachat_error, status_error};
 use super::config::{ConfigError, PassthroughCallConfig};
-use super::logging::json_object;
 use super::wire::header_text;
 
 mod providers;
 
-const AUTHORIZATION: &str = "Authorization";
-const CONTENT_TYPE: &str = "Content-Type";
-const JSON_CONTENT: &str = "application/json";
 const ACCESS_TOKEN_PARAM: &str = "gigachat_access_token";
 const SCOPE_PARAM: &str = "gigachat_scope";
 const AUTH_URL_PARAM: &str = "gigachat_auth_url";
-// botocore's NoCredentialsError text, which LiteLLM lets through when a Bedrock runtime call has no Bearer token
-const NO_CREDENTIALS: &str = "Unable to locate credentials";
-// BedrockMantleAuthMixin.sign_request wraps the same failure in this ValueError
-const MANTLE_NO_CREDENTIALS: &str = "Bedrock Mantle auth failed: no Bearer token and no usable AWS \
-     credentials. Set BEDROCK_MANTLE_API_KEY (or AWS_BEARER_TOKEN_BEDROCK) or pass api_key for \
-     Bearer auth, or provide AWS credentials (IAM role / access key / profile / web identity) for \
-     SigV4.";
 
 // step 8: provider_api_key = config.get_api_key(api_key), then validate_environment's headers
 pub(crate) async fn validate(
@@ -169,48 +156,6 @@ async fn gigachat_headers(
     gigachat_validate(Headers::new(), config.get_api_key(api_key), &bearer)
         .await
         .map_err(gigachat_error)
-}
-
-// provider_config.sign_request: only the two Bedrock variants touch the headers or the body
-pub(crate) fn sign_request(
-    tag: PassthroughConfigTag,
-    headers: Headers,
-    context: &PassthroughSigning<'_>,
-) -> Result<(Headers, Option<Vec<u8>>), ConfigError> {
-    match tag {
-        PassthroughConfigTag::Bedrock => Err(ConfigError::ValueError {
-            message: NO_CREDENTIALS.to_owned(),
-        }),
-        PassthroughConfigTag::BedrockMantle => {
-            let token = context
-                .litellm_params
-                .get("api_key")
-                .and_then(JsonValue::as_str)
-                .map(SecretString::from);
-            let Some(secret) = token else {
-                return Err(ConfigError::ValueError {
-                    message: MANTLE_NO_CREDENTIALS.to_owned(),
-                });
-            };
-            let body = context.request_data.map_or_else(
-                || dumps_object(&json_object(&Object::new())).into_bytes(),
-                |data| dumps_object(&json_object(data)).into_bytes(),
-            );
-            let mut signed = headers;
-            signed.insert(CONTENT_TYPE.to_owned(), JSON_CONTENT.to_owned());
-            signed.insert(
-                AUTHORIZATION.to_owned(),
-                format!("Bearer {}", secret.expose_secret()),
-            );
-            Ok((signed, Some(body)))
-        }
-        PassthroughConfigTag::VLLM
-        | PassthroughConfigTag::Azure
-        | PassthroughConfigTag::AzureAI
-        | PassthroughConfigTag::GigaChat
-        | PassthroughConfigTag::Watsonx
-        | PassthroughConfigTag::NvidiaNim => Ok((headers, None)),
-    }
 }
 
 // The merged authenticator owns the OAuth flow; the call only supplies the parameters it reads

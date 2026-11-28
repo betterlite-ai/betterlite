@@ -115,6 +115,35 @@ fn call_uses_the_session_environment() {
 }
 
 #[test]
+fn call_signs_bedrock_with_the_session_token() {
+    let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
+    let session = format!(
+        r#"{{"environment": {{"AWS_BEARER_TOKEN_BEDROCK": "session-token", "AWS_BEDROCK_RUNTIME_ENDPOINT": "http://{}"}}}}"#,
+        serving.address
+    );
+    let core = SessionCore::build(&session).unwrap();
+    let request = r#"{"method": "POST", "endpoint": "model/anthropic.claude-3-haiku/invoke", "model": "bedrock/anthropic.claude-3-haiku", "custom_llm_provider": "bedrock"}"#;
+    let reply = call_once(&core, request).unwrap();
+    assert_eq!(reply.status, 200);
+    let sent = serving.finish().unwrap();
+    assert_eq!(
+        sent.line,
+        "POST /model/anthropic.claude-3-haiku/invoke HTTP/1.1"
+    );
+    assert!(sent.head.contains("authorization: Bearer session-token"));
+}
+
+#[test]
+fn call_refuses_an_invalid_mantle_region() {
+    let session = r#"{"environment": {"BEDROCK_MANTLE_REGION": "Not_A_Region"}}"#;
+    let core = SessionCore::build(session).unwrap();
+    let request = r#"{"method": "POST", "endpoint": "chat/completions", "model": "bedrock_mantle/openai.gpt-oss-120b", "custom_llm_provider": "bedrock_mantle"}"#;
+    let error = call_once(&core, request).err().unwrap();
+    assert_eq!(error.kind, "BadRequestError");
+    assert_eq!(error.status_code, Some(400));
+}
+
+#[test]
 fn build_reads_the_session_environment() {
     SessionCore::build("{}").unwrap();
     SessionCore::build(r#"{"environment": {"HTTPS_PROXY": "http://proxy.example:3128"}}"#).unwrap();

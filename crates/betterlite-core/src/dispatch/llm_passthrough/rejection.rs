@@ -33,7 +33,7 @@ fn call_status(error: &PassthroughCallError) -> u16 {
     match error {
         PassthroughCallError::UpstreamStatus { status, .. }
         | PassthroughCallError::Routing { status, .. } => *status,
-        PassthroughCallError::Resolution(_) => 400_u16,
+        PassthroughCallError::Resolution(_) | PassthroughCallError::MantleEndpoint(_) => 400_u16,
         PassthroughCallError::Mapped(provider) if (400..=599).contains(&provider.status_code) => {
             provider.status_code
         }

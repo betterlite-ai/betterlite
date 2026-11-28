@@ -3,7 +3,7 @@ use secrecy::SecretString;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-// this section reads no YAML key; LiteLLM reads all three names from the process environment
+// this section reads no YAML key; LiteLLM reads all four names from the process environment
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
     #[serde(skip)]
@@ -15,6 +15,7 @@ pub struct Settings {
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
     pub region: Option<String>,
+    pub aws_bearer_token: Option<SecretString>,
 }
 
 impl Section for Raw {
@@ -30,6 +31,9 @@ impl Section for Raw {
                 .lookup("BEDROCK_MANTLE_API_KEY")
                 .map(SecretString::from),
             region: lookup.lookup("BEDROCK_MANTLE_REGION"),
+            aws_bearer_token: lookup
+                .lookup("AWS_BEARER_TOKEN_BEDROCK")
+                .map(SecretString::from),
         })
     }
 }

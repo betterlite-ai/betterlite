@@ -12,7 +12,7 @@ use betterlite_openai::openai_base_config::Object;
 use super::super::auth;
 use super::super::config::PassthroughCallConfig;
 use super::super::{PassthroughCallArgs, allm_passthrough_route};
-use super::support::{base_args, logging_state, proxy_client, test_environment};
+use super::support::{base_args, failing_aws, logging_state, proxy_client, test_environment};
 
 fn args_for(model: &str) -> PassthroughCallArgs {
     let mut args = base_args();
@@ -43,6 +43,7 @@ async fn gigachat_reads_its_base_and_access_token_from_the_environment() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -76,6 +77,7 @@ async fn gigachat_mints_its_token_from_the_auth_url_environment() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -105,6 +107,7 @@ async fn nvidia_nim_reads_its_base_and_key_from_the_environment() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -126,6 +129,7 @@ async fn azure_reads_its_base_and_key_from_the_environment() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -148,6 +152,7 @@ async fn azure_openai_key_reaches_the_request_when_azure_api_key_is_unset() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -169,6 +174,7 @@ async fn azure_api_key_beats_the_azure_openai_key() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -190,6 +196,7 @@ async fn azure_ad_token_becomes_the_bearer_header() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -212,6 +219,7 @@ async fn azure_param_ad_token_becomes_the_bearer_header() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -224,6 +232,7 @@ async fn azure_ai_entra_reads_the_ad_token() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::AzureAI,
         environment: Arc::new(test_environment(&[("AZURE_AD_TOKEN", "azure-ai-ad-token")])),
+        aws: failing_aws(),
     };
     let headers = auth::validate(
         &config,
@@ -253,6 +262,7 @@ async fn hosted_vllm_reads_its_base_from_the_environment() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");
@@ -284,6 +294,7 @@ async fn watsonx_reads_its_url_key_and_iam_url_from_the_environment() {
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
+        &failing_aws(),
     )
     .await
     .expect("the upstream answers");

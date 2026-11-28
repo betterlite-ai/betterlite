@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::ProxyTrust;
@@ -13,12 +14,19 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::resolution::{ProviderIdentity, ResolvedModel};
-use betterlite_openai::openai_base_config::Object;
+use betterlite_models::provider_defaults_a::policies::MantleEndpoint;
+use betterlite_models::resolution::{ProviderIdentity, ResolutionRequest, ResolvedModel};
+use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::passthrough::transformation::types::{
+    PassthroughSigning, PassthroughUrlRequest,
+};
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
+use url::Url;
 
+use super::super::aws::{AwsFlavor, AwsPassthrough};
+use super::super::config::ConfigError;
 use super::super::{PassthroughCallArgs, PassthroughClient};
 
 pub(crate) const MODEL: &str = "my-model";
@@ -146,4 +154,44 @@ pub(crate) fn header(reply: &super::super::PassthroughReply, name: &str) -> Opti
         .iter()
         .find(|(header, _value)| header.eq_ignore_ascii_case(name));
     found.map(|(_header, value)| value.clone())
+}
+
+// The call tests for other providers hand in a port that refuses, so reaching it fails the test
+pub(crate) fn failing_aws() -> Arc<dyn AwsPassthrough> {
+    Arc::new(FailingAws)
+}
+
+struct FailingAws;
+
+fn refused() -> ConfigError {
+    ConfigError::ValueError {
+        message: String::from("the fake AWS port answers nothing"),
+    }
+}
+
+#[async_trait]
+impl AwsPassthrough for FailingAws {
+    fn mantle_endpoint(
+        &self,
+        _request: &ResolutionRequest<'_>,
+    ) -> Result<MantleEndpoint, ConfigError> {
+        Err(refused())
+    }
+
+    fn complete_url(
+        &self,
+        _flavor: AwsFlavor,
+        _request: &PassthroughUrlRequest<'_>,
+    ) -> Result<(Url, String), ConfigError> {
+        Err(refused())
+    }
+
+    async fn sign_request(
+        &self,
+        _flavor: AwsFlavor,
+        _headers: Headers,
+        _context: &PassthroughSigning<'_>,
+    ) -> Result<(Headers, Option<Vec<u8>>), ConfigError> {
+        Err(refused())
+    }
 }

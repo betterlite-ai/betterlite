@@ -30,6 +30,7 @@ pub mod event;
 pub mod model_id;
 pub mod record;
 pub mod reply;
+pub mod sdk_call;
 mod tests;
 pub mod url;
 use self::url::PassthroughEnvironment;
@@ -97,8 +98,8 @@ fn supplied_authorization(pairs: &[(String, Option<String>)]) -> Vec<(String, St
         })
         .collect()
 }
-fn signing_region(
-    plan: &BedrockPassthroughPlan<'_>,
+pub(crate) fn signing_region(
+    environment: &PassthroughEnvironment,
     context: &PassthroughSigning<'_>,
     bearer: bool,
 ) -> Result<String, PassthroughFailure> {
@@ -110,11 +111,52 @@ fn signing_region(
         explicit: explicit.as_deref(),
         model: context.model,
         model_id: None,
-        environment_region_name: plan.environment.region_name.as_deref(),
-        environment_region: plan.environment.region.as_deref(),
-        session_region: plan.environment.session_region.as_deref(),
+        environment_region_name: environment.region_name.as_deref(),
+        environment_region: environment.region.as_deref(),
+        session_region: environment.session_region.as_deref(),
     })
     .map_err(PassthroughFailure::from)
+}
+
+// B658's sign_request body, shared with the SDK port: the identity and the signing region are already chosen
+pub(crate) struct SigningIdentity<'text> {
+    pub(crate) credentials: Option<&'text Credentials>,
+    pub(crate) bearer_token: Option<&'text SecretString>,
+    pub(crate) now: SystemTime,
+}
+
+pub(crate) fn sign_headers(
+    headers: &Headers,
+    context: &PassthroughSigning<'_>,
+    identity: &SigningIdentity<'_>,
+    region: &str,
+) -> Result<(Headers, Option<Vec<u8>>), PassthroughFailure> {
+    let body = request_body(context)?;
+    let bearer = bedrock_bearer_token(None, identity.bearer_token);
+    let pairs = content_type_pairs(headers, bearer.is_some());
+    let supplied = supplied_authorization(&pairs);
+    let bounded = pairs.iter().any(|(name, _)| {
+        name.eq_ignore_ascii_case("content-length")
+            || name.eq_ignore_ascii_case("transfer-encoding")
+    });
+    let signed = request_headers(RequestHeaders {
+        credentials: identity.credentials,
+        region,
+        extra_headers: &supplied,
+        endpoint: context.api_base,
+        data: Body::Bytes(&body),
+        headers: &pairs,
+        api_key: None,
+        configured_bearer: identity.bearer_token,
+        supports_bearer_token: true,
+        now: identity.now,
+    })?;
+    let signed_headers: Headers = signed
+        .headers
+        .into_iter()
+        .filter(|(name, _)| bounded || !name.eq_ignore_ascii_case("content-length"))
+        .collect();
+    Ok((signed_headers, Some(signed.body)))
 }
 impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
     type Error = PassthroughFailure;
@@ -126,40 +168,21 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         &self,
         request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), Self::Error> {
-        url::complete_url(self, request)
+        url::RuntimeUrl::resolve(&self.environment, request)?.get_complete_url(request)
     }
     fn sign_request(
         &self,
         headers: Headers,
         context: &PassthroughSigning<'_>,
     ) -> Result<(Headers, Option<Vec<u8>>), Self::Error> {
-        let body = request_body(context)?;
-        let bearer = bedrock_bearer_token(None, self.identity.bearer_token.as_ref());
-        let pairs = content_type_pairs(&headers, bearer.is_some());
-        let supplied = supplied_authorization(&pairs);
-        let region = signing_region(self, context, bearer.is_some())?;
-        let bounded = pairs.iter().any(|(name, _)| {
-            name.eq_ignore_ascii_case("content-length")
-                || name.eq_ignore_ascii_case("transfer-encoding")
-        });
-        let signed = request_headers(RequestHeaders {
+        let identity = SigningIdentity {
             credentials: self.identity.credentials.as_ref(),
-            region: &region,
-            extra_headers: &supplied,
-            endpoint: context.api_base,
-            data: Body::Bytes(&body),
-            headers: &pairs,
-            api_key: None,
-            configured_bearer: self.identity.bearer_token.as_ref(),
-            supports_bearer_token: true,
+            bearer_token: self.identity.bearer_token.as_ref(),
             now: self.identity.now,
-        })?;
-        let signed_headers: Headers = signed
-            .headers
-            .into_iter()
-            .filter(|(name, _)| bounded || !name.eq_ignore_ascii_case("content-length"))
-            .collect();
-        Ok((signed_headers, Some(signed.body)))
+        };
+        let bearer = bedrock_bearer_token(None, identity.bearer_token);
+        let region = signing_region(&self.environment, context, bearer.is_some())?;
+        sign_headers(&headers, context, &identity, &region)
     }
     fn get_error_class(&self, message: &str, status_code: u16, headers: &Headers) -> ProviderError {
         error::bedrock_provider_error(message, status_code, headers)

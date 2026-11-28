@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use betterlite_azure::credentials::source::SourceFailure;
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn;
 use betterlite_context::resource_config_selection::passthrough::PassthroughConfigTag;
 use betterlite_foundry::credentials::error::CredentialsError;
 use betterlite_http_fixture::reply::reply;
@@ -15,45 +14,22 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::{
-    PassthroughSigning, PassthroughTarget, PassthroughUrlRequest,
+    PassthroughTarget, PassthroughUrlRequest,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde_json::Number;
 
 use super::super::allm_passthrough_route;
 use super::super::auth;
 use super::super::config::{ConfigError, PassthroughCallConfig};
 use super::super::logging;
-use super::super::mantle;
 use super::super::params;
-use super::MODEL_ARN;
 use super::support::{
-    MODEL, base_args, empty_environment, logging_state, object, proxy_client, resolved, vllm_args,
-    watsonx_environment,
+    MODEL, empty_environment, failing_aws, logging_state, object, proxy_client, resolved,
+    vllm_args, watsonx_environment,
 };
-
-const EAST_ARN: &str = "arn:aws:bedrock:us-east-2:123456789012:application-inference-profile/abc";
-
-fn bedrock_request<'call>(
-    api_base: Option<&'call str>,
-    model: &'call str,
-    endpoint: &'call str,
-    params: &'call Object,
-) -> PassthroughUrlRequest<'call> {
-    PassthroughUrlRequest {
-        api_base,
-        api_key: None,
-        target: PassthroughTarget {
-            model,
-            custom_llm_provider: "bedrock",
-            endpoint,
-        },
-        request_query_params: None,
-        litellm_params: params,
-    }
-}
 
 #[test]
 fn logging_json_object_maps_every_value() {
@@ -261,6 +237,7 @@ async fn auth_refuses_non_string_provider_credentials(
     let config = PassthroughCallConfig {
         tag,
         environment: Arc::new(empty_environment()),
+        aws: failing_aws(),
     };
     let Err(failure) = auth::validate(&config, None, &params, "https://example.test", &http).await
     else {
@@ -283,6 +260,7 @@ async fn auth_nvidia_nim_sets_the_bearer_header_only_for_a_key() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::NvidiaNim,
         environment: Arc::new(empty_environment()),
+        aws: failing_aws(),
     };
     let headers = auth::validate(
         &config,
@@ -301,57 +279,6 @@ async fn auth_nvidia_nim_sets_the_bearer_header_only_for_a_key() {
         .await
         .unwrap();
     assert_eq!(bare.get("Authorization"), None);
-}
-
-#[test]
-fn auth_mantle_signs_the_data_and_sets_the_json_content_type() {
-    let params = object(&[("api_key", JsonValue::String(String::from("mantle-key")))]);
-    let data = object(&[(
-        "model",
-        JsonValue::String(String::from("bedrock_mantle/original")),
-    )]);
-    let context = PassthroughSigning {
-        litellm_params: &params,
-        request_data: Some(&data),
-        api_base: "http://127.0.0.1:1/chat/completions",
-        model: Some("original"),
-    };
-    let config = PassthroughCallConfig {
-        tag: PassthroughConfigTag::BedrockMantle,
-        environment: Arc::new(empty_environment()),
-    };
-    let (headers, body) = config.sign_request(Headers::new(), &context).unwrap();
-    assert_eq!(
-        headers.get("Authorization"),
-        Some(&String::from("Bearer mantle-key"))
-    );
-    assert_eq!(
-        headers.get("Content-Type"),
-        Some(&String::from("application/json"))
-    );
-    assert_eq!(
-        body.as_deref(),
-        Some(br#"{"model": "bedrock_mantle/original"}"#.as_slice())
-    );
-}
-
-#[test]
-fn auth_mantle_without_a_key_is_refused() {
-    let config = PassthroughCallConfig {
-        tag: PassthroughConfigTag::BedrockMantle,
-        environment: Arc::new(empty_environment()),
-    };
-    let empty = Object::new();
-    let unsigned = PassthroughSigning {
-        litellm_params: &empty,
-        request_data: None,
-        api_base: "http://127.0.0.1:1/chat/completions",
-        model: None,
-    };
-    let Err(error) = config.sign_request(Headers::new(), &unsigned) else {
-        panic!("a mantle call without a key is refused");
-    };
-    assert!(error.to_string().contains("Bedrock Mantle auth failed"));
 }
 
 #[tokio::test]
@@ -442,6 +369,7 @@ fn urls_vllm_without_a_base_is_a_value_error() {
     let config = PassthroughCallConfig {
         tag: PassthroughConfigTag::VLLM,
         environment: Arc::new(empty_environment()),
+        aws: failing_aws(),
     };
     let params = Object::new();
     let request = PassthroughUrlRequest {
@@ -468,93 +396,6 @@ fn urls_vllm_without_a_base_is_a_value_error() {
     }
 }
 
-#[test]
-fn urls_bedrock_reads_the_region_and_model_fields() {
-    let config = PassthroughCallConfig {
-        tag: PassthroughConfigTag::Bedrock,
-        environment: Arc::new(empty_environment()),
-    };
-    let params = object(&[
-        (
-            "aws_region_name",
-            JsonValue::String(String::from("eu-central-1")),
-        ),
-        ("model_id", JsonValue::String(String::from(MODEL_ARN))),
-    ]);
-    let request = bedrock_request(None, "anthropic.claude", "model/foo/converse", &params);
-    let (url, base) = config.get_complete_url(&request).unwrap();
-    assert_eq!(base, "https://bedrock-runtime.eu-central-1.amazonaws.com");
-    let probe = format!("/model/{MODEL_ARN}/converse");
-    let encoded = encode_runtime_modelid_arn(&probe);
-    let segment = encoded.split('/').nth(2).unwrap_or("");
-    assert_eq!(url.as_str(), format!("{base}/model/{segment}/converse"));
-}
-
-#[test]
-fn urls_bedrock_refuses_an_invalid_region() {
-    let config = PassthroughCallConfig {
-        tag: PassthroughConfigTag::Bedrock,
-        environment: Arc::new(empty_environment()),
-    };
-    let params = object(&[(
-        "aws_region_name",
-        JsonValue::String(String::from("Bad_Region")),
-    )]);
-    let request = bedrock_request(None, "anthropic.claude", "model/foo/converse", &params);
-    let Err(error) = config.get_complete_url(&request) else {
-        panic!("an invalid region is refused");
-    };
-    match error {
-        ConfigError::ValueError { message } => {
-            assert!(message.contains("Invalid AWS region format: 'Bad_Region'"));
-        }
-        other @ (ConfigError::Passthrough(_)
-        | ConfigError::Message { .. }
-        | ConfigError::Provider(_)) => panic!("unexpected error: {other}"),
-    }
-}
-
-#[test]
-fn urls_bedrock_region_from_the_model_arn() {
-    let config = PassthroughCallConfig {
-        tag: PassthroughConfigTag::Bedrock,
-        environment: Arc::new(empty_environment()),
-    };
-    let params = Object::new();
-    let request = bedrock_request(None, EAST_ARN, "model/foo/converse", &params);
-    let (url, base) = config.get_complete_url(&request).unwrap();
-    assert_eq!(base, "https://bedrock-runtime.us-east-2.amazonaws.com");
-    assert_eq!(url.as_str(), format!("{base}/model/foo/converse"));
-}
-
-#[test]
-fn urls_mantle_reads_the_region_from_its_host() {
-    let config = PassthroughCallConfig {
-        tag: PassthroughConfigTag::BedrockMantle,
-        environment: Arc::new(empty_environment()),
-    };
-    let host = "https://bedrock-mantle.eu-central-1.api.aws";
-    let params = object(&[("api_base", JsonValue::String(String::from(host)))]);
-    let request = bedrock_request(Some(host), "mantle-model", "chat/completions", &params);
-    let (url, base) = config.get_complete_url(&request).unwrap();
-    assert_eq!(base, "https://bedrock-runtime.eu-central-1.amazonaws.com");
-    assert_eq!(
-        url.as_str(),
-        "https://bedrock-runtime.eu-central-1.amazonaws.com/chat/completions"
-    );
-    let plain = "http://127.0.0.1:9";
-    let plain_params = object(&[("api_base", JsonValue::String(String::from(plain)))]);
-    let plain_request = bedrock_request(
-        Some(plain),
-        "mantle-model",
-        "chat/completions",
-        &plain_params,
-    );
-    let (plain_url, plain_base) = config.get_complete_url(&plain_request).unwrap();
-    assert_eq!(plain_base, plain);
-    assert_eq!(plain_url.as_str(), "http://127.0.0.1:9/chat/completions");
-}
-
 #[tokio::test]
 async fn call_sends_the_cookies_it_is_given_and_none_for_an_empty_list() {
     let cookie_server = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
@@ -565,10 +406,15 @@ async fn call_sends_the_cookies_it_is_given_and_none_for_an_empty_list() {
     ]);
     let mut cookie_state = logging_state();
     let http = proxy_client(1024);
-    let cookie_answer =
-        allm_passthrough_route(cookie_args, &mut cookie_state, &http, &empty_environment())
-            .await
-            .expect("the upstream answers");
+    let cookie_answer = allm_passthrough_route(
+        cookie_args,
+        &mut cookie_state,
+        &http,
+        &empty_environment(),
+        &failing_aws(),
+    )
+    .await
+    .expect("the upstream answers");
     assert_eq!(cookie_answer.status, 200);
     assert!(
         cookie_server
@@ -581,97 +427,15 @@ async fn call_sends_the_cookies_it_is_given_and_none_for_an_empty_list() {
     let mut empty_args = vllm_args(&format!("http://{}/v1", empty_server.address));
     empty_args.cookies = Some(Vec::new());
     let mut empty_state = logging_state();
-    let empty_answer =
-        allm_passthrough_route(empty_args, &mut empty_state, &http, &empty_environment())
-            .await
-            .expect("the upstream answers");
+    let empty_answer = allm_passthrough_route(
+        empty_args,
+        &mut empty_state,
+        &http,
+        &empty_environment(),
+        &failing_aws(),
+    )
+    .await
+    .expect("the upstream answers");
     assert_eq!(empty_answer.status, 200);
     assert!(!empty_server.finish().unwrap().head.contains("cookie:"));
-}
-
-#[test]
-fn mantle_policies_strip_the_provider_and_region_prefixes() {
-    let mut args = base_args();
-    args.model = String::from("bedrock_mantle/us-east-1/openai.gpt-oss-120b");
-    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
-    let policies = mantle::policies(&args);
-    let endpoint = policies
-        .mantle
-        .expect("the call builds the Mantle endpoint");
-    assert_eq!(endpoint.base_model, "openai.gpt-oss-120b");
-    assert_eq!(
-        endpoint.api_base,
-        "https://bedrock-mantle.us-east-1.api.aws/v1"
-    );
-}
-
-// split_mantle_region_prefix: a head that names no Bedrock region stays part of the model id
-#[test]
-fn mantle_policies_keep_a_non_region_head() {
-    let mut args = base_args();
-    args.model = String::from("bedrock_mantle/openai.gpt-oss-120b/extra");
-    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
-    let policies = mantle::policies(&args);
-    let endpoint = policies
-        .mantle
-        .expect("the call builds the Mantle endpoint");
-    assert_eq!(endpoint.base_model, "openai.gpt-oss-120b/extra");
-    assert_eq!(
-        endpoint.api_base,
-        "https://bedrock-mantle.us-east-1.api.aws/v1"
-    );
-}
-
-// get_llm_provider gets no litellm_params from the passthrough call, so aws_region_name never reaches this
-#[test]
-fn mantle_policies_take_the_region_from_the_model_prefix_alone() {
-    let mut args = base_args();
-    args.model = String::from("bedrock_mantle/eu-west-1/original");
-    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
-    args.extra.insert(
-        "aws_region_name".to_owned(),
-        JsonValue::String(String::from("us-west-2")),
-    );
-    let policies = mantle::policies(&args);
-    let endpoint = policies
-        .mantle
-        .expect("the call builds the Mantle endpoint");
-    assert_eq!(
-        endpoint.api_base,
-        "https://bedrock-mantle.eu-west-1.api.aws/v1"
-    );
-    assert_eq!(endpoint.base_model, "original");
-    args.model = String::from("bedrock_mantle/original");
-    let plain = mantle::policies(&args);
-    let plain_endpoint = plain.mantle.expect("the call builds the Mantle endpoint");
-    assert_eq!(
-        plain_endpoint.api_base,
-        "https://bedrock-mantle.us-east-1.api.aws/v1"
-    );
-}
-
-#[test]
-fn mantle_policies_keep_the_given_base_and_ignore_an_empty_one() {
-    let mut args = base_args();
-    args.model = String::from("bedrock_mantle/original");
-    args.custom_llm_provider = Some(String::from("bedrock_mantle"));
-    args.api_base = Some(String::from("http://127.0.0.1:8080"));
-    args.api_key = Some(SecretString::from("mantle-key"));
-    let policies = mantle::policies(&args);
-    let endpoint = policies
-        .mantle
-        .expect("the call builds the Mantle endpoint");
-    assert_eq!(endpoint.api_base, "http://127.0.0.1:8080");
-    assert_eq!(endpoint.base_model, "original");
-    assert_eq!(
-        endpoint.api_key.map(|key| key.expose_secret().to_owned()),
-        Some(String::from("mantle-key"))
-    );
-    args.api_base = Some(String::new());
-    let derived = mantle::policies(&args);
-    let derived_endpoint = derived.mantle.expect("the call builds the Mantle endpoint");
-    assert_eq!(
-        derived_endpoint.api_base,
-        "https://bedrock-mantle.us-east-1.api.aws/v1"
-    );
 }

@@ -28,28 +28,12 @@ deviations:
       side effect on a state whose call then fails.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L466-L482
   - what: >-
-      No environment variable is read: the provider resolver and the merged provider configs get an
-      empty environment and empty global credentials, so AZURE_*, AWS_*, VLLM_API_BASE,
-      GIGACHAT_* and WATSONX_* fallbacks do not apply.
+      VLLM_API_BASE is not read from the environment: the VLLM config is still rebuilt in core, so a
+      deployment that sets only the variable and no api_base is refused.
     why: >-
       betterlite configuration enters through the config crate; the caller passes api_base, api_key
       and deployment litellm_params in the arguments and extra map.
     link: ""
-  - what: >-
-      Bedrock runtime requests are not SigV4-signed and no AWS bearer token is read, so without the
-      provider's own key material the call fails with botocore's "Unable to locate credentials" text.
-    why: >-
-      Signing needs botocore's SigV4 and the AWS credential chain, neither of which betterlite-core
-      may depend on. LiteLLM reaches the same error when botocore finds no credentials.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1681-L1699
-  - what: >-
-      Bedrock Mantle takes its bearer token only from litellm_params.api_key, not from
-      BEDROCK_MANTLE_API_KEY or AWS_BEARER_TOKEN_BEDROCK.
-    why: >-
-      Those variables are configuration and enter through the config crate, which this call does not
-      read; the ValueError text is LiteLLM's own and names the variables a setup can set on the
-      deployment instead.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L37-L38
   - what: >-
       A caller-supplied client only lends its two timeouts; the call always builds its own
       ProxiedClient (B173) from the injected policy and limits.
@@ -85,11 +69,11 @@ deviations:
       the keys the caller passed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L188-L193
   - what: >-
-      The Bedrock, Bedrock Mantle and VLLM passthrough configs are rebuilt inside this module instead
-      of calling B658's, B625's and B8153's merged configs.
+      The VLLM passthrough config is rebuilt inside this module instead of calling B8153's merged
+      config.
     why: >-
-      betterlite-bedrock and betterlite-provider depend on betterlite-core, so core cannot import
-      them; the local configs implement the BasePassthroughConfig steps the call needs.
+      betterlite-provider depends on betterlite-core, so core cannot import it; the local config
+      implements the BasePassthroughConfig steps the call needs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9344-L9397
   - what: >-
       litellm_params are built here rather than by B176's get_litellm_params, which is not on main
@@ -110,9 +94,9 @@ deviations:
       The Mantle endpoint the call derives when api_base is absent always uses the /v1 path, where
       LiteLLM picks /openai/v1 for the models its model cost map marks with use_openai_responses_path.
     why: >-
-      The call resolves with an empty model catalog, and betterlite-core cannot import
-      betterlite-bedrock's Mantle inputs; the passthrough request still goes to bedrock-runtime, so
-      only the resolved api_base in litellm_params and the logs differs.
+      The call resolves with an empty model catalog, so the port gets an empty model cost map; the
+      passthrough request still goes to bedrock-runtime, so only the resolved api_base in
+      litellm_params and the logs differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L58-L82
 kept_bugs:
   - what: >-
