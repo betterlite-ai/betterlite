@@ -126,6 +126,7 @@ description: >-
   the imports-on-310 check runs it there.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/vector_store_files/*"
   - "crates/betterlite-python/python/betterlite/types/llms/openai/realtime/*"
   - "crates/betterlite-python/python/betterlite/realtime_api/main.py"
   - "crates/betterlite-python/python/betterlite/evals/_evals.py"
