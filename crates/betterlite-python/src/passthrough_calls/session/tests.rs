@@ -98,6 +98,23 @@ fn call_refuses_a_model_no_provider_serves() {
 }
 
 #[test]
+fn call_uses_the_session_environment() {
+    let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
+    let base = format!("http://{}/api/v1", serving.address);
+    let session = format!(
+        r#"{{"environment": {{"GIGACHAT_API_BASE": "{base}", "GIGACHAT_ACCESS_TOKEN": "session-token"}}}}"#
+    );
+    let core = SessionCore::build(&session).unwrap();
+    let request =
+        r#"{"method": "POST", "endpoint": "chat/completions", "model": "gigachat/GigaChat"}"#;
+    let reply = call_once(&core, request).unwrap();
+    assert_eq!(reply.status, 200);
+    let sent = serving.finish().unwrap();
+    assert_eq!(sent.line, "POST /api/v1/chat/completions HTTP/1.1");
+    assert!(sent.head.contains("authorization: Bearer session-token"));
+}
+
+#[test]
 fn build_reads_the_session_environment() {
     SessionCore::build("{}").unwrap();
     SessionCore::build(r#"{"environment": {"HTTPS_PROXY": "http://proxy.example:3128"}}"#).unwrap();

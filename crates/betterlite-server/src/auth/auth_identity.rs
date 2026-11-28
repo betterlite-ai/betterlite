@@ -10,6 +10,7 @@ use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
+use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
@@ -51,6 +52,7 @@ pub enum AuthBackend {
     AuthPricing,
     AuthTagBudgets,
     AuthKeyBudgets,
+    AuthModelBudgets,
     TeamBudgetAdmission,
     AuthTenantBudgets,
     OrganizationRoutePolicy,
@@ -84,6 +86,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
     AuthBackend::ModelGrantIntersection,
+    AuthBackend::AuthModelBudgets,
 ];
 
 #[derive(Clone, Debug)]
@@ -105,6 +108,7 @@ pub enum StageInput {
     AuthPricing(Box<PricingStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    AuthModelBudgets(Box<ModelBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthTenantBudgets(Box<TenantBudgetStageInput>),
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
@@ -165,6 +169,7 @@ impl StageInput {
             Self::AuthPricing(_) => AuthBackend::AuthPricing,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
+            Self::AuthModelBudgets(_) => AuthBackend::AuthModelBudgets,
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
             Self::AuthTenantBudgets(_) => AuthBackend::AuthTenantBudgets,
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
@@ -176,12 +181,21 @@ impl StageInput {
     }
 }
 
+// the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
+fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    let key_pass_through = backend == MasterKey && matches!(input, Authenticated(_));
+    if backend == input.backend() || key_pass_through {
+        return Ok(());
+    }
+    Err(StageFailure::from(AuthenticationFailure::Missing))
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    ensure_backend_matches(backend, input)?;
+    require_backend(backend, input)?;
     match input {
         Authenticated(context) => Ok((**context).clone()),
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
@@ -189,6 +203,7 @@ pub(crate) fn dispatch(
         StageInput::AuthPricing(stage) => Ok(stage.context.clone()),
         StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelBudgets(stage) => Ok(stage.context.clone()),
         StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
         StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
@@ -227,14 +242,6 @@ fn request_model_context(stage: &RequestModelStageInput) -> Result<AuthContext, 
         Ok(_) => Ok(stage.context.clone()),
         Err(error) => Err(request_model_failure(&error)),
     }
-}
-
-fn ensure_backend_matches(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
-    let exempt = backend == MasterKey && matches!(input, Authenticated(_));
-    if backend == input.backend() || exempt {
-        return Ok(());
-    }
-    Err(StageFailure::from(AuthenticationFailure::Missing))
 }
 
 // The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.

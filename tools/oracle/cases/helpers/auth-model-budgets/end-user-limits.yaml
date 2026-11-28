@@ -1,0 +1,47 @@
+kind: helper
+name: auth-model-budgets-end-user-limits
+call:
+  auth_model_budgets:
+    calls:
+      - function: end_user_apply
+        budget:
+          tpm_limit: 10
+          rpm_limit: 0
+          tpd_limit: 5
+          max_budget: 25.0
+          model_max_budget:
+            gpt-4:
+              max_budget: 3.0
+        end_user_id: eu-1
+      - function: end_user_apply
+        budget:
+          budget_id: b1
+      - function: end_user_update
+        token:
+          token: sk-eu
+          end_user_id: old
+          end_user_tpm_limit: 7
+          end_user_max_budget: 9.0
+          end_user_model_max_budget:
+            gpt-4:
+              max_budget: 4.0
+        params:
+          end_user_id: null
+          end_user_tpm_limit: null
+          end_user_rpm_limit: 11
+          end_user_tpd_limit: 3
+          end_user_max_budget: null
+          end_user_model_max_budget:
+            gpt-4:
+              max_budget: 6.0
+          allowed_model_region: us
+      - function: end_user_update
+        token:
+          token: sk-eu2
+        params:
+          end_user_id: eu-9
+          end_user_max_budget: 0.0
+          end_user_model_max_budget: {}
+env: {}
+compare:
+  ignore: []

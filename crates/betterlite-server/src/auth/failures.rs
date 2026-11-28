@@ -26,6 +26,7 @@ pub(crate) enum StageFailure {
     RequestBodySafety(Box<ProxyException>),
     VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
+    ModelBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     TenantBudgets(Box<ProxyException>),
     OrganizationRoutePolicy(Box<ProxyException>),
@@ -63,6 +64,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
+        | StageFailure::ModelBudgets(exception)
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)
