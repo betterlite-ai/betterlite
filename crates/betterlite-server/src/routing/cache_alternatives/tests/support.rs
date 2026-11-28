@@ -375,10 +375,10 @@ impl RatesCost {
             .copied()
     }
 
-    // the arm's own buckets priced at its rates, shared by the scenario and price lookups below
-    fn input_cost(&self, model: &str, tokens: &CacheTokenBuckets) -> Option<Decimal> {
+    // the fixture's rates and the arm's own buckets priced at them, shared by the lookups below
+    fn priced(&self, model: &str, tokens: &CacheTokenBuckets) -> Option<(Rates, Decimal)> {
         let rates = self.rates_for(model)?;
-        Some(tokens_cost(rates, tokens))
+        Some((rates, tokens_cost(rates, tokens)))
     }
 }
 
@@ -404,7 +404,7 @@ impl CacheCostService for RatesCost {
         request: &ScenarioRequest<'_>,
         _moment: DateTime<Utc>,
     ) -> Option<CacheCostScenario> {
-        let input_cost = self.input_cost(request.model, request.tokens)?;
+        let (_, input_cost) = self.priced(request.model, request.tokens)?;
         Some(CacheCostScenario {
             tokens: *request.tokens,
             input_cost,
@@ -412,16 +412,11 @@ impl CacheCostService for RatesCost {
     }
 
     fn price(&self, request: &PriceRequest<'_>, _moment: DateTime<Utc>) -> Option<Decimal> {
-        let rates = self.rates_for(request.model)?;
+        let (rates, input_cost) = self.priced(request.model, request.tokens)?;
         let completion = rates
             .output
-            .checked_mul(Decimal::from(request.completion_tokens))
-            .expect("the fixture rates stay in range");
-        Some(
-            tokens_cost(rates, request.tokens)
-                .checked_add(completion)
-                .expect("the fixture costs stay in range"),
-        )
+            .checked_mul(Decimal::from(request.completion_tokens))?;
+        input_cost.checked_add(completion)
     }
 }
 
@@ -486,6 +481,16 @@ impl ScriptedTransport {
     }
 }
 
+// the scripted transport answers the total only when the request carries max_tokens, as its counts do
+fn counted_tokens(bytes: &[u8], total: Option<i64>, prefix: Option<i64>) -> Option<i64> {
+    let fields = serde_json::from_slice::<JsonObject>(bytes).ok()?;
+    if fields.contains_key("max_tokens") {
+        total
+    } else {
+        prefix
+    }
+}
+
 impl CountTokensTransport for ScriptedTransport {
     fn send(
         &self,
@@ -496,17 +501,7 @@ impl CountTokensTransport for ScriptedTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.url.to_string());
         let counted = match &request.body {
-            RequestBody::Json(bytes) => {
-                serde_json::from_slice::<JsonObject>(bytes)
-                    .ok()
-                    .and_then(|fields| {
-                        if fields.contains_key("max_tokens") {
-                            self.total
-                        } else {
-                            self.prefix
-                        }
-                    })
-            }
+            RequestBody::Json(bytes) => counted_tokens(bytes, self.total, self.prefix),
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => None,
         };
         let response = counted.map_or_else(
