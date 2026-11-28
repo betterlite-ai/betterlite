@@ -4,7 +4,7 @@ use std::future::Future;
 use std::thread;
 
 use betterlite_anthropic::chat_call::ChatClients;
-use betterlite_anthropic::chat_call::transport::SuppliedChatClient;
+use betterlite_http::client_kind::SuppliedClient;
 use tokio::runtime::Builder;
 
 use crate::anthropic::handler::completion;
@@ -50,7 +50,7 @@ fn the_foundry_completion_completes_on_a_second_thread() {
     let (credentials, keys) = signing_material(&setup);
     let request = request_of(&setup, &credentials, &keys);
     let clients = ChatClients {
-        supplied: setup.supplied.then_some(SuppliedChatClient {
+        supplied: setup.supplied.then_some(SuppliedClient {
             kind: setup.supplied_kind,
             transport: &supplied,
         }),

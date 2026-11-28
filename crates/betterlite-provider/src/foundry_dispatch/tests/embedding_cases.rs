@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use betterlite_foundry::embeddings::call::EmbeddingMode;
 use betterlite_foundry::embeddings::request::FoundryEmbeddingOptions;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 use betterlite_prompts::arguments::json::Object as PromptObject;
@@ -62,7 +62,7 @@ impl Rig {
             api_key,
             params: &self.params,
             timeout: Duration::from_secs(5),
-            mode: EmbeddingMode::Async,
+            mode: ClientKind::Asynchronous,
         }
     }
 

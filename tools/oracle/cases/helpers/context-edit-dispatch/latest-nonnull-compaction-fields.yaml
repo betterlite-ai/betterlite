@@ -1,0 +1,85 @@
+kind: helper
+name: latest-nonnull-compaction-fields
+call:
+  context_edit_dispatch:
+    scenarios:
+      - messages:
+          - role: user
+            content: start
+        context_management:
+          edits:
+            - type: compact_20260112
+            - type: compact_20260112
+            - type: compact_20260112
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: one
+            applied_edits:
+              - type: compact_20260112
+            compaction_block:
+              type: compaction
+              content: A
+            iterations_usage:
+              - type: compaction
+                input_tokens: 1
+                output_tokens: 2
+          - kind: polyfill
+            messages:
+              - role: user
+                content: two
+            applied_edits:
+              - type: compact_20260112
+                error: summary_call_failed
+          - kind: polyfill
+            messages:
+              - role: user
+                content: three
+            applied_edits:
+              - type: compact_20260112
+            compaction_block:
+              type: compaction
+              content: B
+            iterations_usage: []
+      - messages:
+          - role: user
+            content: start
+        context_management:
+          edits:
+            - type: compact_20260112
+            - type: compact_20260112
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: one
+            applied_edits:
+              - type: compact_20260112
+            compaction_block:
+              type: compaction
+              content: A
+            iterations_usage:
+              - type: compaction
+                input_tokens: 1
+                output_tokens: 2
+          - kind: polyfill
+            messages:
+              - role: user
+                content: two
+            applied_edits:
+              - type: compact_20260112
+            compaction_block: null
+      - messages:
+          - role: user
+            content: start
+        context_management:
+          edits:
+            - type: compact_20260112
+            - type: clear_tool_uses_20250919
+        compact:
+          - kind: error
+            status_code: 422
+            message: boom
+env: {}
+compare: {ignore: []}

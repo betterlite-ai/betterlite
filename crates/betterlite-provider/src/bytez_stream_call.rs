@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::bytez_wire::error::BytezError;
 use betterlite_openai::bytez_wire::request::BytezRequestBody;
 use betterlite_prompts::arguments::json::Json;

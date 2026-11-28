@@ -10,7 +10,8 @@ use betterlite_core::api::assistant_read_delete::request::{SuppliedClient, Suppl
 use betterlite_core::api::assistant_records::ClientClass;
 use betterlite_core::api::assistant_run_sdk::call::{RunClient, RunClientClass};
 use betterlite_core::api::assistant_threads::SuppliedClient as ThreadClient;
-use betterlite_openai::assistants::client::{ClientKind, SdkClient};
+use betterlite_http::client_kind::ClientKind;
+use betterlite_openai::assistants::client::SdkClient;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -97,7 +98,9 @@ impl AssistantClient {
     {
         let kind = match self.class {
             SuppliedClass::OpenAi | SuppliedClass::AzureOpenAi => ClientKind::Sync,
-            SuppliedClass::AsyncOpenAi | SuppliedClass::AsyncAzureOpenAi => ClientKind::Async,
+            SuppliedClass::AsyncOpenAi | SuppliedClass::AsyncAzureOpenAi => {
+                ClientKind::Asynchronous
+            }
         };
         match self.class {
             SuppliedClass::OpenAi | SuppliedClass::AsyncOpenAi => {
@@ -145,7 +148,7 @@ impl AssistantClient {
             max_retries: 0,
             timeout: self.timeout,
             http_client: HttpClient {
-                is_async: kind == ClientKind::Async,
+                is_async: kind == ClientKind::Asynchronous,
                 shared: false,
             },
         }

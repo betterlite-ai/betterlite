@@ -1,4 +1,4 @@
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -99,7 +99,7 @@ impl SuppliedClientKind {
     pub const fn client_kind(self) -> ClientKind {
         match self {
             Self::OpenAi | Self::AzureOpenAi => ClientKind::Sync,
-            Self::AsyncOpenAi | Self::AsyncAzureOpenAi => ClientKind::Async,
+            Self::AsyncOpenAi | Self::AsyncAzureOpenAi => ClientKind::Asynchronous,
         }
     }
 }

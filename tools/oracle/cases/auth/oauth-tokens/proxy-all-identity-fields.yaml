@@ -1,0 +1,46 @@
+name: auth-oauth-tokens-proxy-all-identity-fields
+config: |
+  general_settings:
+    master_key: oracle-master
+    enable_oauth2_proxy_auth: true
+    trusted_proxy_ranges: [127.0.0.0/8]
+    oauth2_config_mappings:
+      user_id: x-user-id
+      user_email: x-user-email
+      team_id: x-team-id
+      team_alias: x-team-alias
+      org_id: x-org-id
+      models: x-models
+  model_list:
+    - model_name: proxy-model
+      litellm_params:
+        model: openai/proxy-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    x-user-id: oauth-user
+    x-user-email: oauth-user@example.com
+    x-team-id: oauth-team
+    x-team-alias: OAuth Team
+    x-org-id: oauth-org
+    x-models: proxy-model
+  body:
+    model: proxy-model
+    messages:
+      - {role: user, content: Say hello.}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-oauth-identity
+      object: chat.completion
+      created: 1700000031
+      model: proxy-upstream
+      choices: [{index: 0, message: {role: assistant, content: Hello!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}
