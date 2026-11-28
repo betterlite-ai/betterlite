@@ -74,6 +74,42 @@ async fn mutation_add_builds_with_plain_env_vars() {
 }
 
 #[tokio::test]
+async fn mutation_add_returns_build_failure_after_the_debug_log() {
+    let fixture = test_fixture();
+    let (captured, _guard) = capture();
+    let table = row(
+        r#"{"server_id":"srv-1","transport":"http","url":"https://mcp.test","credentials":{"upstream_token_header":"bad header"}}"#,
+    );
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    let error = mutator.add(&table).await.unwrap_err();
+    assert!(matches!(error, MutationError::Build(_)));
+    assert!(fixture.db_ids().await.is_empty());
+    assert!(captured.text().contains("Failed to add MCP server:"));
+}
+
+#[tokio::test]
+async fn mutation_update_returns_build_failure_after_the_debug_log() {
+    let fixture = test_fixture();
+    fixture
+        .put_db_server(server(
+            r#"{"server_id":"srv-1","name":"before","transport":"http"}"#,
+        ))
+        .await;
+    let (captured, _guard) = capture();
+    let table = row(
+        r#"{"server_id":"srv-1","transport":"http","url":"https://mcp.test","credentials":{"upstream_token_header":"bad header"}}"#,
+    );
+    let builder = fixture.builder();
+    let mutator = fixture.mutator(&builder);
+    let error = mutator.update(&table).await.unwrap_err();
+    assert!(matches!(error, MutationError::Build(_)));
+    let held = fixture.db_server("srv-1").await.unwrap();
+    assert_eq!(held.fields.name, "before");
+    assert!(captured.text().contains("Failed to udpate MCP server:"));
+}
+
+#[tokio::test]
 async fn mutation_update_evicts_when_ineligible() {
     let fixture = test_fixture();
     fixture
