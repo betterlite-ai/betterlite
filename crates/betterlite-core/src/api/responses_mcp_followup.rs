@@ -77,9 +77,11 @@ where
     ) -> Result<ResponsesMcpFollowupResult, McpFollowupError<Provider::Error>> {
         let prepared = self.prepare(input);
         if self.original_stream {
-            return self.streaming(input, prepared);
+            let (plan, events) = self.streaming(input)?;
+            return Ok(prepared.into_result(Some(plan), events, None));
         }
-        self.completed(input, prepared).await
+        let response = self.completed(input, &prepared.call).await?;
+        Ok(prepared.into_result(None, Vec::new(), Some(response)))
     }
 
     fn prepare(&self, input: &ResponsesMcpFollowupInput) -> Prepared {
@@ -104,8 +106,7 @@ where
     fn streaming(
         &self,
         input: &ResponsesMcpFollowupInput,
-        prepared: Prepared,
-    ) -> Result<ResponsesMcpFollowupResult, McpFollowupError<Provider::Error>> {
+    ) -> Result<(McpStreamingPlan, Vec<StreamEvent>), McpFollowupError<Provider::Error>> {
         let plan = create_mcp_streaming_response(&StreamingRequest {
             input: &input.input,
             model: &input.model,
@@ -129,17 +130,17 @@ where
             &results,
             &self.ids,
         )?;
-        Ok(prepared.into_result(Some(plan), events, None))
+        Ok((plan, events))
     }
 
     async fn completed(
         &self,
         input: &ResponsesMcpFollowupInput,
-        prepared: Prepared,
-    ) -> Result<ResponsesMcpFollowupResult, McpFollowupError<Provider::Error>> {
+        call: &FollowUpCall,
+    ) -> Result<ResponsesApiResponse, McpFollowupError<Provider::Error>> {
         let mut response = self
             .provider
-            .call(&prepared.call)
+            .call(call)
             .await
             .map_err(McpFollowupError::Provider)?;
         append_mcp_output_items(
@@ -148,6 +149,6 @@ where
             &input.tool_results,
             &self.ids,
         );
-        Ok(prepared.into_result(None, Vec::new(), Some(response)))
+        Ok(response)
     }
 }
