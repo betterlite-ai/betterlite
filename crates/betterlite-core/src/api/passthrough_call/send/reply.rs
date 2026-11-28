@@ -68,7 +68,10 @@ fn synthetic_stream(
         })),
         spend: SpendCollection {
             sink: Some(OwnedProviderSpend::new(
-                PassthroughCallConfig { tag: context.tag },
+                PassthroughCallConfig {
+                    tag: context.tag,
+                    environment: Arc::clone(&context.environment),
+                },
                 target,
             )),
             chunk_count: 0,

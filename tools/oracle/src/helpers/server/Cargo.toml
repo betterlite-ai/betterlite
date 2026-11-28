@@ -18,6 +18,7 @@ betterlite = { path = "../../../../../crates/betterlite" }
 betterlite-analytics = { path = "../../../../../crates/betterlite-analytics" }
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-backend = { path = "../../../../../crates/betterlite-backend" }
+betterlite-cache = { path = "../../../../../crates/betterlite-cache" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }

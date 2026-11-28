@@ -52,6 +52,7 @@ pub mod model_grant_intersection;
 pub mod model_read_through;
 pub mod oauth_tokens;
 pub mod organization_route_policy;
+pub mod proxy_diagnostics;
 pub mod ptu_rollup;
 pub mod request_body_safety;
 pub mod request_intake;

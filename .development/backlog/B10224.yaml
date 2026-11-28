@@ -1,0 +1,13 @@
+id: B10224
+milestone: R2 bug fixes
+title: The LogContext copies in core, bedrock and provider and anthropic's Logging take betterlite-logging's LogContext
+status: todo
+depends_on: [B10225, B10200, B10216, B10217, B10183, B7877, B7889]
+file: tasks/B10224-log-context-copies.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
