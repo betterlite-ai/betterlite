@@ -127,6 +127,7 @@ description: >-
   the imports-on-310 check runs it there.
 scope:
   paths:
+  - "crates/betterlite-python/python/betterlite/evals/_evals.py"
   - crates/betterlite-python/ruff.toml
   - crates/betterlite-python/pyrightconfig.json
   - crates/betterlite-python/python/betterlite/fine_tuning/ruff.toml
