@@ -11,6 +11,7 @@ workspace = true
 [package.metadata]
 cargo-fuzz = true
 [dependencies]
+axum.workspace = true
 betterlite-auth = { path = "../../betterlite-auth" }
 betterlite-config = { path = "../../betterlite-config" }
 betterlite-core = { path = "../../betterlite-core" }
@@ -578,6 +579,13 @@ bench = false
 [[bin]]
 name = "lens_admin_parsers"
 path = "fuzz_targets/lens_admin_parsers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lens_worker_parsers"
+path = "fuzz_targets/lens_worker_parsers.rs"
 test = false
 doc = false
 bench = false
