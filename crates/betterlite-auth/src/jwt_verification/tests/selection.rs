@@ -70,17 +70,15 @@ async fn first_exact_issuer_or_global_fallback() {
     );
     assert!(!fields.contains_key("_litellm_user_email"));
 
-    let fallback = harness
+    let fallback_error = harness
         .verifier
         .auth_jwt(fixtures::TOKEN_WRONG_ISSUER, &source)
         .await
-        .unwrap();
-    let fallback_fields = claim_fields(&fallback);
+        .unwrap_err();
     assert_eq!(
-        text_claim(&fallback_fields, "iss"),
-        Some("https://evil.example.com")
+        fallback_error.to_string(),
+        "Validation fails: Token is missing the \"aud\" claim"
     );
-    assert!(!fallback_fields.contains_key("_litellm_jwt_issuer"));
     assert_eq!(
         source.calls(),
         vec![format!("issuer:{first_url}"), "lookup:rsa-key".to_owned()]
