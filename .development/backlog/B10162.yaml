@@ -1,13 +1,13 @@
 id: B10162
 milestone: M9 agents and mcp
 title: A reader and a setter for the live public MCP server list
-status: todo
+status: done
 depends_on: [B10020]
 file: tasks/B10162-mcp-public-list-access.yaml
 covers: []
 parent: B139
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3390

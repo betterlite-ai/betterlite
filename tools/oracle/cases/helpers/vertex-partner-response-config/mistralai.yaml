@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-partner-response-config-mistralai
+call:
+  b10159:
+    publisher: mistralai
+    model: mistralai/mistral-large
+    status: 200
+    raw_text: |
+      {"id":"m-1","created":9,"model":"mistral-large-2411","choices":[{"index":0,"message":{"role":"assistant","content":"bonjour"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}
+    headers: {x-request-id: req-b10159}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+env: {}
+compare: {ignore: []}

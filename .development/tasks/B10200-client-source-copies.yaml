@@ -1,0 +1,178 @@
+id: B10200
+title: One ClientSource trait per client contract, with the transport bound at the callers
+description: >-
+  Fourteen client-source traits in betterlite-core, betterlite-provider and betterlite-openai have the same method as another one and differ only in the bound on the client they hand out, because each module bounds `type Client` by its own transport trait. Grouped by method, they are four contracts. This task keeps one trait per contract, drops the bound from its associated type and writes the bound where a caller sends through the client. It is a refactor: no request, header, error text or log changes, and nothing a user sees changes.
+
+
+  Contract 1, `fn client(&self, ssl_verify: Option<bool>) -> Result<Self::Client, ClientError>` with core's ClientError (crates/betterlite-core/src/api/vector_store_http_write/error.rs L56-L61). The home is `ClientSource` in crates/betterlite-core/src/api/vector_store_http_write/service.rs L74-L78, which 25 files already import and which sits beside the ClientError, ClientKind and SuppliedClient the other modules already take from there. Its `type Client: WriteTransport;` (L75) becomes `type Client;`. Deleted copies, each a `pub trait ClientSource: Send + Sync` with the same method: core vector_file_http_write/service.rs L53-L57 (`Client: WriteTransport`, its own), vector_file_http_read/service.rs L54-L58 (`ReadTransport`), vector_file_http_create_list/service.rs L69-L73 (`FileTransport`), responses_read_http/service.rs L76-L80 (`ReadTransport`), file_http_upload/service.rs L72-L76 (`UploadTransport`), provider crates/betterlite-provider/src/api/image_edit_http/service.rs L46-L50 (`vector_store_http_write::service::WriteTransport + Clone`, so it is the home plus Clone) and provider api/speech_http.rs L82-L86 (`SpeechTransport`). speech_http's own `ClientError` (speech_http/error.rs L20-L26) has the home's two variants, `Tls(#[from] TlsPolicyError)` and `Pool(#[from] PoolError)`, both transparent, so it goes and `SpeechError::Client` (L33) wraps core's; azure_media_dispatch/speech/native.rs L16 and L193, speech_http/tests/support.rs L32 and the oracle's sdk_http/speech_http/support.rs L19 and L41 name core's.
+
+
+  Contract 2, `fn client(&self, ssl_verify: Option<bool>, shared_session: Option<SharedSession>)` with compact's `SharedSession(u64)`. The home is `ClientSource` in core responses_compact_http/service.rs L59-L67; `type Client: CompactTransport;` becomes `type Client;`. responses_create_http/service.rs L54-L62 already imports compact's SharedSession, ClientKind and SuppliedClient (L21) and goes; its users bound `Client: CreateTransport`.
+
+
+  Contract 3, `fn client(&self) -> Result<Self::Client, ClientError>`. The home is `ClientSource` in core file_http_content/service.rs L72-L76; `type Client: ContentTransport;` becomes `type Client;`. provider api/rerank_http/client.rs L59-L63 goes, and its own `ClientError` (rerank_http/error.rs L12-L18), the same two transparent variants again, goes with it: `RerankHttpError::Client` (L31), client.rs L84, rerank_http/tests.rs L42, betterlite-python's rerank/operations.rs L19 and the oracle's sdk_http/rerank_http/support.rs L23, rerank_call/support.rs L26 and rerank_provider_plan/providers.rs L21 name core's ClientError. Its users bound `Client: RerankTransport`.
+
+
+  Contract 4, `blocking_client` and `async_client` over `Option<&SslVerify>` answering PoolError. The home is betterlite-openai's `ClientSource` in crates/betterlite-openai/src/containers/container_file_http/transport.rs L73-L81, whose `type Blocking: BlockingClient;` and `type Asynchronous: AsyncClient;` become `type Blocking;` and `type Asynchronous;`. Core's `CollectionClientSource` (crates/betterlite-core/src/api/container_collection_http.rs L42-L48) has the same two methods with `CollectionTransport` bounds and goes; betterlite-python's container_calls/transport.rs L60-L74 implements it only by forwarding to the openai trait, so that impl goes and its one `impl ClientSource for Source` serves both. container_collection_http.rs, container_create_list/handler.rs, container_collection_http/tests.rs L258, tests/create.rs L367 and the oracle's helpers/core_ops/b3364/fixture.rs L170 name the openai trait. openai's own users (channel.rs L32 and L57, container_file_http.rs L143) and core's container_file_list, container_file_endpoints/handler.rs, container_resource_http.rs L127 and container_resource_ops/handler.rs bound `Source: ClientSource<Blocking: BlockingClient, Asynchronous: AsyncClient>`; the collection code bounds `Source: ClientSource<Blocking: CollectionTransport, Asynchronous: CollectionTransport>`.
+
+
+  The bounds. A generic fn or impl whose body, or a callee, calls the client's `send` or `default_timeout` writes the bound the deleted trait carried, with Rust's associated type bound syntax: `S: ClientSource<Client: ReadTransport>` in vector_file_http_read and its users, `Client: WriteTransport` for vector_store_http_write and for vector_file_http_write (each its own WriteTransport), `Client: FileTransport`, `Client: UploadTransport`, `Client: SpeechTransport`, `Client: WriteTransport + Clone` in image_edit_http, `Client: CompactTransport`, `Client: CreateTransport`, `Client: ContentTransport` and `Client: RerankTransport`. A struct that only stores `&S` or `SuppliedClient<'_, S::Client>` keeps plain `S: ClientSource`. `rg -n ': (Collection)?ClientSource\b'` over the scope lists every site: about 110 `S: ClientSource,` lines, 13 `Source: ClientSource,`, 9 `Source: CollectionClientSource,` and 6 impl headers. Every importer of a deleted trait imports its home instead, and a `pub use` at an old path would be the copy this removes, so none stays. Importers of the contract 1 copies: vector_file_http_write (service.rs, service/request.rs, tests.rs, tests/support.rs), vector_file_http_read (vector_file_http_read.rs L17, service.rs, service/request.rs, tests/support.rs), vector_file_read (vector_file_read.rs L19, service.rs, tests.rs), vector_file_http_create_list (service.rs, tests.rs, tests/support.rs), responses_read_http (service.rs, service/request.rs, tests.rs, tests/support.rs), responses_lifecycle_call/executor.rs L46, file_http_upload (service.rs, tests.rs, tests/cancellation.rs), provider image_edit_http (image_edit_http.rs, asynchronous.rs, tests/support.rs) and speech_http (speech_http.rs, request.rs, tests/support.rs, azure_media_dispatch/speech/native.rs), and the oracle fixtures under tools/oracle/src/sdk_http named in the scope. The home's own users that gain the bound: vector_store_http_write, file_http_metadata, vector_search_execution, vector_store_http_create_read (service.rs L27 imports `WriteTransport as _`, which becomes a named import) and vector_store_search. Contract 2's: responses_compact_http, responses_compact_call, responses_create_http, responses_create, responses_create_call and the oracle's responses fixtures and helpers/core_ops/responses_ws_managed/fixtures/ports.rs. Contract 3's: file_http_content (service.rs L115, service/buffered.rs L16, service/streaming.rs L22, tests/support.rs) and the oracle's file_http_content and file_content_stream fixtures.
+
+
+  Two more copies in the files this task edits. `SuppliedClient` in core vector_file_http_write/service.rs L28-L31 and vector_file_http_create_list/service.rs L47-L50 are the home's `SuppliedClient` (vector_store_http_write/service.rs L51-L54) over the same ClientKind, so both go and their modules and tests (vector_file_http_write/tests/modes.rs L11, vector_file_http_create_list/tests/failures.rs L12) import the home's. B7877, running now, adds crates/betterlite-python/src/vector_files/source.rs whose `ProxiedSource` implements the three contract 1 copies, one impl each with `type Client = ProxiedClient`, through a `pooled` helper (L41-L48 on its branch, comment included); after the merge one `impl ClientSource for ProxiedSource` remains, `pooled`'s body becomes its `client`, and `pooled` goes.
+
+
+  Not merged, each with a different contract: responses_write_http/service.rs L83-L91 takes its own unit `SharedSession` (L60), not compact's `SharedSession(u64)` (responses_compact_http/service.rs L42); genai_http/service.rs L86-L90 takes `Option<&Json>`; videos_http_transport/client.rs L96-L100 and provider transcription_http/config.rs L46-L50 each take their own ClientRequest struct (videos L28-L33, transcription L41-L44), and videos answers its own ClientError with an UnknownProvider variant (L103-L110); provider image_generation_http.rs L48-L53 has an associated Error type; betterlite-azure's completion/client.rs L58 and chat_call/client.rs L48 have get and gateway methods; core's video_edit_transport/seams.rs L9, video_remix_list_transport/client.rs L43 and video_status_transport/clients.rs L25 pair a sync and an async client with different provider and error types; provider realtime_http_transport/client.rs L6 answers a concrete ProxiedClient.
+
+
+  Tests. No new test: the owners' module tests already drive every call through the merged traits, and they must pass unchanged. The oracle fixtures only change imports and bounds, and CI's clippy lane builds them.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/vector_store_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service/request.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/tests.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/tests/**
+    - crates/betterlite-core/src/api/vector_file_http_write.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/**
+    - crates/betterlite-core/src/api/vector_file_http_read.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/**
+    - crates/betterlite-core/src/api/vector_file_http_create_list.rs
+    - crates/betterlite-core/src/api/vector_file_http_create_list/**
+    - crates/betterlite-core/src/api/vector_file_read.rs
+    - crates/betterlite-core/src/api/vector_file_read/**
+    - crates/betterlite-core/src/api/vector_store_http_create_read.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/**
+    - crates/betterlite-core/src/api/vector_store_search.rs
+    - crates/betterlite-core/src/api/vector_store_search/**
+    - crates/betterlite-core/src/api/vector_search_execution.rs
+    - crates/betterlite-core/src/api/vector_search_execution/**
+    - crates/betterlite-core/src/api/file_http_metadata.rs
+    - crates/betterlite-core/src/api/file_http_metadata/**
+    - crates/betterlite-core/src/api/file_http_upload.rs
+    - crates/betterlite-core/src/api/file_http_upload/**
+    - crates/betterlite-core/src/api/file_http_content.rs
+    - crates/betterlite-core/src/api/file_http_content/**
+    - crates/betterlite-core/src/api/responses_read_http.rs
+    - crates/betterlite-core/src/api/responses_read_http/**
+    - crates/betterlite-core/src/api/responses_lifecycle_call/executor.rs
+    - crates/betterlite-core/src/api/responses_compact_http.rs
+    - crates/betterlite-core/src/api/responses_compact_http/**
+    - crates/betterlite-core/src/api/responses_compact_call.rs
+    - crates/betterlite-core/src/api/responses_compact_call/**
+    - crates/betterlite-core/src/api/responses_create_http.rs
+    - crates/betterlite-core/src/api/responses_create_http/**
+    - crates/betterlite-core/src/api/responses_create.rs
+    - crates/betterlite-core/src/api/responses_create/**
+    - crates/betterlite-core/src/api/responses_create_call.rs
+    - crates/betterlite-core/src/api/responses_create_call/**
+    - crates/betterlite-core/src/api/container_collection_http.rs
+    - crates/betterlite-core/src/api/container_collection_http/**
+    - crates/betterlite-core/src/api/container_create_list.rs
+    - crates/betterlite-core/src/api/container_create_list/**
+    - crates/betterlite-core/src/api/container_file_endpoints.rs
+    - crates/betterlite-core/src/api/container_file_endpoints/**
+    - crates/betterlite-core/src/api/container_file_list.rs
+    - crates/betterlite-core/src/api/container_file_list/**
+    - crates/betterlite-core/src/api/container_resource_http.rs
+    - crates/betterlite-core/src/api/container_resource_http/**
+    - crates/betterlite-core/src/api/container_resource_ops.rs
+    - crates/betterlite-core/src/api/container_resource_ops/**
+    - crates/betterlite-provider/src/api/image_edit_http.rs
+    - crates/betterlite-provider/src/api/image_edit_http/**
+    - crates/betterlite-provider/src/api/speech_http.rs
+    - crates/betterlite-provider/src/api/speech_http/**
+    - crates/betterlite-provider/src/api/rerank_http.rs
+    - crates/betterlite-provider/src/api/rerank_http/**
+    - crates/betterlite-provider/src/azure_media_dispatch/speech/native.rs
+    - crates/betterlite-openai/src/containers/container_file_http.rs
+    - crates/betterlite-openai/src/containers/container_file_http/**
+    - crates/betterlite-python/src/container_calls/transport.rs
+    - crates/betterlite-python/src/rerank/operations.rs
+    - crates/betterlite-python/src/vector_files/source.rs
+    - tools/oracle/src/helpers/core_ops/b3364/fixture.rs
+    - tools/oracle/src/helpers/core_ops/responses_ws_managed/fixtures/ports.rs
+    - tools/oracle/src/sdk_http/file_content_stream/**
+    - tools/oracle/src/sdk_http/file_create_list_transport/**
+    - tools/oracle/src/sdk_http/file_http_content/**
+    - tools/oracle/src/sdk_http/file_http_metadata/**
+    - tools/oracle/src/sdk_http/file_http_upload/**
+    - tools/oracle/src/sdk_http/image_edit_call/**
+    - tools/oracle/src/sdk_http/image_edit_http/**
+    - tools/oracle/src/sdk_http/rerank_call/**
+    - tools/oracle/src/sdk_http/rerank_http/**
+    - tools/oracle/src/sdk_http/rerank_provider_plan/**
+    - tools/oracle/src/sdk_http/response_chat_dispatch/**
+    - tools/oracle/src/sdk_http/responses_async_create/**
+    - tools/oracle/src/sdk_http/responses_compact/**
+    - tools/oracle/src/sdk_http/responses_compact_transport/**
+    - tools/oracle/src/sdk_http/responses_create/**
+    - tools/oracle/src/sdk_http/responses_create_transport/**
+    - tools/oracle/src/sdk_http/responses_lifecycle_read/**
+    - tools/oracle/src/sdk_http/responses_read_transport/**
+    - tools/oracle/src/sdk_http/speech_http/**
+    - tools/oracle/src/sdk_http/store_create_read_transport/**
+    - tools/oracle/src/sdk_http/vector_file_create_list/**
+    - tools/oracle/src/sdk_http/vector_file_read/**
+    - tools/oracle/src/sdk_http/vector_file_read_transport/**
+    - tools/oracle/src/sdk_http/vector_file_write/**
+    - tools/oracle/src/sdk_http/vector_file_write_transport/**
+    - tools/oracle/src/sdk_http/vector_search_transport/**
+    - tools/oracle/src/sdk_http/vector_store_transport/**
+  lint_tables: false
+references: []
+dod:
+  - text: Each of the four contracts has one trait, its associated types carry no bound, and none of the ten copies, the two provider ClientError copies or the two SuppliedClient copies is left.
+    proof: [no-copies, homes]
+  - text: Every user names the home trait and bounds the client where it sends through it, and the owners' tests in core, provider, openai and python pass unchanged.
+    proof: [core-tests, provider-tests, openai-tests, python-tests]
+checks:
+  optional: []
+  commands:
+    - id: no-copies
+      why: a merged client-source trait, a provider ClientError copy, a SuppliedClient copy or CollectionClientSource is still in place
+      run: |-
+        test -z "$(grep -lE '^pub trait ClientSource\b' crates/betterlite-core/src/api/vector_file_http_write/service.rs crates/betterlite-core/src/api/vector_file_http_read/service.rs crates/betterlite-core/src/api/vector_file_http_create_list/service.rs crates/betterlite-core/src/api/responses_read_http/service.rs crates/betterlite-core/src/api/file_http_upload/service.rs crates/betterlite-core/src/api/responses_create_http/service.rs crates/betterlite-provider/src/api/speech_http.rs crates/betterlite-provider/src/api/image_edit_http/service.rs crates/betterlite-provider/src/api/rerank_http/client.rs)" &&
+        test -z "$(grep -lE '^pub enum ClientError\b' crates/betterlite-provider/src/api/speech_http/error.rs crates/betterlite-provider/src/api/rerank_http/error.rs)" &&
+        test -z "$(grep -lE '^pub struct SuppliedClient\b' crates/betterlite-core/src/api/vector_file_http_write/service.rs crates/betterlite-core/src/api/vector_file_http_create_list/service.rs)" &&
+        test -z "$(grep -rn 'CollectionClientSource' crates tools --include=*.rs)"
+    - id: homes
+      why: a home trait still bounds its client, so the merged users cannot implement it
+      run: |-
+        grep -qx '    type Client;' crates/betterlite-core/src/api/vector_store_http_write/service.rs &&
+        grep -qx '    type Client;' crates/betterlite-core/src/api/responses_compact_http/service.rs &&
+        grep -qx '    type Client;' crates/betterlite-core/src/api/file_http_content/service.rs &&
+        grep -qx '    type Blocking;' crates/betterlite-openai/src/containers/container_file_http/transport.rs &&
+        grep -qx '    type Asynchronous;' crates/betterlite-openai/src/containers/container_file_http/transport.rs
+    - id: core-tests
+      why: a merged trait user in core lost its client selection, its timeout or its error mapping
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(vector_store_http_write|vector_file_http_write|vector_file_http_read|vector_file_http_create_list|vector_file_read|vector_store_http_create_read|vector_store_search|vector_search_execution|file_http_metadata|file_http_upload|file_http_content|responses_read_http|responses_lifecycle_call|responses_compact_http|responses_compact_call|responses_create_http|responses_create_call|responses_create|container_collection_http|container_create_list|container_file_endpoints|container_file_list|container_resource_http|container_resource_ops)::/) - test(/replays_/)'
+    - id: provider-tests
+      why: the speech, image edit or rerank transport lost its client seam, or SpeechError or RerankHttpError changed with core's ClientError
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^(api::(speech_http|image_edit_http|rerank_http)|azure_media_dispatch)::/) - test(/replays_/)'
+    - id: openai-tests
+      why: the container file transport no longer selects its blocking or async client
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^containers::container_file_http::/)'
+    - id: python-tests
+      why: the container sources no longer build both clients through the one trait
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^container_(calls|files)::transport::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The client-source traits with a different contract, listed in the description: responses_write_http, genai_http, videos_http_transport, transcription_http, image_generation_http, the two azure seams, the three video sync-and-async seams and realtime_http_transport."
+  - "The rest of the same family, for a later plan: ClientKind copies (core responses_read_http/service.rs L34, responses_compact_http/service.rs L35, responses_write_http/service.rs L31, provider image_edit_http/service.rs L25, rerank_http/client.rs L16, image_generation_http.rs L23), SuppliedClient copies over their own ClientKind or a `mode: Mode` field (responses_read_http L54, responses_compact_http L44, responses_write_http L62, file_http_upload L39, provider speech_http.rs L88, image_edit_http/service.rs L30, rerank_http/client.rs L31, image_generation_http.rs L43, videos_http_transport/client.rs L84), and request structs that match field for field (vector_store_http_write::WriteRequest L56, responses_write_http::WriteRequest L67, responses_compact_http::CompactRequest L93 and provider SpeechWireRequest L64; vector_file_http_write::WriteRequest L34 and vector_file_http_create_list::FileRequest L52) with the transport traits over them."
+  - "B7876's ProxiedSource in crates/betterlite-python/src/vector_manage/source.rs implements the contract 1 home at its current path and needs no change."
+pitfalls:
+  - "B7877 must land first: its ProxiedSource implements three of the deleted traits for one type, which cannot compile once they are one trait. Its ProxiedClient implements FileTransport, ReadTransport and WriteTransport, so one impl with `type Client = ProxiedClient` serves every bound."
+  - "On main only betterlite-python's container_calls Source implements two of the merged traits, and its forwarding impl goes; no other type does, so no impl clashes. Check that again for anything B7877 or a merge from main adds."
+  - "Only fns and impl blocks that reach the client need the bound. A struct definition keeps `S: ClientSource`; writing the bound there too forces it on every user of the struct."
+  - "Bounds follow the deleted trait's own line: image_edit_http keeps `+ Clone`, and vector_file_http_write's WriteTransport is its own trait, not vector_store_http_write's."
+  - "Files near the line caps: core file_http_upload/tests.rs has 994 of 1000 lines, responses_create/tests/support.rs 996 of 1000, vector_file_read/service.rs 292 of 300, responses_compact_http/service.rs 291 of 300 and container_collection_http.rs 291 of 300. Keep each bound on the line it replaces so rustfmt does not grow them."
+  - "A dispatched run builds nothing, so find every site with the rg line in the description before committing; each missed bound costs a CI round."
+  - "speech_http's and rerank_http's tests and the oracle fixtures call `ClientError::Pool` and `ClientError::Tls`; core's enum has the same variants, so only the import changes."
+review_level: standard
+budget:
+  max_changed_lines: 1100
+  max_new_expects: 0

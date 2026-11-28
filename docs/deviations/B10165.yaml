@@ -1,0 +1,12 @@
+task: B10165
+deviations:
+  - what: The master key's Principal keeps subject "master_key", the service_account principal type and an empty source_key, where LiteLLM's master key is a UserAPIKeyAuth with user_id default_user_id and PROXY_ADMIN, whose principal has subject "default_user_id", the human principal type and the master key record as its source key.
+    why: About 28 route modules on main grant master rights by comparing principal.subject to "master_key"; B10171 replaces those comparisons and gives the master principal LiteLLM's whole master key record. The user id default_user_id and the PlatformAdmin role already match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2085-L2098
+  - what: A virtual key's subject now falls back to its key_alias and then the hashed token, as LiteLLM's does, so until B10171 a key whose user_id or key_alias is "master_key" passes the route modules that still grant master rights by comparing principal.subject to "master_key".
+    why: LiteLLM's subject order is user_id, key_alias, subject_fallback (store.py L178), and the task's projection copies it; B10171 replaces those comparisons. The booted proxy installs no KeyAuthenticator, so no request authenticates with a virtual key there today, but a composition root that installs one exposes the comparison until then.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L178
+  - what: An empty presented credential never matches the master key, even when the configured master key is itself empty; LiteLLM compares the two only with secrets.compare_digest, so an empty master key configuration would make an empty api_key authenticate as the proxy admin.
+    why: No working deployment can rely on an empty credential authenticating as a proxy admin, and a missing or empty master key must leave master authentication closed rather than open to every empty key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2073-L2076
+kept_bugs: []

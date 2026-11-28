@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-partner-response-config-llama-not-json
+call:
+  b10159:
+    publisher: openapi
+    model: meta/llama-3.1-405b-instruct-maas
+    status: 503
+    raw_text: |
+      upstream unavailable
+    headers: {x-request-id: req-b10159}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+env: {}
+compare: {ignore: []}

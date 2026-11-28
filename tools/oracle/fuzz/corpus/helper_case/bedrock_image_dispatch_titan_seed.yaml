@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock_image_dispatch_titan_seed
+call:
+  bedrock_image_dispatch:
+    case: titan_image
+    model_cost: {}
+    probes:
+      - model: amazon.titan-image-generator-v2:0
+        prompt: a seed titan image
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          imageGenerationConfig: {numberOfImages: 1, width: 1024, height: 1024}
+        reply: {body: '{"images": ["c2VlZA=="]}'}
+env: {}
+compare: {ignore: []}

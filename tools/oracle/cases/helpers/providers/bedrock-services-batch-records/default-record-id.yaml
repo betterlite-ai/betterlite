@@ -1,0 +1,32 @@
+kind: helper
+name: bedrock-services-batch-records-default-record-id
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost: {}
+    records:
+      # an omitted custom_id takes the zero-based record index
+      - body: {}
+      - custom_id: null
+        body:
+          model: custom-model-v1
+          messages: []
+      - custom_id: ""
+        body:
+          model: custom-model-v1
+          messages: []
+      # outer keys other than custom_id and body never reach the Bedrock record
+      - custom_id: given
+        method: POST
+        url: /v1/chat/completions
+        body:
+          model: custom-model-v1
+          messages:
+            - {role: user, content: hi}
+      - body:
+          model: custom-model-v1
+          messages: []
+env: {}
+compare: {ignore: []}

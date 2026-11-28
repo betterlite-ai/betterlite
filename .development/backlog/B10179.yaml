@@ -1,0 +1,13 @@
+id: B10179
+milestone: R2 bug fixes
+title: BaseTranslation takes the guardrail per call
+status: todo
+depends_on: [B10169, B3661, B3574, B3666, B5471, B3246, B732, B6160, B6161, B6162, B6163, B3680, B6164, B6260, B3679, B3687, B3676, B3772, B3727, B8391, B3699, B3722, B3724, B3725, B3794, B8212, B8214, B8773, B3726]
+file: tasks/B10179-per-call-translation-guardrail.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,13 @@
+id: B10193
+milestone: R2 bug fixes
+title: One environment-only secret lookup, one CLI writer store and one set of native AWS sources
+status: todo
+depends_on: [B10174, B10175]
+file: tasks/B10193-aws-secret-source-copies.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

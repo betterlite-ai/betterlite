@@ -1,0 +1,13 @@
+kind: helper
+name: microsoft-sso-client-empty-endpoints-fall-back
+call:
+  b10148:
+    client_id: microsoft-client-id
+    redirect_url: https://proxy.example.test/sso/callback
+    environment:
+      MICROSOFT_CLIENT_SECRET: microsoft-secret
+      MICROSOFT_AUTHORIZATION_ENDPOINT: ''
+      MICROSOFT_TOKEN_ENDPOINT: ''
+      MICROSOFT_USERINFO_ENDPOINT: ''
+env: {}
+compare: {ignore: []}

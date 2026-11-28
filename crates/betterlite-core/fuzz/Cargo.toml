@@ -17,6 +17,7 @@ betterlite-core = { path = ".." }
 betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-openai = { path = "../../betterlite-openai" }
+betterlite-pyhost = { path = "../../betterlite-pyhost" }
 betterlite-secrets = { path = "../../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false }
 http = "1.5.0"
@@ -582,6 +583,13 @@ bench = false
 [[bin]]
 name = "vector_store_access"
 path = "fuzz_targets/vector_store_access.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "riva_audio"
+path = "fuzz_targets/riva_audio.rs"
 test = false
 doc = false
 bench = false
