@@ -9,15 +9,32 @@ use std::sync::Arc;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_auth::auth_user_lookup::cache::UserCache;
 use betterlite_auth::auth_user_lookup::error::UserLookupError;
+use betterlite_db::model_secrets::DEFAULT_USER_ID;
+use secrecy::SecretString;
 
 use super::invite::team_admin_can_invite_user;
 use super::ports::{TeamReadError, UserReadError};
 use super::privileges::{admin_can_invite_user, user_has_admin_privileges};
 use super::scope::AdminCaller;
+use crate::auth::auth_key_lookup::master_key_context;
 use support::{
     FakeCache, FakeTeams, FakeUsers, caller, capture_logs, invalid_team, org_user, principal,
     team_row, user, user_row,
 };
+
+#[tokio::test]
+async fn the_master_key_is_a_proxy_admin_caller() {
+    let master = SecretString::from("master".to_owned());
+    let Some(context) = master_key_context(Some(&master), &master) else {
+        panic!("the master key authenticates");
+    };
+    let admin = AdminCaller::from_principal(&context.principal);
+    assert!(admin.proxy_admin);
+    assert_eq!(admin.user_id, Some(DEFAULT_USER_ID));
+    let users = FakeUsers::default();
+    assert!(user_has_admin_privileges(&admin, &users, None::<&FakeTeams>, None).await);
+    assert!(users.calls().is_empty());
+}
 
 #[tokio::test]
 async fn proxy_admin_before_missing_db() {

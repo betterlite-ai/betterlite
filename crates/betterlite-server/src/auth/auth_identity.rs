@@ -1,10 +1,6 @@
 use betterlite_auth::auth_identity::errors::AuthError;
-use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey,
-};
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use secrecy::{ExposeSecret as _, SecretString};
-use subtle::ConstantTimeEq as _;
+use betterlite_auth::auth_identity::records::Principal;
+use secrecy::SecretString;
 
 use self::{
     AuthBackend::MasterKey,
@@ -14,6 +10,7 @@ use crate::auth::auth_context_sources;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
+pub(crate) use crate::auth::auth_key_lookup::master_key_context;
 use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
@@ -247,40 +244,6 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
             Err(StageFailure::from(Missing))
         }
     }
-}
-
-// The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
-pub(crate) fn master_key_context(
-    presented: Option<&SecretString>,
-    master_key: &SecretString,
-) -> Option<AuthContext> {
-    let matched = presented.is_some_and(|key| {
-        !key.expose_secret().is_empty()
-            && bool::from(
-                key.expose_secret()
-                    .as_bytes()
-                    .ct_eq(master_key.expose_secret().as_bytes()),
-            )
-    });
-    matched.then(|| AuthContext {
-        principal: Principal {
-            principal_type: PrincipalType::ServiceAccount,
-            subject: "master_key".to_owned(),
-            issuer: None,
-            audience: Vec::new(),
-            user: None,
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: Vec::new(),
-            scopes: Vec::new(),
-            auth_method: AuthMethod::ApiKey,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey::default(),
-        },
-    })
 }
 
 mod tests;
