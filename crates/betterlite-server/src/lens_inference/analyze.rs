@@ -166,75 +166,31 @@ async fn approve(
     })
 }
 
-fn analysis_body<'call>(
-    input: &'call AnalysisInput<'_>,
-    model: &'call str,
-    prompt: &'call str,
-    team_id: Option<&'call str>,
-) -> AnalysisBody<'call> {
-    AnalysisBody::new(
-        model,
-        prompt,
+async fn run_scoped(
+    ports: &InferencePorts<'_>,
+    key_id: &str,
+    input: &AnalysisInput<'_>,
+    team_id: Option<&str>,
+    reserve: &dyn ReserveBudget,
+) -> Result<CompletionAnswer, AnalyzeError> {
+    let data = AnalysisBody::new(
+        &input.job.settings.model,
+        &input.body.prompt,
         RequestIds {
             lens_id: &input.lens.id,
             run_id: &input.job.id,
             worker_id: &input.worker.id,
             team_id,
         },
-    )
-}
-
-fn budget_reservation<'call, Db>(
-    repository: &'call LensRepository<Db>,
-    input: &'call AnalysisInput<'_>,
-    estimate: Decimal,
-    month_now: DateTime<Utc>,
-    clock: &'call dyn Clock,
-) -> BudgetReservation<'call, Db>
-where
-    Db: Database,
-{
-    BudgetReservation {
-        repository,
-        lens_id: &input.lens.id,
-        job_id: &input.job.id,
-        worker_id: &input.worker.id,
-        estimate,
-        month_now,
-        clock,
-    }
-}
-
-fn settle_request<'call>(
-    input: &'call AnalysisInput<'_>,
-    month_now: DateTime<Utc>,
-    estimate: Decimal,
-    cost: Decimal,
-) -> SettleRequest<'call> {
-    SettleRequest {
-        lens_id: &input.lens.id,
-        job_id: &input.job.id,
-        month_now,
-        estimate,
-        cost,
-    }
-}
-
-async fn run_scoped(
-    ports: &InferencePorts<'_>,
-    key_id: &str,
-    data: &AnalysisBody<'_>,
-    reserve: &dyn ReserveBudget,
-    incoming: &Incoming,
-) -> Result<CompletionAnswer, AnalyzeError> {
+    );
     let _lens = ports.lens_analysis.lens_analysis();
     let _privacy = MessagePrivacyScope::enter(
-        &incoming.privacy,
+        &input.incoming.privacy,
         PrivacyContext {
             message_logging_disabled: true,
         },
     );
-    completion::complete(ports.billing, key_id, data, reserve, incoming)
+    completion::complete(ports.billing, key_id, &data, reserve, input.incoming)
         .await
         .map_err(AnalyzeError::from)
 }
@@ -250,20 +206,23 @@ where
 {
     let approved = approve(ports, &input).await?;
     let month_now = ports.clock.now();
-    let data = analysis_body(
-        &input,
-        &input.job.settings.model,
-        &input.body.prompt,
-        approved.team_id.as_deref(),
-    );
-    let reserve = budget_reservation(
+    let reserve = BudgetReservation {
         repository,
-        &input,
-        approved.estimate,
+        lens_id: &input.lens.id,
+        job_id: &input.job.id,
+        worker_id: &input.worker.id,
+        estimate: approved.estimate,
         month_now,
-        ports.clock,
-    );
-    let answer = run_scoped(ports, &approved.key_id, &data, &reserve, input.incoming).await?;
+        clock: ports.clock,
+    };
+    let answer = run_scoped(
+        ports,
+        &approved.key_id,
+        &input,
+        approved.team_id.as_deref(),
+        &reserve,
+    )
+    .await?;
     let content = answer_content(&answer)?;
     let cost = answer_cost(
         &answer,
@@ -271,7 +230,13 @@ where
         approved.estimate,
         ports.costs,
     )?;
-    let settle = settle_request(&input, month_now, approved.estimate, cost);
+    let settle = SettleRequest {
+        lens_id: &input.lens.id,
+        job_id: &input.job.id,
+        month_now,
+        estimate: approved.estimate,
+        cost,
+    };
     settlement::settle(repository, &settle).await?;
     Ok(ModelResult { content, cost })
 }
