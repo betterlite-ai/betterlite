@@ -114,6 +114,7 @@ fn validate_issuer(payload: &Document, issuer: Option<&str>) -> Result<(), Verif
     Ok(())
 }
 
+// pyjwt's _validate_aud: a configured selector must match the claim, and with none any truthy claim is invalid
 fn validate_audience(
     payload: &Document,
     audience: Option<&Selector>,
@@ -121,32 +122,6 @@ fn validate_audience(
     let Some(configured) = audience else {
         return validate_unscoped_audience(payload);
     };
-    validate_configured_audience(payload, configured)
-}
-
-// pyjwt with verify_aud on but no audience rejects any token that carries a truthy aud claim
-fn validate_unscoped_audience(payload: &Document) -> Result<(), VerificationError> {
-    let Some(value) = payload.json.get("aud") else {
-        return Ok(());
-    };
-    let absent = value.is_null()
-        || value.as_str().is_some_and(str::is_empty)
-        || value.as_array().is_some_and(Vec::is_empty)
-        || matches!(value.as_bool(), Some(false))
-        || matches!(value.as_i64(), Some(0));
-    if absent {
-        return Ok(());
-    }
-    Err(VerificationError::Validation {
-        detail: "Invalid audience".to_owned(),
-    })
-}
-
-fn validate_configured_audience(
-    payload: &Document,
-    configured: &Selector,
-) -> Result<(), VerificationError> {
-    let candidates = audience_candidates(configured);
     let Some(value) = payload.json.get("aud") else {
         return Err(missing_audience());
     };
@@ -156,6 +131,7 @@ fn validate_configured_audience(
     {
         return Err(missing_audience());
     }
+    let candidates = audience_candidates(configured);
     let audience_claims = if let Some(items) = value.as_array() {
         let mut claims = Vec::with_capacity(items.len());
         for item in items {
@@ -180,6 +156,27 @@ fn validate_configured_audience(
         });
     }
     Ok(())
+}
+
+// pyjwt with verify_aud on but no audience rejects any token that carries a truthy aud claim
+fn validate_unscoped_audience(payload: &Document) -> Result<(), VerificationError> {
+    if unscoped_audience_is_absent(payload) {
+        return Ok(());
+    }
+    Err(VerificationError::Validation {
+        detail: "Invalid audience".to_owned(),
+    })
+}
+
+fn unscoped_audience_is_absent(payload: &Document) -> bool {
+    let Some(value) = payload.json.get("aud") else {
+        return true;
+    };
+    value.is_null()
+        || value.as_str().is_some_and(str::is_empty)
+        || value.as_array().is_some_and(Vec::is_empty)
+        || matches!(value.as_bool(), Some(false))
+        || matches!(value.as_i64(), Some(0))
 }
 
 fn missing_audience() -> VerificationError {

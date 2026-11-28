@@ -118,71 +118,47 @@ async fn userinfo_cached_non_object_is_a_miss() {
     );
 }
 
-async fn status_error_without_retry() {
-    let status_http = TestHttp::with_replies(vec![
-        FakeReply::Answer {
-            status: 500,
-            body: "boom".to_owned(),
-        },
-        FakeReply::Answer {
-            status: 200,
-            body: "{}".to_owned(),
-        },
-    ]);
-    let status_case = userinfo_harness(ENDPOINT, TestCache::default(), status_http);
-    let status_error = status_case
-        .verifier
-        .get_oidc_userinfo("abc")
-        .await
-        .unwrap_err();
-    assert_eq!(
-        status_error.to_string(),
-        "Failed to fetch OIDC UserInfo: OIDC UserInfo endpoint returned status 500: boom"
-    );
-    assert_eq!(status_case.http.requests().len(), 1);
-}
-
-async fn json_error_wrapped_as_fetch_failure() {
-    let json_http = TestHttp::with_replies(vec![FakeReply::Answer {
-        status: 200,
-        body: "not-json".to_owned(),
-    }]);
-    let json_case = userinfo_harness(ENDPOINT, TestCache::default(), json_http);
-    let json_error = json_case
-        .verifier
-        .get_oidc_userinfo("abc")
-        .await
-        .unwrap_err();
-    assert_eq!(
-        json_error.to_string(),
-        "Failed to fetch OIDC UserInfo: the json document is not valid json"
-    );
-    assert_eq!(json_case.http.requests().len(), 1);
-}
-
-async fn write_error_wrapped_as_fetch_failure() {
-    let write_http = TestHttp::with_replies(vec![FakeReply::Answer {
-        status: 200,
-        body: "{\"sub\":\"u\"}".to_owned(),
-    }]);
-    let write_case = userinfo_harness(ENDPOINT, TestCache::failing_write(), write_http);
-    let write_error = write_case
-        .verifier
-        .get_oidc_userinfo("abc")
-        .await
-        .unwrap_err();
-    assert_eq!(
-        write_error.to_string(),
-        "Failed to fetch OIDC UserInfo: the cache backend failed"
-    );
-    assert_eq!(write_case.http.requests().len(), 1);
+async fn fetch_failure_for(cache: TestCache, http: TestHttp) -> String {
+    let case = userinfo_harness(ENDPOINT, cache, http);
+    let error = case.verifier.get_oidc_userinfo("abc").await.unwrap_err();
+    assert_eq!(case.http.requests().len(), 1);
+    error.to_string()
 }
 
 #[tokio::test]
 async fn userinfo_no_retry_status_json_write_error_wrapper() {
-    status_error_without_retry().await;
-    json_error_wrapped_as_fetch_failure().await;
-    write_error_wrapped_as_fetch_failure().await;
+    let status = fetch_failure_for(
+        TestCache::default(),
+        TestHttp::with_replies(vec![
+            FakeReply::answer(500, "boom"),
+            FakeReply::answer(200, "{}"),
+        ]),
+    )
+    .await;
+    assert_eq!(
+        status,
+        "Failed to fetch OIDC UserInfo: OIDC UserInfo endpoint returned status 500: boom"
+    );
+
+    let json = fetch_failure_for(
+        TestCache::default(),
+        TestHttp::with_replies(vec![FakeReply::answer(200, "not-json")]),
+    )
+    .await;
+    assert_eq!(
+        json,
+        "Failed to fetch OIDC UserInfo: the json document is not valid json"
+    );
+
+    let write = fetch_failure_for(
+        TestCache::failing_write(),
+        TestHttp::with_replies(vec![FakeReply::answer(200, "{\"sub\":\"u\"}")]),
+    )
+    .await;
+    assert_eq!(
+        write,
+        "Failed to fetch OIDC UserInfo: the cache backend failed"
+    );
 }
 
 #[tokio::test]
@@ -197,10 +173,7 @@ async fn userinfo_cache_read_error_unwrapped() {
 #[tokio::test]
 async fn userinfo_cache_before_return_and_ttl() {
     let events = Events::default();
-    let cache = TestCache {
-        events: events.clone(),
-        ..TestCache::default()
-    };
+    let cache = TestCache::with_events(events.clone());
     let http = TestHttp {
         events: events.clone(),
         ..TestHttp::with_replies(vec![FakeReply::Answer {

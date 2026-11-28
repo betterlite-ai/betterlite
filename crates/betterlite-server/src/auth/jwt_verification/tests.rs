@@ -231,62 +231,68 @@ async fn stage_is_registered() {
     assert_eq!(exception.code, "401");
 }
 
-async fn refused_signature_stops_downstream(app: Router, reached: &Arc<AtomicBool>) {
-    let refused = Request::get("/v1/chat/completions")
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer {}", bad_signature_token()),
-        )
+async fn failure_response(
+    app: Router,
+    reached: &Arc<AtomicBool>,
+    token: &str,
+    reply: SourceReply,
+) -> (StatusCode, String) {
+    let request = Request::get("/v1/chat/completions")
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .extension(Arc::clone(reached))
         .extension(verifier())
-        .extension(source(SourceReply::Key(jwk())))
+        .extension(source(reply))
         .body(Body::empty())
         .unwrap();
-    let response = app.oneshot(refused).await.unwrap();
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let text = String::from_utf8(body.to_vec()).unwrap();
-    assert!(text.contains("auth_error"), "{text}");
-    assert!(text.contains("\"code\":\"401\""), "{text}");
-    assert!(
-        text.contains("Validation fails: Signature verification failed"),
-        "{text}"
-    );
-    assert!(
-        !reached.load(Ordering::Acquire),
-        "an invalid signature must stop before the downstream handler"
-    );
+    (status, String::from_utf8(body.to_vec()).unwrap())
 }
 
-async fn unavailable_key_stops_downstream(app: Router, reached: &Arc<AtomicBool>) {
-    let outage = Request::get("/v1/chat/completions")
-        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
-        .extension(Arc::clone(reached))
-        .extension(verifier())
-        .extension(source(SourceReply::Unreachable))
-        .body(Body::empty())
-        .unwrap();
-    let response = app.oneshot(outage).await.unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let text = String::from_utf8(body.to_vec()).unwrap();
-    assert!(text.contains("auth_provider_unavailable"), "{text}");
-    assert!(text.contains("\"code\":\"503\""), "{text}");
-    assert!(
-        !reached.load(Ordering::Acquire),
-        "an unavailable key must stop before the downstream handler"
-    );
-}
-
-#[tokio::test]
-async fn failure_stops_downstream() {
+fn downstream_application() -> (Router, Arc<AtomicBool>) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load("general_settings:\n  master_key: secret-master-key\n")
     .unwrap();
     let reached = Arc::new(AtomicBool::new(false));
-    let app = chat_application(&config);
-    refused_signature_stops_downstream(app.clone(), &reached).await;
-    unavailable_key_stops_downstream(app, &reached).await;
+    (chat_application(&config), reached)
+}
+
+#[tokio::test]
+async fn failure_stops_downstream() {
+    let (app, reached) = downstream_application();
+
+    let (refused_status, refused_text) = failure_response(
+        app.clone(),
+        &reached,
+        &bad_signature_token(),
+        SourceReply::Key(jwk()),
+    )
+    .await;
+    assert_eq!(refused_status, StatusCode::UNAUTHORIZED);
+    assert!(refused_text.contains("auth_error"), "{refused_text}");
+    assert!(refused_text.contains("\"code\":\"401\""), "{refused_text}");
+    assert!(
+        refused_text.contains("Validation fails: Signature verification failed"),
+        "{refused_text}"
+    );
+    assert!(
+        !reached.load(Ordering::Acquire),
+        "the refused signature reached the handler"
+    );
+
+    let (outage_status, outage_text) =
+        failure_response(app, &reached, TOKEN, SourceReply::Unreachable).await;
+    assert_eq!(outage_status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        outage_text.contains("auth_provider_unavailable"),
+        "{outage_text}"
+    );
+    assert!(outage_text.contains("\"code\":\"503\""), "{outage_text}");
+    assert!(
+        !reached.load(Ordering::Acquire),
+        "the unavailable key reached the handler"
+    );
 }

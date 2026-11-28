@@ -120,6 +120,16 @@ pub(super) struct TestCache {
 }
 
 impl TestCache {
+    pub(super) fn with_events(events: Events) -> Self {
+        Self {
+            entries: Mutex::new(BTreeMap::new()),
+            writes: Mutex::new(Vec::new()),
+            fail_read: AtomicBool::new(false),
+            fail_write: AtomicBool::new(false),
+            events,
+        }
+    }
+
     pub(super) fn with_entry(key: &str, value: Json) -> Self {
         let cache = Self::default();
         lock(&cache.entries).insert(key.to_owned(), value);
@@ -177,6 +187,15 @@ impl KeyCache for TestCache {
 pub(super) enum FakeReply {
     Answer { status: u16, body: String },
     Transport,
+}
+
+impl FakeReply {
+    pub(super) fn answer(status: u16, body: &str) -> Self {
+        Self::Answer {
+            status,
+            body: body.to_owned(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
