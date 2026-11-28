@@ -59,11 +59,11 @@ async fn metadata(State(state): State<SamlEntrypointsState>, request: Request) -
 // SAMLAuthHandler._base_url, _acs_url and _metadata_url through get_custom_url
 fn provider_urls(custom_urls: &CustomUrls, request: &Request) -> (ProviderUrls, String) {
     let root_path = get_request_root_path(request.extensions(), "");
-    let base = custom_urls.custom_url(&request_base_url(request, &root_path), &root_path);
-    let base = if base.ends_with('/') {
-        base
+    let resolved = custom_urls.custom_url(&request_base_url(request, &root_path), &root_path);
+    let base = if resolved.ends_with('/') {
+        resolved
     } else {
-        format!("{base}/")
+        format!("{resolved}/")
     };
     let urls = ProviderUrls {
         metadata_url: format!("{base}{SAML_METADATA_ROUTE}"),
@@ -85,9 +85,9 @@ fn request_base_url(request: &Request, root_path: &str) -> String {
 }
 
 fn default_relay_state(base_url: &str) -> String {
-    let (scheme, host_part) = base_url.split_once("://").unwrap_or((base_url, ""));
+    let (given, host_part) = base_url.split_once("://").unwrap_or((base_url, ""));
     let host = host_part.split('/').next().unwrap_or_default();
-    let scheme = if scheme == "https" { "https" } else { "http" };
+    let scheme = if given == "https" { "https" } else { "http" };
     format!("{scheme}://{host}/{SAML_CALLBACK_ROUTE}")
 }
 

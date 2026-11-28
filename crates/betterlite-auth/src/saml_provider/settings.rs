@@ -85,11 +85,10 @@ impl MergedSettings {
         if self.idp.entity_id.as_deref().unwrap_or_default().is_empty() {
             codes.push("idp_entityId_not_found");
         }
-        let sso_url = self.idp.sso_url.as_deref().unwrap_or_default();
-        if sso_url.is_empty() {
-            codes.push("idp_sso_not_found");
-        } else if !validate_url(sso_url) {
-            codes.push("idp_sso_url_invalid");
+        match self.idp.sso_url.as_deref().unwrap_or_default() {
+            "" => codes.push("idp_sso_not_found"),
+            url if !validate_url(url) => codes.push("idp_sso_url_invalid"),
+            _ => {}
         }
         if let Some(slo_url) = self.idp.slo_url.as_deref()
             && !slo_url.is_empty()
@@ -117,10 +116,10 @@ impl MergedSettings {
         if self.sp_entity_id.is_empty() {
             codes.push("sp_entityId_not_found");
         }
-        if self.acs_url.is_empty() {
-            codes.push("sp_acs_not_found");
-        } else if !validate_url(&self.acs_url) {
-            codes.push("sp_acs_url_invalid");
+        match self.acs_url.as_str() {
+            "" => codes.push("sp_acs_not_found"),
+            url if !validate_url(url) => codes.push("sp_acs_url_invalid"),
+            _ => {}
         }
         // python3-saml ships no SP key or certificate, so requesting signed requests always fails its check.
         if self.authn_requests_signed.0 {

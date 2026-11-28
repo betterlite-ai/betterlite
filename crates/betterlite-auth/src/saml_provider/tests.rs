@@ -27,7 +27,7 @@ use super::authn_request::{authn_request_xml, generate_request_id, redirect_loca
 use super::cache::{AUTHN_TTL, IDP_TTL, SamlCache};
 use super::error::SamlProviderError;
 use super::fetch::{MetadataFetchError, MetadataFetcher};
-use super::idp_metadata::{IdpSettings, X509CertMulti, decode_saml_metadata};
+use super::idp_metadata::{IdpSettings, X509CertMulti, extract::decode_saml_metadata};
 use super::provider::{ProviderUrls, SamlProvider};
 use super::settings::{MergedSettings, validate_url};
 use super::sp_metadata::validate_sp_metadata;
@@ -149,13 +149,13 @@ struct FakeFetcher {
 impl FakeFetcher {
     fn returning(body: &str) -> Self {
         let fetcher = Self::default();
-        fetcher.state().body = body.as_bytes().to_vec();
+        fetcher.fetcher_state().body = body.as_bytes().to_vec();
         fetcher
     }
 
     fn failing() -> Self {
         let fetcher = Self::default();
-        fetcher.state().fail = true;
+        fetcher.fetcher_state().fail = true;
         fetcher
     }
 
@@ -472,7 +472,9 @@ async fn a_fetch_failure_stays_a_fetch_error() {
 async fn invalid_settings_carry_every_toolkit_code() {
     let xml = r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"><md:IDPSSODescriptor><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/></md:IDPSSODescriptor></md:EntityDescriptor>"#;
     let (provider, _cache, _fetcher) = inline_provider(xml);
-    let error = provider.login(&urls(), RELAY).await.unwrap_err();
+    let Err(error) = provider.login(&urls(), RELAY).await else {
+        panic!("expected invalid settings");
+    };
     assert_eq!(
         error.to_string(),
         "Invalid SAML configuration: Invalid dict settings: idp_entityId_not_found,idp_cert_or_fingerprint_not_found_and_required"
@@ -483,7 +485,9 @@ async fn invalid_settings_carry_every_toolkit_code() {
 async fn metadata_want_authn_requests_signed_fails_the_sp_certificate_check() {
     let xml = r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="urn:example:idp"><md:IDPSSODescriptor WantAuthnRequestsSigned="true"><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/><md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>CERT</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor></md:IDPSSODescriptor></md:EntityDescriptor>"#;
     let (provider, _cache, _fetcher) = inline_provider(xml);
-    let error = provider.login(&urls(), RELAY).await.unwrap_err();
+    let Err(error) = provider.login(&urls(), RELAY).await else {
+        panic!("expected invalid settings");
+    };
     assert_eq!(
         error.to_string(),
         "Invalid SAML configuration: Invalid dict settings: sp_cert_not_found_and_required"

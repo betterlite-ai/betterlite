@@ -15,11 +15,9 @@ const X509_DATA: &[u8] = b"X509Data";
 const X509_CERTIFICATE: &[u8] = b"X509Certificate";
 
 pub fn decode_saml_metadata(xml: &[u8]) -> Result<Option<IdpSettings>, IdpMetadataError> {
-    let document = decode_document(xml)?;
-    match document.find_descendant(MD_NAMESPACE, ENTITY_DESCRIPTOR) {
-        Some(entity) => extract_idp(entity),
-        None => Ok(None),
-    }
+    decode_document(xml)?
+        .find_descendant(MD_NAMESPACE, ENTITY_DESCRIPTOR)
+        .map_or(Ok(None), extract_idp)
 }
 
 fn extract_idp(entity: &Element) -> Result<Option<IdpSettings>, IdpMetadataError> {
@@ -54,15 +52,16 @@ fn apply_certificates(idp: &mut IdpSettings, descriptor: &Element) -> Result<(),
     for key_descriptor in descriptor.children_named(MD_NAMESPACE, KEY_DESCRIPTOR) {
         let usage = key_descriptor.attribute(b"use").unwrap_or_default();
         let mut texts = Vec::new();
-        for key_info in key_descriptor.children_named(DS_NAMESPACE, KEY_INFO) {
-            for x509_data in key_info.children_named(DS_NAMESPACE, X509_DATA) {
-                for certificate in x509_data.children_named(DS_NAMESPACE, X509_CERTIFICATE) {
-                    let text = certificate
-                        .text
-                        .as_deref()
-                        .ok_or(IdpMetadataError::CertificateText)?;
-                    texts.push(text.split_whitespace().collect::<String>());
-                }
+        for x509_data in key_descriptor
+            .children_named(DS_NAMESPACE, KEY_INFO)
+            .flat_map(|key_info| key_info.children_named(DS_NAMESPACE, X509_DATA))
+        {
+            for certificate in x509_data.children_named(DS_NAMESPACE, X509_CERTIFICATE) {
+                let text = certificate
+                    .text
+                    .as_deref()
+                    .ok_or(IdpMetadataError::CertificateText)?;
+                texts.push(text.split_whitespace().collect::<String>());
             }
         }
         if !usage.contains("encryption") {

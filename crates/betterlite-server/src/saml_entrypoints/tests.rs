@@ -31,7 +31,9 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tower::ServiceExt as _;
 
-use super::{ProxiedMetadataFetcher, provider_error_response, routes};
+use super::error::provider_error_response;
+use super::fetch::ProxiedMetadataFetcher;
+use super::routes::routes;
 use crate::custom_url::CustomUrls;
 use crate::middleware::request_root_paths::RequestRootPath;
 

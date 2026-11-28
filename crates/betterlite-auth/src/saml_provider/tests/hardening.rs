@@ -10,7 +10,7 @@ use crate::saml_provider::cache::SamlCache;
 use crate::saml_provider::fetch::FETCH_TIMEOUT_SECONDS;
 use crate::saml_provider::idp_metadata::parse::decode_document;
 use crate::saml_provider::idp_metadata::{
-    IdpMetadataError, IdpSettings, X509CertMulti, decode_saml_metadata,
+    IdpMetadataError, IdpSettings, X509CertMulti, extract::decode_saml_metadata,
 };
 use crate::saml_provider::settings::MergedSettings;
 use crate::saml_provider::sp_metadata::validate_sp_metadata;

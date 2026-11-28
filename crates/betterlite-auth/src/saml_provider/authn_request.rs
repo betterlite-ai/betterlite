@@ -22,13 +22,13 @@ const FORM_ENCODING: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'~');
 
 #[must_use]
-pub fn generate_request_id() -> String {
+pub(crate) fn generate_request_id() -> String {
     let entropy = Uuid::new_v4().simple().to_string();
     let digest = hex::encode(Sha1::digest(entropy.as_bytes()));
     format!("{REQUEST_ID_PREFIX}{digest}")
 }
 
-pub fn authn_request_xml(
+pub(crate) fn authn_request_xml(
     settings: &MergedSettings,
     request_id: &str,
     now: i64,
@@ -43,7 +43,7 @@ pub fn authn_request_xml(
     ))
 }
 
-pub fn redirect_location(
+pub(crate) fn redirect_location(
     sso_url: &str,
     request_xml: &str,
     relay_state: &str,

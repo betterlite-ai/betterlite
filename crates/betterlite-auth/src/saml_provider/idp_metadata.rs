@@ -2,10 +2,8 @@ use quick_xml::encoding::EncodingError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-mod extract;
+pub mod extract;
 pub(crate) mod parse;
-
-pub use extract::decode_saml_metadata;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdpSettings {
@@ -27,7 +25,7 @@ pub struct X509CertMulti {
 impl IdpSettings {
     // LiteLLM tests the parsed idp dict for truth; only the five idp keys count, not the sp and security overrides.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.entity_id.is_none()
             && self.sso_url.is_none()
             && self.slo_url.is_none()

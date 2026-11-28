@@ -7,7 +7,7 @@ use super::authn_request::{authn_request_xml, generate_request_id, redirect_loca
 use super::cache::{AUTHN_REQUEST_PREFIX, AUTHN_TTL, IDP_SETTINGS_PREFIX, IDP_TTL, SamlCache};
 use super::error::SamlProviderError;
 use super::fetch::MetadataFetcher;
-use super::idp_metadata::{IdpSettings, decode_saml_metadata};
+use super::idp_metadata::{IdpSettings, extract::decode_saml_metadata};
 use super::settings::{MergedSettings, merged_settings};
 use super::sp_metadata::{build_sp_metadata, validate_sp_metadata};
 use super::verify::{SamlResponseVerifier, SamlVerificationError, VerifiedResponse, VerifyRequest};

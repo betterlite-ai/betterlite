@@ -16,7 +16,7 @@ pub(crate) struct Element {
     pub(crate) local: Vec<u8>,
     pub(crate) attributes: Vec<(Vec<u8>, String)>,
     pub(crate) text: Option<String>,
-    pub(crate) children: Vec<Element>,
+    pub(crate) children: Vec<Self>,
 }
 
 impl Element {
@@ -27,20 +27,24 @@ impl Element {
             .map(|(_key, value)| value.as_str())
     }
 
+    fn is_named(&self, namespace: &str, local: &[u8]) -> bool {
+        self.namespace
+            .as_deref()
+            .is_some_and(|bound| self.local.as_slice() == local && bound == namespace.as_bytes())
+    }
+
     pub(crate) fn children_named<'tree>(
         &'tree self,
         namespace: &'tree str,
         local: &'tree [u8],
-    ) -> impl Iterator<Item = &'tree Element> {
-        self.children.iter().filter(move |child| {
-            child.local.as_slice() == local
-                && child.namespace.as_deref() == Some(namespace.as_bytes())
-        })
+    ) -> impl Iterator<Item = &'tree Self> {
+        self.children
+            .iter()
+            .filter(move |child| child.is_named(namespace, local))
     }
 
-    pub(crate) fn find_descendant(&self, namespace: &str, local: &[u8]) -> Option<&Element> {
-        if self.local.as_slice() == local && self.namespace.as_deref() == Some(namespace.as_bytes())
-        {
+    pub(crate) fn find_descendant(&self, namespace: &str, local: &[u8]) -> Option<&Self> {
+        if self.is_named(namespace, local) {
             return Some(self);
         }
         for child in &self.children {
@@ -52,14 +56,11 @@ impl Element {
     }
 
     pub(crate) fn count_descendants(&self, namespace: &str, local: &[u8]) -> usize {
-        usize::from(
-            self.local.as_slice() == local
-                && self.namespace.as_deref() == Some(namespace.as_bytes()),
-        ) + self
-            .children
+        let own = usize::from(self.is_named(namespace, local));
+        self.children
             .iter()
             .map(|child| child.count_descendants(namespace, local))
-            .sum::<usize>()
+            .fold(own, usize::saturating_add)
     }
 }
 
@@ -73,7 +74,7 @@ struct Builder {
 impl Builder {
     fn open(
         &mut self,
-        resolved: &ResolveResult<'_>,
+        element: &ResolveResult<'_>,
         start: &BytesStart<'_>,
         resolver: &NamespaceResolver,
     ) -> Result<(), IdpMetadataError> {
@@ -89,7 +90,7 @@ impl Builder {
                 limit: MAX_ELEMENTS,
             });
         }
-        let namespace = match resolved {
+        let namespace = match element {
             ResolveResult::Bound(namespace) => Some(namespace.as_ref().to_vec()),
             ResolveResult::Unbound | ResolveResult::Unknown(_) => None,
         };
