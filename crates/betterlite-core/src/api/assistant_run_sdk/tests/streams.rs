@@ -144,6 +144,27 @@ async fn a_supplied_client_class_decides_the_manager_kind() {
 }
 
 #[tokio::test]
+async fn a_supplied_async_client_class_keeps_the_async_manager_kind() {
+    let (recorder, fixture) = openai_recorder();
+    let sdk = fixture.sdk(ProviderRuns {
+        transport: Arc::clone(&recorder),
+    });
+    let mut input = call("openai");
+    input.client = Some(RunClient {
+        class: RunClientClass::AsyncOpenAi,
+        api_key: Some(secret("client-key")),
+        base_url: None,
+        api_version: None,
+        azure_ad_token: None,
+        timeout: None,
+        max_retries: None,
+        organization: None,
+    });
+    let stream = sdk.run_thread_stream(input).unwrap();
+    assert_eq!(stream.kind, ClientKind::Asynchronous);
+}
+
+#[tokio::test]
 async fn stream_entry_failure_surfaces_on_first_read() {
     let (recorder, fixture) = openai_recorder();
     recorder.queue(404, NOT_FOUND);
