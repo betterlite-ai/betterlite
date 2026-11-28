@@ -288,6 +288,31 @@ fn a_proxy_credential_names_the_issued_type_when_set() {
 }
 
 #[test]
+fn token_bodies_debug_without_their_secrets() {
+    let pair = SessionPairBody {
+        access_token: "llm_session_a".to_owned(),
+        token_type: BEARER_TOKEN_TYPE,
+        expires_in: 3_600,
+        refresh_token: "llm_srefresh_r".to_owned(),
+    };
+    let proxy = ProxyCredentialBody {
+        access_token: "sk-proxy".to_owned(),
+        token_type: BEARER_TOKEN_TYPE,
+        expires_in: 600,
+        refresh_token: "llm_srefresh_r".to_owned(),
+        user_id: "alice".to_owned(),
+        team_id: None,
+        issued_token_type: None,
+    };
+    for text in [format!("{pair:?}"), format!("{proxy:?}")] {
+        assert!(text.contains("<redacted>"));
+        assert!(!text.contains("llm_session_a"));
+        assert!(!text.contains("llm_srefresh_r"));
+        assert!(!text.contains("sk-proxy"));
+    }
+}
+
+#[test]
 fn revocation_renders_an_empty_object() {
     assert_eq!(
         serde_json::to_string(&RevokedBody::default()).unwrap(),
