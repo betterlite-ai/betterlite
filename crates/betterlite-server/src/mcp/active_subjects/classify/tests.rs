@@ -106,11 +106,13 @@ async fn header_master_key_mismatch_answers_false() {
 async fn header_non_ascii_master_key_compares_the_encoded_bytes() {
     let mut active = subjects(FakeStore::new());
     active.settings.master_key = Some(SecretString::from("ma\u{00ee}tresse"));
-    assert!(
-        active
-            .uses_gateway_credential(&auth_headers("Bearer ma\u{00ee}tresse"))
-            .await
+    let mut map = HeaderMap::new();
+    // Starlette reads header bytes as Latin-1, so U+00EE arrives as the single byte 0xEE
+    map.insert(
+        "authorization",
+        HeaderValue::from_bytes(b"Bearer ma\xEEtresse").unwrap(),
     );
+    assert!(active.uses_gateway_credential(&map).await);
 }
 
 #[tokio::test]
