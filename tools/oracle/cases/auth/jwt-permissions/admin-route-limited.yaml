@@ -1,0 +1,19 @@
+kind: helper
+name: jwt-permissions-auth-admin-route-limited
+call:
+  jwt_permissions:
+    function: admin_access
+    scopes: [litellm_proxy_admin]
+    route: /v1/embeddings
+    token: oracle-jwt-token
+    user_id: user-1
+    user_email: user@example.com
+    org_id: org-1
+    agent_id: agent-1
+    claims:
+      sub: user-1
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes its own denial text and never echoes the bearer

@@ -1,0 +1,71 @@
+kind: helper
+name: jwt-permissions-role-permissions-matrix
+call:
+  jwt_permissions:
+    function: can_call_route
+    role: team
+    route: /v1/chat/completions
+calls:
+  - jwt_permissions:
+      function: can_call_model
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          models: null
+      model: gpt-4o
+  - jwt_permissions:
+      function: can_call_model
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          models: [gpt-4o]
+      model: gpt-4o
+  - jwt_permissions:
+      function: can_call_model
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          models: ["*"]
+      model: gpt-4o
+  - jwt_permissions:
+      function: can_call_route
+      role: team
+      role_permissions:
+        - role: team
+          routes: null
+      route: /v1/chat/completions
+  - jwt_permissions:
+      function: can_call_route
+      role: team
+      role_permissions:
+        - role: team
+          routes: [openai_routes]
+      route: /v1/chat/completions
+  - jwt_permissions:
+      function: can_call_model
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          models: [gpt-4o]
+      model: gpt-4o-mini
+  - jwt_permissions:
+      function: can_call_model
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          models: []
+        - role: internal_user
+          models: [gpt-4o]
+      model: gpt-4o
+  - jwt_permissions:
+      function: can_call_route
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          routes: [/v1/chat/completions]
+      route: /v1/chat/completions
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes its own denial text and never echoes the bearer

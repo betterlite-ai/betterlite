@@ -1,0 +1,14 @@
+kind: helper
+name: jwt-permissions-auth-rbac-disabled
+call:
+  jwt_permissions:
+    function: check_rbac_role
+    enforce_rbac: false
+    role_permissions:
+      - role: internal_user
+        models: [gpt-4o]
+        routes: [/user/info]
+    model: gpt-4o-mini
+    route: /v1/chat/completions
+env: {}
+compare: {ignore: []}

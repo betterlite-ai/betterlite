@@ -72,6 +72,7 @@ use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_request_policy::stage_input as request_policy_stage_input;
 use crate::auth::auth_resource_grants::stage_input as resource_grant_stage_input;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
 use crate::auth::end_user_identity::stage_input as end_user_identity_stage;
@@ -164,12 +165,12 @@ fn stage_input(
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
-        AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
-            auth_request_policy::stage_input(request, authenticated, body)?,
-        ))),
+        AuthBackend::AuthRequestPolicy => request_policy_stage_input(request, authenticated, body)
+            .map(|stage| StageInput::AuthRequestPolicy(Box::new(stage))),
         AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
+        AuthBackend::JwtPermissions => jwt_permissions::stage_input(request, authenticated, body),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
@@ -270,6 +271,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::TrustedNetwork(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
+        | StageInput::JwtPermissions(_)
         | StageInput::AuthVirtualKeyRoutes(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)

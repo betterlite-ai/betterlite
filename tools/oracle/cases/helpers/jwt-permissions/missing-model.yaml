@@ -1,0 +1,22 @@
+kind: helper
+name: jwt-permissions-missing-model
+call:
+  jwt_permissions:
+    function: check_rbac_role
+    enforce_rbac: true
+    role: internal_user
+    role_permissions:
+      - role: internal_user
+        models: [gpt-4o]
+        routes: [/user/info]
+    route: /user/info
+calls:
+  - jwt_permissions:
+      function: can_call_model
+      role: internal_user
+      role_permissions:
+        - role: internal_user
+          models: [gpt-4o]
+      model: null
+env: {}
+compare: {ignore: []}

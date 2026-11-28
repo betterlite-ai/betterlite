@@ -1,0 +1,52 @@
+kind: helper
+name: jwt-permissions-admin-result
+call:
+  jwt_permissions:
+    function: admin_access
+    scopes: [litellm_proxy_admin]
+    route: /user/info
+    token: oracle-jwt-token
+    user_id: user-1
+    user_email: user@example.com
+    org_id: org-1
+    agent_id: agent-1
+    claims:
+      sub: user-1
+      custom: true
+calls:
+  - jwt_permissions:
+      function: admin_access
+      scopes: [chat]
+      route: /user/info
+      token: oracle-jwt-token
+      user_id: user-1
+      user_email: user@example.com
+      org_id: org-1
+      agent_id: agent-1
+      claims:
+        sub: user-1
+  - jwt_permissions:
+      function: admin_access
+      scopes: [litellm_proxy_admin]
+      route: /user/info
+      token: oracle-jwt-token
+      user_id: user-1
+      user_email: user@example.com
+      org_id: org-1
+      agent_id: agent-1
+  - jwt_permissions:
+      function: admin_access
+      scopes: [custom_admin]
+      admin_jwt_scope: custom_admin
+      route: /user/info
+      token: oracle-jwt-token
+      user_id: user-1
+  - jwt_permissions:
+      function: admin_access
+      scopes: [litellm_proxy_admin]
+      admin_allowed_routes: [/v1/chat/completions]
+      route: /v1/chat/completions
+      token: oracle-jwt-token
+      user_id: user-1
+env: {}
+compare: {ignore: []}

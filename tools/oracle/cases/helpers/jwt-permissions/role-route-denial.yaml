@@ -1,0 +1,18 @@
+kind: helper
+name: jwt-permissions-role-route-denial
+call:
+  jwt_permissions:
+    function: check_rbac_role
+    enforce_rbac: true
+    role: internal_user
+    role_permissions:
+      - role: internal_user
+        models: [gpt-4o]
+        routes: [/user/info]
+    model: gpt-4o
+    route: /v1/chat/completions
+env: {}
+compare:
+  ignore:
+    - pointer: /value/message
+      why: betterlite writes its own denial text and never echoes the bearer
