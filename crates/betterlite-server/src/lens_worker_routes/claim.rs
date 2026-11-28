@@ -43,7 +43,7 @@ where
         if !can_access(&worker.scope, &candidate.scope) {
             continue;
         }
-        if let Some(claim) = claim_candidate(&state, candidate, &worker, now).await? {
+        if let Some(claim) = claim_candidate(&state, &candidate, &worker, now).await? {
             return Ok(Json(Some(claim)));
         }
     }
@@ -68,7 +68,7 @@ fn protocol_version(raw: &[u8]) -> Result<i64, LensWorkerError> {
 // claim_candidate: queue a due job behind changed_only, so a lens with nothing to give back is no work
 async fn claim_candidate<Db, Store>(
     state: &WorkerRoutesState<Db, Store>,
-    candidate: Lens,
+    candidate: &Lens,
     worker: &Worker,
     now: DateTime<Utc>,
 ) -> Result<Option<Claim>, LensWorkerError>
@@ -92,7 +92,7 @@ where
     };
     let claimed = job.worker_id.as_deref() == Some(worker.id.as_str())
         && job.status == JobStatus::Running
-        && current_job(&candidate) != Some(&job);
+        && current_job(candidate) != Some(&job);
     if !claimed {
         return Ok(None);
     }

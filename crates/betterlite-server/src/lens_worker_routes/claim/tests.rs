@@ -152,8 +152,8 @@ async fn claim_takes_a_due_lens() {
     harness.database.seed_lens(stored);
     let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
     assert_eq!(reply.status, StatusCode::OK);
-    let claimed: Option<Claim> = reply.json();
-    let claimed = claimed.expect("a claim");
+    let parsed: Option<Claim> = reply.json();
+    let claimed = parsed.expect("a claim");
     assert_eq!(claimed.lens_id, "l1");
     assert_eq!(claimed.job.id, "id-1");
     assert_eq!(claimed.job.status, JobStatus::Running);
@@ -167,9 +167,9 @@ async fn claim_takes_a_due_lens() {
     assert_eq!(claimed.job.start, shifted(TimeDelta::hours(-24)));
     assert_eq!(claimed.job.end, shifted(TimeDelta::minutes(-2)));
     assert_eq!(claimed.findings, vec![finding("f1")]);
-    let stored = harness.database.lens("l1");
-    assert_eq!(stored.jobs[0].status, JobStatus::Running);
-    assert_eq!(stored.version, 1);
+    let after = harness.database.lens("l1");
+    assert_eq!(after.jobs[0].status, JobStatus::Running);
+    assert_eq!(after.version, 1);
 }
 
 #[tokio::test]
@@ -181,8 +181,8 @@ async fn claim_takes_a_queued_job() {
     harness.database.seed_lens(stored);
     let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
     assert_eq!(reply.status, StatusCode::OK);
-    let claimed: Option<Claim> = reply.json();
-    let claimed = claimed.expect("a claim");
+    let parsed: Option<Claim> = reply.json();
+    let claimed = parsed.expect("a claim");
     assert_eq!(claimed.job.id, "j1");
     assert_eq!(claimed.job.worker_id.as_deref(), Some("w1"));
     assert_eq!(claimed.job.attempts, 1);
@@ -235,9 +235,9 @@ async fn claim_skips_a_live_claim() {
     let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.body, b"null");
-    let stored = harness.database.lens("l1");
-    assert_eq!(stored.jobs[0].worker_id.as_deref(), Some("w2"));
-    assert_eq!(stored.jobs[0].attempts, 0);
+    let after = harness.database.lens("l1");
+    assert_eq!(after.jobs[0].worker_id.as_deref(), Some("w2"));
+    assert_eq!(after.jobs[0].attempts, 0);
 }
 
 #[tokio::test]
@@ -261,8 +261,8 @@ async fn claim_takes_over_an_expired_claim() {
     harness.database.seed_lens(stored);
     let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
     assert_eq!(reply.status, StatusCode::OK);
-    let claimed: Option<Claim> = reply.json();
-    let claimed = claimed.expect("a takeover claim");
+    let parsed: Option<Claim> = reply.json();
+    let claimed = parsed.expect("a takeover claim");
     assert_eq!(claimed.job.id, "j1");
     assert_eq!(claimed.job.worker_id.as_deref(), Some("w1"));
     assert_eq!(claimed.job.attempts, 1);
@@ -270,6 +270,39 @@ async fn claim_takes_over_an_expired_claim() {
         claimed.job.lease_until,
         Some(shifted(TimeDelta::minutes(5)))
     );
+}
+
+// docs/deviations/B4505.yaml: the run window of a clock at the calendar's edge is dropped, not raised
+#[tokio::test]
+async fn claim_answers_null_when_the_run_window_overflows() {
+    let instant = DateTime::<Utc>::MIN_UTC
+        .checked_add_signed(TimeDelta::minutes(1))
+        .expect("a representable instant");
+    let harness = Harness::new().at(instant);
+    harness.database.seed_worker(worker_fixture());
+    let mut stored = base_lens("l1");
+    stored.next_run_at = instant;
+    harness.database.seed_lens(stored);
+    let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.body, b"null");
+    assert!(harness.database.lens("l1").jobs.is_empty());
+}
+
+// docs/deviations/B4505.yaml: the lease instant overflows, so the queued job stays queued and no claim comes back
+#[tokio::test]
+async fn claim_answers_null_when_the_lease_instant_overflows() {
+    let instant = DateTime::<Utc>::MAX_UTC
+        .checked_sub_signed(TimeDelta::minutes(1))
+        .expect("a representable instant");
+    let harness = Harness::new().at(instant);
+    harness.database.seed_worker(worker_fixture());
+    harness.database.seed_lens(base_lens("l1"));
+    let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.body, b"null");
+    let after = harness.database.lens("l1");
+    assert_eq!(after.jobs[0].status, JobStatus::Queued);
 }
 
 #[tokio::test]
@@ -282,8 +315,8 @@ async fn claim_returns_the_first_claimable_lens() {
     harness.database.seed_lens(base_lens("l2"));
     let reply = worker_call(harness.app(), authorized("POST", CLAIM, None)).await;
     assert_eq!(reply.status, StatusCode::OK);
-    let claimed: Option<Claim> = reply.json();
-    let claimed = claimed.expect("the second lens is claimable");
+    let parsed: Option<Claim> = reply.json();
+    let claimed = parsed.expect("the second lens is claimable");
     assert_eq!(claimed.lens_id, "l2");
     assert_eq!(claimed.job.id, "id-2");
 }

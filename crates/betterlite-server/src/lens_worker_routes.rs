@@ -25,7 +25,7 @@ pub(crate) struct WorkerRoutesState<Db, Store = NoStorage> {
 }
 
 impl<Db, Store> WorkerRoutesState<Db, Store> {
-    pub(crate) fn new(routes: LensRoutesState<Db, Store>, inference: Inference) -> Self {
+    pub(crate) const fn new(routes: LensRoutesState<Db, Store>, inference: Inference) -> Self {
         Self { routes, inference }
     }
 }

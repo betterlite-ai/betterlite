@@ -27,15 +27,16 @@ where
     let query = decode_content_query(query_text.as_bytes())?;
     let now = state.routes.clock.now();
     let (lens, job) = assigned(&state.routes, &lens_id, &job_id, &worker, now).await?;
-    let execution = job.sample.as_ref().and_then(|sample| {
-        sample
-            .executions
-            .iter()
-            .find(|entry| entry.id == execution_id)
-    });
-    let Some(execution) = execution else {
-        return Err(LensWorkerError::OutsideSample);
-    };
+    let execution = job
+        .sample
+        .as_ref()
+        .and_then(|sample| {
+            sample
+                .executions
+                .iter()
+                .find(|entry| entry.id == execution_id)
+        })
+        .ok_or(LensWorkerError::OutsideSample)?;
     let reader = source_reader(state.routes.storage.as_ref())?;
     let body = reader
         .content(&lens.scope, execution, &query.cursor, query.offset)

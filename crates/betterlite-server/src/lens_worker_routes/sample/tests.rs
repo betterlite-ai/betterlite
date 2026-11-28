@@ -54,7 +54,7 @@ async fn a_stored_sample_returns_without_storage() {
 
 #[tokio::test]
 async fn the_sample_pages_by_cursor_until_the_selected_count() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[
         page(100, 0, 500, 150),
         page(50, 100, 500, 150),
@@ -86,7 +86,7 @@ async fn the_sample_pages_by_cursor_until_the_selected_count() {
 
 #[tokio::test]
 async fn the_sample_stops_when_a_full_page_reaches_the_selected_count() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[
         page(100, 0, 500, 120),
         page(100, 100, 500, 120),
@@ -109,7 +109,7 @@ async fn the_sample_stops_when_a_full_page_reaches_the_selected_count() {
 
 #[tokio::test]
 async fn a_page_without_a_cursor_ends_the_gathering() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[page(10, 0, 500, 500)]));
     harness.database.seed_worker(worker_fixture());
     harness.database.seed_lens(lens_with(live_job()));
@@ -128,7 +128,7 @@ async fn a_page_without_a_cursor_ends_the_gathering() {
 
 #[tokio::test]
 async fn the_frozen_sample_is_kept_for_the_next_call() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[page(2, 0, 2, 2)]));
     harness.database.seed_worker(worker_fixture());
     harness.database.seed_lens(lens_with(live_job()));
@@ -149,7 +149,7 @@ async fn the_frozen_sample_is_kept_for_the_next_call() {
 
 #[tokio::test]
 async fn another_requests_frozen_sample_wins() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[page(2, 0, 2, 2)]));
     harness.database.seed_worker(worker_fixture());
     harness.database.seed_lens(lens_with(live_job()));
@@ -164,7 +164,7 @@ async fn another_requests_frozen_sample_wins() {
 
 #[tokio::test]
 async fn a_job_moved_before_the_freeze_is_409() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[page(2, 0, 2, 2)]));
     harness.database.seed_worker(worker_fixture());
     harness.database.seed_lens(lens_with(live_job()));

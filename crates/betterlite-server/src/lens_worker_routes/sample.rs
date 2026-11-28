@@ -37,7 +37,7 @@ where
     }
     let reader = source_reader(state.routes.storage.as_ref())?;
     let built = gather(&reader, &lens, &job).await?;
-    freeze(&state.routes, &lens_id, &job_id, &worker, built).await
+    freeze(&state.routes, &lens_id, &job_id, &worker, &built).await
 }
 
 // the sample route's empty sample, for a job whose selection has not been frozen yet
@@ -52,7 +52,7 @@ pub(crate) const fn empty_sample() -> Sample {
 }
 
 // the first page's window, in whole milliseconds from the job's integer microsecond bounds
-fn base_window(job: &Job) -> SampleWindow {
+const fn base_window(job: &Job) -> SampleWindow {
     SampleWindow {
         start: job.start.timestamp_micros().div_euclid(1000),
         end: job.end.timestamp_micros().div_euclid(1000),
@@ -63,7 +63,7 @@ fn base_window(job: &Job) -> SampleWindow {
     }
 }
 
-fn next_window(base: &SampleWindow, cursor: String) -> SampleWindow {
+const fn next_window(base: &SampleWindow, cursor: String) -> SampleWindow {
     SampleWindow {
         start: base.start,
         end: base.end,
@@ -132,13 +132,12 @@ async fn freeze<Db, Store>(
     lens_id: &str,
     job_id: &str,
     worker: &Worker,
-    built: Sample,
+    built: &Sample,
 ) -> Result<Json<Sample>, LensWorkerError>
 where
     Db: LensDatabase,
 {
-    let freeze =
-        |lens: Lens| -> Result<Lens, JobMoved> { frozen(lens, job_id, &worker.id, &built) };
+    let freeze = |lens: Lens| -> Result<Lens, JobMoved> { frozen(lens, job_id, &worker.id, built) };
     let updated = lens_repository(state)?
         .update(lens_id, freeze, DEFAULT_ATTEMPTS, false)
         .await
@@ -149,10 +148,8 @@ where
         .iter()
         .find(|job| job.id == job_id)
         .and_then(|job| job.sample.clone());
-    match stored {
-        Some(sample) => Ok(Json(sample)),
-        None => Err(LensWorkerError::SampleNotFrozen),
-    }
+    let frozen_sample = stored.ok_or(LensWorkerError::SampleNotFrozen)?;
+    Ok(Json(frozen_sample))
 }
 
 // another request that froze the sample first keeps its own selection

@@ -47,7 +47,7 @@ fn content_uri(execution: &Execution) -> String {
 
 #[tokio::test]
 async fn content_returns_the_readers_page() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[]).answering_content(part()));
     harness.database.seed_worker(worker_fixture());
     let execution = trace_execution(0);
@@ -81,7 +81,7 @@ async fn content_returns_the_readers_page() {
 
 #[tokio::test]
 async fn content_passes_the_cursor_and_increments_the_offset() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[]).answering_content(part()));
     harness.database.seed_worker(worker_fixture());
     let execution = trace_execution(0);
@@ -198,7 +198,7 @@ async fn a_negative_offset_is_422() {
 
 #[tokio::test]
 async fn a_repeated_execution_id_uses_the_last_value() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[]).answering_content(part()));
     harness.database.seed_worker(worker_fixture());
     let execution = trace_execution(0);
@@ -232,7 +232,7 @@ async fn content_for_a_missing_lens_is_404() {
 
 #[tokio::test]
 async fn a_storage_failure_is_500() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[]).failing());
     harness.database.seed_worker(worker_fixture());
     let execution = trace_execution(0);

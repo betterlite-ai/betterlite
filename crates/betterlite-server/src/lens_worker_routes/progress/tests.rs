@@ -192,11 +192,11 @@ async fn heartbeat_renews_the_job_with_its_own_stage_and_coverage() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.body, b"true");
-    let stored = harness.database.lens("l1");
-    assert_eq!(stored.jobs[0].stage, "Analyzing");
-    assert_eq!(stored.jobs[0].coverage.screened, 3);
+    let after = harness.database.lens("l1");
+    assert_eq!(after.jobs[0].stage, "Analyzing");
+    assert_eq!(after.jobs[0].coverage.screened, 3);
     assert_eq!(
-        stored.jobs[0].lease_until,
+        after.jobs[0].lease_until,
         Some(shifted(TimeDelta::minutes(5)))
     );
     assert_eq!(harness.database.heartbeats().len(), 1);

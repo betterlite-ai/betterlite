@@ -14,7 +14,7 @@ pub(crate) fn merge_results(
     drafts.iter().fold(lens.clone(), |current, draft| {
         let finding = merge_finding(&current, draft, revision, now);
         let merged_id = finding.id.clone();
-        let mut findings = Vec::with_capacity(current.findings.len() + 1);
+        let mut findings = Vec::with_capacity(current.findings.len().saturating_add(1));
         findings.push(finding);
         findings.extend(
             current

@@ -89,24 +89,24 @@ fn an_access_error_keeps_its_own_status_and_text() {
     let refused = LensWorkerError::from(LensAccessError::NoDatabase);
     assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(refused.detail(), NO_DATABASE);
-    let refused = LensWorkerError::from(LensAccessError::TracingDisabled);
-    assert_eq!(refused.status(), StatusCode::NOT_IMPLEMENTED);
+    let disabled = LensWorkerError::from(LensAccessError::TracingDisabled);
+    assert_eq!(disabled.status(), StatusCode::NOT_IMPLEMENTED);
 }
 
 #[test]
 fn an_analyze_error_keeps_its_own_status_and_text() {
     let refused = LensWorkerError::from(AnalyzeError::NoModels);
     assert_eq!(refused.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let refused = LensWorkerError::from(AnalyzeError::NoAnalysisKey);
-    assert_eq!(refused.status(), StatusCode::CONFLICT);
+    let no_key = LensWorkerError::from(AnalyzeError::NoAnalysisKey);
+    assert_eq!(no_key.status(), StatusCode::CONFLICT);
     assert_eq!(
-        refused.detail(),
+        no_key.detail(),
         "Assign an analysis key to this worker in Lens setup"
     );
-    let refused = LensWorkerError::from(AnalyzeError::NoDeployments);
-    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
-    let refused = LensWorkerError::from(AnalyzeError::NoChoices);
-    assert_eq!(refused.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let no_deployments = LensWorkerError::from(AnalyzeError::NoDeployments);
+    assert_eq!(no_deployments.status(), StatusCode::BAD_REQUEST);
+    let no_choices = LensWorkerError::from(AnalyzeError::NoChoices);
+    assert_eq!(no_choices.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 #[test]

@@ -394,7 +394,7 @@ async fn a_previous_finding_of_another_check_is_422() {
 
 #[tokio::test]
 async fn evidence_that_does_not_match_is_422() {
-    let harness = Harness::new();
+    let mut harness = Harness::new();
     harness.storage = Some(WorkerStorage::with_pages(&[]).answering_evidence(false));
     harness.database.seed_worker(worker_fixture());
     harness.database.seed_lens(sampled_lens(&["c1"], &[0]));
@@ -445,7 +445,6 @@ async fn a_result_without_coverage_is_422() {
     let harness = Harness::new();
     harness.database.seed_worker(worker_fixture());
     let reply = post_result(&harness, r#"{"assessments":[],"findings":[]}"#).await;
-    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     let issues = reply.issues();
     assert_eq!(issues[0].kind, "missing");

@@ -158,11 +158,16 @@ pub(crate) fn sample_of(executions: Vec<Execution>) -> Sample {
 pub(crate) fn page(rows: usize, first: usize, eligible: i64, selected: i64) -> String {
     let entries: Vec<String> = (first..first + rows)
         .map(|index| {
-            format!(concat!(
-                r#"{{"selection_key":"k{index}","source":"traces","trace_id":"t{index}","#,
-                r#""team_id":"team-1","name":"t{index}","start_time":"2026-01-01T00:00:00Z","#,
-                r#""span_count":1,"root_seen":1,"eligible":{eligible},"selected":{selected}}}"#
-            ))
+            format!(
+                concat!(
+                    r#"{{"selection_key":"k{index}","source":"traces","trace_id":"t{index}","#,
+                    r#""team_id":"team-1","name":"t{index}","start_time":"2026-01-01T00:00:00Z","#,
+                    r#""span_count":1,"root_seen":1,"eligible":{eligible},"selected":{selected}}}"#
+                ),
+                index = index,
+                eligible = eligible,
+                selected = selected
+            )
         })
         .collect();
     format!("[{}]", entries.join(","))
@@ -184,11 +189,16 @@ pub(crate) fn draft(check_id: &str, finding_id: Option<&str>, execution_id: &str
     let existing = finding_id.map_or_else(String::new, |id| {
         format!(r#","existing_finding_id":"{id}""#)
     });
-    format!(concat!(
-        r#"{{"title":"Checkout retries","description":"The checkout retried twice","#,
-        r#""check_id":"{check_id}","evidence":[{{"execution_id":"{execution_id}","#,
-        r#""span_id":"s1","quote":"boom"}}]{existing}}}"#
-    ))
+    format!(
+        concat!(
+            r#"{{"title":"Checkout retries","description":"The checkout retried twice","#,
+            r#""check_id":"{check_id}","evidence":[{{"execution_id":"{execution_id}","#,
+            r#""span_id":"s1","quote":"boom"}}]{existing}}}"#
+        ),
+        check_id = check_id,
+        execution_id = execution_id,
+        existing = existing
+    )
 }
 
 pub(crate) fn result_body(assessments: &[String], findings: &[String], error: &str) -> String {
