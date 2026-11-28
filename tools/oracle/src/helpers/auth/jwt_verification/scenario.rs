@@ -187,10 +187,10 @@ fn json_value(value: Value) -> Json {
 }
 
 async fn userinfo_answer(fixture: &Fixture<'_>, token: &str) -> (Json, Option<Failure>) {
-    match fixture.verifier.get_oidc_userinfo(token).await {
-        Ok(fields) => (Json::Object(fields), None),
-        Err(_) => (Json::Null, Some(Failure::default())),
-    }
+    fixture.verifier.get_oidc_userinfo(token).await.map_or_else(
+        |_| (Json::Null, Some(Failure::default())),
+        |fields| (Json::Object(fields), None),
+    )
 }
 
 fn auth_failure(error: &VerificationError) -> Failure {

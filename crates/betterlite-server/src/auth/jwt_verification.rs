@@ -45,22 +45,14 @@ impl fmt::Debug for JwtVerificationStageInput {
 pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
     let extensions = request.extensions();
     let state = extensions.get::<Arc<ServerState>>();
-    let injected_verifier = extensions.get::<Arc<JwtVerifier>>();
-    let verifier = match injected_verifier {
-        Some(injected) => Some(Arc::clone(injected)),
-        None => state.and_then(|server| server.jwt_verification.verifier.clone()),
-    };
-    let injected_source = extensions.get::<Arc<dyn PublicKeySource>>();
-    let source: Option<Arc<dyn PublicKeySource>> = match injected_source {
-        Some(injected) => Some(Arc::clone(injected)),
-        None => match state.and_then(|server| server.jwt_keys.resolver.as_ref()) {
-            Some(resolver) => {
-                let key_source: Arc<dyn PublicKeySource> = Arc::clone(resolver);
-                Some(key_source)
-            }
-            None => None,
-        },
-    };
+    let verifier = extensions
+        .get::<Arc<JwtVerifier>>()
+        .cloned()
+        .or_else(|| state.and_then(|server| server.jwt_verification.verifier.clone()));
+    let source = extensions
+        .get::<Arc<dyn PublicKeySource>>()
+        .cloned()
+        .or_else(|| state.and_then(|server| server.jwt_keys.resolver.clone()));
     StageInput::JwtVerification(Box::new(JwtVerificationStageInput {
         verifier,
         source,
@@ -138,19 +130,22 @@ fn claims_scope(payload: &TypedValue) -> (Option<String>, Vec<String>) {
         .get("iss")
         .and_then(|value| value.as_str())
         .map(str::to_owned);
-    let audience = payload
-        .json
-        .get("aud")
-        .map_or_else(Vec::new, |value| match value.as_array() {
-            Some(items) => items
-                .iter()
-                .filter_map(|item| item.as_str())
-                .map(str::to_owned)
-                .collect(),
-            None => value
-                .as_str()
-                .map(str::to_owned)
-                .map_or_else(Vec::new, |text| vec![text]),
-        });
+    let audience = payload.json.get("aud").map_or_else(Vec::new, |value| {
+        value.as_array().map_or_else(
+            || {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .map_or_else(Vec::new, |text| vec![text])
+            },
+            |items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .map(str::to_owned)
+                    .collect()
+            },
+        )
+    });
     (issuer, audience)
 }
