@@ -19,7 +19,7 @@ pub(crate) fn not_oauth_protected(name: &str) -> DiscoveryFailure {
 }
 
 pub(crate) fn upstream_failure(name: &str, reason: &str) -> DiscoveryFailure {
-    let quoted = repr(name).unwrap_or_default();
+    let quoted = repr(&name).unwrap_or_default();
     DiscoveryFailure {
         status: StatusCode::BAD_GATEWAY,
         detail: format!("{reason} for MCP server {quoted}"),

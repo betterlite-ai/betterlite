@@ -26,7 +26,8 @@ pub(crate) enum FetchError {
 
 #[derive(Debug)]
 pub enum BodyOutcome {
-    Object(JsonObject),
+    // boxed so the object variant stays within 3x of the decode error variant
+    Object(Box<JsonObject>),
     NotObject,
     NotJson(serde_json::Error),
 }
@@ -34,7 +35,7 @@ pub enum BodyOutcome {
 #[must_use]
 pub fn parse_metadata_body(bytes: &[u8]) -> BodyOutcome {
     match serde_json::from_slice::<Json>(bytes) {
-        Ok(Json::Object(document)) => BodyOutcome::Object(document),
+        Ok(Json::Object(document)) => BodyOutcome::Object(Box::new(document)),
         Ok(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             BodyOutcome::NotObject
         }
@@ -79,7 +80,7 @@ fn payload_from(candidate: &str, reply: &UpstreamReply) -> Option<JsonObject> {
         return None;
     }
     match parse_metadata_body(&reply.body) {
-        BodyOutcome::Object(document) => Some(document),
+        BodyOutcome::Object(document) => Some(*document),
         BodyOutcome::NotObject => None,
         BodyOutcome::NotJson(error) => {
             tracing::warn!(

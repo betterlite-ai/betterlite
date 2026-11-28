@@ -36,7 +36,7 @@ pub(crate) const GATEWAY_LEGACY_DOCUMENT: &str = r#"{"authorization_servers":["h
 
 pub(crate) fn document(raw: &str) -> JsonObject {
     match parse_metadata_body(raw.as_bytes()) {
-        BodyOutcome::Object(parsed) => parsed,
+        BodyOutcome::Object(parsed) => *parsed,
         BodyOutcome::NotObject => panic!("the fixture is a JSON object"),
         BodyOutcome::NotJson(error) => panic!("the fixture is JSON: {error}"),
     }
