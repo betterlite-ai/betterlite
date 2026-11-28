@@ -155,7 +155,7 @@ pub(crate) fn handler_with_predict(
     predict_price: Option<Decimal>,
 ) -> (VertexPassthroughHandler, Arc<PredictCost>) {
     let predict_cost = PredictCost::new(predict_price);
-    let relay: Arc<dyn CompletionCost> = Arc::clone(&predict_cost);
+    let relay: Arc<dyn CompletionCost> = Arc::<PredictCost>::clone(&predict_cost);
     let predict = VertexPredictLogger::new(relay);
     let batch = VertexBatchLogging::new(
         None,
