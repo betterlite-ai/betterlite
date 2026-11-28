@@ -18,18 +18,21 @@ pub(crate) struct Candidate {
 }
 
 // _candidate: a model group qualifies only when exactly one deployment serves it and that deployment can be predicted for.
-pub(crate) fn candidate<Host: CacheRoutingHost + ?Sized>(
+pub(crate) fn candidate<Host>(
     host: &Host,
     services: &PredictionServices<'_>,
     tier: &str,
     model: &str,
     request_kwargs: &JsonMap,
-) -> Result<Option<Candidate>, CacheAlternativesError> {
+) -> Result<Option<Candidate>, CacheAlternativesError>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let deployments = host
         .deployments_for_request(model, request_kwargs)
         .map_err(|source| CacheAlternativesError::Deployments {
             model: model.to_owned(),
-            source,
+            source: Box::new(source),
         })?;
     let [deployment] = deployments.as_slice() else {
         return Ok(None);
@@ -49,25 +52,28 @@ pub(crate) fn candidate<Host: CacheRoutingHost + ?Sized>(
 }
 
 // _available: the caller may call the model group, and one healthy deployment is the candidate's own.
-pub(crate) async fn available<Host: CacheRoutingHost + ?Sized>(
+pub(crate) async fn available<Host>(
     host: &Host,
     candidate: &Candidate,
     caller: &UserAPIKeyAuth,
     request_kwargs: &JsonMap,
     messages: Option<&[Message]>,
-) -> Result<bool, CacheAlternativesError> {
+) -> Result<bool, CacheAlternativesError>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     host.can_key_call_model(caller, &candidate.model)
         .await
         .map_err(|source| CacheAlternativesError::Access {
             model: candidate.model.clone(),
-            source,
+            source: Box::new(source),
         })?;
     let healthy = host
         .healthy_deployments(&candidate.model, messages, request_kwargs)
         .await
         .map_err(|source| CacheAlternativesError::Healthy {
             model: candidate.model.clone(),
-            source,
+            source: Box::new(source),
         })?;
     let wanted = PredictionDeployment::read(
         &candidate.deployment.litellm_params,

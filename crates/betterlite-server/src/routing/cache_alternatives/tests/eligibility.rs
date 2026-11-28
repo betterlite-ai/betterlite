@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::tier_definitions::{TierDefinition, TierParam};
+use betterlite_config::sections::tier_definitions::TierParam;
 use betterlite_router::complexity_config::checks::Feature;
 use betterlite_router::complexity_scoring::decision::RoutingDecision;
 use betterlite_router::router_predicates::JsonMap;
-use betterlite_router::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
+use betterlite_router::tier_definitions::model::{
+    TierDefinition, TierModelEntry, TierPool, TierSet,
+};
 use indexmap::IndexMap;
 use rstest::rstest;
 

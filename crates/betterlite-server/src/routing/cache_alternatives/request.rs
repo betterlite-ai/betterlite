@@ -104,7 +104,7 @@ pub(crate) fn set_to_a_value(value: &Json) -> bool {
     }
 }
 
-fn object(value: Option<&Json>) -> Option<&JsonMap> {
+const fn object(value: Option<&Json>) -> Option<&JsonMap> {
     match value {
         Some(Json::Object(fields)) => Some(fields),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
@@ -112,7 +112,7 @@ fn object(value: Option<&Json>) -> Option<&JsonMap> {
     }
 }
 
-fn text(value: Option<&Json>) -> Option<&str> {
+const fn text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(found)) => Some(found.as_str()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
@@ -135,13 +135,13 @@ fn header_map(fields: &JsonMap) -> Option<HeaderMap> {
                 headers.insert(header_name, parsed);
             }
             Err(_) if prediction_header(header_name.as_str()) => return None,
-            Err(_) => continue,
+            Err(_) => {}
         }
     }
     Some(headers)
 }
 
-fn prediction_header(name: &str) -> bool {
+const fn prediction_header(name: &str) -> bool {
     name.eq_ignore_ascii_case(ANTHROPIC_BETA_HEADER)
         || name.eq_ignore_ascii_case(ANTHROPIC_VERSION_HEADER)
 }

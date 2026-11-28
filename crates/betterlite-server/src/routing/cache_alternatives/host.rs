@@ -107,7 +107,10 @@ impl<Host: CacheRoutingHost + ?Sized> CapacityCounter<'_, Host> {
         limiter
             .capacity(self.caller, self.model, self.request_data)
             .await
-            .map_err(|source| CacheAlternativesError::Capacity { model, source })
+            .map_err(|source| CacheAlternativesError::Capacity {
+                model,
+                source: Box::new(source),
+            })
     }
 }
 

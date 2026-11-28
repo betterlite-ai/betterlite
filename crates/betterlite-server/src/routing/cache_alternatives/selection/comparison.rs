@@ -6,7 +6,6 @@ use betterlite_anthropic::cache_aware_routing::types::CachePredictionArm;
 use betterlite_anthropic::cache_aware_routing::types::CacheState;
 use betterlite_models::decisions::Json;
 use betterlite_router::cache_cost_routing::CacheAwareChoice;
-use betterlite_router::cache_cost_routing::TierParams;
 use futures_util::future::join_all;
 use rust_decimal::Decimal;
 
@@ -24,12 +23,15 @@ struct Compared<'compared> {
 }
 
 // steps 6 to 10: the limits, the predictions under capacity, the strict and fresh filter, the cheapest arm
-pub(super) async fn compare<Host: CacheRoutingHost + ?Sized>(
+pub(super) async fn compare<Host>(
     request: &SelectionRequest<'_, Host>,
     gate: &Gate<'_>,
     members: &[&Candidate],
     limits: Vec<i64>,
-) -> Option<CacheAwareChoice> {
+) -> Option<CacheAwareChoice>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let pairs: Vec<(&Candidate, i64)> = members.iter().copied().zip(limits).collect();
     let arms = predict_arms(
         request,
@@ -49,15 +51,18 @@ pub(super) async fn compare<Host: CacheRoutingHost + ?Sized>(
         })
         .collect();
     let services = request.host.prediction_services();
-    pick_choice(request, &gate.provider, &services, &compared)
+    pick_choice(request, &services, &compared)
 }
 
 // step 6: each compared model's max_tokens, else the caller's requested limit, and a bad limit stops the comparison
-pub(super) fn output_limits<Host: CacheRoutingHost + ?Sized>(
+pub(super) fn output_limits<Host>(
     request: &SelectionRequest<'_, Host>,
     members: &[&Candidate],
     fallback: i64,
-) -> Option<Vec<i64>> {
+) -> Option<Vec<i64>>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let mut limits = Vec::with_capacity(members.len());
     for member in members {
         let params = request
@@ -80,13 +85,16 @@ fn positive_int(value: &Json) -> Option<i64> {
 }
 
 // step 7: one prediction per compared model, each count running under that model group's capacity
-async fn predict_arms<'predict, Host: CacheRoutingHost + ?Sized>(
+async fn predict_arms<Host>(
     request: &SelectionRequest<'_, Host>,
     provider: &AnthropicCacheRouting,
-    compared: &[(&'predict Candidate, i64)],
+    compared: &[(&Candidate, i64)],
     caller_key_hash: &str,
     checked_at: f64,
-) -> Vec<CachePredictionArm> {
+) -> Vec<CachePredictionArm>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let services = request.host.prediction_services();
     let counters: Vec<CapacityCounter<'_, Host>> = compared
         .iter()
@@ -118,12 +126,14 @@ async fn predict_arms<'predict, Host: CacheRoutingHost + ?Sized>(
 }
 
 // steps 8 to 10: the capped original cost, the strict and fresh alternatives, and the cheapest of them
-fn pick_choice<Host: CacheRoutingHost + ?Sized>(
+fn pick_choice<Host>(
     request: &SelectionRequest<'_, Host>,
-    provider: &AnthropicCacheRouting,
     services: &PredictionServices<'_>,
     compared: &[Compared<'_>],
-) -> Option<CacheAwareChoice> {
+) -> Option<CacheAwareChoice>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let (original, alternatives) = compared.split_first()?;
     let original_cost = cost_of(request, services, original)?;
     let finished_at = request.now.unwrap_or_else(|| request.host.clock_seconds());
@@ -132,27 +142,7 @@ fn pick_choice<Host: CacheRoutingHost + ?Sized>(
         let Some(cost) = cost_of(request, services, alternative) else {
             continue;
         };
-        let fresh = matches!(
-            alternative.arm.cache_state,
-            CacheState::Warm | CacheState::Partial
-        ) && alternative
-            .arm
-            .evidence
-            .as_ref()
-            .is_some_and(|evidence| evidence.expires_at > finished_at)
-            && alternative.arm.estimate.as_ref().is_some_and(|estimate| {
-                AnthropicCacheRouting::fits(
-                    &PredictionDeployment::read(
-                        &alternative.candidate.deployment.litellm_params,
-                        &alternative.candidate.deployment.model_info,
-                    ),
-                    estimate.tokens.total_tokens(),
-                    alternative.limit,
-                    services,
-                    request.host.price_lookup(),
-                )
-            });
-        if cost >= original_cost || !fresh {
+        if cost >= original_cost || !fresh(request, services, alternative, finished_at) {
             continue;
         }
         if best
@@ -171,12 +161,50 @@ fn pick_choice<Host: CacheRoutingHost + ?Sized>(
     best
 }
 
+// step 9: a warm or partial arm, with evidence still fresh at the second reading and an estimate that fits
+fn fresh<Host>(
+    request: &SelectionRequest<'_, Host>,
+    services: &PredictionServices<'_>,
+    alternative: &Compared<'_>,
+    finished_at: f64,
+) -> bool
+where
+    Host: CacheRoutingHost + ?Sized,
+{
+    let arm = &alternative.arm;
+    if !matches!(arm.cache_state, CacheState::Warm | CacheState::Partial) {
+        return false;
+    }
+    let Some(evidence) = arm.evidence.as_ref() else {
+        return false;
+    };
+    if evidence.expires_at <= finished_at {
+        return false;
+    }
+    let Some(estimate) = arm.estimate.as_ref() else {
+        return false;
+    };
+    AnthropicCacheRouting::fits(
+        &PredictionDeployment::read(
+            &alternative.candidate.deployment.litellm_params,
+            &alternative.candidate.deployment.model_info,
+        ),
+        estimate.tokens.total_tokens(),
+        alternative.limit,
+        services,
+        request.host.price_lookup(),
+    )
+}
+
 // min(cache_aware_routing_output_tokens, limit): the count a price is asked for caps the caller's output limit
-fn cost_of<Host: CacheRoutingHost + ?Sized>(
+fn cost_of<Host>(
     request: &SelectionRequest<'_, Host>,
     services: &PredictionServices<'_>,
     compared: &Compared<'_>,
-) -> Option<Decimal> {
+) -> Option<Decimal>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let capped = i64::try_from(request.config.output_tokens)
         .unwrap_or(i64::MAX)
         .min(compared.limit);

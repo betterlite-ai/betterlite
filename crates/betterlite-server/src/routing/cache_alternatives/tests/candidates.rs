@@ -3,6 +3,7 @@ use betterlite_router::router_predicates::JsonMap;
 
 use crate::routing::cache_alternatives::candidates::{available, candidate};
 use crate::routing::cache_alternatives::error::CacheAlternativesError;
+use crate::routing::cache_alternatives::host::CacheRoutingHost as _;
 use crate::routing::cache_alternatives::tests::support::{
     CALLER, CHEAP_ID, Fixture, caller, cheap_deployment, json, strong_deployment,
 };
@@ -63,7 +64,7 @@ async fn candidate_refuses_a_deployment_without_an_id() {
     let context = fixture.context();
     let mut host = fixture.host(&context);
     let mut spec = cheap_deployment(30_000);
-    assert!(spec.model_info.remove("id").is_some());
+    assert!(spec.model_info.shift_remove("id").is_some());
     host.deployments.insert("cheap".to_owned(), vec![spec]);
     let services = host.prediction_services();
     assert!(

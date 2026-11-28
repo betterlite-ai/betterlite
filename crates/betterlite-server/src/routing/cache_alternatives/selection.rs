@@ -43,10 +43,13 @@ struct Gate<'gate> {
 }
 
 // select_cached_model: the ten ordered steps, each one returning None keeps the classified route
-pub(crate) async fn select_cached_model<Host: CacheRoutingHost + ?Sized>(
+pub(crate) async fn select_cached_model<Host>(
     request: &SelectionRequest<'_, Host>,
-) -> Result<Option<CacheAwareChoice>, CacheAlternativesError> {
-    let Some(gate) = gate(request)? else {
+) -> Result<Option<CacheAwareChoice>, CacheAlternativesError>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
+    let Some(gate) = gate(request) else {
         return Ok(None);
     };
     let candidates = build_candidates(request, &gate.names)?;
@@ -77,46 +80,43 @@ pub(crate) async fn select_cached_model<Host: CacheRoutingHost + ?Sized>(
 }
 
 // steps 1 and 2: the setting, the body, the decision, the caller's key and the eligible names
-fn gate<'gate, Host: CacheRoutingHost + ?Sized>(
-    request: &'gate SelectionRequest<'_, Host>,
-) -> Result<Option<Gate<'gate>>, CacheAlternativesError> {
+fn gate<'gate, Host>(request: &'gate SelectionRequest<'_, Host>) -> Option<Gate<'gate>>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     if !request.config.enabled {
-        return Ok(None);
+        return None;
     }
-    let Some(provider) = AnthropicCacheRouting::from_body(request.body) else {
-        return Ok(None);
-    };
-    let Some(decision) = request.response.routing_decision.as_ref() else {
-        return Ok(None);
-    };
+    let provider = AnthropicCacheRouting::from_body(request.body)?;
+    let decision = request.response.routing_decision.as_ref()?;
     // not caller.api_key: a caller without a key cannot seed an observation lookup
-    let Some(caller_key_hash) = account_limits(request.caller)
+    let caller_key_hash = account_limits(request.caller)
         .hashed_api_key
-        .filter(|key| !key.is_empty())
-    else {
-        return Ok(None);
-    };
+        .filter(|key| !key.is_empty())?;
     let names = eligible_models(&request.routing, decision);
     if !names
         .iter()
         .any(|(_, model)| model.as_str() == request.response.model.as_str())
     {
-        return Ok(None);
+        return None;
     }
     let checked_at = request.now.unwrap_or_else(|| request.host.clock_seconds());
-    Ok(Some(Gate {
+    Some(Gate {
         provider,
         caller_key_hash,
         names,
         checked_at,
-    }))
+    })
 }
 
 // step 3: the candidates that survived the single-deployment and prediction-support checks
-fn build_candidates<Host: CacheRoutingHost + ?Sized>(
+fn build_candidates<Host>(
     request: &SelectionRequest<'_, Host>,
     names: &[(String, String)],
-) -> Result<Vec<Candidate>, CacheAlternativesError> {
+) -> Result<Vec<Candidate>, CacheAlternativesError>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let services = request.host.prediction_services();
     let mut kept = Vec::with_capacity(names.len());
     for (tier, model) in names {
@@ -145,13 +145,16 @@ fn split_candidates<'candidates>(
 }
 
 // step 4: the alternatives already holding a fresh observation, before any authorization or provider call
-async fn warm_candidates<'warm, Host: CacheRoutingHost + ?Sized>(
+async fn warm_candidates<'warm, Host>(
     request: &SelectionRequest<'_, Host>,
     provider: &AnthropicCacheRouting,
     alternatives: &[&'warm Candidate],
     caller_key_hash: &str,
     checked_at: f64,
-) -> Vec<&'warm Candidate> {
+) -> Vec<&'warm Candidate>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let services = request.host.prediction_services();
     let lookups: Vec<WarmRequest<'_>> = alternatives
         .iter()
@@ -179,12 +182,15 @@ async fn warm_candidates<'warm, Host: CacheRoutingHost + ?Sized>(
 }
 
 // step 5: the original must be callable and healthy, and only authorized warm alternatives stay
-async fn staying_candidates<'staying, Host: CacheRoutingHost + ?Sized>(
+async fn staying_candidates<'staying, Host>(
     request: &SelectionRequest<'_, Host>,
     original: &'staying Candidate,
     warm: &[&'staying Candidate],
-) -> Option<Vec<&'staying Candidate>> {
-    let mut members: Vec<&Candidate> = Vec::with_capacity(warm.len() + 1);
+) -> Option<Vec<&'staying Candidate>>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
+    let mut members: Vec<&Candidate> = Vec::with_capacity(warm.len().saturating_add(1));
     members.push(original);
     members.extend(warm.iter().copied());
     let availability = join_all(members.iter().map(|member| {
@@ -215,7 +221,7 @@ fn members_of<'members>(
     original: &'members Candidate,
     authorized: &[&'members Candidate],
 ) -> Vec<&'members Candidate> {
-    let mut members = Vec::with_capacity(authorized.len() + 1);
+    let mut members = Vec::with_capacity(authorized.len().saturating_add(1));
     members.push(original);
     members.extend(authorized.iter().copied());
     members

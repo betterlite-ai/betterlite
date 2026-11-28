@@ -226,7 +226,11 @@ async fn a_missing_caller_keeps_the_classified_model() {
     let fixture = Fixture::new();
     let request_body = body(CONTEXT);
     let mut case = entry_case(&request_body);
-    assert!(case.request_kwargs.remove("litellm_metadata").is_some());
+    assert!(
+        case.request_kwargs
+            .shift_remove("litellm_metadata")
+            .is_some()
+    );
     seed(&fixture.cache, &request_body, 1290.0);
     let context = fixture.context();
     let host = fixture.host(&context);
@@ -288,7 +292,7 @@ async fn an_empty_per_key_config_still_compares() {
     let Some(Json::Object(auth)) = metadata.get_mut("user_api_key_auth") else {
         panic!("the caller entry is an object");
     };
-    auth.insert("config".to_owned(), json(r#"{}"#));
+    auth.insert("config".to_owned(), json("{}"));
     seed(&fixture.cache, &request_body, 1290.0);
     let context = fixture.context();
     let host = fixture.host(&context);
@@ -378,7 +382,11 @@ async fn a_bad_proxy_request_keeps_the_classified_model() {
     let fixture = Fixture::new();
     let request_body = body(CONTEXT);
     let mut case = entry_case(&request_body);
-    assert!(case.request_kwargs.remove("proxy_server_request").is_some());
+    assert!(
+        case.request_kwargs
+            .shift_remove("proxy_server_request")
+            .is_some()
+    );
     seed(&fixture.cache, &request_body, 1290.0);
     let context = fixture.context();
     let host = fixture.host(&context);

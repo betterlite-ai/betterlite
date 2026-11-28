@@ -7,29 +7,30 @@ use thiserror::Error;
 // Every way an optional cache-routing step can stop; choose_cached_model turns each into the classified route.
 #[derive(Debug, Error)]
 pub enum CacheAlternativesError {
+    // sources are boxed to keep the enum under result_large_err's 128-byte limit
     #[error("the deployments for {model} cannot be listed: {source}")]
     Deployments {
         model: String,
         #[source]
-        source: CatalogLookupError,
+        source: Box<CatalogLookupError>,
     },
     #[error("the healthy deployments for {model} cannot be read: {source}")]
     Healthy {
         model: String,
         #[source]
-        source: RoutingError,
+        source: Box<RoutingError>,
     },
     #[error("the caller's access to {model} cannot be checked: {source}")]
     Access {
         model: String,
         #[source]
-        source: EntityModelAccessError,
+        source: Box<EntityModelAccessError>,
     },
     #[error("request capacity for {model} was denied: {source}")]
     Capacity {
         model: String,
         #[source]
-        source: PreCallHookError,
+        source: Box<PreCallHookError>,
     },
     #[error(
         "request capacity cannot be taken for {model} because no capacity limiter is configured"

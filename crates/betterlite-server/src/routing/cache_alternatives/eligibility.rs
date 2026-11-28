@@ -122,16 +122,19 @@ fn pool_refuses(pool: &TierPool) -> bool {
 }
 
 // supported_router_marker: every deployment behind the router alias is a bare auto_router marker
-pub fn supported_router_marker<Host: CacheRoutingHost + ?Sized>(
+pub fn supported_router_marker<Host>(
     host: &Host,
     alias: &str,
     request_kwargs: &JsonMap,
-) -> Result<bool, CacheAlternativesError> {
+) -> Result<bool, CacheAlternativesError>
+where
+    Host: CacheRoutingHost + ?Sized,
+{
     let markers = host
         .deployments_for_request(alias, request_kwargs)
         .map_err(|source| CacheAlternativesError::Deployments {
             model: alias.to_owned(),
-            source,
+            source: Box::new(source),
         })?;
     Ok(!markers.is_empty()
         && markers

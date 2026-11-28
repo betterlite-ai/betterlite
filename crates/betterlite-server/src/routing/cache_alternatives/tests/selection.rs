@@ -14,6 +14,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::routing::cache_alternatives::error::CacheAlternativesError;
+use crate::routing::cache_alternatives::host::CacheRoutingHost as _;
 use crate::routing::cache_alternatives::selection::{SelectionRequest, select_cached_model};
 use crate::routing::cache_alternatives::tests::support::{
     CALLER, CHEAP_ID, CHEAP_MODEL, FakeHost, FakeTierParams, Fixture, NOW, Observation, Rates,
@@ -366,7 +367,7 @@ async fn a_non_positive_tier_limit_stops_the_comparison(#[case] limit: i64) {
     let case = selection_case(&body(CONTEXT));
     seed(&fixture.cache, &case.body, 1290.0);
     let context = fixture.context();
-    let mut host = fixture.host(&context);
+    let host = fixture.host(&context);
     let mut attempt = selection_case(&body(CONTEXT));
     attempt.params = tier_limits(&[("COMPLEX", "strong", limit)]);
     assert!(attempt.run(&host).await.unwrap().is_none(), "limit {limit}");
