@@ -43,6 +43,7 @@ use super::projection::validated;
 use super::routes;
 use super::state::{ConfigGuardrail, ConfigGuardrails, ReadState, TeamIdsFuture, UserTeams};
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::guardrails::form_tables_a::tables_a;
 use crate::guardrails::form_tables_b::tables_b;
 use crate::guardrails::provider_forms::core_tables::core_tables;
@@ -436,7 +437,7 @@ fn principal(subject: &str, roles: Vec<Role>, user: Option<&str>) -> AuthContext
 }
 
 fn admin() -> AuthContext {
-    principal("master_key", Vec::new(), None)
+    master_caller()
 }
 
 fn role_admin() -> AuthContext {

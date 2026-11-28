@@ -1,10 +1,10 @@
+use betterlite_auth::master_key_admin::MASTER_KEY_ALIAS;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
 use crate::api::request_metadata_safety::MetadataPrincipal;
 
-const LITELLM_PROXY_MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 const SHA256_HEX_LENGTH: usize = 64;
 const EXPLICIT_TRACE_HEADER: &str = "x-litellm-trace-id";
 const EXPLICIT_SESSION_HEADER: &str = "x-litellm-session-id";
@@ -28,7 +28,7 @@ pub fn stampable_key_hash(principal: &MetadataPrincipal) -> Option<String> {
         return None;
     }
     let api_key = principal.api_key.as_ref()?.expose_secret();
-    if api_key == LITELLM_PROXY_MASTER_KEY_ALIAS || is_sha256_hex(api_key) {
+    if api_key == MASTER_KEY_ALIAS || is_sha256_hex(api_key) {
         return Some(api_key.to_owned());
     }
     None

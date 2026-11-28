@@ -1,14 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
 use betterlite_auth::auth_resource_grants::search::{
     KeySearchGrant, SearchToolFailure, TeamSearchGrant, can_user_view_search_tool,
 };
 use betterlite_auth::auth_team_lookup::error::TeamLookupError;
-use betterlite_auth::resolved_key::auth::{
-    AuthError, AuthInput, UserAPIKeyAuth, user_api_key_has_admin_view,
-};
+use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_db::search_tools::convert::tool::SearchTool;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_pyhost::json_values::JsonObject;
@@ -18,8 +15,7 @@ use thiserror::Error;
 use super::state::TeamObjectLookup;
 use crate::guardrails::admin_reads::masking::mask_sensitive_values;
 use crate::key_query_plan::filters::UI_SESSION_TOKEN_TEAM_ID;
-
-const MASTER_KEY_SUBJECT: &str = "master_key";
+use crate::management_guards::caller::caller_has_admin_view;
 
 #[derive(Debug, Error)]
 pub(super) enum ListError {
@@ -117,7 +113,7 @@ pub(super) async fn visible_tools(
     principal: &Principal,
     teams: &dyn TeamObjectLookup,
 ) -> Result<Vec<ToolView>, ListError> {
-    if sees_every_tool(principal) {
+    if caller_has_admin_view(principal) {
         return Ok(tools);
     }
     let key = match principal.source_key.0.as_ref() {
@@ -142,20 +138,6 @@ pub(super) async fn visible_tools(
         }
     }
     Ok(visible)
-}
-
-// LiteLLM's proxy_admin and proxy_admin_viewer roles, and the master key, whose request carries no key record
-fn sees_every_tool(principal: &Principal) -> bool {
-    principal.subject == MASTER_KEY_SUBJECT
-        || principal
-            .source_key
-            .0
-            .as_ref()
-            .is_some_and(user_api_key_has_admin_view)
-        || principal
-            .roles
-            .iter()
-            .any(|role| matches!(role, Role::PlatformAdmin | Role::PlatformViewer))
 }
 
 // every Admin UI session key carries the dashboard sentinel, which has no team row to look up

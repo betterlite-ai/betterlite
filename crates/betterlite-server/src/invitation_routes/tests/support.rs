@@ -25,6 +25,7 @@ use futures_util::stream;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::invitation_routes::routes;
 use crate::invitation_routes::state::{
     InvitationDatabase, InvitationRouteState, InvitationScope, QueueAnswer, QueueCompletion,
@@ -65,7 +66,7 @@ pub(super) fn caller(principal: &str) -> AuthContext {
 }
 
 pub(super) fn master() -> AuthContext {
-    caller(r#"{"principal_type":"service_account","subject":"master_key","auth_method":"api_key"}"#)
+    master_caller()
 }
 
 pub(super) fn platform_admin() -> AuthContext {

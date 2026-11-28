@@ -26,18 +26,18 @@ use betterlite_prompts::registry::prompt_registry_helpers::{
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-use self::access::{PromptKeyView, has_admin_view, info_access};
+use self::access::{PromptKeyView, info_access};
 use self::error::PromptReadError;
 use self::rows::{prompt_environments, resolve_spec, version_history_response};
 use self::specs::{listable_prompts, not_found_detail, prompt_template};
 use self::wire::{ListPromptsResponse, PromptInfoResponse, display_wire};
 use crate::auth::auth_identity::AuthContext;
+use crate::management_guards::caller::caller_has_admin_view;
 
 const PROMPTS_LIST_PATH: &str = "/prompts/list";
 const PROMPT_VERSIONS_PATH: &str = "/prompts/{prompt_id}/versions";
 const PROMPT_INFO_PATH: &str = "/prompts/{prompt_id}/info";
 const PROMPT_INFO_ALIAS_PATH: &str = "/prompts/{prompt_id}";
-const MASTER_KEY_SUBJECT: &str = "master_key";
 const VERSIONS_ADMIN_ONLY: &str = "Only proxy admins can view prompt versions";
 
 pub(crate) struct PromptReadState<Table> {
@@ -87,7 +87,7 @@ where
         .metadata
         .as_ref()
         .and_then(|metadata| metadata.prompts.as_deref());
-    if allowlist.is_none() && !has_admin_view(&context.principal) {
+    if allowlist.is_none() && !caller_has_admin_view(&context.principal) {
         return Ok(Json(ListPromptsResponse {
             prompts: Vec::new(),
         }));
@@ -112,7 +112,7 @@ async fn get_prompt_versions<Table>(
 where
     Table: PromptTableActions,
 {
-    if !has_admin_view(&context.principal) {
+    if !caller_has_admin_view(&context.principal) {
         return Err(PromptReadError::Denied {
             status: StatusCode::FORBIDDEN,
             detail: VERSIONS_ADMIN_ONLY.to_owned(),

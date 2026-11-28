@@ -9,21 +9,9 @@ use serde::Serialize;
 
 pub const MISSING_KEY_DETAIL: &str = "Gemini managed-agent endpoints require a caller-supplied Gemini api_key (via 'litellm_params_template'). Falling back to the proxy's GOOGLE_API_KEY / GEMINI_API_KEY env vars is only permitted for proxy admins.";
 
-// the master key's auth stage answers as PROXY_ADMIN in LiteLLM and carries no role here, so its subject stands in
-const MASTER_KEY_SUBJECT: &str = "master_key";
-
 #[derive(Serialize)]
 struct DetailBody {
     detail: &'static str,
-}
-
-// _is_proxy_admin: user_role is PROXY_ADMIN, which map_role turns into PlatformAdmin
-#[must_use]
-pub fn is_proxy_admin(principal: &Principal) -> bool {
-    if principal.subject == MASTER_KEY_SUBJECT {
-        return true;
-    }
-    principal.roles.contains(&Role::PlatformAdmin)
 }
 
 // the caller's own api_key is the only credential source a non-admin may use; admins keep the env fallback
@@ -48,7 +36,7 @@ impl IntoResponse for CallerKeyMissing {
 }
 
 pub fn enforce_provider_key(data: &JsonMap, principal: &Principal) -> Result<(), CallerKeyMissing> {
-    if is_proxy_admin(principal) || is_truthy(data.get("api_key")) {
+    if principal.roles.contains(&Role::PlatformAdmin) || is_truthy(data.get("api_key")) {
         return Ok(());
     }
     Err(CallerKeyMissing)

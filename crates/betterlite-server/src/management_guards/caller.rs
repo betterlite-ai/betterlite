@@ -1,5 +1,6 @@
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
+use betterlite_auth::resolved_key::auth::user_api_key_has_admin_view;
 use betterlite_db::budget_permission_rows::JsonData;
 
 use crate::management_guards::error::ManagementGuardError;
@@ -12,6 +13,17 @@ pub fn caller_user_id_for_non_admin(principal: &Principal) -> Result<&str, Manag
         .as_ref()
         .ok_or(ManagementGuardError::ServiceAccountAnalytics)?;
     Ok(user.id.as_str())
+}
+
+// LiteLLM's user_api_key_has_admin_view over the key record, plus the platform roles a principal without one carries
+pub fn caller_has_admin_view(principal: &Principal) -> bool {
+    principal
+        .source_key
+        .0
+        .as_ref()
+        .is_some_and(user_api_key_has_admin_view)
+        || principal.roles.contains(&Role::PlatformAdmin)
+        || principal.roles.contains(&Role::PlatformViewer)
 }
 
 // metadata has no declared value type, so a request counts when the stored value is nonempty

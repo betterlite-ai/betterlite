@@ -9,12 +9,9 @@ use serde::Deserialize;
 
 use super::super::state::InvitationRouteState;
 use super::super::{Caller, InvitationRouteError};
-use super::{MASTER_KEY_SUBJECT, RouteResult};
+use super::RouteResult;
 use crate::search_tool_routes::body::decode_body;
 use crate::user_invitation::InvitationRecord;
-
-// LiteLLM's litellm_proxy_admin_name, the user id its master key authenticates with
-const MASTER_KEY_USER_ID: &str = "default_user_id";
 
 #[derive(Deserialize)]
 struct AcceptInvitation {
@@ -41,7 +38,7 @@ async fn accept_invitation(
     request: &AcceptInvitation,
 ) -> Result<InvitationRecord, InvitationRouteError> {
     let database = state.database()?;
-    let Some(user_id) = user_id_of(principal) else {
+    let Some(user_id) = principal.user.as_ref().map(|user| user.id.as_str()) else {
         return Err(InvitationRouteError::UserUnidentified);
     };
     database
@@ -50,13 +47,4 @@ async fn accept_invitation(
         .await
         .map_err(InvitationRouteError::Store)?
         .ok_or(InvitationRouteError::InvitationMissing)
-}
-
-fn user_id_of(principal: &Principal) -> Option<&str> {
-    let master_user = (principal.subject == MASTER_KEY_SUBJECT).then_some(MASTER_KEY_USER_ID);
-    principal
-        .user
-        .as_ref()
-        .map(|user| user.id.as_str())
-        .or(master_user)
 }

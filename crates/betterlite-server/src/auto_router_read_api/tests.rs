@@ -40,6 +40,7 @@ use super::query::{
 };
 use super::service::{benchmarks_for, session_for};
 use super::store::AutoRouterReadStore;
+use crate::auth::auth_key_lookup::tests::{caller_through_key_stage, master_caller};
 use crate::benchmark_aggregates::decode::DecodeError;
 use crate::benchmark_aggregates::row::SessionAggRow;
 use crate::benchmark_aggregates::window::{BenchmarkWindow, WindowError};
@@ -706,10 +707,16 @@ fn configured(model_name: &str, model: Option<&str>) -> ModelDeployment {
 }
 
 #[test]
-fn the_master_key_uses_the_stable_alias() {
-    let master = principal("master_key", SourceKey(None));
+fn caller_api_key_ignores_a_key_whose_user_is_master_key() {
+    let spoofed = caller_through_key_stage(r#"{"user_id":"master_key"}"#);
+    assert_ne!(
+        caller_api_key(&spoofed.principal).unwrap().as_deref(),
+        Some("litellm_proxy_master_key")
+    );
     assert_eq!(
-        caller_api_key(&master).unwrap().as_deref(),
+        caller_api_key(&master_caller().principal)
+            .unwrap()
+            .as_deref(),
         Some("litellm_proxy_master_key")
     );
 }

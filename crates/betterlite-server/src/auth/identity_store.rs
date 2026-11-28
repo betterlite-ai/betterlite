@@ -8,10 +8,11 @@ use betterlite_auth::identity_store::IdentityStore;
 use betterlite_db::key_user_writes::hash::hash_token_if_needed;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::auth_identity::{AuthContext, StageFailure, StageInput, master_key_context};
+use super::auth_identity::{AuthContext, StageFailure, StageInput};
 use super::auth_key_lookup;
 use super::auth_key_lookup::ConfiguredMasterKey;
 use super::auth_key_lookup::key_headers::extract_key;
+use super::auth_key_lookup::master_key_context;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
@@ -60,10 +61,10 @@ fn master_key_for(request: &Request<Body>) -> Option<SecretString> {
 
 // The master key wins as it does in LiteLLM; otherwise the presented key is hashed once and resolved by the store.
 pub(crate) async fn prefetch(stage: IdentityStageInput) -> Result<StageInput, StageFailure> {
-    let master = stage
-        .master_key
-        .as_ref()
-        .and_then(|key| master_key_context(stage.presented.as_ref(), key));
+    let master = match stage.master_key.as_ref() {
+        Some(key) => master_key_context(stage.presented.as_ref(), key)?,
+        None => None,
+    };
     if let Some(context) = master {
         return Ok(StageInput::Authenticated(Box::new(context)));
     }

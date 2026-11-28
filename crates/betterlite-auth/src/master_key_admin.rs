@@ -11,7 +11,7 @@ use crate::user_roles::UserRole;
 mod tests;
 
 // LiteLLM's LITELLM_PROXY_MASTER_KEY_ALIAS, the master key's stand-in so the real key never reaches logs or spend rows
-const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
+pub const MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MasterKeyAdminError {

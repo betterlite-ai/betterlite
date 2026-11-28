@@ -32,6 +32,7 @@ use tower::ServiceExt as _;
 use crate::api::agents::collection_routes::processing::{AgentCall, AgentRequestProcessing};
 use crate::api::agents::collection_routes::{AgentCollectionState, routes};
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::pre_call::failure::{PreCallError, PreCallFailure};
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::route_type::RouteType;
@@ -101,7 +102,7 @@ pub(crate) fn admin() -> AuthContext {
 }
 
 pub(crate) fn master_key() -> AuthContext {
-    context("master_key", &[])
+    master_caller()
 }
 
 pub(crate) fn json_map(text: &str) -> JsonMap {

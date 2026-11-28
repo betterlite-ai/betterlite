@@ -44,6 +44,7 @@ use crate::audit_events::sink::{
     AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError,
 };
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::cache_settings_update::audit::{
     CacheSettingsAudit, CacheSettingsAuditEntry, CacheSettingsAuditError,
 };
@@ -480,7 +481,7 @@ pub(crate) fn harness(
 }
 
 pub(crate) fn master_key() -> AuthContext {
-    caller("master_key", Vec::new(), SourceKey::default())
+    master_caller()
 }
 
 pub(crate) fn platform_admin() -> AuthContext {

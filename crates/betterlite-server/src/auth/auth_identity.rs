@@ -8,8 +8,8 @@ use self::{
 };
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
+use crate::auth::auth_key_lookup;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
-pub(crate) use crate::auth::auth_key_lookup::master_key_context;
 use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
@@ -277,6 +277,14 @@ pub(crate) fn dispatch(
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
     }
+}
+
+// ast-grep-ignore: no-one-line-functions - B10171 cannot change auth.rs, whose master stage takes Option
+pub(crate) fn master_key_context(
+    presented: Option<&SecretString>,
+    master_key: &SecretString,
+) -> Option<AuthContext> {
+    auth_key_lookup::master_key_context(presented, master_key).unwrap_or_default()
 }
 
 mod tests;

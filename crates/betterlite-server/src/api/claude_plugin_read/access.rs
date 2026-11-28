@@ -1,14 +1,10 @@
 use axum::extract::Extension;
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_auth::auth_identity::roles::Role;
 use betterlite_core::api::claude_plugin_policy::{PluginCaller, PluginObjectPermission};
 use serde::Deserialize;
 
 use super::error::ClaudePluginReadError;
 use crate::auth::auth_identity::AuthContext;
-
-// LiteLLM authenticates the master key as PROXY_ADMIN; B003's stage carries it as this subject
-const MASTER_KEY_SUBJECT: &str = "master_key";
 
 // the key record keeps its fields crate-private, so its grants are read from the serde form
 #[derive(Deserialize)]
@@ -38,18 +34,10 @@ pub(super) fn caller(
     };
     let granted = permissions(&identity.principal)?;
     Ok(Some(PluginCaller {
-        principal: admin_principal(&identity.principal),
+        principal: identity.principal,
         object_permission: granted.object,
         team_object_permission: granted.team,
     }))
-}
-
-fn admin_principal(principal: &Principal) -> Principal {
-    let mut elevated = principal.clone();
-    if elevated.subject == MASTER_KEY_SUBJECT {
-        elevated.roles.push(Role::PlatformAdmin);
-    }
-    elevated
 }
 
 fn permissions(principal: &Principal) -> Result<KeyPermissions, ClaudePluginReadError> {

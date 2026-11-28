@@ -15,6 +15,7 @@ use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::key_user_writes::json_text::SerdeJsonEncoder;
 use betterlite_db::key_user_writes::json_text::jsonify_object;
+use betterlite_db::model_secrets::DEFAULT_USER_ID;
 use betterlite_db::postgres_store::session::PostgresStore;
 
 use crate::key_patch_fields::soft_budget::{MAX_BUDGET, SOFT_BUDGET, validate_budget};
@@ -24,7 +25,7 @@ use crate::organization_create::access::read_user_object;
 use crate::organization_create::budget::{
     budget_write_payload, created_budget_row, org_metadata_fields,
 };
-use crate::organization_create::caller::{DEFAULT_ADMIN_USER_ID, OrgCaller};
+use crate::organization_create::caller::OrgCaller;
 use crate::organization_create::error::OrganizationCreateError;
 use crate::organization_create::records::{
     NewOrganizationRequest, NewOrganizationResponse, OrganizationRow, organization_row,
@@ -63,7 +64,7 @@ pub async fn create_organization(
     let actor = caller
         .user_id
         .clone()
-        .unwrap_or_else(|| String::from(DEFAULT_ADMIN_USER_ID));
+        .unwrap_or_else(|| String::from(DEFAULT_USER_ID));
     let budget_table = attach_budget(&organization_store, &request, &mut fields, &actor).await?;
     set_object_permission(&mut fields, Some(prisma), &[]).await?;
     check_request_models(state, &caller, &request, user_object.as_ref())?;

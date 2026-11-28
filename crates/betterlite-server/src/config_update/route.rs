@@ -5,6 +5,7 @@ use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::sections::settings::{JsonValue, Section};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -13,7 +14,6 @@ use serde::Serialize;
 use super::body::{DecodedConfigUpdate, decode_config_update};
 use super::store::ConfigUpdateStore;
 use super::{ConfigUpdateError, ConfigUpdateState, SettingsMap, merge, router_settings};
-use crate::api::agents::collection_routes::guards::is_proxy_admin;
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::auth::auth_identity::AuthContext;
@@ -70,7 +70,7 @@ async fn apply(
     principal: &Principal,
     body: DecodedConfigUpdate,
 ) -> Result<(), ConfigUpdateError> {
-    if !is_proxy_admin(principal) {
+    if !principal.roles.contains(&Role::PlatformAdmin) {
         return Err(ConfigUpdateError::NotAdmin);
     }
     if let Some(raw) = &body.raw_router_settings {

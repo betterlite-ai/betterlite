@@ -33,6 +33,7 @@ use crate::audit_events::sink::{
     AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError,
 };
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::deployment_sync_port::DeploymentSyncPort;
 use crate::proxy_config_state::error::ConfigStateError;
 use crate::proxy_config_state::state::ProxyConfigState;
@@ -86,7 +87,7 @@ fn context(subject: &str, source_key: SourceKey) -> AuthContext {
 }
 
 pub(crate) fn admin() -> AuthContext {
-    context("master_key", SourceKey::default())
+    master_caller()
 }
 
 pub(crate) fn user() -> AuthContext {

@@ -29,6 +29,7 @@ use crate::agent_endpoints::admin_actions::{AgentAdminState, agent_admin_routes}
 use crate::audit_events::record::AuditLogRecord;
 use crate::audit_events::sink::AuditClock;
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 
 pub(super) const MAKE_AGENTS_PUBLIC_PATH: &str = "/v1/agents/make_public";
 pub(super) const ADMIN: &str = "proxy_admin";
@@ -425,7 +426,7 @@ pub(super) fn caller_with_user(role: &str, user_id: Option<&str>) -> AuthContext
 }
 
 pub(super) fn master_key_caller() -> AuthContext {
-    context(None, "master_key")
+    master_caller()
 }
 
 fn context(source_key: Option<UserAPIKeyAuth>, subject: &str) -> AuthContext {

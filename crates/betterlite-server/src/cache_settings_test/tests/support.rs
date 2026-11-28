@@ -45,6 +45,7 @@ use tokio::task::JoinSet;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::cache_settings_test::route::CacheTestState;
 use crate::cache_settings_test::route::router;
 use crate::cache_settings_test::saved::SavedCacheConfig;
@@ -137,7 +138,7 @@ pub(crate) fn state_with_environment(environment: BTreeMap<String, String>) -> C
 }
 
 pub(crate) fn admin() -> AuthContext {
-    caller("master_key", Vec::new())
+    master_caller()
 }
 
 pub(crate) fn platform_admin() -> AuthContext {

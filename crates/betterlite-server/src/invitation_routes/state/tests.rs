@@ -65,7 +65,7 @@ async fn admin_scope_grants_a_proxy_admin_both_checks() {
 async fn admin_scope_refuses_a_caller_with_neither_admin_path() {
     let scope = scope();
     let service = principal(
-        r#"{"principal_type":"service_account","subject":"master_key","auth_method":"api_key"}"#,
+        r#"{"principal_type":"service_account","subject":"service-account","auth_method":"api_key"}"#,
     );
     assert!(!scope.has_admin_privileges(&service).await);
     assert!(!scope.can_invite_user(&service, "alice").await);

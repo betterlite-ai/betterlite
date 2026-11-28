@@ -53,6 +53,7 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 
 use super::body::{BodyError, WriteRequest, decode_patch_body, decode_write_request};
 use super::error::MutationError;
@@ -197,7 +198,7 @@ pub(super) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
 }
 
 fn admin() -> AuthContext {
-    caller("master_key", Vec::new())
+    master_caller()
 }
 
 fn role_admin() -> AuthContext {

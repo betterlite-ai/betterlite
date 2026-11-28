@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use betterlite_config::sections::settings::{JsonValue, Section};
+use betterlite_db::model_secrets::DEFAULT_USER_ID;
 use secrecy::ExposeSecret as _;
 use tower::ServiceExt as _;
 
@@ -14,7 +15,6 @@ use super::support::{
     parsed, send, settings, user,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
-use crate::organization_create::caller::DEFAULT_ADMIN_USER_ID;
 
 const REFUSED_SETTINGS: &str =
     r#"{"general_settings": {"a": 1}, "router_settings": {"weights": {}, "nope": true}}"#;
@@ -170,7 +170,7 @@ async fn general_settings_are_audited_with_the_stored_values() {
     assert_eq!(record.object_id, "general_settings");
     assert_eq!(record.action, AuditAction::Updated);
     assert_eq!(record.table_name, AuditTable::Config);
-    assert_eq!(record.changed_by.as_deref(), Some(DEFAULT_ADMIN_USER_ID));
+    assert_eq!(record.changed_by.as_deref(), Some(DEFAULT_USER_ID));
     assert_eq!(
         record.before_value,
         Some(parsed(r#"{"global_max_parallel_requests": 4}"#))

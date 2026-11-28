@@ -20,6 +20,7 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_key_lookup::tests::master_caller;
 use crate::tracing_routes::TraceRoutesState;
 use crate::tracing_routes::access::{Tenant, TraceClock};
 use crate::tracing_routes::query::{QueryRunError, QueryScope, TraceQueryStore};
@@ -417,10 +418,7 @@ pub(super) fn principal(
 }
 
 pub(super) fn master_principal() -> Principal {
-    let mut master = principal(Vec::new(), None, None, None, None);
-    master.subject = "master_key".to_owned();
-    master.principal_type = PrincipalType::ServiceAccount;
-    master
+    master_caller().principal
 }
 
 pub(super) fn body_text(answer: &Answer) -> String {

@@ -1,0 +1,9 @@
+task: B10171
+deviations:
+  - what: The master key's Principal keeps subject "master_key", where LiteLLM's _principal_from_key gives every key, the master key included, the subject user_id or key_alias or subject_fallback, so the master key's subject is default_user_id.
+    why: About twenty auth stage tests on main and five running tasks assert that subject to show the master key went through a stage. After B10171 no code grants anything on it and the subject is on no response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L178
+  - what: An empty presented credential never matches the master key, even when the configured master key is itself empty. LiteLLM's secrets.compare_digest matches two empty strings, and only its earlier malformed-key check keeps an empty credential away from that comparison.
+    why: No working deployment can rely on an empty credential authenticating as a proxy admin, and a missing or empty master key must leave master authentication closed rather than open to every empty key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2073-L2076
+kept_bugs: []
