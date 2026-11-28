@@ -148,6 +148,27 @@ async fn provider_refusal() {
     assert_eq!(outcome.requests.len(), 1);
 }
 
+// The deployment's own static keys sign the count request, not the identity the source was built with
+async fn deployment_keys() {
+    let fixture = scripted(&[Reply::status(200, r#"{"inputTokens": 1}"#)]);
+    let messages = value(r#"[{"role": "user", "content": "hi"}]"#);
+    let own_keys = CountTokensDeployment {
+        litellm_params: params(
+            r#"{"aws_access_key_id": "AKIAI44QH8DHBEXAMPLE", "aws_secret_access_key": "je7MtGbClwBF/2Zp9Utk/h3yCo8nvbEXAMPLEKEY", "aws_region_name": "us-east-1"}"#,
+        ),
+    };
+    let outcome = run(
+        &fixture,
+        operation(Some(&messages), Some(&own_keys), Some(handler(&fixture))),
+    )
+    .await;
+    let authorization = outcome
+        .authorization()
+        .expect("the deployment's keys sign the count");
+    assert!(authorization.contains("AKIAI44QH8DHBEXAMPLE"));
+    assert!(!authorization.contains(ACCESS_KEY));
+}
+
 // A transport failure and an unparsable reply are reported as 500 records, never counted locally
 async fn unreadable_replies() {
     for reply in [Reply::Failed, Reply::status(200, "not json")] {
@@ -181,5 +202,6 @@ pub(super) async fn case() {
     counted_tokens().await;
     absent_calls().await;
     provider_refusal().await;
+    deployment_keys().await;
     unreadable_replies().await;
 }

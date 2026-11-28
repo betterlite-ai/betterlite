@@ -14,6 +14,7 @@ use crate::bedrock_other_dispatch::call::{
 };
 use crate::bedrock_other_dispatch::error::BedrockOtherError;
 use crate::bedrock_other_dispatch::test_support::client::Reply;
+use crate::bedrock_other_dispatch::test_support::factory::{ClientCall, Kind};
 use crate::bedrock_other_dispatch::test_support::{NOW_SECONDS, credentials, instant};
 
 const ACCESS_KEY: &str = "AKIAIOSFODNN7EXAMPLE";
@@ -123,6 +124,19 @@ async fn titan_vectors() {
             .is_some_and(|header| header.starts_with("AWS4-HMAC-SHA256"))
     );
     assert_eq!(g1_outcome.regions, [String::from("us-east-1")]);
+    assert_eq!(
+        g1_outcome.header("x-amz-date"),
+        Some("20231114T221320Z"),
+        "the fixture clock signs the request"
+    );
+    assert_eq!(
+        g1_outcome.calls,
+        [ClientCall {
+            kind: Kind::Sync,
+            provider: None,
+        }],
+        "the non-async embedding leaf asks for the sync client"
+    );
 
     let binary = scripted(&[Reply::status(
         200,
