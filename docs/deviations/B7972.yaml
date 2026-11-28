@@ -10,11 +10,12 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2562-L2580
   - what: >-
-      The root document's resource keeps a request base URL that has no scheme exactly as given, where Python's
-      urlparse finds an empty scheme and netloc and LiteLLM writes resource "://".
+      The root document's resource keeps a request base URL without a usable scheme and authority, one whose
+      urlparse scheme or netloc is empty, exactly as given, where LiteLLM writes resource "://" or "<scheme>://"
+      with one of them empty.
     why: >-
-      A base URL from a real request always has a scheme, and the unusable "://" explains nothing when one is
-      missing.
+      A base URL from a real request always has a scheme and a host, and those unusable resources explain nothing
+      when one is missing.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2651-L2659
   - what: >-
@@ -34,4 +35,12 @@ deviations:
       fetch site; the facts logged are the same.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2440-L2462
+  - what: >-
+      A request base URL whose authority urlparse rejects, an unmatched IPv6 bracket, is kept as given and the
+      root route answers, where Python's urlparse raises and LiteLLM's root route answers 500.
+    why: >-
+      The base URL comes from the request, so a malformed Host header should not turn discovery into a server
+      error; the kept text names the input that could not be parsed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2651-L2659
 kept_bugs: []

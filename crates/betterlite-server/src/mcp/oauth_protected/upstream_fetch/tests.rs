@@ -78,6 +78,31 @@ async fn trims_trailing_slashes_from_the_path_candidate() {
 }
 
 #[tokio::test]
+async fn drops_parameters_from_the_path_candidate() {
+    let harness = Harness::new()
+        .status(PASS_THROUGH_HOST, 404)
+        .reply(PASS_THROUGH_PATH, UPSTREAM_DOCUMENT);
+    let root = harness.root();
+    let mut server = passthrough_server();
+    server.fields.url = Some(String::from(
+        "https://upstream.example.test/mcp;jsessionid=abc",
+    ));
+    let fetched = root
+        .fetch_upstream_oauth_protected_resource(&server)
+        .await
+        .expect("the fetch succeeds")
+        .expect("the params are dropped from the path candidate");
+    assert_eq!(fetched, document(UPSTREAM_DOCUMENT));
+    assert_eq!(
+        root.upstream.calls(),
+        vec![
+            (String::from(PASS_THROUGH_HOST), String::from(JSON_ACCEPT)),
+            (String::from(PASS_THROUGH_PATH), String::from(JSON_ACCEPT)),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn a_double_slash_path_asks_the_same_candidate_twice() {
     let harness = Harness::new().status(PASS_THROUGH_HOST, 404);
     let root = harness.root();

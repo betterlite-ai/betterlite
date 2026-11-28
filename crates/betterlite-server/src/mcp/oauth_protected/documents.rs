@@ -3,6 +3,7 @@ mod tests;
 
 use betterlite_db::mcp_stored_contracts::MCPAuth;
 use betterlite_mcp::gateway_dcr::contracts::supported_grant_types;
+use betterlite_mcp::oauth_resource::python_url;
 use betterlite_mcp::server_record::MCPServer;
 use betterlite_models::decisions::Json;
 use serde::Serialize;
@@ -221,15 +222,13 @@ where
 }
 
 fn origin(base_url: &str) -> String {
-    match base_url.split_once("://") {
-        Some((scheme, rest)) => {
-            let netloc_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-            let netloc = rest.get(..netloc_end).unwrap_or_default();
-            let lowered = scheme.to_ascii_lowercase();
-            format!("{lowered}://{netloc}")
-        }
-        None => base_url.to_owned(),
+    let Ok(parsed) = python_url::parse(base_url) else {
+        return base_url.to_owned();
+    };
+    if parsed.scheme.is_empty() || parsed.netloc.is_empty() {
+        return base_url.to_owned();
     }
+    python_url::join(&parsed.scheme, &parsed.netloc, "", "", "")
 }
 
 fn rewritten_resource(mut document: JsonObject, resource_url: &str) -> JsonObject {

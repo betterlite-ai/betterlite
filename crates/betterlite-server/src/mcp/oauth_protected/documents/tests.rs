@@ -58,6 +58,24 @@ fn a_root_resource_without_a_scheme_keeps_the_url() {
 }
 
 #[test]
+fn a_root_resource_without_a_host_keeps_the_url() {
+    let document = root_resource("https:///base");
+    assert_eq!(
+        serde_json::to_string(&document).expect("the root document serializes"),
+        r#"{"resource":"https:///base","authorization_servers":["https:///base/mcp"],"scopes_supported":[]}"#
+    );
+}
+
+#[test]
+fn a_root_resource_urlparse_rejects_keeps_the_url() {
+    let document = root_resource("http://[::1/base");
+    assert_eq!(
+        serde_json::to_string(&document).expect("the root document serializes"),
+        r#"{"resource":"http://[::1/base","authorization_servers":["http://[::1/base/mcp"],"scopes_supported":[]}"#
+    );
+}
+
+#[test]
 fn the_aggregate_protected_resource_writes_authorization_servers_first() {
     let document = aggregate_protected_resource(BASE_URL);
     assert_eq!(

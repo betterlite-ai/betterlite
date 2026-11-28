@@ -6,6 +6,7 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::oauth_metadata_cache::{
     CacheFill, CacheKey, NEGATIVE_TTL_SECONDS, TTL_SECONDS,
 };
+use betterlite_mcp::oauth_resource::python_url;
 use betterlite_mcp::server_record::MCPServer;
 use betterlite_models::decisions::Json;
 use thiserror::Error;
@@ -49,18 +50,14 @@ struct UpstreamTarget {
 }
 
 fn upstream_target(url: &str) -> Option<UpstreamTarget> {
-    let (scheme, rest) = url.split_once("://")?;
-    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let netloc = rest.get(..authority_end)?;
-    if scheme.is_empty() || netloc.is_empty() {
+    let parsed = python_url::parse(url).ok()?;
+    if parsed.scheme.is_empty() || parsed.netloc.is_empty() {
         return None;
     }
-    let after_authority = rest.get(authority_end..).unwrap_or_default();
-    let path = after_authority.split(['?', '#']).next().unwrap_or_default();
-    let lowered = scheme.to_ascii_lowercase();
+    let host_base = python_url::join(&parsed.scheme, &parsed.netloc, "", "", "");
     Some(UpstreamTarget {
-        host_base: format!("{lowered}://{netloc}"),
-        path: path.to_owned(),
+        host_base,
+        path: parsed.path,
     })
 }
 
