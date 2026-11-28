@@ -1,0 +1,5 @@
+kind: helper
+name: "client-auth-none"
+call: {"b7490":{"function":"client_auth"}}
+env: {}
+compare: {"ignore":[]}
