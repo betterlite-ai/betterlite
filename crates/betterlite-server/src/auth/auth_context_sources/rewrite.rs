@@ -22,13 +22,13 @@ use secrecy::SecretString;
 use crate::api::request_body::read_request_body;
 use crate::auth::auth_errors::FailureContext;
 use crate::auth::auth_identity::{AuthBackend, StageFailure, dispatch};
-use crate::auth::auth_key_lookup;
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
 use crate::auth::{headers_json, prefetch_stage, query_json};
 use crate::state::ServerState;
 
 use super::PreAuthenticated;
+use super::key_lookup_stage_input;
 use super::selection::{Selection, select_model};
 
 #[derive(Clone, Default)]
@@ -71,7 +71,7 @@ pub(crate) async fn prepare(
         return Ok(request);
     }
     // Authenticate before buffering with the same lookup the stage loop runs first, and let that stage forward this identity.
-    let context = match prefetch_stage(auth_key_lookup::lookup_stage_input(&request))
+    let context = match prefetch_stage(key_lookup_stage_input(&request))
         .await
         .and_then(|input| dispatch(AuthBackend::AuthKeyLookup, &input, master_key))
     {
