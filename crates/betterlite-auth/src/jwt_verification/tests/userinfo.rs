@@ -98,6 +98,27 @@ async fn userinfo_hashed_key_empty_hit_and_headers() {
 }
 
 #[tokio::test]
+async fn userinfo_cached_non_object_is_a_miss() {
+    let token = "abc";
+    let key = expected_key(token);
+    let stale = userinfo_harness(
+        ENDPOINT,
+        TestCache::with_entry(&key, Json::Text("not an identity document".to_owned())),
+        TestHttp::with_replies(vec![FakeReply::Answer {
+            status: 200,
+            body: "{\"sub\":\"u-1\"}".to_owned(),
+        }]),
+    );
+    let userinfo = stale.verifier.get_oidc_userinfo(token).await.unwrap();
+    assert!(matches!(userinfo.get("sub"), Some(Json::Text(text)) if text == "u-1"));
+    assert_eq!(stale.http.requests().len(), 1);
+    assert_eq!(
+        stale.cache.events.take(),
+        vec![format!("read:{key}"), format!("write:{key}")]
+    );
+}
+
+#[tokio::test]
 async fn userinfo_no_retry_status_json_write_error_wrapper() {
     let status_http = TestHttp::with_replies(vec![
         FakeReply::Answer {
