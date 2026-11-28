@@ -9,6 +9,9 @@ deviations:
   - what: The model-denial text lists the checked claim teams sorted, where LiteLLM prints a Python set in hash order.
     why: betterlite keeps the claim teams in a sorted set. Python's set iteration order changes between processes, so the order LiteLLM prints cannot be reproduced; the compared cases pin the sorted order on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1746
+  - what: The team-claim hint that follows "No team found in token" needs an ASCII index, where LiteLLM's str.isdigit and \d pattern also accept decimal digits from other scripts.
+    why: betterlite checks the index with char::is_ascii_digit, and Rust's standard library has no exact equivalent of Python's Unicode isdigit, since char::is_numeric also matches fractions that isdigit rejects. A field such as roles.٣ therefore gets the plain refusal without the hint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1599-L1608
 kept_bugs:
   - what: A candidate team whose read or grant check raises is skipped and the request ends in the team-model denial.
     why: LiteLLM swallows every exception inside the candidate loop, so a degraded team read cannot fail the request; the task pins this behavior, so betterlite copies it.

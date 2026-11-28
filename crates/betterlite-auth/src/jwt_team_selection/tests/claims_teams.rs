@@ -240,6 +240,19 @@ async fn index_hint_needs_a_real_index() {
     );
 }
 
+// the deviation: an index must be ASCII, where Python's isdigit also accepts digits from other scripts
+#[tokio::test]
+async fn index_hint_ignores_non_ascii_digits() {
+    assert_eq!(
+        hint_message("roles.٣").await,
+        "Authentication Error, No team found in token. Checked team_id field 'roles.٣' and team_alias field 'None'."
+    );
+    assert_eq!(
+        hint_message("roles[٣]").await,
+        "Authentication Error, No team found in token. Checked team_id field 'roles[٣]' and team_alias field 'None'."
+    );
+}
+
 #[tokio::test]
 async fn group_set_deduplicates() {
     let fields = claim_fields();
