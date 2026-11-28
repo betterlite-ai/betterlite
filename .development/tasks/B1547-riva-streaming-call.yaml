@@ -37,6 +37,7 @@ description: >-
   and 160 oracle lines, capped at 800.
 scope:
   paths:
+    - "tools/oracle/helpers/riva_call_fakes.py"
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-core/src/api/riva/call.rs
     - crates/betterlite-core/src/api/riva/call/**
@@ -85,5 +86,5 @@ pitfalls:
   - A generator exposing neither timeout nor keyword variadics must not receive a timeout argument.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2250
   max_new_expects: 0

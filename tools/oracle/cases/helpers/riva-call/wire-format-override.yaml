@@ -1,0 +1,28 @@
+kind: helper
+name: riva-call-wire-format-override
+call:
+  riva_call:
+    calls:
+      - model: nvidia-riva/parakeet
+        audio_name: clip.wav
+        file_hex: "0000"
+        samples: 1600
+        optional_params:
+          encoding: FLAC
+          sample_rate_hertz: 8000
+          audio_channel_count: 2
+          max_alternatives: 3
+        api_base: localhost:50051
+        api_key: riva-secret
+        timeout_seconds: 30.0
+        service: timeout
+        legacy_auth: false
+        endpointing: ok
+        stream:
+          - results:
+              - is_final: true
+                alternatives:
+                  - transcript: "hello"
+                    words: []
+compare: {ignore: []}
+env: {}
