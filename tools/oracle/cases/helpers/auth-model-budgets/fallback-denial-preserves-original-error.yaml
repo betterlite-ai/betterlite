@@ -1,0 +1,48 @@
+kind: helper
+name: auth-model-budgets-fallback-denial-preserves-original-error
+call:
+  auth_model_budgets:
+    calls:
+      - function: key_fallback
+        token:
+          token: sk-deny
+          models: [gpt-4]
+        model_name: gpt-4
+        request_data:
+          model: gpt-4
+        failing: true
+        fallback: gpt-3.5
+      - function: key_fallback
+        token:
+          token: sk-nested
+          models: [gpt-4, gpt-3.5]
+        model_name: gpt-4
+        request_data:
+          model: nested-model
+        failing: true
+        fallback: gpt-3.5
+      - function: key_fallback
+        token:
+          token: sk-team
+          models: [gpt-4, gpt-3.5]
+          team_id: t1
+          team_models: [gpt-4]
+          model_max_budget: {}
+        model_name: gpt-4
+        request_data:
+          model: gpt-4
+        failing: true
+        fallback: gpt-3.5
+      - function: key_fallback
+        token:
+          token: sk-open
+          models: []
+          model_max_budget: {}
+        model_name: gpt-4
+        request_data:
+          model: gpt-4
+        failing: true
+        fallback: gpt-3.5
+env: {}
+compare:
+  ignore: []

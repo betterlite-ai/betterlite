@@ -1,13 +1,13 @@
 id: B10167
 milestone: R2 bug fixes
 title: One email date port for Retry-After and the blog feed
-status: todo
+status: done
 depends_on: [B306, B3728, B5364]
 file: tasks/B10167-email-date-port.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3372

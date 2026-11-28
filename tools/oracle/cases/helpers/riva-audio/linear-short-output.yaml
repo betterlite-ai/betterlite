@@ -1,0 +1,11 @@
+kind: helper
+name: riva-audio-linear-short-output
+call:
+  riva_audio:
+    calls:
+      - file_hex: "524946462600000057415645666d7420100000000100010044ac0000885801000200100064617461020000000040"
+        soundfile_error: null
+        audioread: null
+        resamplers: []
+compare: {ignore: []}
+env: {}
