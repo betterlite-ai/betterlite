@@ -56,7 +56,7 @@ impl RealtimeWebSocketDialer for WebSocketDialer {
         let headers = dialer_headers(HeaderSource::Backend(request.headers))
             .map_err(|open_failure| open_failure.error)?;
         let opened = self
-            .open(OpenRequest {
+            .open(&OpenRequest {
                 url: request.url,
                 headers: &headers,
                 ssl: request.ssl,
@@ -85,7 +85,7 @@ impl RealtimeProbeDialer for WebSocketDialer {
         let headers = dialer_headers(HeaderSource::Probe(&connection.headers))
             .map_err(OpenFailure::into_probe)?;
         let opened = self
-            .open(OpenRequest {
+            .open(&OpenRequest {
                 url: &connection.url,
                 headers: &headers,
                 ssl: &connection.ssl,
@@ -103,7 +103,7 @@ impl RealtimeProbeDialer for WebSocketDialer {
 
 impl WebSocketDialer {
     // websockets.connect's checks and arguments, one attempt, with the proxy websockets' get_proxy would pick
-    async fn open(&self, request: OpenRequest<'_>) -> Result<WebSocketConnection, OpenFailure> {
+    async fn open(&self, request: &OpenRequest<'_>) -> Result<WebSocketConnection, OpenFailure> {
         let url = websocket_url(request.url)?;
         let plain = url.scheme() == "ws";
         let tls = match request.ssl {

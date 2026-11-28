@@ -112,7 +112,7 @@ pub(super) fn connect_failure(error: WebSocketClientError) -> OpenFailure {
     }
 }
 
-fn timeout_failure(message: String) -> OpenFailure {
+const fn timeout_failure(message: String) -> OpenFailure {
     OpenFailure {
         class: Class::TimeoutError,
         status: None,
@@ -120,7 +120,7 @@ fn timeout_failure(message: String) -> OpenFailure {
     }
 }
 
-fn os_failure(message: String) -> OpenFailure {
+const fn os_failure(message: String) -> OpenFailure {
     OpenFailure {
         class: Class::OSError,
         status: None,
@@ -128,7 +128,7 @@ fn os_failure(message: String) -> OpenFailure {
     }
 }
 
-fn web_socket_failure(class: Class, message: String) -> OpenFailure {
+const fn web_socket_failure(class: Class, message: String) -> OpenFailure {
     OpenFailure {
         class,
         status: None,

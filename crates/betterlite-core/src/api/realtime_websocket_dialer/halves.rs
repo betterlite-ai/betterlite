@@ -107,7 +107,7 @@ impl DialedSource {
 }
 
 // websockets' recv(decode=...) turns a text frame into bytes and a binary frame into text when asked
-fn decode_text(text: String, decode: Option<bool>) -> RealtimeMessage {
+const fn decode_text(text: String, decode: Option<bool>) -> RealtimeMessage {
     match decode {
         Some(false) => RealtimeMessage::Binary(text.into_bytes()),
         None | Some(true) => RealtimeMessage::Text(text),

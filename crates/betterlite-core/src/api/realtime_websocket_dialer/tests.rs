@@ -77,7 +77,7 @@ impl Callback for UpgradeRecorder {
     }
 }
 
-fn web_dialer(proxy: Arc<ProxyPolicy>) -> WebSocketDialer {
+const fn web_dialer(proxy: Arc<ProxyPolicy>) -> WebSocketDialer {
     WebSocketDialer { proxy }
 }
 
@@ -85,7 +85,7 @@ fn no_proxy() -> Arc<ProxyPolicy> {
     Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy"))
 }
 
-fn request<'request>(
+const fn request<'request>(
     url: &'request str,
     ssl: &'request RealtimeSsl,
     headers: &'request HeaderMap,
@@ -100,7 +100,7 @@ fn request<'request>(
     }
 }
 
-fn probe_connection(url: String) -> ProbeConnection {
+const fn probe_connection(url: String) -> ProbeConnection {
     ProbeConnection {
         url,
         headers: Headers::new(),
