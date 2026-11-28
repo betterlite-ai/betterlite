@@ -51,8 +51,15 @@ where
         settings: &IdpSettings,
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
-        self.async_set(Some(cache_key), settings, write_options(ttl_seconds))
-            .await
+        let ttl = WriteTtl {
+            seconds: ttl_seconds,
+        };
+        let options = WriteOptions {
+            ttl: Some(ttl),
+            local_only: false,
+            refresh_ttl: false,
+        };
+        self.async_set(Some(cache_key), settings, options).await
     }
 
     async fn put_authn_request(
@@ -60,18 +67,17 @@ where
         cache_key: &str,
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
-        let marker = AUTHN_REQUEST_MARKER;
-        let options = write_options(ttl_seconds);
-        self.async_set(Some(cache_key), &marker, options).await
-    }
-}
-
-fn write_options(ttl_seconds: f64) -> WriteOptions {
-    WriteOptions {
-        ttl: Some(WriteTtl {
-            seconds: ttl_seconds,
-        }),
-        local_only: false,
-        refresh_ttl: false,
+        self.async_set(
+            Some(cache_key),
+            &AUTHN_REQUEST_MARKER,
+            WriteOptions {
+                ttl: Some(WriteTtl {
+                    seconds: ttl_seconds,
+                }),
+                local_only: false,
+                refresh_ttl: false,
+            },
+        )
+        .await
     }
 }
