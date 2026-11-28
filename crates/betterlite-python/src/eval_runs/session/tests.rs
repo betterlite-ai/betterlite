@@ -20,8 +20,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 use secrecy::SecretString;
 
-use super::EvalCore;
 use super::NativeEvalRunSession;
+use super::build_core;
 use crate::eval_runs::configs::{EvalConfigs, ModuleSettings};
 
 const ENVIRONMENT: &str = r#"{"environment":{}}"#;
@@ -395,7 +395,7 @@ fn configs_serve_only_openai_to_the_lifecycle_service() {
 // LiteLLM keeps the caller's litellm_call_id on the logging object it builds for the call
 #[test]
 fn session_logging_keeps_the_callers_call_id() {
-    let core = EvalCore::build(ENVIRONMENT).expect("the core builds");
+    let core = build_core(ENVIRONMENT).expect("the core builds");
     let kwargs = IndexMap::from([(
         "litellm_call_id".to_owned(),
         Json::Text("call-1".to_owned()),

@@ -441,9 +441,9 @@ fn error_payload_omits_an_empty_model_and_body() {
         body_param: None,
         body_code: None,
     };
-    let raised = native_error(&ErrorClass::Unclassified(Box::new(bare)), "openai");
+    let unclassified = native_error(&ErrorClass::Unclassified(Box::new(bare)), "openai");
     Python::attach(|py| {
-        let text = raised.value(py).to_string();
+        let text = unclassified.value(py).to_string();
         let fields: IndexMap<String, Json> = serde_json::from_str(&text).unwrap();
         assert!(!fields.contains_key("body"));
     });
@@ -474,7 +474,7 @@ fn error_a_core_failure_keeps_its_class() {
     let answer: Result<(), EvalRunFailure> = Err(failure);
     let raised = match EvalOperationFailure::reply(answer, "anthropic") {
         Ok(_) => panic!("the failure has to surface"),
-        Err(failure) => PyErr::from(failure),
+        Err(mapped) => PyErr::from(mapped),
     };
     Python::attach(|py| {
         let message = raised.value(py).to_string();

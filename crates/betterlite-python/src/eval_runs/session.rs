@@ -37,27 +37,25 @@ pub(super) struct EvalCore {
     request_timeout: Duration,
 }
 
-impl EvalCore {
-    pub(super) fn build(text: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire = parse(text)?;
-        let environment = wire.environment.unwrap_or_else(process_environment);
-        let client = outbound_client(&environment)?;
-        let timeout = RequestTimeout::resolve(&environment)?;
-        let request_timeout = Duration::try_from_secs_f64(timeout.seconds).map_err(|source| {
-            SessionError::Duration {
-                seconds: timeout.seconds,
-                source,
-            }
+// EvalCore keeps its one inherent impl in operations.rs, so the constructor is a free function beside the class.
+pub(super) fn build_core(text: &str) -> Result<EvalCore, SessionError> {
+    let wire: SessionWire = parse(text)?;
+    let environment = wire.environment.unwrap_or_else(process_environment);
+    let client = outbound_client(&environment)?;
+    let timeout = RequestTimeout::resolve(&environment)?;
+    let request_timeout =
+        Duration::try_from_secs_f64(timeout.seconds).map_err(|source| SessionError::Duration {
+            seconds: timeout.seconds,
+            source,
         })?;
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
-        Ok(Self {
-            settings: wire.settings,
-            environment,
-            client,
-            redactor,
-            request_timeout,
-        })
-    }
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
+    Ok(EvalCore {
+        settings: wire.settings,
+        environment,
+        client,
+        redactor,
+        request_timeout,
+    })
 }
 
 #[pymethods]
@@ -65,7 +63,7 @@ impl NativeEvalRunSession {
     #[new]
     fn new(settings: &str) -> PyResult<Self> {
         Ok(Self {
-            core: Arc::new(EvalCore::build(settings)?),
+            core: Arc::new(build_core(settings)?),
         })
     }
 
