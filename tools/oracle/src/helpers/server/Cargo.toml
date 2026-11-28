@@ -40,6 +40,7 @@ betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../../../../crates/betterlite-redis" }
 betterlite-reporting = { path = "../../../../../crates/betterlite-reporting" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
+betterlite-router = { path = "../../../../../crates/betterlite-router" }
 betterlite-routes = { path = "../../../../../crates/betterlite-routes" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }

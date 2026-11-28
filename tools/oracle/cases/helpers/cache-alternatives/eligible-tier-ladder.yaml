@@ -1,0 +1,32 @@
+kind: helper
+name: cache-alternatives-eligible-tier-ladder
+call:
+  b3124:
+    config:
+      tiers: {SIMPLE: cheap, MEDIUM: mid, COMPLEX: strong, REASONING: deep}
+    decision: {tier: SIMPLE, cause: heuristic_scorer}
+calls:
+  - b3124:
+      config:
+        tiers: {SIMPLE: cheap, MEDIUM: mid, COMPLEX: strong, REASONING: deep}
+      decision: {tier: MEDIUM, cause: heuristic_v2}
+  - b3124:
+      config:
+        tiers: {SIMPLE: cheap, MEDIUM: mid, COMPLEX: strong, REASONING: deep}
+      decision: {tier: REASONING, cause: reasoning_override}
+  - b3124:
+      config:
+        tiers: {SIMPLE: cheap, MEDIUM: mid, COMPLEX: mid, REASONING: deep}
+      decision: {tier: MEDIUM, cause: heuristic_scorer}
+  - b3124:
+      config: {}
+      decision: {tier: SIMPLE, cause: heuristic_scorer}
+  - b3124:
+      config:
+        classifier_type: llm
+        classifier_llm_config: {model: classifier}
+        enable_non_reasoning_tier: true
+        tiers: {NON_REASONING: tiny, SIMPLE: cheap, MEDIUM: mid, COMPLEX: strong, REASONING: deep}
+      decision: {tier: NON_REASONING, cause: llm_classifier}
+env: {}
+compare: {ignore: []}
