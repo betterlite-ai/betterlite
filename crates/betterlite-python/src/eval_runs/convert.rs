@@ -86,7 +86,7 @@ macro_rules! parse_payload {
     };
 }
 
-// Python sends the caller's timeout in seconds; null leaves it unset and zero is kept for the core to read as unset.
+// Python sends the caller's timeout in seconds; null leaves it unset and an explicit zero is sent as a zero deadline.
 fn timeout(fields: &mut Fields, provider: &str) -> Result<Option<Duration>, ConvertError> {
     let Some(seconds) = read::<f64>(fields, "timeout", provider)? else {
         return Ok(None);
