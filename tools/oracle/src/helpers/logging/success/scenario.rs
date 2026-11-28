@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_logging::callback_logger::CallbackLogger;
-use betterlite_logging::exporter_options::failure_counter::CallbackFailureCounter;
 use betterlite_logging::exporter_options::redaction::ResponseStamp;
 use betterlite_logging::logging_success::handler::SuccessHandler;
 use betterlite_logging::logging_success::types::SuccessResult;
@@ -38,19 +37,17 @@ pub(crate) struct Scenario {
     pub(crate) builder: FixedBuilder,
     pub(crate) assembler: FixedAssembler,
     pub(crate) clock: FixedClock,
-    pub(crate) counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
     pub(crate) counter_calls: Vec<Arc<RecordingCounter>>,
     pub(crate) loggers: Vec<Arc<RecordingLogger>>,
     pub(crate) excluded_fields: Vec<String>,
-    pub(crate) stamp: ResponseStamp,
     pub(crate) known: Box<dyn Fn(&str) -> bool + Send + Sync>,
     pub(crate) privacy: Settings,
 }
 
 impl Scenario {
     pub(crate) fn new(spec: ScenarioSpec<'_>) -> Result<Self, Box<HelperError>> {
-        let (registry, loggers) = loggers(spec.loggers)?;
-        let (counters, counter_calls) = counters();
+        let stamp = stamp_value(spec.stamp);
+        let (registry, loggers, counters) = loggers(spec.loggers, &stamp)?;
         Ok(Self {
             registry,
             builder: FixedBuilder {
@@ -64,11 +61,9 @@ impl Scenario {
                 declines_results: false,
             },
             clock: FixedClock { now: spec.now },
-            counters,
-            counter_calls,
+            counter_calls: counters,
             loggers,
             excluded_fields: spec.excluded_fields,
-            stamp: stamp_value(spec.stamp),
             known: Box::new(|_name: &str| false),
             privacy: Settings::default(),
         })
@@ -80,10 +75,8 @@ impl Scenario {
             payload_builder: &self.builder,
             stream_assembler: &self.assembler,
             clock: &self.clock,
-            failure_counters: &self.counters,
             excluded_fields: &self.excluded_fields,
             known_callback: self.known.as_ref(),
-            stamp: &self.stamp,
             privacy: self.privacy,
         }
     }
@@ -91,43 +84,53 @@ impl Scenario {
 
 fn loggers(
     specs: &[LoggerSpec],
-) -> Result<(CallbackRegistry, Vec<Arc<RecordingLogger>>), Box<HelperError>> {
+    stamp: &ResponseStamp,
+) -> Result<
+    (
+        CallbackRegistry,
+        Vec<Arc<RecordingLogger>>,
+        Vec<Arc<RecordingCounter>>,
+    ),
+    Box<HelperError>,
+> {
     let mut registry = CallbackRegistry::new(64);
+    let first = Arc::new(RecordingCounter::default());
+    let second = Arc::new(RecordingCounter::default());
+    // logging_success.py puts both counters in litellm.callbacks, ahead of the probe loggers
+    register(&mut registry, "recording-counter-1", Arc::clone(&first))?;
+    register(&mut registry, "recording-counter-2", Arc::clone(&second))?;
     let mut recording = Vec::new();
     for logger in specs {
         let record = Arc::new(RecordingLogger::new(
             &logger.name,
             &logger.flags,
             logger.fail,
+            stamp,
         ));
-        let identity = CallbackIdentity {
-            class_name: logger.name.clone(),
-            attributes: IndexMap::new(),
-        };
-        let concrete = Arc::clone(&record);
-        let sink_logger: Arc<dyn CallbackLogger> = concrete;
-        let sink = CallbackSink::Logger(sink_logger);
-        if registry.register(identity, sink, CallbackList::Callbacks)
-            == Registration::SkippedCapacity
-        {
-            return Err(super::value_error(&"the callback registry is full"));
-        }
+        register(&mut registry, &logger.name, Arc::clone(&record))?;
         recording.push(record);
     }
-    Ok((registry, recording))
+    Ok((registry, recording, vec![first, second]))
 }
 
-fn counters() -> (
-    Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    Vec<Arc<RecordingCounter>>,
-) {
-    let first = Arc::new(RecordingCounter::default());
-    let second = Arc::new(RecordingCounter::default());
-    let first_concrete = Arc::clone(&first);
-    let first_handle: Arc<dyn CallbackFailureCounter + Send + Sync> = first_concrete;
-    let second_concrete = Arc::clone(&second);
-    let second_handle: Arc<dyn CallbackFailureCounter + Send + Sync> = second_concrete;
-    (vec![first_handle, second_handle], vec![first, second])
+fn register(
+    registry: &mut CallbackRegistry,
+    name: &str,
+    sink: Arc<dyn CallbackLogger>,
+) -> Result<(), Box<HelperError>> {
+    let identity = CallbackIdentity {
+        class_name: name.to_owned(),
+        attributes: IndexMap::new(),
+    };
+    if registry.register(
+        identity,
+        CallbackSink::Logger(sink),
+        CallbackList::Callbacks,
+    ) == Registration::SkippedCapacity
+    {
+        return Err(super::value_error(&"the callback registry is full"));
+    }
+    Ok(())
 }
 
 fn stamp_value(spec: Option<&StampSpec>) -> ResponseStamp {
