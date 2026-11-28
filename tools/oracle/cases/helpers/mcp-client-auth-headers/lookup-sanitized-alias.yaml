@@ -1,0 +1,20 @@
+kind: helper
+name: mcp-client-auth-headers-lookup-sanitized-alias
+call:
+  b10155:
+    calls:
+      - function: lookup
+        headers:
+          my_server: {Authorization: "Bearer test-sanitized"}
+        alias: My Server
+        server_name: null
+        access_groups: []
+      - function: lookup
+        headers:
+          "my server": {Authorization: "Bearer test-raw"}
+          my_server: {Authorization: "Bearer test-sanitized"}
+        alias: My Server
+        server_name: null
+        access_groups: []
+env: {}
+compare: {ignore: []}

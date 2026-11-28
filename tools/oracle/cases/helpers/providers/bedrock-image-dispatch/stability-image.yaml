@@ -1,0 +1,44 @@
+kind: helper
+name: bedrock-image-dispatch-stability-image
+call:
+  bedrock_image_dispatch:
+    case: stability_image
+    model_cost: {}
+    probes:
+      - model: stability.stable-diffusion-xl-v1
+        prompt: a stability one seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          cfg_scale: 7.5
+          seed: 42
+          width: 512
+          height: 512
+        reply: {body: '{"artifacts": [{"base64": "c3RhYmlsaXR5MQ=="}]}'}
+      - model: stability.sd3-large-v1:0
+        prompt: a stability three seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          aspect_ratio: '16:9'
+          output_format: JPEG
+          seed: 7
+        reply: {body: '{"images": ["c3RhYmlsaXR5Mw=="]}'}
+      - model: stability.sd3-large-v1:0
+        prompt: a blocked stability three seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        reply: {body: '{"images": [], "finish_reasons": ["ContentFiltered"]}'}
+      - model: stability.stable-diffusion-xl-v1
+        prompt: a stability one seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        reply: {status: 400, body: '{"message": "bad request"}'}
+env: {}
+compare: {ignore: []}

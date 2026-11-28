@@ -4,13 +4,11 @@ use std::collections::BTreeMap;
 
 use secrecy::SecretString;
 
+use crate::env_integer::timeout::RequestTimeout;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, parse_integer, resolve_number, resolve_secret, resolve_string};
+use crate::resolve::{parse_integer, resolve_number, resolve_secret, resolve_string};
 use crate::sections::Section;
-
-// LiteLLM's constants.request_timeout: REQUEST_TIMEOUT or 6000, read once at import
-const DEFAULT_REQUEST_TIMEOUT: f64 = 6000.0;
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -71,7 +69,7 @@ impl Settings {
         L: EnvironmentLookup,
     {
         Self {
-            request_timeout_seconds: DEFAULT_REQUEST_TIMEOUT,
+            request_timeout_seconds: RequestTimeout::DEFAULT_SECONDS,
             num_retries: None,
             api_base: None,
             api_key: None,
@@ -116,7 +114,8 @@ impl Section for Raw {
     {
         let settings = self.settings;
         let mut resolved = Settings::from_environment(lookup);
-        resolved.request_timeout_seconds = resolve_timeout(settings.request_timeout, lookup)?;
+        resolved.request_timeout_seconds =
+            RequestTimeout::resolve_configured(settings.request_timeout, lookup)?.seconds;
         resolved.num_retries = resolve_number(
             settings.num_retries,
             "litellm_settings.num_retries",
@@ -140,23 +139,6 @@ impl Section for Raw {
         resolved.headers = settings.headers;
         Ok(resolved)
     }
-}
-
-fn resolve_timeout<L>(configured: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let configured_timeout = resolve_number(
-        configured,
-        "litellm_settings.request_timeout",
-        lookup,
-        parse_float,
-    )?;
-    let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
-    let environment = betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?;
-    Ok(configured_timeout
-        .or(environment)
-        .unwrap_or(DEFAULT_REQUEST_TIMEOUT))
 }
 
 fn resolved_text<L>(

@@ -1,26 +1,28 @@
 use betterlite_auth::auth_identity::errors::AuthError;
-use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey,
-};
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_error::proxy_exception::ProxyException;
-use secrecy::{ExposeSecret as _, SecretString};
-use subtle::ConstantTimeEq as _;
+use betterlite_auth::auth_identity::records::Principal;
+use secrecy::SecretString;
 
 use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
+pub(crate) use crate::auth::auth_key_lookup::master_key_context;
+use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
-use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
+use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
-use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::RequestModelStageInput;
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
+use crate::auth::auth_route_policy::{self, RoutePolicyStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+pub(crate) use crate::auth::failures::StageFailure;
+use crate::auth::identity_store::IdentityStageInput;
+use crate::auth::jwt_keys::{self, JwtKeyStageInput};
+use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
@@ -32,6 +34,7 @@ use crate::error_body::AuthenticationFailure;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
     AuthKeyLookup,
+    JwtKeys,
     MasterKey,
     TrustedNetwork,
     AuthRequestPolicy,
@@ -44,17 +47,20 @@ pub enum AuthBackend {
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
+    AuthModelBudgets,
     TeamBudgetAdmission,
     AuthTenantBudgets,
     OrganizationRoutePolicy,
+    AuthRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
     AuthPolicySupport,
     ModelGrantIntersection,
 }
 
-// B052 owns the final stage order; the master-key stage authenticates before the model stages run.
+// B052 owns the stage order; the JWT fetch runs before the master-key comparison, as in LiteLLM.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
+    AuthBackend::JwtKeys,
     AuthBackend::AuthKeyLookup,
     MasterKey,
     AuthBackend::TrustedNetwork,
@@ -75,12 +81,16 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
     AuthBackend::ModelGrantIntersection,
+    AuthBackend::AuthRoutePolicy,
+    AuthBackend::AuthModelBudgets,
 ];
 
 #[derive(Clone, Debug)]
 pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
+    AuthIdentity(Box<IdentityStageInput>),
     Authenticated(Box<AuthContext>),
+    JwtKeys(Box<JwtKeyStageInput>),
     MasterKey(Option<SecretString>),
     TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
@@ -93,9 +103,11 @@ pub enum StageInput {
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    AuthModelBudgets(Box<ModelBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthTenantBudgets(Box<TenantBudgetStageInput>),
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
+    AuthRoutePolicy(Box<RoutePolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
     AuthPolicySupport(Box<AuthPolicySupportStageInput>),
@@ -123,34 +135,6 @@ pub trait BudgetAdmission {
     ) -> Result<AdmissionLease, AuthError>;
 }
 
-pub(crate) enum StageFailure {
-    Authentication(Box<AuthenticationFailure>),
-    KeyLookup(Box<ProxyException>),
-    ModelAccess(Box<ModelAccessRejection>),
-    AuthModelGrants(Box<ProxyException>),
-    EntityModelAccess(Box<ProxyException>),
-    TrustedNetwork(Box<ProxyException>),
-    AuthRequestPolicy(Box<ProxyException>),
-    ResourceGrants(Box<ProxyException>),
-    TagBudgets(Box<ProxyException>),
-    RequestBodySafety(Box<ProxyException>),
-    VirtualKeyRoutes(Box<ProxyException>),
-    KeyBudgets(Box<ProxyException>),
-    TeamBudgets(Box<ProxyException>),
-    TenantBudgets(Box<ProxyException>),
-    OrganizationRoutePolicy(Box<ProxyException>),
-    OrgLookup(Box<ProxyException>),
-    EndUsers(Box<ProxyException>),
-    AuthPolicySupport(Box<ProxyException>),
-    ModelGrants(Box<ProxyException>),
-}
-
-impl From<AuthenticationFailure> for StageFailure {
-    fn from(failure: AuthenticationFailure) -> Self {
-        Self::Authentication(Box::new(failure))
-    }
-}
-
 impl StageInput {
     // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
     pub(crate) async fn prefetch_model_grants(
@@ -164,7 +148,10 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
-            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
+            Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
+                AuthBackend::AuthKeyLookup
+            }
+            Self::JwtKeys(_) => AuthBackend::JwtKeys,
             Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
@@ -177,9 +164,11 @@ impl StageInput {
             Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
+            Self::AuthModelBudgets(_) => AuthBackend::AuthModelBudgets,
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
             Self::AuthTenantBudgets(_) => AuthBackend::AuthTenantBudgets,
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
+            Self::AuthRoutePolicy(_) => AuthBackend::AuthRoutePolicy,
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
             Self::AuthPolicySupport(_) => AuthBackend::AuthPolicySupport,
@@ -188,17 +177,37 @@ impl StageInput {
     }
 }
 
+// the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
+fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    let key_pass_through = backend == MasterKey && matches!(input, Authenticated(_));
+    if backend == input.backend() || key_pass_through {
+        return Ok(());
+    }
+    Err(StageFailure::from(AuthenticationFailure::Missing))
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    require_backend(backend, input)?;
     match input {
-        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
+        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
+        StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
@@ -210,92 +219,18 @@ pub(crate) fn dispatch(
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
-        StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
-        StageInput::AuthModelPatterns(stage) => {
-            run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
-        }
-        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
-        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthRequestModels(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
-        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
-        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::AuthRoutePolicy(stage) => auth_route_policy::run_stage(stage),
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
-        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
-}
-
-fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
-    match resolve(stage) {
-        Ok(_) => Ok(stage.context.clone()),
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
-    }
-}
-
-fn master_key_stage(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
-}
-
-// The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
-pub(crate) fn master_key_context(
-    presented: Option<&SecretString>,
-    master_key: &SecretString,
-) -> Option<AuthContext> {
-    let matched = presented.is_some_and(|key| {
-        !key.expose_secret().is_empty()
-            && bool::from(
-                key.expose_secret()
-                    .as_bytes()
-                    .ct_eq(master_key.expose_secret().as_bytes()),
-            )
-    });
-    if !matched {
-        return None;
-    }
-    Some(AuthContext {
-        principal: Principal {
-            principal_type: PrincipalType::ServiceAccount,
-            subject: "master_key".to_owned(),
-            issuer: None,
-            audience: Vec::new(),
-            user: None,
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: Vec::new(),
-            scopes: Vec::new(),
-            auth_method: AuthMethod::ApiKey,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey::default(),
-        },
-    })
 }
 
 mod tests;

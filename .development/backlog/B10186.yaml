@@ -1,0 +1,13 @@
+id: B10186
+milestone: R2 bug fixes
+title: The SDK pass-through call logs Azure chat replies and Azure and GigaChat streams with their assembled responses
+status: todo
+depends_on: [B10177, B548, B566, B3636, B8178, B3640, B3650]
+file: tasks/B10186-passthrough-azure-gigachat-assembly.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,12 @@
+kind: helper
+name: compaction-state-client-managed-seed
+call:
+  b10153:
+    state: armed
+    payload:
+      input:
+        - type: message
+          content:
+            - {type: encrypted_content, encrypted_content: gAAAAABopaque}
+env: {}
+compare: {ignore: []}

@@ -2,7 +2,7 @@ id: B4171
 milestone: M8 platform
 title: Allowlisted proxy configuration reports
 status: todo
-depends_on: [B003, B052, B1018, B4170, B1100, B9979, B10058]
+depends_on: [B003, B052, B1018, B4170, B1100, B9979, B10058, B10218]
 file: tasks/B4171-proxy-bug-reports.yaml
 covers:
   - "litellm/proxy/common_utils/debug_utils.py"

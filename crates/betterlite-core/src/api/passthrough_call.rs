@@ -11,6 +11,7 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -127,32 +128,40 @@ pub async fn allm_passthrough_route(
     mut args: PassthroughCallArgs,
     logging: &mut LoggingState,
     http: &ProxiedClient,
+    environment: &BTreeMap<String, String>,
 ) -> Result<PassthroughReply, PassthroughCallError> {
     args.extra
         .insert("allm_passthrough_route".to_owned(), JsonValue::Bool(true));
-    let resolved = resolve_provider(&args)?;
+    let resolved = resolve_provider(&args, environment)?;
     let Some(tag) = config_tag(&resolved) else {
         return Err(PassthroughCallError::ProviderNotFound(
             resolved.provider.slug().to_owned(),
         ));
     };
-    match run(&args, &resolved, tag, logging, http).await {
+    let shared_environment = Arc::new(environment.clone());
+    let config = PassthroughCallConfig {
+        tag,
+        environment: Arc::clone(&shared_environment),
+    };
+    match run(&args, &resolved, &config, logging, http).await {
         Ok(reply) => Ok(reply),
         Err(Failure::Upstream(status)) => Err(PassthroughCallError::UpstreamStatus {
             status: status.status,
             headers: status.headers,
             body: status.body,
         }),
-        Err(Failure::Fault(fault)) => Err(map_fault(&args, fault)),
+        Err(Failure::Fault(fault)) => Err(map_fault(&args, fault, &shared_environment)),
     }
 }
 
 // get_llm_provider: the catalog, names and credentials come from outside; the Mantle endpoint comes from the call
-fn resolve_provider(args: &PassthroughCallArgs) -> Result<ResolvedModel, ResolutionError> {
+fn resolve_provider(
+    args: &PassthroughCallArgs,
+    environment: &BTreeMap<String, String>,
+) -> Result<ResolvedModel, ResolutionError> {
     let catalog = ModelCatalog::default();
     let known_model_names = BTreeSet::new();
     let custom_providers = BTreeSet::new();
-    let environment = BTreeMap::new();
     resolve(
         &ResolutionRequest {
             model: &args.model,
@@ -164,7 +173,7 @@ fn resolve_provider(args: &PassthroughCallArgs) -> Result<ResolvedModel, Resolut
             catalog: &catalog,
             known_model_names: &known_model_names,
             custom_providers: &custom_providers,
-            environment: &environment,
+            environment,
             registry: JSONProviderRegistry::default(),
             policies: mantle::policies(args),
             globals: GlobalCredentials::default(),
@@ -180,9 +189,13 @@ fn config_tag(resolved: &ResolvedModel) -> Option<PassthroughConfigTag> {
     }
 }
 
-// The except block: resolve again, then let _handle_error map the original failure
-fn map_fault(args: &PassthroughCallArgs, fault: Fault) -> PassthroughCallError {
-    let resolved = match resolve_provider(args) {
+// The except block: resolve again over the same map, then let _handle_error map the original failure
+fn map_fault(
+    args: &PassthroughCallArgs,
+    fault: Fault,
+    environment: &Arc<BTreeMap<String, String>>,
+) -> PassthroughCallError {
+    let resolved = match resolve_provider(args, environment.as_ref()) {
         Ok(resolved) => resolved,
         Err(error) => return PassthroughCallError::Resolution(error),
     };
@@ -203,7 +216,10 @@ fn map_fault(args: &PassthroughCallArgs, fault: Fault) -> PassthroughCallError {
         headers: ResponseHeaders::default(),
         body: message,
     };
-    let config = PassthroughCallConfig { tag };
+    let config = PassthroughCallConfig {
+        tag,
+        environment: Arc::clone(environment),
+    };
     match handle_error(&config, failure) {
         CallFailure::Provider(error) => {
             PassthroughCallError::Mapped(Box::new(mapped_error(error, synthesized)))

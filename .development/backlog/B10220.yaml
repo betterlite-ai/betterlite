@@ -1,0 +1,13 @@
+id: B10220
+milestone: R2 bug fixes
+title: Core's ClientKind and SuppliedClient move onto the betterlite-http home and the oracle's sdk_http Mode copies go
+status: todo
+depends_on: [B10221, B10216, B10217]
+file: tasks/B10220-sdk-client-kind-home.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

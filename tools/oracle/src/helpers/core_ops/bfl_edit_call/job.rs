@@ -12,7 +12,7 @@ use betterlite_core::api::bfl::edit_call::{EditCall, EditExecutor, prepare_call}
 use betterlite_core::api::bfl::generation::BflImageResponse;
 use betterlite_core::api::bfl::generation_call::LogContext;
 use betterlite_core::api::bfl::generation_call::params::CallParams;
-use betterlite_core::api::bfl::generation_call::submit::SuppliedTransport;
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -73,7 +73,7 @@ fn run_call(
         clock: wire,
         sleeper: wire,
     };
-    let supplied: Option<SuppliedTransport<'_, Wire<'_>>> = None;
+    let supplied: Option<SuppliedClient<'_, Wire<'_>>> = None;
     Ok(runtime.block_on(executor.image_edit(&call, &prepared, supplied)))
 }
 

@@ -114,6 +114,7 @@ out_of_scope:
   - "The date window, projections, overview rows and aggregation helpers: B3689. guardrail_status_to_action and the guardrail index rows: B3688. The table repositories: B726. Config guardrail lookups: B3682."
   - "The other guardrail and policy routes and the shared route state: B8667, B8668, B8669 and B8790."
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - "Overview without a database answers the empty overview before the date window is checked, but detail answers 500 first and logs answer an empty page."
   - "Logs take page_size+1 rows and then use only page_size of them, while total is a separate count."
   - "A metrics row is keyed by guardrail_name or guardrail_id, so detail and logs must query both ids, not only the path id."

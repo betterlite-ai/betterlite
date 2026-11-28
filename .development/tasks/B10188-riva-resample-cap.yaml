@@ -1,0 +1,75 @@
+id: B10188
+title: Riva resampling refuses an output past the 64 MiB audio cap before it allocates
+description: >-
+  Fix a LiteLLM bug that B1546 copied. LiteLLM's _resample and _linear_resample size their output from the decoded
+  sample count times 16000 divided by the rate in the file header, and nothing checks that length. B1546
+  (crates/betterlite-core/src/api/riva/audio/resample.rs) caps the supplied bytes and the decoded PCM at 64 MiB but
+  not the resampled output, and its parity review flagged it under the bounded-inputs rule. A 220 KB WAV that declares
+  100 Hz and holds 110,000 samples passes both caps and asks for 17.6 million output samples. At 1 Hz the same file
+  asks for 1.76 billion. The linear fallback then builds a float64 index array and three more arrays of that length,
+  and soxr and scipy allocate the same expansion.
+
+
+  The fix checks the output length before any resampler runs. resample computes the largest length any of the three
+  resamplers can return, ceil(samples * 16000 / source rate) in integer math that can't overflow, and fails with
+  RivaAudioError::TooLarge when that many float32 samples (4 bytes each) would pass MAX_AUDIO_BYTES. That is 16,777,216
+  output samples, about 17.5 minutes at 16 kHz. TooLarge already maps to HTTP 413 with code audio_too_large, the same
+  answer the decode caps give. Equal rates and empty input skip the check as they skip resampling, and downsampling
+  never trips it once the decode cap passed. Audio under the cap resamples exactly as before.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/riva/audio/resample.rs
+  - crates/betterlite-core/src/api/riva/audio/tests.rs
+  - crates/betterlite-core/src/api/riva/audio/tests/**
+  - crates/betterlite-openai/src/api/audio_file_input/decoder.rs
+  - docs/deviations/B10188.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L185-L239
+  why: _resample and _linear_resample size the output from the header rate with no limit.
+dod:
+- text: >-
+    The output bound is a plain function. For 8,388,608 samples at 8000 Hz (16,777,216 output samples) it passes, and
+    for 8,388,609 samples at 8000 Hz it fails with TooLarge. A sample count and rate whose product overflows u64 fails
+    with TooLarge instead of wrapping.
+  proof: [resample-cap]
+- text: >-
+    A mono int16 WAV built in the test, declaring 100 Hz and holding 110,000 zero samples, fails decode with
+    RivaAudioError::TooLarge and status 413, code audio_too_large, before soxr, scipy or the linear fallback runs.
+  proof: [resample-cap]
+- text: >-
+    Every existing Riva audio test and oracle case passes unchanged.
+  proof: [riva-audio-tests, oracle]
+- text: >-
+    docs/deviations/B10188.yaml has one row that says LiteLLM resamples to any length, with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: resample-cap
+    why: A low header rate still makes the resampler allocate past the cap, or the bound is off by one.
+    run: uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::riva::audio::tests::resample_cap::/)'
+  - id: riva-audio-tests
+    why: The cap changed audio that stays under it.
+    run: uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::riva::audio::/) - test(replays_the_riva_audio_corpus)'
+  - id: deviation-row
+    why: The cap needs its deviations row with the pinned LiteLLM link.
+    run: grep -q 'audio_utils.py#L185-L239' docs/deviations/B10188.yaml
+oracle_cases:
+- tools/oracle/cases/helpers/riva-audio/stereo-downmix.yaml
+- tools/oracle/cases/helpers/riva-audio/negative-peak.yaml
+- tools/oracle/cases/helpers/riva-audio/same-rate.yaml
+- tools/oracle/cases/helpers/riva-audio/linear-short-output.yaml
+- tools/oracle/cases/helpers/riva-audio/backend-order.yaml
+deviations: []
+out_of_scope:
+- New fuzz corpus entries. The riva_audio fuzz target from B1546 already reaches resample.
+- Riva gRPC streaming. B1547 owns it.
+pitfalls:
+- Mount the new tests as mod resample_cap in tests.rs with the file at tests/resample_cap.rs, like import_failures, so they are named api::riva::audio::tests::resample_cap.
+- Don't allocate the cap in a test. Test the bound function at its edge with plain numbers and build only the small 100 Hz WAV.
+- resample_poly returns ceil(n * up / down) samples and the linear fallback rounds half to even, so the bound must be the ceiling, not the rounded length.
+review_level: security
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

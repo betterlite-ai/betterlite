@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-services-batch-records-unsupported-parameter
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost:
+      "anthropic.claude-3-5-sonnet-20241022-v2:0": {litellm_provider: bedrock}
+    records:
+      - custom_id: refused
+        url: /v1/chat/completions
+        body:
+          model: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+          messages:
+            - {role: user, content: hi}
+          max_tokens: 16
+          presence_penalty: 0.5
+env: {}
+compare: {ignore: []}

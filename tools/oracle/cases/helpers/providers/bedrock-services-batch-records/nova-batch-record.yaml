@@ -1,0 +1,49 @@
+kind: helper
+name: bedrock-services-batch-records-nova
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost:
+      "amazon.nova-pro-v1:0": {litellm_provider: bedrock, supports_sampling_params: true}
+    records:
+      - custom_id: nova
+        url: /v1/chat/completions
+        body:
+          model: "amazon.nova-pro-v1:0"
+          messages:
+            - {role: developer, content: be nice}
+            - {role: user, content: hi}
+          max_tokens: 16
+          temperature: 0.2
+          top_p: 0.9
+          top_k: 5
+      - custom_id: openai-passthrough
+        url: /v1/chat/completions
+        body:
+          model: "openai.gpt-oss-20b-1:0"
+          messages:
+            - {role: user, content: hi}
+          max_tokens: 16
+      - custom_id: qwen-passthrough
+        url: /v1/chat/completions
+        body:
+          model: "qwen.qwen3-32b-v1:0"
+          messages:
+            - {role: user, content: hi}
+          top_k: 5
+      - custom_id: deepseek-passthrough
+        body:
+          model: "deepseek.r1-v1:0"
+          messages:
+            - {role: system, content: be brief}
+            - {role: user, content: hi}
+          stop: ["END"]
+      - custom_id: no-provider
+        body:
+          model: custom-model-v1
+          messages:
+            - {role: user, content: hi}
+env: {}
+compare: {ignore: []}
