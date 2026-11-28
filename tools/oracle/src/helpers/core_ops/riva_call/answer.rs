@@ -93,28 +93,26 @@ pub(super) fn read_probe(host: &PythonHost) -> Result<Probe, Box<HelperError>> {
 pub(super) fn answer(
     probe: &Probe,
     logger: &RecordingLogger,
-    reply: &TranscriptionReply,
+    outcome: Result<&TranscriptionReply, &RivaCallError>,
 ) -> Result<Value, Box<HelperError>> {
-    let hidden = json!({
+    match outcome {
+        Ok(reply) => base(probe, logger, Value::Null, Value::Null, hidden_view(reply)),
+        Err(error) => base(
+            probe,
+            logger,
+            json!(error.status_code()),
+            json!(error.to_string()),
+            Value::Null,
+        ),
+    }
+}
+
+fn hidden_view(reply: &TranscriptionReply) -> Value {
+    json!({
         "model": reply.model,
         "custom_llm_provider": reply.custom_llm_provider,
         "audio_transcription_duration": duration(&reply.duration),
-    });
-    base(probe, logger, Value::Null, Value::Null, hidden)
-}
-
-pub(super) fn failure_answer(
-    probe: &Probe,
-    logger: &RecordingLogger,
-    error: &RivaCallError,
-) -> Result<Value, Box<HelperError>> {
-    base(
-        probe,
-        logger,
-        json!(error.status_code()),
-        json!(error.to_string()),
-        Value::Null,
-    )
+    })
 }
 
 fn base(
@@ -155,14 +153,15 @@ fn base(
 }
 
 fn pre_view(record: &LoggedPre) -> Result<Value, Box<HelperError>> {
+    let complete = json!({
+        "recognition_config": encoded(&record.recognition_config)?,
+        "nvcf_function_id_set": record.nvcf_function_id_set,
+        "use_ssl": encoded(&record.use_ssl)?,
+    });
     Ok(json!({
         "api_base": record.api_base,
         "atranscription": record.atranscription,
-        "complete_input_dict": {
-            "recognition_config": encoded(&record.recognition_config)?,
-            "nvcf_function_id_set": record.nvcf_function_id_set,
-            "use_ssl": encoded(&record.use_ssl)?,
-        },
+        "complete_input_dict": complete,
     }))
 }
 

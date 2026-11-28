@@ -16,7 +16,7 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use self::answer::{RecordingLogger, answer, failure_answer, read_probe};
+use self::answer::{RecordingLogger, answer, read_probe};
 use self::fakes::{SavedModules, install};
 
 pub(crate) struct Op;
@@ -167,10 +167,7 @@ fn run_call(host: &PythonHost, call: &PipelineCall) -> Result<Value, Box<HelperE
     let mut logger = RecordingLogger::default();
     let outcome = host.attach(|py| transcribe_attached(py, &pending, &mut logger));
     let probe = read_probe(host)?;
-    match outcome {
-        Ok(reply) => answer(&probe, &logger, &reply),
-        Err(error) => failure_answer(&probe, &logger, &error),
-    }
+    answer(&probe, &logger, outcome.as_ref())
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {
