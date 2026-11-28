@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -18,7 +19,10 @@ use secrecy::SecretString;
 use serde::Serialize;
 use tower::ServiceExt as _;
 
-use super::{AUTHORIZE_PATH, ConsentState, MAX_FORM_FIELDS, router_with};
+use super::{AUTHORIZE_PATH, ConsentState, router_with};
+use crate::api::request_form::MAX_FORM_FIELDS;
+use crate::routes::router;
+use crate::routes::tests::{empty_config, state_for};
 
 const MASTER_KEY: &str = "sk-oracle-master";
 const CALLBACK: &str = "http://127.0.0.1:1456/callback";
@@ -628,4 +632,38 @@ async fn the_post_uses_an_ampersand_when_the_redirect_uri_has_a_query() {
     assert_eq!(response.status(), StatusCode::FOUND);
     let location = header_of(&response, "location").unwrap();
     assert!(location.starts_with("http://127.0.0.1:1456/callback?tenant=acme&code="));
+}
+
+fn assembled_router() -> Router {
+    let mut config = empty_config();
+    config.general_settings.master_key = Some(SecretString::from(MASTER_KEY));
+    router(
+        state_for(&config),
+        Arc::new(AtomicBool::new(false)),
+        Router::new(),
+        Router::new(),
+    )
+}
+
+#[tokio::test]
+async fn the_assembled_router_serves_the_consent_get_outside_the_auth_layers() {
+    let response = send(assembled_router(), get(&authorize_uri(&valid_query()))).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        header_of(&response, "content-type"),
+        Some("text/html; charset=utf-8")
+    );
+}
+
+#[tokio::test]
+async fn the_assembled_router_accepts_the_signed_consent_post_outside_the_auth_layers() {
+    let cookies = cookie(&ui_claims(), MASTER_KEY);
+    let response = send(
+        assembled_router(),
+        post(AUTHORIZE_PATH, &valid_form(), FORM_TYPE, Some(&cookies)),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let location = header_of(&response, "location").unwrap();
+    assert!(location.starts_with("http://127.0.0.1:1456/callback?code="));
 }
