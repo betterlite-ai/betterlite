@@ -52,7 +52,7 @@ pub fn strip_internal_claims(payload: &Document) -> Result<Document, ClaimError>
         return Err(ClaimError::NotObject);
     };
     for claim in LITELLM_INTERNAL_CLAIMS {
-        fields.shift_remove(claim);
+        fields.remove(claim);
     }
     Ok(stripped)
 }

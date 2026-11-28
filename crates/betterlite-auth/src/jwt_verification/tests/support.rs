@@ -475,12 +475,9 @@ pub(super) fn harness_with(
     let cache = Arc::new(cache);
     let http = Arc::new(http);
     let clock = Arc::new(TestClock::default());
-    let verifier = JwtVerifier::new(
-        Arc::new(settings),
-        Arc::clone(&cache),
-        Arc::clone(&http),
-        clock,
-    );
+    let cache_tier: Arc<dyn KeyCache> = Arc::clone(&cache);
+    let http_tier: Arc<dyn UserinfoHttp> = Arc::clone(&http);
+    let verifier = JwtVerifier::new(Arc::new(settings), cache_tier, http_tier, clock);
     Harness {
         verifier,
         cache,

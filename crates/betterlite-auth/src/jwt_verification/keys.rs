@@ -82,7 +82,7 @@ fn verify_with_jwk(
             let key = DecodingKey::from_ed_components(&x).map_err(|error| unusable_key(&error))?;
             verify_with_library(&key, algorithm, signing_input, signature)
         }
-        (Family::Rsa, _) | (Family::Ec, _) | (Family::Ed, _) => Err(incompatible_key()),
+        (Family::Rsa | Family::Ec | Family::Ed, _) => Err(incompatible_key()),
     }
 }
 
