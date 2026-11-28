@@ -281,8 +281,7 @@ impl WorkerDatabase {
             return;
         };
         let mut workers = self.inner.workers.lock().expect("the worker lock");
-        let slot = workers.iter_mut().find(|found| found.id == worker_id);
-        if let Some(worker_record) = slot {
+        if let Some(worker_record) = workers.iter_mut().find(|found| found.id == worker_id) {
             worker_record.last_seen = parsed.with_timezone(&Utc);
         }
     }
@@ -303,8 +302,7 @@ impl WorkerDatabase {
         *swap = None;
         drop(swap);
         let mut lenses = self.inner.lenses.lock().expect("the lens lock");
-        let slot = lenses.iter_mut().find(|stored| stored.id == replacement.id);
-        if let Some(stored) = slot {
+        if let Some(stored) = lenses.iter_mut().find(|entry| entry.id == replacement.id) {
             *stored = replacement;
         }
     }
