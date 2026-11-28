@@ -23,7 +23,7 @@ from test_evals_calls import (
     query_of,
     request_shape,
 )
-from typing_extensions import TypedDict, override
+from typing_extensions import override
 
 import betterlite.evals
 from betterlite._completion.errors import UnsupportedCallArgument
