@@ -14,10 +14,13 @@ pub struct BudgetRefreshJob<Logger> {
 
 // LiteLLM's initialize_budget_metrics_cron_job: the setting is checked before the callback list is read
 #[must_use]
-pub fn budget_refresh_job<Logger: Clone>(
+pub fn budget_refresh_job<Logger>(
     settings: &Settings,
     loggers: &[Logger],
-) -> Option<BudgetRefreshJob<Logger>> {
+) -> Option<BudgetRefreshJob<Logger>>
+where
+    Logger: Clone,
+{
     if !settings.initialize_budget_metrics {
         return None;
     }

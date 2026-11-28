@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
@@ -18,6 +19,7 @@ use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_logging::prometheus::budget_gauges::lists::customer_row::CustomerBudgetGaugeRow;
 use betterlite_logging::prometheus::budget_gauges::lists::org_list::OrgBudgetGaugeRow;
 use deadpool_postgres::Client;
+use serde::de::DeserializeOwned;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
@@ -28,37 +30,16 @@ use crate::team_pagination::get_paginated_teams;
 use super::source::{BudgetPageError, BudgetPageSource, Page};
 
 use query::key_query;
+use sql::{
+    CUSTOMER_COUNT_BUDGETED_SQL, CUSTOMER_COUNT_SQL, CUSTOMER_PAGE_BUDGETED_SQL, CUSTOMER_PAGE_SQL,
+    ORG_PAGES, TEAM_COUNT_SQL, TablePages, USER_COUNT_SQL, USER_PAGES,
+};
 
 mod query;
+mod sql;
 mod tests;
 
 type PageResult<Row> = Result<Page<Row>, BudgetPageError>;
-
-const USER_PAGE_SQL: &str = r#"SELECT row_to_json(t)::text FROM "LiteLLM_UserTable" t ORDER BY t."created_at" DESC OFFSET $1 LIMIT $2"#;
-const USER_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_UserTable""#;
-const TEAM_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_TeamTable""#;
-const ORG_PAGE_SQL: &str = r#"SELECT row_to_json(t)::text, row_to_json(b)::text FROM "LiteLLM_OrganizationTable" t LEFT JOIN "LiteLLM_BudgetTable" b ON t."budget_id" = b."budget_id" ORDER BY t."created_at" DESC OFFSET $1 LIMIT $2"#;
-const ORG_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_OrganizationTable""#;
-const CUSTOMER_PAGE_SQL: &str = r#"SELECT row_to_json(t)::text, row_to_json(b)::text FROM "LiteLLM_EndUserTable" t LEFT JOIN "LiteLLM_BudgetTable" b ON t."budget_id" = b."budget_id" ORDER BY t."user_id" ASC OFFSET $1 LIMIT $2"#;
-const CUSTOMER_PAGE_BUDGETED_SQL: &str = r#"SELECT row_to_json(t)::text, row_to_json(b)::text FROM "LiteLLM_EndUserTable" t LEFT JOIN "LiteLLM_BudgetTable" b ON t."budget_id" = b."budget_id" WHERE t."budget_id" IS NOT NULL ORDER BY t."user_id" ASC OFFSET $1 LIMIT $2"#;
-const CUSTOMER_COUNT_SQL: &str = r#"SELECT count(*)::bigint FROM "LiteLLM_EndUserTable""#;
-const CUSTOMER_COUNT_BUDGETED_SQL: &str =
-    r#"SELECT count(*)::bigint FROM "LiteLLM_EndUserTable" WHERE "budget_id" IS NOT NULL"#;
-
-#[derive(Clone, Copy)]
-struct TablePages {
-    page: &'static str,
-    count: Option<&'static str>,
-}
-
-const USER_PAGES: TablePages = TablePages {
-    page: USER_PAGE_SQL,
-    count: Some(USER_COUNT_SQL),
-};
-const ORG_PAGES: TablePages = TablePages {
-    page: ORG_PAGE_SQL,
-    count: Some(ORG_COUNT_SQL),
-};
 
 #[derive(Clone, Copy)]
 pub struct PostgresBudgetPageSource<'db> {
@@ -66,7 +47,7 @@ pub struct PostgresBudgetPageSource<'db> {
 }
 
 // B714 routes every Prisma read to the replica until its health flag says the replica is unavailable
-fn read_store<'db>(client: PrismaClient<'db>) -> &'db PostgresStore {
+fn read_store(client: PrismaClient<'_>) -> &PostgresStore {
     if client
         .availability
         .reader_unavailable
@@ -96,8 +77,11 @@ async fn count_rows(
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<u64, BudgetPageError> {
-    let row = session.query_one(sql, params).await.map_err(backend)?;
-    let stored: i64 = row.try_get(0).map_err(backend)?;
+    let row = session
+        .query_one(sql, params)
+        .await
+        .map_err(backend::<Infallible>)?;
+    let stored: i64 = row.try_get(0).map_err(backend::<Infallible>)?;
     let count = u64::try_from(stored).map_err(|source| BudgetPageError::Count { source })?;
     Ok(count)
 }
@@ -112,7 +96,10 @@ async fn page_rows(
     let (offset, limit) = page_window(page_size, page)?;
     let session = read_store(client).session().await?;
     let params: [&(dyn ToSql + Sync); 2] = [&offset, &limit];
-    let rows = session.query(pages.page, &params).await.map_err(backend)?;
+    let rows = session
+        .query(pages.page, &params)
+        .await
+        .map_err(backend::<Infallible>)?;
     let total_count = match pages.count {
         Some(sql) => Some(count_rows(&session, sql, &[]).await?),
         None => None,
@@ -139,7 +126,7 @@ fn budgeted_inputs<Stored, Out>(
     convert: fn(Stored, Option<BudgetTableSnapshot>) -> Out,
 ) -> Result<Page<Out>, BudgetPageError>
 where
-    Stored: serde::de::DeserializeOwned,
+    Stored: DeserializeOwned,
 {
     let mut rows = Vec::with_capacity(page.rows.len());
     for row in page.rows {
@@ -152,8 +139,11 @@ where
     })
 }
 
-fn stored_row<Stored: serde::de::DeserializeOwned>(row: &Row) -> Result<Stored, BudgetPageError> {
-    serde_json::from_str(&row.try_get::<_, String>(0).map_err(backend)?)
+fn stored_row<Stored>(row: &Row) -> Result<Stored, BudgetPageError>
+where
+    Stored: DeserializeOwned,
+{
+    serde_json::from_str(&row.try_get::<_, String>(0).map_err(backend::<Infallible>)?)
         .map_err(BudgetPageError::Row)
 }
 
@@ -168,7 +158,7 @@ fn team_input(team: LiteLLMTeamTable) -> TeamBudgetGaugeInput {
 }
 
 fn user_row(row: Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
-    let text: String = row.try_get(0).map_err(backend)?;
+    let text: String = row.try_get(0).map_err(backend::<Infallible>)?;
     let stored = decode_user_record(text.as_bytes())
         .map_err(|source| BudgetPageError::UserRecord { source })?
         .ok_or(BudgetPageError::UserRecord {
@@ -185,7 +175,7 @@ fn user_row(row: Row) -> Result<UserBudgetGaugeInput, BudgetPageError> {
 }
 
 fn budget_of(row: &Row) -> Result<Option<BudgetTableSnapshot>, BudgetPageError> {
-    let text: Option<String> = row.try_get(1).map_err(backend)?;
+    let text: Option<String> = row.try_get(1).map_err(backend::<Infallible>)?;
     let Some(text) = text else {
         return Ok(None);
     };

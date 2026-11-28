@@ -46,11 +46,11 @@ fn the_first_logger_and_the_interval_go_into_the_job() {
 
     assert_eq!(
         job,
-        Some(BudgetRefreshJob {
+        BudgetRefreshJob {
             id: JOB_ID,
             interval_minutes: 7,
             logger: "scheduler-one",
-        })
+        }
     );
     let captured = logs.text();
     assert!(

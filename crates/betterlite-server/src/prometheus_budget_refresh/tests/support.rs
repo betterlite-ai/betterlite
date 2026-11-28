@@ -55,7 +55,7 @@ pub struct SetEvent {
 }
 
 // Every gauge event a test wrote, shared with the gauges built over it.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ProbeLog {
     events: Arc<Mutex<Vec<SetEvent>>>,
 }
