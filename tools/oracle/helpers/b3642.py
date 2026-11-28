@@ -28,9 +28,8 @@ class Input(TypedDict):
 
 
 class SearchConfig(Protocol):
-    # ast-grep-ignore: no-long-names
     def transform_search_vector_store_response(
-        self, **_kwargs: object  # ast-grep-ignore: no-loose-types
+        self, **_kwargs: object
     ) -> JsonValue: ...
 
 
@@ -46,8 +45,8 @@ class HandlerCall(TypedDict):
 
 @runtime_checkable
 class VertexHandler(Protocol):
-    interactions_passthrough_handler: Callable[..., JsonValue]  # ast-grep-ignore
-    batch_prediction_jobs_handler: Callable[..., JsonValue]
+    interactions_passthrough_handler: Callable[[object], JsonValue]
+    batch_prediction_jobs_handler: Callable[[object], JsonValue]
 
     def vertex_passthrough_handler(
         self, **kwargs: Unpack[HandlerCall]
@@ -56,29 +55,29 @@ class VertexHandler(Protocol):
 
 @runtime_checkable
 class HandlerModule(Protocol):
-    VertexAIVideoConfig: Callable[..., JsonValue]
+    VertexAIVideoConfig: Callable[[object], JsonValue]
     vertex_search_api_config: SearchConfig
 
 
 @runtime_checkable
 class LitellmModule(Protocol):
-    ModelResponse: Callable[..., JsonValue]
+    ModelResponse: Callable[[object], JsonValue]
 
 
 @runtime_checkable
 class ImageModule(Protocol):
-    VertexImageGeneration: Callable[..., JsonValue]
+    VertexImageGeneration: Callable[[object], JsonValue]
 
 
 @runtime_checkable
 class EmbedModule(Protocol):
-    process_embed_content_response: Callable[..., JsonValue]
-    process_response: Callable[..., JsonValue]
+    process_embed_content_response: Callable[[object], JsonValue]
+    process_response: Callable[[object], JsonValue]
 
 
 @runtime_checkable
 class PartnerModule(Protocol):
-    get_vertex_ai_partner_model_config: Callable[..., JsonValue]  # ast-grep-ignore
+    get_vertex_ai_partner_model_config: Callable[[object], JsonValue]
 
 
 @runtime_checkable
@@ -102,16 +101,15 @@ class Leaf:
 
     def __call__(
         self,
-        *_args: object,  # ast-grep-ignore: no-loose-types
-        **_kwargs: object,  # ast-grep-ignore: no-loose-types
+        *_args: object,
+        **_kwargs: object,
     ) -> JsonValue:
         raise BranchHitError(self.branch)
 
 
-class SearchLeaf(SearchConfig):
-    # ast-grep-ignore: no-long-names
+class SearchLeaf:
     def transform_search_vector_store_response(
-        self, **_kwargs: object  # ast-grep-ignore: no-loose-types
+        self, **_kwargs: object
     ) -> JsonValue:
         raise BranchHitError("search")
 
