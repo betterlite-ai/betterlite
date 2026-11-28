@@ -1,0 +1,49 @@
+kind: helper
+name: bedrock-services-s3-listing-bodiless-s3-signature
+call:
+  bedrock_services_s3_listing:
+    operation: content_request
+    contents:
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: us-east-1, aws_access_key_id: AWSKEY, aws_secret_access_key: AWSSECRET, aws_session_token: tok-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: us-east-1, s3_access_key_id: STATICACCESS, s3_secret_access_key: STATICKEY, aws_session_token: ignored}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: cn-north-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: eu-west-1, s3_endpoint_url: "https://example.com:9000/"}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: us_east}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+        litellm_params: {aws_region_name: eu-west-1}
+        optional_params: {s3_region_name: cn-north-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - file_id: s3://bucket/litellm-bedrock-files-a b?c
+        litellm_params: {aws_region_name: us-east-1, s3_access_key_id: STATICACCESS, s3_secret_access_key: STATICKEY}
+        trusted: [[s3_bucket_name, bucket]]
+calls:
+  - bedrock_services_s3_listing:
+      operation: delete_request
+      deletes:
+        - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: us-east-1, aws_access_key_id: AWSKEY, aws_secret_access_key: AWSSECRET, aws_session_token: tok-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: eu-west-1, s3_endpoint_url: "https://example.com:9000/"}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/litellm-batch-outputs/job.jsonl
+          litellm_params: {aws_region_name: cn-north-1}
+          trusted: [[s3_bucket_name, bucket]]
+        - file_id: s3://bucket/pre/litellm-bedrock-files-a
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, bucket/pre]]
+env: {}
+compare: {ignore: []}

@@ -3,8 +3,9 @@ use std::{io, str};
 
 use betterlite_bedrock::image_call::error::ImageCallError;
 use betterlite_bedrock::image_call::plan::{ImageCall, ImageEnvironment};
-use betterlite_bedrock::image_call::transport::{ClientKind, ImageRequest, SuppliedClient};
+use betterlite_bedrock::image_call::transport::ImageRequest;
 use betterlite_bedrock::image_models::params::Params;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::error::RedactionError;
 use secrecy::SecretString;
@@ -156,7 +157,7 @@ impl<'probe> Harness<'probe> {
     pub(crate) fn supplied(&self) -> Option<SuppliedClient<'_, Client>> {
         self.supplied.as_ref().map(|client| SuppliedClient {
             kind: match self.probe.supplied {
-                Supplied::Async => ClientKind::Async,
+                Supplied::Async => ClientKind::Asynchronous,
                 Supplied::None | Supplied::Sync => ClientKind::Sync,
             },
             transport: client,

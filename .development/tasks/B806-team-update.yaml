@@ -245,6 +245,7 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
+  - "Pass B10218's `&*state.proxy_diagnostics.notices` as handle_exception_on_proxy's diagnostics and set a Failure's location with Location::caller() where it builds one; never write another ProxyDiagnostics impl."
   - Clearing organization_id still checks limits against the stored organization before writing null.
   - Restoring the server-owned team_member_budget_id happens after the metadata callback has seen stripped metadata.
 budget:

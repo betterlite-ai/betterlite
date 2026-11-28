@@ -52,6 +52,7 @@ pub mod model_grant_intersection;
 pub mod model_read_through;
 pub mod oauth_tokens;
 pub mod organization_route_policy;
+pub mod proxy_diagnostics;
 pub mod ptu_rollup;
 pub mod request_body_safety;
 pub mod request_intake;
@@ -128,6 +129,7 @@ pub struct ServerState {
     pub model_read_through: model_read_through::Slot,
     pub oauth_tokens: oauth_tokens::Slot,
     pub organization_route_policy: organization_route_policy::Slot,
+    pub proxy_diagnostics: proxy_diagnostics::Slot,
     pub ptu_rollup: ptu_rollup::Slot,
     pub request_body_safety: request_body_safety::Slot,
     pub request_intake: request_intake::Slot,
@@ -204,6 +206,7 @@ impl ServerState {
             model_read_through: model_read_through::Slot::new(config, &shared),
             oauth_tokens: oauth_tokens::Slot::new(config, &shared),
             organization_route_policy: organization_route_policy::Slot::new(config, &shared),
+            proxy_diagnostics: proxy_diagnostics::Slot::new(config),
             ptu_rollup: ptu_rollup::Slot::new(config, &shared),
             request_body_safety: request_body_safety::Slot::new(config, &shared),
             request_intake: request_intake::Slot::new(config, &shared),

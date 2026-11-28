@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use betterlite_config::sections::azure_credentials::DEFAULT_SCOPE;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 use secrecy::SecretString;
 

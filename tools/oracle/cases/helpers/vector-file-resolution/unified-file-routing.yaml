@@ -1,0 +1,88 @@
+kind: helper
+name: vector-file-resolution-unified-file-routing
+call:
+  vector_file_resolution:
+    calls:
+      - function: unified_file_routing
+        data: {model: old, file_id: old_file}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1, api_base: "http://m1"}}
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTI7dGFyZ2V0X21vZGVsX25hbWVzLG0xOw"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTQ7dGFyZ2V0X21vZGVsX25hbWVzLG0xO2xsbV9vdXRwdXRfZmlsZV9pZCwgICA7"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: unified_file_routing
+        data: {custom_llm_provider: azure, file_id: old_file}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTM7"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: unified_file_routing
+        data: {file_id: old_file}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxl"
+        caller: {}
+        catalog: {}
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+        catalog: {}
+      - function: unified_file_routing
+        data: {model: old}
+        file_id: file-bGl0ZWxsbTpmaWxlX3Jhdzttb2RlbCxtX2VtYmVkZGVk
+        caller: {}
+        catalog: {m_embedded: {api_key: sk-embedded, custom_llm_provider: openai}}
+      - function: unified_file_routing
+        data: {model: old}
+        file_id: file-bGl0ZWxsbTpmaWxlX3Jhdzttb2RlbCxtX2VtYmVkZGVk
+        caller: {}
+        catalog: {m_embedded: {api_key: sk-embedded}}
+        deny: [m_embedded]
+      - function: unified_file_routing
+        data: {}
+        file_id: file_plain
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: unified_file_routing
+        data: {model: m1}
+        file_id: file_plain
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+      - function: unified_file_routing
+        data: {}
+        file_id: file_plain
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+        require_managed_files: true
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+        require_managed_files: true
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+        managed_files: true
+        require_managed_files: true
+      - function: unified_file_routing
+        data: {}
+        file_id: "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdWlkLTE7dGFyZ2V0X21vZGVsX25hbWVzLG0xLG0yO2xsbV9vdXRwdXRfZmlsZV9pZCwgZmlsZV9hIDs"
+        caller: {}
+        catalog: {m1: {api_key: sk-m1}}
+        managed_files: false
+        require_managed_files: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,37 @@
+kind: helper
+name: end-user-identity-lookup-failure-order
+call:
+  end_user_identity:
+    raw_end_user_id: ghost
+    validate_in_db: true
+    database: true
+    end_user: missing
+    user: error
+calls:
+  - end_user_identity:
+      raw_end_user_id: ghost
+      validate_in_db: true
+      database: true
+      end_user: found
+      user: error
+  - end_user_identity:
+      raw_end_user_id: alice@example.com
+      validate_in_db: true
+      database: true
+      end_user: missing
+      user: missing
+  - end_user_identity:
+      raw_end_user_id: alice
+      validate_in_db: true
+      database: true
+      end_user: missing
+      user: found
+  - end_user_identity:
+      raw_end_user_id: ghost
+      validate_in_db: true
+      database: true
+      proxy_default: b-proxy
+      end_user: missing
+      user: error
+env: {}
+compare: {ignore: []}

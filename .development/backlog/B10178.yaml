@@ -1,0 +1,13 @@
+id: B10178
+milestone: R2 bug fixes
+title: The proxy's Google generation routes run the request pipeline and the GenAI SDK call
+status: todo
+depends_on: [B10183, B10196, B10175, B081, B8631, B8610, B1103, B5103, B004, B3506, B3489, B9800, B8801, B8802, B8800, B8399, B8612, B8395, B8604, B8605, B8632, B8633, B9802, B7324, B744, B1395, B3688, B10218]
+file: tasks/B10178-google-generation-dispatch.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

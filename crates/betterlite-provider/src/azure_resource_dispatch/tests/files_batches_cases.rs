@@ -13,9 +13,10 @@ use betterlite_azure::batches::{
     Operation as BatchOperation, Reply as BatchReply, call as batch_call,
 };
 use betterlite_azure::endpoints::projection::ClientKind;
+use betterlite_http::client_kind::ClientKind as SdkKind;
 use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery, BatchStatus};
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind as SdkKind};
+use betterlite_openai::batches::sdk::BatchesSdk;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_openai::files::{DEFAULT_TIMEOUT, FilesClient};

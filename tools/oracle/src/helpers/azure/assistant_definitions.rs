@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::endpoints::projection::LiteLlmParams;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::records::AssistantCreate;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -20,18 +21,10 @@ struct Reply {
     body: String,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum KindName {
-    #[default]
-    Sync,
-    Async,
-}
-
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SuppliedStep {
-    kind: KindName,
+    kind: ClientKind,
 }
 
 // One facade call: the method arguments LiteLLM reads, the litellm_params it forwards, and the SDK reply to serve.
@@ -61,7 +54,7 @@ pub(crate) struct Step {
     #[serde(default)]
     assistant_id: Option<String>,
     #[serde(default)]
-    kind: KindName,
+    kind: ClientKind,
     #[serde(default)]
     supplied: Option<SuppliedStep>,
     #[serde(default)]

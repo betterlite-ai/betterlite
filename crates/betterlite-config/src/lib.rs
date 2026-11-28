@@ -20,7 +20,7 @@ mod providers;
 pub mod proxy;
 pub mod ptu_pricing;
 pub mod rag;
-mod raw;
+pub mod raw;
 pub mod replicate_price;
 mod resolve;
 pub mod saml_assertion;

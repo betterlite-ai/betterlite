@@ -1,0 +1,13 @@
+id: B10197
+milestone: R2 bug fixes
+title: The Google countTokens route translates contents and counts tokens through the production adapter and the proxy's token counter
+status: todo
+depends_on: [B3506, B3484, B8598, B10183, B10196]
+file: tasks/B10197-google-count-tokens-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

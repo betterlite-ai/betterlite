@@ -1,8 +1,9 @@
 use std::sync::{Arc, PoisonError};
 
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::batches::error::{BatchesError, SdkError};
 use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchQuery};
-use betterlite_openai::batches::sdk::{ClientKind, ClientSettings, Connection, Timeout};
+use betterlite_openai::batches::sdk::{ClientSettings, Connection, Timeout};
 use betterlite_openai::batches::{BatchOperation, BatchesApi};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};

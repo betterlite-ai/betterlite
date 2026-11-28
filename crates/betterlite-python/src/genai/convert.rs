@@ -8,7 +8,7 @@ use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::time::{Duration, TryFromFloatSecsError};
+use std::time::TryFromFloatSecsError;
 mod tests;
 // The session text: absent means the process environment, the snapshot LiteLLM reads its globals from at import.
 #[derive(Default, Deserialize)]
@@ -16,32 +16,6 @@ mod tests;
 pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
     pub(crate) api_key: Option<String>,
-}
-// One generate content call, field for field with litellm/google_genai/main.py's arguments and its **kwargs.
-#[derive(Debug, Deserialize)]
-pub(crate) struct GenaiCall {
-    pub(crate) model: String,
-    pub(crate) contents: Json,
-    pub(crate) config: Option<Object>,
-    pub(crate) tools: Option<Json>,
-    pub(crate) extra_headers: Option<IndexMap<String, String>>,
-    pub(crate) extra_query: Option<Object>,
-    pub(crate) extra_body: Option<Object>,
-    #[serde(default)]
-    pub(crate) timeout: Option<f64>,
-    pub(crate) custom_llm_provider: Option<String>,
-    #[serde(default)]
-    pub(crate) kwargs: Object,
-}
-impl GenaiCall {
-    // timeout or request_timeout hands the handler seconds; a zero is no timeout, and B3489 resolves it then
-    pub(crate) fn timeout(&self) -> Result<Option<Duration>, ConvertError> {
-        self.timeout.map_or(Ok(None), |seconds| {
-            Duration::try_from_secs_f64(seconds)
-                .map(Some)
-                .map_err(|source| ConvertError::Timeout { source })
-        })
-    }
 }
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConvertError {

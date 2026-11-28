@@ -10,9 +10,7 @@ use betterlite_config::sections::settings::{
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
 
-use super::environ::{
-    ResolvedConfig, Resolver, Workers, off_runtime, owned_secret_lookup, restore_oidc_tokens,
-};
+use super::environ::{ResolvedConfig, Resolver, Workers, off_runtime, restore_oidc_tokens};
 use super::error::OverlayError;
 use super::pass_through::endpoints_beside_db;
 use super::rows::apply_db_rows;
@@ -81,7 +79,7 @@ pub fn prepare_reload(
     let config = resolved_config(state, file_config);
     let owned = db_owned_values(state);
     initialize_secret_manager(state, &config, source, env)?;
-    let lookup = owned_secret_lookup(&state.secrets.lookup);
+    let lookup = state.secrets.lookup.clone();
     Ok(PendingReload {
         config,
         lookup,

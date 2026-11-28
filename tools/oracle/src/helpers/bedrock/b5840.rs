@@ -5,11 +5,12 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::CredentialSource;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::sagemaker_runtime::chat::{self, ChatCall, ChatVariant};
 use betterlite_bedrock::sagemaker_runtime::endpoint::{EndpointRequest, ParamMap, runtime_url};
 use betterlite_bedrock::sagemaker_runtime::runtime::{
-    PreparedCall, SagemakerCredentials, SagemakerEnvironment, SagemakerRuntime,
+    PreparedCall, SagemakerEnvironment, SagemakerRuntime,
 };
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_openai::chat::ChatMessage;
@@ -113,7 +114,7 @@ fn component_result(case: &ComponentHeaderInput) -> Value {
 
 struct FixedCredentials(Credentials);
 
-impl SagemakerCredentials for FixedCredentials {
+impl CredentialSource for FixedCredentials {
     fn resolve(
         &self,
         _settings: AwsSettings,

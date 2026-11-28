@@ -1,0 +1,85 @@
+id: B10192
+title: The AWS credential resolver reads LiteLLM's AWS_* environment names itself, so every Bedrock-family caller gets them
+description: >-
+  LiteLLM's `get_credentials` fills every unset parameter from a fixed AWS_* variable before it picks a flow (base_aws_llm.py L364-L393): AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION_NAME, AWS_SESSION_NAME, AWS_PROFILE_NAME, AWS_ROLE_NAME, AWS_WEB_IDENTITY_TOKEN, AWS_STS_ENDPOINT and AWS_EXTERNAL_ID. betterlite's resolver (crates/betterlite-bedrock/src/credentials/sources.rs L16-L56) reads none of them, so the fallback lives in two callers instead. The config snapshot does it in `snapshot` (crates/betterlite-config/src/sections/bedrock_settings.rs L142-L181), which no production code reads (only oracle helpers load `sections.bedrock_settings`). Bedrock transcription does it again in `chain_settings` (crates/betterlite-bedrock/src/transcription/auth.rs L87-L110, the port of litellm-rust's `aws_auth_config`). And `resolve_credentials` reads AWS_REGION_NAME a third time on its own (credentials.rs L45-L50). Every other production caller builds its settings without any fallback: `auth_settings` (crates/betterlite-bedrock/src/signing/target.rs L82-L99), used by the converse, embedding, batch, SageMaker, realtime, S3 signing and service signing paths, plus Vertex AWS federation, Polly, the Bedrock guardrails and RAG ingestion. So a proxy that sets AWS_ROLE_NAME and AWS_SESSION_NAME, or AWS_PROFILE_NAME, in its environment signs Bedrock calls with the ambient SDK identity instead of the role or profile LiteLLM uses. B10175's deviation row says the same for the chain.
+
+
+  One fallback, beside the type. `AwsSettings` (bedrock_settings.rs L61-L76) gains `#[must_use] pub fn with_environment<L: EnvironmentLookup>(self, lookup: &L) -> Self`: each of the ten fields above that is None takes its variable's value as given, an empty value included, and a field that is set stays as it is, as Python's `value if value is not None else os.getenv(env_var)` does. session_tags, role_arn, web_identity_token_file and bearer_token are not touched. `snapshot` keeps resolving the explicit params and their `os.environ/` references, then calls `with_environment(lookup)`, so `Resolver::value` and `Resolver::secret` lose their variable argument and the snapshot's output does not change. litellm-rust does the same step inside its resolver (`config.clone().with_environment(env_lookup)`, auth-aws/src/aws.rs L224).
+
+
+  The resolver applies it. `sources::resolve` starts from `settings.clone().with_environment(&resolver.native.environment)` and uses that one value everywhere it reads the settings today, the web identity inputs at L26-L30 included (they read the caller's `settings`, not `effective`). The region is the one the entry point passes, else AWS_REGION_NAME from the same map: `get_credentials` passes `settings.region_name`, `resolve_credentials` passes its argument, and the AWS_REGION_NAME read at credentials.rs L45-L50 goes, since LiteLLM's resolve_credentials hands its region to get_credentials and lets the fallback fill it (L512-L526).
+
+
+  The transcription copy goes. `chain_settings` reads only the params, and `credential_source(params)` drops its `env` argument; `validate_environment` keeps `env` for `resolve_region`. `host_supplied` and `SECRET_NAMES` stay. The env-fallback tests in transcription/tests/native_auth.rs move to the resolver's tests below.
+
+
+  docs/deviations/B10175.yaml loses the row about LiteLLM's AWS_* fallbacks (the one linking base_aws_llm.py#L364-L393); write `deviations: []` if it was the only one.
+
+
+  Tests. A new file crates/betterlite-bedrock/src/credentials/tests/environment_names.rs, mounted from credentials/tests.rs, holds `environment_names_reach_the_resolver`, an rstest over the existing Fixture (credentials/tests/support.rs L349-L392) that always passes `AwsSettings::default()` or a literal built by hand, never config-loaded settings, so the fallback can only come from the resolver. Cases: role (AWS_ROLE_NAME, AWS_SESSION_NAME and AWS_EXTERNAL_ID with env keys: the fixture's AssumeRole answer comes back and the recorded call carries that RoleSessionName and ExternalId, as environment_fields_reach_the_selected_branch checks for config settings at credentials_cases.rs L504-L545); web_identity (AWS_WEB_IDENTITY_TOKEN with role and session: AssumeRoleWithWebIdentity is called with that RoleArn); profile (AWS_PROFILE_NAME with a credentials file in the fixture's filesystem: the profile's keys come back, not the env keys); region (`resolve_credentials` with None and AWS_REGION_NAME set resolves static env keys, which `resolve_local_credentials` only returns directly when a region is set); explicit_wins (a role_name in the literal beats AWS_ROLE_NAME); and empty_value (AWS_ROLE_NAME set to "" leaves role_name Some(""), as the snapshot keeps it). On main the role, web_identity and profile cases get the SDK chain's env keys instead. The config's bedrock_settings_config_cases keep their expectations, and the oracle's bedrock-credentials and bedrock-settings cases keep matching LiteLLM, fixed-env-fallback-only included.
+
+
+  What users see. A proxy whose environment sets LiteLLM's AWS_ROLE_NAME (with AWS_SESSION_NAME), AWS_PROFILE_NAME, AWS_WEB_IDENTITY_TOKEN, AWS_STS_ENDPOINT or AWS_EXTERNAL_ID now assumes that role or reads that profile for Bedrock chat, embeddings, batches, SageMaker, realtime, guardrails, RAG ingestion and Vertex AWS federation, as LiteLLM does, instead of signing with whatever the SDK default chain finds.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/bedrock_settings.rs
+    - crates/betterlite-config/src/sections/bedrock_settings/tests.rs
+    - crates/betterlite-bedrock/src/credentials.rs
+    - crates/betterlite-bedrock/src/credentials/sources.rs
+    - crates/betterlite-bedrock/src/credentials/tests.rs
+    - crates/betterlite-bedrock/src/credentials/tests/**
+    - crates/betterlite-bedrock/src/transcription/auth.rs
+    - crates/betterlite-bedrock/src/transcription/tests/**
+    - docs/deviations/B10175.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L364-L393
+    why: get_credentials fills each unset parameter from its fixed AWS_* variable before choosing a flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512-L526
+    why: resolve_credentials passes its region to get_credentials, so a None region takes AWS_REGION_NAME there.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/auth-aws/src/aws.rs#L567-L591
+    why: aws_auth_config, the params-then-environment map transcription's chain_settings ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/auth-aws/src/aws.rs#L219-L225
+    why: litellm-rust's resolver applies with_environment itself before it classifies the flow.
+dod:
+  - text: AwsSettings::with_environment is the only code that maps the ten AWS_* names onto unset settings; the config snapshot and the resolver call it, and transcription's chain_settings reads only its params.
+    proof: [one-fallback, config-tests, resolver-tests]
+  - text: The resolver applies the fallback from its native environment before it picks a flow, so empty settings assume the AWS_ROLE_NAME role, use AWS_WEB_IDENTITY_TOKEN or read the AWS_PROFILE_NAME profile, and a None region takes AWS_REGION_NAME.
+    proof: [resolver-tests, oracle-credential-cases]
+  - text: B10175's deviation row about the AWS_* fallbacks is gone.
+    proof: [one-fallback]
+checks:
+  optional: [mutants]
+  commands:
+    - id: one-fallback
+      why: a second copy of the AWS_* fallback is left, resolve_credentials still reads AWS_REGION_NAME itself, or B10175's row stays
+      run: |-
+        test -z "$(grep -n 'or_else(|| env' crates/betterlite-bedrock/src/transcription/auth.rs)" &&
+        grep -q 'pub fn with_environment' crates/betterlite-config/src/sections/bedrock_settings.rs &&
+        test -z "$(grep -n 'AWS_REGION_NAME' crates/betterlite-bedrock/src/credentials.rs)" &&
+        test -z "$(grep -n 'base_aws_llm.py#L364-L393' docs/deviations/B10175.yaml)"
+    - id: config-tests
+      why: the snapshot changed its output after the move onto with_environment
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::bedrock_settings::/)'
+    - id: resolver-tests
+      why: the resolver misses an environment name, applies it after the flow choice, or lets it beat an explicit setting
+      run: grep -q 'fn environment_names_reach_the_resolver' crates/betterlite-bedrock/src/credentials/tests/environment_names.rs && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^credentials::/) | test(/^transcription::/) | test(/^signing::/)'
+    - id: oracle-credential-cases
+      why: the resolver or the snapshot no longer matches LiteLLM's get_credentials inputs and answers
+      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock -- tools/oracle/cases/helpers/providers/bedrock-credentials tools/oracle/cases/helpers/providers/bedrock-settings
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "SQS logging's own copy of the fallback (crates/betterlite-logging/src/sqs_logging/credentials.rs L55-L82, `effective`): B10194 moves SQS onto the chain and deletes it."
+  - "The S3 module reader for Python hooks (crates/betterlite-server/src/bucket_config/s3_reader.rs L261-L276), which calls NativeSources::load and never reaches the resolver."
+  - "betterlite-ocr's AWS_SECRET_NAMES (textract_ocr/environment.rs L19-L31), the names the OCR connection reads into its secrets, not a fallback."
+pitfalls:
+  - "transcription/auth.rs's SECRET_NAMES matches LiteLLM's list of names and has its own test; leave both."
+  - "sources::resolve reads `settings` for the web identity triple and `effective` everywhere else; after the change there is one filled value and every read uses it, or AWS_WEB_IDENTITY_TOKEN never reaches the web identity branch."
+  - "The cache key comes from the filled settings (`parameters(&effective, ...)`), as LiteLLM builds `args` after the fallback; a key from the caller's settings would let two different env identities share an entry."
+  - "Every test map sets AWS_EC2_METADATA_DISABLED=true and gives keys or a profile, so nothing reaches instance metadata."
+  - "Empty stays as given: an empty AWS_ROLE_NAME is Some(\"\"), and the flow checks after it already treat empty values as LiteLLM's truthiness does; don't filter empties in with_environment."
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

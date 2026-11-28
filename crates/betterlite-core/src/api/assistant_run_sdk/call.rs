@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::thread_runs::stream::RunEventHandler;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -77,7 +77,7 @@ impl RunClient {
     pub const fn kind(&self) -> ClientKind {
         match self.class {
             RunClientClass::OpenAi | RunClientClass::Azure => ClientKind::Sync,
-            RunClientClass::AsyncOpenAi | RunClientClass::AsyncAzure => ClientKind::Async,
+            RunClientClass::AsyncOpenAi | RunClientClass::AsyncAzure => ClientKind::Asynchronous,
         }
     }
 }

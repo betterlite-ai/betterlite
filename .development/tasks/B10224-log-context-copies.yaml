@@ -1,0 +1,331 @@
+id: B10224
+title: The LogContext copies in core, bedrock and provider and anthropic's Logging take betterlite-logging's LogContext
+description: >-
+  B10225 puts `LogContext<'borrow, 'env>` in crates/betterlite-logging/src/logging_pre_post/context.rs: `pub state: &'borrow mut LoggingState` beside `pub env: &'borrow PrePostEnv<'env>`, the logging object of one call and the pre and post call environment its records go through. Twenty-one structs in betterlite-core, betterlite-bedrock, betterlite-provider and betterlite-anthropic still declare those two fields themselves. Eighteen even share the name, and some users already take one family's copy for another: betterlite-python's genai/session.rs L26 and search_ocr/session.rs L11 import vector_store_http_write's. This task deletes the twenty-one and points every user at the home. Every crate involved, the oracle and bedrock's fuzz crate already depend on betterlite-logging, so no crate gains a dependency. It is a refactor: no record, log line, header or error changes, and nothing a user sees changes.
+
+
+  The LogContext copies. Each is `pub struct LogContext<'borrow, 'env>` with the home's two fields, so its users keep writing `LogContext` and only the import changes, to `use betterlite_logging::logging_pre_post::context::LogContext;` or `context::LogContext` inside an existing `betterlite_logging::logging_pre_post::{...}` group. Core: api/bfl/generation_call.rs L42-L45, file_http_content/service.rs L83-L86, file_http_upload/service.rs L87-L90, responses_compact_http/service.rs L75-L78, responses_create_http/service.rs L70-L73, responses_read_http/service.rs L88-L91, responses_write_http/service.rs L100-L103, vector_file_http_create_list/service.rs L81-L84, vector_file_http_read/service.rs L66-L69, vector_file_http_write/service.rs L65-L68, vector_store_http_write/service.rs L86-L89, video_remix_list_transport.rs L29-L33 and videos_http_transport/generation.rs L27-L31 (the last two with their comment line). Bedrock: embedding_call.rs L59-L62, image_call/plan.rs L69-L72 and rerank/plan.rs L54-L57. Provider: api/image_edit_http/service.rs L58-L61 and api/speech_http.rs L99-L102. Each goes, and so do the LoggingState and PrePostEnv imports that only it used; clippy's unused import lint names any left.
+
+
+  Three copies under other names. Provider's `RerankLogContext` (api/rerank_http.rs L50-L53) goes, and its users write `LogContext`: rerank_http.rs L70 and L169, rerank_http/logging.rs L8 and L18, rerank_http/tests.rs L43 and L166, betterlite-python's rerank/operations.rs L21 and L203, and the oracle's sdk_http rerank_http/native.rs, rerank_call/support.rs and rerank_provider_plan/providers.rs. Core's `GenerationCallEnvironment` (video_generation_call/call.rs L40-L44) names its state field `logging`: it goes, call.rs L76 and L119 take `LogContext<'call, '_>`, L78 destructures `LogContext { state: logging, env }` so the body keeps its binding, and its builders write `state:` (betterlite-python's video_calls/operations.rs L104-L107, betterlite-server's health_native_backend/video_generation.rs L90-L93, call/tests/support.rs L483). Anthropic's `Logging<'logging>` (response.rs L42-L45) uses one lifetime for both borrows; the home's two lifetimes cover every caller, so it goes, each `Logging<'_>` reads `LogContext<'_, '_>`, each `Logging { state, env }` reads `LogContext { state, env }`, and the `Logging as ResponseLogging` imports (anthropic chat_call/tests/fixture.rs L37, foundry anthropic/tests/support.rs L23) import the home under its own name. Its users: anthropic's response.rs, chat_call (send.rs, config.rs, tests/fixture.rs), batches (handler.rs, result.rs, tests/cases.rs, tests/support.rs) and response/tests/fixture.rs, bedrock claude_invoke (response.rs, tests/support.rs) and invoke_response/delegate.rs, vertex vertex_claude_chat/response.rs L36, foundry anthropic/tests/support.rs, provider anthropic_dispatch.rs L116 and L165, anthropic_dispatch/native/config.rs and foundry_dispatch/fixtures/claude.rs, server pass_through_logging/anthropic_passthrough_logging/transform.rs, and the oracle's helpers anthropic (batches/cases.rs, batches/retrieve.rs, chat_call/fixture.rs, response/fixture.rs), bedrock/claude_invoke/response.rs and foundry/anthropic/tests/fixture.rs. delegate.rs L60-L65 and L105-L109 destructure image_call's LogContext only to build anthropic's Logging or a new LogContext from the same two fields; with one type each passes `call.log` on as it is.
+
+
+  Files other tasks add or move first. B7877 adds betterlite-python's vector_files/calls.rs (vector_file_http_read's LogContext), vector_files/service.rs (`LogContext as FileLogContext` from vector_file_http_create_list) and vector_files/write_service.rs (`LogContext as WriteLogContext` from vector_file_http_write); each imports the home once under its own name and builds `LogContext {`. B7889 adds realtime_calls/http.rs, which imports vector_store_http_write's. B10183 moves the GenAI session, whose `run` takes `log: &mut LogContext<'_, '_>`, into betterlite-vertex's genai/session.rs and genai/session/, and betterlite-python's genai/session.rs keeps building the LogContext it passes in. B10200, B10216 and B10217 rewrite the `service::{...}` import groups and transport files these copies sit in, so this task starts from their result.
+
+
+  Every site. The scope lists each file that names a copy on main, plus the four B7877 and B7889 add and the vertex session B10183 fills. `rg -nw 'LogContext|RerankLogContext|GenerationCallEnvironment|FileLogContext|WriteLogContext' crates tools` lists them on the base, and the anthropic paragraph above names every user of its Logging; every hit that names a deleted path or name changes, and a hit that only writes `LogContext<'_, '_>` stays. Bedrock's converse_call/tests/fixtures/run.rs L101, L113, L155 and L198 spell `super::bedrock::image_call::plan::LogContext` in full, and bedrock's fuzz target fuzz_targets/bedrock_invoke_response.rs L11 imports image_call's; both name the home.
+
+
+  Tests. No new test: the owners' tests already pin the pre-call and post-call records each family writes, and they must pass with only imports and names changed. The oracle files change only imports and names, and CI's clippy lane builds them.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/batches/handler.rs
+    - crates/betterlite-anthropic/src/batches/result.rs
+    - crates/betterlite-anthropic/src/batches/tests/cases.rs
+    - crates/betterlite-anthropic/src/batches/tests/support.rs
+    - crates/betterlite-anthropic/src/chat_call/config.rs
+    - crates/betterlite-anthropic/src/chat_call/send.rs
+    - crates/betterlite-anthropic/src/chat_call/tests/fixture.rs
+    - crates/betterlite-anthropic/src/response.rs
+    - crates/betterlite-anthropic/src/response/tests/fixture.rs
+    - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_response.rs
+    - crates/betterlite-bedrock/src/batch_call/logging.rs
+    - crates/betterlite-bedrock/src/batch_call/tests/fixture.rs
+    - crates/betterlite-bedrock/src/bedrock_http_stream/converse.rs
+    - crates/betterlite-bedrock/src/bedrock_http_stream/fake.rs
+    - crates/betterlite-bedrock/src/bedrock_http_stream/invoke.rs
+    - crates/betterlite-bedrock/src/bedrock_http_stream/tests/support.rs
+    - crates/betterlite-bedrock/src/claude_invoke/response.rs
+    - crates/betterlite-bedrock/src/claude_invoke/tests/support.rs
+    - crates/betterlite-bedrock/src/converse_call/buffered.rs
+    - crates/betterlite-bedrock/src/converse_call.rs
+    - crates/betterlite-bedrock/src/converse_call/streaming.rs
+    - crates/betterlite-bedrock/src/converse_call/tests/fixtures/run.rs
+    - crates/betterlite-bedrock/src/converse_response/tests/support.rs
+    - crates/betterlite-bedrock/src/converse_response/transform.rs
+    - crates/betterlite-bedrock/src/embedding_call/execute/bridge.rs
+    - crates/betterlite-bedrock/src/embedding_call/execute.rs
+    - crates/betterlite-bedrock/src/embedding_call/hooks.rs
+    - crates/betterlite-bedrock/src/embedding_call.rs
+    - crates/betterlite-bedrock/src/embedding_call/tests/fixture.rs
+    - crates/betterlite-bedrock/src/embedding_jobs/logging.rs
+    - crates/betterlite-bedrock/src/embedding_jobs/tests/fixture.rs
+    - crates/betterlite-bedrock/src/image_call/execute.rs
+    - crates/betterlite-bedrock/src/image_call/plan.rs
+    - crates/betterlite-bedrock/src/image_call/tests/cases.rs
+    - crates/betterlite-bedrock/src/image_edits/prepare.rs
+    - crates/betterlite-bedrock/src/image_edits/response.rs
+    - crates/betterlite-bedrock/src/image_edits/tests/cases.rs
+    - crates/betterlite-bedrock/src/invoke_response/delegate.rs
+    - crates/betterlite-bedrock/src/invoke_response.rs
+    - crates/betterlite-bedrock/src/invoke_response/tests/support.rs
+    - crates/betterlite-bedrock/src/invoke_stream.rs
+    - crates/betterlite-bedrock/src/invoke_stream/tests/support.rs
+    - crates/betterlite-bedrock/src/invoke_stream/timing.rs
+    - crates/betterlite-bedrock/src/nova_chat/direct.rs
+    - crates/betterlite-bedrock/src/nova_chat/tests/cases.rs
+    - crates/betterlite-bedrock/src/qwen_deepseek/tests/support.rs
+    - crates/betterlite-bedrock/src/rerank/execute.rs
+    - crates/betterlite-bedrock/src/rerank/plan.rs
+    - crates/betterlite-bedrock/src/rerank/tests/cases.rs
+    - crates/betterlite-core/src/api/bfl/edit_call.rs
+    - crates/betterlite-core/src/api/bfl/edit_call/tests.rs
+    - crates/betterlite-core/src/api/bfl/generation_call.rs
+    - crates/betterlite-core/src/api/bfl/generation_call/tests.rs
+    - crates/betterlite-core/src/api/file_http_content/service.rs
+    - crates/betterlite-core/src/api/file_http_content/tests/support.rs
+    - crates/betterlite-core/src/api/file_http_metadata/service/endpoints.rs
+    - crates/betterlite-core/src/api/file_http_metadata/service/listing.rs
+    - crates/betterlite-core/src/api/file_http_metadata/service.rs
+    - crates/betterlite-core/src/api/file_http_metadata/tests/support.rs
+    - crates/betterlite-core/src/api/file_http_upload/service/pre_call.rs
+    - crates/betterlite-core/src/api/file_http_upload/service.rs
+    - crates/betterlite-core/src/api/file_http_upload/tests.rs
+    - crates/betterlite-core/src/api/genai/generate_content/answered.rs
+    - crates/betterlite-core/src/api/genai/generate_content/async_stream.rs
+    - crates/betterlite-core/src/api/genai/generate_content/async_unary.rs
+    - crates/betterlite-core/src/api/genai/generate_content/dispatch.rs
+    - crates/betterlite-core/src/api/genai/generate_content/native.rs
+    - crates/betterlite-core/src/api/genai/generate_content/stream.rs
+    - crates/betterlite-core/src/api/genai/generate_content/tests/support.rs
+    - crates/betterlite-core/src/api/genai/generate_content/unary.rs
+    - crates/betterlite-core/src/api/genai_http/service/prepare.rs
+    - crates/betterlite-core/src/api/genai_http/service.rs
+    - crates/betterlite-core/src/api/genai_http/tests.rs
+    - crates/betterlite-core/src/api/genai_http/tests/support.rs
+    - crates/betterlite-core/src/api/messages_response_call/seams.rs
+    - crates/betterlite-core/src/api/messages_response_call/service.rs
+    - crates/betterlite-core/src/api/messages_response_call/tests.rs
+    - crates/betterlite-core/src/api/responses_compact_call/execute.rs
+    - crates/betterlite-core/src/api/responses_compact_call.rs
+    - crates/betterlite-core/src/api/responses_compact_call/tests/compact_model_and_encrypted_items.rs
+    - crates/betterlite-core/src/api/responses_compact_call/tests/compact_native_support_required.rs
+    - crates/betterlite-core/src/api/responses_compact_call/tests/compact_optional_parameters.rs
+    - crates/betterlite-core/src/api/responses_compact_call/tests/compact_timeout_and_residency.rs
+    - crates/betterlite-core/src/api/responses_compact_http/service.rs
+    - crates/betterlite-core/src/api/responses_compact_http/tests/support.rs
+    - crates/betterlite-core/src/api/responses_create_call/deps.rs
+    - crates/betterlite-core/src/api/responses_create_call.rs
+    - crates/betterlite-core/src/api/responses_create_call/tests/support.rs
+    - crates/betterlite-core/src/api/responses_create/execute.rs
+    - crates/betterlite-core/src/api/responses_create_http/service/finish.rs
+    - crates/betterlite-core/src/api/responses_create_http/service/hook.rs
+    - crates/betterlite-core/src/api/responses_create_http/service/request.rs
+    - crates/betterlite-core/src/api/responses_create_http/service.rs
+    - crates/betterlite-core/src/api/responses_create_http/tests/support.rs
+    - crates/betterlite-core/src/api/responses_create/logging.rs
+    - crates/betterlite-core/src/api/responses_create/native.rs
+    - crates/betterlite-core/src/api/responses_create/tests/builders.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_call/executor.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_call/service.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_write/service.rs
+    - crates/betterlite-core/src/api/responses_read_http/service.rs
+    - crates/betterlite-core/src/api/responses_read_http/tests/support.rs
+    - crates/betterlite-core/src/api/responses_write_http/service/request.rs
+    - crates/betterlite-core/src/api/responses_write_http/service.rs
+    - crates/betterlite-core/src/api/responses_write_http/tests/support.rs
+    - crates/betterlite-core/src/api/search_http.rs
+    - crates/betterlite-core/src/api/search_http/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_http_create_list/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_create_list/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_http_read.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_read/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/service/request.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/tests/support.rs
+    - crates/betterlite-core/src/api/vector_file_read/service.rs
+    - crates/betterlite-core/src/api/vector_file_read/tests.rs
+    - crates/betterlite-core/src/api/vector_search_execution/service/direct.rs
+    - crates/betterlite-core/src/api/vector_search_execution/service/logging.rs
+    - crates/betterlite-core/src/api/vector_search_execution/service.rs
+    - crates/betterlite-core/src/api/vector_search_execution/tests/support.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/service.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/tests/support.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/tests/support.rs
+    - crates/betterlite-core/src/api/vector_store_read/tests/native_calls.rs
+    - crates/betterlite-core/src/api/vector_store_search/service/create_call.rs
+    - crates/betterlite-core/src/api/vector_store_search/service/search_call.rs
+    - crates/betterlite-core/src/api/vector_store_search/tests/create.rs
+    - crates/betterlite-core/src/api/vector_store_search/tests/search.rs
+    - crates/betterlite-core/src/api/video_generation_call/call.rs
+    - crates/betterlite-core/src/api/video_generation_call/call/tests/support.rs
+    - crates/betterlite-core/src/api/video_generation_call/handler.rs
+    - crates/betterlite-core/src/api/video_list_call.rs
+    - crates/betterlite-core/src/api/video_remix_call.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/list.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/logging.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/remix.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/response.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/tests/support.rs
+    - crates/betterlite-core/src/api/videos_http_transport/generation.rs
+    - crates/betterlite-core/src/api/videos_http_transport/tests/video_http_transport/support.rs
+    - crates/betterlite-core/src/search.rs
+    - crates/betterlite-core/src/search/tests/support.rs
+    - crates/betterlite-foundry/src/anthropic/tests/support.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/native/config.rs
+    - crates/betterlite-provider/src/anthropic_dispatch.rs
+    - crates/betterlite-provider/src/api/image_edit_http/asynchronous.rs
+    - crates/betterlite-provider/src/api/image_edit_http/request.rs
+    - crates/betterlite-provider/src/api/image_edit_http.rs
+    - crates/betterlite-provider/src/api/image_edit_http/service.rs
+    - crates/betterlite-provider/src/api/image_edit_http/tests/support.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/calls.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/session.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/tests/calls.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/tests.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/tests/wire.rs
+    - crates/betterlite-provider/src/api/rerank_http/logging.rs
+    - crates/betterlite-provider/src/api/rerank_http.rs
+    - crates/betterlite-provider/src/api/rerank_http/tests.rs
+    - crates/betterlite-provider/src/api/speech_http/logging.rs
+    - crates/betterlite-provider/src/api/speech_http.rs
+    - crates/betterlite-provider/src/api/speech_http/tests/support.rs
+    - crates/betterlite-provider/src/api/transcription_http.rs
+    - crates/betterlite-provider/src/api/transcription_http/tests/support.rs
+    - crates/betterlite-provider/src/azure_media_dispatch/speech/native.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/execute/edit.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/execute/generate.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/execute.rs
+    - crates/betterlite-provider/src/bedrock_image_dispatch/tests/fixture.rs
+    - crates/betterlite-provider/src/foundry_dispatch/fixtures/claude.rs
+    - crates/betterlite-provider/src/watsonx_transcription.rs
+    - crates/betterlite-provider/src/watsonx_transcription/tests/support.rs
+    - crates/betterlite-python/src/genai/session.rs
+    - crates/betterlite-python/src/realtime_calls/http.rs
+    - crates/betterlite-python/src/rerank/operations.rs
+    - crates/betterlite-python/src/search_ocr/session.rs
+    - crates/betterlite-python/src/vector_files/calls.rs
+    - crates/betterlite-python/src/vector_files/service.rs
+    - crates/betterlite-python/src/vector_files/write_service.rs
+    - crates/betterlite-python/src/vector_search/session.rs
+    - crates/betterlite-python/src/video_calls/operations.rs
+    - crates/betterlite-server/src/health_native_backend/video_generation.rs
+    - crates/betterlite-server/src/pass_through_logging/anthropic_passthrough_logging/transform.rs
+    - crates/betterlite-vertex/src/genai/session/**
+    - crates/betterlite-vertex/src/genai/session.rs
+    - crates/betterlite-vertex/src/vertex_claude_chat/response.rs
+    - tools/oracle/src/helpers/anthropic/batches/cases.rs
+    - tools/oracle/src/helpers/anthropic/batches/retrieve.rs
+    - tools/oracle/src/helpers/anthropic/chat_call/fixture.rs
+    - tools/oracle/src/helpers/anthropic/response/fixture.rs
+    - tools/oracle/src/helpers/bedrock/claude_invoke/response.rs
+    - tools/oracle/src/helpers/bedrock/converse_response.rs
+    - tools/oracle/src/helpers/bedrock/http_stream/run.rs
+    - tools/oracle/src/helpers/bedrock/invoke_response.rs
+    - tools/oracle/src/helpers/bedrock/invoke_stream/run.rs
+    - tools/oracle/src/helpers/bedrock/invoke_stream/support.rs
+    - tools/oracle/src/helpers/bedrock/nova_chat/ops.rs
+    - tools/oracle/src/helpers/bedrock/other_embedding_call/fixtures/harness.rs
+    - tools/oracle/src/helpers/bedrock/other_embedding_jobs/env.rs
+    - tools/oracle/src/helpers/bedrock/other_image_call/handlers.rs
+    - tools/oracle/src/helpers/bedrock/other_image_edits/driver.rs
+    - tools/oracle/src/helpers/bedrock/other_rerank/driver.rs
+    - tools/oracle/src/helpers/bedrock/qwen_deepseek.rs
+    - tools/oracle/src/helpers/core_ops/b3488.rs
+    - tools/oracle/src/helpers/core_ops/b3489.rs
+    - tools/oracle/src/helpers/core_ops/bfl_edit_call/job.rs
+    - tools/oracle/src/helpers/core_ops/bfl_jobs/job.rs
+    - tools/oracle/src/helpers/core_ops/messages_response_call/script.rs
+    - tools/oracle/src/helpers/core_ops/responses_ws_managed/fixtures/dispatch.rs
+    - tools/oracle/src/helpers/foundry/anthropic/tests/fixture.rs
+    - tools/oracle/src/helpers/provider/bedrock_image_dispatch.rs
+    - tools/oracle/src/sdk_http/file_content_stream/fixtures/wire.rs
+    - tools/oracle/src/sdk_http/file_create_list_transport/support.rs
+    - tools/oracle/src/sdk_http/file_http_content/support.rs
+    - tools/oracle/src/sdk_http/file_http_metadata/support.rs
+    - tools/oracle/src/sdk_http/file_http_upload/native.rs
+    - tools/oracle/src/sdk_http/file_provider_read/wire.rs
+    - tools/oracle/src/sdk_http/image_edit_call/openai.rs
+    - tools/oracle/src/sdk_http/image_edit_http/support.rs
+    - tools/oracle/src/sdk_http/realtime_http_calls/native.rs
+    - tools/oracle/src/sdk_http/realtime_http_transport/native.rs
+    - tools/oracle/src/sdk_http/rerank_call/support.rs
+    - tools/oracle/src/sdk_http/rerank_http/native.rs
+    - tools/oracle/src/sdk_http/rerank_provider_plan/providers.rs
+    - tools/oracle/src/sdk_http/response_chat_dispatch/fixtures/execution.rs
+    - tools/oracle/src/sdk_http/responses_async_create/native.rs
+    - tools/oracle/src/sdk_http/responses_compact/support.rs
+    - tools/oracle/src/sdk_http/responses_compact_transport/support.rs
+    - tools/oracle/src/sdk_http/responses_create/native.rs
+    - tools/oracle/src/sdk_http/responses_create_transport/support.rs
+    - tools/oracle/src/sdk_http/responses_read_transport/support.rs
+    - tools/oracle/src/sdk_http/responses_write_transport/support.rs
+    - tools/oracle/src/sdk_http/speech_http/support.rs
+    - tools/oracle/src/sdk_http/store_create_read_transport/support.rs
+    - tools/oracle/src/sdk_http/transcription_call/xai.rs
+    - tools/oracle/src/sdk_http/transcription_http/fixtures/source.rs
+    - tools/oracle/src/sdk_http/vector_file_create_list/native.rs
+    - tools/oracle/src/sdk_http/vector_file_read/native.rs
+    - tools/oracle/src/sdk_http/vector_file_read_transport/support.rs
+    - tools/oracle/src/sdk_http/vector_file_write/native.rs
+    - tools/oracle/src/sdk_http/vector_file_write_transport/support.rs
+    - tools/oracle/src/sdk_http/vector_search_transport/support.rs
+    - tools/oracle/src/sdk_http/vector_store_read/native.rs
+    - tools/oracle/src/sdk_http/vector_store_search_create/native.rs
+    - tools/oracle/src/sdk_http/vector_store_search_create/native/search.rs
+    - tools/oracle/src/sdk_http/vector_store_transport/support.rs
+    - tools/oracle/src/sdk_http/vector_store_write/native.rs
+  lint_tables: false
+references: []
+dod:
+  - text: No LogContext copy, RerankLogContext, GenerationCallEnvironment or anthropic Logging is left, so betterlite-logging's LogContext is the only struct holding the logging state and the pre and post call environment.
+    proof: [log-context-copies]
+  - text: Every user names the home, and the owners' tests in core, bedrock, provider, python, server, anthropic, vertex and foundry pass with only imports and names changed.
+    proof: [core-log-context-tests, bedrock-log-context-tests, provider-log-context-tests, python-log-context-tests, server-log-context-tests, anthropic-log-context-tests, vertex-log-context-tests, foundry-log-context-tests]
+checks:
+  optional: []
+  commands:
+    - id: log-context-copies
+      why: a module still declares its own LogContext, RerankLogContext, GenerationCallEnvironment or anthropic Logging, or a user still aliases a copy
+      run: |-
+        test -z "$(grep -rlE '^pub struct (LogContext|RerankLogContext|GenerationCallEnvironment|Logging)<' crates tools --include=*.rs | grep -vx 'crates/betterlite-logging/src/logging_pre_post/context.rs')" &&
+        test -z "$(grep -rnwE 'RerankLogContext|GenerationCallEnvironment|FileLogContext|WriteLogContext|ResponseLogging' crates tools --include=*.rs)"
+    - id: core-log-context-tests
+      why: a core handler family no longer writes its pre-call or post-call records through the logging pair it is handed
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(api::(bfl|file_http_content|file_http_metadata|file_http_upload|genai|genai_http|messages_response_call|responses_compact_call|responses_compact_http|responses_create|responses_create_call|responses_create_http|responses_lifecycle_call|responses_lifecycle_write|responses_read_http|responses_write_http|search_http|vector_file_http_create_list|vector_file_http_read|vector_file_http_write|vector_file_read|vector_search_execution|vector_store_http_create_read|vector_store_http_write|vector_store_read|vector_store_search|video_generation_call|video_list_call|video_remix_call|video_remix_list_transport|videos_http_transport)|search)::/) - test(/replays_/)'
+    - id: bedrock-log-context-tests
+      why: a bedrock family lost its logging pair on the way to pre_call or to anthropic's transform
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^(batch_call|bedrock_http_stream|claude_invoke|converse_call|converse_response|embedding_call|embedding_jobs|image_call|image_edits|invoke_response|invoke_stream|nova_chat|qwen_deepseek|rerank)::/) - test(/replays_/)'
+    - id: provider-log-context-tests
+      why: a provider transport or dispatch no longer hands its logging pair to the call it wraps
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^(api::(image_edit_http|realtime_http_transport|rerank_http|speech_http|transcription_http)|anthropic_dispatch|azure_media_dispatch|bedrock_image_dispatch|foundry_dispatch|watsonx_transcription)::/) - test(/replays_/)'
+    - id: python-log-context-tests
+      why: a Python session no longer builds the logging pair its core or provider call takes
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^(genai|realtime_calls|rerank|search_ocr|vector_files|vector_search|video_calls)::/)'
+    - id: server-log-context-tests
+      why: the video generation health check or the Anthropic pass-through transform no longer builds the logging pair
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(health_native_backend::video_generation|pass_through_logging::anthropic_passthrough_logging)::/) - test(/replays_/)'
+    - id: anthropic-log-context-tests
+      why: anthropic's transform, chat call or batch retrieve no longer logs through the pair it is handed
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^(response|chat_call|batches)::/) - test(/replays_/)'
+    - id: vertex-log-context-tests
+      why: the GenAI session or the Vertex Claude transform no longer logs through the pair it is handed
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^(genai|vertex_claude_chat)::/) - test(/replays_/)'
+    - id: foundry-log-context-tests
+      why: foundry's Anthropic tests no longer hand anthropic's transform its logging pair
+      run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^anthropic::/) - test(/replays_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10225's copies, which land first and create the home: provider's seven CallLogging, the ten PrePostLogger in openai, azure and core soniox, and core eval_http's EvalLogging."
+  - "Not copies: core responses_lifecycle_call's `LifecycleLog` (service.rs L27-L30) owns its PrePostEnv and lends it to a LogContext; the oracle sdk_http `Fixture` structs and the bedrock helpers' `Run` structs own a LoggingState; core's VideoCallDeps, GenerationHandlerEnvironment and the other structs that carry the pair beside call data have more fields. They stay."
+  - "`BatchesError::Logging` (anthropic batches/error.rs L37) and the oracle's `TranscriptionError::Logging` are error variants that share a word with anthropic's struct and stay."
+pitfalls:
+  - "B7877's vector_files/service.rs and write_service.rs alias two different copies; after the merge both aliases name one type, so drop the alias rather than keep `LogContext as FileLogContext`, and the copies check fails while either alias is left."
+  - "Bedrock's converse_call/tests/fixtures/run.rs writes `super::bedrock::image_call::plan::LogContext` inline at four places and no `use` line names it, so a search over imports alone misses them."
+  - "GenerationCallEnvironment's field is `logging`, not `state`: three builders and one destructure change their field name, and the rest of call.rs keeps reading the `logging` binding."
+  - "Anthropic's Logging is taken by value everywhere (`logging: Logging<'_>`), and that stays: write `LogContext<'_, '_>` by value, not `&mut LogContext`, so anthropic_dispatch.rs L165 and the batch handlers keep their shape."
+  - "anthropic_dispatch.rs is `#[rustfmt::skip]` from L145; edit L165 by hand and keep it on one line."
+  - "Files near the line caps: tools/oracle/src/helpers/bedrock/other_rerank/driver.rs has 298 of 300 counted lines and core responses_write_http/service.rs 295; keep the home import on the line the old import held."
+  - "B10216 rewrites the `service::{ClientKind, LogContext, SuppliedClient, ...}` groups in these files before this task starts; take LogContext out of the group it left and add the home import, without restoring anything it removed."
+  - "A dispatched run builds nothing, so walk every hit of the rg line in the description on the base before committing; each missed import costs a CI round."
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

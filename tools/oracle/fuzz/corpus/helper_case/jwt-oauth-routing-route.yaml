@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-oauth-routing-route
+call:
+  b10161:
+    operation: route
+    token: eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiaHR0cHM6Ly9pc3N1ZXIuZXhhbXBsZSIsICJhdWQiOiAiYXBpIiwgImNsaWVudF9pZCI6ICJjbGllbnQtYWJjIiwgInNjb3BlIjogIm9wZW5pZCBwcm9maWxlIiwgInN1YiI6ICJ1c2VyLTEifQ.InNpZyI
+    routing_overrides: [{iss: "https://issuer.example", scope: profile}]
+env: {}
+compare: {ignore: []}

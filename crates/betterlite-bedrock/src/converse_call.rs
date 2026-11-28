@@ -4,6 +4,7 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::user_url::validate::Resolve;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
@@ -24,11 +25,11 @@ use crate::agentcore_stream::IdSource;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::{ConverseMedia, ConverseSettings};
 use crate::converse_response::wire::ModelResponse;
+use crate::credentials::CredentialSource;
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
 use crate::model_routes::ParamMap;
-use crate::rerank::plan::CredentialSource;
-use crate::rerank::transport::{ClientKind, RerankHttpReply, SuppliedClient};
+use crate::rerank::transport::RerankHttpReply;
 
 pub mod buffered;
 pub mod error;
@@ -138,7 +139,7 @@ pub async fn converse_call<Cred, Source, Transport, Factory, Lookup, R, Ids>(
     assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
 ) -> Result<CallPlan, ConverseCallError>
 where
-    Cred: CredentialSource + Sync,
+    Cred: CredentialSource,
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
     Factory: ConverseClientFactory,
@@ -177,7 +178,7 @@ where
     Cred: Sync,
 {
     let route = if call.acompletion {
-        ClientKind::Async
+        ClientKind::Asynchronous
     } else {
         ClientKind::Sync
     };

@@ -1,0 +1,24 @@
+kind: helper
+name: auth-model-budgets-auth-global-spend-singleflight
+call:
+  auth_model_budgets:
+    calls:
+      - function: global_spend
+        max_budget: 100.0
+        spend: 99.5
+        tokens: [sk-one, sk-two]
+        admin_name: root
+      - function: global_spend
+        max_budget: -1.0
+        spend: 5.0
+        tokens: [sk-off]
+        admin_name: root
+      - function: global_spend
+        max_budget: 3.0
+        spend: 1.0
+        tokens: [sk-null-db]
+        admin_name: root
+        database: false
+env: {}
+compare:
+  ignore: []

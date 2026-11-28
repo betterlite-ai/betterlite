@@ -1,0 +1,253 @@
+id: B10221
+title: One ClientKind and SuppliedClient in betterlite-http for the OpenAI SDK, anthropic and foundry client class copies
+description: >-
+  Six betterlite-openai modules, anthropic's chat call and foundry's embeddings each declare their own two-variant enum for the class of the client a caller hands LiteLLM: the sync or the async one (OpenAI or AsyncOpenAI, HTTPHandler or AsyncHTTPHandler), the class LiteLLM's isinstance checks test. Anthropic and foundry also pair it with a borrowed transport in a struct of their own. Core has the same pair as `ClientKind` and `SuppliedClient<'client, Client>` in crates/betterlite-core/src/api/vector_store_http_write/service.rs, but these crates sit below betterlite-core and cannot import it. This task writes one ClientKind and one SuppliedClient into the empty module crates/betterlite-http/src/client_kind.rs (the stub and its `pub mod client_kind;` line in lib.rs are on main) and points every copy's users at it. betterlite-openai, betterlite-anthropic, betterlite-foundry, betterlite-azure, every crate above them and every oracle helper group in scope already depend on betterlite-http, so no Cargo.toml changes and no new crate edge. B10220 moves core's pair onto the same home once B10216 and B10217 have landed. It is a refactor: what each family sends, logs, raises and reports stays the same.
+
+
+  The home. `#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]` and `#[serde(rename_all = "snake_case")]` over `pub enum ClientKind { Sync, Asynchronous }`, with `#[serde(rename = "async")]` on Asynchronous and a one-line comment saying what the class is. The variant is spelled Asynchronous as core's is, so B10220 renames no core user. The serde names are "sync" and "async", the names openai's batches and text_completion_transport enums read and write today and the names every oracle case sends. `impl ClientKind` holds `#[must_use] pub const fn label(self) -> &'static str` giving "sync" and "async", the method image_variations and speech carry today. `pub struct SuppliedClient<'client, Client> { pub kind: ClientKind, pub transport: &'client Client }` follows, with no derives, as anthropic's and foundry's have none. Its tests go in client_kind/tests.rs behind `#[cfg(test)] mod tests;`: both values serialize with serde_json to "sync" and "async" and read back, and label gives the same two names.
+
+
+  The copies, all `Sync, Async`. betterlite-openai: assistants/client.rs L52-L56, batches/sdk.rs L11-L16 (with the serde derives), image_variations/client.rs L9-L13 plus its label impl L15-L23, speech/client.rs L10-L14 plus its label impl L16-L24, text_completion_transport/sdk.rs L13-L19 (comment, serde derives) and transcription/client.rs L10-L14. betterlite-anthropic: chat_call/transport.rs L10-L15 (`ClientKind` and its comment) and L16-L19 (`SuppliedChatClient<'clients, Client> { kind, transport }`). betterlite-foundry: embeddings/call.rs L23-L27 (`EmbeddingMode`) and L29-L33 (`SuppliedClient<'client, Client> { mode, client }` and its comment). Each goes, and its module imports `betterlite_http::client_kind::ClientKind` (and `SuppliedClient` for anthropic and foundry) in its place.
+
+
+  The users. Every `ClientKind::Async` of these enums becomes `ClientKind::Asynchronous`, also where a file renames the import: azure's transcription/call.rs L15, call/client.rs L7 and call/reply.rs L9 import openai's transcription ClientKind as `CallKind`, and provider's azure_resource_dispatch/tests/files_batches_cases.rs L18 and the oracle's azure/batches/fixture.rs L14 import openai's batches ClientKind as `SdkKind`. `EmbeddingMode` becomes `ClientKind`; the fields that hold it (`mode` on TextEmbeddingCall L45, FoundryEmbeddingRequest L69 and the test support) keep their names. foundry's supplied client takes the home's field names, so `mode` and `client` become `kind` and `transport` wherever one is built or read. `SuppliedChatClient` becomes `SuppliedClient`. The users by crate: betterlite-openai's assistants, batches, image_variations, speech, text_completion_execution, text_completion_transport, thread_runs, threads and transcription; betterlite-azure's assistants, azure_assistant_definitions, azure_message_attachments, azure_thread_messages, batches and transcription; anthropic's chat_call; foundry's anthropic and embeddings; core's api::assistant_read_delete, assistant_run_sdk (its tests reach the type through `use super::*`) and assistant_threads; provider's adapters/vertex_agent_stream, anthropic_dispatch, azure_resource_dispatch, bytez_stream_call, foundry_dispatch, langgraph_stream, openai_assistant_dispatch, openai_dispatch/fixtures/text_transport.rs and openai_resource_dispatch; server's api::assistant_dispatch; and the oracle helpers under tools/oracle/src/helpers/anthropic, azure, foundry, openai and provider. The scope lists each file.
+
+
+  The oracle's wire copies. Eight helper enums read the case's "sync" or "async" only to turn it into one of these classes: `KindName` in tools/oracle/src/helpers/azure/assistant_definitions.rs L25-L29, assistants.rs L27-L30, message_attachments.rs L26-L29 and thread_messages.rs L25-L29, `KindName` in openai/assistants/input.rs L56-L59, `Kind` in openai/image_variations/input.rs L19-L22, `SuppliedKind` in openai/speech/input.rs L48-L51 and `ModeName` in foundry/embeddings/input.rs L32-L35. Each field that holds one takes `ClientKind` itself, and the converters go with them: `client_kind` in azure's assistants/steps.rs L200, assistant_definitions/steps.rs L167, message_attachments/steps.rs L148 and thread_messages/steps.rs L159, `kind_of` in openai/assistants.rs L108, `ModeName::mode` (foundry/embeddings/input.rs L37-L44) and the inline matches in openai/image_variations.rs L82-L83 and openai/speech/input.rs L91-L92. Five hand-written `ClientKind::Sync => "sync"` matches (azure's assistant_definitions/reports.rs L49, assistants/reports.rs L42, message_attachments/reports.rs L66, thread_messages/reports.rs L55 and openai/assistants.rs L169) call `label()` instead. The two azure KindName enums derive Default with Sync as the default, but no struct that holds one derives Default, so nothing reads it.
+
+
+  Not merged. openai's files.rs ClientKind (L57-L60) carries the FilesClient in each variant, so it is a supplied client, not a class. speech's `SuppliedClient` (client.rs L31-L40), assistants' `SdkClient` (client.rs L58-L59) and image_variations' `ImageVariationClient` (client.rs L29-L39) carry the constructor settings, not a borrowed transport, so they keep their structs and only their `kind` fields take the home type. azure's endpoints::projection `ClientKind` has five variants (AzureOpenAi, AsyncAzureOpenAi, OpenAi, AsyncOpenAi, Other), so it and its `SuppliedClient` stay. foundry's AgentRunMode and anthropic `Style`, azure's image_transport CallStyle, openai's codestral_call Mode, cohere_legacy_embedding SdkMode, compatible_embedding Mode and compatible_line_stream Mode pick which LiteLLM call runs, sync or async, not the class of a supplied client; that is a different concept and stays.
+
+
+  Tests. The home's tests.rs is the only new test. The families' tests already pick a supplied client by class and rebuild the other class, and they pass with only the import, the variant name and foundry's field names changed.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-anthropic/src/chat_call.rs
+    - crates/betterlite-anthropic/src/chat_call/send.rs
+    - crates/betterlite-anthropic/src/chat_call/send/streams.rs
+    - crates/betterlite-anthropic/src/chat_call/tests/cases.rs
+    - crates/betterlite-anthropic/src/chat_call/tests/harness.rs
+    - crates/betterlite-anthropic/src/chat_call/tests/send.rs
+    - crates/betterlite-anthropic/src/chat_call/transport.rs
+    - crates/betterlite-azure/src/assistants/operations.rs
+    - crates/betterlite-azure/src/assistants/tests/dispatch.rs
+    - crates/betterlite-azure/src/assistants/tests/handler.rs
+    - crates/betterlite-azure/src/assistants/tests/poll.rs
+    - crates/betterlite-azure/src/assistants/tests/stream.rs
+    - crates/betterlite-azure/src/assistants/tests/support.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/client.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/operations.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/tests/create.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/tests/delete.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/tests/flags.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/tests/guards.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/tests/inputs.rs
+    - crates/betterlite-azure/src/azure_assistant_definitions/tests/list.rs
+    - crates/betterlite-azure/src/azure_message_attachments/operations.rs
+    - crates/betterlite-azure/src/azure_message_attachments/tests/append.rs
+    - crates/betterlite-azure/src/azure_message_attachments/tests/inputs.rs
+    - crates/betterlite-azure/src/azure_message_attachments/tests/list.rs
+    - crates/betterlite-azure/src/azure_message_attachments/tests/support.rs
+    - crates/betterlite-azure/src/azure_thread_messages/operations.rs
+    - crates/betterlite-azure/src/azure_thread_messages/tests/create.rs
+    - crates/betterlite-azure/src/azure_thread_messages/tests/flags.rs
+    - crates/betterlite-azure/src/azure_thread_messages/tests/retrieve.rs
+    - crates/betterlite-azure/src/azure_thread_messages/tests/support.rs
+    - crates/betterlite-azure/src/batches/client.rs
+    - crates/betterlite-azure/src/batches/tests.rs
+    - crates/betterlite-azure/src/transcription/call/client.rs
+    - crates/betterlite-azure/src/transcription/call/reply.rs
+    - crates/betterlite-azure/src/transcription/call/request.rs
+    - crates/betterlite-azure/src/transcription/call.rs
+    - crates/betterlite-core/src/api/assistant_read_delete/call.rs
+    - crates/betterlite-core/src/api/assistant_read_delete/request.rs
+    - crates/betterlite-core/src/api/assistant_read_delete.rs
+    - crates/betterlite-core/src/api/assistant_read_delete/sdk_dispatch.rs
+    - crates/betterlite-core/src/api/assistant_run_sdk/call.rs
+    - crates/betterlite-core/src/api/assistant_run_sdk/convert.rs
+    - crates/betterlite-core/src/api/assistant_run_sdk/service.rs
+    - crates/betterlite-core/src/api/assistant_run_sdk/tests/polls.rs
+    - crates/betterlite-core/src/api/assistant_run_sdk/tests.rs
+    - crates/betterlite-core/src/api/assistant_run_sdk/tests/streams.rs
+    - crates/betterlite-core/src/api/assistant_threads/target.rs
+    - crates/betterlite-core/src/api/assistant_threads/tests/azure.rs
+    - crates/betterlite-core/src/api/assistant_threads/tests.rs
+    - crates/betterlite-foundry/src/anthropic/tests/cases.rs
+    - crates/betterlite-foundry/src/anthropic/tests/harness.rs
+    - crates/betterlite-foundry/src/anthropic/tests/invariants.rs
+    - crates/betterlite-foundry/src/anthropic/tests/send.rs
+    - crates/betterlite-foundry/src/embeddings/call.rs
+    - crates/betterlite-foundry/src/embeddings/tests/flow.rs
+    - crates/betterlite-foundry/src/embeddings/tests/route.rs
+    - crates/betterlite-foundry/src/embeddings/tests/support.rs
+    - crates/betterlite-http/src/client_kind/**
+    - crates/betterlite-http/src/client_kind.rs
+    - crates/betterlite-openai/src/assistants/client.rs
+    - crates/betterlite-openai/src/assistants/operations.rs
+    - crates/betterlite-openai/src/assistants/tests/guards.rs
+    - crates/betterlite-openai/src/assistants/tests/projection.rs
+    - crates/betterlite-openai/src/batches/http.rs
+    - crates/betterlite-openai/src/batches.rs
+    - crates/betterlite-openai/src/batches/sdk.rs
+    - crates/betterlite-openai/src/batches/tests/fake.rs
+    - crates/betterlite-openai/src/batches/tests/http.rs
+    - crates/betterlite-openai/src/batches/tests.rs
+    - crates/betterlite-openai/src/image_variations/call.rs
+    - crates/betterlite-openai/src/image_variations/client.rs
+    - crates/betterlite-openai/src/image_variations/tests.rs
+    - crates/betterlite-openai/src/image_variations/tests/support.rs
+    - crates/betterlite-openai/src/speech/call.rs
+    - crates/betterlite-openai/src/speech/client.rs
+    - crates/betterlite-openai/src/speech/tests/cases.rs
+    - crates/betterlite-openai/src/text_completion_execution/http.rs
+    - crates/betterlite-openai/src/text_completion_execution/tests.rs
+    - crates/betterlite-openai/src/text_completion_transport.rs
+    - crates/betterlite-openai/src/text_completion_transport/sdk.rs
+    - crates/betterlite-openai/src/text_completion_transport/tests.rs
+    - crates/betterlite-openai/src/text_completion_transport/tests/support.rs
+    - crates/betterlite-openai/src/thread_runs/operations.rs
+    - crates/betterlite-openai/src/thread_runs/stream.rs
+    - crates/betterlite-openai/src/thread_runs/tests/cases.rs
+    - crates/betterlite-openai/src/threads/operations.rs
+    - crates/betterlite-openai/src/threads/tests/cases.rs
+    - crates/betterlite-openai/src/transcription/call.rs
+    - crates/betterlite-openai/src/transcription/client.rs
+    - crates/betterlite-openai/src/transcription/tests/cases.rs
+    - crates/betterlite-openai/src/transcription/tests/invariants.rs
+    - crates/betterlite-provider/src/adapters/vertex_agent_stream.rs
+    - crates/betterlite-provider/src/adapters/vertex_agent_stream/tests.rs
+    - crates/betterlite-provider/src/adapters/vertex_agent_stream/transport.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/native/messages.rs
+    - crates/betterlite-provider/src/anthropic_dispatch/native.rs
+    - crates/betterlite-provider/src/azure_resource_dispatch/assistants.rs
+    - crates/betterlite-provider/src/azure_resource_dispatch/tests/files_batches_cases.rs
+    - crates/betterlite-provider/src/bytez_stream_call.rs
+    - crates/betterlite-provider/src/bytez_stream_call/tests.rs
+    - crates/betterlite-provider/src/bytez_stream_call/transport.rs
+    - crates/betterlite-provider/src/foundry_dispatch/embedding.rs
+    - crates/betterlite-provider/src/foundry_dispatch/fixtures/embedding.rs
+    - crates/betterlite-provider/src/foundry_dispatch/tests/embedding_cases.rs
+    - crates/betterlite-provider/src/langgraph_stream/wrapper.rs
+    - crates/betterlite-provider/src/langgraph_stream/wrapper/tests.rs
+    - crates/betterlite-provider/src/openai_assistant_dispatch/reply.rs
+    - crates/betterlite-provider/src/openai_assistant_dispatch/tests/runs.rs
+    - crates/betterlite-provider/src/openai_dispatch/fixtures/text_transport.rs
+    - crates/betterlite-provider/src/openai_resource_dispatch/tests/fixture.rs
+    - crates/betterlite-server/src/api/assistant_dispatch/client.rs
+    - crates/betterlite-server/src/api/assistant_dispatch/tests/supplied.rs
+    - tools/oracle/src/helpers/anthropic/chat_call/failures.rs
+    - tools/oracle/src/helpers/anthropic/chat_call/scenarios.rs
+    - tools/oracle/src/helpers/azure/assistant_definitions/reports.rs
+    - tools/oracle/src/helpers/azure/assistant_definitions.rs
+    - tools/oracle/src/helpers/azure/assistant_definitions/steps.rs
+    - tools/oracle/src/helpers/azure/assistants/reports.rs
+    - tools/oracle/src/helpers/azure/assistants.rs
+    - tools/oracle/src/helpers/azure/assistants/steps.rs
+    - tools/oracle/src/helpers/azure/batches/fixture.rs
+    - tools/oracle/src/helpers/azure/message_attachments/reports.rs
+    - tools/oracle/src/helpers/azure/message_attachments.rs
+    - tools/oracle/src/helpers/azure/message_attachments/steps.rs
+    - tools/oracle/src/helpers/azure/thread_messages/reports.rs
+    - tools/oracle/src/helpers/azure/thread_messages.rs
+    - tools/oracle/src/helpers/azure/thread_messages/steps.rs
+    - tools/oracle/src/helpers/foundry/anthropic/tests/answers.rs
+    - tools/oracle/src/helpers/foundry/embeddings/input.rs
+    - tools/oracle/src/helpers/foundry/embeddings.rs
+    - tools/oracle/src/helpers/openai/assistants/input.rs
+    - tools/oracle/src/helpers/openai/assistants.rs
+    - tools/oracle/src/helpers/openai/batches/fixture.rs
+    - tools/oracle/src/helpers/openai/batches.rs
+    - tools/oracle/src/helpers/openai/image_variations/input.rs
+    - tools/oracle/src/helpers/openai/image_variations.rs
+    - tools/oracle/src/helpers/openai/speech/input.rs
+    - tools/oracle/src/helpers/openai/speech.rs
+    - tools/oracle/src/helpers/openai/text_completion_transport/fixture.rs
+    - tools/oracle/src/helpers/openai/text_completion_transport.rs
+    - tools/oracle/src/helpers/openai/thread_runs.rs
+    - tools/oracle/src/helpers/openai/threads.rs
+    - tools/oracle/src/helpers/openai/transcription/exchange.rs
+    - tools/oracle/src/helpers/provider/azure_resource_dispatch/files_batches/batches.rs
+    - tools/oracle/src/helpers/provider/openai_resource_dispatch/fixtures.rs
+  lint_tables: false
+references: []
+dod:
+  - text: betterlite-http's client_kind module holds the one ClientKind, with Sync and Asynchronous, the serde names "sync" and "async" and label, and the one SuppliedClient with kind and transport, and its tests pass.
+    proof: [http-home-shape, http-kind-tests]
+  - text: anthropic's chat_call, foundry's embeddings and openai's assistants, batches, image_variations, speech, text_completion_transport and transcription declare no client class enum or supplied client pair of their own, and no user spells the async class Async.
+    proof: [sdk-kind-copies, sdk-kind-variants]
+  - text: The oracle helpers read the supplied client's class straight into the home ClientKind, with no wire enum, converter or hand-written label of their own.
+    proof: [sdk-kind-wire-copies]
+  - text: The families' tests in openai, anthropic, foundry, azure, provider, core and server pass unchanged apart from the import, the variant name and foundry's field names.
+    proof: [openai-kind-tests, anthropic-kind-tests, foundry-kind-tests, azure-kind-tests, provider-sdk-kind-tests, core-assistant-kind-tests, server-assistant-kind-tests]
+checks:
+  optional: []
+  commands:
+    - id: http-home-shape
+      why: the home lost its async serde name, its label or its supplied client
+      run: |-
+        grep -qxF 'pub enum ClientKind {' crates/betterlite-http/src/client_kind.rs &&
+        grep -qxF '    Asynchronous,' crates/betterlite-http/src/client_kind.rs &&
+        grep -qxF '    #[serde(rename = "async")]' crates/betterlite-http/src/client_kind.rs &&
+        grep -qF 'pub const fn label(self)' crates/betterlite-http/src/client_kind.rs &&
+        grep -qxF "pub struct SuppliedClient<'client, Client> {" crates/betterlite-http/src/client_kind.rs
+    - id: sdk-kind-copies
+      why: a crate below core still declares its own client class enum, supplied client pair or label
+      run: |-
+        test -z "$(grep -lE '^pub enum (ClientKind|EmbeddingMode)\b' crates/betterlite-anthropic/src/chat_call/transport.rs crates/betterlite-foundry/src/embeddings/call.rs crates/betterlite-openai/src/assistants/client.rs crates/betterlite-openai/src/batches/sdk.rs crates/betterlite-openai/src/image_variations/client.rs crates/betterlite-openai/src/speech/client.rs crates/betterlite-openai/src/text_completion_transport/sdk.rs crates/betterlite-openai/src/transcription/client.rs)" &&
+        test -z "$(grep -lE '^pub struct (SuppliedChatClient|SuppliedClient)\b' crates/betterlite-anthropic/src/chat_call/transport.rs crates/betterlite-foundry/src/embeddings/call.rs)" &&
+        test -z "$(grep -rnwE 'SuppliedChatClient|EmbeddingMode' crates/betterlite-anthropic/src crates/betterlite-foundry/src crates/betterlite-provider/src tools/oracle/src/helpers/anthropic tools/oracle/src/helpers/foundry tools/oracle/src/helpers/provider --include=*.rs)" &&
+        test -z "$(grep -rnF 'const fn label(self)' crates/betterlite-openai/src/image_variations crates/betterlite-openai/src/speech --include=*.rs)"
+    - id: sdk-kind-variants
+      why: a user still spells the async class Async, so it names a deleted enum
+      run: |-
+        test -z "$(grep -rnwE '(ClientKind|CallKind|SdkKind)::Async' crates/betterlite-anthropic/src crates/betterlite-foundry/src crates/betterlite-openai/src crates/betterlite-azure/src crates/betterlite-core/src/api/assistant_read_delete crates/betterlite-core/src/api/assistant_run_sdk crates/betterlite-core/src/api/assistant_threads crates/betterlite-provider/src/adapters crates/betterlite-provider/src/anthropic_dispatch crates/betterlite-provider/src/azure_resource_dispatch crates/betterlite-provider/src/bytez_stream_call crates/betterlite-provider/src/foundry_dispatch crates/betterlite-provider/src/langgraph_stream crates/betterlite-provider/src/openai_assistant_dispatch crates/betterlite-provider/src/openai_dispatch crates/betterlite-provider/src/openai_resource_dispatch crates/betterlite-server/src/api/assistant_dispatch tools/oracle/src/helpers/anthropic tools/oracle/src/helpers/azure tools/oracle/src/helpers/foundry tools/oracle/src/helpers/openai tools/oracle/src/helpers/provider --include=*.rs | grep -vF '::Async(')"
+    - id: sdk-kind-wire-copies
+      why: an oracle helper still reads the class into a wire enum of its own or spells its label by hand
+      run: |-
+        test -z "$(grep -nE '^(pub(\((crate|super)\))? )?enum (KindName|Kind|SuppliedKind|ModeName)\b' tools/oracle/src/helpers/azure/assistant_definitions.rs tools/oracle/src/helpers/azure/assistants.rs tools/oracle/src/helpers/azure/message_attachments.rs tools/oracle/src/helpers/azure/thread_messages.rs tools/oracle/src/helpers/openai/assistants/input.rs tools/oracle/src/helpers/openai/image_variations/input.rs tools/oracle/src/helpers/openai/speech/input.rs tools/oracle/src/helpers/foundry/embeddings/input.rs)" &&
+        test -z "$(grep -rnE 'ClientKind::Sync => "sync"' tools/oracle/src/helpers/azure tools/oracle/src/helpers/openai --include=*.rs)"
+    - id: http-kind-tests
+      why: the home's serde names or label no longer match "sync" and "async"
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^client_kind::/)'
+    - id: openai-kind-tests
+      why: an openai family no longer picks or rebuilds the SDK client by class
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(assistants|batches|image_variations|speech|text_completion_execution|text_completion_transport|thread_runs|threads|transcription)::/) - test(/replays_/)'
+    - id: anthropic-kind-tests
+      why: anthropic's chat call no longer reuses a supplied client of the matching class
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^chat_call::/) - test(/replays_/)'
+    - id: foundry-kind-tests
+      why: foundry's embeddings or anthropic route no longer pick the supplied client by class
+      run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^(anthropic|embeddings)::/) - test(/replays_/)'
+    - id: azure-kind-tests
+      why: an azure assistants, batches or transcription call no longer reaches the OpenAI SDK class through the home
+      run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/^(assistants|azure_assistant_definitions|azure_message_attachments|azure_thread_messages|batches|transcription)::/) - test(/replays_/)'
+    - id: provider-sdk-kind-tests
+      why: a provider dispatch no longer hands the class of its supplied client to the openai, anthropic or foundry call
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^(adapters::vertex_agent_stream|anthropic_dispatch|azure_resource_dispatch|bytez_stream_call|foundry_dispatch|langgraph_stream|openai_assistant_dispatch|openai_dispatch|openai_resource_dispatch)::/) - test(/replays_/)'
+    - id: core-assistant-kind-tests
+      why: core's assistant calls no longer pass the SDK class to openai's assistants client
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(assistant_read_delete|assistant_run_sdk|assistant_threads)::/)'
+    - id: server-assistant-kind-tests
+      why: the server's assistant routes no longer build the supplied SDK client with its class
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::assistant_dispatch::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10220: core's ClientKind and SuppliedClient in vector_store_http_write::service, their users in core, provider, bedrock, vertex, python and server, and the oracle's sdk_http Mode enums that convert into them. They move onto this home after B10216 and B10217 land."
+  - "openai's files.rs ClientKind, whose variants carry the FilesClient, and the settings-carrying SuppliedClient, SdkClient and ImageVariationClient structs, which only take the home type in their `kind` fields."
+  - "azure's endpoints::projection ClientKind and SuppliedClient, five classes that tell Azure from OpenAI clients."
+  - "The Sync and Async enums that pick which LiteLLM call runs rather than the class of a supplied client: foundry's AgentRunMode and anthropic Style, azure's CallStyle, openai's codestral_call Mode, cohere_legacy_embedding SdkMode, compatible_embedding Mode and compatible_line_stream Mode, router's semantic_embeddings EmbeddingMode and the oracle's entry point enums."
+  - "betterlite-redis's ClientKind (the redis-py client class for a connection) and betterlite-router's deployment_clients ClientKind (the cache key for a deployment's client), which are other concepts."
+pitfalls:
+  - "openai's files.rs ClientKind keeps `Async(FilesClient)`, so a blanket rename of `ClientKind::Async` in openai, provider or the oracle breaks files callers; rename only users of the six copies, and leave `ClientKind::Async(` alone."
+  - "Several files reach a copy without naming its module: azure's transcription imports openai's ClientKind as `CallKind`, provider's files_batches_cases.rs and the oracle's azure/batches/fixture.rs as `SdkKind`, text_completion_transport.rs through `use self::sdk::{...}`, and core's assistant_run_sdk tests through `use super::*`. Each still needs the Asynchronous spelling."
+  - "speech/client.rs keeps its settings-carrying `pub struct SuppliedClient`; only the enum and its label impl leave that file, and the speech module imports only ClientKind from the home, since importing the home's SuppliedClient there clashes with the local name. The same goes for azure files that import projection's SuppliedClient."
+  - "The batches and text_completion_transport enums serialize today; the home's `#[serde(rename = \"async\")]` keeps their output \"async\", so the oracle answers do not change. Without it serde writes \"asynchronous\"."
+  - "The home lives in betterlite-http so every crate can name it; do not leave a `pub use` of it in openai, anthropic or foundry, since that is one more path to the same name. Each user imports `betterlite_http::client_kind` directly."
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

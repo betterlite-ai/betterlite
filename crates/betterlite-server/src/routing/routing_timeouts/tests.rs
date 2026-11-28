@@ -2,8 +2,9 @@
 
 use std::time::{Duration, Instant};
 
+use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_config::sections::routing_timeouts::{
-    DeploymentTimeouts as ConfigDeployment, GlobalTimeout, RouterTimeouts as ConfigRouter, Settings,
+    DeploymentTimeouts as ConfigDeployment, RouterTimeouts as ConfigRouter, Settings,
 };
 use betterlite_router::routing_timeouts::error::TimeoutError;
 use betterlite_router::routing_timeouts::plan::RequestTimeouts;
@@ -17,7 +18,7 @@ fn section(
     deployments: Vec<ConfigDeployment>,
 ) -> Settings {
     Settings {
-        global: GlobalTimeout {
+        global: RequestTimeout {
             seconds: global.0,
             explicitly_set: global.1,
         },

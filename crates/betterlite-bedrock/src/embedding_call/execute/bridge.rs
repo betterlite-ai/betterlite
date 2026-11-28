@@ -1,5 +1,6 @@
 use std::sync::{Mutex, PoisonError};
 
+use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -18,14 +19,14 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 
 use super::{Item, cohere_timeout};
 use crate::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport,
-    SuppliedClient, Timeout, TransferError,
+    ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
 };
+use crate::credentials::CredentialSource;
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::hooks::{Event, Input, Recorder, log_event, replay};
 use crate::embedding_call::plan::remaining_options;
 use crate::embedding_call::sign::{SigningInput, sign_item};
-use crate::embedding_call::{Clock, CredentialSource, Dependencies, LogContext};
+use crate::embedding_call::{Clock, Dependencies, LogContext};
 
 // LiteLLM builds the async cohere client with litellm.LlmProviders.COHERE
 const COHERE_CLIENT_PROVIDER: &str = "cohere";
@@ -61,7 +62,7 @@ where
 {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
         match (self.asynchronous, self.supplied.as_ref()) {
-            (true, Some(client)) if client.kind == ClientKind::Async => {
+            (true, Some(client)) if client.kind == ClientKind::Asynchronous => {
                 post(client.transport, request, self.headers, &self.timed_out).await
             }
             (true, _) => {
@@ -142,7 +143,7 @@ pub(super) fn cohere<'run, Source, Factory, Transport>(
     log: &'run mut LogContext<'_, '_>,
 ) -> BoxFuture<'run, Result<LegacyEmbeddingResponse, EmbeddingCallError>>
 where
-    Source: CredentialSource + Sync,
+    Source: CredentialSource,
     Factory: ClientFactory + Sync,
     Factory::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,
