@@ -143,7 +143,9 @@ pub fn or_bearer_token(tokens: &[Option<&SecretString>]) -> Option<SecretString>
         .copied()
         .find(|token| !token.expose_secret().is_empty());
     // Python's `a or b or c` evaluates to the last operand when none of them is truthy
-    selected.or(tokens.last().copied().flatten()).cloned()
+    selected
+        .or_else(|| tokens.last().copied().flatten())
+        .cloned()
 }
 
 #[derive(Debug, Serialize)]
