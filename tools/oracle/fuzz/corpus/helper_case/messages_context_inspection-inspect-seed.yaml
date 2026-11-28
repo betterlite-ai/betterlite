@@ -1,0 +1,20 @@
+kind: helper
+name: messages_context_inspection-inspect-seed
+call:
+  messages_context_inspection:
+    inspections:
+      - messages:
+          - role: assistant
+            content:
+              - {type: compaction, content: seeded}
+        kwargs:
+          litellm_metadata: {user_id: seeded}
+        router: handle
+      - messages:
+          - role: user
+            content: seeded
+        kwargs: {}
+        router: missing
+    predictions: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,58 @@
+kind: sdk_http
+name: messages-context-preparation-compact-full-input
+call:
+  messages_context_preparation:
+    scenarios:
+      - model: main-model
+        messages:
+          - {role: user, content: old question}
+          - {role: assistant, content: old answer}
+          - role: user
+            content:
+              - {type: compaction, content: S}
+          - {role: assistant, content: ack}
+          - {role: user, content: recent question}
+        system: BASE SYSTEM
+        context_management:
+          edits:
+            - type: compact_20260112
+              trigger:
+                type: input_tokens
+                value: 50000
+        summary_model: gpt-4o-mini
+        counter: 50001
+      - model: main-model
+        messages:
+          - {role: user, content: question}
+        system: SYS
+        tools:
+          - name: read
+            input_schema: {type: object}
+        context_management:
+          edits:
+            - type: compact_20260112
+              trigger:
+                type: input_tokens
+                value: 50000
+        metadata: {user_id: u1}
+        principal: {user_id: u2}
+        router: true
+        dispatcher: result
+        scripted:
+          messages:
+            - {role: assistant, content: scripted}
+        counter: 50001
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-mini
+      choices:
+        - index: 0
+          message: {role: assistant, content: "<summary> NEW </summary>"}
+          finish_reason: stop
+      usage: {prompt_tokens: 12, completion_tokens: 3, total_tokens: 15}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}
