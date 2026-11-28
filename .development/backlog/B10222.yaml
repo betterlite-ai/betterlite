@@ -1,8 +1,8 @@
 id: B10222
 milestone: R2 bug fixes
-title: The handler modules in core and provider take betterlite-openai's Selected client enum instead of their own copies
+title: One Selected client enum in betterlite-http for the core, provider and openai handler modules
 status: todo
-depends_on: [B10200]
+depends_on: [B10200, B10216]
 file: tasks/B10222-supplied-created-selector.yaml
 covers: []
 parent: null
