@@ -6,7 +6,9 @@ use rstest::rstest;
 
 use betterlite_config::sections::settings::JsonValue;
 
-use super::support::{Harness, internal_key, json, master_key, object, request_with_body};
+use super::support::{
+    Harness, admin_user, internal_key, json, master_key, object, request_with_body,
+};
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::config_overlay_port::ConfigOverlayPortError;
 use crate::proxy_config_state::error::{ConfigOwnedDetail, ConfigStateError};
@@ -163,6 +165,19 @@ async fn audits_the_success_callback_before_and_after() {
         records[0].updated_values,
         Some(json(r#"{"success_callback": ["other"]}"#))
     );
+}
+
+// the audit row's changed_by is the calling key's own user id, not only the proxy admin fallback
+#[tokio::test]
+async fn audits_the_caller_user_id_as_changed_by() {
+    let harness = Harness::new(success_config(r#"["langfuse"]"#));
+    let (status, _body) = harness
+        .call(delete_call("langfuse"), Some(admin_user()))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let records = harness.audit_records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].changed_by.as_deref(), Some("admin-user"));
 }
 
 #[tokio::test]

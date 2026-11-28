@@ -9,9 +9,9 @@ use axum::body::Body;
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey,
+    CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
 };
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_config::sections::alert_settings::webhooks::WebhookUrl;
 use betterlite_config::sections::audit_events::Settings;
@@ -85,6 +85,20 @@ pub(crate) fn master_key() -> Principal {
 
 pub(crate) fn internal_key() -> Principal {
     principal("key-1")
+}
+
+pub(crate) fn admin_user() -> Principal {
+    Principal {
+        user: Some(UserIdentity {
+            id: "admin-user".to_owned(),
+            external_id: None,
+            user_name: None,
+            email: None,
+            display_name: None,
+        }),
+        roles: vec![Role::PlatformAdmin],
+        ..principal("key-2")
+    }
 }
 
 pub(crate) fn webhook(url: &str) -> WebhookUrl {
