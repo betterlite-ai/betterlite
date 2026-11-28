@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod hardening;
+
 use std::io::Read as _;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -814,6 +816,7 @@ impl MemoryMaxSize for TestMemory {
 struct TestTier {
     memory: Arc<TestMemory>,
     recorded: Arc<Mutex<Recorded>>,
+    cached: Option<Json>,
 }
 
 fn record(recorded: &Mutex<Recorded>) -> MutexGuard<'_, Recorded> {
@@ -842,7 +845,7 @@ impl AuthCacheTier for TestTier {
         record(&self.recorded)
             .gets
             .push((key.to_owned(), local_only));
-        None
+        self.cached.clone()
     }
 
     async fn async_get(&self, key: &str, local_only: bool) -> Option<Json> {
@@ -901,10 +904,12 @@ async fn the_auth_cache_stores_settings_for_an_hour_and_a_request_id_for_ten_min
         ordinary: TestTier {
             memory: Arc::new(TestMemory),
             recorded: Arc::clone(&recorded),
+            cached: None,
         },
         key_objects: TestTier {
             memory: Arc::new(TestMemory),
             recorded: Arc::clone(&recorded),
+            cached: None,
         },
         management_ttl_fallback: 45.0_f64,
     };
@@ -951,10 +956,12 @@ async fn the_auth_cache_reads_settings_with_the_typed_decoder() {
         ordinary: TestTier {
             memory: Arc::new(TestMemory),
             recorded: Arc::clone(&recorded),
+            cached: None,
         },
         key_objects: TestTier {
             memory: Arc::new(TestMemory),
             recorded: Arc::clone(&recorded),
+            cached: None,
         },
         management_ttl_fallback: 45.0_f64,
     };
