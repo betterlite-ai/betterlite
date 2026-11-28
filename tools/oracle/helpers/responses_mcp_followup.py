@@ -128,12 +128,15 @@ def _auth_state(
     scenario: RequestScenario,
 ) -> tuple[UserAPIKeyAuth | None, dict[str, UserAPIKeyAuth | None]]:
     auth = scenario.get("auth")
-    if auth is None:
-        return None, {}
-    if auth["kind"] == "direct":
-        return UserAPIKeyAuth.model_validate({"user_id": auth["user_id"]}), {}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
-    principal = None if auth["user_id"] is None else UserAPIKeyAuth.model_validate({"user_id": auth["user_id"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
-    return None, {"user_api_key_auth": principal}
+    direct: UserAPIKeyAuth | None = None
+    metadata: dict[str, UserAPIKeyAuth | None] = {}
+    if auth is not None and auth["kind"] == "direct":
+        direct = UserAPIKeyAuth.model_validate({"user_id": auth["user_id"]})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+    if auth is not None and auth["kind"] == "metadata":
+        user_id = auth["user_id"]
+        principal = None if user_id is None else UserAPIKeyAuth.model_validate({"user_id": user_id})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+        metadata = {"user_api_key_auth": principal}
+    return direct, metadata
 
 
 def _streaming_iterator(scenario: RequestScenario) -> MCPEnhancedStreamingIterator:
@@ -193,12 +196,16 @@ def _call_parameter_streaming(value: CallParameterStreamingCase) -> JsonValue:
 def _append_output(value: AppendOutputCase) -> JsonValue:
     response = ResponsesAPIResponse.model_validate(value["response"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
     fastuuid.uuid4 = _FixedUuid(value["ids"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1326
-    composed = Proxy._add_mcp_output_elements_to_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
-        response,
-        value["mcp_tools_fetched"],
-        value["tool_results"],
-    )
+    composed = Proxy._add_mcp_output_elements_to_response(response=response, mcp_tools_fetched=value["mcp_tools_fetched"], tool_results=value["tool_results"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
     return JSON.validate_python(cast(dict[str, JsonValue], composed.model_dump(mode="json"))["output"])  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1354-L1355
+
+
+def _provider_failure_view(recorded: dict[str, JsonValue], status: int) -> JsonValue:
+    forwarded: dict[str, JsonValue] = {
+        **{name: recorded[name] for name in FORWARDED},
+        "call_params": {name: item for name, item in recorded.items() if name not in FORWARDED},
+    }
+    return JSON.validate_python({"request": forwarded, "error": {"status": status}})
 
 
 def _provider_call_error(value: ProviderCallErrorCase) -> JsonValue:
@@ -220,19 +227,7 @@ def _provider_call_error(value: ProviderCallErrorCase) -> JsonValue:
             )
         )
     except _ProviderError as error:
-        recorded = recorder.calls[0]
-        forwarded: dict[str, JsonValue] = {
-            "input": recorded["input"],
-            "model": recorded["model"],
-            "tools": recorded["tools"],
-            "previous_response_id": recorded["previous_response_id"],
-            "call_params": {
-                name: item for name, item in recorded.items() if name not in FORWARDED
-            },
-        }
-        status_view: dict[str, JsonValue] = {"status": error.status_code}
-        view: dict[str, JsonValue] = {"request": forwarded, "error": status_view}
-        return JSON.validate_python(view)
+        return _provider_failure_view(recorder.calls[0], error.status_code)
     raise ValueError("the provider call must fail")
 
 
