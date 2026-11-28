@@ -30,6 +30,7 @@ where
 }
 
 // FastAPI 0.136.3: partition on the first space, strip the credentials, compare the scheme ignoring case
+#[must_use]
 pub fn bearer_token(header: Option<&HeaderValue>) -> Option<SecretString> {
     let value = header
         .and_then(|value| value.to_str().ok())

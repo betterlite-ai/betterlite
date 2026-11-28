@@ -47,6 +47,7 @@ where
 }
 
 // execution_id is a required query string, so a request without it is FastAPI's missing-field 422
+#[must_use]
 pub fn execution_id(raw: &[u8]) -> Option<String> {
     let mut found = None;
     for (name, value) in form_urlencoded::parse(raw).into_owned() {
