@@ -24,10 +24,9 @@ use crate::api::bfl::edit::media::{MaskInput, SuppliedMedia};
 use crate::api::bfl::generation::BflImageResponse;
 use crate::api::bfl::generation_call::LogContext;
 use crate::api::bfl::generation_call::params::CallParams;
-use crate::api::bfl::generation_call::submit::{
-    SubmitError, SubmitRequest, SubmitTransport, SuppliedTransport, TransportKind,
-};
+use crate::api::bfl::generation_call::submit::{SubmitError, SubmitRequest, SubmitTransport};
 use crate::api::bfl::poll::{BflPoller, PollClock, PollSleeper, PollTransport};
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 pub struct EditCall<'text> {
     pub model: &'text str,
@@ -62,15 +61,15 @@ where
         &self,
         call: &EditCall<'_>,
         prepared: &PreparedEdit,
-        supplied: Option<SuppliedTransport<'_, T>>,
+        supplied: Option<SuppliedClient<'_, T>>,
     ) -> Result<BflImageResponse, EditCallError>
     where
         T: SubmitTransport + PollTransport + Sync,
     {
         let expected = if call.aimage_edit {
-            TransportKind::Async
+            ClientKind::Asynchronous
         } else {
-            TransportKind::Sync
+            ClientKind::Sync
         };
         match supplied.filter(|client| client.kind == expected) {
             Some(client) => self.execute(call, prepared, client.transport).await,
