@@ -607,7 +607,7 @@ def test_calls_refuse_provider() -> None:
 
 
 # azure is a tag LiteLLM serves and this build does not: the refusal is deliberate
-def test_refuses_unserved_tags() -> None:
+def test_calls_refuse_azure() -> None:
     with closing(ManageServer()) as server:
         with pytest.raises(APIConnectionError):
             retrieve(
@@ -644,26 +644,24 @@ def test_error_keeps_class() -> None:
     authentication_class = LITELLM_ERRORS.AuthenticationError
     not_found_class = LITELLM_ERRORS.NotFoundError
     with closing(ManageServer()) as server:
-        with pytest.raises(AuthenticationError) as authenticated_retrieve:
-            retrieve(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
-        with pytest.raises(authentication_class):
-            LITELLM.retrieve(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
+        # a GET answers with the reply body, and retrieve keeps only its declared fields
+        reference_error = LITELLM.retrieve(
+            vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY
+        )
+        assert reference_error == error_payload("Incorrect API key provided")
+        assert retrieve(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY) == {}
+        reference_list = LITELLM.list(api_base=server.url, api_key=BAD_KEY)
+        assert list_call(api_base=server.url, api_key=BAD_KEY) == reference_list
         with pytest.raises(AuthenticationError) as authenticated_update:
             update(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
         with pytest.raises(authentication_class):
             LITELLM.update(vector_store_id=STORE_ID, api_base=server.url, api_key=BAD_KEY)
-        with pytest.raises(NotFoundError) as missing_retrieve:
-            retrieve(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(not_found_class):
-            LITELLM.retrieve(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
         with pytest.raises(NotFoundError) as missing_delete:
             delete(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
         with pytest.raises(not_found_class):
             LITELLM.delete(vector_store_id=MISSING_ID, api_base=server.url, api_key=GOOD_KEY)
     caught = (
-        (authenticated_retrieve, authentication_class, UNAUTHORIZED),
         (authenticated_update, authentication_class, UNAUTHORIZED),
-        (missing_retrieve, not_found_class, NOT_FOUND),
         (missing_delete, not_found_class, NOT_FOUND),
     )
     for ours_caught, reference_class, status in caught:

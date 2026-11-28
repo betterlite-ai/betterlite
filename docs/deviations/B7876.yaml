@@ -27,7 +27,13 @@ deviations:
   - what: "vector_stores/__init__.py exports the twelve call names of B7875 and this task with an explicit __all__, where LiteLLM exports four call names and VectorStoreRegistry and vector_stores/main.py has no __all__."
     why: The registry is Rust (B1062), and this project builds the two call families as separate tasks.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/__init__.py#L1
+  - what: "a reply to retrieve or update that carries keys outside VectorStoreCreateResponse, an error body included, reads without them, so a 401 body reads as {} where LiteLLM returns it verbatim; list returns the body verbatim in both."
+    why: "The declared TypedDict is the reply contract and pydantic drops the keys outside it; keeping them would need extra=\"allow\" on that shared type, which is outside this task's scope."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L150
 kept_bugs:
   - what: retrieve, list, update and delete accept extra_query and never send it to the provider.
     why: LiteLLM's signatures carry the argument and no handler forwards it, so a working setup may pass it and get no error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L547
+  - what: retrieve and list return the reply body for a provider error status instead of raising, because LiteLLM's GET handlers never call raise_for_status, while update and delete raise the mapped exception.
+    why: A working LiteLLM setup can observe the returned body, so betterlite copies the GET handlers instead of raising where the reference does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10344
