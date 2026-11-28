@@ -1,0 +1,13 @@
+id: B10214
+milestone: R2 bug fixes
+title: The Gemini, Vertex and Meta realtime configs behind B10213's port, and one Vertex token port for the server and Python
+status: todo
+depends_on: [B10213, B10183, B1365, B1357, B1378, B1379, B1380, B1381, B1382, B1394, B1115, B6414]
+file: tasks/B10214-realtime-provider-configs.yaml
+covers: []
+parent: B124
+split_from: B1125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

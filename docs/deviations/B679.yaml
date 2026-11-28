@@ -1,0 +1,12 @@
+task: B679
+deviations: []
+kept_bugs:
+  - what: >-
+      A Bedrock image generation call ignores the extra_headers the caller passed, while a Bedrock image edit
+      call forwards them to its handler. betterlite reproduces the drop: GenerateOperation carries the caller's
+      header list and the generation dispatch hands the leaf None, so the signed request has neither.
+    why: >-
+      Every Bedrock generation deployment running today gets a request without those headers, since the arm
+      never forwards them; adding them would change signed requests for callers who set header names the API
+      rejects. The composition keeps the request a working setup can rely on and the parity test pins it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L491-L505

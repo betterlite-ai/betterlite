@@ -1,0 +1,198 @@
+id: B10216
+title: One ClientKind, one SuppliedClient and one handler request with its transport for the core and provider HTTP families
+description: >-
+  After B10200 the httpx handler families in betterlite-core and betterlite-provider share one client-source trait per contract, but twelve modules still declare their own `Sync, Asynchronous` client class enum, twelve their own pair of that class with a borrowed transport, and seven their own copy of the handler request with a transport trait and a ProxiedClient adapter over it. Each copy has the same variants or fields and the same meaning: the httpx client class a caller handed in, and the one request that class sends. This task deletes the copies and points every user at crates/betterlite-core/src/api/vector_store_http_write/service.rs, which already holds ClientKind, SuppliedClient, WriteRequest and WriteTransport and is B10200's home for ClientSource. No crate gains a dependency, since provider imports this file today (image_edit_http/service.rs L3-L4). It is a refactor: no request, header, timeout, error text or log line changes.
+
+
+  ClientKind. The home is `ClientKind` at service.rs L30-L34. The copies, each `#[derive(Debug, Clone, Copy, PartialEq, Eq)]` over `Sync` and `Asynchronous` (fal's lists the same derives in another order): core responses_read_http/service.rs L33-L37, responses_compact_http/service.rs L34-L38, responses_write_http/service.rs L30-L34, videos_http_transport/client.rs L20-L24, fal/video_results/transport.rs L41-L45, `Mode` in file_http_upload/service.rs L33-L37, `ImageEditClientKind` in image_edit_call/call.rs L60-L65 and `CustomClientKind` in image_generation_call/call.rs L14-L18, and provider api/image_edit_http/service.rs L24-L28, api/image_generation_http.rs L22-L26, api/rerank_http/client.rs L15-L19 and `Mode` in api/speech_http.rs L37-L42. The renamed ones take the home's name, so every `Mode::Sync`, `ImageEditClientKind::Asynchronous` or `CustomClientKind::Sync` path, field type and import in their modules and importers reads `ClientKind`. `ImageEditClientKind::of` (call.rs L67-L76) has one caller, image_edit_call/service.rs L218, which writes its if/else in the filter instead. rerank_http's `client_kind` (client.rs L21-L29) stays and returns the home's type. Importers outside the copies' own modules: core file_provider_write (file_provider_write.rs L14, arguments.rs L6, service.rs L6, tests.rs, tests/dispatch.rs, tests/guards.rs), responses_compact_call/execute.rs L16, responses_create_http (service.rs L21, service/request.rs L11, service/finish.rs L22, tests.rs, tests/support.rs, tests/failures.rs), responses_create (native.rs L10, deps.rs L3, tests/native_create_options_and_ids.rs), responses_lifecycle_call (call_plan.rs L17, executor.rs L12, service.rs L16, tests.rs, tests/support.rs), responses_lifecycle_write (call.rs L10, tests.rs, tests/support.rs), video_character_transport (service.rs L23, service/send.rs L11), video_content_call (video_content_call.rs L25, handler.rs L8 and its tests), video_generation_call (handler.rs L9, call/request.rs L9 and call/tests), betterlite-python's file_calls (convert.rs L1, convert/tests.rs L7, dispatch/clients.rs L6, session.rs L3, session/core.rs L11), and the oracle's sdk_http file_http_upload, file_provider_write, image_edit_call, image_edit_http, image_generation_http.rs, responses_compact_transport, responses_create_transport, responses_read_transport, responses_write_transport and speech_http, plus helpers/core_ops/fal_video_results/outcome.rs L10.
+
+
+  SuppliedClient. The home is `SuppliedClient<'client, Client>` at service.rs L51-L54, a `kind: ClientKind` beside `transport: &'client Client`. The copies: core responses_read_http/service.rs L54-L57, responses_compact_http/service.rs L44-L47, responses_write_http/service.rs L62-L65, videos_http_transport/client.rs L84-L87, `SuppliedTransport<'client, T>` in fal/video_results/transport.rs L47-L50, file_http_upload/service.rs L39-L42 (its field is `mode`, read at service.rs L273 and built at tests.rs L413, and becomes `kind`), and provider image_edit_http/service.rs L30-L33, image_generation_http.rs L43-L46, rerank_http/client.rs L31-L34 and speech_http.rs L88-L91. Two more are the home over a fixed transport: core realtime_http_calls/call.rs L10-L15 and provider realtime_http_transport/client.rs L10-L15, both `SuppliedClient<'_>` holding `&ProxiedClient` and deriving Debug, Clone and Copy; their holders name `SuppliedClient<'call, ProxiedClient>`. realtime_http_calls.rs L162 and L221 copy `common.client` out of a borrowed call, so the home needs Copy for that type, and a derive would demand `Client: Copy`, which ProxiedClient is not. The home therefore gains two impls with no bound on Client, written exactly `impl<Client> Clone for SuppliedClient<'_, Client> {` with a body of `*self`, and `impl<Client> Copy for SuppliedClient<'_, Client> {}`. With one type on both sides, the oracle's sdk_http/realtime_http_calls/native.rs passes the core value on as it is instead of rebuilding it at L172-L173, and drops `SuppliedClient as ProviderClient` from its import at L34-L36.
+
+
+  The request. Two shapes carry the same parts. Shape A is `method: Method, url: Url, headers, body: RequestBody, timeout: Option<Duration>`: the home `WriteRequest` (service.rs L56-L62), responses_write_http's `WriteRequest` (service.rs L67-L73), responses_compact_http's `CompactRequest` (service.rs L92-L99), videos_http_transport's `VideoRequest` (client.rs L74-L82) and provider speech_http's `SpeechWireRequest` (speech_http.rs L63-L70). Shape B adds `query: Vec<(String, String)>` after url: vector_file_http_write's `WriteRequest` (service.rs L33-L41), vector_file_http_create_list's `FileRequest` (service.rs L52-L59) and video_remix_list_transport's `VideoRequest` (client.rs L17-L25). Every ProxiedClient adapter over them does the same thing, the request's timeout or the client's `limits.read_timeout` as the deadline, `send_following` and `buffered(limits.body_bytes)`, and the shape A ones pass `query: Vec::new()`. So one struct serves both: the home `WriteRequest` gains `pub query: Vec<(String, String)>,` between url and headers and `#[derive(Debug)]` (videos' VideoRequest derives it), its adapter in vector_store_http_write/service/proxied.rs L20 passes `query: request.query`, and each shape A construction writes `query: Vec::new(),`: core file_http_metadata/service.rs L143 and service/listing.rs L93, responses_compact_http/service.rs L148, responses_write_http/service.rs L221, vector_search_execution/service.rs L100, vector_store_http_create_read/service.rs L147, vector_store_http_write/service.rs L160, video_edit_transport/wire.rs L98 and videos_http_transport/client.rs L155, and provider image_edit_http/service.rs L154 and speech_http.rs L195. Shape B builders (vector_file_http_create_list/service/request.rs L94, vector_file_http_write/service.rs L140, video_remix_list_transport/wire.rs L63) keep their query and only change the struct name.
+
+
+  The transports. The home is `WriteTransport` at service.rs L64-L72, `default_timeout` and `send(WriteRequest)`. Over the one request these are the same trait: `CompactTransport` (responses_compact_http/service.rs L49-L57), `SpeechTransport` (speech_http.rs L72-L80), vector_file_http_write's `WriteTransport` (service.rs L43-L51) and `VideoAsyncClient` (video_remix_list_transport/client.rs L32-L40), and three that only send, responses_write_http's `WriteTransport` (service.rs L75-L81), `VideoTransport` (videos_http_transport/client.rs L66-L72) and `FileTransport` (vector_file_http_create_list/service.rs L61-L67). All seven go. ProxiedClient may implement the home once, so every other adapter goes with them: the files responses_compact_http/service/proxied.rs, responses_write_http/service/proxied.rs, vector_file_http_write/service/proxied.rs, vector_file_http_create_list/service/proxied.rs and provider speech_http/proxied.rs with their `mod proxied;` lines (compact service.rs L31, write service.rs L27, vector file write service.rs L25, create list service.rs L29, speech_http.rs L30), and the impls at videos_http_transport/client.rs L266-L281 and video_remix_list_transport/client.rs L104-L130 with the imports only they used. Fakes of the send-only traits implement the home and so gain a `default_timeout`, which their callers never read: responses_write_http/tests/support.rs L225, responses_lifecycle_write/tests/support.rs L65, videos_http_transport/tests/video_http_transport/support.rs L246, video_content_call/tests/support.rs L456, video_generation_call/call/tests/support.rs L234, vector_file_http_create_list/tests/support.rs L221 and betterlite-server's health_native_backend/video_generation/tests.rs L416. The others only change the trait and request names: responses_compact_http/tests/support.rs L301, responses_compact_call/tests/support.rs L188, vector_file_http_write/tests/support.rs L218, video_remix_call/tests/support.rs L201, video_remix_list_transport/tests/support.rs L239, provider speech_http/tests/support.rs L205, azure_media_dispatch/speech/native.rs L201 (`impl<T> SpeechTransport for RuntimeClient<'_, T>`), and the oracle's helpers/core_ops/b3340/client.rs L53. Every bound that names a deleted trait names the home instead, B10200's `Client: CompactTransport`, `Client: SpeechTransport`, `Client: FileTransport` and vector_file_http_write's `Client: WriteTransport` included, as do videos' `type Client: VideoTransport;` (client.rs L97) and `type AsyncClient: VideoAsyncClient;` (video_remix_list_transport/client.rs L45). `VideoSyncClient` (client.rs L27-L30) answers synchronously, so it stays, and its `send` takes the home WriteRequest; betterlite-python's video_calls/clients.rs L7 and L87 and the oracle's b3340 client.rs and project.rs follow the rename.
+
+
+  Not merged. responses_read_http's `ReadRequest` (service.rs L59-L66) has a body but no timeout, and vector_file_http_read's (service.rs L37-L45) a timeout but no body, and their ProxiedClient adapters pick different deadlines. responses_create_http's `CreateRequest` (service.rs L99) carries a resolved `timeout: Duration`, file_http_upload's `UploadRequest` (L56-L62) an `UploadBody`, video_character_transport's `CharacterRequest` (clients.rs L28) a `CharacterBody`, rerank_http's `RerankHttpRequest` (client.rs L36-L41) has no method and a byte body and its `send` takes a logging argument, and betterlite-http's `OutboundRequest` (outbound.rs L33-L40) holds the deadline already resolved. fal's own `VideoTransport` (fal/video_results/transport.rs L15) sends a plain GET with no request struct. file_provider_write's `SuppliedClient<Client>` enum (file_provider_write.rs L30-L35) tells an httpx handler from an SDK client and stays; only its `Handler { mode }` takes the home ClientKind.
+
+
+  Tests. No new test: every listed module's tests already pin client selection, the timeout each class applies and the error each one reports, and they pass with only imports, names, fake methods and the shape A `query` changed. The oracle files change only names and imports, and CI's clippy lane builds them.
+
+
+  What users see: nothing.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/vector_store_http_write/service.rs
+    - crates/betterlite-core/src/api/vector_store_http_write/service/proxied.rs
+    - crates/betterlite-core/src/api/responses_read_http.rs
+    - crates/betterlite-core/src/api/responses_read_http/**
+    - crates/betterlite-core/src/api/responses_compact_http.rs
+    - crates/betterlite-core/src/api/responses_compact_http/**
+    - crates/betterlite-core/src/api/responses_write_http.rs
+    - crates/betterlite-core/src/api/responses_write_http/**
+    - crates/betterlite-core/src/api/responses_compact_call.rs
+    - crates/betterlite-core/src/api/responses_compact_call/**
+    - crates/betterlite-core/src/api/responses_create.rs
+    - crates/betterlite-core/src/api/responses_create/**
+    - crates/betterlite-core/src/api/responses_create_http.rs
+    - crates/betterlite-core/src/api/responses_create_http/**
+    - crates/betterlite-core/src/api/responses_lifecycle_call.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_call/**
+    - crates/betterlite-core/src/api/responses_lifecycle_write.rs
+    - crates/betterlite-core/src/api/responses_lifecycle_write/**
+    - crates/betterlite-core/src/api/videos_http_transport.rs
+    - crates/betterlite-core/src/api/videos_http_transport/**
+    - crates/betterlite-core/src/api/video_character_transport/service.rs
+    - crates/betterlite-core/src/api/video_character_transport/service/send.rs
+    - crates/betterlite-core/src/api/video_content_call.rs
+    - crates/betterlite-core/src/api/video_content_call/**
+    - crates/betterlite-core/src/api/video_generation_call.rs
+    - crates/betterlite-core/src/api/video_generation_call/**
+    - crates/betterlite-core/src/api/video_remix_call.rs
+    - crates/betterlite-core/src/api/video_remix_call/**
+    - crates/betterlite-core/src/api/video_remix_list_transport.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/**
+    - crates/betterlite-core/src/api/video_edit_transport.rs
+    - crates/betterlite-core/src/api/video_edit_transport/**
+    - crates/betterlite-core/src/api/fal/video_results.rs
+    - crates/betterlite-core/src/api/fal/video_results/**
+    - crates/betterlite-core/src/api/file_http_upload.rs
+    - crates/betterlite-core/src/api/file_http_upload/**
+    - crates/betterlite-core/src/api/file_provider_write.rs
+    - crates/betterlite-core/src/api/file_provider_write/**
+    - crates/betterlite-core/src/api/file_http_metadata.rs
+    - crates/betterlite-core/src/api/file_http_metadata/**
+    - crates/betterlite-core/src/api/image_edit_call.rs
+    - crates/betterlite-core/src/api/image_edit_call/**
+    - crates/betterlite-core/src/api/image_generation_call.rs
+    - crates/betterlite-core/src/api/image_generation_call/**
+    - crates/betterlite-core/src/api/realtime_http_calls.rs
+    - crates/betterlite-core/src/api/realtime_http_calls/**
+    - crates/betterlite-core/src/api/vector_file_http_write.rs
+    - crates/betterlite-core/src/api/vector_file_http_write/**
+    - crates/betterlite-core/src/api/vector_file_http_create_list.rs
+    - crates/betterlite-core/src/api/vector_file_http_create_list/**
+    - crates/betterlite-core/src/api/vector_search_execution.rs
+    - crates/betterlite-core/src/api/vector_search_execution/**
+    - crates/betterlite-core/src/api/vector_store_http_create_read.rs
+    - crates/betterlite-core/src/api/vector_store_http_create_read/**
+    - crates/betterlite-provider/src/api/image_edit_http.rs
+    - crates/betterlite-provider/src/api/image_edit_http/**
+    - crates/betterlite-provider/src/api/image_generation_http.rs
+    - crates/betterlite-provider/src/api/image_generation_http/**
+    - crates/betterlite-provider/src/api/rerank_http.rs
+    - crates/betterlite-provider/src/api/rerank_http/**
+    - crates/betterlite-provider/src/api/speech_http.rs
+    - crates/betterlite-provider/src/api/speech_http/**
+    - crates/betterlite-provider/src/api/realtime_http_transport.rs
+    - crates/betterlite-provider/src/api/realtime_http_transport/**
+    - crates/betterlite-provider/src/azure_media_dispatch/speech/native.rs
+    - crates/betterlite-python/src/file_calls/convert.rs
+    - crates/betterlite-python/src/file_calls/convert/tests.rs
+    - crates/betterlite-python/src/file_calls/dispatch/clients.rs
+    - crates/betterlite-python/src/file_calls/session.rs
+    - crates/betterlite-python/src/file_calls/session/core.rs
+    - crates/betterlite-python/src/video_calls/clients.rs
+    - crates/betterlite-server/src/health_native_backend/video_generation/tests.rs
+    - tools/oracle/src/helpers/core_ops/b3340/client.rs
+    - tools/oracle/src/helpers/core_ops/b3340/project.rs
+    - tools/oracle/src/helpers/core_ops/fal_video_results/outcome.rs
+    - tools/oracle/src/helpers/core_ops/responses_ws_managed/fixtures/ports.rs
+    - tools/oracle/src/sdk_http/file_create_list_transport/**
+    - tools/oracle/src/sdk_http/file_http_upload/**
+    - tools/oracle/src/sdk_http/file_provider_write/**
+    - tools/oracle/src/sdk_http/image_edit_call/**
+    - tools/oracle/src/sdk_http/image_edit_http/**
+    - tools/oracle/src/sdk_http/image_generation_http.rs
+    - tools/oracle/src/sdk_http/realtime_http_calls/**
+    - tools/oracle/src/sdk_http/response_chat_dispatch/**
+    - tools/oracle/src/sdk_http/responses_async_create/**
+    - tools/oracle/src/sdk_http/responses_compact/**
+    - tools/oracle/src/sdk_http/responses_compact_transport.rs
+    - tools/oracle/src/sdk_http/responses_compact_transport/**
+    - tools/oracle/src/sdk_http/responses_create/**
+    - tools/oracle/src/sdk_http/responses_create_transport.rs
+    - tools/oracle/src/sdk_http/responses_create_transport/**
+    - tools/oracle/src/sdk_http/responses_read_transport.rs
+    - tools/oracle/src/sdk_http/responses_read_transport/**
+    - tools/oracle/src/sdk_http/responses_write_transport.rs
+    - tools/oracle/src/sdk_http/responses_write_transport/**
+    - tools/oracle/src/sdk_http/speech_http.rs
+    - tools/oracle/src/sdk_http/speech_http/**
+    - tools/oracle/src/sdk_http/vector_file_create_list/**
+    - tools/oracle/src/sdk_http/vector_file_write/**
+    - tools/oracle/src/sdk_http/vector_file_write_transport/**
+  lint_tables: false
+references: []
+dod:
+  - text: ClientKind and SuppliedClient exist once, in vector_store_http_write's service module, and none of the twelve class enums or the twelve supplied-client structs is left.
+    proof: [kind-copies, supplied-copies, home-shape]
+  - text: One WriteRequest with a query and one WriteTransport serve every handler family named here, ProxiedClient implements it once, and no copied request struct, transport trait or proxied adapter is left.
+    proof: [request-copies, home-shape]
+  - text: Every user of a deleted type compiles against the home and the owners' tests in core, provider, python and server pass with only names, imports and fake methods changed.
+    proof: [core-client-tests, provider-client-tests, python-client-tests, server-video-tests]
+checks:
+  optional: []
+  commands:
+    - id: kind-copies
+      why: a module still declares its own Sync and Asynchronous client class enum
+      run: |-
+        test -z "$(grep -lE '^pub enum (ClientKind|Mode|ImageEditClientKind|CustomClientKind)\b' crates/betterlite-core/src/api/responses_read_http/service.rs crates/betterlite-core/src/api/responses_compact_http/service.rs crates/betterlite-core/src/api/responses_write_http/service.rs crates/betterlite-core/src/api/videos_http_transport/client.rs crates/betterlite-core/src/api/fal/video_results/transport.rs crates/betterlite-core/src/api/file_http_upload/service.rs crates/betterlite-core/src/api/image_edit_call/call.rs crates/betterlite-core/src/api/image_generation_call/call.rs crates/betterlite-provider/src/api/image_edit_http/service.rs crates/betterlite-provider/src/api/image_generation_http.rs crates/betterlite-provider/src/api/rerank_http/client.rs crates/betterlite-provider/src/api/speech_http.rs)" &&
+        test -z "$(grep -rnwE 'ImageEditClientKind|CustomClientKind' crates tools --include=*.rs)"
+    - id: supplied-copies
+      why: a module still pairs the client class with a borrowed transport in its own struct
+      run: |-
+        test -z "$(grep -lE '^pub struct (SuppliedClient|SuppliedTransport)\b' crates/betterlite-core/src/api/responses_read_http/service.rs crates/betterlite-core/src/api/responses_compact_http/service.rs crates/betterlite-core/src/api/responses_write_http/service.rs crates/betterlite-core/src/api/videos_http_transport/client.rs crates/betterlite-core/src/api/fal/video_results/transport.rs crates/betterlite-core/src/api/file_http_upload/service.rs crates/betterlite-core/src/api/realtime_http_calls/call.rs crates/betterlite-provider/src/api/image_edit_http/service.rs crates/betterlite-provider/src/api/image_generation_http.rs crates/betterlite-provider/src/api/rerank_http/client.rs crates/betterlite-provider/src/api/speech_http.rs crates/betterlite-provider/src/api/realtime_http_transport/client.rs)" &&
+        test -z "$(grep -rnw 'SuppliedTransport' crates/betterlite-core/src/api/fal tools/oracle/src/helpers/core_ops/fal_video_results --include=*.rs)"
+    - id: request-copies
+      why: a copied request struct, transport trait or ProxiedClient adapter over the handler request is still in place
+      run: |-
+        test -z "$(grep -lE '^pub (struct (WriteRequest|CompactRequest|VideoRequest|FileRequest|SpeechWireRequest)|trait (WriteTransport|CompactTransport|VideoTransport|VideoAsyncClient|FileTransport|SpeechTransport))\b' crates/betterlite-core/src/api/responses_write_http/service.rs crates/betterlite-core/src/api/responses_compact_http/service.rs crates/betterlite-core/src/api/videos_http_transport/client.rs crates/betterlite-core/src/api/vector_file_http_write/service.rs crates/betterlite-core/src/api/vector_file_http_create_list/service.rs crates/betterlite-core/src/api/video_remix_list_transport/client.rs crates/betterlite-provider/src/api/speech_http.rs)" &&
+        test ! -e crates/betterlite-core/src/api/responses_compact_http/service/proxied.rs &&
+        test ! -e crates/betterlite-core/src/api/responses_write_http/service/proxied.rs &&
+        test ! -e crates/betterlite-core/src/api/vector_file_http_write/service/proxied.rs &&
+        test ! -e crates/betterlite-core/src/api/vector_file_http_create_list/service/proxied.rs &&
+        test ! -e crates/betterlite-provider/src/api/speech_http/proxied.rs &&
+        test -z "$(grep -rnwE 'CompactTransport|SpeechWireRequest|VideoAsyncClient' crates/betterlite-core/src crates/betterlite-provider/src crates/betterlite-python/src crates/betterlite-server/src tools/oracle/src/helpers/core_ops tools/oracle/src/sdk_http --include=*.rs)"
+    - id: home-shape
+      why: the home request lost its query, its adapter drops the query, or the home supplied client is not Copy for a ProxiedClient
+      run: |-
+        grep -qxF '    pub query: Vec<(String, String)>,' crates/betterlite-core/src/api/vector_store_http_write/service.rs &&
+        grep -qF "impl<Client> Copy for SuppliedClient<'_, Client> {}" crates/betterlite-core/src/api/vector_store_http_write/service.rs &&
+        grep -qF "impl<Client> Clone for SuppliedClient<'_, Client> {" crates/betterlite-core/src/api/vector_store_http_write/service.rs &&
+        grep -qF 'query: request.query,' crates/betterlite-core/src/api/vector_store_http_write/service/proxied.rs
+    - id: core-client-tests
+      why: a core handler family lost its client selection, its timeout, its error mapping or its request after the merge
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(vector_store_http_write|responses_read_http|responses_compact_http|responses_write_http|responses_compact_call|responses_create|responses_create_http|responses_lifecycle_call|responses_lifecycle_write|videos_http_transport|video_character_transport|video_content_call|video_generation_call|video_remix_call|video_remix_list_transport|video_edit_transport|fal::video_results|file_http_upload|file_provider_write|file_http_metadata|image_edit_call|image_generation_call|realtime_http_calls|vector_file_http_write|vector_file_http_create_list|vector_search_execution|vector_store_http_create_read)::/) - test(/replays_/)'
+    - id: provider-client-tests
+      why: the provider image, rerank, speech or realtime transport no longer picks or sends through the shared client types
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^(api::(image_edit_http|image_generation_http|rerank_http|speech_http|realtime_http_transport)|azure_media_dispatch)::/) - test(/replays_/)'
+    - id: python-client-tests
+      why: the Python file or video calls no longer reach the upload mode or the async video client through the home types
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^(file_calls|video_calls)::/)'
+    - id: server-video-tests
+      why: the server's video generation health check fake no longer implements the shared transport
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_native_backend::video_generation::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B10217's group: the `Sync, Async` client class and its supplied pair in betterlite-bedrock (bedrock_embedding_io, image_call and rerank transport.rs), betterlite-vertex's gemini_http/call.rs, core's soniox/pipeline/client.rs and bfl's TransportKind and SuppliedTransport. They take this home without waiting for B10200."
+  - "The same class below betterlite-core, which cannot import this home: betterlite-anthropic's chat_call/transport.rs ClientKind and SuppliedChatClient and betterlite-foundry's embeddings/call.rs EmbeddingMode and SuppliedClient. Folding them needs the home moved into betterlite-http, a later plan."
+  - "betterlite-openai's ClientKind copies for the OpenAI SDK class (assistants/client.rs L52, batches/sdk.rs L11, image_variations/client.rs L9, speech/client.rs L10, text_completion_transport/sdk.rs L14, transcription/client.rs L10): the SDK client class, not the httpx handler class, and some carry serde derives or a label; a later plan inside betterlite-openai."
+  - "The private `Selected` enum with its `get` (21 copies, one in betterlite-openai's container_file_http) and the per-module `LogContext` borrow pair (18 copies) in these same service files, and the oracle sdk_http `Mode` wire enums that each map to a ClientKind: a later plan."
+  - "betterlite-redis's ClientKind (redis_connection_settings/model/settings.rs L11, which redis client class the settings build) and betterlite-router's (deployment_clients/clients.rs L12, a deployment's cached client slot that derives Ord) are other concepts and stay."
+pitfalls:
+  - "vector_store_http_write/service.rs has 281 of its 300 lines; the query field, the Debug derive and the two impls bring it to about 291, so `of` is inlined at its caller and nothing else moves into this file."
+  - "Write the Clone and Copy impls by hand: `#[derive(Clone, Copy)]` on the generic home bounds them on `Client: Copy`, and realtime_http_calls.rs L162 then fails with E0507 because ProxiedClient is only Clone."
+  - "ProxiedClient may implement WriteTransport once; a proxied.rs left behind with `impl WriteTransport for ProxiedClient` fails with E0119 once its local trait is gone, so delete the file and its `mod proxied;` line together."
+  - "betterlite-openai has its own `FileTransport` and `SpeechTransport` (files/transport.rs, speech/result.rs), implemented in betterlite-azure, betterlite-anthropic, betterlite-server and the oracle's openai and azure helpers; those are a different trait and must not be renamed."
+  - "file_provider_write declares its own `SuppliedClient<Client>` enum, so it imports only the home ClientKind; importing the home SuppliedClient there clashes with the local name."
+  - "The oracle's sdk_http/speech_http.rs and speech_http/native.rs reach the provider module through `use betterlite_provider::api::speech_http as production;`, so `production::Mode` and `production::SuppliedClient` never show up in a grep for `speech_http::Mode`; they become the core home's ClientKind and SuppliedClient."
+  - "B10200 rewrites the `S: ClientSource` lines in these modules first; rename the trait in the bound it wrote and keep the line as it is, rather than going back to a bound on the associated type."
+review_level: standard
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0

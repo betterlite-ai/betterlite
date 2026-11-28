@@ -1,0 +1,6 @@
+task: B753
+deviations:
+  - what: An unquoted non-finite YAML float for litellm_settings.max_budget, such as .nan or .inf, fails the config load at the shared YAML layer, where LiteLLM's float(value) turns the same literal into nan or inf and starts the proxy; LiteLLM's +inf ceiling then keeps the global spend read on.
+    why: The ceiling is a rust_decimal value, which holds no non-finite number, so there is no typed setting to compare with zero; the shared loader refuses non-finite YAML floats before any section reads them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6436-L6437
+kept_bugs: []

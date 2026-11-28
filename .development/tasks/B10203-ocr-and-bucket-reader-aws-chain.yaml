@@ -1,0 +1,73 @@
+id: B10203
+title: The Python Textract OCR client and the S3 bucket module reader sign through the credential chain
+description: >-
+  Two AWS callers still sign with nothing or with their own copy of the native sources. The Python search and OCR session gives every OCR client `UnsignedAws` (crates/betterlite-python/src/search_ocr/ocr_client.rs L77-L90, set at L44), so an aws_textract call reaches Textract unsigned and its 403 is the answer. litellm-rust signs the same call with SigV4 over credentials from the request's aws_* params, then the environment, through its resolver (litellm-rust/crates/llms/src/aws_textract/ocr/common_utils.rs L232-L259, auth-aws/src/aws.rs L602-L610). The S3 bucket module reader builds its own `NativeSources` literal and asks the SDK chain at the region (crates/betterlite-server/src/bucket_config/s3_reader.rs L242-L276), where LiteLLM's module download calls `BaseAWSLLM().get_credentials()` with no arguments, so LiteLLM's AWS_* names and its role, profile and web identity flows apply (litellm/proxy/common_utils/load_config_utils.py L210-L232).
+
+
+  The OCR signer. The search and OCR session (search_ocr/session.rs, built at L55-L77) gains an `aws: AwsCredentialChain` field, built once in `build` with `AwsCredentialChain::from_environment(environment.clone(), &client, Arc::new(SecretLookup::environment_only()))` over a client from its pool, the way B10176's sessions build theirs, and a failure is a new `SessionError::AwsCredentials(#[source] ChainError)`. `ocr_client::build` takes `aws: &AwsCredentialChain` and sets `aws: Arc::new(ChainSigner { aws: aws.clone() })`; `UnsignedAws` and its comment go. `ChainSigner` implements betterlite-ocr's `AwsRequestSigner` (crates/betterlite-ocr/src/ocr_auth.rs L29-L45): the aws_* text values of `request.optional_params` (access key, secret key, session token, region, session name, profile, role, web identity token, STS endpoint, external id) fill an `AwsSettings` literal, `aws.get_credentials(&settings, None)` resolves them (the resolver fills LiteLLM's AWS_* names itself after B10192, so the signer reads no variable), and betterlite_sigv4's `sign_request` signs the request's method, URL, headers and body for `request.service` at `request.region` with `SigningMode::SigV4Auth` and `SystemTime::now`, answering the returned headers. A credential or signing failure is `OcrError` with its source, through the variant the other OCR auth sources use for a failed credential. betterlite-python adds betterlite-sigv4 if B10176 has not.
+
+
+  The bucket reader. `BucketModuleDownloader` (bucket_config/module_download.rs L38-L42) gains `aws: AwsCredentialChain`. The downloader is built per module download before Shared exists (python_hooks/bucket_fetcher.rs L79-L94), so `downloader_for` builds its own chain over the environment, the proxied client it already makes (L82-L83) and `SecretLookup::environment_only()`, as LiteLLM builds a fresh BaseAWSLLM per download. `S3Reader::initialize` (s3_reader.rs L136-L164) takes `aws: &AwsCredentialChain` and gets its credentials from `aws.get_credentials(&AwsSettings::default(), None)`; the region still comes from `region_from_environment`. `resolve_credentials` and `credential_settings` go, and the error log on a failure keeps its text. python_hooks/test_support.rs's `gcs_downloader` literal and the s3_reader tests build a chain over their test map.
+
+
+  Tests. search_ocr/ocr_client/tests.rs gains `textract_requests_sign_with_the_chain`: a client over a chain whose map holds AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_EC2_METADATA_DISABLED=true signs a request for service textract at us-east-1, and the answer has an Authorization header starting `AWS4-HMAC-SHA256 Credential=<that key>/` with `/us-east-1/textract/aws4_request` and an X-Amz-Date; with aws_access_key_id and aws_secret_access_key in the params, the params' key signs. On main UnsignedAws answers no header. s3_reader/tests.rs gains `the_reader_reads_litellm_profile_names`: with AWS_SHARED_CREDENTIALS_FILE pointing at a temporary file holding a `[work]` profile, AWS_PROFILE_NAME=work and different AWS_ACCESS_KEY_ID keys in the map, the reader's credentials are the work profile's; on main the SDK chain ignores AWS_PROFILE_NAME and answers the environment keys. The three initialize tests (s3_reader/tests.rs L172-L224) keep their expectations.
+
+
+  What users see. An aws_textract OCR call from the Python package is signed with SigV4 from its params, the environment, a profile, a role or web identity, instead of failing with Textract's 403. A Python hook module in an S3 bucket downloads with the credentials LiteLLM's get_credentials picks, LiteLLM's AWS_ROLE_NAME and AWS_PROFILE_NAME included.
+scope:
+  paths:
+    - crates/betterlite-python/src/search_ocr/ocr_client.rs
+    - crates/betterlite-python/src/search_ocr/ocr_client/tests.rs
+    - crates/betterlite-python/src/search_ocr/session.rs
+    - crates/betterlite-python/src/search_ocr/session/**
+    - crates/betterlite-python/src/search_ocr/error.rs
+    - crates/betterlite-python/Cargo.toml
+    - crates/betterlite-server/src/bucket_config/s3_reader.rs
+    - crates/betterlite-server/src/bucket_config/s3_reader/tests.rs
+    - crates/betterlite-server/src/bucket_config/module_download.rs
+    - crates/betterlite-server/src/bucket_config/module_download/tests.rs
+    - crates/betterlite-server/src/python_hooks/bucket_fetcher.rs
+    - crates/betterlite-server/src/python_hooks/test_support.rs
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/common_utils.rs#L232-L259
+    why: the Textract environment resolves the region and a SigV4 signer over credentials from the params and the environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/auth-aws/src/aws.rs#L602-L610
+    why: from_params takes host-supplied keys as they are and otherwise hands the params to the credential chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L210-L232
+    why: the module download asks BaseAWSLLM().get_credentials() and builds its S3 client with those keys.
+dod:
+  - text: The Python OCR client signs Textract requests with SigV4 over the session's credential chain, and UnsignedAws is gone.
+    proof: [no-stubs, ocr-tests]
+  - text: The S3 bucket module reader gets its credentials from get_credentials on a chain of its own, and its NativeSources literal is gone.
+    proof: [no-stubs, reader-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: no-stubs
+      why: the OCR client still signs nothing, or the reader still builds its own native sources
+      run: |-
+        test -z "$(grep -n 'UnsignedAws' crates/betterlite-python/src/search_ocr/ocr_client.rs)" &&
+        test -z "$(grep -nE 'fn credential_settings|NativeSources \{' crates/betterlite-server/src/bucket_config/s3_reader.rs)"
+    - id: ocr-tests
+      why: the OCR signer signs with the wrong keys, service or region, or the session lost its chain
+      run: grep -q 'fn textract_requests_sign_with_the_chain' crates/betterlite-python/src/search_ocr/ocr_client/tests.rs && cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^search_ocr::/)'
+    - id: reader-tests
+      why: the reader ignores LiteLLM's AWS_* names, or a module download lost its credentials
+      run: grep -q 'fn the_reader_reads_litellm_profile_names' crates/betterlite-server/src/bucket_config/s3_reader/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::/) | test(/^python_hooks::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Azure and Vertex token sources of the same OCR client (NoAzureToken, NoVertexToken): not AWS."
+  - "The server's OCR paths, which build no OcrClient in production yet."
+  - "Moving the reader onto Shared's chain: the downloader is built before Shared exists."
+pitfalls:
+  - "S3Reader's credentials field takes betterlite_sigv4's Credentials after B10190; pass the chain's answer as it is."
+  - "betterlite-ocr sits below betterlite-bedrock, so ChainSigner lives in betterlite-python, which already depends on both."
+  - "Build the session's chain once in build, not per OCR call, so its credential cache is shared across calls."
+  - "Every test map that reaches the SDK chain sets AWS_EC2_METADATA_DISABLED=true and gives keys or a profile, so nothing reaches instance metadata."
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

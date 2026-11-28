@@ -13,6 +13,7 @@ use super::support::{
     FakeScope, FakeStore, ScopeRights, internal_user, invitation_router, key_caller, master,
     org_admin, parse, platform_admin, platform_viewer, record, router_for, send, userless_admin,
 };
+use crate::auth::auth_key_lookup::tests::caller_through_key_stage;
 use crate::invitation_routes::state::{
     InvitationDatabase, InvitationRouteState, InvitationScope, QueueRouteState,
 };
@@ -170,6 +171,34 @@ async fn new_invitation_by_an_org_admin_checks_the_target() {
     assert_eq!(
         rows.created,
         vec![("alice".to_owned(), Some("org-admin".to_owned()))]
+    );
+}
+
+#[tokio::test]
+async fn new_invitation_by_an_org_admin_key_records_its_user() {
+    let (store, scope, router) = setup(Vec::new(), open_scope());
+    let (status, _, _) = Box::pin(send(
+        &router,
+        "POST",
+        "/invitation/new",
+        r#"{"user_id":"alice"}"#,
+        Some(caller_through_key_stage(
+            r#"{"user_id":"u1","user_role":"org_admin"}"#,
+        )),
+    ))
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        scope.calls(),
+        vec![
+            "has_admin_privileges".to_owned(),
+            "can_invite_user:alice".to_owned()
+        ]
+    );
+    let rows = store.rows.lock().expect("the store lock");
+    assert_eq!(
+        rows.created,
+        vec![("alice".to_owned(), Some("u1".to_owned()))]
     );
 }
 
@@ -501,6 +530,25 @@ async fn update_accepts_the_invitation() {
 }
 
 #[tokio::test]
+async fn update_by_a_user_bound_key_records_its_user() {
+    let (store, _, router) = setup(vec![record("inv-1", "alice", "admin-user")], open_scope());
+    let (status, _, text) = Box::pin(send(
+        &router,
+        "POST",
+        "/invitation/update",
+        r#"{"invitation_id":"inv-1","is_accepted":true}"#,
+        Some(caller_through_key_stage(r#"{"user_id":"u1"}"#)),
+    ))
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parse(&text)["updated_by"], "u1");
+    assert_eq!(
+        store.rows.lock().expect("the store lock").updated,
+        vec![("inv-1".to_owned(), true, "u1".to_owned())]
+    );
+}
+
+#[tokio::test]
 async fn update_reports_a_missing_row() {
     let (_, _, router) = setup(Vec::new(), open_scope());
     let (status, _, text) = Box::pin(send(
@@ -627,6 +675,29 @@ async fn delete_lets_an_org_admin_delete_their_own_invitation() {
         "/invitation/delete",
         r#"{"invitation_id":"inv-1"}"#,
         Some(org_admin()),
+    ))
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        store.rows.lock().expect("the store lock").deleted,
+        vec!["inv-1".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn delete_lets_an_org_admin_key_delete_its_own_invitation() {
+    let (store, _, router) = setup(
+        vec![record("inv-1", "alice", "u1")],
+        FakeScope::new(ScopeRights::Privileged),
+    );
+    let (status, _, _) = Box::pin(send(
+        &router,
+        "POST",
+        "/invitation/delete",
+        r#"{"invitation_id":"inv-1"}"#,
+        Some(caller_through_key_stage(
+            r#"{"user_id":"u1","user_role":"org_admin"}"#,
+        )),
     ))
     .await;
     assert_eq!(status, StatusCode::OK);

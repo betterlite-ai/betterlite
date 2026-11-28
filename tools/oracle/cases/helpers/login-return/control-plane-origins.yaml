@@ -1,0 +1,18 @@
+kind: helper
+name: login-return-control-plane-origins
+call:
+  login_return: {function: validate, return_to: "https://cp.example/ui", control_plane_url: "https://cp.example"}
+calls:
+  - login_return: {function: validate, return_to: "https://CP.Example/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example:443/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example/ui", control_plane_url: "https://cp.example:443"}
+  - login_return: {function: validate, return_to: "https://user:pw@cp.example/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "ws://cp.example:80/ui", control_plane_url: "ws://cp.example"}
+  - login_return: {function: validate, return_to: "wss://cp.example/ui", control_plane_url: "wss://cp.example:443"}
+  - login_return: {function: validate, return_to: "https://cp.example:8443/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "http://cp.example/ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example./ui", control_plane_url: "https://cp.example"}
+  - login_return: {function: validate, return_to: "https://cp.example/ui?next=/keys#frag", control_plane_url: "https://cp.example/console?x=1"}
+  - login_return: {function: validate, return_to: "https://cp.example/ui", control_plane_url: null}
+env: {}
+compare: {ignore: []}
