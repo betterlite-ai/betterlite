@@ -1,13 +1,13 @@
 id: B10211
 milestone: R2 bug fixes
 title: A production realtime WebSocket dialer over one shared tokio-tungstenite client
-status: todo
+status: done
 depends_on: [B2457, B1127]
 file: tasks/B10211-realtime-websocket-dialer.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3463
