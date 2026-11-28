@@ -58,6 +58,7 @@ use std::sync::{Arc, PoisonError};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
+use crate::auth::auth_context_sources::rewrite;
 use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
@@ -79,7 +80,6 @@ use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::{ExposeSecret as _, SecretString};
-
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -89,18 +89,34 @@ pub(crate) async fn authenticate(
     if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
     }
+    // both OAuth2 branches run before LiteLLM reads the master key, so they run here too
+    let pre_stage = oauth_tokens::pre_stage(
+        request.headers(),
+        request.uri().path(),
+        request.extensions(),
+    )
+    .await;
+    match pre_stage {
+        oauth_tokens::PreStage::Skipped => {}
+        oauth_tokens::PreStage::Authenticated(context) => {
+            request.extensions_mut().insert(*context);
+            return next.run(request).await;
+        }
+        oauth_tokens::PreStage::Rejected(failure) => {
+            let context = auth_errors::FailureContext::of(&request, None);
+            return context.respond(&failure, failure_response).await;
+        }
+    }
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    request
-        .extensions_mut()
-        .insert(ConfiguredMasterKey(master_key.clone()));
-    request.extensions_mut().insert(SharedViews::default());
-    let prepared =
-        match auth_context_sources::rewrite::prepare(request, master_key, failure_response).await {
-            Ok(prepared) => prepared,
-            Err(response) => return *response,
-        };
+    let extensions = request.extensions_mut();
+    extensions.insert(ConfiguredMasterKey(master_key.clone()));
+    extensions.insert(SharedViews::default());
+    let prepared = match rewrite::prepare(request, master_key, failure_response).await {
+        Ok(prepared) => prepared,
+        Err(response) => return *response,
+    };
     let pipeline = auth_stage_loop::run_stages(prepared, master_key, failure_response);
     match Box::pin(pipeline).await {
         Ok((mut staged, authenticated, body)) => {

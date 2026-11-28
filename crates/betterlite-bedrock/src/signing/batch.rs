@@ -1,7 +1,8 @@
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
+
 use super::error::SigningError;
 use super::headers::{merge_computed, prepare, without_computed};
 use super::request::AwsSignedRequest;
-use super::sigv4::{Signable, sign_request};
 use super::target::{RegionInputs, auth_settings, resolve_region};
 use crate::aws_settings::pop_aws_auth_params;
 use crate::aws_settings::sources::Credentials;
@@ -52,10 +53,8 @@ where
             BatchData::Json(object) => dumps_object(object),
             BatchData::Text(text) => text.to_owned(),
         };
-        (
-            text,
-            vec![("Content-Type".to_owned(), "application/json".to_owned())],
-        )
+        let content_type = vec![("Content-Type".to_owned(), "application/json".to_owned())];
+        (text, content_type)
     };
     let supplied = without_computed(initial_headers, credentials.session_token.is_some());
     let computed = sign_request(&Signable {
@@ -66,6 +65,7 @@ where
         service: request.service_name,
         region: &region,
         credentials: &credentials,
+        mode: SigningMode::SigV4Auth,
         now: request.now,
     })?;
     let merged = merge_computed(supplied, computed);
