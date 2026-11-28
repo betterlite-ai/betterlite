@@ -233,8 +233,10 @@ fn push_value(entries: &mut Vec<(String, LabelDumpValue)>, name: &str, value: Op
 }
 
 fn model_info_id(fields: Option<&IndexMap<String, Json>>) -> Option<String> {
-    let model_info = as_object(fields?.get("model_info")?)?;
-    model_info.get("id").and_then(as_text).map(str::to_owned)
+    as_object(fields?.get("model_info")?)?
+        .get("id")
+        .and_then(as_text)
+        .map(str::to_owned)
 }
 
 // litellm reads metadata.model_info.id, then request_data.model_info.id, and an empty first id falls through
