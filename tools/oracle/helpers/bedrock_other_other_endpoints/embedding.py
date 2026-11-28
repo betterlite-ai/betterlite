@@ -1,3 +1,4 @@
+from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue
 
 import bedrock_other_embedding_call
@@ -24,14 +25,14 @@ from .common import (
 )
 from .models import (
     EMBEDDING_OUTPUT,
+    EMBEDDING_PAYLOAD,
     JOBS_INPUT,
     STATUS_OUTPUT,
     EmbeddingRequest,
-    EmbeddingResponse,
     Probe,
     Reply,
-    StatusRequest,
     StatusOutput,
+    StatusRequest,
 )
 
 
@@ -67,16 +68,17 @@ def embedding_case(probe: Probe) -> dict[str, JsonValue]:
 
 
 def embedding_value(response: EmbeddingResponse) -> JsonValue:
+    payload = EMBEDDING_PAYLOAD.validate_json(response.model_dump_json())
     data: list[JsonValue] = [
         {"index": record["index"], "embedding": record["embedding"]}
-        for record in response["data"]
+        for record in payload["data"]
     ]
     usage: dict[str, JsonValue] = {
-        "prompt_tokens": response["usage"]["prompt_tokens"],
-        "total_tokens": response["usage"]["total_tokens"],
+        "prompt_tokens": payload["usage"]["prompt_tokens"],
+        "total_tokens": payload["usage"]["total_tokens"],
     }
     raw: dict[str, JsonValue] = {
-        "model": response["model"],
+        "model": payload["model"],
         "data": data,
         "usage": usage,
     }

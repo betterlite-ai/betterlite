@@ -1,5 +1,6 @@
 from typing import Final
 
+from litellm.types.llms.bedrock import AwsAuthParams
 from pydantic import JsonValue, TypeAdapter
 
 from .models import Probe, Reply
@@ -104,10 +105,10 @@ def region_of(probe: Probe) -> str:
 
 
 def keys_of(probe: Probe) -> dict[str, JsonValue]:
-    params = params_of(probe)
+    params = AwsAuthParams.model_validate(params_of(probe))
     return {
-        "access_key_id": params.get("aws_access_key_id"),
-        "secret_access_key": params.get("aws_secret_access_key"),
+        "access_key_id": params.aws_access_key_id,
+        "secret_access_key": params.aws_secret_access_key,
     }
 
 

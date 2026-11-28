@@ -1,5 +1,6 @@
 from typing import Final
 
+from litellm.types.utils import TokenCountResponse
 from pydantic import JsonValue
 
 import bedrock_other_count_call
@@ -21,8 +22,8 @@ from .common import (
 from .models import (
     COUNT_INPUT,
     COUNT_OUTPUT,
+    COUNT_PAYLOAD,
     CountRequest,
-    CountResult,
     Probe,
 )
 
@@ -63,18 +64,19 @@ def count_call(probe: Probe) -> JsonValue:
     }
 
 
-def count_value(result: CountResult | None) -> JsonValue:
+def count_value(result: TokenCountResponse | None) -> JsonValue:
     if result is None:
         return None
+    payload = COUNT_PAYLOAD.validate_json(result.model_dump_json())
     raw: dict[str, JsonValue] = {
-        "total_tokens": result["total_tokens"],
-        "request_model": result["request_model"],
-        "model_used": result["model_used"],
-        "tokenizer_type": result["tokenizer_type"],
-        "error": result["error"],
-        "error_message": result["error_message"],
-        "status_code": result["status_code"],
-        "original_response": result["original_response"],
+        "total_tokens": payload["total_tokens"],
+        "request_model": payload["request_model"],
+        "model_used": payload["model_used"],
+        "tokenizer_type": payload["tokenizer_type"],
+        "error": payload["error"],
+        "error_message": payload["error_message"],
+        "status_code": payload["status_code"],
+        "original_response": payload["original_response"],
     }
     return JSON.validate_python(raw)
 

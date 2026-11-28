@@ -1,5 +1,7 @@
 from typing import Final, Literal, NotRequired, Required, TypedDict
 
+from litellm.types.rerank import RerankResponse
+from litellm.types.utils import EmbeddingResponse, TokenCountResponse
 from pydantic import JsonValue, TypeAdapter
 
 import bedrock_other_count_call
@@ -81,7 +83,7 @@ class EmbeddingUsage(TypedDict):
     total_tokens: int
 
 
-class EmbeddingResponse(TypedDict):
+class EmbeddingPayload(TypedDict):
     model: str | None
     data: list[EmbeddingRecord]
     usage: EmbeddingUsage
@@ -117,23 +119,13 @@ class RerankRequest(TypedDict):
     signed_headers: SignedHeaders
 
 
-class RerankResult(TypedDict):
-    index: int
-    relevance_score: float
-
-
-class RerankResponse(TypedDict):
-    id: str | None
-    results: list[RerankResult] | None
-
-
 class CountRequest(TypedDict):
     url: str
     body: str
     headers: dict[str, str]
 
 
-class CountResult(TypedDict):
+class CountPayload(TypedDict):
     total_tokens: int
     request_model: str
     model_used: str
@@ -145,7 +137,7 @@ class CountResult(TypedDict):
 
 
 class CountCall(TypedDict):
-    result: CountResult | None
+    result: TokenCountResponse | None
     request: CountRequest | None
 
 
@@ -194,10 +186,12 @@ TRANSCRIPTION_INPUT: Final[TypeAdapter[bedrock_other_transcription.Calls]] = Typ
 )
 IMAGE_INPUT: Final[TypeAdapter[ImageInput]] = TypeAdapter(ImageInput)
 EMBEDDING_OUTPUT: Final[TypeAdapter[EmbeddingOutput]] = TypeAdapter(EmbeddingOutput)
+EMBEDDING_PAYLOAD: Final[TypeAdapter[EmbeddingPayload]] = TypeAdapter(EmbeddingPayload)
 STATUS_OUTPUT: Final[TypeAdapter[StatusOutput]] = TypeAdapter(StatusOutput)
 RERANK_REQUEST: Final[TypeAdapter[RerankRequest]] = TypeAdapter(RerankRequest)
 RERANK_OUTPUT: Final[TypeAdapter[RerankResponse]] = TypeAdapter(RerankResponse)
 COUNT_OUTPUT: Final[TypeAdapter[CountOutput]] = TypeAdapter(CountOutput)
+COUNT_PAYLOAD: Final[TypeAdapter[CountPayload]] = TypeAdapter(CountPayload)
 TRANSCRIPTION_OUTPUT: Final[TypeAdapter[TranscriptionOutput]] = TypeAdapter(
     TranscriptionOutput
 )

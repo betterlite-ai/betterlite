@@ -1,3 +1,4 @@
+import litellm
 from pydantic import JsonValue
 
 from .common import JSON
@@ -7,6 +8,8 @@ from .image import image_row
 from .models import INPUT, Probe
 from .rerank import rerank_row
 from .transcription import transcription_row
+
+litellm.suppress_debug_info = True
 
 
 def probe_row(model_cost: dict[str, JsonValue] | None, probe: Probe) -> JsonValue:

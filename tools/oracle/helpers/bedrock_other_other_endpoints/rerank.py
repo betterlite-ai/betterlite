@@ -1,3 +1,4 @@
+from litellm.types.rerank import RerankResponse
 from pydantic import JsonValue
 
 import bedrock_other_rerank
@@ -19,7 +20,6 @@ from .models import (
     RERANK_PROBE,
     RERANK_REQUEST,
     Probe,
-    RerankResponse,
 )
 
 
@@ -67,13 +67,13 @@ def rerank_probe(probe: Probe) -> dict[str, JsonValue]:
 
 def rerank_value(response: RerankResponse) -> JsonValue:
     results: JsonValue = None
-    items = response["results"]
+    items = response.results
     if items is not None:
         entries: list[JsonValue] = [
             {"index": item["index"], "score": item["relevance_score"]} for item in items
         ]
         results = JSON.validate_python(entries)
-    raw: dict[str, JsonValue] = {"id": response["id"], "results": results}
+    raw: dict[str, JsonValue] = {"id": response.id, "results": results}
     return JSON.validate_python(raw)
 
 

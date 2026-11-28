@@ -1,3 +1,4 @@
+from litellm.types.utils import LlmProviders
 from pydantic import JsonValue
 
 import bedrock_other_transcription
@@ -35,7 +36,7 @@ def transcription_call(probe: Probe) -> dict[str, JsonValue]:
         "mode": mode,
         "model": probe["model"],
         "file": file_case(file_value),
-        "custom_llm_provider": "bedrock",
+        "custom_llm_provider": LlmProviders.BEDROCK.value,
         "optional_params": params_of(probe),
         "api_key": probe.get("api_key"),
         "api_base": probe.get("api_base"),
