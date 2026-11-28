@@ -75,8 +75,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        // proxy_server.py reads max_budget with float(value); the shared decoder resolves an os.environ
-        // reference first and refuses a bool, which is outside the declared float
+        // proxy_server.py reads max_budget with float(value); the shared decoder resolves a reference and refuses a bool
         let max_budget = resolve_number(
             self.litellm_settings.max_budget,
             BUDGET_PATH,
