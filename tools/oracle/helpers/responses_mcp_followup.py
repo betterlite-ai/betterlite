@@ -199,9 +199,7 @@ def _append_output(value: AppendOutputCase) -> JsonValue:
     response = ResponsesAPIResponse.model_validate(value["response"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
     fastuuid.uuid4 = _FixedUuid(value["ids"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1326
     composed = Proxy._add_mcp_output_elements_to_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1310-L1357
-        response=response, mcp_tools_fetched=value["mcp_tools_fetched"],
-        tool_results=value["tool_results"],
-    )
+        response, value["mcp_tools_fetched"], value["tool_results"])
     output = cast(dict[str, JsonValue], composed.model_dump(mode="json"))["output"]  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1354-L1355
     return JSON.validate_python(output)
 
