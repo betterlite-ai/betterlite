@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -12,6 +12,7 @@ use betterlite_db::mcp_stored_contracts::MCPTransport;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::UserUrlError;
 use rstest::rstest;
+use tokio::time::sleep;
 use tracing::subscriber::{set_default, with_default};
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -22,7 +23,7 @@ use super::openapi::{MAX_SPEC_BYTES, SpecHealthChecks as _, openapi_spec_health}
 use super::ports::{Clock as _, ProbeError, SessionError, SystemClock};
 use super::reachability::ServerReachability as _;
 use super::settings::{HEALTH_CHECK_TIMEOUT_VARIABLE, HealthSettings};
-use crate::config_loader::ports::InstructionsCache;
+use crate::config_loader::ports::InstructionsCache as _;
 use crate::openapi_tools::error::OpenApiError;
 use crate::server_record::MCPServer;
 
@@ -58,9 +59,12 @@ impl CapturedLog {
 }
 
 impl io::Write for CapturedLog {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -69,7 +73,7 @@ impl io::Write for CapturedLog {
 }
 
 impl MakeWriter<'_> for CapturedLog {
-    type Writer = CapturedLog;
+    type Writer = Self;
 
     fn make_writer(&self) -> Self::Writer {
         self.clone()
@@ -336,7 +340,7 @@ async fn check_system_clock_moves_forward() {
     let clock = SystemClock::default();
     let monotonic_before = clock.now_monotonic();
     let utc_before = clock.now_utc();
-    tokio::time::sleep(Duration::from_millis(5)).await;
+    sleep(Duration::from_millis(5)).await;
     assert!(clock.now_monotonic() > monotonic_before);
     assert!(clock.now_utc() > utc_before);
 }

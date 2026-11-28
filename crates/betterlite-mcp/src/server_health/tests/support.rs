@@ -9,6 +9,7 @@ use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::managed_resource_rows::wire::RowTimestamp;
 use chrono::{DateTime, TimeDelta, Utc};
 use tokio::sync::RwLock;
+use tokio::task::yield_now;
 use tokio_util::sync::CancellationToken;
 
 use crate::openapi_tools::error::OpenApiError;
@@ -218,7 +219,7 @@ impl SessionProbe for FakeSession {
             let running = log.active.fetch_add(1, Ordering::SeqCst).saturating_add(1);
             log.peak.fetch_max(running, Ordering::SeqCst);
             log.calls.lock().unwrap().push(call);
-            tokio::task::yield_now().await;
+            yield_now().await;
             log.active.fetch_sub(1, Ordering::SeqCst);
             let slow = log.slow_call.lock().unwrap().clone();
             if let Some((by, clock)) = slow {
@@ -338,8 +339,9 @@ impl SpecLoader for FakeLoader {
         };
         async move {
             log.calls.lock().unwrap().push(call);
-            if let Some(cancel) = log.cancel.lock().unwrap().clone() {
-                cancel.cancel();
+            let held = log.cancel.lock().unwrap().clone();
+            if let Some(token) = held {
+                token.cancel();
             }
             if log.held_open.load(Ordering::SeqCst) {
                 pending::<()>().await;
@@ -388,6 +390,6 @@ impl Clock for FakeClock {
         let elapsed = *self.0.elapsed.lock().unwrap();
         let millis = i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX);
         let offset = TimeDelta::try_milliseconds(millis).unwrap_or(TimeDelta::zero());
-        self.0.now + offset
+        self.0.now.checked_add_signed(offset).unwrap_or(self.0.now)
     }
 }
