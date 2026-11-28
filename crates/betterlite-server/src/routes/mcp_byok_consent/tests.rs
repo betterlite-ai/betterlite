@@ -12,7 +12,7 @@ use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_mcp::byok_consent::store::{AUTH_CODES_MAX_SIZE, AuthCodeStore};
-use betterlite_mcp::byok_token_exchange::ports::AuthCodeRecord;
+use betterlite_mcp::byok_token_exchange::ports::{AuthCodeLookup as _, AuthCodeRecord};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use secrecy::SecretString;
 use serde::Serialize;
@@ -304,6 +304,30 @@ async fn a_signed_in_form_redirects_to_the_callback_with_code_and_state() {
     let location = header_of(&response, "location").unwrap();
     assert!(location.starts_with("http://127.0.0.1:1456/callback?code="));
     assert!(location.ends_with("&state="));
+}
+
+#[tokio::test]
+async fn the_stored_code_belongs_to_the_cookie_user() {
+    let consent = Arc::new(ConsentState {
+        codes: AuthCodeStore::new(),
+        master_key: Some(SecretString::from(MASTER_KEY)),
+        authenticator: keyring(true),
+    });
+    let cookies = cookie(&ui_claims(), MASTER_KEY);
+    let response = send(
+        router_with(Arc::clone(&consent)),
+        post(AUTHORIZE_PATH, &valid_form(), Some(&cookies)),
+    )
+    .await;
+    let location = header_of(&response, "location").unwrap();
+    let code = location
+        .split_once("?code=")
+        .unwrap()
+        .1
+        .split_once("&state=")
+        .unwrap()
+        .0;
+    assert_eq!(consent.codes.get(code).unwrap().user_id, "user-1");
 }
 
 #[tokio::test]
