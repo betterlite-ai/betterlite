@@ -1,0 +1,102 @@
+kind: helper
+name: messages-context-inspection-inspect-compaction-and-proxy-context
+call:
+  messages_context_inspection:
+    inspections:
+      - messages:
+          - role: assistant
+            content:
+              - {type: text, text: done}
+              - {type: compaction, content: S}
+        kwargs:
+          litellm_metadata:
+            user_id: u-1
+            user_api_key_auth: {api_key: sk-1}
+            litellm_call_id: c-1
+          temperature: 0.5
+        router: handle
+      - messages:
+          - role: user
+            content:
+              - {type: compaction, content: S}
+        kwargs: {}
+        router: empty
+      - messages:
+          - role: system
+            content:
+              - {type: compaction, content: S}
+        kwargs:
+          litellm_metadata: {}
+        router: missing
+      - messages:
+          - role: user
+            content: hello
+          - role: assistant
+            content:
+              - {type: compaction, content: S}
+        kwargs:
+          litellm_metadata:
+            user_id: u-1
+        router: missing
+      - messages:
+          - role: assistant
+            content: a compaction happened
+        kwargs: {}
+        router: missing
+      - messages:
+          - role: assistant
+            content: {type: compaction, content: S}
+        kwargs: {}
+        router: missing
+      - messages:
+          - role: assistant
+            content:
+              - {type: text, text: compaction}
+        kwargs: {}
+        router: missing
+      - messages:
+          - role: assistant
+            content:
+              - {type: 7, content: S}
+        kwargs: {}
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs: {}
+        router: missing
+      - messages:
+          - role: assistant
+        kwargs: {}
+        router: missing
+      - messages: []
+        kwargs: {}
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs:
+          litellm_metadata: null
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs:
+          litellm_metadata: text
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs:
+          litellm_metadata: [1, 2]
+        router: missing
+      - messages:
+          - role: assistant
+            content: [compaction]
+        kwargs:
+          litellm_metadata:
+            user_api_key_auth: null
+        router: missing
+    predictions: []
+env: {}
+compare: {ignore: []}
