@@ -1,0 +1,22 @@
+kind: helper
+name: mcp-active-subjects-user-record-seed
+call:
+  b4658:
+    operation: user_record
+    user:
+      user_id: user-1
+      metadata:
+        scim_active: false
+calls:
+  - b4658:
+      operation: user_record
+      user:
+        user_id: user-1
+        metadata:
+          scim_active: 0
+  - b4658:
+      operation: user_record
+      user:
+        user_id: user-1
+env: {}
+compare: {ignore: []}

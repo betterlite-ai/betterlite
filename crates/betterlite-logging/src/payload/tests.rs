@@ -14,7 +14,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::{REDACTED_TEXT, ResponseStamp};
+use crate::exporter_options::redaction::REDACTED_TEXT;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::status::LoggingStatus;
 use crate::logging_failure::callbacks::FailureCallbacks;
@@ -258,10 +258,6 @@ fn lifecycle(builder: PayloadBuilder, emitter: Arc<Recorder>) -> LoggingLifecycl
         counters: Vec::<Arc<dyn CallbackFailureCounter + Send + Sync>>::new(),
         excluded_fields: Vec::new(),
         known_callback: Arc::new(|_name: &str| false),
-        stamp: ResponseStamp {
-            id: "chatcmpl-1".to_owned(),
-            created: 1_704_067_200,
-        },
         emitter,
     })
 }

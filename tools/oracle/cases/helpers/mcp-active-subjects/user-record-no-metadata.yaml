@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-active-subjects-user-record-no-metadata
+call:
+  b4658:
+    operation: user_record
+    user:
+      user_id: user-1
+env: {}
+compare: {ignore: []}

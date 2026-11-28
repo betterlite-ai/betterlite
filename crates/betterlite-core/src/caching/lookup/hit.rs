@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_cache::cache_key::derive::get_cache_key;
@@ -12,6 +13,7 @@ use betterlite_logging::logging_state::correlation::CorrelationContext;
 // ast-grep-ignore: no-long-names
 use betterlite_logging::logging_success::dispatch::handle_sync_success_callbacks_for_async_calls as dispatch_sync_callbacks;
 use betterlite_logging::logging_success::handler::SuccessHandler;
+use betterlite_logging::logging_success::owned::OwnedSuccessHandler;
 use betterlite_logging::logging_success::types::{SuccessRequest, SuccessResult};
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use betterlite_logging::worker::{Admission, LoggingWorker};
@@ -23,7 +25,7 @@ use secrecy::SecretString;
 
 use crate::caching::hit_callbacks::context::{CacheHitContext, record_cache_hit_context};
 use crate::caching::hit_callbacks::job::{
-    CacheHitCallbacks, CacheHitSuccessJob, OwnedSuccessHandler, log_cache_hit_on_callbacks,
+    CacheHitCallbacks, CacheHitSuccessJob, log_cache_hit_on_callbacks,
 };
 
 use super::error::{HitError, LookupError};
@@ -33,7 +35,7 @@ use super::services::LookupServices;
 
 // The logging object's cache-hit half: the success handler, the state it logs into and the correlation ids
 pub struct HitLogging {
-    pub handler: OwnedSuccessHandler,
+    pub handler: Arc<OwnedSuccessHandler>,
     pub state: LoggingState,
     pub correlation: CorrelationContext,
 }
@@ -198,17 +200,7 @@ pub fn log_hit_sync(
     logging: &mut HitLogging,
 ) -> Result<(), HitError> {
     record_cache_hit_context(&mut logging.state, hit)?;
-    let success = SuccessHandler {
-        registry: &logging.handler.registry,
-        payload_builder: logging.handler.payload_builder.as_ref(),
-        stream_assembler: logging.handler.stream_assembler.as_ref(),
-        clock: logging.handler.clock.as_ref(),
-        failure_counters: &logging.handler.failure_counters,
-        excluded_fields: &logging.handler.excluded_fields,
-        known_callback: logging.handler.known_callback.as_ref(),
-        stamp: &logging.handler.stamp,
-        privacy: logging.handler.privacy,
-    };
+    let success = SuccessHandler::from(logging.handler.as_ref());
     let request = SuccessRequest {
         result,
         start_time: times.start,
