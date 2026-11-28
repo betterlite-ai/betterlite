@@ -123,7 +123,7 @@ class StoredCredential(BaseModel):
 
 
 class CredentialsModule(Protocol):
-    credential_list: list[StoredCredential]
+    def __getattr__(self, name: str) -> list[StoredCredential]: ...
 
 
 LITELLM_CREDENTIALS: Final[CredentialsModule] = importlib.import_module("litellm")
