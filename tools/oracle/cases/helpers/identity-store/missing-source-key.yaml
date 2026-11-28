@@ -1,0 +1,14 @@
+kind: helper
+name: identity-store-missing-source-key
+call:
+  identity_store:
+    aspect: carrier
+    key: {token: sk-hashed-orphan, key_name: sk-orphan}
+    keep_source_key: false
+calls:
+  # the same failure through the auth seam's translation
+  - identity_store:
+      aspect: error
+      kind: missing_source_key
+env: {}
+compare: {ignore: []}

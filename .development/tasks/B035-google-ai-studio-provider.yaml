@@ -12,10 +12,11 @@ description: >-
   README redirects to the shared Vertex implementation; no separate Studio cache is introduced.
   Connect B1350/B1351 generation/edit to B998/B999, injecting B1120 MIME selection and preserving
   image generation's narrower GEMINI_API_KEY fallback. B1366 transcription uses B1122 execution
-  with B1001 language normalization. Files, File Search and Live
-  are deferred: until B087 installs the Gemini file arm, B1067 the File Search arm and B1125 the
-  Live arm, those Gemini operations return an error naming the operation as not built, the way
-  catalog/arize.rs answers CatalogError::Unavailable. Expose B1363/B1364 video,
+  with B1001 language normalization. Files and File Search
+  are deferred: until B087 installs the Gemini file arm and B1067 the File Search arm, those Gemini
+  operations return an error naming the operation as not built, the way catalog/arize.rs answers
+  CatalogError::Unavailable. Live is not an operation here: B10214's Gemini config runs Live
+  sessions through B10213's executor. Expose B1363/B1364 video,
   B1368 native generateContent, B1370 Interactions, B1391 guardrail projection and B1392 agent
   lifecycle as native capabilities. Interactions receives B206 header conversion. These exports
   are consumed later by B093/B3506/B3507/B3508/B104/B4784-B4787/B8589/B8647, not mounted under invented HTTP paths here.
@@ -93,7 +94,7 @@ deviations: []
 out_of_scope:
   - B031 owns both named Vertex completion dispatch functions, including the gemini beta call; this task only supplies its Studio operation binding.
   - B1325/B1330/B1331/B1350/B1351/B1363/B1364/B1366-B1368/B1370/B1378-B1382/B1390-B1392/B1394 retain the Studio files and functions split from this entry.
-  - B004/B005/B006/B082/B083 retain public handlers. B087 owns the Gemini file arm and its resumable-files case, B1067 File Search and its case, B1125 the Live arm over B1008's relay and its two WebSocket cases; B093/B3506/B3507/B3508/B104/B4784-B4787/B8589/B8647 remain future native-family API owners.
+  - B004/B005/B006/B082/B083 retain public handlers. B087 owns the Gemini file arm and its resumable-files case, B1067 File Search and its case, B10214 the Live config and B1125 its two WebSocket cases; B093/B3506/B3507/B3508/B104/B4784-B4787/B8589/B8647 remain future native-family API owners.
 pitfalls:
   - GOOGLE_API_KEY can authenticate chat while image generation still requires its separate explicit or GEMINI_API_KEY source.
   - A Studio embedding request must not inherit Vertex project options merely because both implementations share a crate.

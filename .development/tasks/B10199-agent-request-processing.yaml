@@ -1,0 +1,148 @@
+id: B10199
+title: The managed agent routes run the request pipeline and the Gemini agent calls in production
+description: >-
+  B3508 serves POST and GET /v1beta/agents, GET and DELETE /v1beta/agents/{name} and GET /v1beta/agents/{name}/versions (crates/betterlite-server/src/api/agents/collection_routes) and hands everything after the pre-call step to a port, `AgentRequestProcessing` (collection_routes/processing.rs L23), held as `AgentCollectionState.processing` (collection_routes.rs L30). Nothing outside tests implements it: the only impl is FakeProcessing in collection_routes/tests/support.rs L321. B8774 mounts the routes and has no value to pass, so its agent cases cannot pass. This task builds that value: LiteLLM's ProxyBaseLLMRequestProcessing.base_process_llm_request for route types acreate_agent, alist_agents, aget_agent, adelete_agent and alist_agent_versions (common_request_processing.py L2526-L2978), the part of route_request those route types reach (route_llm_request.py L469-L497, L545-L546, L607-L615 and L717-L725), and _handle_llm_api_exception (L3621-L3774), over parts that exist or are planned. Like B10178 for the Google generation routes, it is a per-route pipeline made of shared parts.
+
+
+  The parts. B10209's `betterlite_vertex::studio_agents::config::GeminiAgentsConfig` is the provider config. B3504's acreate and alist (crates/betterlite-core/src/api/agents/collection/creation.rs, listing.rs) and B3505's aget, adelete and alist_versions (crates/betterlite-core/src/api/agents/item.rs L153-L158) are litellm.interactions.agents.*. B9800's call steps (crates/betterlite-server/src/messages_call.rs) port route_request's generic branches and, after B10183, take the route type as their first argument; B10196's `app::inference::router_routing::router_routing` answers the router facts. B8399's ProxyLogging on `state.shared.proxy_logging` (B8612) is called through its pub methods during_call_hook, update_request_status, post_call_success_hook and post_call_response_headers_hook. B081's `api::response_tail` (header_input, header_cost, finish_body) and B9802's custom_headers (crates/betterlite-server/src/custom_headers.rs L21) build the success headers and body, B744's check_response_size (crates/betterlite-auth/src/auth_request_policy/bytes.rs L84) bounds the body, and B10178's `api::llm_api_exception::handle_llm_api_exception` answers every failure.
+
+
+  Port change (collection_routes/processing.rs and handlers.rs). `PreCallFailure` cannot carry a call failure's type, param, openai code or provider headers, which _handle_llm_api_exception reads, so `process` answers `Result<Response, LlmApiFailure>` and `handle_exception` takes an `LlmApiFailure`, B10178's type. The handler's pre-call branch (handlers.rs L186-L190) hands `LlmApiFailure::from(error.failure)` with the pre-call's data. AgentCall's `route_type: RouteType` becomes `operation: AgentOperation`, a pub enum in processing.rs with Create, List, Get, Delete and ListVersions and `pub const fn route_type(self) -> RouteType` (the match AgentRoute::route_type holds at handlers.rs L32-L40, moved), so the processing picks its SDK call by an exhaustive match. FakeProcessing and the route tests move to the new shapes; what they check stays.
+
+
+  Merged template scan (handlers.rs and crates/betterlite-server/src/auth/request_body_safety.rs). LiteLLM's is_request_body_safe scans the request body root, so `api_base`, `user_config` and the other banned keys inside litellm_params_template (a body field on create, a query parameter on the other four) reach the call unchecked, and the proxy sends the request to any host the caller names. After the handler builds the data and before the key guard, scan the merged data with the same RequestBodySafety call the auth stage makes (request_body_safety.rs L67-L80), reading the slot from the request's Arc<ServerState> extension as stage_input does (L45-L48) and skipping the scan when there is none, as run_stage does. Move that call into one `pub(crate) fn` both use, and answer its refusal with `into_proxy_exception()`, the 401 auth_error the auth stage answers a body api_base with. With `general_settings.allow_client_side_credentials` true it passes, as in LiteLLM.
+
+
+  Route choice (messages_call.rs and messages_call/plan.rs). With a router, LiteLLM checks the model block list and then sends the five agent route types to `llm_router.<route_type>(**data)` before it reads data["model"] (route_llm_request.py L607-L615), and the Router's five agent methods call the SDK functions with custom_llm_provider defaulting to gemini and no model routing (router.py L2199-L2220, L7157-L7173). B9800's plan answers MissingModel there (plan.rs L91) and would send a Router outcome to RouterGeneric, which has no agent executor. Add `skips_model_routing: RouteFlag` to MessagesRouteInput, set by route_input (messages_call.rs L160) when the steps' route type is one of the five; plan_with_router answers `Router { specific_deployment: false }` right after the blocked check when it is set, and run_plan (L96) runs `self.dispatch.dispatch(data)` for a Router outcome when it is set, with a one-line comment that names router.py L7157-L7173. /v1/messages and the Google routes choose as before.
+
+
+  Module `app::inference::google_agents` (crates/betterlite-server/src/app/inference/google_agents.rs and google_agents/: arguments.rs, calls.rs, pipeline.rs, tests.rs). Main declares `pub mod google_agents;` in app/inference.rs over an empty file. `GoogleAgents::new(state: &Arc<ServerState>, calls: &RouterCalls, environment: &BTreeMap<String, String>) -> Result<Self, TlsPolicyError>` keeps the Arc of the state, `Arc::clone(&calls.generic)` from B8631's RouterCalls, `GeminiAgentsConfig { settings: config.sections.studio_identity.clone() }`, `TlsPolicy::resolve(&state.config, environment, None)` (chat_setup.rs L251 resolves the default policy the same way), the redactor of `state.executor`, the request timeout of `config.sections.routing_timeouts.global` (litellm.request_timeout), `config.sections.mock_testing_params`, B8800's CliOverrides user_model and the version the chat route on main sends. It implements `AgentRequestProcessing<UserAPIKeyAuth>`.
+
+
+  Arguments (arguments.rs). One serde struct binds the data the way `acreate(**data)` and the item functions bind keyword arguments: name, base_agent, instructions, base_environment, custom_llm_provider, extra_headers, extra_body and timeout by name, and every other key (api_key, api_base, page_size, page_token, litellm_metadata, metadata, proxy_server_request, litellm_call_id and the rest) as `#[serde(flatten)] kwargs: IndexMap<String, Json>` with betterlite-models' Json, which keeps key order. Create without a text name is a 400 invalid_request_error with param name (see deviations); the item routes always carry the path name. timeout is seconds as a number; a wrong type or a negative value is a 400 that names the field.
+
+
+  Calls (calls.rs). `AgentDirectCall` implements B9800's MessagesDispatch for one request: it holds the operation, the config, the TLS policy and proxy policy for a fresh `HttpClients::new(tls, Arc::clone(&state.shared.client.policy))`, the redactor, the timeouts and this call's LoggingState, and on dispatch binds the arguments and runs the operation's async SDK function with that LoggingState as AgentCollection.logging or AgentItemDeps.logging, so _make_logging_obj writes into the request's logging state, and with one betterlite-http `Logging` record per call (B3505's AgentHttpLogging over it for the collection calls; make that struct and its module pub in crates/betterlite-core/src/api/agents/item.rs and item/logging.rs). The record serializes to a JSON object and answers `MessagesOutcome::Message { body, hidden }` with empty hidden params, since LiteLLM's agent handler sets none. A failure answers `MessagesCallError::Call(CallFailure)` from its ErrorClass, through the same ErrorClass to CallFailure conversion B10196 uses for a GenerateContentFailure.
+
+
+  Pipeline (pipeline.rs), in LiteLLM's order for these route types; the pre-call already ran in the handler.
+  1. Build `MessagesCallSteps::new(route type name, dispatch, routing, None, mock, user_model)` for this call, with routing `router_routing(route type name, Arc::clone(&state.shared.router), Arc::clone(&generic))` when `state.shared.router_views.current()` is Some and None otherwise, as B10178 does; the route type name is `<&'static str>::from(operation.route_type())`. The steps are built per call because MessagesDispatch takes only the data, so the logging state rides in the dispatch value.
+  2. Run `proxy_logging.during_call_hook` (route type as call type) and `steps.call(data, is_proxy_admin)` together, where the first error ends both, as LiteLLM's gather does (L2600-L2639); is_proxy_admin is true when the key's user_role is proxy_admin. Then `proxy_logging.update_request_status(call id, "success")` (L2659-L2664), with the call id from the LoggingState.
+  3. JSON outcome (L2859-L2978): body = `post_call_success_hook(data, body, key)`; headers from custom_headers over api::response_tail's header_input with header_cost; finish_body on the body; check_response_size on it; and the post_call_response_headers_hook headers over the custom ones. Answer 200 JSON with those headers. The agent calls never stream, so there is no stream branch: a body with stream true still answers JSON (see deviations), and a Stream outcome, which AgentDirectCall never makes, is the 500 CallFailure "agent calls do not stream".
+  4. Every failure from steps 1 to 3 becomes an LlmApiFailure with the data held at that point, and handle_exception runs `handle_llm_api_exception` with the key, the data, the call id from the data's litellm_call_id, the version and the redactor, and answers the LlmApiAnswer as a Response.
+
+
+  Shared conversions. This task reads four conversions as B10178 and B10196 write them: `From<PreCallFailure> for LlmApiFailure`, `From<MessagesCallError> for LlmApiFailure` and LlmApiAnswer into a Response in api::llm_api_exception, and ErrorClass into CallFailure in messages_call.rs. When one of them sits inside B10178's genai_routes/response.rs or google_generation/pipeline.rs or B10196's google_sdk_call instead, move it to the home named here and call it from both; those files are in scope.
+
+
+  Tests. app::inference::google_agents::tests build a ServerState without a database from a config whose studio_identity base points at a betterlite_http_fixture mock Gemini upstream, build B8631's RouterCalls with router_calls(state), use a fake PreCall that passes the data through with a fresh logging state and B8399's recording ProxyLogging fakes, and drive `api::agents::collection_routes::routes(AgentCollectionState { processing: Arc::new(GoogleAgents::new(..)?), .. })` with tower's oneshot. They check: create with a body api_key reaches the mock at /v1beta/agents with x-goog-api-key and the name, base_agent, instructions and base_environment body, and answers the agent with an x-litellm-call-id header; list, get, delete and versions answer their records, with pageSize and pageToken from the query template; a proxy admin with no api_key and a model_list config reaches the mock with the Studio key; with no model_list and no user_model the admin gets the 400 not-found error that names /v1beta/agents and the mock sees nothing; a litellm_params_template api_base is the 401 auth_error with no upstream request, and passes with allow_client_side_credentials true; create without a name is the 400 with param name; a Gemini 404 is a 404 with its error type and the call id header; and a failing during-call hook leaves the mock without a request. messages_call::tests add `agent_route_types_skip_model_routing`: with a router and no model, each of the five route types runs the dispatch, while anthropic_messages still answers MissingModel.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/google_agents.rs
+    - crates/betterlite-server/src/app/inference/google_agents/**
+    - crates/betterlite-server/src/api/agents/collection_routes/processing.rs
+    - crates/betterlite-server/src/api/agents/collection_routes/handlers.rs
+    - crates/betterlite-server/src/api/agents/collection_routes/tests.rs
+    - crates/betterlite-server/src/api/agents/collection_routes/tests/**
+    - crates/betterlite-server/src/api/agents/collection_routes/routes/**
+    - crates/betterlite-server/src/api/agents/collection_routes/security/**
+    - crates/betterlite-server/src/auth/request_body_safety.rs
+    - crates/betterlite-server/src/auth/request_body_safety/**
+    - crates/betterlite-server/src/messages_call.rs
+    - crates/betterlite-server/src/messages_call/plan.rs
+    - crates/betterlite-server/src/messages_call/tests.rs
+    - crates/betterlite-server/src/messages_call/tests/**
+    - crates/betterlite-server/src/api/llm_api_exception.rs
+    - crates/betterlite-server/src/api/llm_api_exception/**
+    - crates/betterlite-server/src/api/genai_routes/response.rs
+    - crates/betterlite-server/src/app/inference/google_generation/pipeline.rs
+    - crates/betterlite-server/src/app/inference/google_sdk_call.rs
+    - crates/betterlite-server/src/app/inference/google_sdk_call/**
+    - crates/betterlite-core/src/api/agents/item.rs
+    - crates/betterlite-core/src/api/agents/item/logging.rs
+    - docs/deviations/B10199.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L142-L442
+    why: The five agent handlers, each calling base_process_llm_request with its route_type and _handle_llm_api_exception in its except.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L469-L728
+    why: _route_request_single_attempt; the agents branch at L607-L615 comes after the block check at L545-L546 and before data["model"] is read, and L717-L725 is the not-found error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7157-L7173
+    why: _init_managed_agents_api_endpoints, the Router's agent methods, which only default custom_llm_provider to gemini and call the SDK function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2526-L2978
+    why: _process_llm_request; the during-call gather, update_request_status and the JSON tail these route types take.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3621-L3774
+    why: _handle_llm_api_exception, which B10178 ports and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L98-L503
+    why: acreate, alist, aget, adelete and alist_versions and the keyword arguments the data binds to.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L477-L530
+    why: is_request_body_safe scans the body root and two nested keys only, the gap the merged template scan closes.
+dod:
+  - text: GoogleAgents implements AgentRequestProcessing for UserAPIKeyAuth, and the five agent routes reach the Gemini upstream through the call steps and B10209's config, answering LiteLLM's JSON with the custom headers.
+    proof: [agents-tests, production-impl]
+  - text: With a router, the five agent route types skip model routing and run the direct call; /v1/messages chooses as before.
+    proof: [steps-tests, agents-tests]
+  - text: The port answers LlmApiFailure, every failure goes through handle_llm_api_exception, and B3508's route tests still pass on the new shapes.
+    proof: [routes-tests, agents-tests]
+  - text: A banned key inside litellm_params_template is refused with the auth stage's 401 unless allow_client_side_credentials is true.
+    proof: [agents-tests]
+  - text: The pipeline writes no exception mapping, header builder, body tail or provider config of its own.
+    proof: [no-copies]
+  - text: docs/deviations/B10199.yaml lists this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: agents-tests
+      why: a route does not reach the upstream, a step is skipped, the template scan is missing, or a failure answers wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::google_agents::/)'
+    - id: production-impl
+      why: no production value implements the port
+      run: grep -rq 'impl AgentRequestProcessing<UserAPIKeyAuth> for GoogleAgents' crates/betterlite-server/src/app/inference/google_agents.rs crates/betterlite-server/src/app/inference/google_agents
+    - id: steps-tests
+      why: the agent route types still read the model, reach RouterGeneric, or changed what /v1/messages chooses
+      run: grep -rq 'fn agent_route_types_skip_model_routing' crates/betterlite-server/src/messages_call/tests.rs crates/betterlite-server/src/messages_call/tests && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^messages_call::/)'
+    - id: routes-tests
+      why: the port change broke a B3508 route test, or the port still answers PreCallFailure
+      run: grep -q 'LlmApiFailure' crates/betterlite-server/src/api/agents/collection_routes/processing.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::agents::collection_routes::/) | test(/^auth::request_body_safety::/)'
+    - id: no-copies
+      why: the pipeline holds its own exception mapping, header input, body tail, hooks port or Gemini config
+      run: test -z "$(grep -rnE 'fn (handle_llm_api_exception|header_input|header_cost|finish_body)\b|trait [A-Za-z]*Hooks|impl (AgentsApiConfig|AgentsConfig|ErrorClasses) for|is_unsafe_header_name' crates/betterlite-server/src/app/inference/google_agents.rs crates/betterlite-server/src/app/inference/google_agents)"
+    - id: deviation-rows
+      why: this task's deviations are not recorded
+      run: test -s docs/deviations/B10199.yaml && grep -q 'litellm_params_template' docs/deviations/B10199.yaml && grep -q 'user_config' docs/deviations/B10199.yaml
+oracle_cases: []
+deviations:
+  - what: A banned key (api_base, base_url, user_config and the rest of the list) inside litellm_params_template is refused with the 401 auth_error the auth stage gives the same key at the body root, unless general_settings.allow_client_side_credentials is true; LiteLLM merges it unchecked and sends the request to the named host.
+    why: Security fix (SSRF); LiteLLM scans only the body root, extra_body and litellm_embedding_config, and the GET routes have no body at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L477-L530
+  - what: POST /v1beta/agents without a text name answers 400 invalid_request_error with param name, where LiteLLM's acreate(**data) raises a TypeError that _handle_llm_api_exception answers with a 500.
+    why: A 500 for a missing required field is a bug no setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L98-L109
+  - what: A request whose data carries user_config (reachable only with allow_client_side_credentials true) gets a 400 with "user_config is not supported on acreate_agent" or the route type it came with, where LiteLLM builds a Router from it and runs the call.
+    why: B9800 does not build per-request routers; /v1/messages and the Google routes answer the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L513-L514
+  - what: The agent calls run none of LiteLLM's @client success or failure callbacks, so logging integrations and spend logs get no row for them; the pre-call and the ProxyLogging hooks still run.
+    why: No production port of LiteLLM's client wrapper runs for proxy-side SDK calls yet; these calls cost nothing, so no budget or spend total changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1976-L2000
+  - what: A create body with stream true answers the agent as JSON, where LiteLLM takes its streaming branch for a response that is not a stream, async_data_generator's `async for` over the record raises, and the 200 event stream carries only the error frame (proxy_server.py L9899, L10031-L10069).
+    why: The streaming branch over a pydantic record is a bug no setup relies on; the agent calls have no stream form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2665-L2668
+out_of_scope:
+  - "Mounting the routes, passing GoogleAgents into AgentCollectionState and the HTTP oracle cases: B8774."
+  - "The Gemini agents config and the oracle adapters that used their own: B10209."
+  - "handle_llm_api_exception, the pre-call step, the router routing, ProxyLogging and api::response_tail: B10178, B8801 and B8802, B10196, B8399, B081."
+  - "The key guard and the template merge themselves: B3508. The admin role check in guards.rs: B10171."
+  - "The model-free branches of the container (L586-L598) and interaction (L599-L606) route types: their route tasks, B7326 and B3507."
+pitfalls:
+  - "LiteLLM checks the block list before the agents branch, so a body model that the router fully blocks still answers the 403 before any agent call; keep skips_model_routing after that check, never before it."
+  - "Scan the merged data before the key guard, so a banned template key answers the auth 401 even for a non-admin caller without api_key, the way LiteLLM's auth check runs before its handler."
+  - "page_size and page_token reach the config through kwargs, not as named arguments; B10209's config sends them only when truthy, so pass them through unchanged."
+  - "Hold the call's LoggingState in the dispatch value and never hold a std Mutex guard across the SDK call's await; take it out, run the call, put it back."
+  - "MessagesCallSteps takes read_through None here: these route types carry no model, so route_request's read-through retry never fires for them."
+  - "The template scan reads the slot from the Arc<ServerState> extension that routes.rs L303 layers over every app::mount route, so in production it always runs; the google_agents tests that drive collection_routes::routes directly add `Extension(Arc::clone(&state))` themselves, or the 401 test passes for the wrong reason. B3508's own route tests carry no extension and skip the scan by design."
+  - "B10183 renames ROUTE_TYPE to a field and B10196 adds router_routing; read messages_call.rs and app/inference on main when this task starts."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

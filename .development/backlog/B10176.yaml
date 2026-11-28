@@ -2,7 +2,7 @@ id: B10176
 milestone: R2 bug fixes
 title: Python sessions resolve AWS credentials through the credential chain for Bedrock pass-through and Vertex workload identity
 status: todo
-depends_on: [B10175, B10166, B10164, B10183]
+depends_on: [B10175, B10166, B10164, B10183, B10193]
 file: tasks/B10176-python-aws-chain.yaml
 covers: []
 parent: null

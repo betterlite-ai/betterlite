@@ -1,0 +1,19 @@
+task: B10159
+deviations:
+  - what: >-
+      The Ai21 arm answers zero token counts in usage when the reply carries no usage object,
+      where LiteLLM's convert_to_model_response_object leaves the response usage null.
+    why: >-
+      B1425's compatible reply decoder always builds a usage record, and the chat response on
+      main has no null usage; the reply's usage key is optional in LiteLLM's
+      OpenAIChatCompletionResponse, so a working Ai21 passthrough gets a zero usage record here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L717-L736
+  - what: >-
+      The Ai21 arm answers an empty model when the reply carries none, where LiteLLM leaves the
+      response model null.
+    why: >-
+      B1425's decoder fills an absent model with "" before the Ai21 arm reads it, and B004's
+      response requires a model string; the reply's model key is optional, so this only shows on
+      a reply that omits it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L717-L736
+kept_bugs: []
