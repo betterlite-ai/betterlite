@@ -1,15 +1,10 @@
 use std::time::SystemTime;
 
-use aws_credential_types::Credentials;
-use aws_sigv4::http_request::{
-    SignableBody, SignableRequest, SigningError as AwsSigningError, SigningParams, SigningSettings,
-    sign,
-};
-use aws_sigv4::sign::v4;
-use aws_sigv4::sign::v4::signing_params::BuildError;
-use aws_smithy_runtime_api::client::identity::Identity;
 use betterlite_models::decisions::{Extra, Json};
-use secrecy::{ExposeSecret as _, SecretString};
+use betterlite_sigv4::credentials::Credentials;
+use betterlite_sigv4::error::SigV4Error;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
+use secrecy::SecretString;
 
 use crate::openai_base_config::Headers;
 
@@ -34,24 +29,12 @@ const UNRESOLVED_AUTH_PARAMETERS: [&str; 7] = [
     EXTERNAL_ID,
     SESSION_TAGS,
 ];
-const PROVIDER_NAME: &str = "betterlite";
 const CONTENT_LENGTH: &str = "Content-Length";
-
-#[derive(Clone)]
-pub struct AwsCredentials {
-    pub access_key_id: SecretString,
-    pub secret_access_key: SecretString,
-    pub session_token: Option<SecretString>,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SigningError {
-    #[error("the signing parameters are invalid")]
-    Parameters(#[source] Box<BuildError>),
-    #[error("the request cannot be signed")]
-    Signable(#[source] Box<AwsSigningError>),
     #[error("signing the request failed")]
-    Sign(#[source] Box<AwsSigningError>),
+    Sign(#[source] SigV4Error),
 }
 
 pub struct JsonPost<'call> {
@@ -59,17 +42,17 @@ pub struct JsonPost<'call> {
     pub region: &'call str,
     pub body: &'call [u8],
     pub headers: &'call Headers,
-    pub credentials: &'call AwsCredentials,
+    pub credentials: &'call Credentials,
     pub now: SystemTime,
 }
 
 #[must_use]
-pub fn credentials_from_params(litellm_params: &Extra) -> Option<AwsCredentials> {
+pub fn credentials_from_params(litellm_params: &Extra) -> Option<Credentials> {
     warn_unresolved_auth_params(litellm_params);
     let access_key_id = secret_parameter(litellm_params, ACCESS_KEY_ID)?;
     let secret_access_key = secret_parameter(litellm_params, SECRET_ACCESS_KEY)?;
     let session_token = secret_parameter(litellm_params, SESSION_TOKEN);
-    Some(AwsCredentials {
+    Some(Credentials {
         access_key_id,
         secret_access_key,
         session_token,
@@ -103,53 +86,27 @@ fn secret_parameter(litellm_params: &Extra, name: &'static str) -> Option<Secret
 }
 
 pub fn sign_json_post(request: &JsonPost<'_>) -> Result<Headers, SigningError> {
-    let credentials = Credentials::new(
-        request.credentials.access_key_id.expose_secret(),
-        request.credentials.secret_access_key.expose_secret(),
-        request
-            .credentials
-            .session_token
-            .as_ref()
-            .map(|token| token.expose_secret().to_owned()),
-        None,
-        PROVIDER_NAME,
-    );
-    let identity = Identity::from(credentials);
-    let parameters = v4::SigningParams::builder()
-        .identity(&identity)
-        .region(request.region)
-        .name(SERVICE)
-        .time(request.now)
-        .settings(SigningSettings::default())
-        .build()
-        .map_err(|source| SigningError::Parameters(Box::new(source)))?;
-    let signable = SignableRequest::new(
-        "POST",
-        request.url,
-        request
-            .headers
-            .iter()
-            .map(|(name, value)| (name.as_str(), value.as_str())),
-        SignableBody::Bytes(request.body),
-    )
-    .map_err(|source| SigningError::Signable(Box::new(source)))?;
-    let (instructions, _signature) = sign(signable, &SigningParams::from(parameters))
-        .map_err(|source| SigningError::Sign(Box::new(source)))?
-        .into_parts();
-    let mut signed = request.headers.clone();
-    for (name, value) in instructions.headers() {
-        signed.insert(litellm_casing(name).to_owned(), value.to_owned());
+    let signable = request
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect::<Vec<(String, String)>>();
+    let signed = sign_request(&Signable {
+        method: "POST",
+        url: request.url,
+        headers: &signable,
+        body: request.body,
+        service: SERVICE,
+        region: request.region,
+        credentials: request.credentials,
+        mode: SigningMode::SigV4Auth,
+        now: request.now,
+    })
+    .map_err(SigningError::Sign)?;
+    let mut headers = request.headers.clone();
+    for (name, value) in signed {
+        headers.insert(name, value);
     }
-    signed.insert(CONTENT_LENGTH.to_owned(), request.body.len().to_string());
-    Ok(signed)
-}
-
-// the signature itself is case-insensitive, but LiteLLM returns these names as botocore spells them
-fn litellm_casing(name: &str) -> &str {
-    match name {
-        "authorization" => "Authorization",
-        "x-amz-date" => "X-Amz-Date",
-        "x-amz-security-token" => "X-Amz-Security-Token",
-        other => other,
-    }
+    headers.insert(CONTENT_LENGTH.to_owned(), request.body.len().to_string());
+    Ok(headers)
 }
