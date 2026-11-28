@@ -3382,6 +3382,7 @@ name = "betterlite-oracle-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-lc-rs",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-db",

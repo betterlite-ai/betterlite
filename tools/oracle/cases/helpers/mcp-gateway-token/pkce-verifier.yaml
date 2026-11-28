@@ -1,0 +1,137 @@
+kind: helper
+name: mcp-gateway-token-pkce-verifier
+call:
+  b4676:
+    base_url: 'https://proxy.test:8443'
+    clients: []
+    servers: []
+    setup: []
+    steps:
+      - name: 'matching'
+        kind: 'pkce'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'mismatch'
+        kind: 'pkce'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-other-verifier-abcdefghijklmnopqrstuvwxyz-0123456789'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'short-verifier'
+        kind: 'pkce'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'abc'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'long-verifier'
+        kind: 'pkce'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'empty-verifier'
+        kind: 'pkce'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: ''
+        code_challenge: ''
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'non-ascii-verifier'
+        kind: 'pkce'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: -1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-é'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+env: {}
+compare: {ignore: []}

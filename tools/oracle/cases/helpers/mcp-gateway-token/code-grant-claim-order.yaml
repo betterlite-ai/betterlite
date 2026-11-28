@@ -1,0 +1,246 @@
+kind: helper
+name: mcp-gateway-token-code-grant-claim-order
+call:
+  b4676:
+    base_url: 'https://proxy.test:8443'
+    clients:
+      - redirect_uris: ['http://127.0.0.1:8080/callback']
+    servers: []
+    setup:
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-order-1'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: null
+        audience: 'proxy_api'
+        team_id: 'team-a'
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-order-2'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: null
+        audience: 'proxy_api'
+        team_id: 'team-a'
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+      - kind: 'mint_code'
+        user_id: 'alice'
+        client: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        jti: 'j-order-3'
+        iat: 1699999900
+        exp: 1700000600
+        resource_server_id: null
+        audience: null
+        team_id: null
+        at: 0
+        token_kind: 'session'
+        tamper: false
+        bearer: false
+    steps:
+      - name: 'reload-failure-no-mint'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: 'no_active_key'
+        mint: {key: 'sk-b4676-order', expires_in: 3600, user_id: 'alice', team_id: 'team-a'}
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'mint-after-reload-failure'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: {key: 'sk-b4676-order', expires_in: 3600, user_id: 'alice', team_id: 'team-a'}
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'replay-after-claim'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 0
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'mint-failure-no-claim'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: 'not_a_member'
+        exchange: null
+        exchange_failure: null
+      - name: 'mint-after-failure'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: {key: 'sk-b4676-order', expires_in: 3600, user_id: 'alice', team_id: 'team-a'}
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'replay-mint-code'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 1
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'reload-failure-session'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 2
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: 'unavailable'
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'valid-session'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 2
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+      - name: 'replay-session'
+        kind: 'token'
+        master: 'present'
+        now: 1700000000
+        client: 0
+        grant_type: 'authorization_code'
+        code: 2
+        redirect_uri: 'http://127.0.0.1:8080/callback'
+        code_verifier: 'b4676-verifier-0123456789abcdefghijklmnopqrstuvwxyz'
+        code_challenge: 'GrrAMW4isICoReV1WSwmvL6_b_HNaYgEi-zxJjVvn1Q'
+        refresh: -1
+        resource: null
+        subject: -1
+        subject_token_type: null
+        requested_token_type: null
+        token: -1
+        reload: null
+        mint: null
+        mint_failure: null
+        exchange: null
+        exchange_failure: null
+env: {}
+compare: {ignore: []}
