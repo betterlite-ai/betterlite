@@ -28,6 +28,7 @@ pub(super) fn generate_content(
     input: VertexPassthroughInput<'_>,
     vertex_location: Option<&str>,
 ) -> Result<HandlerOutcome, VertexPassthroughError> {
+    let kwargs = input.kwargs;
     let model = extract_model_from_url(input.url_route);
     let provider = custom_provider_from_url(input.url_route);
     let response = decode_reply(
@@ -56,7 +57,7 @@ pub(super) fn generate_content(
     set_body_id(&mut body, &completion.id.unwrap_or_default())?;
     Ok(HandlerOutcome {
         result: Some(PassThroughResponse::ModelResponse(body)),
-        kwargs: relay_kwargs(&input.kwargs, logged),
+        kwargs: relay_kwargs(&kwargs, logged),
     })
 }
 

@@ -65,6 +65,7 @@ pub(super) fn raw_predict(
     let Some(partner) = tools else {
         return Err(VertexPassthroughError::Tools);
     };
+    let kwargs = input.kwargs;
     let model = extract_model_from_url(input.url_route);
     let publisher = publisher_from_url(input.url_route);
     // LiteLLM decodes the reply before it branches on the publisher, so a body that is not JSON fails either way.
@@ -72,9 +73,9 @@ pub(super) fn raw_predict(
         .map_err(|source| VertexPassthroughError::RawBody { source })?;
     let mut relay = RelayLogging::project(input.logging_obj);
     let mut body = match publisher {
-        Some(publisher) => partner_body(
+        Some(found) => partner_body(
             partner,
-            publisher,
+            found,
             PartnerReply {
                 model: &model,
                 status: input.status.as_u16(),
@@ -90,7 +91,7 @@ pub(super) fn raw_predict(
     relay.commit();
     Ok(HandlerOutcome {
         result: Some(PassThroughResponse::ModelResponse(body)),
-        kwargs: relay_kwargs(&input.kwargs, logged),
+        kwargs: relay_kwargs(&kwargs, logged),
     })
 }
 
@@ -99,31 +100,39 @@ fn partner_body(
     publisher: VertexPublisher,
     reply: PartnerReply<'_>,
 ) -> Result<Json, VertexPassthroughError> {
+    let PartnerReply {
+        model,
+        status,
+        headers,
+        body,
+        now,
+        call_log,
+    } = reply;
     let sink = DebugSink;
-    let env = partner_env(&sink, &partner.redactor, reply.now);
+    let env = partner_env(&sink, &partner.redactor, now);
     let messages = dummy_messages();
     let request_data = IndexMap::new();
     let optional_params = IndexMap::new();
     let litellm_params = IndexMap::new();
     // ModelResponse() starts with a chatcmpl id, which the payload step replaces.
-    let starting_id = format!("chatcmpl-{}", reply.call_log.litellm_call_id);
+    let starting_id = format!("chatcmpl-{}", call_log.litellm_call_id);
     partner_response_config(publisher)
         .transform_response(PartnerResponseCall {
             input: PartnerResponseInput {
-                model: reply.model,
+                model,
                 starting_id: &starting_id,
-                status: reply.status,
-                headers: reply.headers,
-                body: reply.body,
+                status,
+                headers,
+                body,
                 messages: &messages,
                 request_data: &request_data,
                 optional_params: &optional_params,
                 litellm_params: &litellm_params,
                 json_mode: None,
-                now: reply.now.timestamp(),
+                now: now.timestamp(),
                 identifier: Uuid::new_v4,
                 disable_add_prefix_to_prompt: false,
-                state: reply.call_log,
+                state: call_log,
                 env: &env,
             },
             counter: &partner.counter,
@@ -204,8 +213,15 @@ pub(super) fn completion_response(body: &Json) -> CompletionResponse {
     };
     let model = match fields.get("model") {
         Some(Json::Text(name)) if !name.is_empty() => Some(name.clone()),
-        None | Some(Json::Null | Json::Text(_)) => None,
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => None,
+        None
+        | Some(
+            Json::Text(_)
+            | Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::List(_)
+            | Json::Object(_),
+        ) => None,
     };
     let usage = match fields.get("usage") {
         None | Some(Json::Null) => None,

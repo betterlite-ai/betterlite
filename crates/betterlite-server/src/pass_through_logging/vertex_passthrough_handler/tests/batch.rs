@@ -3,11 +3,11 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
-use super::support::{RecordingRegistry, fixture, handler, handler_with_batch, input};
+use super::support::{RecordingRegistry, fixture, handler, handler_with_batch, input, items};
 use super::{BATCH_BODY, BATCH_ID, BATCH_MODEL_PATH, BATCH_ROUTE, CREATED};
 use crate::pass_through_logging::anthropic_batch::unified_object_id;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
-    FakeCost, as_text, field, integer, items, json, kwarg, kwargs, number_text, result_json, text,
+    FakeCost, as_text, field, integer, json, kwarg, kwargs, number_text, result_json, text,
 };
 use crate::pass_through_logging::vertex_passthrough_handler::VertexPassthroughError;
 
