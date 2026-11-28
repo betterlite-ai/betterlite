@@ -34,6 +34,7 @@ use tower::ServiceExt as _;
 use super::error::provider_error_response;
 use super::fetch::ProxiedMetadataFetcher;
 use super::routes::routes;
+use super::state::SamlEntrypointsState;
 use crate::custom_url::CustomUrls;
 use crate::middleware::request_root_paths::RequestRootPath;
 
@@ -154,8 +155,8 @@ fn provider(
     }
 }
 
-fn state(provider: SamlProvider, environment: &[(&str, &str)]) -> super::SamlEntrypointsState {
-    super::SamlEntrypointsState {
+fn state(provider: SamlProvider, environment: &[(&str, &str)]) -> SamlEntrypointsState {
+    SamlEntrypointsState {
         provider: Arc::new(provider),
         custom_urls: CustomUrls::default(),
         trusted_network: TrustedNetworkSettings::default(),
@@ -163,7 +164,7 @@ fn state(provider: SamlProvider, environment: &[(&str, &str)]) -> super::SamlEnt
     }
 }
 
-fn configured_state(xml: &str, pairs: &[(&str, &str)]) -> super::SamlEntrypointsState {
+fn configured_state(xml: &str, pairs: &[(&str, &str)]) -> SamlEntrypointsState {
     let cache = Arc::new(FakeCache::default());
     let fetcher = Arc::new(FakeFetcher::default());
     state(
@@ -468,7 +469,7 @@ async fn a_provider_without_configuration_answers_501_on_both_routes() {
     assert_eq!(text_of(&body), detail_body(UNCONFIGURED_DETAIL));
 }
 
-fn configured_state_empty() -> super::SamlEntrypointsState {
+fn configured_state_empty() -> SamlEntrypointsState {
     let cache = Arc::new(FakeCache::default());
     let fetcher = Arc::new(FakeFetcher::default());
     state(provider(&[], cache, fetcher), &[])
@@ -567,9 +568,9 @@ async fn the_fetcher_follows_redirects_and_reads_only_a_200_body() {
         .await;
         (first, second)
     };
-    let (fetched, (first, second)) =
-        tokio::join!(fetcher.fetch(&format!("{base}/start"), true), serving);
-    assert_eq!(fetched.unwrap(), b"hello");
+    let start = format!("{base}/start");
+    let (outcome, (first, second)) = tokio::join!(fetcher.fetch(&start, true), serving);
+    assert_eq!(outcome.unwrap(), b"hello");
     assert!(first.starts_with("GET /start "), "{first}");
     assert!(second.starts_with("GET /final "), "{second}");
 }
@@ -583,10 +584,10 @@ async fn the_fetcher_refuses_a_status_other_than_200() {
         &listener,
         "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
     );
-    let (fetched, _request) =
-        tokio::join!(fetcher.fetch(&format!("{base}/missing"), false), serving);
+    let missing = format!("{base}/missing");
+    let (outcome, _request) = tokio::join!(fetcher.fetch(&missing, false), serving);
     assert!(matches!(
-        fetched,
+        outcome,
         Err(MetadataFetchError::Status { status: 404 })
     ));
 }
