@@ -103,21 +103,12 @@ fn invalid_integer_warns() {
         )
     });
     assert_eq!(fractional, Settings::default());
-    assert_eq!(
+    let counts = [
         fractional_output.matches(super::SOURCE_LIMIT_KEY).count(),
-        1,
-        "{fractional_output}"
-    );
-    assert_eq!(
         fractional_output.matches(super::WINDOW_KEY).count(),
-        1,
-        "{fractional_output}"
-    );
-    assert_eq!(
         fractional_output.matches(super::BLOCK_KEY).count(),
-        1,
-        "{fractional_output}"
-    );
+    ];
+    assert_eq!(counts, [1, 1, 1], "{fractional_output}");
 
     // int() rejects two underscores in a row, so the digits never join across the empty group
     let (underscored, underscored_output) =

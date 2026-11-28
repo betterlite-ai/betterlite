@@ -201,10 +201,10 @@ fn positive_int<L>(raw: Option<Json>, key: &str, default: i64, lookup: &L) -> i6
 where
     L: EnvironmentLookup,
 {
-    let Some(value) = resolved(raw, lookup) else {
+    let Some(raw_value) = resolved(raw, lookup) else {
         return default;
     };
-    let text = text_of(&value);
+    let text = text_of(&raw_value);
     match int_of(&text) {
         Some(value) if value >= 1 => value,
         Some(value) => {
@@ -235,9 +235,9 @@ where
     SourceOverrides::Mapping(
         entries
             .into_iter()
-            .map(|(range, value)| SourceOverride {
+            .map(|(range, raw_value)| SourceOverride {
                 range,
-                limit: override_limit(resolved_environment(value, lookup), default),
+                limit: override_limit(resolved_environment(raw_value, lookup), default),
             })
             .collect(),
     )
@@ -245,10 +245,10 @@ where
 
 // _override_limit: a null value silently keeps the source default; only a stripped 0 exempts, otherwise the value must be a positive integer
 fn override_limit(raw: Json, default: i64) -> OverrideLimit {
-    let text = match raw {
-        Json::Null => return OverrideLimit::Limit(default),
-        other => text_of(&other),
-    };
+    if raw == Json::Null {
+        return OverrideLimit::Limit(default);
+    }
+    let text = text_of(&raw);
     if text.trim() == "0" {
         return OverrideLimit::Exempt;
     }
