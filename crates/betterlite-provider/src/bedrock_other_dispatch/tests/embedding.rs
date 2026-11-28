@@ -4,13 +4,14 @@ use std::time::SystemTime;
 use betterlite_bedrock::bedrock_embedding_io::response::EmbeddingReply;
 use betterlite_bedrock::bedrock_embedding_io::transport::{ASYNC_CLIENT_PROVIDER, Timeout};
 use betterlite_bedrock::embedding_call::{EmbeddingCallResponse, EmbeddingEnvironment};
+use betterlite_bedrock::transcription::error::CallError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use secrecy::SecretString;
 
-use super::fixture::{Fixture, Handler, environment, object, params, run, value};
+use super::fixture::{Fixture, Handler, Outcome, environment, object, params, run, value};
 use crate::bedrock_other_dispatch::call::{
     BedrockOtherOperation, EmbeddingInput, EmbeddingOperation, EmbeddingStatusOperation,
 };
@@ -140,25 +141,33 @@ async fn titan_g1_vector() {
         operation(TITAN, EmbeddingInput::Multiple(&single), IDENTITY, &env),
     )
     .await;
-    let g1_reply = batch(g1_outcome.embedding());
-    assert_eq!(floats(&g1_reply.data[0].embedding), [0.5_f64, 0.25_f64]);
-    assert_eq!(g1_reply.data[0].index, 0);
-    assert_eq!(g1_reply.usage.prompt_tokens, 2);
-    assert_eq!(g1_reply.usage.total_tokens, 2);
-    assert_eq!(g1_outcome.body(0), value(r#"{"inputText": "hello"}"#));
+    titan_g1_reply(&g1_outcome);
+    titan_g1_request(&g1_outcome);
+}
+
+fn titan_g1_reply(outcome: &Outcome<CallError>) {
+    let reply = batch(outcome.embedding());
+    assert_eq!(floats(&reply.data[0].embedding), [0.5_f64, 0.25_f64]);
+    assert_eq!(reply.data[0].index, 0);
+    assert_eq!(reply.usage.prompt_tokens, 2);
+    assert_eq!(reply.usage.total_tokens, 2);
+}
+
+fn titan_g1_request(outcome: &Outcome<CallError>) {
+    assert_eq!(outcome.body(0), value(r#"{"inputText": "hello"}"#));
     assert!(
-        g1_outcome
+        outcome
             .authorization()
             .is_some_and(|header| header.starts_with("AWS4-HMAC-SHA256"))
     );
-    assert_eq!(g1_outcome.regions, [String::from("us-east-1")]);
+    assert_eq!(outcome.regions, [String::from("us-east-1")]);
     assert_eq!(
-        g1_outcome.header("x-amz-date"),
+        outcome.header("x-amz-date"),
         Some("20231114T221320Z"),
         "the fixture clock signs the request"
     );
     assert_eq!(
-        g1_outcome.calls,
+        outcome.calls,
         [ClientCall {
             kind: Kind::Sync,
             provider: None,
@@ -166,9 +175,9 @@ async fn titan_g1_vector() {
         }],
         "the non-async embedding leaf asks for the sync client"
     );
-    assert!(g1_outcome.post_call(), "the leaf logs its reply");
+    assert!(outcome.post_call(), "the leaf logs its reply");
     assert_eq!(
-        g1_outcome.phases,
+        outcome.phases,
         [String::from("pre_api_call"), String::from("post_api_call")],
         "one input logs its request and its reply"
     );
@@ -409,6 +418,11 @@ async fn async_status() {
         }),
     )
     .await;
+    assert!(optional.is_empty(), "the status lookup reads no param");
+    assert_status_lookup(&outcome);
+}
+
+fn assert_status_lookup(outcome: &Outcome<CallError>) {
     assert_eq!(
         outcome.status_body(),
         &value(
@@ -423,7 +437,6 @@ async fn async_status() {
         "https://bedrock-runtime.us-east-1.amazonaws.com/async-invoke/arn%3Aaws%3Abedrock%3Aus-east-1%3A123456789012%3Aasync-invoke%2Fabc"
     );
     assert_eq!(outcome.regions, [String::from("us-east-1")]);
-    assert!(optional.is_empty());
     assert!(outcome.pre_call(), "the status lookup logs its request");
     assert!(outcome.post_call(), "the status lookup logs its reply");
     assert_eq!(

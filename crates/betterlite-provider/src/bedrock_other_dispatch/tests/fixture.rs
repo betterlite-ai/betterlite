@@ -89,6 +89,22 @@ impl<E> Outcome<E>
 where
     E: StdError + 'static,
 {
+    fn new(
+        result: Result<BedrockOtherResult, BedrockOtherError<E>>,
+        fixture: &Fixture,
+        capture: &Capture,
+        state: LoggingState,
+    ) -> Self {
+        Self {
+            result,
+            requests: fixture.factory.seen.requests(),
+            calls: fixture.factory.calls(),
+            regions: fixture.source.regions(),
+            phases: capture.phases(),
+            state,
+        }
+    }
+
     pub(crate) fn embedding(&self) -> &EmbeddingCallResponse {
         match &self.result {
             Ok(BedrockOtherResult::Embedding(response)) => response.as_ref(),
@@ -283,12 +299,5 @@ where
         Ok(_other) => panic!("the non-chat dispatcher returns a non-chat result"),
         Err(error) => Err(error),
     };
-    Outcome {
-        result,
-        requests: fixture.factory.seen.requests(),
-        calls: fixture.factory.calls(),
-        regions: fixture.source.regions(),
-        phases: capture.phases(),
-        state: prepared.state,
-    }
+    Outcome::new(result, fixture, &capture, prepared.state)
 }
