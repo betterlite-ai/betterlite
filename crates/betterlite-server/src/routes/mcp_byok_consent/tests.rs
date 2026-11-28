@@ -23,6 +23,15 @@ use super::{AUTHORIZE_PATH, ConsentState, MAX_FORM_FIELDS, router_with};
 const MASTER_KEY: &str = "sk-oracle-master";
 const CALLBACK: &str = "http://127.0.0.1:1456/callback";
 const FORM_TYPE: &str = "application/x-www-form-urlencoded";
+const MULTIPART_FORM: &str = concat!(
+    "--boundary-1\r\nContent-Disposition: form-data; name=\"redirect_uri\"\r\n\r\n",
+    "http://127.0.0.1:1456/callback\r\n",
+    "--boundary-1\r\nContent-Disposition: form-data; name=\"code_challenge\"\r\n\r\n",
+    "challenge\r\n",
+    "--boundary-1\r\nContent-Disposition: form-data; name=\"api_key\"\r\n\r\n",
+    "sk-user\r\n",
+    "--boundary-1--\r\n"
+);
 const FUTURE_EXP: i64 = 4_102_444_800;
 
 #[derive(Serialize)]
@@ -120,6 +129,19 @@ fn post(uri: &str, body: &str, cookie: Option<&str>) -> Request<Body> {
         builder = builder.header(header::COOKIE, cookie_value);
     }
     builder.body(Body::from(body.to_owned())).unwrap()
+}
+
+fn post_multipart(uri: &str, body: &str, cookie: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(
+            header::CONTENT_TYPE,
+            "multipart/form-data; boundary=boundary-1",
+        )
+        .header(header::COOKIE, cookie)
+        .body(Body::from(body.to_owned()))
+        .unwrap()
 }
 
 async fn send(router: Router, request: Request<Body>) -> Response {
@@ -553,6 +575,19 @@ async fn the_post_refuses_a_challenge_method_that_is_not_s256() {
         text(response).await,
         r#"{"detail":"Only S256 code_challenge_method is supported"}"#
     );
+}
+
+#[tokio::test]
+async fn a_multipart_form_redirects_to_the_callback() {
+    let cookies = cookie(&ui_claims(), MASTER_KEY);
+    let response = send(
+        signed_in(AuthCodeStore::new()),
+        post_multipart(AUTHORIZE_PATH, MULTIPART_FORM, &cookies),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FOUND);
+    let location = header_of(&response, "location").unwrap();
+    assert!(location.starts_with("http://127.0.0.1:1456/callback?code="));
 }
 
 #[tokio::test]

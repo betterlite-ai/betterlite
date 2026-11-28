@@ -27,7 +27,8 @@ use crate::api::request_form::{RequestFormError, decode_request_form};
 use crate::state::ServerState;
 
 pub(crate) const AUTHORIZE_PATH: &str = "/v1/mcp/oauth/authorize";
-const FORM_CONTENT_TYPE: &str = "application/x-www-form-urlencoded";
+// FastAPI's Form(...) parameters read both form encodings, and the shared decoder parses either.
+const FORM_CONTENT_TYPES: [&str; 2] = ["application/x-www-form-urlencoded", "multipart/form-data"];
 // LiteLLM caps one form field at 1 MiB but leaves the total unbounded; one MiB for the whole body closes that.
 const BODY_LIMIT_BYTES: usize = 0x0010_0000;
 const MAX_FORM_FIELDS: usize = 1000;
@@ -179,8 +180,9 @@ fn form_content_type(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::CONTENT_TYPE)?;
     let text = value.to_str().ok()?;
     let media_type = text.split(';').next().unwrap_or_default().trim();
-    media_type
-        .eq_ignore_ascii_case(FORM_CONTENT_TYPE)
+    FORM_CONTENT_TYPES
+        .iter()
+        .any(|accepted| media_type.eq_ignore_ascii_case(accepted))
         .then_some(text)
 }
 
