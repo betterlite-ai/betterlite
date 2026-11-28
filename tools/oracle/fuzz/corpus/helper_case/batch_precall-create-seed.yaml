@@ -1,0 +1,38 @@
+kind: helper
+name: batch-precall-create-seed
+call:
+    batch_precall:
+        call:
+            op: create
+            call_type: acreate_batch
+            principal:
+                api_key: sk-seed
+                metadata:
+                    batch_enqueued_token_limit: 400
+            data:
+                input_file_id: file-seed
+                metadata: {}
+        stages:
+            skip: false
+            usage:
+                total_tokens: 12
+                request_count: 1
+            reject: false
+            rejection: rate limited
+            backend: memory
+            owner: seed-worker
+        stash:
+            reservation: null
+            operations: []
+            refund_failure: null
+        memory:
+            entries: {}
+            faults: []
+        remote:
+            scan_keys: []
+            batch_entries: {}
+            get_value: null
+            faults: []
+        verbose_stdout: false
+env: {}
+compare: {ignore: []}
