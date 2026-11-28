@@ -4,7 +4,7 @@ from typing import Final, Literal, NotRequired, TypedDict
 
 from fastapi import FastAPI, HTTPException
 from litellm.proxy._types import LiteLLM_JWTAuth
-from litellm.proxy.auth.handle_jwt import JWTAuthManager, JWTHandler
+from litellm.proxy.auth.handle_jwt import AgentLookup, JWTAuthManager, JWTHandler
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.pass_through_endpoints.pass_through_endpoints import (
@@ -23,23 +23,10 @@ UNAUTHORIZED: Final = 401
 ENDPOINT: Final = "p1"
 
 
-class Fields(TypedDict, total=False):
-    team_id_jwt_field: str | None
-    team_ids_jwt_field: str | None
-    team_id_default: str | None
-    team_alias_jwt_field: str | None
-    agent_id_jwt_field: str | None
-    team_id_upsert: bool
-    team_claim_fallback: bool
-    fallback_to_db_teams: bool
-    enforce_team_based_model_access: bool
-    team_allowed_routes: list[str]
-
-
 class Scenario(TypedDict):
     function: Function
     token: NotRequired[JsonRow]
-    fields: NotRequired[Fields]
+    fields: NotRequired[JsonRow]
     teams: NotRequired[dict[str, JsonRow]]
     aliases: NotRequired[dict[str, list[JsonRow]]]
     agents: NotRequired[list[JsonRow]]
@@ -47,7 +34,7 @@ class Scenario(TypedDict):
     headers: NotRequired[dict[str, str]]
     requested_model: NotRequired[str | None]
     route: NotRequired[str]
-    request_method: NotRequired[str | None]
+    request_method: NotRequired[str]
     registered_route: NotRequired[bool]
     user_id: NotRequired[str | None]
     team_id: NotRequired[str | None]
@@ -60,7 +47,7 @@ class Input(TypedDict):
     scenarios: list[Scenario]
 
 
-# a team row as LiteLLM's own pydantic model reads it; extra fields are allowed like the table's columns
+# a team row as LiteLLM's own pydantic model reads it; extra table columns are allowed
 class Row(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -68,7 +55,10 @@ class Row(BaseModel):
 # the team table the scripted scenario answers from; every read is an event, as on the Rust side
 class TeamTable:
     def __init__(
-        self, teams: dict[str, JsonRow], aliases: dict[str, list[JsonRow]], events: list[str]
+        self,
+        teams: dict[str, JsonRow] | None,
+        aliases: dict[str, list[JsonRow]] | None,
+        events: list[str],
     ) -> None:
         self.teams = teams
         self.aliases = aliases
@@ -88,11 +78,12 @@ class TeamTable:
         name = TEXT.validate_python(value)
         if field == "team_id":
             self.events.append(f"team {name}")
-            row = self.teams.get(name)
+            row = None if self.teams is None else self.teams.get(name)
             return [] if row is None else [Row.model_validate(row)]
         if field == "team_alias":
             self.events.append(f"alias {name}")
-            return [Row.model_validate(row) for row in self.aliases.get(name, [])]
+            rows = None if self.aliases is None else self.aliases.get(name)
+            return [] if rows is None else [Row.model_validate(row) for row in rows]
         raise ValueError(f"unexpected team read on {field}")
 
 
@@ -112,22 +103,24 @@ class Client(PrismaClient):
         self.db = Db(table)
 
 
-class Registry:
+class Registry(AgentLookup):
     def __init__(self, rows: list[JsonRow]) -> None:
-        self.agents = [AgentResponse.model_validate(row) for row in rows]
+        self.agents = [AgentResponse.model_validate(row) for row in rows]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L323
 
+    @override
     def get_agent_list(self) -> list[AgentResponse]:
         return list(self.agents)
 
+    @override
     def get_agent_by_id(self, agent_id: str) -> AgentResponse | None:
         return next((agent for agent in self.agents if agent.agent_id == agent_id), None)
 
+    @override
     def get_agent_by_name(self, agent_name: str) -> AgentResponse | None:
         return next((agent for agent in self.agents if agent.agent_name == agent_name), None)
 
 
-# LiteLLM scans a set, whose iteration order differs per process; the sorted order is the one the
-# Rust side uses, so the scan's reads line up. No case has two teams that both qualify.
+# LiteLLM scans a set in per-process order; both sides read the sorted order the Rust side uses
 class ScanOrdered(set[str]):
     @override
     def __iter__(self) -> Iterator[str]:
@@ -140,31 +133,41 @@ class ScanOrdered(set[str]):
 
 
 def token_of(scenario: Scenario) -> JsonRow:
-    return scenario.get("token", {})
+    given = scenario.get("token")
+    return {} if given is None else given
 
 
-def fields_of(scenario: Scenario) -> Fields:
-    return scenario.get("fields", Fields())
+def fields_of(scenario: Scenario) -> JsonRow:
+    given = scenario.get("fields")
+    return {} if given is None else given
 
 
-def handler_of(scenario: Scenario, client: Client | None, cache: UserApiKeyCache) -> JWTHandler:
+def handler_of(
+    scenario: Scenario, events: list[str], cache: UserApiKeyCache
+) -> tuple[Client | None, JWTHandler]:
+    client = (
+        None
+        if scenario.get("database") is False
+        else Client(TeamTable(scenario.get("teams"), scenario.get("aliases"), events))
+    )
     handler = JWTHandler()
     handler.update_environment(
         prisma_client=client,
         user_api_key_cache=cache,
         litellm_jwtauth=LiteLLM_JWTAuth(**fields_of(scenario)),
     )
-    return handler
+    return client, handler
 
 
 def register_route(scenario: Scenario) -> None:
-    InitPassThroughEndpointHelpers.clear_all_pass_through_routes()
-    if not scenario.get("registered_route", False):
+    InitPassThroughEndpointHelpers.clear_all_pass_through_routes()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3145
+    if scenario.get("registered_route") is not True:
         return
-    method = (scenario.get("request_method") or "").upper()
-    InitPassThroughEndpointHelpers.add_exact_path_route(
+    method = scenario.get("request_method")
+    route = scenario.get("route")
+    InitPassThroughEndpointHelpers.add_exact_path_route(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2957
         app=FastAPI(),
-        path=scenario.get("route", ""),
+        path="" if route is None else route,
         target="https://oracle.invalid",
         custom_headers=None,
         forward_headers=None,
@@ -172,57 +175,44 @@ def register_route(scenario: Scenario) -> None:
         dependencies=None,
         cost_per_request=None,
         endpoint_id=ENDPOINT,
-        methods=[method],
+        methods=["" if method is None else method.upper()],
         auth=True,
     )
 
 
-# the owned code raises these two as a plain Exception, which B757 renders as a 401; anything else
-# is a collaborator failure the case must show instead of hiding
-def owned_plain_failure(error: Exception) -> bool:
-    return str(error).startswith(("No DB Connected", "No team found in token"))
-
-
-def failure(error: Exception, events: list[str]) -> JsonValue:
-    if isinstance(error, HTTPException):
-        status = error.status_code
-        message = str(error.detail)
-    else:
-        status = UNAUTHORIZED
-        message = f"Authentication Error, {error}"
-    # B757's public shape for an auth failure: type, param and the status as the code string
-    return JSON.validate_python(
-        {
-            "error": {
-                "status": status,
-                "message": message,
-                "type": "auth_error",
-                "param": "None",
-                "code": str(status),
-            },
-            "events": events,
-        }
-    )
+# B757's public shape for an auth failure: type, param and the status as the code string
+def failure(status: int, message: str, events: list[str]) -> JsonValue:
+    error_row: JsonRow = {
+        "status": status,
+        "message": message,
+        "type": "auth_error",
+        "param": "None",
+        "code": str(status),
+    }
+    payload: JsonRow = {"error": error_row, "events": JSON.validate_python(events)}
+    return JSON.validate_python(payload)
 
 
 async def answered(scenario: Scenario) -> JsonValue:
     events: list[str] = []
     cache = UserApiKeyCache()
-    table = TeamTable(scenario.get("teams", {}), scenario.get("aliases", {}), events)
-    client = Client(table) if scenario.get("database", True) else None
-    handler = handler_of(scenario, client, cache)
+    client, handler = handler_of(scenario, events, cache)
     token = token_of(scenario)
     function = scenario["function"]
     register_route(scenario)
     value: JsonValue = None
+    row: JsonRow = {}
     try:
         if function == "agent":
             agent_id = JWTAuthManager.resolve_agent_id(
-                handler, token, Registry(scenario.get("agents", []))
+                handler,
+                token,
+                Registry([] if scenario.get("agents") is None else scenario["agents"]),
             )
-            value = JSON.validate_python({"agent_id": agent_id})
+            row = {"agent_id": agent_id}
+            value = JSON.validate_python(row)
         elif function == "specific_team":
-            team_id, _team = await JWTAuthManager.find_and_validate_specific_team_id(
+            team_id, _team = await JWTAuthManager.find_and_validate_specific_team_id(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1523-L1620
                 jwt_handler=handler,
                 jwt_valid_token=token,
                 prisma_client=client,
@@ -230,13 +220,14 @@ async def answered(scenario: Scenario) -> JsonValue:
                 parent_otel_span=None,
                 proxy_logging_obj=ProxyLogging(user_api_key_cache=cache),
             )
-            value = JSON.validate_python({"team_id": team_id})
+            row = {"team_id": team_id}
+            value = JSON.validate_python(row)
         elif function == "candidates":
-            team_ids = ScanOrdered(JWTAuthManager.get_all_team_ids(handler, token))
+            team_ids = ScanOrdered(JWTAuthManager.get_all_team_ids(handler, token))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1623-L1629
             selected, _team = await JWTAuthManager.find_team_with_model_access(
                 team_ids=team_ids,
                 requested_model=scenario.get("requested_model"),
-                route=scenario.get("route", ""),
+                route="" if scenario.get("route") is None else scenario["route"],
                 jwt_handler=handler,
                 prisma_client=client,
                 user_api_key_cache=cache,
@@ -244,46 +235,54 @@ async def answered(scenario: Scenario) -> JsonValue:
                 proxy_logging_obj=ProxyLogging(user_api_key_cache=cache),
                 request_method=scenario.get("request_method"),
             )
-            value = JSON.validate_python({"team_id": selected})
+            row = {"team_id": selected}
+            value = JSON.validate_python(row)
         elif function == "header":
             header = await JWTAuthManager.resolve_team_from_header(
-                request_headers=scenario.get("headers", {}),
-                allowed_team_ids=set(scenario.get("allowed_team_ids", [])),
-                fallback_to_db_teams=fields_of(scenario).get("fallback_to_db_teams", False),
+                request_headers=scenario.get("headers"),
+                allowed_team_ids=(
+                    set[str]()
+                    if scenario.get("allowed_team_ids") is None
+                    else set(scenario["allowed_team_ids"])
+                ),
+                fallback_to_db_teams=fields_of(scenario).get("fallback_to_db_teams") is True,
                 prisma_client=client,
                 user_api_key_cache=cache,
                 parent_otel_span=None,
                 proxy_logging_obj=ProxyLogging(user_api_key_cache=cache),
             )
-            value = JSON.validate_python(
-                {
-                    "header_value": None if header is None else header.header_value,
-                    "team_id": None if header is None else header.team_id,
-                }
-            )
+            row = {"header_value": None, "team_id": None}
+            if header is not None:
+                row = {"header_value": header.header_value, "team_id": header.team_id}
+            value = JSON.validate_python(row)
         else:
             JWTAuthManager.validate_object_id(
                 scenario.get("user_id"),
                 scenario.get("team_id"),
-                scenario.get("enforce_rbac", False),
-                scenario.get("is_proxy_admin", False),
+                scenario.get("enforce_rbac") is True,
+                scenario.get("is_proxy_admin") is True,
             )
-            value = JSON.validate_python({"ok": True})
+            row = {"ok": True}
+            value = JSON.validate_python(row)
     except HTTPException as error:
-        return failure(error, events)
+        return failure(error.status_code, str(error.detail), events)
     except Exception as error:
-        if not owned_plain_failure(error):
+        if not str(error).startswith(("No DB Connected", "No team found in token")):
             raise
-        return failure(error, events)
-    return JSON.validate_python(
-        {"events": sorted(events) if function == "candidates" else events, "value": value}
-    )
+        return failure(UNAUTHORIZED, f"Authentication Error, {error}", events)
+    row = {
+        "events": JSON.validate_python(sorted(events) if function == "candidates" else events),
+        "value": value,
+    }
+    return JSON.validate_python(row)
 
 
 async def answered_all(input_value: Input) -> JsonValue:
     answers = [await answered(scenario) for scenario in input_value["scenarios"]]
-    return JSON.validate_python({"scenarios": answers})
+    result: JsonRow = {"scenarios": answers}
+    return JSON.validate_python(result)
 
 
 def run(input_value: Input) -> JsonValue:
-    return JSON.validate_python(asyncio.run(answered_all(input_value)))
+    answers = asyncio.run(answered_all(input_value))
+    return JSON.validate_python(answers)

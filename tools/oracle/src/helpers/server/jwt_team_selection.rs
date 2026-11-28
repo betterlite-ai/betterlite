@@ -11,9 +11,7 @@ use betterlite_auth::jwt_team_selection::agent::resolve_agent_id;
 use betterlite_auth::jwt_team_selection::candidates::{
     CandidateContext, CandidateRequest, find_team_with_model_access,
 };
-use betterlite_auth::jwt_team_selection::claims_teams::{
-    find_and_validate_specific_team_id, get_all_team_ids,
-};
+use betterlite_auth::jwt_team_selection::claims_teams::{find_team_in_claims, get_all_team_ids};
 use betterlite_auth::jwt_team_selection::error::TeamSelectionError;
 use betterlite_auth::jwt_team_selection::header::resolve_team_from_header;
 use betterlite_auth::jwt_team_selection::object::validate_object_id;
@@ -78,14 +76,9 @@ async fn answer(scenario: &Scenario) -> HelperResult {
             Ok(tagged(answer, &script))
         }
         Function::SpecificTeam => Ok(tagged(
-            find_and_validate_specific_team_id(
-                &claims,
-                &lookup,
-                &settings,
-                scenario.fields.team_id_upsert,
-            )
-            .await
-            .map(|(team_id, _team)| json!({"team_id": team_id})),
+            find_team_in_claims(&claims, &lookup, &settings, scenario.fields.team_id_upsert)
+                .await
+                .map(|(team_id, _team)| json!({"team_id": team_id})),
             &script,
         )),
         Function::Candidates => Ok(tagged(

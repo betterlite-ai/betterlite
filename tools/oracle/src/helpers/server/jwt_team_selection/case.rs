@@ -49,8 +49,7 @@ pub(super) struct Scenario {
     pub(super) route: String,
     #[serde(default)]
     pub(super) request_method: Option<String>,
-    // an absent switch keeps the false default, as LiteLLM_JWTAuth does; Option<bool> keeps these
-    // wire records under clippy's struct_excessive_bools limit
+    // an absent switch keeps LiteLLM_JWTAuth's false default; Option<bool> keeps the bool count down
     #[serde(default)]
     pub(super) registered_route: Option<bool>,
     #[serde(default)]
@@ -76,20 +75,20 @@ pub(super) struct Fields {
     pub(super) team_id_upsert: Option<bool>,
     pub(super) team_claim_fallback: Option<bool>,
     pub(super) fallback_to_db_teams: Option<bool>,
-    pub(super) enforce_team_based_model_access: Option<bool>,
+    #[serde(rename = "enforce_team_based_model_access")]
+    pub(super) team_model_access: Option<bool>,
     // absent keeps the pinned default list, as LiteLLM_JWTAuth's own default does
     pub(super) team_allowed_routes: Option<Vec<String>>,
 }
 
 pub(super) fn claim_settings(fields: &Fields) -> JwtAuthSettings {
-    JwtAuthSettings {
-        team_id_jwt_field: fields.team_id_jwt_field.clone(),
-        team_ids_jwt_field: fields.team_ids_jwt_field.clone(),
-        team_id_default: fields.team_id_default.clone(),
-        team_alias_jwt_field: fields.team_alias_jwt_field.clone(),
-        agent_id_jwt_field: fields.agent_id_jwt_field.clone(),
-        ..JwtAuthSettings::default()
-    }
+    let mut settings = JwtAuthSettings::default();
+    settings.team_id_jwt_field = fields.team_id_jwt_field.clone();
+    settings.team_ids_jwt_field = fields.team_ids_jwt_field.clone();
+    settings.team_id_default = fields.team_id_default.clone();
+    settings.team_alias_jwt_field = fields.team_alias_jwt_field.clone();
+    settings.agent_id_jwt_field = fields.agent_id_jwt_field.clone();
+    settings
 }
 
 pub(super) fn selection_settings(fields: &Fields) -> SelectionSettings {
@@ -101,7 +100,7 @@ pub(super) fn selection_settings(fields: &Fields) -> SelectionSettings {
     settings.teams.team_id_upsert = fields.team_id_upsert.unwrap_or(false);
     settings.routing.team_claim_fallback = fields.team_claim_fallback.unwrap_or(false);
     settings.routing.fallback_to_db_teams = fields.fallback_to_db_teams.unwrap_or(false);
-    settings.scopes.team_model_access = fields.enforce_team_based_model_access.unwrap_or(false);
+    settings.scopes.team_model_access = fields.team_model_access.unwrap_or(false);
     if let Some(routes) = &fields.team_allowed_routes {
         settings.routes.team_allowed_routes.clone_from(routes);
     }
