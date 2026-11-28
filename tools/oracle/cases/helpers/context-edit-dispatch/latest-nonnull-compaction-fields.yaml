@@ -9,6 +9,8 @@ call:
         context_management:
           edits:
             - type: compact_20260112
+            - type: compact_20260112
+            - type: compact_20260112
         compact:
           - kind: polyfill
             messages:
@@ -45,6 +47,7 @@ call:
             content: start
         context_management:
           edits:
+            - type: compact_20260112
             - type: compact_20260112
         compact:
           - kind: polyfill
