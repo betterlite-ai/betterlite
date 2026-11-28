@@ -69,7 +69,9 @@ impl ProxyPolicy {
                 ProxyRoute::Forward(_) if name == "socks" => ProxyRoute::Unsupported {
                     scheme: "socks5h".to_owned(),
                 },
-                other => other,
+                other @ (ProxyRoute::Forward(_)
+                | ProxyRoute::Unsupported { .. }
+                | ProxyRoute::Invalid { .. }) => other,
             };
             primary.insert(name.clone(), route);
         }
