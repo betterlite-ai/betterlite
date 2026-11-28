@@ -16,6 +16,7 @@ use super::super::tests::{
     CountingNonces, FakeStore, SALT, fixed_now, session_codec, subjects, user_row,
 };
 use super::super::{ActiveSubjects, IdentityLookup};
+use super::GatewayCredential as _;
 
 const HEADER: &str = "eyJhbGciOiJub25lIn0";
 const ISS_CONFIGURED: &str = r#"{"iss":"https://issuer.example"}"#;
@@ -104,10 +105,10 @@ async fn header_master_key_mismatch_answers_false() {
 #[tokio::test]
 async fn header_non_ascii_master_key_compares_the_encoded_bytes() {
     let mut active = subjects(FakeStore::new());
-    active.settings.master_key = Some(SecretString::from("maîtresse"));
+    active.settings.master_key = Some(SecretString::from("ma\u{00ee}tresse"));
     assert!(
         active
-            .uses_gateway_credential(&auth_headers("Bearer maîtresse"))
+            .uses_gateway_credential(&auth_headers("Bearer ma\u{00ee}tresse"))
             .await
     );
 }

@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_auth::master_key_admin::master_key_admin_auth;
 use betterlite_auth::subject_state::key_is_active;
 use betterlite_mcp::gateway_dcr::ports::ReloadUserFailure;
@@ -9,8 +11,21 @@ use super::{ActiveSubjects, ResolvedKey, SubjectReadError, SubjectStore};
 
 mod tests;
 
-impl<S: SubjectStore> ActiveSubjects<S> {
-    pub async fn resolve_active_key(
+// The workspace denies clippy::multiple_inherent_impl, so this module's part of the type's API lives on this trait.
+pub trait ActiveKeyReload {
+    fn resolve_active_key(
+        &self,
+        headers: &HeaderMap,
+    ) -> impl Future<Output = Result<ResolvedKey, ReloadUserFailure>> + Send;
+
+    fn reload_active_key(
+        &self,
+        key_hash: &str,
+    ) -> impl Future<Output = Result<ResolvedKey, ReloadUserFailure>> + Send;
+}
+
+impl<S: SubjectStore> ActiveKeyReload for ActiveSubjects<S> {
+    async fn resolve_active_key(
         &self,
         headers: &HeaderMap,
     ) -> Result<ResolvedKey, ReloadUserFailure> {
@@ -20,10 +35,7 @@ impl<S: SubjectStore> ActiveSubjects<S> {
         self.reload_active_key(&hash_token(&token)).await
     }
 
-    pub async fn reload_active_key(
-        &self,
-        key_hash: &str,
-    ) -> Result<ResolvedKey, ReloadUserFailure> {
+    async fn reload_active_key(&self, key_hash: &str) -> Result<ResolvedKey, ReloadUserFailure> {
         match master_key_admin_auth(
             key_hash,
             self.settings.master_key.as_ref(),

@@ -7,7 +7,7 @@ use betterlite_auth::session_token_codec::record::SessionRecord;
 use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_mcp::gateway_dcr::ports::{
-    ConsentTeam, LookupConsentTeams, MintProxyCredential, ProxyCredentialMintFailure,
+    ConsentTeam, LookupConsentTeams as _, MintProxyCredential as _, ProxyCredentialMintFailure,
     ReloadUserFailure,
 };
 use betterlite_secrets::error::SecretError;
@@ -41,10 +41,6 @@ fn token_record(credential_key: &str) -> SessionRecord {
     SessionRecord::from_auth(&auth)
 }
 
-fn role(text: &str) -> Option<UserRole> {
-    Some(text.parse().unwrap())
-}
-
 struct MarkerNonces;
 
 impl NonceSource for MarkerNonces {
@@ -57,7 +53,7 @@ impl NonceSource for MarkerNonces {
 #[tokio::test]
 async fn consent_reads_the_cache_source() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1"}"#)),
+        user: UserAnswer::Found(Box::new(user_row(r#"{"user_id":"user-1"}"#))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };
@@ -65,12 +61,12 @@ async fn consent_reads_the_cache_source() {
     let active = subjects(store);
     let teams = active.consent_teams("user-1").await.unwrap();
     assert!(teams.is_empty());
-    let calls = calls.lock().unwrap();
+    let recorded = calls.lock().unwrap();
     assert_eq!(
-        calls.users,
+        recorded.users,
         vec![("user-1".to_owned(), UserRowSource::Cache)]
     );
-    assert_eq!(calls.teams, vec![Vec::<String>::new()]);
+    assert_eq!(recorded.teams, vec![Vec::<String>::new()]);
 }
 
 #[rstest]
@@ -96,7 +92,9 @@ async fn consent_returns_the_user_failure(
 #[tokio::test]
 async fn consent_unknown_team_details_is_unavailable() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["team-a"]}"#,
+        ))),
         details: None,
         ..FakeStore::new()
     };
@@ -110,7 +108,9 @@ async fn consent_unknown_team_details_is_unavailable() {
 #[tokio::test]
 async fn consent_drops_details_without_a_team_id() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["team-a"]}"#,
+        ))),
         details: Some(vec![
             detail("team-a", "alias-a", &[]),
             teamless("orphan"),
@@ -157,7 +157,9 @@ async fn mint_refusal_reads_the_database_source_and_returns_the_user_failure() {
 #[tokio::test]
 async fn mint_refusal_team_the_user_is_not_in_before_any_team_read() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["team-a"]}"#,
+        ))),
         details: Some(vec![detail("team-a", "alias-a", &[])]),
         ..FakeStore::new()
     };
@@ -171,7 +173,9 @@ async fn mint_refusal_team_the_user_is_not_in_before_any_team_read() {
 #[tokio::test]
 async fn mint_refusal_without_team_details_is_unavailable() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["team-a"]}"#,
+        ))),
         details: None,
         ..FakeStore::new()
     };
@@ -186,7 +190,9 @@ async fn mint_refusal_without_team_details_is_unavailable() {
 #[tokio::test]
 async fn mint_refusal_without_a_team_for_live_teams_is_team_required() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["team-a"]}"#,
+        ))),
         details: Some(vec![detail("team-a", "alias-a", &[])]),
         ..FakeStore::new()
     };
@@ -201,7 +207,9 @@ async fn mint_refusal_without_a_team_for_live_teams_is_team_required() {
 #[tokio::test]
 async fn mint_refusal_member_whose_team_row_is_gone() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["team-a"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["team-a"]}"#,
+        ))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };
@@ -213,7 +221,9 @@ async fn mint_refusal_member_whose_team_row_is_gone() {
 #[tokio::test]
 async fn mint_refusal_with_no_team_for_a_user_whose_teams_are_gone() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","teams":["gone"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","teams":["gone"]}"#,
+        ))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };
@@ -226,7 +236,9 @@ async fn mint_refusal_with_no_team_for_a_user_whose_teams_are_gone() {
 #[tokio::test]
 async fn mint_refusal_without_teams_never_reads_team_details() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","models":["gpt-4o"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","models":["gpt-4o"]}"#,
+        ))),
         details: None,
         ..FakeStore::new()
     };
@@ -243,7 +255,9 @@ async fn mint_refusal_without_teams_never_reads_team_details() {
 #[rstest]
 #[case::missing(UserAnswer::Missing, ProxyCredentialMintFailure::NoActiveKey)]
 #[case::scim_deactivated(
-    UserAnswer::Found(user_row(r#"{"user_id":"user-1","metadata":{"scim_active":false}}"#)),
+    UserAnswer::Found(Box::new(user_row(
+        r#"{"user_id":"user-1","metadata":{"scim_active":false}}"#
+    ))),
     ProxyCredentialMintFailure::NoActiveKey
 )]
 #[tokio::test]
@@ -263,7 +277,7 @@ async fn mint_refusal_user_that_is_not_live(
 #[tokio::test]
 async fn mint_refusal_without_a_signing_key_is_unresolvable() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1"}"#)),
+        user: UserAnswer::Found(Box::new(user_row(r#"{"user_id":"user-1"}"#))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };
@@ -282,7 +296,7 @@ async fn mint_refusal_without_a_signing_key_is_unresolvable() {
 #[tokio::test]
 async fn mint_refusal_with_a_non_positive_lifetime_is_unresolvable(#[case] hours: i64) {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1"}"#)),
+        user: UserAnswer::Found(Box::new(user_row(r#"{"user_id":"user-1"}"#))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };
@@ -304,9 +318,9 @@ async fn mint_token_carries_the_grant_team_and_its_scope() {
         team_model_aliases: Some(BTreeMap::from([("gpt-4o".to_owned(), "smart".to_owned())])),
     };
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(
+        user: UserAnswer::Found(Box::new(user_row(
             r#"{"user_id":"user-1","user_role":"proxy_admin","models":["gpt-4o"],"teams":["team-a"]}"#,
-        )),
+        ))),
         details: Some(vec![scoped]),
         ..FakeStore::new()
     };
@@ -333,14 +347,16 @@ async fn mint_token_carries_the_grant_team_and_its_scope() {
         )]))
     );
     assert!(record.models.is_empty());
-    assert_eq!(record.user_role, role("proxy_admin"));
+    assert_eq!(record.user_role, Some(UserRole::ProxyAdmin));
     assert!(record.is_session_token);
 }
 
 #[tokio::test]
 async fn mint_token_without_a_team_carries_the_user_models_and_effective_role() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1","models":["gpt-4o"]}"#)),
+        user: UserAnswer::Found(Box::new(user_row(
+            r#"{"user_id":"user-1","models":["gpt-4o"]}"#,
+        ))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };
@@ -351,7 +367,7 @@ async fn mint_token_without_a_team_carries_the_user_models_and_effective_role() 
     let record = token_record(credential.key.expose_secret());
     assert_eq!(record.models, vec![JsonData::String("gpt-4o".to_owned())]);
     assert_eq!(record.team_id, None);
-    assert_eq!(record.user_role, role("internal_user"));
+    assert_eq!(record.user_role, Some(UserRole::InternalUser));
     assert!(record.team_models.is_empty());
 }
 
@@ -366,7 +382,7 @@ fn mint_token_fills_each_nonce_through_the_shared_source() {
 #[tokio::test]
 async fn mint_token_uses_the_configured_lifetime() {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1"}"#)),
+        user: UserAnswer::Found(Box::new(user_row(r#"{"user_id":"user-1"}"#))),
         details: Some(Vec::new()),
         ..FakeStore::new()
     };

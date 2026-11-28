@@ -102,15 +102,10 @@ impl SubjectStore for LiveSubjectStore {
         self.identity_answer(key_hash)
     }
 
-    fn team_details(
-        &self,
-        teams: &[String],
-    ) -> impl Future<Output = Option<Vec<CliSsoTeamDetail>>> + Send {
-        async move {
-            let Some(store) = self.database.as_ref() else {
-                return None;
-            };
-            fetch_cli_sso_team_details(store.as_ref(), teams).await
-        }
+    async fn team_details(&self, teams: &[String]) -> Option<Vec<CliSsoTeamDetail>> {
+        let Some(store) = self.database.as_ref() else {
+            return None;
+        };
+        fetch_cli_sso_team_details(store.as_ref(), teams).await
     }
 }

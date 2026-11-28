@@ -75,13 +75,13 @@ pub(crate) fn session_codec() -> SessionTokenCodec<CountingNonces, TracingDiagno
 
 #[derive(Clone)]
 pub(crate) enum KeyAnswer {
-    Found(UserAPIKeyAuth),
+    Found(Box<UserAPIKeyAuth>),
     Failed(SubjectReadError),
 }
 
 #[derive(Clone)]
 pub(crate) enum UserAnswer {
-    Found(LiteLLMUserTable),
+    Found(Box<LiteLLMUserTable>),
     Missing,
     Failed(SubjectReadError),
 }
@@ -142,7 +142,7 @@ impl SubjectStore for FakeStore {
     ) -> impl Future<Output = Result<UserAPIKeyAuth, SubjectReadError>> + Send {
         self.calls.lock().unwrap().keys.push(key_hash.to_owned());
         let answer = match &self.key {
-            KeyAnswer::Found(key) => Ok(key.clone()),
+            KeyAnswer::Found(key) => Ok((**key).clone()),
             KeyAnswer::Failed(error) => Err(*error),
         };
         ready(answer)
@@ -159,7 +159,7 @@ impl SubjectStore for FakeStore {
             .users
             .push((user_id.to_owned(), source));
         let answer = match &self.user {
-            UserAnswer::Found(row) => Ok(Some(row.clone())),
+            UserAnswer::Found(row) => Ok(Some((**row).clone())),
             UserAnswer::Missing => Ok(None),
             UserAnswer::Failed(error) => Err(*error),
         };

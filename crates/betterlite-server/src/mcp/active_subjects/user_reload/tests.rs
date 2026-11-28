@@ -2,11 +2,12 @@
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_mcp::gateway_dcr::ports::{ReloadUser, ReloadUserFailure};
+use betterlite_mcp::gateway_dcr::ports::{ReloadUser as _, ReloadUserFailure};
 use rstest::rstest;
 
 use super::super::tests::{FakeStore, UserAnswer, key_row, subjects, user_row};
 use super::super::{SubjectReadError, UserRowSource};
+use super::ActiveUserLoad as _;
 
 fn owned_key() -> UserAPIKeyAuth {
     key_row(r#"{"token":"sk-owned","user_id":"user-1"}"#)
@@ -68,7 +69,7 @@ async fn load_missing_row_is_no_active_key() {
 #[tokio::test]
 async fn load_passes_the_requested_source_to_the_store() {
     let store = FakeStore {
-        user: UserAnswer::Found(active_user()),
+        user: UserAnswer::Found(Box::new(active_user())),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -88,7 +89,7 @@ async fn load_passes_the_requested_source_to_the_store() {
 async fn load_scim_deactivated_user_is_no_active_key() {
     let deactivated = user_row(r#"{"user_id":"user-1","metadata":{"scim_active":false}}"#);
     let store = FakeStore {
-        user: UserAnswer::Found(deactivated),
+        user: UserAnswer::Found(Box::new(deactivated)),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -102,7 +103,7 @@ async fn load_scim_deactivated_user_is_no_active_key() {
 async fn owner_deactivated_needs_a_literal_scim_false() {
     let deactivated = user_row(r#"{"user_id":"user-1","metadata":{"scim_active":false}}"#);
     let store = FakeStore {
-        user: UserAnswer::Found(deactivated),
+        user: UserAnswer::Found(Box::new(deactivated)),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -121,7 +122,7 @@ async fn owner_deactivated_needs_a_literal_scim_false() {
 #[tokio::test]
 async fn owner_deactivated_is_false_for_anything_but_scim_false(#[case] row: &str) {
     let store = FakeStore {
-        user: UserAnswer::Found(user_row(row)),
+        user: UserAnswer::Found(Box::new(user_row(row))),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -132,7 +133,7 @@ async fn owner_deactivated_is_false_for_anything_but_scim_false(#[case] row: &st
 async fn owner_without_a_user_id_reads_nothing() {
     let key = key_row(r#"{"token":"sk-team","team_id":"team-a"}"#);
     let store = FakeStore {
-        user: UserAnswer::Found(active_user()),
+        user: UserAnswer::Found(Box::new(active_user())),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -145,7 +146,7 @@ async fn owner_without_a_user_id_reads_nothing() {
 async fn owner_of_an_inactive_key_reads_nothing() {
     let key = key_row(r#"{"token":"sk-old","user_id":"user-1","expires":"2000-01-01T00:00:00Z"}"#);
     let store = FakeStore {
-        user: UserAnswer::Found(active_user()),
+        user: UserAnswer::Found(Box::new(active_user())),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -158,7 +159,7 @@ async fn owner_of_an_inactive_key_reads_nothing() {
 async fn owner_without_a_database_is_false() {
     let store = FakeStore {
         has_database: false,
-        user: UserAnswer::Found(active_user()),
+        user: UserAnswer::Found(Box::new(active_user())),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -203,7 +204,7 @@ async fn reload_user_keeps_only_the_failure() {
 #[tokio::test]
 async fn reload_user_is_none_for_a_live_user() {
     let store = FakeStore {
-        user: UserAnswer::Found(active_user()),
+        user: UserAnswer::Found(Box::new(active_user())),
         ..FakeStore::new()
     };
     let calls = store.calls();

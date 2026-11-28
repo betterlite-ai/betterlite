@@ -9,12 +9,14 @@ use http::header::{AUTHORIZATION, HeaderValue};
 use rstest::rstest;
 use secrecy::SecretString;
 
+use super::super::ActiveSubjects;
 use super::super::SubjectReadError;
 use super::super::tests::{ADMIN_NAME, FakeStore, KeyAnswer, key_row, subjects};
+use super::ActiveKeyReload as _;
 
 const MASTER_KEY: &str = "master-secret";
 
-fn master_subjects(store: FakeStore) -> super::super::ActiveSubjects<FakeStore> {
+fn master_subjects(store: FakeStore) -> ActiveSubjects<FakeStore> {
     let mut active = subjects(store);
     active.settings.master_key = Some(SecretString::from(MASTER_KEY));
     active
@@ -58,7 +60,9 @@ async fn reload_master_key_mismatch_without_a_database_is_unresolvable() {
 async fn reload_without_a_database_is_unresolvable() {
     let store = FakeStore {
         has_database: false,
-        key: KeyAnswer::Found(key_row(r#"{"token":"sk-active","user_id":"user-1"}"#)),
+        key: KeyAnswer::Found(Box::new(key_row(
+            r#"{"token":"sk-active","user_id":"user-1"}"#,
+        ))),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -91,7 +95,7 @@ async fn reload_key_failures_keep_their_names(
 async fn reload_active_key_returns_it_with_the_stored_hash() {
     let key = key_row(r#"{"token":"sk-active","user_id":"user-1"}"#);
     let store = FakeStore {
-        key: KeyAnswer::Found(key),
+        key: KeyAnswer::Found(Box::new(key)),
         ..FakeStore::new()
     };
     let calls = store.calls();
@@ -109,7 +113,7 @@ async fn reload_active_key_returns_it_with_the_stored_hash() {
 async fn reload_expired_key_is_no_active_key() {
     let key = key_row(r#"{"token":"sk-old","expires":"2000-01-01T00:00:00Z"}"#);
     let store = FakeStore {
-        key: KeyAnswer::Found(key),
+        key: KeyAnswer::Found(Box::new(key)),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -121,7 +125,7 @@ async fn reload_expired_key_is_no_active_key() {
 async fn reload_blocked_key_is_no_active_key() {
     let key = key_row(r#"{"token":"sk-blocked","blocked":true}"#);
     let store = FakeStore {
-        key: KeyAnswer::Found(key),
+        key: KeyAnswer::Found(Box::new(key)),
         ..FakeStore::new()
     };
     let active = subjects(store);
@@ -149,7 +153,7 @@ async fn resolve_hashes_the_presented_token_with_plain_sha256(
 ) {
     let key = key_row(r#"{"token":"sk-presented"}"#);
     let store = FakeStore {
-        key: KeyAnswer::Found(key),
+        key: KeyAnswer::Found(Box::new(key)),
         ..FakeStore::new()
     };
     let calls = store.calls();

@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
@@ -18,6 +17,7 @@ use secrecy::SecretString;
 use crate::cli_team_grants::records::CliSsoTeamDetail;
 use crate::cli_team_grants::selection::selected_cli_sso_team_detail;
 
+use super::user_reload::ActiveUserLoad as _;
 use super::{ActiveSubjects, SharedNonces, SubjectStore, UserRowSource};
 
 mod tests;
@@ -33,126 +33,123 @@ const fn mint_failure(failure: ReloadUserFailure) -> ProxyCredentialMintFailure 
     }
 }
 
-impl<S: SubjectStore> ActiveSubjects<S> {
-    async fn consent_team_list(
-        &self,
-        user_id: &str,
-    ) -> Result<Vec<ConsentTeam>, ReloadUserFailure> {
-        let user = match self.load_active_user(user_id, UserRowSource::Cache).await {
-            Ok(user) => user,
-            Err(failure) => return Err(failure),
-        };
-        let Some(details) = self.store.team_details(&user.teams).await else {
-            return Err(ReloadUserFailure::Unavailable);
-        };
-        Ok(details
-            .into_iter()
-            .filter_map(|detail| {
-                let team_id = detail.team_id?;
-                Some(ConsentTeam {
-                    team_id,
-                    team_alias: detail.team_alias,
-                })
+async fn consent_team_list<S: SubjectStore>(
+    active: &ActiveSubjects<S>,
+    user_id: &str,
+) -> Result<Vec<ConsentTeam>, ReloadUserFailure> {
+    let user = match active.load_active_user(user_id, UserRowSource::Cache).await {
+        Ok(user) => user,
+        Err(failure) => return Err(failure),
+    };
+    let Some(details) = active.store.team_details(&user.teams).await else {
+        return Err(ReloadUserFailure::Unavailable);
+    };
+    Ok(details
+        .into_iter()
+        .filter_map(|detail| {
+            let team_id = detail.team_id?;
+            Some(ConsentTeam {
+                team_id,
+                team_alias: detail.team_alias,
             })
-            .collect())
-    }
-
-    async fn minted_credential(
-        &self,
-        user_id: &str,
-        team_id: Option<&str>,
-    ) -> Result<MintedProxyCredential, ProxyCredentialMintFailure> {
-        let user = match self
-            .load_active_user(user_id, UserRowSource::Database)
-            .await
-        {
-            Ok(user) => user,
-            Err(failure) => return Err(mint_failure(failure)),
-        };
-        let details = self.minted_team_details(&user, team_id).await?;
-        let Some(selected) = selected_cli_sso_team_detail(&details, team_id) else {
-            return Err(ProxyCredentialMintFailure::NotAMember);
-        };
-        let key = self.minted_key(&user, team_id, selected)?;
-        let lifetime = self
-            .settings
-            .cli_token_hours
-            .saturating_mul(SECONDS_PER_HOUR);
-        let Some(expires_in) = u64::try_from(lifetime).ok().and_then(NonZeroU64::new) else {
-            return Err(ProxyCredentialMintFailure::Unresolvable);
-        };
-        Ok(MintedProxyCredential {
-            key,
-            expires_in,
-            user_id: user.user_id,
-            team_id: team_id.map(str::to_owned),
         })
-    }
+        .collect())
+}
 
-    // the membership, team read and team_required checks, in LiteLLM's order
-    async fn minted_team_details(
-        &self,
-        user: &LiteLLMUserTable,
-        team_id: Option<&str>,
-    ) -> Result<Vec<CliSsoTeamDetail>, ProxyCredentialMintFailure> {
-        if let Some(wanted) = team_id
-            && !user.teams.iter().any(|team| team.as_str() == wanted)
-        {
-            return Err(ProxyCredentialMintFailure::NotAMember);
-        }
-        let fetched = if user.teams.is_empty() {
-            Some(Vec::new())
-        } else {
-            self.store.team_details(&user.teams).await
-        };
-        let Some(details) = fetched else {
-            return Err(ProxyCredentialMintFailure::Unavailable);
-        };
-        if team_id.is_none() && details.iter().any(|detail| detail.team_id.is_some()) {
-            return Err(ProxyCredentialMintFailure::TeamRequired);
-        }
-        Ok(details)
-    }
+async fn minted_credential<S: SubjectStore>(
+    active: &ActiveSubjects<S>,
+    user_id: &str,
+    team_id: Option<&str>,
+) -> Result<MintedProxyCredential, ProxyCredentialMintFailure> {
+    let user = match active
+        .load_active_user(user_id, UserRowSource::Database)
+        .await
+    {
+        Ok(user) => user,
+        Err(failure) => return Err(mint_failure(failure)),
+    };
+    let details = minted_team_details(active, &user, team_id).await?;
+    let Some(selected) = selected_cli_sso_team_detail(&details, team_id) else {
+        return Err(ProxyCredentialMintFailure::NotAMember);
+    };
+    let key = minted_key(active, &user, team_id, selected)?;
+    let lifetime = active
+        .settings
+        .cli_token_hours
+        .saturating_mul(SECONDS_PER_HOUR);
+    let Some(expires_in) = u64::try_from(lifetime).ok().and_then(NonZeroU64::new) else {
+        return Err(ProxyCredentialMintFailure::Unresolvable);
+    };
+    Ok(MintedProxyCredential {
+        key,
+        expires_in,
+        user_id: user.user_id,
+        team_id: team_id.map(str::to_owned),
+    })
+}
 
-    fn minted_key(
-        &self,
-        user: &LiteLLMUserTable,
-        team_id: Option<&str>,
-        selected: CliSsoTeamDetail,
-    ) -> Result<SecretString, ProxyCredentialMintFailure> {
-        let row = minted_user_row(user);
-        let session = CliSession {
-            team_id: team_id.map(str::to_owned),
-            team_alias: selected.team_alias,
-            team_models: selected.team_models,
-            team_model_aliases: selected.team_model_aliases,
-            max_budget: None,
-        };
-        match self
-            .cli_codec()
-            .cli_session_token(&row, &session, self.clock.now())
-        {
-            Ok(key) => Ok(key),
-            Err(error) => {
-                tracing::debug!(error = %error, "the CLI session token could not be built");
-                Err(ProxyCredentialMintFailure::Unresolvable)
-            }
+// the membership, team read and team_required checks, in LiteLLM's order
+async fn minted_team_details<S: SubjectStore>(
+    active: &ActiveSubjects<S>,
+    user: &LiteLLMUserTable,
+    team_id: Option<&str>,
+) -> Result<Vec<CliSsoTeamDetail>, ProxyCredentialMintFailure> {
+    if let Some(wanted) = team_id
+        && !user.teams.iter().any(|team| team.as_str() == wanted)
+    {
+        return Err(ProxyCredentialMintFailure::NotAMember);
+    }
+    let fetched = if user.teams.is_empty() {
+        Some(Vec::new())
+    } else {
+        active.store.team_details(&user.teams).await
+    };
+    let Some(details) = fetched else {
+        return Err(ProxyCredentialMintFailure::Unavailable);
+    };
+    if team_id.is_none() && details.iter().any(|detail| detail.team_id.is_some()) {
+        return Err(ProxyCredentialMintFailure::TeamRequired);
+    }
+    Ok(details)
+}
+
+fn minted_key<S: SubjectStore>(
+    active: &ActiveSubjects<S>,
+    user: &LiteLLMUserTable,
+    team_id: Option<&str>,
+    selected: CliSsoTeamDetail,
+) -> Result<SecretString, ProxyCredentialMintFailure> {
+    let row = minted_user_row(user);
+    let session = CliSession {
+        team_id: team_id.map(str::to_owned),
+        team_alias: selected.team_alias,
+        team_models: selected.team_models,
+        team_model_aliases: selected.team_model_aliases,
+        max_budget: None,
+    };
+    match cli_codec(active).cli_session_token(&row, &session, active.clock.now()) {
+        Ok(key) => Ok(key),
+        Err(error) => {
+            tracing::debug!(error = %error, "the CLI session token could not be built");
+            Err(ProxyCredentialMintFailure::Unresolvable)
         }
     }
+}
 
-    fn cli_codec(&self) -> SessionTokenCodec<SharedNonces, TracingDiagnostics> {
-        SessionTokenCodec {
-            cipher: StoredCipher {
-                settings: CipherSettings {
-                    signing_key: self.secret.clone(),
-                    algorithm: Algorithm::Aes256Gcm,
-                },
-                nonces: SharedNonces(Arc::clone(&self.nonces)),
-                diagnostics: TracingDiagnostics,
+fn cli_codec<S: SubjectStore>(
+    active: &ActiveSubjects<S>,
+) -> SessionTokenCodec<SharedNonces, TracingDiagnostics> {
+    SessionTokenCodec {
+        cipher: StoredCipher {
+            settings: CipherSettings {
+                signing_key: active.secret.clone(),
+                algorithm: Algorithm::Aes256Gcm,
             },
-            max_ui_session_budget: None,
-            cli_expiration_hours: self.settings.cli_token_hours,
-        }
+            nonces: SharedNonces(Arc::clone(&active.nonces)),
+            diagnostics: TracingDiagnostics,
+        },
+        max_ui_session_budget: None,
+        cli_expiration_hours: active.settings.cli_token_hours,
     }
 }
 
@@ -191,21 +188,17 @@ fn minted_user_row(user: &LiteLLMUserTable) -> LiteLLMUserTable {
 }
 
 impl<S: SubjectStore> LookupConsentTeams for ActiveSubjects<S> {
-    fn consent_teams(
-        &self,
-        user_id: &str,
-    ) -> impl Future<Output = Result<Vec<ConsentTeam>, ReloadUserFailure>> + Send {
-        self.consent_team_list(user_id)
+    async fn consent_teams(&self, user_id: &str) -> Result<Vec<ConsentTeam>, ReloadUserFailure> {
+        consent_team_list(self, user_id).await
     }
 }
 
 impl<S: SubjectStore> MintProxyCredential for ActiveSubjects<S> {
-    fn mint(
+    async fn mint(
         &self,
         user_id: &str,
         team_id: Option<&str>,
-    ) -> impl Future<Output = Result<MintedProxyCredential, ProxyCredentialMintFailure>> + Send
-    {
-        self.minted_credential(user_id, team_id)
+    ) -> Result<MintedProxyCredential, ProxyCredentialMintFailure> {
+        minted_credential(self, user_id, team_id).await
     }
 }
