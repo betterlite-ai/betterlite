@@ -60,7 +60,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^realtime_calls::convert::tests::arealtime_/)'
     - id: python-lint
       why: the Python side fails ruff or basedpyright
-      run: grep -q 'def _arealtime' crates/betterlite-python/python/betterlite/realtime_api/main.py && uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+      run: grep -q 'def _arealtime' crates/betterlite-python/python/betterlite/realtime_api/main.py && uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/tests/pyrightconfig.json
     - id: deviation-rows
       why: this task's deviations are not recorded
       run: test -s docs/deviations/B10212.yaml && grep -q 'receive_text' docs/deviations/B10212.yaml
