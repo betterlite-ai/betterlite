@@ -11,10 +11,11 @@ use betterlite_openai::api::container_contracts::records::{
     ContainerListResponse, ContainerObject,
 };
 use betterlite_openai::containers::container_file_http::PreCallHook;
+use betterlite_openai::containers::container_file_http::transport::ClientSource;
 use betterlite_openai::openai_base_config::Object;
 
 use crate::api::container_collection_http::{
-    CollectionBase, CollectionClientSource, ContainerCollectionError,
+    CollectionBase, CollectionTransport, ContainerCollectionError,
     ContainerCreateCall as CollectionCreate, ContainerListCall as CollectionList,
     acontainer_create_handler, acontainer_list_handler, container_create_handler,
     container_list_handler,
@@ -80,7 +81,7 @@ impl HandlerCallBase<'_> {
         hook: &'call dyn PreCallHook,
     ) -> CollectionBase<'call, Source>
     where
-        Source: CollectionClientSource,
+        Source: ClientSource,
     {
         CollectionBase {
             config: self.config,
@@ -105,7 +106,7 @@ macro_rules! collection_call {
             call: &'call $call<'call>,
         ) -> $collection<'call, Source>
         where
-            Source: CollectionClientSource,
+            Source: ClientSource,
         {
             $collection {
                 base: call.base.collection(source, hook),
@@ -121,7 +122,7 @@ macro_rules! collection_call {
             call: &'call $call<'call>,
         ) -> $collection<'call, Source>
         where
-            Source: CollectionClientSource,
+            Source: ClientSource,
         {
             $collection {
                 base: call.base.collection(source, hook),
@@ -160,7 +161,7 @@ macro_rules! collection_handler_methods {
 
 impl<Source, Hook> ContainerCollectionHandler for GenericCollectionHandler<Source, Hook>
 where
-    Source: CollectionClientSource,
+    Source: ClientSource<Blocking: CollectionTransport, Asynchronous: CollectionTransport>,
     Hook: PreCallHook,
 {
     collection_handler_methods!(

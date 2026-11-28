@@ -4,8 +4,6 @@ use std::time::Duration;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::compatible_embedding_settings;
 use betterlite_config::sections::self_hosted_dispatch::Settings as SectionSettings;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -65,11 +63,6 @@ pub(super) fn first_secret<const N: usize>(
 pub(super) fn ollama_api_base(settings: DispatchSettings<'_>, api_base: Option<&str>) -> String {
     first_nonempty([settings.api_base, api_base, settings.ollama_api_base])
         .unwrap_or_else(|| String::from(OLLAMA_DEFAULT_API_BASE))
-}
-
-pub struct CallLogging<'state, 'env> {
-    pub state: &'state mut LoggingState,
-    pub env: &'state PrePostEnv<'env>,
 }
 
 pub struct DispatchContext<'request> {

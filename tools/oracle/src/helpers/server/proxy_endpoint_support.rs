@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::panic::Location;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -139,6 +140,8 @@ fn caught_exception(spec: &ExceptionSpec) -> CaughtException<'_> {
             status_code: *status_code,
             param: param.as_deref(),
             database_error: None,
+            // a tools path, so the record keeps no frame, as a LiteLLM error that was never raised keeps none
+            location: Location::caller(),
         }),
     }
 }

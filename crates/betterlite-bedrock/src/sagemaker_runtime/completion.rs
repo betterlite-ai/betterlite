@@ -15,6 +15,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 
+use crate::credentials::CredentialSource;
 use crate::sagemaker_stream::events::EventState;
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerEvents};
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
@@ -23,8 +24,8 @@ use super::convert;
 use super::endpoint::{self, EndpointRequest, ParamMap};
 use super::error::{RuntimeError, RuntimeFailure, timeout_error};
 use super::runtime::{
-    ChunkStream, PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport,
-    epoch_seconds, stream_error, wire_error,
+    ChunkStream, PreparedCall, SagemakerRuntime, SagemakerTransport, epoch_seconds, stream_error,
+    wire_error,
 };
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
@@ -47,7 +48,7 @@ pub async fn prepare_completion<T, C>(
 ) -> Result<PreparedCall, RuntimeError>
 where
     T: Sync,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
     let credentials = runtime.credentials_for(call.signing, &region).await?;
@@ -96,7 +97,7 @@ pub async fn completion<T, C>(
 ) -> Result<ChatResponse, RuntimeFailure>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let prepared = prepare_completion(runtime, call).await?;
     let response = runtime
@@ -128,7 +129,7 @@ pub async fn completion_stream<T, C>(
 ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError>
 where
     T: SagemakerTransport,
-    C: SagemakerCredentials,
+    C: CredentialSource,
 {
     let prepared = prepare_completion(runtime, call).await?;
     let (status, chunks) = runtime

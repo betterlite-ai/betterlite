@@ -11,10 +11,10 @@ use futures_util::StreamExt as _;
 use futures_util::stream::{Stream, unfold};
 use tokio::time::timeout;
 
-use crate::assistants::client::ClientKind;
 use crate::thread_runs::decode::{FrameOutcome, RunFrames, classify, decode_run_event};
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::records::RunEvent;
+use betterlite_http::client_kind::ClientKind;
 
 pub type RunChunks = Pin<Box<dyn Stream<Item = Result<Vec<u8>, ThreadRunsError>> + Send>>;
 pub trait RunStreamTransport: Send + Sync {

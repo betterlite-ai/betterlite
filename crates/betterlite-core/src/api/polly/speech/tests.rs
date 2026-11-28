@@ -3,17 +3,19 @@
 use std::io::Error as IoError;
 use std::time::{Duration, SystemTime};
 
+use async_trait::async_trait;
 use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::openai_base_config::Object;
+use betterlite_sigv4::credentials::Credentials;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::json;
 
 use super::body::request_body;
 use super::config::PollySpeechConfig;
-use super::credentials::{self, CredentialResolver, CredentialSources, ResolvedCredentials};
+use super::credentials::{self, CredentialResolver, CredentialSources};
 use super::endpoint::{DEFAULT_REGION, complete_url};
 use super::error::SpeechError;
 use super::mapping::map_openai_params;
@@ -82,8 +84,8 @@ fn region_params(region: &str, api_base: Option<&str>) -> Object {
     params
 }
 
-fn resolved(session_token: Option<&str>) -> ResolvedCredentials {
-    ResolvedCredentials {
+fn resolved(session_token: Option<&str>) -> Credentials {
+    Credentials {
         access_key_id: SecretString::from(EXAMPLE_KEY.to_owned()),
         secret_access_key: SecretString::from(EXAMPLE_SECRET.to_owned()),
         session_token: session_token.map(|token| SecretString::from(token.to_owned())),
@@ -94,11 +96,9 @@ struct FixedResolver {
     with_token: bool,
 }
 
+#[async_trait]
 impl CredentialResolver for FixedResolver {
-    fn resolve(
-        &self,
-        _sources: &CredentialSources<'_>,
-    ) -> Result<ResolvedCredentials, SpeechError> {
+    async fn resolve(&self, _sources: &CredentialSources<'_>) -> Result<Credentials, SpeechError> {
         let token = self.with_token.then_some("session-token");
         Ok(resolved(token))
     }
@@ -106,8 +106,9 @@ impl CredentialResolver for FixedResolver {
 
 struct ExpectingResolver;
 
+#[async_trait]
 impl CredentialResolver for ExpectingResolver {
-    fn resolve(&self, sources: &CredentialSources<'_>) -> Result<ResolvedCredentials, SpeechError> {
+    async fn resolve(&self, sources: &CredentialSources<'_>) -> Result<Credentials, SpeechError> {
         let expected = sources.aws_region_name == Some("eu-west-1")
             && sources.aws_session_name == Some("session")
             && sources.aws_access_key_id == Some(EXAMPLE_KEY);
@@ -122,7 +123,7 @@ impl CredentialResolver for ExpectingResolver {
     }
 }
 
-fn transform(
+async fn transform(
     text: &str,
     voice: Option<&str>,
     optional_params: &Object,
@@ -139,6 +140,7 @@ fn transform(
         },
         resolver,
     )
+    .await
     .expect("a signed request")
 }
 
@@ -150,7 +152,7 @@ struct SimpleVector {
     authorization: &'static str,
 }
 
-fn check_simple(vector: &SimpleVector) {
+async fn check_simple(vector: &SimpleVector) {
     let params = object(r#"{"engine": "standard", "output_format": "ogg_vorbis"}"#);
     let litellm_params = region_params(vector.region, vector.api_base);
     let resolver = FixedResolver {
@@ -162,7 +164,8 @@ fn check_simple(vector: &SimpleVector) {
         &params,
         &litellm_params,
         &resolver,
-    );
+    )
+    .await;
     assert_eq!(signed.url, vector.url);
     assert_eq!(signed.data.ssml_body.as_deref(), Some(SIMPLE_BODY));
     let headers = signed.data.headers.expect("signed headers");
@@ -728,8 +731,8 @@ fn the_body_serializes_like_pythons_json_dumps() {
 
 // the signed request: exact botocore vectors, service polly, the body bytes carried in ssml_body
 
-#[test]
-fn the_signed_request_is_the_botocore_unicode_payload() {
+#[tokio::test]
+async fn the_signed_request_is_the_botocore_unicode_payload() {
     let params = object(
         r#"{"engine": "neural", "output_format": "mp3", "LanguageCode": null, "LexiconNames": ["a", "b"], "SampleRate": "22050"}"#,
     );
@@ -740,7 +743,8 @@ fn the_signed_request_is_the_botocore_unicode_payload() {
         &params,
         &litellm_params,
         &FixedResolver { with_token: true },
-    );
+    )
+    .await;
 
     assert_eq!(
         signed.url,
@@ -770,8 +774,8 @@ fn the_signed_request_is_the_botocore_unicode_payload() {
     );
 }
 
-#[test]
-fn the_signing_region_defaults_to_us_east_1_when_the_params_lack_one() {
+#[tokio::test]
+async fn the_signing_region_defaults_to_us_east_1_when_the_params_lack_one() {
     let params = object(r#"{"engine": "standard", "output_format": "ogg_vorbis"}"#);
     let litellm_params = object(&format!(
         r#"{{"aws_access_key_id": "{EXAMPLE_KEY}", "aws_secret_access_key": "{EXAMPLE_SECRET}"}}"#
@@ -782,7 +786,8 @@ fn the_signing_region_defaults_to_us_east_1_when_the_params_lack_one() {
         &params,
         &litellm_params,
         &FixedResolver { with_token: false },
-    );
+    )
+    .await;
 
     assert_eq!(
         signed.url,
@@ -796,57 +801,61 @@ fn the_signing_region_defaults_to_us_east_1_when_the_params_lack_one() {
     );
 }
 
-#[test]
-fn the_simple_payload_is_signed_for_us_west_2_without_a_token() {
+#[tokio::test]
+async fn the_simple_payload_is_signed_for_us_west_2_without_a_token() {
     check_simple(&SimpleVector {
         region: "us-west-2",
         api_base: None,
         with_token: false,
         url: "https://polly.us-west-2.amazonaws.com/v1/speech",
         authorization: "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-west-2/polly/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=8155fdb35d8c7a1b8e4a69d63279c092e32525d65f0ced9185fcfb130ffa5eb9",
-    });
+    })
+    .await;
 }
 
-#[test]
-fn the_partition_host_is_signed_for_cn_north_1() {
+#[tokio::test]
+async fn the_partition_host_is_signed_for_cn_north_1() {
     check_simple(&SimpleVector {
         region: "cn-north-1",
         api_base: None,
         with_token: true,
         url: "https://polly.cn-north-1.amazonaws.com.cn/v1/speech",
         authorization: "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/cn-north-1/polly/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token, Signature=b371695ff9c8e21fb2dc584e7b84d218f51a0642b8cc9b20bc03f89f3fa10f50",
-    });
+    })
+    .await;
 }
 
-#[test]
-fn an_explicit_base_is_signed_after_the_speech_path_is_appended() {
+#[tokio::test]
+async fn an_explicit_base_is_signed_after_the_speech_path_is_appended() {
     check_simple(&SimpleVector {
         region: "eu-west-1",
         api_base: Some("https://example.test"),
         with_token: true,
         url: "https://example.test/v1/speech",
         authorization: "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/eu-west-1/polly/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token, Signature=84a5fc1799e4989d1b7f61cfbf5c3f895e45bbed38f70050c7bf1fb327e0e773",
-    });
+    })
+    .await;
 }
 
-#[test]
-fn the_gov_partition_host_is_signed_for_us_gov_west_1() {
+#[tokio::test]
+async fn the_gov_partition_host_is_signed_for_us_gov_west_1() {
     check_simple(&SimpleVector {
         region: "us-gov-west-1",
         api_base: None,
         with_token: true,
         url: "https://polly.us-gov-west-1.amazonaws.com/v1/speech",
         authorization: "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20260101/us-gov-west-1/polly/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token, Signature=4338bf8d2ff2c3e5a162a0ed0c0d9a71b90cc6925f908512f2b788eff524ebee",
-    });
+    })
+    .await;
 }
 
-#[test]
-fn transform_resolves_credentials_from_the_effective_params() {
+#[tokio::test]
+async fn transform_resolves_credentials_from_the_effective_params() {
     let params = object(r#"{"engine": "neural", "output_format": "mp3"}"#);
     let litellm_params = object(
         r#"{"aws_region_name": "eu-west-1", "aws_session_name": "session", "aws_access_key_id": "AKIDEXAMPLE"}"#,
     );
-    let signed = transform("hello", None, &params, &litellm_params, &ExpectingResolver);
+    let signed = transform("hello", None, &params, &litellm_params, &ExpectingResolver).await;
 
     assert!(signed.data.ssml_body.is_some());
 }

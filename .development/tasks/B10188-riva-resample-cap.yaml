@@ -21,6 +21,7 @@ scope:
   - crates/betterlite-core/src/api/riva/audio/resample.rs
   - crates/betterlite-core/src/api/riva/audio/tests.rs
   - crates/betterlite-core/src/api/riva/audio/tests/**
+  - crates/betterlite-openai/src/api/audio_file_input/decoder.rs
   - docs/deviations/B10188.yaml
   lint_tables: false
 references:

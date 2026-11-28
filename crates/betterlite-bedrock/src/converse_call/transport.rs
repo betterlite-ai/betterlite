@@ -2,10 +2,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::agentcore_stream::transport::StreamHandler;
-use crate::rerank::transport::{ClientKind, RerankTransport};
+use crate::rerank::transport::RerankTransport;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
 use crate::signing::error::SigningError;
 use crate::signing::request::AwsSignedRequest;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 
 // B595's get_request_headers behind a seam, so a call can be asked what it would sign.
 pub trait ConverseSigner: Sync {

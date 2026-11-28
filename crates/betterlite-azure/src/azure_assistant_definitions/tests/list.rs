@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::records::AssistantPage;
 
 use crate::azure_assistant_definitions::operations::{DefinitionCall, DefinitionReply};
@@ -29,7 +29,7 @@ pub(super) async fn check() {
         .call(&request, None, Some(true), DefinitionCall::List)
         .await
         .unwrap();
-    assert_eq!(async_listed.kind, ClientKind::Async);
+    assert_eq!(async_listed.kind, ClientKind::Asynchronous);
     let DefinitionReply::Page(page) = async_listed.reply else {
         panic!("a list call returns a page");
     };

@@ -7,8 +7,9 @@ use betterlite_core::api::vector_file_http_read::config::{
 };
 use betterlite_core::api::vector_file_http_read::error::ReadError;
 use betterlite_core::api::vector_file_http_read::service::{
-    ClientSource, ReadDeps, ReadTarget, send,
+    ReadDeps, ReadTarget, ReadTransport, send,
 };
+use betterlite_core::api::vector_store_http_write::service::ClientSource;
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
 
@@ -72,7 +73,7 @@ async fn read_one<'borrow, 'deps, C, S>(
 where
     'deps: 'borrow,
     C: ReadConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ReadTransport>,
 {
     let mut fixture = Fixture::new(operation.logging_call_type())?;
     let target = ReadTarget {

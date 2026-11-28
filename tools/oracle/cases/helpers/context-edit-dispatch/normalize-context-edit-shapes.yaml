@@ -1,0 +1,96 @@
+kind: helper
+name: normalize-context-edit-shapes
+call:
+  context_edit_dispatch:
+    scenarios:
+      - messages:
+          - role: user
+            content: hello
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+      - messages:
+          - role: user
+            content: hello
+        context_management: {}
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+          edits:
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+          edits: []
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+          edits: bad
+      - model: main-model
+        messages:
+          - role: user
+            content: hello
+        context_management:
+          edits:
+            - 7
+            - {}
+            - type: clear_tool_uses_20250919
+        clear:
+          - kind: legacy
+            messages:
+              - role: user
+                content: cleared
+            applied:
+              type: clear_tool_uses_20250919
+              cleared_tool_uses: 1
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+          - type: compaction
+            compact_threshold: 60000.9
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: done
+            applied_edits:
+              - type: compact_20260112
+            compaction_block:
+              type: compaction
+              content: A
+            iterations_usage:
+              - type: compaction
+                input_tokens: 1
+                output_tokens: 2
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+          - type: future
+          - type: compaction
+            compact_threshold: 60000
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: done
+      - messages:
+          - role: user
+            content: hello
+        context_management:
+          - type: compaction
+            compact_threshold: 60000
+            trigger:
+              type: input_tokens
+              value: 70000
+        compact:
+          - kind: polyfill
+            messages:
+              - role: user
+                content: done
+env: {}
+compare: {ignore: []}

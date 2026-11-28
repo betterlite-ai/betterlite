@@ -1,0 +1,10 @@
+task: B4717
+deviations: []
+kept_bugs:
+  - what: >-
+      _sanitize_mcp_server_for_virtual_key does not clear spec_path, although _sanitize_mcp_server_for_non_admin clears it and both views clear url.
+    why: >-
+      LiteLLM keeps the OpenAPI spec path on the virtual-key view so tool discovery can upload a
+      schema, and a virtual key that works today may rely on reading it; betterlite copies that.
+      The Q8 decision on whether a spec path can carry a secret is still open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L800-L851

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::future::Future;
+use std::panic::Location;
 use std::sync::Arc;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -50,6 +51,8 @@ pub struct FailureFacts<'caught> {
     pub status_code: Option<u16>,
     pub param: Option<&'caught str>,
     pub database_error: Option<&'caught DbError>,
+    // the place the caller built the failure, which B9979 uses as the report's one frame
+    pub location: &'static Location<'static>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,7 +62,7 @@ pub enum CaughtException<'caught> {
     Failure(FailureFacts<'caught>),
 }
 
-// B4170's should_report_bug and bug_report_notice, injected so this module never reads the environment itself
+// B4170's should_report_bug and bug_report_notice; the production impl is api::proxy_diagnostics::BugReportNotices, handed out by state::proxy_diagnostics::Slot
 pub trait ProxyDiagnostics: Send + Sync {
     fn bug_report_notice(&self, failure: &FailureFacts<'_>) -> Option<String>;
 }

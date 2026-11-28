@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-active-subjects-key-user-id-active
+call:
+  b4658:
+    operation: active_key_user_id
+    key:
+      token: sk-live
+      user_id: user-1
+env: {}
+compare: {ignore: []}

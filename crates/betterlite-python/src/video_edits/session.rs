@@ -5,7 +5,7 @@ use std::time::Duration;
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_config::tls::{TlsPolicy, Verification, user_agent};
 use betterlite_core::api::video_edit_transport::config::VideoLogging;
 use betterlite_core::api::video_edit_transport::error::VideoClientError;
 use betterlite_core::api::video_edit_transport::seams::{
@@ -180,14 +180,6 @@ impl EditSource {
             Some(true) | None => Ok(self.default.clone()),
         }
     }
-}
-
-// TlsPolicy's default agent, read the way every family reads LITELLM_USER_AGENT
-fn user_agent(environment: &BTreeMap<String, String>) -> String {
-    environment
-        .get("LITELLM_USER_AGENT")
-        .cloned()
-        .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION")))
 }
 
 impl VideoClientSource for EditSource {

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_openai::aleph_alpha::lines::decode_text;
 use betterlite_prompts::arguments::json::Object;
@@ -26,12 +27,6 @@ use super::headers::{psc_endpoint_format, request_headers};
 use super::logging;
 use super::post::{GeminiPost, PostRequest};
 use super::stream::{GeminiHttpStream, StreamSetup};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ClientKind {
-    Sync,
-    Async,
-}
 
 pub struct SuppliedClient {
     pub kind: ClientKind,
@@ -95,7 +90,7 @@ fn completion_client(
     timeout: Option<Duration>,
 ) -> (Arc<dyn GeminiPost>, ClientTimeout) {
     match &clients.supplied {
-        Some(supplied) if supplied.kind == ClientKind::Async => (
+        Some(supplied) if supplied.kind == ClientKind::Asynchronous => (
             Arc::clone(&supplied.transport),
             ClientTimeout::HandlerDefault,
         ),
@@ -106,7 +101,7 @@ fn completion_client(
 // LiteLLM hands the streamed call the caller's async handler only, and no timeout at all
 fn streaming_client(clients: &Clients) -> Option<Arc<dyn GeminiPost>> {
     match &clients.supplied {
-        Some(supplied) if supplied.kind == ClientKind::Async => {
+        Some(supplied) if supplied.kind == ClientKind::Asynchronous => {
             Some(Arc::clone(&supplied.transport))
         }
         Some(_) | None => None,

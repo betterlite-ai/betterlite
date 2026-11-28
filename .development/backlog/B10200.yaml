@@ -1,13 +1,13 @@
 id: B10200
 milestone: R2 bug fixes
 title: One ClientSource trait per client contract, with the transport bound at the callers
-status: todo
+status: done
 depends_on: [B7877]
 file: tasks/B10200-client-source-copies.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3462

@@ -12,7 +12,7 @@ use self::wire::{file_response, query_pairs, request_url, send_once, status_fact
 use super::config::{FileParams, Headers, MetadataConfig, ReplyContext};
 use super::error::{MetadataError, provider_error};
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest,
+    ClientKind, ClientSource, LogContext, SuppliedClient, WriteRequest, WriteTransport,
 };
 
 mod endpoints;
@@ -161,7 +161,7 @@ pub async fn send<C, S>(
 ) -> Result<MetadataValue, MetadataError>
 where
     C: MetadataConfig,
-    S: ClientSource,
+    S: ClientSource<Client: WriteTransport>,
 {
     let PreparedMetadata {
         config,

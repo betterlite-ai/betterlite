@@ -1,5 +1,6 @@
 use crate::operation::OperationError;
 use betterlite_anthropic::completion::error::CompletionError;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use http::header::InvalidHeaderName;
 use http::header::InvalidHeaderValue;
 use std::error::Error as StdError;
@@ -12,12 +13,13 @@ pub(crate) mod tests;
 use betterlite_anthropic::anthropic_http_stream::call::StreamLogger;
 use betterlite_anthropic::chat_call::ChatOutcome;
 use betterlite_anthropic::chat_call::error::ChatCallError;
-use betterlite_anthropic::chat_call::transport::{ChatTransport, ClientKind};
+use betterlite_anthropic::chat_call::transport::ChatTransport;
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::request::error::RequestError;
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
@@ -26,7 +28,6 @@ use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_tokenizer::engine::{Engine, error::EngineError};
 use chrono::{DateTime, Utc};
 
-use super::CallLogging;
 use super::base::Surface;
 use super::completion::{CompletionHandler, HandlerFuture, ResolvedCall};
 use preparation::Preparation;
@@ -116,7 +117,7 @@ where
     fn complete<'call>(
         &'call mut self,
         call: ResolvedCall<ClientHandle<Client>, Engine>,
-        log: &'call mut CallLogging<'_, '_>,
+        log: &'call mut LogContext<'_, '_>,
     ) -> HandlerFuture<'call, Self::Reply, Self::Failure> {
         match call.surface {
             Surface::Legacy => Box::pin(async move {

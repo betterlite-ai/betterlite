@@ -4,7 +4,7 @@ use http::Method;
 
 use super::super::config::FileContentConfig;
 use super::super::error::ContentError;
-use super::{ClientSource, ContentRequest, ContentTransport as _, PreparedContent, facts};
+use super::{ClientSource, ContentRequest, ContentTransport, PreparedContent, facts};
 
 // retrieve_file_content and async_retrieve_file_content share this GET: no per-call timeout, and a status of 400 or more raises the provider's error
 pub async fn retrieve_file_content<C, S>(
@@ -13,7 +13,7 @@ pub async fn retrieve_file_content<C, S>(
 ) -> Result<BinaryContent, ContentError>
 where
     C: FileContentConfig,
-    S: ClientSource,
+    S: ClientSource<Client: ContentTransport>,
 {
     let PreparedContent {
         config,

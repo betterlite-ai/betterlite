@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_pre_post::context::LogContext;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::data_cloud_dispatch::call::CompletionCall;
 use crate::data_cloud_dispatch::chat::dispatch;
-use crate::data_cloud_dispatch::context::{CallLogging, DispatchGlobals};
+use crate::data_cloud_dispatch::context::DispatchGlobals;
 use crate::data_cloud_dispatch::error::DispatchError;
 use crate::data_cloud_dispatch::handler::HandlerError;
 
@@ -242,7 +243,7 @@ fn dispatch_leaves_unknown_tags_to_the_later_arms() {
     let handler = Recorder::succeeding();
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &env,
     };
@@ -418,7 +419,7 @@ fn run_arm(
 ) {
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
+    let mut log = LogContext {
         state: &mut state,
         env: &env,
     };

@@ -1,11 +1,9 @@
 use std::error::Error;
 use std::time::SystemTime;
 
-use aws_sigv4::http_request::{
-    SignableBody, SignableRequest, SigningInstructions, SigningParams, SigningSettings, sign,
-};
-use aws_sigv4::sign::v4;
-use aws_smithy_runtime_api::client::identity::Identity;
+use betterlite_sigv4::credentials::Credentials;
+use betterlite_sigv4::sign::header_map::insert_signed;
+use betterlite_sigv4::sign::{Signable, SigningMode, sign_request};
 use http::header::CONTENT_TYPE;
 use http::{HeaderMap, HeaderName, HeaderValue};
 
@@ -26,38 +24,29 @@ where
     TransportFailure: Error + 'static,
 {
     let target = format!("{SERVICE_NAME}.{action}");
-    let identity = Identity::from(credentials_info.credentials.clone());
-    let params = SigningParams::from(
-        v4::SigningParams::builder()
-            .identity(&identity)
-            .region(&credentials_info.aws_region_name)
-            .name(SERVICE_NAME)
-            .time(now)
-            .settings(SigningSettings::default())
-            .build()
-            .map_err(AwsRequestError::SigningParams)?,
-    );
-    let unsigned_headers = [
-        ("content-type", JSON_CONTENT_TYPE),
-        ("x-amz-target", &target),
+    let request_headers = [
+        ("content-type".to_owned(), JSON_CONTENT_TYPE.to_owned()),
+        ("x-amz-target".to_owned(), target.clone()),
     ];
-    let signable = SignableRequest::new(
-        "POST",
-        endpoint_url,
-        unsigned_headers.into_iter(),
-        SignableBody::Bytes(body),
-    )
+    let credentials = Credentials::from(&credentials_info.credentials);
+    let signed = sign_request(&Signable {
+        method: "POST",
+        url: endpoint_url,
+        headers: &request_headers,
+        body,
+        service: SERVICE_NAME,
+        region: &credentials_info.aws_region_name,
+        credentials: &credentials,
+        mode: SigningMode::SigV4Auth,
+        now,
+    })
     .map_err(AwsRequestError::Signing)?;
-    let (instructions, _signature) = sign(signable, &params)
-        .map_err(AwsRequestError::Signing)?
-        .into_parts();
-
-    response_headers(&target, &instructions)
+    response_headers(&target, signed)
 }
 
 fn response_headers<ResolverError, TransportFailure>(
     target: &str,
-    instructions: &SigningInstructions,
+    signed: Vec<(String, String)>,
 ) -> Result<HeaderMap, AwsRequestError<ResolverError, TransportFailure>>
 where
     ResolverError: Error + 'static,
@@ -69,14 +58,6 @@ where
         HeaderName::from_static("x-amz-target"),
         HeaderValue::from_str(target).map_err(AwsRequestError::HeaderValue)?,
     );
-    for (name, value) in instructions.headers() {
-        let mut header_value =
-            HeaderValue::from_str(value).map_err(AwsRequestError::HeaderValue)?;
-        header_value.set_sensitive(name != "x-amz-date");
-        headers.insert(
-            HeaderName::from_bytes(name.as_bytes()).map_err(AwsRequestError::HeaderName)?,
-            header_value,
-        );
-    }
+    insert_signed(&mut headers, signed).map_err(AwsRequestError::Signing)?;
     Ok(headers)
 }
