@@ -82,17 +82,13 @@ impl Scenario {
     }
 }
 
-fn loggers(
-    specs: &[LoggerSpec],
-    stamp: &ResponseStamp,
-) -> Result<
-    (
-        CallbackRegistry,
-        Vec<Arc<RecordingLogger>>,
-        Vec<Arc<RecordingCounter>>,
-    ),
-    Box<HelperError>,
-> {
+type LoggerSetup = (
+    CallbackRegistry,
+    Vec<Arc<RecordingLogger>>,
+    Vec<Arc<RecordingCounter>>,
+);
+
+fn loggers(specs: &[LoggerSpec], stamp: &ResponseStamp) -> Result<LoggerSetup, Box<HelperError>> {
     let mut registry = CallbackRegistry::new(64);
     let first = Arc::new(RecordingCounter::default());
     let second = Arc::new(RecordingCounter::default());

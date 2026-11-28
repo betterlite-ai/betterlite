@@ -227,7 +227,7 @@ impl CallbackFailureCounter for RecordingCounter {
 // logging_success.py keeps both counters in litellm.callbacks, so each one is a callback that answers a counter
 #[async_trait]
 impl CallbackLogger for RecordingCounter {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "_RecordingCounter"
     }
 
