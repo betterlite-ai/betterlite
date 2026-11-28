@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_prefetch::permission::lookup::{
@@ -25,14 +25,14 @@ impl Script {
     pub(super) fn events(&self) -> Vec<String> {
         self.events
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
     fn record(&self, event: String) {
         self.events
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(event);
     }
 }
@@ -128,11 +128,11 @@ impl ObjectPermissionCache for Script {
 }
 
 pub(super) fn lookup(script: &Arc<Script>, database: bool) -> TeamLookup {
-    let cache: Arc<dyn TeamCache> = Arc::clone(script);
-    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::clone(script);
-    let store: Arc<dyn TeamStore> = Arc::clone(script);
-    let reader: Arc<dyn ObjectPermissionStore> = Arc::clone(script);
-    let writer: Arc<dyn ObjectPermissionStore> = Arc::clone(script);
+    let cache: Arc<dyn TeamCache> = Arc::<Script>::clone(script);
+    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::<Script>::clone(script);
+    let store: Arc<dyn TeamStore> = Arc::<Script>::clone(script);
+    let reader: Arc<dyn ObjectPermissionStore> = Arc::<Script>::clone(script);
+    let writer: Arc<dyn ObjectPermissionStore> = Arc::<Script>::clone(script);
     TeamLookup {
         cache,
         permission_cache,

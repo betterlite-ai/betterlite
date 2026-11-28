@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
@@ -14,7 +14,7 @@ use betterlite_auth::jwt_team_selection::candidates::{
 use betterlite_auth::jwt_team_selection::claims_teams::{find_team_in_claims, get_all_team_ids};
 use betterlite_auth::jwt_team_selection::error::TeamSelectionError;
 use betterlite_auth::jwt_team_selection::header::resolve_team_from_header;
-use betterlite_auth::jwt_team_selection::object::validate_object_id;
+use betterlite_auth::jwt_team_selection::object::{ObjectPolicy, validate_object_id};
 use betterlite_auth::jwt_team_selection::settings::SelectionSettings;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -55,7 +55,7 @@ async fn answer(scenario: &Scenario) -> HelperResult {
     let script = Arc::new(Script {
         teams: scenario.teams.clone(),
         aliases: scenario.aliases.clone(),
-        events: std::sync::Mutex::new(Vec::new()),
+        events: Mutex::new(Vec::new()),
     });
     let lookup = lookup(&script, scenario.database.unwrap_or(true));
     let claims_settings = claim_settings(&scenario.fields);
@@ -82,7 +82,7 @@ async fn answer(scenario: &Scenario) -> HelperResult {
             &script,
         )),
         Function::Candidates => Ok(tagged(
-            await_candidates(scenario, &claims, &lookup, &settings).await?,
+            await_candidates(scenario, &claims, &lookup, &settings).await,
             &script,
         )),
         Function::Header => Ok(tagged(
@@ -93,8 +93,10 @@ async fn answer(scenario: &Scenario) -> HelperResult {
             validate_object_id(
                 scenario.user_id.as_deref(),
                 scenario.team_id.as_deref(),
-                scenario.enforce_rbac.unwrap_or(false),
-                scenario.is_proxy_admin.unwrap_or(false),
+                ObjectPolicy {
+                    enforce_rbac: scenario.enforce_rbac.unwrap_or(false),
+                    is_proxy_admin: scenario.is_proxy_admin.unwrap_or(false),
+                },
             )
             .map(|()| json!({"ok": true})),
             &script,
