@@ -1,10 +1,13 @@
+use betterlite_openai::api::audio_file_input::decoder::DEFAULT_MAX_SAMPLE_RATE;
 use pyo3::exceptions::PyImportError;
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyInt, PyModule};
 use pyo3::{Bound, PyAny, PyErr, PyResult, Python};
 
 use super::TARGET_SAMPLE_RATE_HZ;
-use super::error::{RivaAudioError, call_failure};
+use super::error::{MAX_AUDIO_BYTES, RivaAudioError, call_failure};
 use super::python::{as_int, import_numpy};
+
+const FLOAT32_BYTES: u64 = 4;
 
 pub(super) fn resample<'py>(
     py: Python<'py>,
@@ -23,12 +26,41 @@ pub(super) fn resample<'py>(
     if rates.source == rates.target || size == 0 {
         return Ok(samples.clone());
     }
+    check_output_size(size, rates.source)?;
     for resampler in [Resampler::Soxr, Resampler::Scipy] {
         if let Some(converted) = try_resampler(py, &numpy, resampler, samples, rates)? {
             return Ok(converted);
         }
     }
     linear(py, &numpy, samples, rates.source, rates.target)
+}
+
+// LiteLLM sizes the resampled output from the header rate alone, and a low rate allocates far past the input
+pub(super) fn check_output_size(sample_count: i64, source_rate: i64) -> Result<(), RivaAudioError> {
+    let Ok(samples) = u64::try_from(sample_count) else {
+        return Err(RivaAudioError::TooLarge);
+    };
+    let Ok(rate) = u64::try_from(source_rate) else {
+        return Err(RivaAudioError::TooLarge);
+    };
+    if rate == 0 {
+        return Err(RivaAudioError::TooLarge);
+    }
+    // scipy's filter grows with the rate ratio, so the WAV decoder's rate ceiling applies here too
+    if rate > u64::from(DEFAULT_MAX_SAMPLE_RATE) {
+        return Err(RivaAudioError::TooLarge);
+    }
+    let scaled = samples
+        .checked_mul(u64::from(TARGET_SAMPLE_RATE_HZ))
+        .ok_or(RivaAudioError::TooLarge)?;
+    let output_samples = scaled.div_ceil(rate);
+    if output_samples
+        .checked_mul(FLOAT32_BYTES)
+        .is_none_or(|bytes| bytes > MAX_AUDIO_BYTES)
+    {
+        return Err(RivaAudioError::TooLarge);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]

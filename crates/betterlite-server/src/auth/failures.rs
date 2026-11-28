@@ -28,10 +28,12 @@ pub(crate) enum StageFailure {
     TeamBudgets(Box<ProxyException>),
     TenantBudgets(Box<ProxyException>),
     OrganizationRoutePolicy(Box<ProxyException>),
+    AuthRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
     AuthPolicySupport(Box<ProxyException>),
     ModelGrants(Box<ProxyException>),
+    OauthTokens(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -65,10 +67,12 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)
+        | StageFailure::AuthRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
         | StageFailure::AuthPolicySupport(exception)
-        | StageFailure::ModelGrants(exception) => denial_response(exception),
+        | StageFailure::ModelGrants(exception)
+        | StageFailure::OauthTokens(exception) => denial_response(exception),
     }
 }
 

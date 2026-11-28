@@ -5,8 +5,9 @@ use betterlite_bedrock::image_call::execute::{dispatch_request, transform_respon
 use betterlite_bedrock::image_call::plan::{
     LogContext, PreparedRequest, prepare_request, resolve_target,
 };
-use betterlite_bedrock::image_call::transport::{ClientKind, ImageRequest};
+use betterlite_bedrock::image_call::transport::ImageRequest;
 use betterlite_bedrock::image_models::response::ModelResponse;
+use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Map, Value, json};
@@ -150,7 +151,7 @@ impl Run {
             "factory": match kind {
                 None => "none",
                 Some(ClientKind::Sync) => "sync",
-                Some(ClientKind::Async) => "async",
+                Some(ClientKind::Asynchronous) => "async",
             },
             "timeout_ms": last
                 .and_then(|(_, timeout)| *timeout)

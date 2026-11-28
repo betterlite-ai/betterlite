@@ -185,10 +185,12 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::TeamBudgets(exception)
         | StageFailure::TenantBudgets(exception)
         | StageFailure::OrganizationRoutePolicy(exception)
+        | StageFailure::AuthRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
         | StageFailure::AuthPolicySupport(exception)
         | StageFailure::ModelGrants(exception)
+        | StageFailure::OauthTokens(exception)
         | StageFailure::KeyLookup(exception) => Some((**exception).clone()),
         StageFailure::Authentication(authentication) => match **authentication {
             AuthenticationFailure::Invalid => Some(ProxyException::new(ProxyExceptionInit {
