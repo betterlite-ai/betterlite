@@ -45,10 +45,6 @@ pub(super) const GUARDRAIL_RULES: [Rule; 2] = [
     ("request_fields", str_list, Presence::Nullable),
     ("response_fields", str_list, Presence::Nullable),
 ];
-pub(super) const REDIS_NODE_RULES: [Rule; 2] = [
-    ("host", JsonValue::is_string, Presence::Required),
-    ("port", is_integer, Presence::Required),
-];
 pub(super) const HEADER_RULES: [Rule; 2] = [
     ("header_name", JsonValue::is_string, Presence::Required),
     (
@@ -120,47 +116,6 @@ pub(super) const DYNAMO_RULES: [Rule; 18] = [
     (
         "assume_role_aws_session_name",
         JsonValue::is_string,
-        Presence::Nullable,
-    ),
-];
-pub(super) const REDIS_RULES: [Rule; 15] = [
-    ("host", JsonValue::is_string, Presence::Nullable),
-    ("port", is_integer, Presence::Nullable),
-    ("password", JsonValue::is_string, Presence::Nullable),
-    ("username", JsonValue::is_string, Presence::Nullable),
-    ("url", JsonValue::is_string, Presence::Nullable),
-    ("ssl", JsonValue::is_boolean, Presence::Nullable),
-    ("startup_nodes", super::is_redis_nodes, Presence::Nullable),
-    (
-        "sentinel_nodes",
-        super::is_sentinel_nodes,
-        Presence::Nullable,
-    ),
-    (
-        "sentinel_password",
-        JsonValue::is_string,
-        Presence::Nullable,
-    ),
-    ("service_name", JsonValue::is_string, Presence::Nullable),
-    (
-        "aws_iam_auth",
-        |value| value.is_boolean() || value.is_string(),
-        Presence::Nullable,
-    ),
-    (
-        "aws_iam_user_name",
-        JsonValue::is_string,
-        Presence::Nullable,
-    ),
-    (
-        "aws_iam_cache_name",
-        JsonValue::is_string,
-        Presence::Nullable,
-    ),
-    ("aws_iam_region", JsonValue::is_string, Presence::Nullable),
-    (
-        "aws_iam_serverless",
-        |value| value.is_boolean() || value.is_string(),
         Presence::Nullable,
     ),
 ];

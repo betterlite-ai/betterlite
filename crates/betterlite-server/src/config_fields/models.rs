@@ -7,8 +7,7 @@ mod rules;
 
 use rules::{
     CLIENT_RULES, DYNAMO_RULES, ENDPOINT_RULES, GUARDRAIL_RULES, HEADER_KEYS, HEADER_RULES,
-    Presence, REDIS_NODE_RULES, REDIS_RULES, Rule, SPEND_KEYS, SPEND_RULES, STAGGER_KEYS,
-    STAGGER_RULES, VERSIONS,
+    Presence, Rule, SPEND_KEYS, SPEND_RULES, STAGGER_KEYS, STAGGER_RULES, VERSIONS,
 };
 
 // one declared field: how a present value is checked, and whether it may be absent or null
@@ -103,42 +102,6 @@ pub fn database_args(value: &JsonValue) -> bool {
         return false;
     };
     check_fields(entries, &DYNAMO_RULES)
-}
-
-// CoordinationRedisParams
-#[must_use]
-pub fn redis(value: &JsonValue) -> bool {
-    let Some(entries) = value.as_object() else {
-        return false;
-    };
-    check_fields(entries, &REDIS_RULES)
-}
-
-fn is_redis_nodes(value: &JsonValue) -> bool {
-    value.as_array().is_some_and(|nodes| {
-        nodes
-            .iter()
-            .all(|node| object_rules(node, &REDIS_NODE_RULES))
-    })
-}
-
-fn is_sentinel_nodes(value: &JsonValue) -> bool {
-    let Some(pairs) = value.as_array() else {
-        return false;
-    };
-    pairs.iter().all(sentinel_pair)
-}
-
-fn sentinel_pair(pair: &JsonValue) -> bool {
-    pair.as_array()
-        .is_some_and(|parts| parts.iter().all(sentinel_part))
-}
-
-fn sentinel_part(part: &JsonValue) -> bool {
-    if part.is_string() {
-        return true;
-    }
-    is_integer(part)
 }
 
 // ScheduledJobStaggerSettings forbids unknown keys and a window_seconds below zero

@@ -1,6 +1,8 @@
 use crate::plugin_routes::config::PluginConfig;
+use crate::proxy_request_contracts::coordination_redis::CoordinationRedisParams;
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_secret_managers::secret_types::KeyManagementSystem;
 
 use super::error::ConfigFieldError;
 use super::models;
@@ -10,6 +12,8 @@ mod alerting;
 pub(super) use alerting::validate_alerting_args;
 
 pub(super) type Check = fn(&JsonValue) -> bool;
+
+const ALERTING_ARGS: &str = "alerting_args";
 
 const STR: &str = "completion_model master_key control_plane_url database_url custom_auth user_header_name maximum_spend_logs_retention_period maximum_autorouter_session_retention_period maximum_health_check_retention_period maximum_daily_tag_spend_retention_period maximum_spend_logs_cleanup_run_budget maximum_spend_logs_cleanup_batch_timeout mcp_client_id_header";
 const INT: &str = "database_connection_pool_limit max_parallel_requests global_max_parallel_requests max_request_size_mb max_batch_file_size_mb max_file_size_mb max_response_size_mb health_check_concurrency alerting_threshold password_policy_min_length maximum_spend_logs_cleanup_batch_size maximum_spend_logs_cleanup_max_batches";
@@ -40,18 +44,6 @@ const DB_OBJECTS: [&str; 11] = [
     "config_overrides",
     "websearch_interception_settings",
 ];
-const KMS: [&str; 9] = [
-    "google_kms",
-    "azure_key_vault",
-    "aws_secret_manager",
-    "google_secret_manager",
-    "hashicorp_vault",
-    "cyberark",
-    "local",
-    "aws_kms",
-    "custom",
-];
-
 // ConfigGeneralSettings.model_fields: every declared key with its pydantic check, and whether it takes a null
 const KINDS: [(&str, Check, bool); 32] = [
     (STR, JsonValue::is_string, true),
@@ -91,7 +83,7 @@ const KINDS: [(&str, Check, bool); 32] = [
     (STR_LIST, str_list, true),
     (
         "alert_types",
-        |value| serde_json::from_value::<AlertType>(value.clone()).is_ok(),
+        |value| serde_json::from_value::<Vec<AlertType>>(JsonValue::clone(value)).is_ok(),
         true,
     ),
     (
@@ -110,10 +102,18 @@ const KINDS: [(&str, Check, bool); 32] = [
     ("mcp_advertised_versions", models::advertised_versions, true),
     ("mcp_allowed_clients", models::allowed_clients, true),
     ("database_args", models::database_args, true),
-    ("coordination_redis", models::redis, true),
+    (
+        "coordination_redis",
+        |value| CoordinationRedisParams::from_value(value).is_ok(),
+        true,
+    ),
     ("scheduled_job_stagger", models::stagger, true),
     ("spend_capture_rate_check", models::spend_capture, true),
-    ("key_management_system", |value| in_set(value, &KMS), true),
+    (
+        "key_management_system",
+        |value| serde_json::from_value::<KeyManagementSystem>(JsonValue::clone(value)).is_ok(),
+        true,
+    ),
     ("database_type", |value| in_set(value, &["dynamo_db"]), true),
     (
         "ui_access_mode",
@@ -184,6 +184,25 @@ pub fn validate(kind: Kind, value: &JsonValue) -> Result<(), ConfigFieldError> {
         return Ok(());
     }
     Err(invalid_type(value))
+}
+
+// every catalog check the update route runs on a declared field's value
+pub fn validate_field(field_name: &str, value: &JsonValue) -> Result<(), ConfigFieldError> {
+    let Some(kind) = kind_of(field_name) else {
+        return Err(invalid_field(field_name));
+    };
+    validate(kind, value)?;
+    if field_name == ALERTING_ARGS {
+        validate_alerting_args(value)?;
+    }
+    Ok(())
+}
+
+#[must_use]
+pub fn invalid_field(name: &str) -> ConfigFieldError {
+    ConfigFieldError::BadRequest {
+        detail: format!("Invalid field={name} passed in."),
+    }
 }
 
 fn invalid_type(value: &JsonValue) -> ConfigFieldError {
