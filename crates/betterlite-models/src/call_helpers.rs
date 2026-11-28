@@ -2,6 +2,7 @@ pub mod arithmetic;
 pub mod drop_params;
 pub mod expected_error;
 pub mod finish_reason;
+pub mod generic_params;
 pub mod headers;
 pub mod metadata;
 pub mod model_name;

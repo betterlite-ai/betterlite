@@ -9,6 +9,7 @@ use aws_credential_types::Credentials;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider, future};
 use aws_smithy_async::time::SharedTimeSource;
+use betterlite_sigv4::error::SigV4Error;
 use bytes::Bytes;
 use http::Request;
 
@@ -156,7 +157,12 @@ async fn sign_rejects_a_header_value_that_is_not_visible_ascii() {
         .body(Bytes::new())
         .unwrap();
     let error = auth.auth_flow(request).await.unwrap_err();
-    assert!(matches!(error, McpSigV4Error::HeaderValue { name, .. } if name == "x-bytes"));
+    assert!(matches!(
+        error,
+        McpSigV4Error::Signing {
+            source: SigV4Error::HeaderText { name, .. }
+        } if name == "x-bytes"
+    ));
 }
 
 #[derive(Debug)]

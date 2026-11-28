@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::records::{AssistantCreate, AssistantObject};
 
 use crate::azure_assistant_definitions::operations::{DefinitionCall, DefinitionReply};
@@ -51,7 +51,7 @@ async fn async_create() {
         .call(&request, None, Some(true), DefinitionCall::Create(&data))
         .await
         .unwrap();
-    assert_eq!(awaited.kind, ClientKind::Async);
+    assert_eq!(awaited.kind, ClientKind::Asynchronous);
     assert_eq!(
         transport.requests(),
         vec![wire(

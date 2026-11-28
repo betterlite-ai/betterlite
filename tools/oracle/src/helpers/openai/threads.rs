@@ -1,4 +1,5 @@
-use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
+use betterlite_http::client_kind::ClientKind;
+use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::operations::{ClientSetup, ThreadCall, ThreadReply, ThreadsApi};
@@ -95,7 +96,7 @@ where
 const fn client_class(kind: ClientKind) -> &'static str {
     match kind {
         ClientKind::Sync => "OpenAI",
-        ClientKind::Async => "AsyncOpenAI",
+        ClientKind::Asynchronous => "AsyncOpenAI",
     }
 }
 

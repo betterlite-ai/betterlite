@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use betterlite_openai::assistants::client::ClientKind;
+use betterlite_http::client_kind::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::threads::records::ThreadMessagePage;
 
@@ -85,7 +85,7 @@ async fn missing_status_kept() {
 
 // Only the literal true flag selects the async client; a missing or false one stays sync.
 async fn async_flag() {
-    async_kind(Some(true), ClientKind::Async).await;
+    async_kind(Some(true), ClientKind::Asynchronous).await;
     async_kind(Some(false), ClientKind::Sync).await;
     async_kind(None, ClientKind::Sync).await;
 }
