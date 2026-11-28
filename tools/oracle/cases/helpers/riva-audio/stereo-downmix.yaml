@@ -1,0 +1,11 @@
+kind: helper
+name: riva-audio-stereo-downmix
+call:
+  riva_audio:
+    calls:
+      - file_hex: "524946462c00000057415645666d74201000000001000200401f0000007d000004001000646174610800000000c0000000400000"
+        soundfile_error: null
+        audioread: null
+        resamplers: []
+compare: {ignore: []}
+env: {}
