@@ -88,8 +88,8 @@ async fn auth_records_reach_the_gauges_with_their_labels() {
     assert_eq!(
         remaining[0].labels,
         vec![
-            ("hashed_api_key".to_owned(), "hashed-key".to_owned()),
             ("api_key_alias".to_owned(), "prod".to_owned()),
+            ("hashed_api_key".to_owned(), "hashed-key".to_owned()),
         ]
     );
     let max = rig.log.for_metric("max");

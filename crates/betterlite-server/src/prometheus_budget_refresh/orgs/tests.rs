@@ -79,8 +79,8 @@ async fn every_page_of_orgs_reaches_the_gauges() {
         MetricValue::Finite(Decimal::from(40_i32))
     );
     let expected = vec![
-        ("org_id".to_owned(), "o-1".to_owned()),
         ("org_alias".to_owned(), "o-1-alias".to_owned()),
+        ("org_id".to_owned(), "o-1".to_owned()),
     ];
     assert_eq!(remaining[0].labels, expected);
     assert_eq!(remaining[1].value, MetricValue::PositiveInfinity);

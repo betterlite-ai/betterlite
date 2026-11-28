@@ -113,7 +113,7 @@ fn budget_row(budget_id: &str, max_budget: i64, reset_at: &str) -> String {
 
 fn org_row(org_id: &str, budget_id: &str, spend: i64, created_at: &str) -> String {
     format!(
-        r#"INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, spend, created_at, created_by, updated_by) VALUES ('{org_id}', '{org_id}-alias', '{budget_id}', {spend}, '{created_at}', 'seed', 'seed');"#
+        r#"INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, models, spend, created_at, created_by, updated_by) VALUES ('{org_id}', '{org_id}-alias', '{budget_id}', ARRAY[]::text[], {spend}, '{created_at}', 'seed', 'seed');"#
     )
 }
 
