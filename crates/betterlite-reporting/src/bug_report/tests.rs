@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use std::error::Error;
-use std::fmt;
 use std::num::ParseIntError;
 use std::panic::Location;
 use std::path::Path;
@@ -40,21 +38,11 @@ fn failing_parse() -> (&'static Location<'static>, ParseIntError) {
     (Location::caller(), "x".parse::<u32>().unwrap_err())
 }
 
-#[derive(Debug)]
-struct Wrapped<E>(E);
-
-impl<E: fmt::Display> fmt::Display for Wrapped<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-impl<E: fmt::Debug + fmt::Display> Error for Wrapped<E> {}
-
 #[test]
 fn exception_type_name_keeps_the_class_name_alone() {
     assert_eq!(exception_type_name(&failing_parse().1), "ParseIntError");
-    assert_eq!(exception_type_name(&Wrapped(failing_parse().1)), "Wrapped");
+    let boxed = Box::new(failing_parse().1);
+    assert_eq!(exception_type_name(&boxed), "Box");
 }
 
 #[rstest]

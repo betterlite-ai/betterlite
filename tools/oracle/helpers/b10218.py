@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Literal, TypeAlias, TypedDict
 
 import litellm
@@ -61,6 +62,42 @@ class Input(TypedDict):
     calls: list[Call]
 
 
+# KNOWN_PROXY_ROUTES through LiteLLM's members; agent_routes is its two agent tables combined
+ROUTE_TABLES: tuple[Sequence[str] | frozenset[str], ...] = (
+    LiteLLMRoutes.openai_route_names.value,
+    LiteLLMRoutes.openai_routes.value,
+    LiteLLMRoutes.mapped_pass_through_routes.value,
+    LiteLLMRoutes.passthrough_routes_wildcard.value,
+    LiteLLMRoutes.litellm_native_routes.value,
+    LiteLLMRoutes.anthropic_routes.value,
+    LiteLLMRoutes.mcp_inference_routes.value,
+    LiteLLMRoutes.mcp_management_routes.value,
+    LiteLLMRoutes.mcp_routes.value,
+    LiteLLMRoutes.agent_inference_routes.value,
+    LiteLLMRoutes.agent_management_routes.value,
+    LiteLLMRoutes.google_routes.value,
+    LiteLLMRoutes.apply_guardrail_routes.value,
+    LiteLLMRoutes.model_info_routes.value,
+    LiteLLMRoutes.llm_api_routes.value,
+    LiteLLMRoutes.info_routes.value,
+    LiteLLMRoutes.master_key_only_routes.value,
+    LiteLLMRoutes.key_management_routes.value,
+    LiteLLMRoutes.team_service_account_key_routes.value,
+    LiteLLMRoutes.management_routes.value,
+    LiteLLMRoutes.spend_tracking_routes.value,
+    LiteLLMRoutes.global_spend_tracking_routes.value,
+    LiteLLMRoutes.public_routes.value,
+    LiteLLMRoutes.ui_routes.value,
+    LiteLLMRoutes.compliance_check_routes.value,
+    LiteLLMRoutes.internal_user_routes.value,
+    LiteLLMRoutes.internal_user_view_only_routes.value,
+    LiteLLMRoutes.self_managed_routes.value,
+    LiteLLMRoutes.org_admin_only_routes.value,
+    LiteLLMRoutes.admin_viewer_routes.value,
+    LiteLLMRoutes.org_admin_allowed_routes.value,
+)
+
+
 def report_from_record(record: BugReportRecord) -> BugReport:
     environment = record["environment"]
     return BugReport(
@@ -79,21 +116,16 @@ def report_from_record(record: BugReportRecord) -> BugReport:
     )
 
 
-def environment_output(environment: EnvironmentReport) -> EnvironmentRecord:
-    config_lines = list(environment.config_lines)
-    return {
-        "surface": environment.surface,
-        "litellm_version": environment.litellm_version,
-        "python_version": environment.python_version,
-        "deployment": environment.deployment,
-        "config_lines": config_lines,
-    }
-
-
 def record_output(report: BugReport) -> BugReportRecord:
-    environment = environment_output(report.environment)
+    environment = report.environment
     return {
-        "environment": environment,
+        "environment": {
+            "surface": environment.surface,
+            "litellm_version": environment.litellm_version,
+            "python_version": environment.python_version,
+            "deployment": environment.deployment,
+            "config_lines": list(environment.config_lines),
+        },
         "exception_type": report.exception_type,
         "litellm_frames": list(report.litellm_frames),
         "call_type": report.call_type,
@@ -114,43 +146,10 @@ def failure_answer(call: FailureCall) -> BugReportRecord | None:
     return record_output(build_proxy_bug_report(error))
 
 
-# LiteLLM's KNOWN_PROXY_ROUTES through its members, since mypy types the constant as Any
 def known_proxy_routes() -> frozenset[str]:
-    tables = (
-        LiteLLMRoutes.openai_route_names.value,
-        LiteLLMRoutes.openai_routes.value,
-        LiteLLMRoutes.mapped_pass_through_routes.value,
-        LiteLLMRoutes.passthrough_routes_wildcard.value,
-        LiteLLMRoutes.litellm_native_routes.value,
-        LiteLLMRoutes.anthropic_routes.value,
-        LiteLLMRoutes.mcp_inference_routes.value,
-        LiteLLMRoutes.mcp_management_routes.value,
-        LiteLLMRoutes.mcp_routes.value,
-        LiteLLMRoutes.agent_inference_routes.value,
-        LiteLLMRoutes.agent_management_routes.value,
-        LiteLLMRoutes.agent_routes.value,
-        LiteLLMRoutes.google_routes.value,
-        LiteLLMRoutes.apply_guardrail_routes.value,
-        LiteLLMRoutes.model_info_routes.value,
-        LiteLLMRoutes.llm_api_routes.value,
-        LiteLLMRoutes.info_routes.value,
-        LiteLLMRoutes.master_key_only_routes.value,
-        LiteLLMRoutes.key_management_routes.value,
-        LiteLLMRoutes.team_service_account_key_routes.value,
-        LiteLLMRoutes.management_routes.value,
-        LiteLLMRoutes.spend_tracking_routes.value,
-        LiteLLMRoutes.global_spend_tracking_routes.value,
-        LiteLLMRoutes.public_routes.value,
-        LiteLLMRoutes.ui_routes.value,
-        LiteLLMRoutes.compliance_check_routes.value,
-        LiteLLMRoutes.internal_user_routes.value,
-        LiteLLMRoutes.internal_user_view_only_routes.value,
-        LiteLLMRoutes.self_managed_routes.value,
-        LiteLLMRoutes.org_admin_only_routes.value,
-        LiteLLMRoutes.admin_viewer_routes.value,
-        LiteLLMRoutes.org_admin_allowed_routes.value,
+    return frozenset(
+        route for table in ROUTE_TABLES for route in table if route.startswith("/")
     )
-    return frozenset(route for table in tables for route in table if route.startswith("/"))
 
 
 def routes_answer(call: RoutesCall) -> list[str]:
