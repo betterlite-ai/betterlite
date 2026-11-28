@@ -24,18 +24,6 @@ use crate::config_overlay_port::ConfigOverlayPort;
 use crate::plugin_routes::config::PluginRegistry;
 use crate::proxy_config_state::state::ProxyConfigState;
 
-pub use error::ConfigFieldError;
-pub use ports::{
-    ConfigFieldCaller, ConfigFieldDatabase, ConfigFieldRowError, ConfigFieldRows,
-    ConfigFieldRuntime, ConfigFieldServices,
-};
-pub use read::{get_config_general_settings, list_config_general_settings};
-pub use records::{
-    ConfigFieldDelete, ConfigFieldInfo, ConfigFieldUpdate, ConfigFieldUpdateResponse, ConfigList,
-    ConfigType, FieldDetail, GeneralSettingsRow, UiFieldResponse,
-};
-pub use write::{delete_config_general_settings, update_config_general_settings};
-
 // what B8612 holds for the four routes: B8380's config state behind the lock its writes need, and the ports beside it
 #[derive(Clone)]
 pub struct ConfigFieldState {

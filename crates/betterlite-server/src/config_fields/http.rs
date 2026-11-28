@@ -4,12 +4,14 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, Query, State};
 use axum::response::{IntoResponse, Response};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::auth_identity::AuthContext;
 use crate::config_overlay_port::ConfigOverlayPort;
 use crate::proxy_config_state::state::ProxyConfigState;
 
+use super::ConfigFieldState;
 use super::error::ConfigFieldError;
 use super::ports::{ConfigFieldCaller, ConfigFieldServices};
 use super::read::{get_config_general_settings, list_config_general_settings};
@@ -38,15 +40,22 @@ struct ListQuery {
     config_type: Option<String>,
 }
 
+// the body decode both write routes run; the fuzz target and its corpus replay feed it arbitrary bytes
+pub fn decode_body<T>(body: &[u8]) -> Result<T, ConfigFieldError>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_slice(body).map_err(|_error| ConfigFieldError::Unprocessable {
+        detail: INVALID_BODY,
+    })
+}
+
 pub(super) async fn update(
     State(state): State<HttpState>,
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Result<Json<ConfigFieldUpdateResponse>, ConfigFieldError> {
-    let update: ConfigFieldUpdate =
-        serde_json::from_slice(&body).map_err(|_error| ConfigFieldError::Unprocessable {
-            detail: INVALID_BODY,
-        })?;
+    let update = decode_body::<ConfigFieldUpdate>(&body)?;
     let client = caller_of(caller.as_ref())?;
     let mut config = state.fields.config.lock().await;
     let services = services(&state, &mut config);
@@ -59,7 +68,7 @@ pub(super) async fn delete(
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Response {
-    let Ok(delete) = serde_json::from_slice::<ConfigFieldDelete>(&body) else {
+    let Ok(delete) = decode_body::<ConfigFieldDelete>(&body) else {
         return ConfigFieldError::Unprocessable {
             detail: INVALID_BODY,
         }
@@ -141,7 +150,10 @@ fn services<'run>(
     }
 }
 
-fn respond<T: Serialize>(result: Result<T, ConfigFieldError>) -> Response {
+fn respond<T>(result: Result<T, ConfigFieldError>) -> Response
+where
+    T: Serialize,
+{
     match result {
         Ok(body) => Json(body).into_response(),
         Err(error) => error.into_response(),
