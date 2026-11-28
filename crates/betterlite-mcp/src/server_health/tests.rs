@@ -713,12 +713,12 @@ async fn batch_deduplicates_and_keeps_the_input_order() {
 
 #[tokio::test]
 async fn batch_runs_ten_checks_at_a_time_and_keeps_the_order() {
-    let specs: Vec<String> = (0..25)
+    let specs: Vec<String> = (0..25_usize)
         .map(|index| server_json(&format!("s{index}"), "http", ""))
         .collect();
     let json: Vec<&str> = specs.iter().map(String::as_str).collect();
     let rig = rig(&json, &[]);
-    let target: Vec<String> = (0..25).map(|index| format!("s{index}")).collect();
+    let target: Vec<String> = (0..25_usize).map(|index| format!("s{index}")).collect();
     let rows = rig.service.run_health_checks(&target).await;
     assert_eq!(server_ids(&rows), target);
     assert_eq!(rig.session.calls().len(), 25);
