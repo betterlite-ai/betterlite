@@ -102,6 +102,26 @@ fn minimax_chain(
     assert_eq!(call.api_base.as_deref(), Some(expected_base));
 }
 
+// an empty string is falsy in LiteLLM's `api_key or litellm.api_key` chain, so each step skips it
+#[test]
+fn minimax_skips_an_empty_request_key_and_base() {
+    let mut fixture = ChatFixture::new();
+    fixture.provider = String::from("minimax");
+    fixture.api_key = Some(secret(""));
+    fixture.settings.api_key = Some(secret("sk-global"));
+    fixture.api_base = Some(String::new());
+    fixture.settings.api_base = Some(String::from("http://global.example/v1"));
+    let handler = ChatRecorder::succeeding();
+    let (outcome, _state) = chat_dispatch(ChatConfigTag::MinimaxChat, &fixture, &handler);
+    outcome.expect("the minimax arm answers");
+    let call = handler.first();
+    assert_eq!(
+        secret_text(call.api_key.as_ref()),
+        Some(String::from("sk-global"))
+    );
+    assert_eq!(call.api_base.as_deref(), Some("http://global.example/v1"));
+}
+
 #[test]
 fn minimax_passes_the_request_headers_and_provider_config_as_they_came() {
     let mut fixture = ChatFixture::new();
