@@ -27,12 +27,6 @@ class Input(TypedDict):
     url_route: str
 
 
-class SearchConfig(Protocol):
-    def transform_search_vector_store_response(
-        self, **_kwargs: object
-    ) -> JsonValue: ...
-
-
 class HandlerCall(TypedDict):
     httpx_response: httpx.Response
     logging_obj: Logging
@@ -45,8 +39,7 @@ class HandlerCall(TypedDict):
 
 @runtime_checkable
 class VertexHandler(Protocol):
-    interactions_passthrough_handler: Callable[[object], JsonValue]
-    batch_prediction_jobs_handler: Callable[[object], JsonValue]
+    batch_prediction_jobs_handler: Callable[[JsonValue], JsonValue]
 
     def vertex_passthrough_handler(
         self, **kwargs: Unpack[HandlerCall]
@@ -55,29 +48,24 @@ class VertexHandler(Protocol):
 
 @runtime_checkable
 class HandlerModule(Protocol):
-    VertexAIVideoConfig: Callable[[object], JsonValue]
-    vertex_search_api_config: SearchConfig
+    VertexAIVideoConfig: Callable[[JsonValue], JsonValue]
+    vertex_search_api_config: Callable[[JsonValue], JsonValue]
 
 
 @runtime_checkable
 class LitellmModule(Protocol):
-    ModelResponse: Callable[[object], JsonValue]
+    ModelResponse: Callable[[JsonValue], JsonValue]
 
 
 @runtime_checkable
 class ImageModule(Protocol):
-    VertexImageGeneration: Callable[[object], JsonValue]
+    VertexImageGeneration: Callable[[JsonValue], JsonValue]
 
 
 @runtime_checkable
 class EmbedModule(Protocol):
-    process_embed_content_response: Callable[[object], JsonValue]
-    process_response: Callable[[object], JsonValue]
-
-
-@runtime_checkable
-class PartnerModule(Protocol):
-    get_vertex_ai_partner_model_config: Callable[[object], JsonValue]
+    process_embed_content_response: Callable[[JsonValue], JsonValue]
+    process_response: Callable[[JsonValue], JsonValue]
 
 
 @runtime_checkable
@@ -101,17 +89,10 @@ class Leaf:
 
     def __call__(
         self,
-        *_args: object,
-        **_kwargs: object,
+        *_args: JsonValue,
+        **_kwargs: JsonValue,
     ) -> JsonValue:
         raise BranchHitError(self.branch)
-
-
-class SearchLeaf:
-    def transform_search_vector_store_response(
-        self, **_kwargs: object
-    ) -> JsonValue:
-        raise BranchHitError("search")
 
 
 HANDLER: Final = TypeAdapter(VertexHandler, config=ARBITRARY)
@@ -119,7 +100,6 @@ HANDLER_MODULE: Final = TypeAdapter(HandlerModule, config=ARBITRARY)
 LITELLM: Final = TypeAdapter(LitellmModule, config=ARBITRARY)
 IMAGES: Final = TypeAdapter(ImageModule, config=ARBITRARY)
 EMBEDDINGS: Final = TypeAdapter(EmbedModule, config=ARBITRARY)
-PARTNERS: Final = TypeAdapter(PartnerModule, config=ARBITRARY)
 LOGGING: Final = TypeAdapter(LoggingSetup, config=ARBITRARY)
 INPUT: Final = TypeAdapter(Input)
 
@@ -130,15 +110,18 @@ def branch_for(url_route: str) -> str | None:
     core = LITELLM.validate_python(litellm)
     images = IMAGES.validate_python(image_module)
     embeddings = EMBEDDINGS.validate_python(embed_module)
-    partners = PARTNERS.validate_python(partner_module)
-    handler.interactions_passthrough_handler = Leaf("interactions")
+    object.__setattr__(handler_module, "_interactions_model", Leaf("interactions"))
     bindings.VertexAIVideoConfig = Leaf("video")
     core.ModelResponse = Leaf("generate_content")
     embeddings.process_embed_content_response = Leaf("embed_content")
     embeddings.process_response = Leaf("embed_content")
     images.VertexImageGeneration = Leaf("predict")
-    partners.get_vertex_ai_partner_model_config = Leaf("raw_predict")
-    bindings.vertex_search_api_config = SearchLeaf()
+    object.__setattr__(
+        partner_module, "get_vertex_ai_partner_model_config", Leaf("raw_predict")
+    )
+    search = Leaf("search")
+    object.__setattr__(search, "transform_search_vector_store_response", search)
+    bindings.vertex_search_api_config = search
     handler.batch_prediction_jobs_handler = Leaf("batch_prediction_jobs")
     logging_obj = make_logging(START)
     setup = LOGGING.validate_python(logging_obj)
