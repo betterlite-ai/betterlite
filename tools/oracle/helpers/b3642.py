@@ -77,8 +77,9 @@ INPUT: Final = TypeAdapter(Input)
 
 
 def branch_for(url_route: str) -> str | None:
-    handler = HANDLER.validate_python(handler_module.VertexPassthroughLoggingHandler)
-    object.__setattr__(handler_module, "_interactions_model", Leaf("interactions"))
+    handler_class = handler_module.VertexPassthroughLoggingHandler
+    handler = HANDLER.validate_python(handler_class)
+    type.__setattr__(handler_class, "interactions_passthrough_handler", Leaf("interactions"))
     object.__setattr__(handler_module, "VertexAIVideoConfig", Leaf("video"))
     object.__setattr__(litellm, "ModelResponse", Leaf("generate_content"))
     object.__setattr__(embed_module, "process_embed_content_response", Leaf("embed_content"))
