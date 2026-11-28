@@ -150,9 +150,6 @@ fn validate_audience(
     }
     let audience_claims = match value.as_array() {
         Some(items) => {
-            if items.is_empty() {
-                return Err(missing_audience());
-            }
             let mut claims = Vec::with_capacity(items.len());
             for item in items {
                 let Some(text) = item.as_str() else {
@@ -166,9 +163,6 @@ fn validate_audience(
             let Some(text) = value.as_str() else {
                 return Err(invalid_audience_format());
             };
-            if text.is_empty() {
-                return Err(missing_audience());
-            }
             vec![text]
         }
     };
