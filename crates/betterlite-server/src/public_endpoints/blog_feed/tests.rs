@@ -253,7 +253,11 @@ async fn deep_nesting_falls_back() {
     assert_eq!(over_feed.cache_snapshot().cached_posts, None);
     let recorded = over_warnings.warnings();
     assert_eq!(recorded.len(), 1);
-    assert!(recorded[0].message.contains("nests deeper than 64"));
+    assert!(
+        recorded[0]
+            .message
+            .contains("RSS feed nests deeper than the 64 element limit")
+    );
 }
 
 #[tokio::test]

@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
+use tokio::time::sleep;
 
 use super::support::{FRESH, backup_post, backup_posts, feed, post};
 use crate::public_endpoints::blog_feed::testing::FixedClock;
@@ -213,12 +213,14 @@ async fn cancelling_a_fetch_does_not_wedge_the_feed() {
         clock,
         Arc::new(backup_posts()),
     );
-    let mut fetch = Box::pin(feed.get_blog_posts());
+    let shared = Arc::new(feed);
+    let fetching = Arc::clone(&shared);
+    let mut fetches = JoinSet::new();
+    let pending = fetches.spawn(async move { fetching.get_blog_posts().await });
     accepted.recv().await.unwrap();
-    timeout(Duration::from_millis(50), &mut fetch)
-        .await
-        .expect_err("the fetch answered before the server held it");
-    drop(fetch);
-    let posts = feed.get_blog_posts().await.unwrap();
+    pending.abort();
+    let cancelled = fetches.join_next().await.unwrap().unwrap_err();
+    assert!(cancelled.is_cancelled());
+    let posts = shared.get_blog_posts().await.unwrap();
     assert_eq!(posts, vec![post("Fresh", "https://fresh")]);
 }
