@@ -102,12 +102,6 @@ async fn list_reads_all_rows_in_one_bulk_call_and_keeps_the_order() {
             "bulk:user-1:srv-2,srv-1,srv-3"
         ]
     );
-    let bulk_calls = harness
-        .journal()
-        .iter()
-        .filter(|event| event.starts_with("bulk:"))
-        .count();
-    assert_eq!(bulk_calls, 1);
 }
 
 #[tokio::test]

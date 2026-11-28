@@ -253,6 +253,7 @@ impl ManagementCacheEviction for NoEffects {
 }
 
 // The deps a route with no alert, no parent span and no cached key hands the wrapper
+#[must_use]
 pub fn no_effect_deps<'deps>(
     body_settings: &'deps RequestBodySettings,
     limits: &'deps ApiLimits,
