@@ -6,10 +6,10 @@ use std::time::Duration;
 use betterlite_core::api::bfl::generation::BflImageResponse;
 use betterlite_core::api::bfl::generation_call::error::GenerationCallError;
 use betterlite_core::api::bfl::generation_call::params::CallParams;
-use betterlite_core::api::bfl::generation_call::submit::SuppliedTransport;
 use betterlite_core::api::bfl::generation_call::{
     GenerationCall, GenerationExecutor, LogContext, prepare_call,
 };
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use secrecy::SecretString;
@@ -41,7 +41,7 @@ pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
         clock: &timeline,
         sleeper: &timeline,
     };
-    let supplied: Option<SuppliedTransport<'_, Script<'_>>> = None;
+    let supplied: Option<SuppliedClient<'_, Script<'_>>> = None;
     let logger = |details: &Json| -> Result<(), PrePostError> {
         effects.record(pre_call_effect(details));
         Ok(())

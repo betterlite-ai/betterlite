@@ -1,0 +1,47 @@
+task: B7972
+deviations:
+  - what: >-
+      A 502 detail that quotes a server name escapes the backslash, the chosen quote and every control character
+      (C0 and C1) as \xNN; Python's repr also escapes non-printable characters outside those categories, such as
+      the soft hyphen, as \uNNNN or \UXXXXXXXX, and those read raw here.
+    why: >-
+      The name is rendered by betterlite-logging's shared Python repr, which escapes only control characters;
+      deciding printability for every Unicode category needs Python's own table, which std does not carry.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2562-L2580
+  - what: >-
+      The root document's resource keeps a request base URL without a usable scheme and authority, one whose
+      urlparse scheme or netloc is empty, exactly as given, where LiteLLM writes resource "://" or "<scheme>://"
+      with one of them empty.
+    why: >-
+      A base URL from a real request always has a scheme and a host, and those unusable resources explain nothing
+      when one is missing.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2651-L2659
+  - what: >-
+      The 200 body decoder reads UTF-8 RFC 8259 JSON, so a body that Python's json.loads accepts but serde_json
+      refuses (UTF-16 or UTF-32 text, a NaN or Infinity literal) counts as no metadata and is logged.
+    why: >-
+      Upstream metadata is UTF-8 standard JSON, and a NaN or Infinity value cannot survive LiteLLM's own JSON
+      response either, so accepting it would only move the failure past the fetch.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2452-L2463
+  - what: >-
+      The fetch warnings carry the failure text in the message where LiteLLM names the Python exception class
+      first ("TransportError: ...", "JSONDecodeError: ..."), and the pass-through warnings name the server in a
+      tracing field instead of the %r-quoted text.
+    why: >-
+      GetFailure crosses the UpstreamGet port as one string, so the class that raised is no longer known at the
+      fetch site; the facts logged are the same.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2440-L2462
+  - what: >-
+      A request base URL whose authority python_url rejects, an unmatched IPv6 bracket or a bracketed host that
+      is not an IPv6 address, is kept as given and the root route answers, where Python's urlparse raises and
+      LiteLLM's root route answers 500.
+    why: >-
+      The base URL comes from the request, so a malformed Host header should not turn discovery into a server
+      error; the kept text names the input that could not be parsed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2651-L2659
+kept_bugs: []

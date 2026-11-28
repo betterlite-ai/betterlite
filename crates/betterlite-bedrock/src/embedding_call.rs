@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_core::api::vector_store_http_write::service::SuppliedClient;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_openai::cohere_embedding::TextEncoding;
@@ -25,7 +26,7 @@ use serde_json::value::RawValue;
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use crate::bedrock_embedding_io::response::EmbeddingReply;
-use crate::bedrock_embedding_io::transport::{ClientFactory, SuppliedClient, Timeout};
+use crate::bedrock_embedding_io::transport::{ClientFactory, Timeout};
 use crate::credentials::error::CredentialError;
 use crate::signing::executor::AwsSigningExecutor;
 use error::EmbeddingCallError;
