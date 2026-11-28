@@ -1,5 +1,4 @@
 use betterlite_context::non_default_params::Params;
-use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 
@@ -12,8 +11,7 @@ use crate::api::riva::records::recognition::{RecognitionOptions, RivaRequest, tr
 pub const NVCF_FUNCTION_ID: &str = "nvcf_function_id";
 pub const USE_SSL: &str = "use_ssl";
 
-// what the call reads off the optional params before any SDK object exists: the B1545 request with
-// the wire format forced to the resampler's output, plus the auth inputs the handler reads raw
+// what the call reads off the optional params before any SDK object exists: the B1545 request with the wire format forced to the resampler's output, plus the auth inputs the handler reads raw
 #[derive(Clone)]
 pub struct Resolved {
     pub request: RivaRequest,
@@ -30,11 +28,9 @@ pub fn resolve(params: &Params) -> Result<Resolved, RivaCallError> {
     let nvcf = function_id(&optional)?;
     let override_value = optional.get(USE_SSL).filter(|value| !value.is_null());
     let use_ssl = match override_value {
-        Some(value) => {
-            let typed: JsonValue = serde_json::from_value(value.clone())
-                .map_err(|source| RivaCallError::Json { source })?;
-            truthy(&typed)
-        }
+        Some(value) => value
+            .as_bool()
+            .ok_or(RecordsError::Boolean { field: USE_SSL })?,
         None => nvcf.is_some(),
     };
     let use_ssl_logged = match override_value {
@@ -82,20 +78,6 @@ fn function_id(optional: &Object) -> Result<Option<String>, RivaCallError> {
         return Ok(None);
     }
     Ok(Some(text.to_owned()))
-}
-
-// Python's truth test for an untyped optional param: zero, empty text and empty containers are false
-pub fn truthy(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null => false,
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number
-            .as_f64()
-            .is_some_and(|float| float.abs().to_bits() != 0),
-        JsonValue::Text(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
-    }
 }
 
 // `if not api_base`: the handler refuses a missing or empty endpoint before it touches the audio
