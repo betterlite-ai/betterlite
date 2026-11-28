@@ -12,7 +12,7 @@ pub fn normalize_context_edit_shapes(
         return Ok(Vec::new());
     };
     let normalized = match raw {
-        Json::List(_) => map_context_management(spec)?.map(Json::Object),
+        Json::List(_) => map_context_management(raw)?.map(Json::Object),
         Json::Object(fields) => Some(Json::Object(fields.clone())),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => None,
     };
