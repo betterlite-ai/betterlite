@@ -1,0 +1,33 @@
+kind: helper
+name: bedrock-other-other-endpoints-image
+call:
+  bedrock_other_other_endpoints:
+    model_cost:
+      amazon.nova-canvas-v1:0:
+        litellm_provider: bedrock
+        supports_nova_canvas_image_edit: true
+        output_cost_per_image: 0.25
+    probes:
+      - case: image_generation
+        model: amazon.nova-canvas-v1:0
+        prompt: a nova seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          taskType: TEXT_IMAGE
+          textToImageParams: {negativeText: blurry}
+        reply:
+          body: '{"images": ["bm92YTE="]}'
+      - case: image_edit
+        model: amazon.nova-canvas-v1:0
+        prompt: make it pop
+        images: [aW1n]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        reply:
+          body: '{"images": ["b3V0MQ=="]}'
+env: {}
+compare: {ignore: []}

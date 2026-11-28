@@ -1,0 +1,46 @@
+kind: helper
+name: bedrock-count-dispatch
+call:
+  bedrock_other_other_endpoints:
+    probes:
+      - case: count
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages:
+          - role: user
+            content: hi
+        request_model: requested-model
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        environment:
+          AWS_REGION_NAME: us-east-1
+        reply:
+          status: 200
+          body: '{"inputTokens": 42}'
+      - case: count
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        request_model: requested-model
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        environment:
+          AWS_REGION_NAME: us-east-1
+        reply:
+          status: 200
+          body: '{"inputTokens": 1}'
+      - case: count
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages:
+          - role: user
+            content: hi
+        request_model: requested-model
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        environment:
+          AWS_REGION_NAME: us-east-1
+        reply:
+          status: 401
+          body: denied
+env: {}
+compare: {ignore: []}

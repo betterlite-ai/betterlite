@@ -1,0 +1,28 @@
+kind: helper
+name: bedrock-transcription-dispatch
+call:
+  bedrock_other_other_endpoints:
+    probes:
+      - case: transcription
+        model: bedrock/voxtral
+        file: {content: RIFF, filename: a.wav}
+        optional_params:
+          language: en
+          aws_region_name: us-east-1
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        api_key: key-one
+        api_base: https://base.example
+        extra_headers: {x-trace: t1}
+        timeout: 3.5
+        reply_text: hello
+      - case: transcription
+        model: bedrock/voxtral
+        file: {content: x, filename: a.aac}
+        optional_params:
+          aws_region_name: us-east-1
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        reply_text: hello
+env: {}
+compare: {ignore: []}

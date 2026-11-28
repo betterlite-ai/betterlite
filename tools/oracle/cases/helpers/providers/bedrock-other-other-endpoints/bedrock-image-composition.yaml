@@ -1,0 +1,40 @@
+kind: helper
+name: bedrock-image-composition
+call:
+  bedrock_other_other_endpoints:
+    model_cost:
+      amazon.nova-canvas-v1:0:
+        litellm_provider: bedrock
+        supports_nova_canvas_image_edit: true
+        output_cost_per_image: 0.25
+    probes:
+      - case: image_generation
+        model: amazon.nova-canvas-v1:0
+        prompt: a nova seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          taskType: TEXT_IMAGE
+          textToImageParams: {negativeText: blurry}
+          imageGenerationConfig: {numberOfImages: 2, width: 512, height: 512, quality: standard}
+        reply:
+          body: '{"images": ["bm92YTE=", "bm92YTI="]}'
+      - case: image_edit
+        model: amazon.nova-canvas-v1:0
+        prompt: make it pop
+        images: [aW1n]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          numberOfImages: 2
+          width: 512
+          height: 512
+          negativeText: blurry
+          similarityStrength: 0.7
+        extra_headers: {x-oracle-extra: kept}
+        reply:
+          body: '{"images": ["b3V0MQ==", "b3V0Mg=="]}'
+env: {}
+compare: {ignore: []}
