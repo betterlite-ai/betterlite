@@ -3,6 +3,8 @@
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use percent_encoding::percent_decode_str;
+
 use super::*;
 use crate::gateway_authorize::no_cache_headers;
 use crate::gateway_authorize::reply::{ConnectFlowDescription, ConnectFlowState};
@@ -109,8 +111,11 @@ fn page_url(body: &str) -> String {
 }
 
 fn opened_code(code: &str, db_cipher: &DbCipher) -> GatewayAuthCode {
+    let decoded = percent_decode_str(code)
+        .decode_utf8()
+        .expect("decoded code");
     open_sealed::<GatewayAuthCode>(
-        code,
+        &decoded,
         GATEWAY_AUTH_CODE_PREFIX,
         db_cipher,
         AUTH_CODE_DEBUG_KEY,
@@ -553,7 +558,7 @@ async fn a_manual_delivery_renders_the_copy_paste_page() {
     assert!(body.contains("expires in 5 minutes"));
     let url = page_url(&body);
     assert!(url.starts_with(&format!("{CALLBACK}?code={GATEWAY_AUTH_CODE_PREFIX}")));
-    assert!(url.ends_with("&state=st-1"));
+    assert!(url.ends_with("&amp;state=st-1"));
     let opened = opened_code(&callback_code(&url), &cipher(SALT));
     assert_eq!(opened.exp, 1_300);
 }
