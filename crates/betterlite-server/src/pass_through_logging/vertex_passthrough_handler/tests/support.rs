@@ -1,0 +1,154 @@
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_logging::logging_state::LoggingState;
+use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
+use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
+use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_vertex::vertex_relay_metadata::types::{
+    CompletionCost, CompletionCostRequest, CustomLlmProvider,
+};
+use http::{HeaderMap, StatusCode};
+use rust_decimal::Decimal;
+
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
+use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
+    FakeCost, logging_object, timestamp,
+};
+use crate::pass_through_logging::vertex_batch_logging::VertexBatchLogging;
+use crate::pass_through_logging::vertex_batch_logging::testing::{FixedResponseId, logging_state};
+use crate::pass_through_logging::vertex_passthrough_handler::{
+    VertexPassthroughHandler, VertexPassthroughInput,
+};
+use crate::pass_through_logging::vertex_predict_logging::VertexPredictLogger;
+
+pub(crate) struct Fixture {
+    pub(crate) logging_obj: StreamLoggingObject,
+    pub(crate) call_log: LoggingState,
+    pub(crate) url_route: String,
+    pub(crate) headers: HeaderMap,
+    pub(crate) body: Vec<u8>,
+    pub(crate) request_body: Option<JsonMap>,
+    pub(crate) kwargs: PassThroughLoggingKwargs,
+}
+
+pub(crate) fn fixture(url_route: &str, body: &str) -> Fixture {
+    Fixture {
+        logging_obj: logging_object(),
+        call_log: logging_state().expect("a logging state"),
+        url_route: url_route.to_owned(),
+        headers: HeaderMap::new(),
+        body: body.as_bytes().to_vec(),
+        request_body: None,
+        kwargs: PassThroughLoggingKwargs::default(),
+    }
+}
+
+pub(crate) fn with_request_body(mut fixture: Fixture, body: &str) -> Fixture {
+    let serde_json::Value::Object(fields) =
+        serde_json::from_str(body).expect("a JSON object literal")
+    else {
+        panic!("the request body is an object");
+    };
+    fixture.request_body = Some(fields);
+    fixture
+}
+
+pub(crate) fn input(fixture: &mut Fixture) -> VertexPassthroughInput<'_> {
+    VertexPassthroughInput {
+        logging_obj: &fixture.logging_obj,
+        url_route: &fixture.url_route,
+        result: "",
+        start_time: timestamp(),
+        end_time: timestamp(),
+        cache_hit: false,
+        status: StatusCode::OK,
+        response_headers: &fixture.headers,
+        response_body: &fixture.body,
+        request_body: fixture.request_body.as_ref(),
+        call_log: &mut fixture.call_log,
+        kwargs: fixture.kwargs.clone(),
+    }
+}
+
+pub(crate) fn items(value: &Json) -> &[Json] {
+    match value {
+        Json::List(values) => values,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            panic!("the value is a list")
+        }
+    }
+}
+
+// B3639 prices through B3638's trait, so the predict branches need their own recording adapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PredictCall {
+    pub(crate) model: String,
+    pub(crate) provider: CustomLlmProvider,
+    pub(crate) location: Option<String>,
+    pub(crate) usage: Option<(i64, i64, i64)>,
+}
+
+pub(crate) struct PredictCost {
+    price: Option<Decimal>,
+    calls: Mutex<Vec<PredictCall>>,
+}
+
+impl PredictCost {
+    fn new(price: Option<Decimal>) -> Arc<Self> {
+        Arc::new(Self {
+            price,
+            calls: Mutex::new(Vec::new()),
+        })
+    }
+
+    pub(crate) fn calls(&self) -> Vec<PredictCall> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl CompletionCost for PredictCost {
+    fn completion_cost(&self, request: &CompletionCostRequest<'_>) -> Option<Decimal> {
+        let usage = request.response.usage.as_ref().map(|usage| {
+            (
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.total_tokens,
+            )
+        });
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(PredictCall {
+                model: request.model.to_owned(),
+                provider: request.custom_llm_provider,
+                location: request.vertex_location.map(str::to_owned),
+                usage,
+            });
+        self.price
+    }
+}
+
+pub(crate) fn handler(cost: Arc<FakeCost>) -> (VertexPassthroughHandler, Arc<PredictCost>) {
+    handler_with_predict(cost, Some(Decimal::ONE))
+}
+
+pub(crate) fn handler_with_predict(
+    cost: Arc<FakeCost>,
+    predict_price: Option<Decimal>,
+) -> (VertexPassthroughHandler, Arc<PredictCost>) {
+    let predict_cost = PredictCost::new(predict_price);
+    let relay: Arc<dyn CompletionCost> = predict_cost.clone();
+    let predict = VertexPredictLogger::new(relay);
+    let batch = VertexBatchLogging::new(
+        None,
+        None,
+        Arc::new(FixedResponseId),
+        BackgroundTasks::default(),
+    );
+    let passthrough = VertexPassthroughHandler::new(predict, batch, cost);
+    (passthrough, predict_cost)
+}
