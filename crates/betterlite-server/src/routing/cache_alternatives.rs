@@ -7,7 +7,6 @@ pub mod host;
 pub mod request;
 pub mod selection;
 
-#[cfg(test)]
 mod tests;
 
 // choose_cached_model's state: the live proxy every read goes through, injected so nothing here reaches a global

@@ -53,7 +53,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let config = tier_config(&input.config);
-        let order_features = order_features(&input.config);
+        let features = router_features(&input.config);
         let checks = TierChecks {
             classifier_type: input.config.classifier_type,
             classifier_fallback: ClassifierFallback::Heuristic,
@@ -62,13 +62,12 @@ impl Helper for Op {
             classification_examples: None,
             llm_system_prompt: None,
             classification_rubric: None,
-            order_features: &order_features,
+            order_features: &features.order,
         };
         let tiers = TierSet::resolve(&config, &checks).or_config_error()?;
-        let features = features(&input.config);
         let routing = CacheRoutingConfig {
             tiers: &tiers,
-            features: &features,
+            features: &features.active,
         };
         let names = eligible_models(&routing, &input.decision);
         let eligible: Vec<[&str; 2]> = names
@@ -88,47 +87,38 @@ fn tier_config(config: &Config) -> tier_section::Config {
     }
 }
 
-// the settings whose presence a custom tier set refuses
-fn order_features(config: &Config) -> Vec<OrderFeature> {
-    let mut order_features = Vec::new();
-    if config.adaptive {
-        order_features.push(OrderFeature::Adaptive);
-    }
-    if config
-        .plugins
-        .as_ref()
-        .is_some_and(|plugins| !plugins.is_empty())
-    {
-        order_features.push(OrderFeature::Plugins);
-    }
-    if config.session_affinity {
-        order_features.push(OrderFeature::SessionAffinity);
-    }
-    order_features
+struct RouterFeatures {
+    // the settings whose presence a custom tier set refuses
+    order: Vec<OrderFeature>,
+    // the active router features, the same ones the production config layer hands CacheRoutingConfig
+    active: Vec<Feature>,
 }
 
-// the active router features, the same ones the production config layer hands CacheRoutingConfig
-fn features(config: &Config) -> Vec<Feature> {
-    let mut features = Vec::new();
+fn router_features(config: &Config) -> RouterFeatures {
+    let mut order = Vec::new();
+    let mut active = Vec::new();
     if config.adaptive {
-        features.push(Feature::Adaptive);
+        order.push(OrderFeature::Adaptive);
+        active.push(Feature::Adaptive);
     }
     if config
         .plugins
         .as_ref()
         .is_some_and(|plugins| !plugins.is_empty())
     {
-        features.push(Feature::Plugins);
+        order.push(OrderFeature::Plugins);
+        active.push(Feature::Plugins);
     }
     if config.session_affinity {
-        features.push(Feature::SessionAffinity);
+        order.push(OrderFeature::SessionAffinity);
+        active.push(Feature::SessionAffinity);
     }
-    let user_turn = config
+    if config
         .classification_mode
         .as_deref()
-        .is_some_and(|mode| mode != "every_request");
-    if user_turn {
-        features.push(Feature::UserTurnClassification);
+        .is_some_and(|mode| mode != "every_request")
+    {
+        active.push(Feature::UserTurnClassification);
     }
-    features
+    RouterFeatures { order, active }
 }

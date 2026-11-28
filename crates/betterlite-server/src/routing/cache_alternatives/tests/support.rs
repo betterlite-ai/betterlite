@@ -19,6 +19,7 @@ use betterlite_auth::auth_limit_inputs::account::account_limits;
 use betterlite_auth::entity_model_access::error::EntityModelAccessError;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::anthropic_count_tokens::DEFAULT_BETA_VERSION;
+use betterlite_config::sections::anthropic_credentials::DEFAULT_API_BASE;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -100,18 +101,6 @@ pub(super) fn body_with_max_tokens(text: &str, max_tokens: i64) -> Json {
         panic!("the body is an object");
     };
     fields.insert("max_tokens".to_owned(), number(max_tokens));
-    body
-}
-
-pub(super) fn body_with_thinking(text: &str) -> Json {
-    let mut body = body(text);
-    let Json::Object(fields) = &mut body else {
-        panic!("the body is an object");
-    };
-    fields.insert(
-        "thinking".to_owned(),
-        json(r#"{"type":"enabled","budget_tokens":10000}"#),
-    );
     body
 }
 
@@ -250,6 +239,7 @@ pub(super) fn seed(cache: &MemoryCache, body: &Json, expires_at: f64) {
     );
 }
 
+#[derive(Default)]
 pub(super) struct Resolution {
     catalog: ModelCatalog,
     names: BTreeSet<String>,
@@ -257,14 +247,6 @@ pub(super) struct Resolution {
 }
 
 impl Resolution {
-    pub(super) fn new() -> Self {
-        Self {
-            catalog: ModelCatalog::default(),
-            names: BTreeSet::new(),
-            environment: BTreeMap::new(),
-        }
-    }
-
     pub(super) fn context(&self) -> ResolutionContext<'_> {
         ResolutionContext {
             catalog: &self.catalog,
@@ -278,17 +260,12 @@ impl Resolution {
     }
 }
 
+#[derive(Default)]
 pub(super) struct MemoryCache {
     entries: Mutex<BTreeMap<String, Json>>,
 }
 
 impl MemoryCache {
-    pub(super) fn new() -> Self {
-        Self {
-            entries: Mutex::new(BTreeMap::new()),
-        }
-    }
-
     pub(super) fn seed(&self, key: &str, value: Json) {
         self.entries
             .lock()
@@ -327,20 +304,20 @@ pub(super) struct Rates {
 
 impl Rates {
     pub(super) fn cheap() -> Self {
-        Self {
-            input: Decimal::new(1, 6),
-            output: Decimal::new(4, 6),
-            read: Decimal::new(1, 7),
-            creation: Decimal::new(125, 8),
-        }
+        Self::from_prices(&CHEAP_PRICES)
     }
 
     pub(super) fn strong() -> Self {
+        Self::from_prices(&STRONG_PRICES)
+    }
+
+    // the same prices the deployments declare, so the cost the arm reports matches its own rates
+    fn from_prices(prices: &DeploymentPrices) -> Self {
         Self {
-            input: Decimal::new(3, 6),
-            output: Decimal::new(15, 6),
-            read: Decimal::new(3, 7),
-            creation: Decimal::new(375, 8),
+            input: decimal(prices.input),
+            output: decimal(prices.output),
+            read: decimal(prices.read),
+            creation: decimal(prices.creation),
         }
     }
 }
@@ -357,8 +334,8 @@ pub(super) struct RatesCost {
     table: Mutex<BTreeMap<String, Rates>>,
 }
 
-impl RatesCost {
-    pub(super) fn new() -> Self {
+impl Default for RatesCost {
+    fn default() -> Self {
         let table = BTreeMap::from([
             (CHEAP_MODEL.to_owned(), Rates::cheap()),
             (STRONG_MODEL.to_owned(), Rates::strong()),
@@ -367,7 +344,9 @@ impl RatesCost {
             table: Mutex::new(table),
         }
     }
+}
 
+impl RatesCost {
     pub(super) fn set(&self, model: &str, rates: Rates) {
         self.table
             .lock()
@@ -422,6 +401,7 @@ impl CacheCostService for RatesCost {
     }
 }
 
+#[derive(Default)]
 pub(super) struct FakeMinimum {
     pub(super) tokens: i64,
 }
@@ -433,6 +413,7 @@ impl MinimumCacheTokens for FakeMinimum {
 }
 
 // The fixture deployments declare their own ceilings, so the cost map answers no limit.
+#[derive(Default)]
 pub(super) struct NoLimits;
 
 impl PriceLookup for NoLimits {
@@ -606,24 +587,56 @@ pub(super) fn deployment(model_name: &str, params: &str, info: &str) -> Deployme
     }
 }
 
-pub(super) fn cheap_deployment(max_output: i64) -> DeploymentSpec {
+// the per-token prices a fixture deployment declares, the same ones Rates prices its costs with
+struct DeploymentPrices {
+    input: &'static str,
+    output: &'static str,
+    read: &'static str,
+    creation: &'static str,
+}
+
+const CHEAP_PRICES: DeploymentPrices = DeploymentPrices {
+    input: "0.000001",
+    output: "0.000004",
+    read: "0.0000001",
+    creation: "0.00000125",
+};
+
+const STRONG_PRICES: DeploymentPrices = DeploymentPrices {
+    input: "0.000003",
+    output: "0.000015",
+    read: "0.0000003",
+    creation: "0.00000375",
+};
+
+fn priced_deployment(
+    group: &str,
+    model: &str,
+    id: &str,
+    max_output: i64,
+    prices: &DeploymentPrices,
+) -> DeploymentSpec {
     let params = format!(
-        r#"{{"model":"anthropic/{CHEAP_MODEL}","api_key":"{PROVIDER_KEY}","input_cost_per_token":0.000001,"output_cost_per_token":0.000004,"cache_read_input_token_cost":0.0000001,"cache_creation_input_token_cost":0.00000125}}"#
+        r#"{{"model":"anthropic/{model}","api_key":"{PROVIDER_KEY}","input_cost_per_token":{},"output_cost_per_token":{},"cache_read_input_token_cost":{},"cache_creation_input_token_cost":{}}}"#,
+        prices.input, prices.output, prices.read, prices.creation
     );
-    let info = format!(
-        r#"{{"id":"{CHEAP_ID}","max_input_tokens":100000,"max_output_tokens":{max_output}}}"#
-    );
-    deployment("cheap", &params, &info)
+    let info =
+        format!(r#"{{"id":"{id}","max_input_tokens":100000,"max_output_tokens":{max_output}}}"#);
+    deployment(group, &params, &info)
+}
+
+pub(super) fn cheap_deployment(max_output: i64) -> DeploymentSpec {
+    priced_deployment("cheap", CHEAP_MODEL, CHEAP_ID, max_output, &CHEAP_PRICES)
 }
 
 pub(super) fn strong_deployment(max_output: i64) -> DeploymentSpec {
-    let params = format!(
-        r#"{{"model":"anthropic/{STRONG_MODEL}","api_key":"{PROVIDER_KEY}","input_cost_per_token":0.000003,"output_cost_per_token":0.000015,"cache_read_input_token_cost":0.0000003,"cache_creation_input_token_cost":0.00000375}}"#
-    );
-    let info = format!(
-        r#"{{"id":"{STRONG_ID}","max_input_tokens":100000,"max_output_tokens":{max_output}}}"#
-    );
-    deployment("strong", &params, &info)
+    priced_deployment(
+        "strong",
+        STRONG_MODEL,
+        STRONG_ID,
+        max_output,
+        &STRONG_PRICES,
+    )
 }
 
 pub(super) fn cold_deployment() -> DeploymentSpec {
@@ -648,17 +661,12 @@ pub(super) fn marker_params() -> String {
 }
 
 pub(super) fn tier_limits(entries: &[(&str, &str, i64)]) -> FakeTierParams {
-    FakeTierParams {
-        limits: entries
-            .iter()
-            .map(|(tier, model, limit)| {
-                (
-                    ((*tier).to_owned(), (*model).to_owned()),
-                    JsonMap::from([("max_tokens".to_owned(), number(*limit))]),
-                )
-            })
-            .collect(),
+    let mut limits = BTreeMap::new();
+    for (tier, model, limit) in entries {
+        let params = JsonMap::from([("max_tokens".to_owned(), number(*limit))]);
+        limits.insert(((*tier).to_owned(), (*model).to_owned()), params);
     }
+    FakeTierParams { limits }
 }
 
 // _litellm_params_for_model: the tier entry's own params, which max_tokens_from_tier_model fills with the ceiling.
@@ -676,6 +684,7 @@ impl TierParams for FakeTierParams {
     }
 }
 
+#[derive(Default)]
 pub(super) struct Fixture {
     pub(super) settings: AnthropicSettings,
     pub(super) resolution: Resolution,
@@ -685,20 +694,26 @@ pub(super) struct Fixture {
     pub(super) prices: NoLimits,
 }
 
+// the provider key is the only setting the fixtures set past the Anthropic defaults
+fn fixture_settings() -> AnthropicSettings {
+    AnthropicSettings {
+        api_key: Some(SecretString::from(PROVIDER_KEY)),
+        auth_token: None,
+        api_base: DEFAULT_API_BASE.to_owned(),
+        use_bearer_for_custom_base: false,
+        anthropic_version: ANTHROPIC_VERSION.to_owned(),
+    }
+}
+
 impl Fixture {
     pub(super) fn new() -> Self {
+        let settings = fixture_settings();
         Self {
-            settings: AnthropicSettings {
-                api_key: Some(SecretString::from(PROVIDER_KEY)),
-                auth_token: None,
-                api_base: "https://api.anthropic.com".to_owned(),
-                use_bearer_for_custom_base: false,
-                anthropic_version: ANTHROPIC_VERSION.to_owned(),
-            },
-            resolution: Resolution::new(),
-            cache: MemoryCache::new(),
-            cost: RatesCost::new(),
-            minimum: FakeMinimum { tokens: 0 },
+            settings,
+            resolution: Resolution::default(),
+            cache: MemoryCache::default(),
+            cost: RatesCost::default(),
+            minimum: FakeMinimum::default(),
             prices: NoLimits,
         }
     }
@@ -778,6 +793,10 @@ pub(super) struct FakeHost<'frame> {
 }
 
 impl FakeHost<'_> {
+    fn deployments_named(&self, model: &str) -> Vec<DeploymentSpec> {
+        self.deployments.get(model).cloned().unwrap_or_default()
+    }
+
     pub(super) fn authorization_calls(&self) -> Vec<String> {
         self.authorization
             .lock()
@@ -861,7 +880,7 @@ impl CacheRoutingHost for FakeHost<'_> {
                 model: model.to_owned(),
             });
         }
-        Ok(self.deployments.get(model).cloned().unwrap_or_default())
+        Ok(self.deployments_named(model))
     }
 
     async fn healthy_deployments(
@@ -870,12 +889,13 @@ impl CacheRoutingHost for FakeHost<'_> {
         _messages: Option<&[Message]>,
         _request_kwargs: &JsonMap,
     ) -> Result<Vec<DeploymentSpec>, RoutingError> {
-        if self.unhealthy.iter().any(|name| name == model) {
+        let model_is_unhealthy = self.unhealthy.iter().any(|name| name == model);
+        if model_is_unhealthy {
             return Err(RoutingError::NotBuilt {
                 entry: "healthy_deployments",
             });
         }
-        Ok(self.deployments.get(model).cloned().unwrap_or_default())
+        Ok(self.deployments_named(model))
     }
 
     async fn can_key_call_model(
