@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_identity::records::{
@@ -101,10 +101,7 @@ pub(crate) struct ScriptedOverlay {
 impl ConfigOverlayPort for ScriptedOverlay {
     async fn reload_config(&self) -> Result<ConfigWithBaseline, ConfigOverlayPortError> {
         self.reloads.fetch_add(1, Ordering::SeqCst);
-        match self.failure {
-            Some(failure) => Err(failure),
-            None => Ok(self.config.clone()),
-        }
+        self.failure.map_or_else(|| Ok(self.config.clone()), Err)
     }
 
     async fn serve_pass_through_endpoints(
@@ -133,10 +130,7 @@ impl ConfigSaver for RecordingSaver {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop();
-        match failure {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        failure.map_or_else(|| Ok(()), Err)
     }
 }
 
@@ -456,7 +450,7 @@ impl Harness {
         }
         let response = router.oneshot(request).await.expect("the router answers");
         let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        let bytes = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("the body reads");
         let body = serde_json::from_slice(&bytes).expect("the body is JSON");

@@ -54,7 +54,7 @@ async fn masks_alert_credentials_for_admins_and_redacts_them_for_viewers() {
     assert_ne!(teams_url, "https://teams.example/hook");
     assert!(teams_url.starts_with("http"));
     assert!(teams_url.ends_with("hook"));
-    let (_status, viewer_body) = harness
+    let (_, viewer_body) = harness
         .call(get_request(CALLBACKS_URI), Some(internal_key()))
         .await;
     let viewer_email = &alert_entry(&viewer_body, "email")["variables"];
@@ -112,15 +112,15 @@ async fn lists_slack_alerts_only_when_slack_is_configured() {
         json(r#"{"alerting": ["slack", "email"]}"#),
     )]))
     .with_alerting(vec![AlertType::LlmExceptions], webhooks);
-    let (_status, body) = with
+    let (_, slack_body) = with
         .call(get_request(CALLBACKS_URI), Some(master_key()))
         .await;
-    assert_eq!(alert_names(&body), vec!["slack", "email", "ms_teams"]);
+    assert_eq!(alert_names(&slack_body), vec!["slack", "email", "ms_teams"]);
     assert_eq!(
-        body["active_alerting_destinations"],
+        slack_body["active_alerting_destinations"],
         json(r#"["slack", "email"]"#)
     );
-    let slack = alert_entry(&body, "slack");
+    let slack = alert_entry(&slack_body, "slack");
     assert_eq!(slack["active_alerts"], json(r#"["llm_exceptions"]"#));
     assert_eq!(
         slack["alerts_to_webhook"],
@@ -156,7 +156,7 @@ async fn redacts_the_slack_webhook_map_for_a_viewer() {
             r#"{"budget_alerts": ["https://hooks.example/one", "https://hooks.example/two"], "llm_exceptions": "https://hooks.example/slack"}"#
         )
     );
-    let (_status, viewer_body) = harness
+    let (_, viewer_body) = harness
         .call(get_request(CALLBACKS_URI), Some(internal_key()))
         .await;
     assert_eq!(

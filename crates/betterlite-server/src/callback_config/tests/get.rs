@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::Principal;
@@ -11,6 +13,8 @@ use crate::callback_config::ports::RuntimeCallback;
 use crate::config_overlay_port::ConfigOverlayPortError;
 
 const CALLBACKS_URI: &str = "/get/config/callbacks";
+
+type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 fn selection(success: &[&str], failure: &[&str], both: &[&str]) -> CallbackSelection {
     CallbackSelection {
@@ -46,27 +50,32 @@ fn litellm_config(settings: &str) -> BTreeMap<String, JsonValue> {
     object(&[("litellm_settings", json(settings))])
 }
 
-async fn get_callbacks(harness: &Harness, caller: Option<Principal>) -> (StatusCode, JsonValue) {
-    harness.call(get_request(CALLBACKS_URI), caller).await
+fn get_callbacks(
+    harness: &Harness,
+    caller: Option<Principal>,
+) -> BoxedFuture<'_, (StatusCode, JsonValue)> {
+    Box::pin(harness.call(get_request(CALLBACKS_URI), caller))
 }
 
-async fn runtime_rows_for(
-    configured: &str,
-    classes: &[(&str, &str)],
+fn runtime_rows_for<'a>(
+    configured: &'a str,
+    classes: &'a [(&'a str, &'a str)],
     callback: RuntimeCallback,
-) -> Vec<JsonValue> {
-    let mut harness = Harness::new(litellm_config(&format!(
-        r#"{{"success_callback": {configured}}}"#
-    )));
-    harness.callbacks.selection = selection(&[callback.name.as_str()], &[], &[]);
-    harness.callbacks.classes = classes
-        .iter()
-        .map(|(name, class)| ((*name).to_owned(), (*class).to_owned()))
-        .collect();
-    harness.callbacks.objects = vec![callback];
-    let (status, body) = get_callbacks(&harness, Some(master_key())).await;
-    assert_eq!(status, StatusCode::OK);
-    runtime_only(&rows(&body))
+) -> BoxedFuture<'a, Vec<JsonValue>> {
+    Box::pin(async move {
+        let mut harness = Harness::new(litellm_config(&format!(
+            r#"{{"success_callback": {configured}}}"#
+        )));
+        harness.callbacks.selection = selection(&[callback.name.as_str()], &[], &[]);
+        harness.callbacks.classes = classes
+            .iter()
+            .map(|(name, class)| ((*name).to_owned(), (*class).to_owned()))
+            .collect();
+        harness.callbacks.objects = vec![callback];
+        let (status, body) = get_callbacks(&harness, Some(master_key())).await;
+        assert_eq!(status, StatusCode::OK);
+        runtime_only(&rows(&body))
+    })
 }
 
 #[tokio::test]
@@ -200,7 +209,7 @@ async fn sorts_the_runtime_rows_by_name_and_type() {
 }
 
 #[tokio::test]
-async fn hides_the_static_guardrail_and_internal_runtime_callbacks() {
+async fn hides_the_internal_runtime_callbacks() {
     assert!(
         runtime_rows_for(
             "[]",
@@ -228,18 +237,6 @@ async fn hides_the_static_guardrail_and_internal_runtime_callbacks() {
         runtime_rows_for(
             "[]",
             &[],
-            RuntimeCallback {
-                guardrail: true,
-                ..runtime("custom_guard", "user_module", "CustomGuard", None)
-            }
-        )
-        .await
-        .is_empty()
-    );
-    assert!(
-        runtime_rows_for(
-            "[]",
-            &[],
             runtime(
                 "internal_logger",
                 "litellm.proxy.hooks.internal",
@@ -250,6 +247,26 @@ async fn hides_the_static_guardrail_and_internal_runtime_callbacks() {
         .await
         .is_empty()
     );
+}
+
+#[tokio::test]
+async fn hides_an_unregistered_guardrail_callback() {
+    assert!(
+        runtime_rows_for(
+            "[]",
+            &[],
+            RuntimeCallback {
+                guardrail: true,
+                ..runtime("custom_guard", "user_module", "CustomGuard", None)
+            }
+        )
+        .await
+        .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn keeps_a_registered_integration_visible() {
     let registered = runtime_rows_for(
         "[]",
         &[],
@@ -269,7 +286,7 @@ async fn hides_the_static_guardrail_and_internal_runtime_callbacks() {
 }
 
 #[tokio::test]
-async fn hides_the_runtime_callbacks_a_configured_name_claims() {
+async fn hides_a_configured_class_instance() {
     assert!(
         runtime_rows_for(
             r#"["signoz"]"#,
@@ -298,6 +315,10 @@ async fn hides_the_runtime_callbacks_a_configured_name_claims() {
         .await
         .is_empty()
     );
+}
+
+#[tokio::test]
+async fn keeps_a_sibling_class_instance_visible() {
     let sibling = runtime_rows_for(
         r#"["logfire"]"#,
         &[("logfire", "opentelemetry")],
@@ -314,6 +335,10 @@ async fn hides_the_runtime_callbacks_a_configured_name_claims() {
     .await;
     assert_eq!(sibling.len(), 1);
     assert_eq!(sibling[0]["name"], json(r#""arize""#));
+}
+
+#[tokio::test]
+async fn hides_a_configured_module_callback() {
     assert!(
         runtime_rows_for(
             r#"["my_module.my_callback"]"#,
@@ -357,7 +382,7 @@ async fn redacts_sensitive_variables_for_everyone_but_a_proxy_admin() {
         admin_rows[1]["variables"]["GALILEO_USERNAME"],
         json(r#""user""#)
     );
-    let (_status, viewer_body) = get_callbacks(&harness, Some(internal_key())).await;
+    let (_, viewer_body) = get_callbacks(&harness, Some(internal_key())).await;
     let viewer_rows = rows(&viewer_body);
     assert_eq!(
         viewer_rows[0]["variables"],
@@ -385,9 +410,9 @@ async fn reads_router_settings_from_the_router_when_one_is_mounted() {
         ("num_retries", json("3")),
         ("timeout", json("30")),
     ]));
-    let (_status, body) = get_callbacks(&with, Some(master_key())).await;
+    let (_, with_body) = get_callbacks(&with, Some(master_key())).await;
     assert_eq!(
-        body["router_settings"],
+        with_body["router_settings"],
         json(r#"{"num_retries": 3, "timeout": 30}"#)
     );
 }
