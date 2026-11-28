@@ -60,25 +60,20 @@ async fn run(scenario: &Scenario, api_base: &str) -> Result<Run, SdkHttpError> {
         }),
         direct: &completion,
     };
-    let router: &dyn SummaryCompletion = &completion;
+    let summary_router: &dyn SummaryCompletion = &completion;
     let principal = scenario.principal.as_ref().map(principal).transpose()?;
-    let request = context_request(
-        scenario,
-        principal.as_ref(),
-        scenario.router.then_some(router),
-    );
+    let router = scenario.router.then_some(summary_router);
+    let request = context_request(scenario, principal.as_ref(), router);
     let scripted = scripted_result(scenario);
     let recorder = Recorder::default();
-    let recorded = Recorded {
+    let dispatcher = Recorded {
         calls: recorder.clone(),
         answer: answer(scenario.dispatcher, &editors, scripted.as_ref())?,
     };
     // ast-grep-ignore: no-long-names
-    let outcome = prepare_context_managed_request(request, &recorded).await;
-    assemble(
-        outcome,
-        take(&mut *recorder.0.lock().unwrap_or_else(PoisonError::into_inner)),
-    )
+    let outcome = prepare_context_managed_request(request, &dispatcher).await;
+    let mut calls = recorder.0.lock().unwrap_or_else(PoisonError::into_inner);
+    assemble(outcome, take(&mut *calls))
 }
 
 fn summary_settings(scenario: &Scenario) -> Settings {

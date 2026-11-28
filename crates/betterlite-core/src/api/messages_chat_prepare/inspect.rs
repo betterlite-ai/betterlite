@@ -40,10 +40,10 @@ pub fn has_compaction_block(messages: &[Json]) -> bool {
             return false;
         };
         blocks.iter().any(|block| {
-            let Json::Object(fields) = block else {
+            let Json::Object(block_fields) = block else {
                 return false;
             };
-            matches!(fields.get("type"), Some(Json::Text(kind)) if kind.as_str() == COMPACTION_BLOCK_TYPE)
+            matches!(block_fields.get("type"), Some(Json::Text(kind)) if kind.as_str() == COMPACTION_BLOCK_TYPE)
         })
     })
 }

@@ -19,7 +19,7 @@ use crate::api::summary_execution::completion::{ExecutorCompletion, SummaryCompl
 use super::support::{
     DispatchRecord, FixedClearCounter, Logs, NeverCalled, NoBudgets, NoChecks, NoHooks, NoRows,
     Recorder, RecordingHistoryCounter, RouterCompletion, ScriptedDispatch, capture_logs,
-    context_failure, decided, deployment, executor, extra, parse, polyfilled, principal,
+    context_failure, decided, deployment, executor, extra, object, parse, polyfilled, principal,
     text_field,
 };
 
@@ -282,16 +282,7 @@ fn assert_editor_input(
     assert_eq!(calls[0].system, Some(system.clone()));
     assert_eq!(calls[0].tools.as_deref(), Some(tools));
     assert_eq!(calls[0].spec.as_ref(), Some(spec));
-    assert_eq!(
-        serde_json::to_value(
-            calls[0]
-                .metadata
-                .as_ref()
-                .expect("the metadata is passed on")
-        )
-        .expect("it encodes"),
-        parse(METADATA)
-    );
+    assert_eq!(calls[0].metadata, Some(object(METADATA)));
     assert!(calls[0].has_router);
     assert!(calls[0].has_principal);
 }

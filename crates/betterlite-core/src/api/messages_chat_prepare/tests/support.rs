@@ -72,6 +72,10 @@ pub(crate) fn extra(raw: &str) -> betterlite_models::decisions::Extra {
     serde_json::from_str(raw).expect("the mapping decodes")
 }
 
+pub(crate) fn object(raw: &str) -> Object {
+    serde_json::from_str(raw).expect("the object decodes")
+}
+
 pub(crate) fn text_field<'value>(value: &'value Json, name: &str) -> Option<&'value str> {
     let Json::Object(fields) = value else {
         return None;

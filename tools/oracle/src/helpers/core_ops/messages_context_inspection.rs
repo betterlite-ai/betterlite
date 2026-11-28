@@ -108,10 +108,9 @@ fn inspect(input: &InspectionInput) -> Inspection {
         matches!(input.router, RouterMode::Handle).then_some(&handle as &dyn SummaryCompletion);
     // ast-grep-ignore: no-long-names
     let found = inspect_compaction_and_proxy_context(&input.messages, &input.kwargs, router);
-    let (litellm_metadata, user_api_key_auth) = match found.proxy {
-        Some(proxy) => (Some(proxy.litellm_metadata), proxy.user_api_key_auth),
-        None => (None, None),
-    };
+    let (litellm_metadata, user_api_key_auth) = found.proxy.map_or((None, None), |proxy| {
+        (Some(proxy.litellm_metadata), proxy.user_api_key_auth)
+    });
     Inspection {
         has_compaction_block: found.has_compaction_block,
         litellm_metadata,

@@ -1,10 +1,9 @@
-use betterlite_models::decisions::Json;
-
 use crate::api::messages_chat_prepare::inspect::{
-    extract_proxy_metadata, has_compaction_block, inspect_compaction_and_proxy_context,
+    extract_proxy_metadata, has_compaction_block,
+    inspect_compaction_and_proxy_context as inspect_context,
 };
 
-use super::support::{NeverCalled, decided, extra, parse};
+use super::support::{NeverCalled, decided, extra, object, parse};
 
 const COMPACTION: &str = r#"{"type":"compaction","content":"S"}"#;
 
@@ -50,10 +49,9 @@ fn inspect_compaction_and_proxy_context() {
         r#"{"litellm_metadata":{"user_id":"u-1","user_api_key_auth":{"api_key":"sk-1"},"litellm_call_id":"c-1"},"temperature":0.5}"#,
     );
     let context = extract_proxy_metadata(&kwargs).expect("the mapping is a proxy context");
-    let metadata: Json = serde_json::to_value(&context.litellm_metadata).expect("it encodes");
     assert_eq!(
-        metadata,
-        parse(
+        context.litellm_metadata,
+        object(
             r#"{"user_id":"u-1","user_api_key_auth":{"api_key":"sk-1"},"litellm_call_id":"c-1"}"#
         )
     );
@@ -68,10 +66,7 @@ fn inspect_compaction_and_proxy_context() {
     assert!(empty.user_api_key_auth.is_none());
     let anthropic = extract_proxy_metadata(&extra(r#"{"litellm_metadata":{"user_id":"u-1"}}"#))
         .expect("a context");
-    assert_eq!(
-        serde_json::to_value(&anthropic.litellm_metadata).expect("it encodes"),
-        parse(r#"{"user_id":"u-1"}"#)
-    );
+    assert_eq!(anthropic.litellm_metadata, object(r#"{"user_id":"u-1"}"#));
     assert!(anthropic.user_api_key_auth.is_none());
 
     // a missing, null or non-dict litellm_metadata is no proxy context, even with other kwargs
@@ -82,14 +77,14 @@ fn inspect_compaction_and_proxy_context() {
 
     // the router handle comes back as the caller passed it, and nothing answers when it is absent
     let router = NeverCalled;
-    let inspection = inspect_compaction_and_proxy_context(&assistant, &kwargs, Some(&router));
+    let inspection = inspect_context(&assistant, &kwargs, Some(&router));
     assert!(inspection.has_compaction_block);
     assert!(inspection.proxy.is_some());
     assert!(inspection.router.is_some());
-    let absent = inspect_compaction_and_proxy_context(&assistant, &extra("{}"), None);
+    let absent = inspect_context(&assistant, &extra("{}"), None);
     assert!(absent.router.is_none());
     assert!(absent.proxy.is_none());
-    let unavailable = inspect_compaction_and_proxy_context(&decided("[]"), &extra("{}"), None);
+    let unavailable = inspect_context(&decided("[]"), &extra("{}"), None);
     assert!(unavailable.router.is_none());
     assert!(!unavailable.has_compaction_block);
 }

@@ -75,7 +75,7 @@ where
     } else {
         client_history(request.messages, request.system)?
     };
-    let result = run_polyfill_if_enabled(request, &history, prediction, dispatcher).await?;
+    let result = run_polyfill_if_enabled(request, history.as_ref(), prediction, dispatcher).await?;
     if result.is_some() {
         return Ok(result);
     }
@@ -89,7 +89,7 @@ where
 // _run_polyfill_if_enabled: a client error wins; any other failure is logged, then swallowed for compact only
 async fn run_polyfill_if_enabled<Dispatcher>(
     request: ContextRequest<'_>,
-    history: &Option<PolyfillResult>,
+    history: Option<&PolyfillResult>,
     prediction: EditPrediction,
     dispatcher: &Dispatcher,
 ) -> Result<Option<PolyfillResult>, PrepareError>
@@ -102,10 +102,10 @@ where
     ) else {
         return Ok(None);
     };
-    let (messages, system) = match history {
-        Some(result) => (result.messages.clone(), result.system.clone()),
-        None => (request.messages.to_vec(), request.system.cloned()),
-    };
+    let (messages, system) = history.map_or_else(
+        || (request.messages.to_vec(), request.system.cloned()),
+        |result| (result.messages.clone(), result.system.clone()),
+    );
     match dispatcher
         .dispatch(dispatch_request(request, messages, system, spec))
         .await

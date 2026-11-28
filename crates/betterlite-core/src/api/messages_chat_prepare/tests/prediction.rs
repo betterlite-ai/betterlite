@@ -1,11 +1,11 @@
 use betterlite_models::decisions::Json;
 
-use crate::api::messages_chat_prepare::prediction::predict_context_edit_execution;
+use crate::api::messages_chat_prepare::prediction::predict_context_edit_execution as predict_edits;
 
 use super::support::parse;
 
 fn prediction(spec: Option<&Json>, drops: Option<&Json>) -> (bool, bool) {
-    let predicted = predict_context_edit_execution(spec, drops);
+    let predicted = predict_edits(spec, drops);
     (predicted.compact, predicted.non_compact)
 }
 
