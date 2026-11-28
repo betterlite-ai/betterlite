@@ -132,7 +132,10 @@ impl ScriptedEditor {
             .clone()
     }
 
-    fn record<Record: serde::Serialize>(&self, record: &Record) {
+    fn record<Record>(&self, record: &Record)
+    where
+        Record: serde::Serialize,
+    {
         let encoded: Json = serde_json::to_value(record)
             .and_then(serde_json::from_value)
             .expect("a recorded call encodes");
@@ -428,12 +431,7 @@ pub(crate) fn field<'value>(value: &'value Json, name: &str) -> Option<&'value J
 pub(crate) fn text_field<'value>(value: &'value Json, name: &str) -> Option<&'value str> {
     match field(value, name)? {
         Json::Text(text) => Some(text.as_str()),
-        Json::Null
-        | Json::Bool(_)
-        | Json::Number(_)
-        | Json::Text(_)
-        | Json::List(_)
-        | Json::Object(_) => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 

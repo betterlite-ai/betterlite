@@ -92,7 +92,7 @@ fn flow_dispatch<'request>(
 }
 
 fn metadata() -> Object {
-    serde_json::from_value(parse(METADATA)).expect("the metadata decodes")
+    serde_json::from_str(METADATA).expect("the metadata decodes")
 }
 
 fn assert_flow_result(result: &PolyfillResult) {
@@ -301,7 +301,7 @@ async fn latest_nonnull_compaction_fields() {
         ],
     );
     let spec = three_compactions();
-    let dispatch = request(decided(r#"[]"#), None, Some(&spec));
+    let dispatch = request(decided("[]"), None, Some(&spec));
     let result = apply_context_management(dispatch, &editor)
         .await
         .expect("all three edits run");
@@ -338,7 +338,7 @@ async fn latest_nonnull_compaction_fields_block_without_usage() {
         ],
     );
     let spec = parse(r#"{"edits":[{"type":"compact_20260112"},{"type":"compact_20260112"}]}"#);
-    let dispatch = request(decided(r#"[]"#), None, Some(&spec));
+    let dispatch = request(decided("[]"), None, Some(&spec));
     let result = apply_context_management(dispatch, &editor)
         .await
         .expect("both edits run");

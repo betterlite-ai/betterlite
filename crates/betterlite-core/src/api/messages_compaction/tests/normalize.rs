@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use crate::api::messages_compaction::error::SpecError;
-use crate::api::messages_compaction::normalize::normalize_context_edit_shapes;
+use crate::api::messages_compaction::normalize::normalize_context_edit_shapes as normalize_shapes;
 
 use super::support::{decided, parse};
 
@@ -47,7 +47,7 @@ use super::support::{decided, parse};
 )]
 fn normalize_context_edit_shapes(#[case] raw: Option<&str>, #[case] expected: &str) {
     let spec = raw.map(parse);
-    let edits: Vec<Json> = normalize_context_edit_shapes(spec.as_ref())
+    let edits: Vec<Json> = normalize_shapes(spec.as_ref())
         .expect("the spec normalizes")
         .into_iter()
         .map(Json::Object)
@@ -58,8 +58,8 @@ fn normalize_context_edit_shapes(#[case] raw: Option<&str>, #[case] expected: &s
 #[test]
 fn normalize_context_edit_shapes_surfaces_a_bad_threshold() {
     let spec = parse(r#"[{"type":"compaction","compact_threshold":1e30}]"#);
-    let error: SpecError = normalize_context_edit_shapes(Some(&spec))
-        .expect_err("a threshold outside i64 has no token count");
+    let error: SpecError =
+        normalize_shapes(Some(&spec)).expect_err("a threshold outside i64 has no token count");
     assert_eq!(
         error.to_string(),
         "the compact threshold is not a whole number of tokens"

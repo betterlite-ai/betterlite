@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::future::Future;
+use std::mem::take;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_models::decisions::Json;
@@ -190,29 +191,46 @@ where
         return Ok(());
     };
     let fallback_system = state.system.take();
-    let messages = std::mem::take(&mut state.messages);
-    let call = match edit_type {
+    let messages = take(&mut state.messages);
+    let call = edit_call(
+        edit_type,
+        shared,
+        messages,
+        fallback_system.clone(),
+        edit_spec,
+    );
+    let outcome = editor.edit(call).await.map_err(DispatchError::Editor)?;
+    state.carry(outcome, fallback_system);
+    Ok(())
+}
+
+// one registry entry's typed arguments: the history and system the previous edit left behind
+fn edit_call<'call>(
+    edit_type: EditType,
+    shared: &Shared<'call>,
+    messages: Vec<Json>,
+    system: Option<Json>,
+    edit_spec: IndexMap<String, Json>,
+) -> EditCall<'call> {
+    match edit_type {
         EditType::ClearToolUses => EditCall::Clear(ClearCall {
             model: shared.model.to_owned(),
             messages,
             tools: shared.tools.clone(),
-            system: fallback_system.clone(),
+            system,
             edit_spec: Json::Object(edit_spec),
         }),
         EditType::Compact => EditCall::Compact(CompactCall {
             model: shared.model,
             messages,
             tools: shared.tools.clone(),
-            system: fallback_system.clone(),
+            system,
             edit_spec: Json::Object(edit_spec),
             litellm_metadata: shared.litellm_metadata,
             llm_router: shared.llm_router,
             user_api_key_auth: shared.user_api_key_auth,
         }),
-    };
-    let outcome = editor.edit(call).await.map_err(DispatchError::Editor)?;
-    state.carry(outcome, fallback_system);
-    Ok(())
+    }
 }
 
 // the '%s' of LiteLLM's debug line: scalars read as Python prints them, and a container has no repr to copy
