@@ -125,8 +125,7 @@ async fn candidate_models_null() {
     assert_eq!(row.fields.base.team_id, "team-b");
 }
 
-// the deviation: a NULL models row does not decode, so the scan treats it as unresolved and the claim
-// fallback applies, where LiteLLM reads models=None as a resolved team that is skipped and denies
+// the deviation: a NULL models row does not decode, so the scan leaves it unresolved and the claim fallback applies
 #[tokio::test]
 async fn candidate_models_null_defers_under_fallback() {
     let script = Arc::new(Script::new().with_raw("team-a-null", NULL_MODELS));
