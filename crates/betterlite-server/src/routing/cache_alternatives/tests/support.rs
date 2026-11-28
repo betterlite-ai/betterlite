@@ -487,11 +487,11 @@ impl ScriptedTransport {
 // the scripted transport answers the total for the full prompt and the prefix for the body cut at the breakpoint
 fn counted_tokens(bytes: &[u8], total: Option<i64>, prefix: Option<i64>) -> Option<i64> {
     let body = from_utf8(bytes).ok()?;
-    Some(if body.contains(FULL_PROMPT_TEXT) {
+    if body.contains(FULL_PROMPT_TEXT) {
         total
     } else {
         prefix
-    })
+    }
 }
 
 impl CountTokensTransport for ScriptedTransport {
